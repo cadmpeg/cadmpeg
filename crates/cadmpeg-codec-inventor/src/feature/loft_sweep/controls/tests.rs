@@ -246,7 +246,7 @@ fn validator_refuses_each_construction_value_outside_the_positional_form() {
         ("allow_multi_profile_faces", serde_json::json!(true)),
     ] {
         let mut changed = base.clone();
-        changed[field] = value;
+        changed["value"]["value"][field] = value;
         let changed = serde_json::from_value(changed).expect("changed loft");
         assert!(!matches_definition(&changed));
     }

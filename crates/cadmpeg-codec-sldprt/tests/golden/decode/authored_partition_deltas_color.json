@@ -1,17 +1,19 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [
         {
           "appearance": "sldprt:appearance:entity53#900",
+          "channels": {},
           "id": "sldprt:appearance:binding#face:700:900",
           "object_type": "Face",
           "source_entity_id": "700",
           "target": {
-            "id": "sldprt:brep:face#10",
-            "kind": "face"
+            "kind": "face",
+            "value": "sldprt:brep:face#10"
           }
         }
       ],
@@ -24,10 +26,14 @@
             "r": 0.25
           },
           "id": "sldprt:appearance:entity53#900",
-          "schema": "entity-53"
+          "properties": {},
+          "schema": "entity-53",
+          "textures": []
         }
       ],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [
         {
@@ -43,6 +49,7 @@
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [],
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
         },
@@ -50,6 +57,7 @@
           "edge": "sldprt:brep:edge#41",
           "id": "sldprt:brep:coedge#31",
           "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [],
           "radial_next": "sldprt:brep:coedge#31",
           "sense": "forward"
         },
@@ -57,24 +65,31 @@
           "edge": "sldprt:brep:edge#42",
           "id": "sldprt:brep:coedge#32",
           "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [],
           "radial_next": "sldprt:brep:coedge#32",
           "sense": "forward"
         }
       ],
+      "colliders": [],
       "configurations": [
         {
           "active": true,
           "bodies": [
             "sldprt:brep:body#700"
           ],
+          "feature_states": {},
           "id": "sldprt:model:configuration#425:0",
           "name": "Default",
           "native_ref": "sldprt:history:configuration#425:0",
           "ordinal": 0,
+          "parameter_overrides": {},
+          "parameter_values": {},
+          "properties": {},
           "source_index": 0
         }
       ],
       "curves": [],
+      "declared_measures": [],
       "drawings": [],
       "edges": [
         {
@@ -106,7 +121,7 @@
           },
           "id": "sldprt:brep:face#10",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "sldprt:brep:loop#20"
             ]
@@ -116,7 +131,10 @@
           "surface": "sldprt:brep:surf#10"
         }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
+      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -125,16 +143,21 @@
               "sldprt:brep:coedge#31",
               "sldprt:brep:coedge#32"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "sldprt:brep:face#10",
           "id": "sldprt:brep:loop#20"
         }
       ],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
       "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [
         {
           "id": "sldprt:brep:point#60",
@@ -175,6 +198,7 @@
           ]
         }
       ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [
         {
@@ -191,6 +215,8 @@
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -198,21 +224,24 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "sldprt:brep:surf#10"
@@ -276,13 +305,16 @@
         "sketch_input_entities": [],
         "unknowns": [
           {
-            "id": "sldprt:file:block#12"
+            "id": "sldprt:file:block#12",
+            "links": []
           },
           {
-            "id": "sldprt:file:block#425"
+            "id": "sldprt:file:block#425",
+            "links": []
           },
           {
-            "id": "sldprt:file:block#545"
+            "id": "sldprt:file:block#545",
+            "links": []
           }
         ]
       }
@@ -315,11 +347,12 @@
         "sw_configuration_name": "Default"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [
             {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "carrier": "block@12:Contents/Config-0-Partition+0",
                 "schema": "SCH_SW_33103_11000"
@@ -328,7 +361,9 @@
               "instance": "block@12:Contents/Config-0-Partition+0"
             },
             {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "carrier": "block@12:Contents/Config-0-Partition+823",
                 "schema": "SCH_SW_33103_11000"
@@ -338,10 +373,14 @@
             }
           ],
           "primary": {
-            "admission": "residual",
+            "admission": {
+              "kind": "residual"
+            },
+            "declared": {},
             "dialect": "sldprt:unknown"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -349,16 +388,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [
           {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "carrier": "block@12:Contents/Config-0-Partition+0",
               "schema": "SCH_SW_33103_11000"
@@ -367,7 +411,9 @@
             "instance": "block@12:Contents/Config-0-Partition+0"
           },
           {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "carrier": "block@12:Contents/Config-0-Partition+823",
               "schema": "SCH_SW_33103_11000"
@@ -377,19 +423,25 @@
           }
         ],
         "primary": {
-          "admission": "residual",
+          "admission": {
+            "kind": "residual"
+          },
+          "declared": {},
           "dialect": "sldprt:unknown"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "source.dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "sldprt",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "sldprt",
+            "strict_floor": "warning"
+          }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
@@ -402,7 +454,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -412,7 +467,7 @@
           "fields": {
             "geometry.u_axis": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         }
       },
       "provenance": {
@@ -547,7 +602,7 @@
       "sldprt:file:block#12": {
         "bytes": {
           "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAATwAAAA8AD1NETC9UWVNBX0NPTE9VUgBQAAAAAQAQAAEADwAAH0EAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAACAFEAAAABArwAAAABABAAAAAAAAAAAAAAA4QAUwAAAAMDhD/QAAAAAAAAP+AAAAAAAAA/6AAAAAAAAAAyAGQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgAKAAAAAAK8wrySj5luAAAAAAAAABQAAABkKwAAAAAAAAAAAAAADwAUAAAAAAAAAB4ACgAAABEAHgAAABQAHwAgADMAAAAoAAAAACsAEQAfAAAAFAAgAB4ANAAAACkAAAAAKwARACAAAAAUAB4AHwAyAAAAKgAAAAArABAAKAAAAAAAAMK8ko+ZbgAAAAAAAAAAAAAAAAAAArwAEAApAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAACvAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAK8ABIAMgAAAAAAAAAAAAAAAAA8wrySj5luAAACvAASADMAAAAAAAAAAAAAAAAAPcK8ko+ZbgAAArwAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAK8AB0APAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdAD0AAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA+AAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAz/ArwAAYlcAAUABgABAAEAAQABQI9AAAAAAAA+RXmO4jCMOgABAAEAAQEAAgEBAEYAAQABAAEAAQABAAEAUAABAAEAAQAN/wBGAAMNhgABArwAAQABAAEAAQBQAAEAE/8AUAAElDAAAQK8AAEAAQBGUwAO/wAKAAYaigABwrySj5luAAAAAQABAAAARgBkK1BTAAAAC2RlbHRhcyBib2R5AAASU0NIX1NXXzMzMTAzXzExMDAwAE8AAAAPAA9TREwvVFlTQV9DT0xPVVIAUAAAAAEAEAABAA8AAB9BAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAgBRAAAAAQK8AAAAAQAQAAAAAAAAAAAAAAOEAFMAAAADA4Q/0AAAAAAAAD/gAAAAAAAAP+gAAAAAAAA=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
         "stream": "Contents/Config-0-Partition"
@@ -555,7 +610,7 @@
       "sldprt:file:block#425": {
         "bytes": {
           "data": "PEtleXdvcmRzPjxDb25maWd1cmF0aW9uIE5hbWU9IkRlZmF1bHQiIFNvdXJjZUluZGV4PSIwIi8+PC9LZXl3b3Jkcz4=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
         "stream": "Contents/Keywords"
@@ -563,7 +618,7 @@
       "sldprt:file:block#545": {
         "bytes": {
           "data": "PHN3U29saWRXb3JrcyB4bWxucz0iaHR0cDovL3d3dy5zb2xpZHdvcmtzLmNvbS9zdzIwMDMvc2NoZW1hIj48c3dNb2RlbCBpZD0ibW9kZWwtMCIgc3dDb25maWd1cmF0aW9uTmFtZT0iRGVmYXVsdCIvPjxzd0NvbmZpZ3VyYXRpb25MaXN0Pjxzd0NvbmZpZ3VyYXRpb24gc3dJRD0iMCIgc3dNb2RlbFJlZj0ibW9kZWwtMCIgc3dNb3N0UmVjZW50Q29uZmlndXJhdGlvbj0iWUVTIi8+PC9zd0NvbmZpZ3VyYXRpb25MaXN0Pjwvc3dTb2xpZFdvcmtzPg==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
         "stream": "Contents/Features"
@@ -571,7 +626,7 @@
       "sldprt:file:source-image#0": {
         "bytes": {
           "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAALZ5R5pkAQAA1wMAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYLCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGDwByrkZ+APdvHRD4kMdox39vfxDw1iCAAKMzIIADE/A4O8IwMMMDKgACaGQJAg0x6ocjhgbmEAOYGZucX+AkTE/gGUfgFVYsSQwoACtBmIBPYfUGkMwMfABaKY9hzaM6l/Zh5UVASIU5At4QcLgYAcWIMgkAYpk2dQYDAGsjRAUtpAYXmwsAJQ2gTI0oQJK4CF5YDSRkCWFkRYAKKNgQHFbigABpQARD8eeS288kJgyxDABqYOLGeMImeLImeCImeHJCfLYMNADJBlsEXm4gx/WQY7bMIY6nn+Ay1n7IxhYGVgA6YfMHTodwDL2blW9j0y6LGCiDIyMAGxG0wRGAZAad7/QAlm3jZwOkSWFP4PpFimGMAl3IIZ+P4Do5pNqouBER6+jOBU7QZMGwGgNMudkppTklg8GPMMAFrZyIcUAAYACABCAAAAKIc340kAAABEAAAAEQAAADT25kdW5kc38rRWl3f2J0Y3AUQAu/88S2V5d29yZHM+PENvbmZpZ3VyYXRpb24gTmFtZT0iRGVmYXVsdCIgU291cmNlSW5kZXg9IjAiLz48L0tleXdvcmRzPlrZyIcUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAADT25kdW5kc38mRWFkdXJ1Y3bY+7DoJAEEV/hUwvS7QzLI1YmIgFFMZyA4ts3Idhhoyfr0vlRrvJnNx7ckvkLlgzXMP8wOzlrEcJE9FzLwQz5xghR5j3wQnkbVHsBPaTdgqqErkJg7aZGSS4eG0KyJAPwY/mvsyKTPAX5bSEWo9qsQQihhJ+Nkg/z0/JqZawtq2KVo+JoglIre61pyQn4XbsokT8tYjvudUbRSt+KAAAFAAGAAgAIAAAALZ5R5pkAQAA1wMAABsAAAAAAAAAAQAAAAAAAAAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25kUrfigAABQABgAIAEIAAAAohzfjSQAAAEQAAAARAAAAAAAAAAEAAAAAAJ0BAAA09uZHVuZHN/K0Vpd39idGN0UrfigAABQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAAAAAAAAEAAAAAABUCAAA09uZHVuZHN/JkVhZHVydWN5+CXgIAAAAAAwADAMcAAADdAgAAAAA=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
         "stream": "source"

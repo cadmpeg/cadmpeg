@@ -507,6 +507,17 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         self.assertEqual(status, 1, output)
         self.assertIn("Reader::A", output)
 
+    def test_internal_tagged_unit_arm_read_by_its_tag_alone(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+                A,
+                B { value: u8 },
+            }
+        '''})
+        self.assertEqual(status, 0, output)
+
     def test_internal_tagged_empty_struct_and_skipped_unit_arms(self) -> None:
         status, output = self.run_census({"lib.rs": '''
             #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]

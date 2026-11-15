@@ -1,8 +1,12 @@
 {
+  "fragment": false,
   "ir_version": "0",
   "decode_depth": "full",
   "units": {
-    "length": "millimeter"
+    "length": "millimeter",
+    "angle": "radian",
+    "mass": "kilogram",
+    "time": "second"
   },
   "tolerances": {
     "linear": 1e-6,
@@ -24,14 +28,18 @@
     "pcurves": [],
     "procedural_surfaces": [],
     "procedural_curves": [],
+    "assets": [],
     "features": [],
+    "feature_input_topologies": [],
+    "feature_result_topologies": [],
     "configurations": [],
-    "parameters": ¤],
+    "parameters": [],
     "sketches": [],
     "sketch_entities": [],
-    "sketch_constraints": [],
+    "skštch_constraints": [],
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
     "spreadsheets": [],
     "product_definitions": [],
     "occurrences": [],
@@ -45,7 +53,17 @@
     "appearance_bindings": [],
     "attributes": [],
     "pmi": [],
-    "presentation_layers": []
+    "presentation_layers": [],
+    "physical_materials": [],
+    "mass_properties": [],
+    "rigid_bodies": [],
+    "colliders": [],
+    "articulations": [],
+    "physics_scenes": [],
+    "solver_settings": [],
+    "declared_measures": [],
+    "point_clouds": [],
+    "history_bodies": []
   },
   "native": {}
 }

@@ -54,7 +54,7 @@ fn region_loops_reject_repeated_and_outer_holes() {
             .unwrap_err()
             .to_string()
             .contains("holes"));
-        let region = serde_json::json!({"region": "loops", "outer": 0, "holes": holes});
+        let region = serde_json::json!({"kind": "loops", "outer": 0, "holes": holes});
         assert!(serde_json::from_value::<SketchProfileRegion>(region)
             .unwrap_err()
             .to_string()
@@ -68,13 +68,9 @@ fn region_loops_reject_repeated_and_outer_holes() {
         assert_eq!(loops.outer(), 0);
         assert_eq!(loops.holes(), holes);
         let wire = serde_json::to_value(&region).unwrap();
-        assert_eq!(wire["region"], "loops");
+        assert_eq!(wire["kind"], "loops");
         assert_eq!(wire["outer"], 0);
-        if holes.is_empty() {
-            assert!(wire.get("holes").is_none());
-        } else {
-            assert_eq!(wire["holes"], serde_json::json!(holes));
-        }
+        assert_eq!(wire["holes"], serde_json::json!(holes));
         assert_eq!(
             serde_json::from_value::<SketchProfileRegion>(wire).unwrap(),
             region
@@ -92,8 +88,8 @@ fn trimmed_regions_require_nonempty_rings_and_region_selections_are_distinct() {
     assert!(SketchProfileRegion::trimmed(vec![], vec![]).is_err());
     assert!(SketchProfileRegion::trimmed(vec![boundary.clone()], vec![vec![]]).is_err());
     for wire in [
-        serde_json::json!({"region": "trimmed", "outer_boundary": []}),
-        serde_json::json!({"region": "trimmed", "outer_boundary": [boundary], "hole_boundaries": [[]]}),
+        serde_json::json!({"kind": "trimmed", "outer_boundary": []}),
+        serde_json::json!({"kind": "trimmed", "outer_boundary": [boundary], "hole_boundaries": [[]]}),
     ] {
         let error = serde_json::from_value::<SketchProfileRegion>(wire)
             .unwrap_err()
@@ -125,7 +121,8 @@ fn trimmed_regions_require_nonempty_rings_and_region_selections_are_distinct() {
     let profile = PlanarProfileRef::sketch_regions(sketch, vec![trimmed, loops]).unwrap();
     let wire = serde_json::to_value(&profile).unwrap();
     assert_eq!(
-        serde_json::from_value::<ProfileRef>(wire).unwrap(),
+        serde_json::from_value::<ProfileRef>(serde_json::json!({"kind": "planar", "value": wire}))
+            .unwrap(),
         ProfileRef::Planar(profile)
     );
 }
@@ -141,9 +138,9 @@ fn a_sketch_profile_region_states_which_boundary_form_it_uses() {
     let trimmed = SketchProfileRegion::trimmed(vec![boundary.clone()], Vec::new()).unwrap();
 
     let loops_wire = serde_json::to_value(&loops).unwrap();
-    assert_eq!(loops_wire["region"], "loops");
+    assert_eq!(loops_wire["kind"], "loops");
     let trimmed_wire = serde_json::to_value(&trimmed).unwrap();
-    assert_eq!(trimmed_wire["region"], "trimmed");
+    assert_eq!(trimmed_wire["kind"], "trimmed");
     assert_eq!(
         serde_json::from_value::<SketchProfileRegion>(loops_wire.clone()).unwrap(),
         loops
@@ -170,5 +167,5 @@ fn a_sketch_profile_region_states_which_boundary_form_it_uses() {
     let error = serde_json::from_value::<SketchProfileRegion>(serde_json::json!({"outer": 0}))
         .unwrap_err()
         .to_string();
-    assert!(error.contains("region"), "{error}");
+    assert!(error.contains("kind"), "{error}");
 }

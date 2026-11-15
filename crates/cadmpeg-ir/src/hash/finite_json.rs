@@ -197,7 +197,8 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_f64(self, value: f64) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         if value.is_finite() {
-            self.inner.serialize_f64(value)
+            // `-0.0 + 0.0` is `0.0`, so a writer never writes negative zero.
+            self.inner.serialize_f64(value + 0.0)
         } else {
             Err(self.guard.refuse(value))
         }
@@ -206,7 +207,7 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_f32(self, value: f32) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         if value.is_finite() {
-            self.inner.serialize_f32(value)
+            self.inner.serialize_f32(value + 0.0)
         } else {
             Err(self.guard.refuse(f64::from(value)))
         }

@@ -1,11 +1,14 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [
         {
@@ -22,6 +25,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:0",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:0",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:11",
           "sense": "forward"
         },
@@ -29,6 +33,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:1",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:1",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:23",
           "sense": "forward"
         },
@@ -36,6 +41,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:9",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:10",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:20",
           "sense": "reversed"
         },
@@ -43,6 +49,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:0",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:11",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:0",
           "sense": "reversed"
         },
@@ -50,6 +57,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:2",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:12",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:3",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:2",
           "sense": "forward"
         },
@@ -57,6 +65,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:10",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:13",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:3",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:22",
           "sense": "forward"
         },
@@ -64,6 +73,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:5",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:14",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:3",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:5",
           "sense": "reversed"
         },
@@ -71,6 +81,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:11",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:15",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:3",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:17",
           "sense": "reversed"
         },
@@ -78,6 +89,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:3",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:16",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:4",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:3",
           "sense": "forward"
         },
@@ -85,6 +97,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:11",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:17",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:4",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:15",
           "sense": "forward"
         },
@@ -92,6 +105,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:4",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:18",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:4",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:4",
           "sense": "reversed"
         },
@@ -99,6 +113,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:8",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:19",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:4",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:8",
           "sense": "reversed"
         },
@@ -106,6 +121,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:2",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:2",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:12",
           "sense": "reversed"
         },
@@ -113,6 +129,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:9",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:20",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:5",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:10",
           "sense": "forward"
         },
@@ -120,6 +137,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:6",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:21",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:5",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:6",
           "sense": "forward"
         },
@@ -127,6 +145,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:10",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:22",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:5",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:13",
           "sense": "reversed"
         },
@@ -134,6 +153,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:1",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:23",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:5",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:1",
           "sense": "reversed"
         },
@@ -141,6 +161,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:3",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:3",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:0",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:16",
           "sense": "reversed"
         },
@@ -148,6 +169,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:4",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:4",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:18",
           "sense": "forward"
         },
@@ -155,6 +177,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:5",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:5",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:14",
           "sense": "forward"
         },
@@ -162,6 +185,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:6",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:6",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:21",
           "sense": "reversed"
         },
@@ -169,6 +193,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:7",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:7",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:1",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:9",
           "sense": "reversed"
         },
@@ -176,6 +201,7 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:8",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:8",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:19",
           "sense": "forward"
         },
@@ -183,205 +209,244 @@
           "edge": "usd:stage:edge#/Scene/Box:edge:7",
           "id": "usd:stage:coedge#/Scene/Box:orientedEdge:9",
           "owner_loop": "usd:stage:loop#/Scene/Box:loop:2",
+          "pcurves": [],
           "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:7",
           "sense": "forward"
         }
       ],
+      "colliders": [],
       "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -20.0,
-              "y": -20.0,
-              "z": -20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -20.0,
+                "y": -20.0,
+                "z": -20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:0"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -20.0,
-              "y": -20.0,
-              "z": 20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -20.0,
+                "y": -20.0,
+                "z": 20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:1"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -20.0,
-              "y": 20.0,
-              "z": 20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -20.0,
+                "y": 20.0,
+                "z": 20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:10"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -20.0,
-              "y": 20.0,
-              "z": -20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -20.0,
+                "y": 20.0,
+                "z": -20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:11"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -20.0,
-              "y": 20.0,
-              "z": -20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -20.0,
+                "y": 20.0,
+                "z": -20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:2"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -20.0,
-              "y": -20.0,
-              "z": -20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -20.0,
+                "y": -20.0,
+                "z": -20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:3"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": -20.0,
-              "z": -20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": -20.0,
+                "z": -20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:4"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": 20.0,
-              "z": -20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": 20.0,
+                "z": -20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:5"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": -20.0,
-              "z": 20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": -20.0,
+                "z": 20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:6"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": -20.0,
-              "z": -20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": -20.0,
+                "z": -20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:7"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -20.0,
-              "y": -20.0,
-              "z": -20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -20.0,
+                "y": -20.0,
+                "z": -20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:8"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -20.0,
-              "y": -20.0,
-              "z": 20.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -20.0,
+                "y": -20.0,
+                "z": 20.0
+              }
             }
           },
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:9"
         }
       ],
+      "declared_measures": [],
       "drawings": [],
       "edges": [
         {
@@ -533,8 +598,8 @@
         {
           "id": "usd:stage:face#/Scene/Box:face:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/Scene/Box:loop:0"
           },
           "sense": "forward",
@@ -544,8 +609,8 @@
         {
           "id": "usd:stage:face#/Scene/Box:face:1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/Scene/Box:loop:1"
           },
           "sense": "forward",
@@ -555,8 +620,8 @@
         {
           "id": "usd:stage:face#/Scene/Box:face:2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/Scene/Box:loop:2"
           },
           "sense": "forward",
@@ -566,8 +631,8 @@
         {
           "id": "usd:stage:face#/Scene/Box:face:3",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/Scene/Box:loop:3"
           },
           "sense": "forward",
@@ -577,8 +642,8 @@
         {
           "id": "usd:stage:face#/Scene/Box:face:4",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/Scene/Box:loop:4"
           },
           "sense": "forward",
@@ -588,8 +653,8 @@
         {
           "id": "usd:stage:face#/Scene/Box:face:5",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/Scene/Box:loop:5"
           },
           "sense": "forward",
@@ -597,7 +662,10 @@
           "surface": "usd:stage:surface#/Scene/Box:surface-analytic:5"
         }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
+      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -607,7 +675,8 @@
               "usd:stage:coedge#/Scene/Box:orientedEdge:2",
               "usd:stage:coedge#/Scene/Box:orientedEdge:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/Scene/Box:face:0",
           "id": "usd:stage:loop#/Scene/Box:loop:0"
@@ -620,7 +689,8 @@
               "usd:stage:coedge#/Scene/Box:orientedEdge:6",
               "usd:stage:coedge#/Scene/Box:orientedEdge:7"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/Scene/Box:face:1",
           "id": "usd:stage:loop#/Scene/Box:loop:1"
@@ -633,7 +703,8 @@
               "usd:stage:coedge#/Scene/Box:orientedEdge:10",
               "usd:stage:coedge#/Scene/Box:orientedEdge:11"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/Scene/Box:face:2",
           "id": "usd:stage:loop#/Scene/Box:loop:2"
@@ -646,7 +717,8 @@
               "usd:stage:coedge#/Scene/Box:orientedEdge:14",
               "usd:stage:coedge#/Scene/Box:orientedEdge:15"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/Scene/Box:face:3",
           "id": "usd:stage:loop#/Scene/Box:loop:3"
@@ -659,7 +731,8 @@
               "usd:stage:coedge#/Scene/Box:orientedEdge:18",
               "usd:stage:coedge#/Scene/Box:orientedEdge:19"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/Scene/Box:face:4",
           "id": "usd:stage:loop#/Scene/Box:loop:4"
@@ -672,12 +745,14 @@
               "usd:stage:coedge#/Scene/Box:orientedEdge:22",
               "usd:stage:coedge#/Scene/Box:orientedEdge:23"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/Scene/Box:face:5",
           "id": "usd:stage:loop#/Scene/Box:loop:5"
         }
       ],
+      "mass_properties": [],
       "occurrences": [
         {
           "id": "usd:stage:occurrence#/Scene",
@@ -689,7 +764,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Scene",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -728,7 +803,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Scene/Box",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -767,7 +842,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Scene/Robot",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -806,11 +881,11 @@
           },
           "prototype": {
             "document": {
-              "path": "./robot/payload.usd",
-              "resolution": "path"
+              "kind": "path",
+              "path": "./robot/payload.usd"
             },
-            "object": "/Robot",
-            "scope": "external"
+            "kind": "external",
+            "object": "/Robot"
           },
           "scale": [
             1.0,
@@ -849,7 +924,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Scene/Shelf",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -888,10 +963,10 @@
           },
           "prototype": {
             "document": {
-              "path": "shelf.usda",
-              "resolution": "path"
+              "kind": "path",
+              "path": "shelf.usda"
             },
-            "scope": "external"
+            "kind": "external"
           },
           "scale": [
             1.0,
@@ -922,7 +997,10 @@
       ],
       "parameters": [],
       "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [
         {
           "id": "usd:stage:point#/Scene/Box:vertex:0",
@@ -995,30 +1073,41 @@
       "procedural_surfaces": [],
       "product_definitions": [
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Scene",
           "kind": "group",
           "native_ref": "/Scene",
+          "sketches": [],
           "source_name": "Scene"
         },
         {
           "bodies": [
             "usd:stage:body#/Scene/Box"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Scene/Box",
           "kind": "group",
           "native_ref": "/Scene/Box",
+          "sketches": [],
           "source_name": "Box"
         },
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Scene/Robot",
           "kind": "group",
           "native_ref": "/Scene/Robot",
+          "sketches": [],
           "source_name": "Robot"
         },
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Scene/Shelf",
           "kind": "group",
           "native_ref": "/Scene/Shelf",
+          "sketches": [],
           "source_name": "Shelf"
         }
       ],
@@ -1031,6 +1120,7 @@
           ]
         }
       ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [
         {
@@ -1067,6 +1157,8 @@
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -1074,126 +1166,144 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": -20.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": -20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "usd:stage:surface#/Scene/Box:surface-analytic:0"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 20.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/Scene/Box:surface-analytic:1"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": -20.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": -20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/Scene/Box:surface-analytic:2"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "usd:stage:surface#/Scene/Box:surface-analytic:3"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -20.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -20.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/Scene/Box:surface-analytic:4"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 20.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 20.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "usd:stage:surface#/Scene/Box:surface-analytic:5"
@@ -1244,17 +1354,19 @@
         "up_axis": "Y"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "version": "0.8.0"
             },
             "dialect": "usd:usdc-0.8.0"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -1262,101 +1374,123 @@
       "linear": 9.999999999999999e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "version": "0.8.0"
           },
           "dialect": "usd:usdc-0.8.0"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "metadata.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "metadata.not-transferred",
+            "kind": "metadata_not_transferred",
+            "namespace": "usd"
+          }
         },
         "message": "layer metadata was not transferred: customLayerData, documentation, endTimeCode, startTimeCode",
         "severity": "info"
       },
       {
         "code": {
-          "code": "composition.layer-unavailable",
-          "kind": "assembly_components_external",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "composition.layer-unavailable",
+            "kind": "assembly_components_external",
+            "namespace": "usd"
+          }
         },
         "message": "3 named layers did not open: ./lighting.usda (the decode has no companion file source), ./robot/payload.usd (the decode has no companion file source), shelf.usda (the decode has no companion file source)",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "composition.sublayers-not-composed",
-          "kind": "assembly_components_external",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "composition.sublayers-not-composed",
+            "kind": "assembly_components_external",
+            "namespace": "usd"
+          }
         },
         "message": "1 sublayers were not composed: ./lighting.usda",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "composition.over-undefined",
-          "kind": "reference_graph_not_closed",
-          "namespace": "usd",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "composition.over-undefined",
+            "kind": "reference_graph_not_closed",
+            "namespace": "usd",
+            "strict_floor": "warning"
+          }
         },
         "message": "1 prims have only `over` specifications in this layer and were not composed: /Unrelated",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "composition.external-arc",
-          "kind": "assembly_components_external",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "composition.external-arc",
+            "kind": "assembly_components_external",
+            "namespace": "usd"
+          }
         },
         "message": "2 references and payloads to other layers were kept as external prototypes; their content was not loaded",
         "severity": "info"
       },
       {
         "code": {
-          "code": "metadata.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "metadata.not-transferred",
+            "kind": "metadata_not_transferred",
+            "namespace": "usd"
+          }
         },
         "message": "prim metadata was not transferred: inheritPaths 1",
         "severity": "info"
       },
       {
         "code": {
-          "code": "prim.type-not-transferred",
-          "kind": "unsupported_object_family",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "prim.type-not-transferred",
+            "kind": "unsupported_object_family",
+            "namespace": "usd"
+          }
         },
         "message": "prims of these types and their descendants were not transferred: Camera 1, DistantLight 1",
         "severity": "info"
       },
       {
         "code": {
-          "code": "attribute.animation-not-transferred",
-          "kind": "attributes_not_transferred",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "attribute.animation-not-transferred",
+            "kind": "attributes_not_transferred",
+            "namespace": "usd"
+          }
         },
         "message": "1 attributes have time samples or splines; each was read at its default value, or its first sample: /Scene/Robot.xformOp:translate",
         "severity": "info"
@@ -1365,10 +1499,17 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

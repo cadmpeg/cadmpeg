@@ -9,11 +9,11 @@
         "header_offset": "0",
         "signature": "PV-PVS0301"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "model.pvs",
       "role": "document",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 439
       }
     },
@@ -25,11 +25,11 @@
         "header_offset": "478",
         "signature": "DIV-OL09BL"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "bracket.ol",
       "role": "model-data",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 412
       }
     },
@@ -41,28 +41,31 @@
         "header_offset": "930",
         "signature": "DIV-OL08BL"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "plate.ol",
       "role": "model-data",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 449
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "pvs_signature": "PV-PVS0301"
         },
         "dialect": "pvz:pvs-0301"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "structure member model.pvs; 2 geometry members"
   ]

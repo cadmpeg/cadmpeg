@@ -24,9 +24,9 @@ fn untrim_surface_preserves_loop_choices_and_signed_distances() {
                 extension,
             });
             let wire = serde_json::to_value(&definition).unwrap();
-            assert_eq!(wire["definition"], "untrim_surface");
+            assert_eq!(wire["value"]["kind"], "untrim_surface");
             assert_eq!(
-                wire["extension"],
+                wire["value"]["value"]["extension"],
                 extension
                     .map(crate::scalar::Length::get)
                     .map_or(serde_json::Value::Null, |value| serde_json::json!(value))

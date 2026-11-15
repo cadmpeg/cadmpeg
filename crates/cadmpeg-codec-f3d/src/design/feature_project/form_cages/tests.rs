@@ -1121,8 +1121,7 @@ fn form_missing_sources_preserve_native_parameters_metadata_and_repeated_binding
         "id":"f3d:model:feature#form", "ordinal":7, "name":"Form", "suppressed":true,
         "dependencies":["f3d:model:feature#previous"], "source_properties":{"reference:0":"205"},
         "outputs":["f3d:model:body#result"], "native_ref":scope.id,
-        "definition":{"definition":"native","kind":"Form","parameters":{"width":"width / 2","extra":"sin(angle)"}}
-    })).unwrap();
+        "definition":{"kind": "operation", "value": {"kind": "native", "value": {"kind":"Form","parameters":{"width":"width / 2","extra":"sin(angle)"}}}}, "source_content": []})).unwrap();
     let mut rows = vec![row.clone()];
     let mut losses = Vec::new();
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -1210,8 +1209,7 @@ fn form_native_source_reference_takes_precedence_over_derived_feature_identity()
         let mut feature: Feature = serde_json::from_value(serde_json::json!({
             "id":crate::ids::neutral_feature_id(&scopes[0]), "ordinal":7, "suppressed":true,
             "outputs":["f3d:model:body#result"],
-            "definition":{"definition":"native","kind":"Form","parameters":{"extra":"sin(angle)"}}
-        }))
+            "definition":{"kind": "operation", "value": {"kind": "native", "value": {"kind":"Form","parameters":{"extra":"sin(angle)"}}}}, "dependencies": [], "source_properties": {}, "source_content": []}))
         .unwrap();
         feature.native_ref = native_ref;
         let original = feature.clone();
@@ -1435,7 +1433,7 @@ fn form_source_recovery_propagates_a_resource_refusal() {
         ctx.retain_bytes(1, "Form test fuse"),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
-    let mut rows = vec![serde_json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"suppressed":null,"definition":{"definition":"native","kind":"Form","parameters":{}}})).unwrap()];
+    let mut rows = vec![serde_json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"definition":{"kind": "operation", "value": {"kind": "native", "value": {"kind":"Form","parameters":{}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap()];
     let original = rows.clone();
     let mut losses = Vec::new();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
@@ -1580,7 +1578,7 @@ fn ordinary_form_list_keeps_valid_positions_around_a_malformed_slot_and_full_nat
         archive.write_all(&bytes).unwrap();
         let archive = archive.finish().unwrap().into_inner();
         let scope = form_scope(2190, vec![2196]);
-        let mut rows: Vec<cadmpeg_ir::features::Feature> = vec![serde_json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"suppressed":null,"native_ref":scope.id,"definition":{"definition":"native","kind":"Form","parameters":{}}})).unwrap()];
+        let mut rows: Vec<cadmpeg_ir::features::Feature> = vec![serde_json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"native_ref":scope.id,"definition":{"kind": "operation", "value": {"kind": "native", "value": {"kind":"Form","parameters":{}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap()];
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
                 super::project_forms(

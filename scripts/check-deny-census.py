@@ -1357,12 +1357,18 @@ def split_tuple_types(text):
 
 
 class Arm:
-    def __init__(self, name, kind, types, untagged, skipped_newtype=False):
+    def __init__(self, name, kind, types, untagged, skipped_newtype=False, tag_only=False):
         self.name = name
         self.kind = kind
         self.types = types
         self.untagged = untagged
         self.skipped_newtype = skipped_newtype
+        self.tag_only = tag_only
+
+
+# A unit arm read through `cadmpeg_core::tag_only::read` refuses every key
+# beside its tag by name.
+TAG_ONLY_READER_RE = re.compile(r'deserialize_with\s*=\s*"(?:[\w:]*::)?tag_only::read"')
 
 
 GENERIC_HEADER_RE = re.compile(
@@ -2325,7 +2331,8 @@ def untagged_arms(item):
             )
             arms.append(Arm(name, "tuple", fields, untagged, skipped_newtype))
         else:
-            arms.append(Arm(name, "unit", [], untagged))
+            tag_only = TAG_ONLY_READER_RE.search(raw) is not None
+            arms.append(Arm(name, "unit", [], untagged, tag_only=tag_only))
     return arms
 
 
@@ -4063,7 +4070,7 @@ def main():
             ):
                 units = [arm for arm in untagged_arms(item)
                          if arm.untagged != "always"
-                         and (arm.kind == "unit" or arm.skipped_newtype)]
+                         and ((arm.kind == "unit" and not arm.tag_only) or arm.skipped_newtype)]
                 for arm in units:
                     arm_failures.append((
                         item.path, item.line,
