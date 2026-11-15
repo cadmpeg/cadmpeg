@@ -343,7 +343,6 @@ fn fill_history(
     let mut subtypes = None;
     let mut newer = HashMap::<i64, HashSet<Option<i64>>>::new();
     let mut visited = 0;
-    let mut live_at_end = HashSet::<i64>::new();
     let mut failure = None;
     super::walk_entity_versions(
         states,
@@ -352,25 +351,19 @@ fn fill_history(
         |state_index, versions| {
             let ordinal = states.len() - visited - 1;
             visited += 1;
-            if visited == 1 {
-                live_at_end = versions.keys().copied().collect();
-            }
             if failure.is_some() {
                 return;
             }
             let state_id = states[state_index].state_id;
             for want in wants.iter().filter(|want| want.state == state_id) {
                 let revision = versions.get(&want.slot).copied();
-                let produced = want.producer.filter(|_| {
-                    newer
-                        .get(&want.slot)
-                        .is_some_and(|seen| seen.iter().any(|new| *new != revision))
-                });
-                // A consumed body that the final model still holds is a
-                // result body, not a history-only one.
-                let consumed = want
-                    .consumer
-                    .filter(|_| revision.is_some() && !live_at_end.contains(&want.slot));
+                let changed = newer
+                    .get(&want.slot)
+                    .is_some_and(|seen| seen.iter().any(|new| *new != revision));
+                // A later state that deletes or revises the slot leaves the
+                // body as this state holds it only in the record archive.
+                let produced = want.producer.filter(|_| changed);
+                let consumed = want.consumer.filter(|_| changed);
                 if produced.is_none() && consumed.is_none() {
                     continue;
                 }

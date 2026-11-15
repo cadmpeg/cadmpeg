@@ -836,9 +836,27 @@ fn a_consumed_body_the_final_state_lacks_is_a_history_body() {
 }
 
 #[test]
-fn a_consumed_body_the_final_state_still_holds_needs_no_history_body() {
+fn a_consumed_body_a_later_state_revises_is_a_history_body() {
     let (bodies, losses) = run_roles(
         &carrier_bytes(RefWidth::Eight, true),
+        RefWidth::Eight,
+        1,
+        MAX_HISTORY_BODY_WORK,
+        (false, true),
+        1,
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let [body] = bodies.as_slice() else {
+        panic!("one history body")
+    };
+    assert_eq!(body.consumed_by, Some(feature("base").id));
+    assert_eq!(body.produced_by, None);
+}
+
+#[test]
+fn a_consumed_body_no_later_state_changes_needs_no_history_body() {
+    let (bodies, losses) = run_roles(
+        &carrier_bytes(RefWidth::Eight, false),
         RefWidth::Eight,
         1,
         MAX_HISTORY_BODY_WORK,
