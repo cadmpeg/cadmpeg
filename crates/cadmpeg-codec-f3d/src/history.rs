@@ -5850,7 +5850,6 @@ fn bind_historical_face_operand<'a>(
         crate::records::feature::scope::DesignFeatureKind::MoveFace
             | crate::records::feature::scope::DesignFeatureKind::OffsetFaces
     ) && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
-        && !operand.has_closed_edge_node()
     {
         operand.resolved_face_slots = caches
             .face_recipes
