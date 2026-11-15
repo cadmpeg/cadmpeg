@@ -3339,7 +3339,22 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .values()
                     .copied()
                     .collect::<Vec<_>>();
-                let expected_groups = construction.form.face_groups(&references);
+                let expected_groups = if construction.form
+                    == records::feature::thread::DesignThreadForm::StandardExtended
+                {
+                    construction
+                        .form
+                        .owner_ordinals(scope, &native.design_parameter_owners)
+                        .map(|ordinals| {
+                            records::feature::thread::DesignThreadForm::extended_standard_face_groups(
+                                &references,
+                                ordinals,
+                            )
+                        })
+                        .unwrap_or_default()
+                } else {
+                    construction.form.face_groups(&references)
+                };
                 construction
                     .form
                     .owners_hold(scope, &native.design_parameter_owners)
