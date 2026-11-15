@@ -1486,15 +1486,19 @@ const FIDELITY_SIDECAR: &str = r#"{
              "transfer": {"transfer": "full", "geometry_transferred": true},
              "coverage": {}, "losses": [], "notes": []},
   "fidelity": {
+    "decode_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "file_digests": {},
+    "unrepresented": ["model", "design"],
     "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},
                     "exactness": {}},
     "retained_records": {
       "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0,
-             "bytes": {"retention": "inline", "data": "QUJDRA=="}},
+             "bytes": {"retention": "inline", "data": "QUJDRA=="}, "untyped": []},
       "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4,
-             "bytes": {"retention": "inline", "data": "RUY="}},
+             "bytes": {"retention": "inline", "data": "RUY="}, "untyped": ["model"]},
       "f3d:source:record#r3": {"stream": "Other", "offset": 0,
-             "bytes": {"retention": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}}
+             "bytes": {"retention": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
+             "untyped": ["model", "design"]}
     }
   }
 }"#;
@@ -1508,14 +1512,21 @@ fn fidelity_lists_retained_records_with_annotation_counts() {
         .assert()
         .success()
         .stdout(
-            "stream\toffset\tbytes\tdata\tid\n\
-             Contents/Config-0\t0\t4\tyes\tf3d:source:record#r1\n\
-             Contents/Config-0\t4\t2\tyes\tf3d:source:record#r2\n\
-             Other\t0\t3\tno\tf3d:source:record#r3\n",
+            "stream\toffset\tbytes\tdata\tuntyped\tid\n\
+             Contents/Config-0\t0\t4\tyes\t-\tf3d:source:record#r1\n\
+             Contents/Config-0\t4\t2\tyes\tmodel\tf3d:source:record#r2\n\
+             Other\t0\t3\tno\tmodel,design\tf3d:source:record#r3\n",
         )
-        .stderr(predicate::str::contains(
-            "annotations: 1 streams, 1 provenance entries, 0 exactness notes",
-        ));
+        .stderr(
+            predicate::str::contains(
+                "annotations: 1 streams, 1 provenance entries, 0 exactness notes",
+            )
+            .and(predicate::str::contains(
+                "decoded file sha256 \
+                 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855; \
+                 0 component file digest(s); unrepresented: model,design",
+            )),
+        );
 }
 
 #[test]
@@ -1680,6 +1691,19 @@ fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
     assert_eq!(
         value["payload"]["retained_records"][2]["data_retained"],
         false
+    );
+    assert_eq!(
+        value["payload"]["decode_digest"],
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(value["payload"]["file_digests"], serde_json::json!({}));
+    assert_eq!(
+        value["payload"]["unrepresented"],
+        serde_json::json!(["model", "design"])
+    );
+    assert_eq!(
+        value["payload"]["retained_records"][1]["untyped"],
+        serde_json::json!(["model"])
     );
 }
 

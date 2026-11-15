@@ -413,6 +413,12 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
     }
 }
 
+/// Returns the sidecar wire name of an arena class (`model` or `design`).
+#[must_use]
+pub const fn arena_class_name(class: ArenaClass) -> &'static str {
+    classes::name(class)
+}
+
 fn class_list(classes: &BTreeSet<ArenaClass>) -> String {
     classes
         .iter()
