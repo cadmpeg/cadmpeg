@@ -272,9 +272,10 @@ fn selection_behind_start(
     linear_tolerance: f64,
 ) -> bool {
     let behind = || {
-        let (origin, normal, _) = crate::design::face_resolve::extrude_profile_sketch_id(frame.profile)
-            .and_then(|id| sketches.iter().find(|sketch| sketch.id == *id))
-            .and_then(Sketch::resolved_placement)?;
+        let (origin, normal, _) =
+            crate::design::face_resolve::extrude_profile_sketch_id(frame.profile)
+                .and_then(|id| sketches.iter().find(|sketch| sketch.id == *id))
+                .and_then(Sketch::resolved_placement)?;
         let sweep = match frame.direction {
             ExtrudeDirection::ProfileNormal {} => normal.get(),
             ExtrudeDirection::ReversedProfileNormal {} => normal.get().scale(-1.0),
