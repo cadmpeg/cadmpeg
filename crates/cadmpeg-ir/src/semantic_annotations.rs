@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn physical_text_style_roundtrips_and_names_invalid_height() {
-        let wire = serde_json::json!({"id":"test:model:annotation#text", "object":"source", "kind":"text", "runtime_type":"Text", "order":0, "native_ref":"native", "text_style":{"height":5.0,"font_family":"osifont"}});
+        let wire = serde_json::json!({"id":"test:model:annotation#text", "object":"source", "kind":"text", "runtime_type":"Text", "order":0, "native_ref":"native", "text_style":{"height":5.0,"font_family":"osifont"}, "text": [], "references": {}, "reference_anchors": [], "parameters": {}, "assets": []});
         let annotation: SemanticAnnotation = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(annotation).unwrap(), wire);
         for height in [
@@ -224,7 +224,7 @@ mod tests {
     fn dimension_wire_admission_names_optional_fields() {
         let wire = serde_json::json!({"id": "synthetic:test:annotation#dimension", "object": "source", "kind": "dimension", "runtime_type": "Dimension", "order": 0, "native_ref": "native",
             "dimension_kind": {"kind": "radius"}, "value": 12.0, "format": "%.2f", "position": [4.0, 5.0, 0.0],
-            "text_override": "R12", "upper_tolerance": 0.2, "lower_tolerance": -0.1});
+            "text_override": "R12", "upper_tolerance": 0.2, "lower_tolerance": -0.1, "text": [], "references": {}, "reference_anchors": [], "text_style": {}, "parameters": {}, "assets": []});
         let annotation: SemanticAnnotation = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(annotation).unwrap(), wire);
         for field in [

@@ -1584,12 +1584,10 @@ mod tests {
 
         for wire in [
             serde_json::json!({
-                "classification": "unspecified",
-                "loops": ["t:b:loop#1", "t:b:loop#2"]
+                "kind": "unspecified", "loops": ["t:b:loop#1", "t:b:loop#2"]
             }),
             serde_json::json!({
-                "classification": "classified",
-                "outer": "t:b:loop#1",
+                "kind": "classified", "outer": "t:b:loop#1",
                 "inner": ["t:b:loop#2"]
             }),
         ] {
@@ -1601,7 +1599,7 @@ mod tests {
         // refused for the missing key, so it is not a second spelling of an
         // unclassified face.
         let error = serde_json::from_value::<FaceLoops>(
-            serde_json::json!({"classification": "classified", "inner": ["t:b:loop#2"]}),
+            serde_json::json!({"kind": "classified", "inner": ["t:b:loop#2"]}),
         )
         .unwrap_err()
         .to_string();
@@ -2013,7 +2011,7 @@ mod tests {
             "use_curve": {
                 "curve": "test:model:curve#0",
                 "parameter_range": [0.25, 0.75]
-            }
+            }, "pcurves": []
         })
     }
 
@@ -2119,7 +2117,8 @@ mod tests {
             "face": "test:model:face#0",
             "boundary": {
                 "kind": "vertex",
-                "vertex": "test:model:vertex#0"
+                "vertex": "test:model:vertex#0",
+                "pcurves": []
             }
         });
         let loop_: Loop = serde_json::from_value(json.clone()).unwrap();
@@ -2141,7 +2140,8 @@ mod tests {
                 "coedges": ["test:model:coedge#0"],
                 "vertex_uses": [{
                     "vertex": "test:model:vertex#0",
-                    "after": "test:model:coedge#0"
+                    "after": "test:model:coedge#0",
+                    "pcurves": []
                 }]
             }
         });
@@ -2172,7 +2172,7 @@ mod tests {
             "boundary": {
                 "kind": "ring",
                 "coedges": ["test:model:coedge#0"],
-                "vertex_uses": [{ "vertex": "test:model:vertex#0" }]
+                "vertex_uses": [{ "vertex": "test:model:vertex#0", "pcurves": [] }]
             }
         });
         assert!(serde_json::from_value::<Loop>(ring_without_anchor).is_err());
@@ -2203,10 +2203,7 @@ mod tests {
         let inner = members.collect();
         face.loops = FaceLoops::classified(outer.clone(), inner);
         let wire = serde_json::to_value(&*face).unwrap();
-        assert_eq!(
-            wire["loops"]["classification"],
-            serde_json::json!("classified")
-        );
+        assert_eq!(wire["loops"]["kind"], serde_json::json!("classified"));
         assert_eq!(wire["loops"]["outer"], serde_json::json!(outer.as_str()));
         assert!(wire["loops"].get("loops").is_none());
         let restored: Face = serde_json::from_value(wire).unwrap();
@@ -2232,10 +2229,7 @@ mod tests {
         let face = &model.faces[0];
         assert!(matches!(face.loops, FaceLoops::Unspecified { .. }));
         let wire = serde_json::to_value(face).unwrap();
-        assert_eq!(
-            wire["loops"]["classification"],
-            serde_json::json!("unspecified")
-        );
+        assert_eq!(wire["loops"]["kind"], serde_json::json!("unspecified"));
         assert!(wire["loops"].get("outer").is_none());
         assert_eq!(
             wire["loops"]["loops"]
@@ -2251,25 +2245,23 @@ mod tests {
     #[test]
     fn a_face_states_either_a_classification_or_a_loop_order() {
         for wire in [
-            serde_json::json!({"classification": "classified", "outer": "test:model:loop#0", "inner": []}),
-            serde_json::json!({"classification": "unspecified", "loops": ["test:model:loop#0"]}),
+            serde_json::json!({"kind": "classified", "outer": "test:model:loop#0", "inner": []}),
+            serde_json::json!({"kind": "unspecified", "loops": ["test:model:loop#0"]}),
         ] {
             let loops: FaceLoops = serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(&loops).unwrap(), wire);
         }
         // Mixing the two arms' keys names no shape.
         assert!(serde_json::from_value::<FaceLoops>(serde_json::json!({
-            "classification": "classified",
-            "outer": "test:model:loop#0",
+            "kind": "classified", "outer": "test:model:loop#0",
             "loops": ["test:model:loop#0"]
         }))
         .is_err());
         // A face with no boundary has a spelling: nx, sat, step and freecad
         // each produce one, so `loops` is a plain list.
         let none: FaceLoops =
-            serde_json::from_value(serde_json::json!({"classification": "unspecified",
-                "loops": []}))
-            .unwrap();
+            serde_json::from_value(serde_json::json!({"kind": "unspecified", "loops": []}))
+                .unwrap();
         assert!(none.is_empty());
     }
 
@@ -2297,8 +2289,7 @@ mod tests {
             "surface": "test:model:surface#0",
             "sense": "forward",
             "loops": {
-                "classification": "classified",
-                "outer": ["test:model:loop#0", "test:model:loop#1"],
+                "kind": "classified", "outer": ["test:model:loop#0", "test:model:loop#1"],
                 "inner": []
             }
         });
@@ -2313,8 +2304,7 @@ mod tests {
             "surface": "test:model:surface#0",
             "sense": "forward",
             "loops": {
-                "classification": "classified",
-                "outer": "test:model:loop#0",
+                "kind": "classified", "outer": "test:model:loop#0",
                 "inner": [],
                 "zz_bogus": 1
             }
@@ -2331,7 +2321,7 @@ mod tests {
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary_role": "outer",
-            "boundary": { "kind": "vertex", "vertex": "test:model:vertex#0" }
+            "boundary": { "kind": "vertex", "vertex": "test:model:vertex#0", "pcurves": [] }
         });
         let error = serde_json::from_value::<Loop>(wire)
             .unwrap_err()

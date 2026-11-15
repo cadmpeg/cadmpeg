@@ -758,7 +758,7 @@ mod tests {
         let value = serde_json::to_value(&definition).unwrap();
         assert_eq!(value["kind"], "dimension");
         assert_eq!(value["nominal"]["value"], 12.0);
-        assert_eq!(value["tolerance"]["form"], "plus_minus");
+        assert_eq!(value["tolerance"]["kind"], "plus_minus");
         assert_eq!(value["tolerance"]["lower"]["value"], -0.1);
         assert_eq!(value["tolerance"]["upper"]["value"], 0.2);
         assert!(value.get("lower_deviation").is_none());
@@ -771,16 +771,15 @@ mod tests {
 
         let error = serde_json::from_value::<PmiDefinition>(serde_json::json!({
             "kind": "dimension",
-            "dimension": "size",
-            "lower_deviation": {"value": -0.1, "quantity": "length"}
+            "dimension": {"kind": "size"},
+            "lower_deviation": {"value": -0.1, "quantity": "length"}, "modifiers": []
         }))
         .unwrap_err()
         .to_string();
         assert!(error.contains("unknown field `lower_deviation`"), "{error}");
 
         let error = serde_json::from_value::<DimensionTolerance>(serde_json::json!({
-            "form": "fit",
-            "fit": {
+            "kind": "fit", "fit": {
                 "form_variance": "H",
                 "zone_variance": "",
                 "grade": "7",
@@ -797,12 +796,11 @@ mod tests {
     fn dimension_wire_carries_an_absent_nominal_and_a_combined_tolerance() {
         let value = serde_json::json!({
             "kind": "dimension",
-            "dimension": "diameter",
+            "dimension": {"kind": "diameter"},
             "tolerance": {
-                "form": "plus_minus",
-                "lower": {"value": -0.1, "quantity": "length"},
+                "kind": "plus_minus", "lower": {"value": -0.1, "quantity": "length"},
                 "upper": {"value": 0.2, "quantity": "length"}
-            }
+            }, "modifiers": []
         });
         let definition =
             serde_json::from_value::<PmiDefinition>(value.clone()).expect("absent nominal");
@@ -816,11 +814,10 @@ mod tests {
 
         let value = serde_json::json!({
             "kind": "dimension",
-            "dimension": "size",
+            "dimension": {"kind": "size"},
             "nominal": {"value": 12.0, "quantity": "length"},
             "tolerance": {
-                "form": "plus_minus_fit",
-                "lower": {"value": -0.1, "quantity": "length"},
+                "kind": "plus_minus_fit", "lower": {"value": -0.1, "quantity": "length"},
                 "upper": {"value": 0.2, "quantity": "length"},
                 "fit": {
                     "form_variance": "H",
@@ -828,7 +825,7 @@ mod tests {
                     "grade": "7",
                     "source": "ISO 286"
                 }
-            }
+            }, "modifiers": []
         });
         let definition =
             serde_json::from_value::<PmiDefinition>(value.clone()).expect("combined tolerance");
@@ -843,13 +840,12 @@ mod tests {
     fn dimension_wire_carries_limit_values() {
         let value = serde_json::json!({
             "kind": "dimension",
-            "dimension": "diameter",
+            "dimension": {"kind": "diameter"},
             "nominal": {"value": 35.0, "quantity": "length"},
             "tolerance": {
-                "form": "limits",
-                "lower": {"value": 34.8, "quantity": "length"},
+                "kind": "limits", "lower": {"value": 34.8, "quantity": "length"},
                 "upper": {"value": 35.2, "quantity": "length"}
-            }
+            }, "modifiers": []
         });
         let definition = serde_json::from_value::<PmiDefinition>(value.clone()).expect("limits");
         assert!(matches!(
@@ -908,11 +904,10 @@ mod tests {
         )
         .is_err());
         let wire = serde_json::json!({
-            "kind": "dimension", "dimension": "size",
+            "kind": "dimension", "dimension": {"kind": "size"},
             "nominal": {"value": 12.0, "quantity": "length"},
-            "tolerance": {"form": "plus_minus",
-                "lower": {"value": -0.1, "quantity": "angle"},
-                "upper": {"value": 0.2, "quantity": "length"}}
+            "tolerance": {"kind": "plus_minus", "lower": {"value": -0.1, "quantity": "angle"},
+                "upper": {"value": 0.2, "quantity": "length"}}, "modifiers": []
         });
         let error = serde_json::from_value::<PmiDefinition>(wire)
             .expect_err("mixed dimension quantities")
@@ -931,10 +926,9 @@ mod tests {
         )
         .is_err());
         let wire = serde_json::json!({
-            "kind": "dimension", "dimension": "angular",
-            "tolerance": {"form": "plus_minus",
-                "lower": {"value": -0.1, "quantity": "length"},
-                "upper": {"value": 0.2, "quantity": "length"}}
+            "kind": "dimension", "dimension": {"kind": "angular"},
+            "tolerance": {"kind": "plus_minus", "lower": {"value": -0.1, "quantity": "length"},
+                "upper": {"value": 0.2, "quantity": "length"}}, "modifiers": []
         });
         let error = serde_json::from_value::<PmiDefinition>(wire)
             .expect_err("angular dimension needs angle tolerance")
@@ -977,8 +971,8 @@ mod tests {
         let angle = PmiValue::new(1.0, PmiQuantity::Angle).expect("finite angle");
         assert!(PmiDimension::new(DimensionKind::Size, Some(angle), None).is_err());
         let wire = serde_json::json!({
-            "kind": "dimension", "dimension": "size",
-            "nominal": {"value": 1.0, "quantity": "angle"}
+            "kind": "dimension", "dimension": {"kind": "size"},
+            "nominal": {"value": 1.0, "quantity": "angle"}, "modifiers": []
         });
         let error = serde_json::from_value::<PmiDefinition>(wire)
             .expect_err("size nominal needs length")
@@ -1224,7 +1218,8 @@ mod tests {
     fn a_datum_precedence_of_zero_states_no_reference() {
         let wire = serde_json::json!({
             "datum": "test:model:pmi#0",
-            "precedence": 0
+            "precedence": 0,
+            "modifiers": []
         });
         let error = serde_json::from_value::<super::DatumReference>(wire)
             .expect_err("zero is not a precedence")
@@ -1233,7 +1228,8 @@ mod tests {
 
         let wire = serde_json::json!({
             "datum": "test:model:pmi#0",
-            "precedence": 1
+            "precedence": 1,
+            "modifiers": []
         });
         let reference =
             serde_json::from_value::<super::DatumReference>(wire).expect("one is a precedence");

@@ -704,8 +704,9 @@ mod tests {
         serde_json::json!({
             "name": "entry",
             "role": "stream",
-            "compression": compression,
+            "kind": compression,
             "size": size.clone(),
+            "attributes": {},
         })
     }
 
@@ -717,7 +718,8 @@ mod tests {
         let mut value = serde_json::json!({
             "name": "entry",
             "role": "stream",
-            "compression": compression,
+            "kind": compression,
+            "attributes": {},
         });
         if let Some(stored) = stored {
             value["stored"] = stored.into();
@@ -762,35 +764,35 @@ mod tests {
     fn each_declared_verbatim_size_has_one_spelling() {
         for (size, expected) in [
             (
-                serde_json::json!({"form": "unreported"}),
+                serde_json::json!({"kind": "unreported"}),
                 VerbatimSize::Unreported,
             ),
             (
-                serde_json::json!({"form": "payload_only", "payload": 12}),
+                serde_json::json!({"kind": "payload_only", "payload": 12}),
                 VerbatimSize::PayloadOnly(12),
             ),
             (
-                serde_json::json!({"form": "payload_only", "payload": 0}),
+                serde_json::json!({"kind": "payload_only", "payload": 0}),
                 VerbatimSize::PayloadOnly(0),
             ),
             (
-                serde_json::json!({"form": "stored_only", "stored": 5}),
+                serde_json::json!({"kind": "stored_only", "stored": 5}),
                 VerbatimSize::StoredOnly(5),
             ),
             (
-                serde_json::json!({"form": "exact", "size": 7}),
+                serde_json::json!({"kind": "exact", "size": 7}),
                 VerbatimSize::Exact(7),
             ),
             (
-                serde_json::json!({"form": "exact", "size": 0}),
+                serde_json::json!({"kind": "exact", "size": 0}),
                 VerbatimSize::Exact(0),
             ),
             (
-                serde_json::json!({"form": "framed", "payload": 10, "framing": 20}),
+                serde_json::json!({"kind": "framed", "payload": 10, "framing": 20}),
                 framed(10, 20),
             ),
             (
-                serde_json::json!({"form": "framed", "payload": 0, "framing": 5}),
+                serde_json::json!({"kind": "framed", "payload": 0, "framing": 5}),
                 framed(0, 5),
             ),
         ] {
@@ -800,11 +802,9 @@ mod tests {
             };
             let read = admit(verbatim_wire("none", &size));
             assert_eq!(read.storage, storage, "{size}");
-            let mut expected_wire = verbatim_wire("none", &size);
-            expected_wire["attributes"] = serde_json::json!({});
             assert_eq!(
                 serde_json::to_value(entry(storage)).expect("a container entry serializes"),
-                expected_wire,
+                verbatim_wire("none", &size),
                 "{size}"
             );
         }
@@ -814,20 +814,20 @@ mod tests {
     fn a_framed_payload_carries_no_stored_span_to_disagree_with() {
         let error = reject(verbatim_wire(
             "none",
-            &serde_json::json!({"form": "framed", "payload": 9, "framing": 1, "stored": 5}),
+            &serde_json::json!({"kind": "framed", "payload": 9, "framing": 1, "stored": 5}),
         ));
         assert!(error.contains("unknown field"), "{error}");
         assert!(error.contains("stored"), "{error}");
 
         let error = reject(verbatim_wire(
             "none",
-            &serde_json::json!({"form": "framed", "payload": 9, "framing": 0}),
+            &serde_json::json!({"kind": "framed", "payload": 9, "framing": 0}),
         ));
         assert!(error.contains("zero"), "{error}");
 
         let error = reject(verbatim_wire(
             "none",
-            &serde_json::json!({"form": "framed", "payload": u64::MAX, "framing": 1}),
+            &serde_json::json!({"kind": "framed", "payload": u64::MAX, "framing": 1}),
         ));
         assert!(
             error.contains("declared length exceeds the largest live allocation"),
@@ -872,8 +872,7 @@ mod tests {
                 stored,
                 expanded,
             };
-            let mut expected = compressed_wire("deflate", stored, expanded);
-            expected["attributes"] = serde_json::json!({});
+            let expected = compressed_wire("deflate", stored, expanded);
             let serialized =
                 serde_json::to_value(entry(storage.clone())).expect("a container entry serializes");
             assert_eq!(serialized, expected);
@@ -913,11 +912,11 @@ mod tests {
     fn a_reported_zero_size_is_not_an_unreported_one() {
         let reported = admit(verbatim_wire(
             "none",
-            &serde_json::json!({"form": "exact", "size": 0}),
+            &serde_json::json!({"kind": "exact", "size": 0}),
         ));
         let unreported = admit(verbatim_wire(
             "none",
-            &serde_json::json!({"form": "unreported"}),
+            &serde_json::json!({"kind": "unreported"}),
         ));
         assert_ne!(reported.storage, unreported.storage);
         assert_eq!(reported.stored_size(), Some(0));
@@ -934,7 +933,7 @@ mod tests {
     fn a_storage_label_cannot_declare_a_byte_size() {
         let error = reject(verbatim_wire(
             "storage",
-            &serde_json::json!({"form": "exact", "size": 4}),
+            &serde_json::json!({"kind": "exact", "size": 4}),
         ));
         assert!(error.contains("unknown field"), "{error}");
         assert!(error.contains("size"), "{error}");
@@ -944,7 +943,8 @@ mod tests {
         let entry: ContainerEntry = serde_json::from_value(serde_json::json!({
             "name": "entry",
             "role": "stream",
-            "compression": "storage",
+            "kind": "storage",
+            "attributes": {},
         }))
         .expect("a directory node declares no size");
         assert_eq!(entry.storage, EntryStorage::Directory);
@@ -954,13 +954,13 @@ mod tests {
     fn reported_sizes_are_absent_rather_than_zero() {
         let payload_only = admit(verbatim_wire(
             "none",
-            &serde_json::json!({"form": "payload_only", "payload": 12}),
+            &serde_json::json!({"kind": "payload_only", "payload": 12}),
         ));
         assert_eq!(payload_only.stored_size(), None);
         assert_eq!(payload_only.expanded_size(), Some(12));
         let framed_entry = admit(verbatim_wire(
             "none",
-            &serde_json::json!({"form": "framed", "payload": 10, "framing": 20}),
+            &serde_json::json!({"kind": "framed", "payload": 10, "framing": 20}),
         ));
         assert_eq!(framed_entry.stored_size(), Some(30));
         assert_eq!(framed_entry.expanded_size(), Some(10));
@@ -974,8 +974,9 @@ mod tests {
         let wire = serde_json::json!({
             "name": "entry",
             "role": "stream",
-            "compression": "none",
-            "size": {"form": "unreported"},
+            "kind": "none",
+            "size": {"kind": "unreported"},
+            "attributes": {},
         });
         serde_json::from_value::<ContainerEntry>(wire.clone()).expect("a legal entry");
 

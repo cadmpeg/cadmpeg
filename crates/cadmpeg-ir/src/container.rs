@@ -195,8 +195,8 @@ mod tests {
         };
 
         let bare = serde_json::to_value(&summary).expect("a summary serializes");
-        assert!(bare.get("losses").is_none(), "{bare}");
-        assert_eq!(bare["identity"]["classification"], "unclassified");
+        assert_eq!(bare["losses"], serde_json::json!([]), "{bare}");
+        assert_eq!(bare["identity"]["kind"], "unclassified");
         assert_eq!(bare["identity"]["format"], "rhino");
         assert!(bare.get("format").is_none(), "{bare}");
         assert_eq!(
@@ -219,7 +219,7 @@ mod tests {
             Vec::new(),
         );
         let classified = serde_json::to_value(&summary).expect("a summary serializes");
-        assert_eq!(classified["identity"]["classification"], "classified");
+        assert_eq!(classified["identity"]["kind"], "classified");
         assert_eq!(
             classified["identity"]["dialects"],
             serde_json::json!({"primary": primary, "extra": [extra]})
@@ -246,7 +246,7 @@ mod tests {
 
     #[cfg(feature = "schema")]
     #[test]
-    fn current_summary_schema_requires_its_identity() {
+    fn current_summary_schema_requires_its_identity_and_losses() {
         let schema = serde_json::to_value(schemars::schema_for!(ContainerSummary))
             .expect("summary schema serializes");
         let required = schema["required"]
@@ -256,9 +256,6 @@ mod tests {
             required.iter().any(|field| field == "identity"),
             "{schema:#}"
         );
-        assert!(
-            !required.iter().any(|field| field == "losses"),
-            "{schema:#}"
-        );
+        assert!(required.iter().any(|field| field == "losses"), "{schema:#}");
     }
 }

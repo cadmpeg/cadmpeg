@@ -28,6 +28,8 @@ const OPTION_READER_MACRO: &str = "named_optional_field";
 
 const OPTION_READER: &str = "named_present";
 
+const TAG_ONLY_READER: &str = "::tag_only::read";
+
 #[derive(Clone)]
 struct Decl {
     file: String,
@@ -579,7 +581,13 @@ impl Index {
     }
 }
 
-fn check_enum(index: &Index, decl: &Decl, variants: &[Variant], problems: &mut Vec<String>) {
+fn check_enum(
+    index: &Index,
+    decl: &Decl,
+    variants: &[Variant],
+    reads: bool,
+    problems: &mut Vec<String>,
+) {
     let live: Vec<&Variant> = variants
         .iter()
         .filter(|variant| !has(&serde_metas(&variant.attrs), "skip"))
@@ -605,6 +613,26 @@ fn check_enum(index: &Index, decl: &Decl, variants: &[Variant], problems: &mut V
             value(&metas, "tag"),
             value(&metas, "content"),
         ));
+    }
+    // serde reads an internally tagged unit variant by its tag and skips every
+    // other key, `deny_unknown_fields` or not.
+    if reads && actual == Some(Form::Internal) {
+        for variant in &live {
+            let metas = serde_metas(&variant.attrs);
+            let reader = value(&metas, "deserialize_with");
+            let tag_only = reader.is_some_and(|reader| {
+                reader
+                    .strip_prefix("cadmpeg_core")
+                    .or(reader.strip_prefix("crate"))
+                    == Some(TAG_ONLY_READER)
+            });
+            if matches!(variant.fields, Fields::Unit) && !tag_only {
+                problems.push(format!(
+                    "{}:{} {}::{}: unit variant does not read through cadmpeg_core{TAG_ONLY_READER}",
+                    decl.file, decl.line, decl.name, variant.ident
+                ));
+            }
+        }
     }
 }
 
@@ -770,7 +798,7 @@ pub(crate) fn census(root: &Path) -> Vec<String> {
         let at = format!("{}:{} {}", decl.file, decl.line, decl.name);
         match &decl.body {
             Body::Enum(variants) => {
-                check_enum(&index, decl, variants, &mut problems);
+                check_enum(&index, decl, variants, reads, &mut problems);
                 for variant in variants {
                     if !has(&serde_metas(&variant.attrs), "skip") {
                         let at = format!("{at}::{}", variant.ident);

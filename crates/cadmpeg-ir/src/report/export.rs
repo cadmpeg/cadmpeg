@@ -52,7 +52,7 @@ mod schema_tests {
             .as_array()
             .expect("export identity schema is a tagged union")
             .iter()
-            .find(|arm| arm["properties"]["payload"]["const"] == "native")
+            .find(|arm| arm["properties"]["kind"]["const"] == "native")
             .expect("the native arm");
         let required = native["required"]
             .as_array()

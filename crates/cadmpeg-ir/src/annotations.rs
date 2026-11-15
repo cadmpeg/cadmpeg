@@ -1122,15 +1122,13 @@ mod tests {
     #[test]
     fn an_entity_note_refuses_byte_exact_and_a_field_note_refuses_an_empty_map() {
         let error = serde_json::from_value::<ExactnessNote>(serde_json::json!({
-            "scope": "entity",
-            "entity": "byte_exact"
+            "kind": "entity", "entity": "byte_exact"
         }))
         .expect_err("byte-exact is the implicit entity exactness");
         assert!(error.to_string().contains("unknown variant"), "{error}");
 
         let error = serde_json::from_value::<ExactnessNote>(serde_json::json!({
-            "scope": "fields",
-            "fields": {}
+            "kind": "fields", "fields": {}
         }))
         .expect_err("a field note carries at least one override");
         assert!(
@@ -1142,8 +1140,7 @@ mod tests {
     #[test]
     fn explicit_field_exactness_survives_an_equal_entity_note() {
         let wire = serde_json::json!({
-            "scope": "entity",
-            "entity": "derived",
+            "kind": "entity", "entity": "derived",
             "fields": {"geometry": "derived"}
         });
         let note: ExactnessNote = serde_json::from_value(wire.clone()).unwrap();
@@ -1166,7 +1163,7 @@ mod tests {
                 if entity_first {
                     wire.clone()
                 } else {
-                    serde_json::json!({"scope": "entity", "entity": "derived"})
+                    serde_json::json!({"kind": "entity", "entity": "derived", "fields": {}})
                 }
             );
         }
@@ -1226,8 +1223,8 @@ mod tests {
             before
         );
         for wire in [
-            serde_json::json!({"scope": "entity", "entity": "derived", "fields": {"": "derived"}}),
-            serde_json::json!({"scope": "fields", "fields": {"": "derived"}}),
+            serde_json::json!({"kind": "entity", "entity": "derived", "fields": {"": "derived"}}),
+            serde_json::json!({"kind": "fields", "fields": {"": "derived"}}),
         ] {
             let error = serde_json::from_value::<ExactnessNote>(wire).expect_err("empty field key");
             assert!(
@@ -1236,8 +1233,7 @@ mod tests {
             );
         }
         let wire = serde_json::json!({
-            "scope": "entity",
-            "entity": "derived",
+            "kind": "entity", "entity": "derived",
             "fields": {"position.x": "byte_exact"}
         });
         let admitted: ExactnessNote = serde_json::from_value(wire.clone()).expect("nonempty path");

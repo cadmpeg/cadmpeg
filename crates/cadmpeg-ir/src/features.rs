@@ -5718,6 +5718,7 @@ pub enum WrapMode {
         depth: PositiveLength,
     },
     /// Imprint the profile without adding or removing material.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
     Scribe,
 }
 
@@ -5897,10 +5898,13 @@ pub enum SurfaceBoundary {
 #[serde(deny_unknown_fields)]
 pub enum TrimRegion {
     /// Source trim exists but the retained region is unresolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
     Unresolved,
     /// Retain the region enclosed by the trimming path.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
     Inside,
     /// Retain the region outside the trimming path.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
     Outside,
     /// Remove an explicit set of partition cells.
     Cells(TrimCellSelection),
@@ -6284,6 +6288,7 @@ pub enum SheetMetalFlangeWidth {
         offsets: NonEmptyMembers<sheet_metal::SheetMetalFlangeOffset>,
     },
     /// The flange spans the complete selected edge.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
     FullEdge,
     /// The flange is centred on the edge with one width.
     Symmetric(sheet_metal::SheetMetalFlangeSymmetricWidth),

@@ -529,8 +529,7 @@ mod tests {
         assert_eq!(
             path_wire,
             serde_json::json!({
-                "resolution": "path",
-                "path": "parts/widget.FCStd"
+                "kind": "path", "path": "parts/widget.FCStd"
             })
         );
         assert_eq!(
@@ -542,7 +541,7 @@ mod tests {
         let document_id_wire = serde_json::to_value(&document_id).unwrap();
         assert_eq!(
             document_id_wire,
-            serde_json::json!({"resolution": "document_id", "document_id": "document-7"})
+            serde_json::json!({"kind": "document_id", "document_id": "document-7"})
         );
         assert_eq!(
             serde_json::from_value::<ExternalDocument>(document_id_wire).unwrap(),
@@ -553,7 +552,7 @@ mod tests {
         assert_eq!(ExternalDocument::path(""), missing);
         assert_eq!(ExternalDocument::document_id(""), missing);
         let missing_wire = serde_json::to_value(&missing).unwrap();
-        assert_eq!(missing_wire, serde_json::json!({"resolution": "missing"}));
+        assert_eq!(missing_wire, serde_json::json!({"kind": "missing"}));
         assert_eq!(
             serde_json::from_value::<ExternalDocument>(missing_wire).unwrap(),
             missing
@@ -561,26 +560,22 @@ mod tests {
 
         for (invalid, named) in [
             (
-                serde_json::json!({"resolution": "path", "path": ""}),
+                serde_json::json!({"kind": "path", "path": ""}),
                 "must not be blank",
             ),
             (
-                serde_json::json!({"resolution": "path", "path": "   "}),
+                serde_json::json!({"kind": "path", "path": "   "}),
                 "must not be blank",
             ),
             (
                 serde_json::json!({
-                    "resolution": "path",
-                    "path": "parts/widget.FCStd",
+                    "kind": "path", "path": "parts/widget.FCStd",
                     "document_id": "document-7"
                 }),
                 "document_id",
             ),
-            (
-                serde_json::json!({"resolution": "missing", "path": ""}),
-                "path",
-            ),
-            (serde_json::json!({"resolution": "path"}), "path"),
+            (serde_json::json!({"kind": "missing", "path": ""}), "path"),
+            (serde_json::json!({"kind": "path"}), "path"),
         ] {
             let error = serde_json::from_value::<ExternalDocument>(invalid)
                 .unwrap_err()
@@ -595,7 +590,7 @@ mod tests {
         let root_wire = serde_json::to_value(&root).unwrap();
         assert_eq!(
             root_wire,
-            serde_json::json!({"container": {"container": "root"}, "object": "Body1"})
+            serde_json::json!({"container": {"kind": "root"}, "object": "Body1", "subelements": []})
         );
         assert_eq!(
             serde_json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
@@ -605,7 +600,7 @@ mod tests {
         let occurrence_id = OccurrenceId::mint("test:model:occurrence#0").unwrap();
         let occurrence = JointOperand::occurrence(occurrence_id.clone(), "Body1", Vec::new());
         let occurrence_wire = serde_json::to_value(&occurrence).unwrap();
-        assert_eq!(occurrence_wire["container"]["container"], "occurrence");
+        assert_eq!(occurrence_wire["container"]["kind"], "occurrence");
         assert_eq!(
             serde_json::from_value::<JointOperand>(occurrence_wire.clone()).unwrap(),
             occurrence
@@ -617,14 +612,14 @@ mod tests {
             Vec::new(),
         );
         let external_wire = serde_json::to_value(&external).unwrap();
-        assert_eq!(external_wire["container"]["container"], "external");
+        assert_eq!(external_wire["container"]["kind"], "external");
         assert_eq!(
             serde_json::from_value::<JointOperand>(external_wire).unwrap(),
             external
         );
 
         let mut both = occurrence_wire;
-        both["container"]["external_document"] = serde_json::json!({"resolution": "missing"});
+        both["container"]["external_document"] = serde_json::json!({"kind": "missing"});
         let error = serde_json::from_value::<JointOperand>(both)
             .unwrap_err()
             .to_string();
@@ -789,14 +784,14 @@ mod tests {
         let wire = serde_json::to_value(JointLimits::Range(range)).unwrap();
         assert_eq!(
             wire,
-            serde_json::json!({"bounds": "range", "minimum": -2.0, "maximum": 3.0})
+            serde_json::json!({"kind": "range", "minimum": -2.0, "maximum": 3.0})
         );
         assert_eq!(
             serde_json::from_value::<JointLimits>(wire).unwrap(),
             JointLimits::Range(range)
         );
         let error = serde_json::from_value::<JointLimits>(
-            serde_json::json!({"bounds": "range", "minimum": 2.0, "maximum": 1.0}),
+            serde_json::json!({"kind": "range", "minimum": 2.0, "maximum": 1.0}),
         )
         .unwrap_err()
         .to_string();
@@ -850,9 +845,9 @@ mod tests {
                 {"kind": "element_component", "component": "test:model:product#element"},
                 {"kind": "claim_child", "claim": true},
                 {"kind": "copy_on_change", "state": {
-                    "policy": {"policy": "owned"},
-                    "source": {"scope": "local", "definition": "test:model:product#source"},
-                    "group": {"scope": "local", "definition": "test:model:product#group"},
+                    "policy": {"kind": "owned"},
+                    "source": {"kind": "local", "definition": "test:model:product#source"},
+                    "group": {"kind": "local", "definition": "test:model:product#group"},
                     "touched": true
                 }}
             ])

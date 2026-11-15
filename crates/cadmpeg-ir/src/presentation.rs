@@ -390,6 +390,7 @@ mod tests {
         let refusal = serde_json::from_value::<ViewPresentation>(serde_json::json!({
             "id": "freecad:presentation:view#1",
             "order": 0,
+            "properties": {},
             "line_width": null
         }))
         .expect_err("null is not a spelling of an absent line width");
@@ -401,9 +402,10 @@ mod tests {
         );
         let absent = serde_json::from_value::<ViewPresentation>(serde_json::json!({
             "id": "freecad:presentation:view#1",
-            "order": 0
+            "order": 0,
+            "properties": {}
         }))
-        .expect("an absent key reaches the field default");
+        .expect("an absent optional key reads as none");
         assert!(absent.line_width.is_none());
     }
 

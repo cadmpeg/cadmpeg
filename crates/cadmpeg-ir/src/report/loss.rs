@@ -325,11 +325,11 @@ pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 
 /// Machine-readable loss code on the decode/export wire.
 ///
-/// A `scope` tag selects the variant. A shared loss is
-/// `{ "scope": "shared", "kind": "pcurve_omitted" }`; a codec-local one is
-/// `{ "scope": "namespaced", "namespace": "rhino", "code": "brep.trim-pcurve-dropped",
-/// "kind": "pcurve_omitted" }`, carrying `strict_floor` exactly when the code
-/// pins one.
+/// A `kind` tag selects the variant. A shared loss is
+/// `{ "kind": "shared", "value": { "kind": "pcurve_omitted" } }`; a codec-local
+/// one is `{ "kind": "namespaced", "value": { "namespace": "rhino", "code":
+/// "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" } }`, carrying
+/// `strict_floor` exactly when the code pins one.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
