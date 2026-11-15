@@ -1792,23 +1792,27 @@ pub(crate) fn bind_sketch_profiles(
             };
             profiles.push(profile);
         }
-        let is_extrude = design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude);
+        let is_extrude =
+            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude);
         if profiles.iter().any(|profile| profile.sketch_absent) {
-            if !is_extrude {
-                profiles.retain(|profile| !profile.sketch_absent);
-            } else {
+            if is_extrude {
                 let scope_record_index = scope.record_index;
                 if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
                     scope.payload_mut()
                 {
-                let absent = profiles.iter().filter(|profile| profile.sketch_absent).count();
-                losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileSketchAbsent.note(
-                    format!("{absent} Sketch-profile operand(s) of Extrude scope record {} name a Sketch that the Design stream does not register; the profile stays native.", scope_record_index),
-                ));
-                slot.get_or_insert_with(Default::default)
-                    .extrude_native_profiles = Some(profiles);
-                continue;
+                    let absent = profiles
+                        .iter()
+                        .filter(|profile| profile.sketch_absent)
+                        .count();
+                    losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileSketchAbsent.note(
+                        format!("{absent} Sketch-profile operand(s) of Extrude scope record {scope_record_index} name a Sketch that the Design stream does not register; the profile stays native."),
+                    ));
+                    slot.get_or_insert_with(Default::default)
+                        .extrude_native_profiles = Some(profiles);
+                    continue;
                 }
+            } else {
+                profiles.retain(|profile| !profile.sketch_absent);
             }
         }
         if profiles.len() > 1 {
