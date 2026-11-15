@@ -292,8 +292,8 @@ pub(super) fn stored_origins() -> Vec<StoredOrigin> {
         StoredOrigin::Base {},
         StoredOrigin::Imported {},
         StoredOrigin::Snapshot {},
-        StoredOrigin::Linked(links().remove(0)),
-        StoredOrigin::Linked(links().remove(1)),
+        StoredOrigin::Linked(Box::new(links().remove(0))),
+        StoredOrigin::Linked(Box::new(links().remove(1))),
     ]
 }
 
@@ -369,7 +369,7 @@ pub(super) fn feature_operations() -> Vec<FeatureOperation> {
         FeatureOperation::Stored {
             bodies: Some(vec![id("body", 1)]),
             tessellations: vec![id("tessellation", 1)],
-            origin: StoredOrigin::Linked(links().remove(0)),
+            origin: StoredOrigin::Linked(Box::new(links().remove(0))),
         },
         FeatureOperation::Stored {
             bodies: None,

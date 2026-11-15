@@ -79,7 +79,7 @@ impl Container {
 pub enum OrderedKind {
     /// A history timeline.
     Timeline,
-    /// An ordered body container (a CATIA body, a FreeCAD PartDesign Body).
+    /// An ordered container of one body's features.
     Body,
 }
 

@@ -210,7 +210,7 @@ pub enum StoredOrigin {
     /// to it.
     Snapshot {},
     /// A frozen copy that keeps its link.
-    Linked(Link),
+    Linked(Box<Link>),
 }
 
 /// The link of a frozen copy of geometry to the geometry it copies.

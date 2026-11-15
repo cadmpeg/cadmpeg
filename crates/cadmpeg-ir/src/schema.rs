@@ -291,64 +291,47 @@ impl<T: EntitySchema> ArenaRecord for T {
 }
 
 macro_rules! impl_design_record {
-    ($type:ty, $kind:ident, |$record:ident| $identity:expr) => {
+    ($type:ty, $kind:ident, $($identity:tt)+) => {
         impl ArenaRecord for $type {
             const KIND: EntityKind = EntityKind::$kind;
 
             fn record_identity(&self) -> &str {
-                let $record = self;
-                $identity.as_str()
+                self.$($identity)+.as_str()
             }
         }
     };
 }
 
-impl_design_record!(crate::design::scope::DesignScope, DesignScope, |scope| {
-    scope.definition
-});
-impl_design_record!(
-    crate::design::container::Container,
-    DesignContainer,
-    |container| container.id()
-);
-impl_design_record!(crate::design::feature::Feature, DesignFeature, |feature| {
-    feature.id
-});
+impl_design_record!(crate::design::scope::DesignScope, DesignScope, definition);
+impl_design_record!(crate::design::container::Container, DesignContainer, id());
+impl_design_record!(crate::design::feature::Feature, DesignFeature, id);
 impl_design_record!(
     crate::design::parameter::DesignParameter,
     DesignParameter,
-    |parameter| parameter.id
+    id
 );
 impl_design_record!(
     crate::design::spreadsheet::Spreadsheet,
     DesignSpreadsheet,
-    |sheet| sheet.id
+    id
 );
-impl_design_record!(
-    crate::design::program::ParameterProgram,
-    DesignProgram,
-    |program| program.id
-);
+impl_design_record!(crate::design::program::ParameterProgram, DesignProgram, id);
 impl_design_record!(
     crate::design::configuration::DesignConfiguration,
     DesignConfiguration,
-    |configuration| configuration.id
+    id
 );
 impl_design_record!(
     crate::design::configuration::Arrangement,
     DesignArrangement,
-    |arrangement| arrangement.id
+    id
 );
 impl_design_record!(
     crate::design::configuration::Publication,
     DesignPublication,
-    |publication| publication.id
+    id
 );
-impl_design_record!(
-    crate::design::evaluation::Evaluation,
-    DesignEvaluation,
-    |evaluation| evaluation.id
-);
+impl_design_record!(crate::design::evaluation::Evaluation, DesignEvaluation, id);
 
 /// Schema behavior required for every entity admitted to a model arena.
 pub trait EntitySchema: Serialize + rewrite::typed::RewriteIdentities {

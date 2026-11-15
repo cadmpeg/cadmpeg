@@ -19,7 +19,7 @@ use crate::spreadsheets::{
 /// One sheet and its ordered cell and layout state. The feature whose
 /// operation names the sheet owns it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "SpreadsheetWire")]
+#[serde(try_from = "SpreadsheetWire", into = "SpreadsheetWire")]
 pub struct Spreadsheet {
     /// The sheet's identity.
     pub id: SpreadsheetId,
@@ -99,7 +99,7 @@ impl Serialize for Spreadsheet {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(rename = "Spreadsheet"))]
 #[serde(deny_unknown_fields)]
