@@ -3227,3 +3227,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled to-object flanges whose selected construction remains external or unresolved while the signed offset is retained.
 
 **Note.** `feature.edge-flange-height-target-native` retains the decoded target selection program. `feature.edge-flange-height-target-scope-assumed` retains the owning scope program when that target selection is unresolved. The target and signed offset remain independent neutral construction inputs.
+
+### DR-665. Planar face of an Extrude profile selection with an unbound member identity
+
+**Question.** Which planar face does an Extrude profile selection member select when its local identity is bound to no ASM entity of the history?
+
+**Known.** The member's local identity is read as an entity slot of the preceding state. This read can name a loop or coedge of a cylinder wall. A profile face is planar, so the cylinder wall is not the selected face.
+
+**Need.** A save in which a bound and an unbound member select the same planar face, or a save that stores the planar face's own identity beside the unbound member.
+
+**Note.** A selection whose one face has a cylinder, axis, or radius carrier row and no plane row stays native and reports `feature.extrude-profile-face-curved` with the entity read and the face.

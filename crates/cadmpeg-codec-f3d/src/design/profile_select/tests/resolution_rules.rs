@@ -1902,14 +1902,21 @@ fn historical_face_profile_of(curved: bool) -> Option<PlanarProfileRef> {
         entity_ref: 11,
         state_ids: Vec::new(),
     });
-    super::super::historical_face_profile_selection(
+    let mut note = None;
+    let profile = super::super::historical_face_profile_selection(
         &[&group],
         &[member],
         Some(0),
         &cadmpeg_ir::features::FeatureId::mint("test:model:feature#extrude").unwrap(),
         std::slice::from_ref(&history),
+        &mut note,
     )
-    .unwrap()
+    .unwrap();
+    assert_eq!(
+        note.map(|note| note.code),
+        curved.then(|| crate::loss::F3dLossCode::FeatureExtrudeProfileFaceCurved.kind()),
+    );
+    profile
 }
 
 #[test]

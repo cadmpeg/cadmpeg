@@ -500,6 +500,7 @@ pub(crate) fn bind_extrude_profile_selections(
         let mut to_distance_info = None;
         let mut historical_face_sketch_info: Option<(String, String)> = None;
         let mut historical_face_offset_info: Option<f64> = None;
+        let mut curved_face_note: Option<cadmpeg_ir::report::loss::LossNote> = None;
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| -> Result<(), CodecError> {
                 'feature_edit: {
@@ -605,6 +606,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             effective_previous_history_state_id,
                             &feature.id,
                             scoped_histories,
+                            &mut curved_face_note,
                         )? {
                             *profile = ProfileRef::Planar(selection);
                         }
@@ -1005,6 +1007,7 @@ pub(crate) fn bind_extrude_profile_selections(
                 .entry(cadmpeg_core::nonblank_literal!("historical_face_profiles"))
                 .or_insert(prof_indices);
         }
+        losses.extend(curved_face_note);
         if let Some(face_off) = historical_face_offset_info {
             if face_off.abs() > 1.0e-4 {
                 feature
@@ -1293,6 +1296,7 @@ fn historical_face_profile_selection(
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
     scoped_histories: &[crate::history_records::AsmHistory],
+    curved_face_note: &mut Option<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::PlanarProfileRef>, CodecError> {
     use cadmpeg_ir::features::PlanarProfileRef;
 
@@ -1380,6 +1384,10 @@ fn historical_face_profile_selection(
         // A profile face is planar; a face on a curved carrier shows that
         // the member identity named another entity.
         if carriers.is_curved(face) {
+            *curved_face_note = Some(crate::loss::F3dLossCode::FeatureExtrudeProfileFaceCurved.note(format!(
+                "Extrude profile group {}: its selection reads face {face} of the preceding state, which is on a curved carrier; the profile stays native.",
+                group.id,
+            )));
             return Ok(None);
         }
         if !selected_faces.contains(&face) {
