@@ -4888,7 +4888,7 @@ fn resolved_sketch_profile_regions(
         return None;
     };
     let mut resolved = Vec::new();
-    for region in &selection.regions {
+    for region in selection.resolution_regions()? {
         let first_member = region.members.first()?;
         let first = sketch_profile_member_entity(
             stream,
@@ -4986,14 +4986,17 @@ pub(in crate::design) fn planar_selection_agrees_with_region_operand(
     let Some(selection) = operand.region_selection.as_ref() else {
         return false;
     };
-    if selection.regions.is_empty() || selection.has_extended_incidence() {
+    let Some(regions) = selection.resolution_regions() else {
+        return false;
+    };
+    if regions.is_empty() || selection.has_extended_incidence() {
         return false;
     }
     let Ok(owner_reference) = u32::try_from(operand.entity_id.suffix()) else {
         return false;
     };
-    let mut explicit_regions = Vec::with_capacity(selection.regions.len());
-    for region in &selection.regions {
+    let mut explicit_regions = Vec::with_capacity(regions.len());
+    for region in regions {
         if region.members.is_empty() {
             return false;
         }
@@ -5144,7 +5147,7 @@ fn resolved_spatial_sketch_profile_regions(
         return None;
     };
     let mut resolved = Vec::new();
-    for region in &selection.regions {
+    for region in selection.resolution_regions()? {
         let first_member = region.members.first()?;
         let first = spatial_profile_member_entity(
             stream,
