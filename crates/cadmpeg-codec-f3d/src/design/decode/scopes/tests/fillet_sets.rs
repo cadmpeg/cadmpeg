@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::fillet_set::{
-    decoded_group_keys, fillet_set_conflict_loss, fillet_set_list, fillet_set_list_with_padding,
-    retain_consistent_fillet_sets,
+    decoded_group_keys, fillet_set_conflict_loss, retain_consistent_fillet_sets,
 };
 use crate::records::feature::fillet_set::{DesignFilletSetLaw, DesignFilletSetListForm};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
@@ -11,6 +10,18 @@ use crate::records::parameters::{
 };
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
+
+/// The fillet set list without its padding observation.
+fn fillet_set_list(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[DesignParameterOwner],
+) -> Option<crate::records::feature::fillet_set::DesignFilletSetList> {
+    super::super::fillet_set::fillet_set_list(bytes, records, scope, parameters, parameter_owners)
+        .map(|(list, _)| list)
+}
 const SCOPE: u32 = 282;
 const SET: u32 = 283;
 const GROUP: u32 = 284;
@@ -260,7 +271,7 @@ fn decode_bytes_as(
 )> {
     let (law_parameter, law_owner) = owned(LAW_OWNER, law_kind);
     let (tangency_parameter, tangency_owner) = owned(TANGENCY_OWNER, "TangencyWeight");
-    fillet_set_list_with_padding(
+    super::super::fillet_set::fillet_set_list(
         bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(bytes),
         scope,

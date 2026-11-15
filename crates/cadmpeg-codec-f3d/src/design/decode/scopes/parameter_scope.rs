@@ -35,7 +35,7 @@ use super::direct_face::move_transform_references_loss;
 use super::draft::exact_draft_operation_with_owners;
 use super::emboss::exact_emboss_construction;
 use super::extrude::{exact_extrude_prologue, exact_typed_extrude_prologue};
-use super::fillet_set::fillet_set_list_with_padding;
+use super::fillet_set::fillet_set_list;
 use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
 use super::fixed_parameters::exact_fixed_fillet_parameters;
@@ -586,7 +586,7 @@ pub(crate) fn decode_parameter_scopes(
                     parameters,
                     parameter_owners,
                 );
-                let sets = fillet_set_list_with_padding(
+                let sets = fillet_set_list(
                     bytes,
                     &records,
                     &scope,

@@ -854,10 +854,10 @@ Parsed by:
 | 27 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+27: edge-group reference` |
 | 38 | 21 | `zero_run_21_at_38` | `bytes[21]` | little | spec | Every byte that the form does not name is zero |
 | 59 | 11 | `radius_owner_reference` | `bytes[11]` | little | spec | `+59: Radius owner reference` |
-| 70 | 4 | `radius_owner_padding` | `bytes[4]` | little | spec | `+70: four padding bytes` |
+| 70 | 4 | `radius_owner_padding` | `bytes[4]` | little | spec | `+70: four bytes` |
 | 74 | 4 | `set_ordinal` | `u32` | little | spec | `+74: u32 set ordinal` |
 | 78 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+78: TangencyWeight owner reference` |
-| 89 | 4 | `tangency_weight_owner_padding` | `bytes[4]` | little | spec | `+89: four padding bytes` |
+| 89 | 4 | `tangency_weight_owner_padding` | `bytes[4]` | little | spec | `+89: four bytes` |
 
 ## `thicken_scope_prologue`
 

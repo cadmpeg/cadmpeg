@@ -30,21 +30,9 @@ const COMPACT_FLAG_RUN_LEN: usize = 11;
 const PADDING_LEN: usize = 4;
 
 /// The fillet set list of `scope`, admitted when the prefix, every set frame,
-/// and every owner reference match their forms.
+/// and every owner reference match their forms, and whether a compact padding
+/// byte of its flag run or of a set frame is nonzero.
 pub(super) fn fillet_set_list(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    scope: &DesignParameterScope,
-    parameters: &[DesignParameter],
-    parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignFilletSetList> {
-    fillet_set_list_with_padding(bytes, records, scope, parameters, parameter_owners)
-        .map(|(list, _)| list)
-}
-
-/// The fillet set list of `scope` and whether a compact padding byte of its
-/// flag run or of a set frame is nonzero.
-pub(super) fn fillet_set_list_with_padding(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
