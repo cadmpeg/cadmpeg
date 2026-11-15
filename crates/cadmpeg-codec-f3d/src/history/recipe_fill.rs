@@ -11,10 +11,10 @@ use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignExtrudeOperandRole;
 use crate::records::topology::face::DesignFaceOperand;
 
-/// Whether any selected face slot is absent from the faces the transition
-/// changes.
-pub(super) fn selection_has_unchanged_face(slots: &[i64], changed: &HashSet<i64>) -> bool {
-    slots.iter().any(|slot| !changed.contains(slot))
+/// Whether the selection is not empty and none of its face slots is among the
+/// faces the transition deletes.
+pub(super) fn selection_has_no_deleted_face(slots: &[i64], deleted: &HashSet<i64>) -> bool {
+    !slots.is_empty() && !slots.iter().any(|slot| deleted.contains(slot))
 }
 
 /// Whether a recipe face replaces the operand's current selection. A recipe
@@ -38,8 +38,8 @@ pub(super) struct Transition<'a> {
 }
 
 /// Drop the selection of a closed-edge Extrude profile operand that holds a
-/// face the transition did not delete. The sweep consumes its profile face, so
-/// the transition deletes that face. An Extrude that makes a new body leaves
+/// no face the transition deletes. The sweep consumes its profile face, so the
+/// transition deletes at least one of the selected faces. An Extrude that makes a new body leaves
 /// its profile face in place.
 pub(super) fn drop_unconsumed_closed_edge_profile(
     operand: &mut DesignFaceOperand,
@@ -52,7 +52,7 @@ pub(super) fn drop_unconsumed_closed_edge_profile(
     let Some(deleted) = deleted_faces(transition) else {
         return;
     };
-    if selection_has_unchanged_face(&operand.resolved_face_slots, &deleted) {
+    if selection_has_no_deleted_face(&operand.resolved_face_slots, &deleted) {
         operand.resolved_face_slots.clear();
         operand.resolved_active_face = None;
     }
