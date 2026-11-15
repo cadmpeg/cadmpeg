@@ -2,6 +2,69 @@ use super::super as form_cages;
 use super::*;
 
 #[test]
+fn review1368_compatible_partial_preserves_complete_membership() {
+    let complete = FormConstruction::complete(vec![
+        cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#known").unwrap(),
+    ])
+    .unwrap();
+    let partial = FormConstruction::try_new(
+        FormInputs::default(),
+        complete.observations().to_vec(),
+        FormMembership::Partial {
+            cardinality: Some(1),
+            order: FormOrder::Source,
+            members: vec![FormMember {
+                observation: FormObservationIndex(0),
+                ordinal: Some(0),
+            }],
+        },
+    )
+    .unwrap();
+    let result = form_cages::retain_knowledge(&complete, &partial).unwrap();
+    assert!(result.membership_is_complete());
+    assert_eq!(
+        result.committed_cages().map(|cage| cage.as_str()).collect::<Vec<_>>(),
+        ["f3d:model:subd#known"]
+    );
+}
+
+#[test]
+fn review1368_unknown_to_inactive_preserves_valid_partial_evidence() {
+    let make = |availability, selected| {
+        FormConstruction::try_new(
+            FormInputs::default(),
+            vec![FormCageObservation {
+                paths: Vec::new(),
+                binding: FormCageBinding::Undecoded {
+                    resource: FormResource {
+                        source: cadmpeg_ir::ids::NativeId::mint("f3d:scope:record#299").unwrap(),
+                        entry: cadmpeg_core::nonblank_literal!("asset/TSplines.BlobParts/cage.tsm"),
+                    },
+                    availability,
+                },
+            }],
+            FormMembership::Partial {
+                cardinality: None,
+                order: FormOrder::Unknown,
+                members: if selected {
+                    vec![FormMember {
+                        observation: FormObservationIndex(0),
+                        ordinal: None,
+                    }]
+                } else {
+                    Vec::new()
+                },
+            },
+        )
+        .unwrap()
+    };
+    let old = make(FormResourceAvailability::Unknown, true);
+    let new = make(FormResourceAvailability::Inactive, false);
+    let result = form_cages::retain_knowledge(&old, &new);
+    assert!(result.is_ok());
+}
+
+#[test]
 fn form_enrichment_keeps_existing_complete_and_partial_knowledge() {
     let complete =
         FormConstruction::complete(vec![
