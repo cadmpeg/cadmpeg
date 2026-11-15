@@ -3186,6 +3186,28 @@ pub(crate) mod base_feature_result_body_entry {
     pub(crate) const REFERENCE_FIELD: usize = 9;
 }
 
+/// Byte offsets for the `base_feature_null_reference_count` record.
+///
+/// Spec §3.1. Record length 15 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the two parallel 15-byte body-entry runs of the ordinary form.
+/// ```
+pub(crate) mod base_feature_null_reference_count {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `null_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_MARKER: usize = 0;
+    /// Offset of `null_reference` (`bytes[8]`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE: usize = 1;
+    /// Offset of `null_reference_flag` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_FLAG: usize = 9;
+    /// Offset of `null_reference_zero` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_ZERO: usize = 10;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_COUNT: usize = 11;
+}
+
 /// Byte offsets for the `base_feature_compact_result_body_count` record.
 ///
 /// Spec §3.1. Record length 11 B.
