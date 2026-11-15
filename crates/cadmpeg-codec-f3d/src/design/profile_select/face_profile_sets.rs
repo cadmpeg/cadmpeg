@@ -200,7 +200,13 @@ pub(crate) fn bind_extrude_face_profile_sets_with(
         };
         let mut outcome = Ok(Vec::new());
         feature.evaluation.edit(|definition, _| {
-            outcome = bind_one(definition, scope, resolution, SEARCH_LIMITS, defer_closed_edge);
+            outcome = bind_one(
+                definition,
+                scope,
+                resolution,
+                SEARCH_LIMITS,
+                defer_closed_edge,
+            );
         });
         losses.extend(outcome?);
     }

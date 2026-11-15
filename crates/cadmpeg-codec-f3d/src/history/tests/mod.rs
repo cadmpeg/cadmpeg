@@ -21,6 +21,7 @@ mod mirror;
 mod move_face;
 mod path_selections;
 mod planes;
+mod recipe_fill;
 mod recipe_projection;
 mod recipes;
 mod selections;

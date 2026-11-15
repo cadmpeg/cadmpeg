@@ -1163,7 +1163,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             },
             false,
         )?,
-    );    losses.extend(profile_work.losses());
+    );
+    losses.extend(profile_work.losses());
     let unprofiled = crate::design::profile_select::unprofiled_region_losses(
         ctx,
         unprofiled,
