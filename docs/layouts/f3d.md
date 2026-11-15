@@ -3625,6 +3625,20 @@ This layout repeats for each body entity suffix and each passive body-reference 
 | 1 | 8 | `reference_value` | `u64` | little | spec | marked u64 Design body entity suffixes |
 | 9 | 6 | `reference_field` | `bytes[6]` | little | spec | every value has a six-byte trailing field |
 
+## `base_feature_null_reference_count`
+
+Spec §3.1 · layout: byte offsets · size: 15 B
+
+Offsets are relative to the byte after the two parallel 15-byte body-entry runs of the ordinary form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `null_reference_marker` | `u8` | little | spec | The marked null reference is `u8 1`, a zero u64 |
+| 1 | 8 | `null_reference` | `bytes[8]` | little | spec | The marked null reference is `u8 1`, a zero u64 |
+| 9 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 10 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 11 | 4 | `body_count` | `u32` | little | spec | The ordinary form then stores a marked null reference, u32 `N` |
+
 ## `base_feature_compact_result_body_count`
 
 Spec §3.1 · layout: byte offsets · size: 11 B
