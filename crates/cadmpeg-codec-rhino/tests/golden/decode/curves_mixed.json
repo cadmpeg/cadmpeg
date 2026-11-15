@@ -736,6 +736,8 @@
         }
       }
     },
+    "decode_digest": "831240da3b89abeee4e3cc2a2a501643bf4779c4385c2fec835c61b708aa442d",
+    "file_digests": {},
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -743,7 +745,8 @@
           "retention": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000001": {
         "bytes": {
@@ -751,7 +754,8 @@
           "retention": "inline"
         },
         "offset": 314,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000002": {
         "bytes": {
@@ -759,7 +763,8 @@
           "retention": "inline"
         },
         "offset": 659,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000003": {
         "bytes": {
@@ -767,7 +772,8 @@
           "retention": "inline"
         },
         "offset": 840,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000004": {
         "bytes": {
@@ -775,7 +781,8 @@
           "retention": "inline"
         },
         "offset": 1197,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000005": {
         "bytes": {
@@ -783,8 +790,10 @@
           "retention": "inline"
         },
         "offset": 1418,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

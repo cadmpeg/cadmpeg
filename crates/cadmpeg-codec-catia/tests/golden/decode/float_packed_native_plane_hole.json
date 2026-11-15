@@ -2265,6 +2265,8 @@
         }
       }
     },
+    "decode_digest": "49fdd8c8fe7ce2d94e7aa03fbf7f79585ffe826f3665d1006ab78016c7c8fd73",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#freeform": {
         "bytes": {
@@ -2272,8 +2274,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

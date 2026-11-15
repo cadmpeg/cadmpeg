@@ -1201,6 +1201,8 @@
         }
       }
     },
+    "decode_digest": "4f42842f3b7ffc292602b2e607fed483b2049a95eb241bf67fef553a9517b4ba",
+    "file_digests": {},
     "retained_records": {
       "sldprt:file:block#1088": {
         "bytes": {
@@ -1208,7 +1210,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features"
+        "stream": "Contents/Features",
+        "untyped": []
       },
       "sldprt:file:block#12": {
         "bytes": {
@@ -1216,7 +1219,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:block#348": {
         "bytes": {
@@ -1224,7 +1228,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-ResolvedFeatures"
+        "stream": "Contents/Config-0-ResolvedFeatures",
+        "untyped": []
       },
       "sldprt:file:block#968": {
         "bytes": {
@@ -1232,7 +1237,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords"
+        "stream": "Contents/Keywords",
+        "untyped": []
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -1240,8 +1246,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

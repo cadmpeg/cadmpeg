@@ -5129,6 +5129,8 @@
           }
         }
       },
+      "decode_digest": "af297f9d01a582b6a4a23835fb95346885065faa094a5524077554ed4905ebb5",
+      "file_digests": {},
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {
@@ -5136,7 +5138,8 @@
             "retention": "inline"
           },
           "offset": 1548,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -5144,7 +5147,8 @@
             "retention": "inline"
           },
           "offset": 1564,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -5152,7 +5156,8 @@
             "retention": "inline"
           },
           "offset": 1586,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#3": {
           "bytes": {
@@ -5160,7 +5165,8 @@
             "retention": "inline"
           },
           "offset": 1599,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#4": {
           "bytes": {
@@ -5168,7 +5174,8 @@
             "retention": "inline"
           },
           "offset": 1813,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#5": {
           "bytes": {
@@ -5176,7 +5183,8 @@
             "retention": "inline"
           },
           "offset": 1814,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#6": {
           "bytes": {
@@ -5184,9 +5192,11 @@
             "retention": "inline"
           },
           "offset": 1854,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

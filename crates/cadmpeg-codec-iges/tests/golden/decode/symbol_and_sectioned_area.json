@@ -1634,6 +1634,8 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "58900f2b4b58c5b686ef9328edbbfe77e55a54a589467bd3486a323ac2ec7ead",
+    "file_digests": {},
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -1641,8 +1643,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

@@ -254,6 +254,8 @@
           }
         }
       },
+      "decode_digest": "0556501ffba2d7d2b8f21c35398dff3f6d52cd0932ba3cc4dc54fd9c0ae83397",
+      "file_digests": {},
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {
@@ -261,7 +263,8 @@
             "retention": "inline"
           },
           "offset": 122,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -269,7 +272,8 @@
             "retention": "inline"
           },
           "offset": 138,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -277,9 +281,11 @@
             "retention": "inline"
           },
           "offset": 176,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

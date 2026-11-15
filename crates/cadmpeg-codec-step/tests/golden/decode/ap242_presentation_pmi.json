@@ -196,6 +196,10 @@
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "49213178822fd9269a633a6320446e1b933350f73f2bf5a8f7116f8648788a6a",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

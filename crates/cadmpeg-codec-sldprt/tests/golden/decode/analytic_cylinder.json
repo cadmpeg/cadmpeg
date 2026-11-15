@@ -232,6 +232,8 @@
         }
       }
     },
+    "decode_digest": "8165d1927071382e64e47e6e89368c29f4c3d93c509a834b090405e01dfd1e13",
+    "file_digests": {},
     "retained_records": {
       "sldprt:file:block#8": {
         "bytes": {
@@ -239,7 +241,8 @@
           "retention": "inline"
         },
         "offset": 8,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -247,8 +250,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

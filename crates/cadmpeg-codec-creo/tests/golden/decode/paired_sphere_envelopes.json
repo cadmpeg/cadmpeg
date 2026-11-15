@@ -1024,6 +1024,8 @@
         }
       }
     },
+    "decode_digest": "37ace3e692044971546e8bff948fd3cdb23347391e5317436757c855681e87cb",
+    "file_digests": {},
     "retained_records": {
       "creo:VisibGeom:section#76": {
         "bytes": {
@@ -1031,8 +1033,10 @@
           "retention": "inline"
         },
         "offset": 76,
-        "stream": "creo:VisibGeom"
+        "stream": "creo:VisibGeom",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

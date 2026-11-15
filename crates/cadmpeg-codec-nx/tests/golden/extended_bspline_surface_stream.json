@@ -125,7 +125,11 @@
       }
     },
     "source_fidelity": {
-      "annotations": {}
+      "annotations": {},
+      "decode_digest": "7db0eab274a7296134ed8696b9090f55740b9dc1750bebb60c0b9fbf7b1fadfb",
+      "file_digests": {},
+      "retained_records": {},
+      "unrepresented": []
     }
   },
   "inspect": {

@@ -3502,6 +3502,10 @@
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "8afd602cdd801c879b4830be6cb437270ca087532dfcb3a51f7a6da50d2841b0",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

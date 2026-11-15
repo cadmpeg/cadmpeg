@@ -2635,6 +2635,10 @@
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "50450fbe592989557b01a854f4c4b5916c46fa4654f85d78cae3817fda95879b",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

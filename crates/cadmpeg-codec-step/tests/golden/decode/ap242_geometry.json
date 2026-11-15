@@ -877,6 +877,8 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "d00e6c96b2f9b1819d8cd432746ac3b96bdebbc3f19d491e2604aa4439ffbc0a",
+    "file_digests": {},
     "retained_records": {
       "step:data:presentation_style_assignment#42": {
         "bytes": {
@@ -884,7 +886,8 @@
           "retention": "inline"
         },
         "offset": 2448,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "step:data:styled_item#43": {
         "bytes": {
@@ -892,8 +895,10 @@
           "retention": "inline"
         },
         "offset": 2505,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

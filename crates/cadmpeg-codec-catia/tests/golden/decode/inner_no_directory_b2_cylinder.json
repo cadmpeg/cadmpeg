@@ -594,6 +594,8 @@
         }
       }
     },
+    "decode_digest": "50b40607c29f48050412fd356f5526352160ed5ef947f43c3d8c7a27a26c900d",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#freeform": {
         "bytes": {
@@ -601,8 +603,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

@@ -255,6 +255,10 @@
           "tag": "sphere-surface"
         }
       }
-    }
+    },
+    "decode_digest": "9f198682282daac2bfaf147cd31975c76812fa5525c225efffbf6f8bb0045046",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

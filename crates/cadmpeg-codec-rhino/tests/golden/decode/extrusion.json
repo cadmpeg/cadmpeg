@@ -645,6 +645,8 @@
         }
       }
     },
+    "decode_digest": "b7a33834673ad07a44203f8fc26dc49e97b78d3a5594d58351569843b7ef180a",
+    "file_digests": {},
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -652,8 +654,10 @@
           "retention": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

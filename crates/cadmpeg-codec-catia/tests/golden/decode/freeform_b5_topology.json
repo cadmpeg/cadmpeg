@@ -527,6 +527,8 @@
         }
       }
     },
+    "decode_digest": "8192d93eaace3eea36bf0a3ed23812f372bc35828e3fcae13863a6a4cad57142",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
         "bytes": {
@@ -534,8 +536,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

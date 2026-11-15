@@ -571,6 +571,8 @@
         }
       }
     },
+    "decode_digest": "138a1e3e093627c1cf84e3c4ba3cad2d194d889527280e546aa202f0ddfb9d0e",
+    "file_digests": {},
     "retained_records": {
       "creo:NovisGeom:section#143": {
         "bytes": {
@@ -578,7 +580,8 @@
           "retention": "inline"
         },
         "offset": 143,
-        "stream": "creo:NovisGeom"
+        "stream": "creo:NovisGeom",
+        "untyped": []
       },
       "creo:VisibGeom:section#76": {
         "bytes": {
@@ -586,8 +589,10 @@
           "retention": "inline"
         },
         "offset": 76,
-        "stream": "creo:VisibGeom"
+        "stream": "creo:VisibGeom",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

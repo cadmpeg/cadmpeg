@@ -433,6 +433,10 @@
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

@@ -622,9 +622,9 @@
           "geometry": {
             "kind": "plane",
             "normal": {
-              "x": 0.5773502691896257,
-              "y": 0.5773502691896257,
-              "z": 0.5773502691896257
+              "x": 0.5773502691896258,
+              "y": 0.5773502691896258,
+              "z": 0.5773502691896258
             },
             "origin": {
               "x": 1.0,
@@ -632,9 +632,9 @@
               "z": 0.0
             },
             "u_axis": {
-              "x": 0.816496580927726,
-              "y": -0.40824829046386296,
-              "z": -0.40824829046386296
+              "x": 0.8164965809277259,
+              "y": -0.4082482904638632,
+              "z": -0.4082482904638632
             }
           },
           "id": "iges:model:surface#D19",
@@ -5034,6 +5034,8 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "7441d51afbc8dc10c880a3f6926caefea668ff07c2ee394e00fa88a6a143bc14",
+    "file_digests": {},
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -5041,8 +5043,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

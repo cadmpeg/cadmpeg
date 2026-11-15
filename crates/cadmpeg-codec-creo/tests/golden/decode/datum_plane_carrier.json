@@ -546,6 +546,8 @@
         }
       }
     },
+    "decode_digest": "9685d71f14d9467a8dcaf6e73cd4e105847eec97521130f222f7b853d61a3da4",
+    "file_digests": {},
     "retained_records": {
       "creo:ActDatums:section#76": {
         "bytes": {
@@ -553,8 +555,10 @@
           "retention": "inline"
         },
         "offset": 76,
-        "stream": "creo:ActDatums"
+        "stream": "creo:ActDatums",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

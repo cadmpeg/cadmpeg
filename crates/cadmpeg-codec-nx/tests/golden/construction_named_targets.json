@@ -909,6 +909,8 @@
           }
         }
       },
+      "decode_digest": "2c93dd6d48a799441d675819ac51b7c645de4d34c701187c38cbff221e4f48bd",
+      "file_digests": {},
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {
@@ -916,7 +918,8 @@
             "retention": "inline"
           },
           "offset": 489,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -924,7 +927,8 @@
             "retention": "inline"
           },
           "offset": 505,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#10": {
           "bytes": {
@@ -932,7 +936,8 @@
             "retention": "inline"
           },
           "offset": 552,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -940,7 +945,8 @@
             "retention": "inline"
           },
           "offset": 525,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#3": {
           "bytes": {
@@ -948,7 +954,8 @@
             "retention": "inline"
           },
           "offset": 545,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#4": {
           "bytes": {
@@ -956,7 +963,8 @@
             "retention": "inline"
           },
           "offset": 546,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#5": {
           "bytes": {
@@ -964,7 +972,8 @@
             "retention": "inline"
           },
           "offset": 547,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#6": {
           "bytes": {
@@ -972,7 +981,8 @@
             "retention": "inline"
           },
           "offset": 548,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#7": {
           "bytes": {
@@ -980,7 +990,8 @@
             "retention": "inline"
           },
           "offset": 549,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#8": {
           "bytes": {
@@ -988,7 +999,8 @@
             "retention": "inline"
           },
           "offset": 550,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#9": {
           "bytes": {
@@ -996,9 +1008,11 @@
             "retention": "inline"
           },
           "offset": 551,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

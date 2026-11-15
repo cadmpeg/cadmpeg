@@ -612,6 +612,8 @@
         }
       }
     },
+    "decode_digest": "8826c7cba725aa9e26046dca86e6981ba5c11b4cd5015ee933147884ec8b59ba",
+    "file_digests": {},
     "retained_records": {
       "sldprt:file:block#12": {
         "bytes": {
@@ -619,7 +621,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:block#348": {
         "bytes": {
@@ -627,7 +630,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords"
+        "stream": "Contents/Keywords",
+        "untyped": []
       },
       "sldprt:file:block#495": {
         "bytes": {
@@ -635,7 +639,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/PMISemanticDataDB"
+        "stream": "Contents/PMISemanticDataDB",
+        "untyped": []
       },
       "sldprt:file:block#767": {
         "bytes": {
@@ -643,7 +648,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features"
+        "stream": "Contents/Features",
+        "untyped": []
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -651,8 +657,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

@@ -252,6 +252,8 @@
         }
       }
     },
+    "decode_digest": "3b93fe83c6d9883ea07f1b13bab788c0c8b5db537c7d3e2dc2463043bd386165",
+    "file_digests": {},
     "retained_records": {
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -259,8 +261,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

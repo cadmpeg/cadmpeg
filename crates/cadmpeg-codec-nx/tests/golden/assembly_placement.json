@@ -160,7 +160,11 @@
             "tag": "ASSEMBLY_PLACEMENT"
           }
         }
-      }
+      },
+      "decode_digest": "9b480aa66a510859c6cb734a7489aa152d616e88bc404786841cee5eefd0dc3b",
+      "file_digests": {},
+      "retained_records": {},
+      "unrepresented": []
     }
   },
   "inspect": {

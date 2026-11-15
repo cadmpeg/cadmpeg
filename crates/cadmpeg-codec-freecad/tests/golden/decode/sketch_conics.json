@@ -1017,6 +1017,10 @@
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

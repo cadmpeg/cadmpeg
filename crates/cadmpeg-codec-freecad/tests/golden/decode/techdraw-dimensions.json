@@ -4777,6 +4777,10 @@
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "decode_digest": "a1ec94417092ac8de667b13a164922e01adb23cc427a9a535ca2f51e12a61f75",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

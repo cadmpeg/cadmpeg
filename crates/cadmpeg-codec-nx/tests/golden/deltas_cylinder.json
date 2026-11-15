@@ -497,6 +497,8 @@
           }
         }
       },
+      "decode_digest": "b93038a51e0dd352bf7a7f46e25fe13fec34d7911588ea365b15353d45ac1dda",
+      "file_digests": {},
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -504,7 +506,8 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -512,9 +515,11 @@
             "retention": "inline"
           },
           "offset": 358,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

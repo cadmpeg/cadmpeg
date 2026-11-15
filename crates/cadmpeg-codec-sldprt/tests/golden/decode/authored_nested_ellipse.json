@@ -747,6 +747,8 @@
         }
       }
     },
+    "decode_digest": "c1eae201d7e8641b4c483be34917f6624740b1e7f1b5f241ac7d417c2314a629",
+    "file_digests": {},
     "retained_records": {
       "sldprt:file:block#12": {
         "bytes": {
@@ -754,7 +756,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:block#348": {
         "bytes": {
@@ -762,7 +765,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-ResolvedFeatures"
+        "stream": "Contents/Config-0-ResolvedFeatures",
+        "untyped": []
       },
       "sldprt:file:block#768": {
         "bytes": {
@@ -770,7 +774,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords"
+        "stream": "Contents/Keywords",
+        "untyped": []
       },
       "sldprt:file:block#888": {
         "bytes": {
@@ -778,7 +783,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features"
+        "stream": "Contents/Features",
+        "untyped": []
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -786,8 +792,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

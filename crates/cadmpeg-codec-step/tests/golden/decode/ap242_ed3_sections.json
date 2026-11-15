@@ -187,6 +187,8 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "46c8315eb30763649e852f221f917853175810cd936be52cee921ed4e864fdd4",
+    "file_digests": {},
     "retained_records": {
       "step:data:example_record#2": {
         "bytes": {
@@ -194,7 +196,8 @@
           "retention": "inline"
         },
         "offset": 398,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "step:file:signature#0": {
         "bytes": {
@@ -202,8 +205,10 @@
           "retention": "inline"
         },
         "offset": 453,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

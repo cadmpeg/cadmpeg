@@ -3304,6 +3304,8 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "393db41b6acd1d3c890dc07085017fa6f07e91f96d59e7a244e2c834075ffcc2",
+    "file_digests": {},
     "retained_records": {
       "fcstd:native:thumbnail#thumbnails/Thumbnail.png": {
         "bytes": {
@@ -3311,8 +3313,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

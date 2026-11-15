@@ -190,7 +190,11 @@
       }
     },
     "source_fidelity": {
-      "annotations": {}
+      "annotations": {},
+      "decode_digest": "6c965d2458f64f54b6f11ede79ee62f303ea6787f79817b6bb82baf21b8abef2",
+      "file_digests": {},
+      "retained_records": {},
+      "unrepresented": []
     }
   },
   "inspect": {
