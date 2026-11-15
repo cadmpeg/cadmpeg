@@ -53,23 +53,23 @@ fn circle(z: f64, radius: f64) -> SolvedCurveGeometry {
 /// any value but one puts that trim off its edge.
 fn ruled(top_v: f64) -> CadIr {
     let mut ir = super::reports::edgeless_doc();
-    ir.model.bodies[0].kind = BodyKind::Sheet;
-    ir.model.points.clear();
-    ir.model.vertices.clear();
-    ir.model.edges.clear();
-    ir.model.coedges.clear();
+    ir.geometry.bodies[0].kind = BodyKind::Sheet;
+    ir.geometry.points.clear();
+    ir.geometry.vertices.clear();
+    ir.geometry.edges.clear();
+    ir.geometry.coedges.clear();
     let id = |kind: &str, i: usize| format!("test:model:{kind}#ruled{i}");
     let bottom = Point3::new(BOTTOM_RADIUS, 0.0, 0.0);
     let top = Point3::new(TOP_RADIUS, 0.0, HEIGHT);
     let vertices: [VertexId; 2] = std::array::from_fn(|i| VertexId::mint(id("vertex", i)).unwrap());
     for (i, position) in [bottom, top].into_iter().enumerate() {
         let point = PointId::mint(id("point", i)).unwrap();
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             point.clone(),
             FinitePoint3::new(position).unwrap(),
             None,
         ));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertices[i].clone(),
             point,
             tolerance: None,
@@ -86,7 +86,7 @@ fn ruled(top_v: f64) -> CadIr {
         )),
     ];
     for (i, geometry) in geometries.into_iter().enumerate() {
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: curves[i].clone(),
             geometry: CurveGeometry::Solved(geometry),
             parameter_range: (i < 2)
@@ -104,7 +104,7 @@ fn ruled(top_v: f64) -> CadIr {
     .into_iter()
     .enumerate()
     {
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: edges[i].clone(),
             carrier: EdgeCarrier::new(Some(curves[i].clone()), Some(range)).unwrap(),
             start: vertices[start].clone(),
@@ -112,7 +112,7 @@ fn ruled(top_v: f64) -> CadIr {
             tolerance: None,
         });
     }
-    let loop_id = ir.model.loops[0].id.clone();
+    let loop_id = ir.geometry.loops[0].id.clone();
     let seam_step = 1.0 / seam_length;
     let uses = [
         (0, Sense::Forward, [0.0, 0.0], [1.0, 0.0], [0.0, TAU]),
@@ -135,7 +135,7 @@ fn ruled(top_v: f64) -> CadIr {
     let coedges: [CoedgeId; 4] = std::array::from_fn(|i| CoedgeId::mint(id("coedge", i)).unwrap());
     for (i, (edge, sense, origin, direction, range)) in uses.into_iter().enumerate() {
         let pcurve = PcurveId::mint(id("pcurve", i)).unwrap();
-        ir.model.pcurves.push(Pcurve {
+        ir.geometry.pcurves.push(Pcurve {
             id: pcurve.clone(),
             geometry: PcurveGeometry::Line(
                 LinePcurve::try_new(
@@ -151,7 +151,7 @@ fn ruled(top_v: f64) -> CadIr {
             3 => 1,
             _ => i,
         };
-        ir.model.coedges.push(Coedge {
+        ir.geometry.coedges.push(Coedge {
             id: coedges[i].clone(),
             owner_loop: loop_id.clone(),
             edge: edges[edge].clone(),
@@ -165,15 +165,15 @@ fn ruled(top_v: f64) -> CadIr {
             use_curve: None,
         });
     }
-    ir.model.loops[0].boundary =
+    ir.geometry.loops[0].boundary =
         LoopBoundary::Ring(LoopRing::new(coedges.to_vec(), Vec::new()).unwrap());
-    let surface = ir.model.surfaces[0].id.clone();
+    let surface = ir.geometry.surfaces[0].id.clone();
     let construction = ProceduralSurfaceId::mint("test:model:construction#ruled").unwrap();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Procedural {
         construction: construction.clone(),
         cache: None,
     };
-    ir.model
+    ir.geometry
         .add_procedural_surface(
             &surface,
             ProceduralSurface::new(
@@ -230,21 +230,21 @@ fn ruled_surface_is_written_as_a_trimmed_sampled_bspline_face() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(decoded.ir().model.faces.len(), 1);
-    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.edges.len(), 3);
 }
 
 #[test]
 fn sampled_ruled_surface_stays_within_the_residual_limit() {
     let ir = ruled(1.0);
-    let surface_id = ir.model.surfaces[0].id.clone();
+    let surface_id = ir.geometry.surfaces[0].id.clone();
     let mut approximator = Approximator::new(&ir);
     let limit = approximator.residual_limit();
     let carrier = approximator.surface(surface_id.as_str()).unwrap();
     let exact_index = ModelIndex::new_model_only(&ir);
     let mut sampled = ir.clone();
-    sampled.model.procedural_surfaces.clear();
-    sampled.model.surfaces[0].geometry = SurfaceGeometry::Solved(carrier);
+    sampled.geometry.procedural_surfaces.clear();
+    sampled.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(carrier);
     let index = ModelIndex::new_model_only(&sampled);
     for i in 0..=40 {
         for j in 0..=40 {
@@ -268,7 +268,7 @@ fn sampled_ruled_surface_stays_within_the_residual_limit() {
 #[test]
 fn surface_with_a_trim_off_its_edge_keeps_the_omission_report() {
     let ir = ruled(0.5);
-    let surface_id = ir.model.surfaces[0].id.clone();
+    let surface_id = ir.geometry.surfaces[0].id.clone();
     let mut approximator = Approximator::new(&ir);
     assert!(approximator.surface(surface_id.as_str()).is_none());
     assert!(approximator.surface(surface_id.as_str()).is_none());

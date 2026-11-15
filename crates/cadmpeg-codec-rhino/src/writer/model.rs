@@ -258,7 +258,8 @@ fn resolve(positions: &BTreeMap<&str, usize>, id: &str) -> Result<usize, CodecEr
 impl<'a> WritableModel<'a> {
     pub(super) fn try_new(ir: &'a CadIr) -> Result<Self, CodecError> {
         let model = &ir.model;
-        let Some(body) = model
+        let geometry = &ir.geometry;
+        let Some(body) = geometry
             .bodies
             .iter()
             .find(|body| matches!(body.kind, BodyKind::Sheet | BodyKind::Solid))
@@ -267,37 +268,37 @@ impl<'a> WritableModel<'a> {
                 "body topology is not a writable Brep".into(),
             ));
         };
-        let layout = if model.faces.len() > 1 || body.kind == BodyKind::Solid {
+        let layout = if geometry.faces.len() > 1 || body.kind == BodyKind::Solid {
             Layout::MultiFace
         } else {
             Layout::SingleFace
         };
-        let edge_count = model.coedges.len();
+        let edge_count = geometry.coedges.len();
         let invalid_counts = match layout {
             Layout::SingleFace => {
-                model.faces.len() != 1
-                    || model.loops.is_empty()
+                geometry.faces.len() != 1
+                    || geometry.loops.is_empty()
                     || edge_count < 3
-                    || model.edges.len() != edge_count
-                    || model.vertices.len() != edge_count
-                    || model.points.len() != edge_count
-                    || model.curves.len() != edge_count
-                    || model.surfaces.len() != 1
+                    || geometry.edges.len() != edge_count
+                    || geometry.vertices.len() != edge_count
+                    || geometry.points.len() != edge_count
+                    || geometry.curves.len() != edge_count
+                    || geometry.surfaces.len() != 1
             }
             Layout::MultiFace => {
-                model.faces.len() < 2
-                    || model.loops.len() < model.faces.len()
-                    || edge_count < 3 * model.faces.len()
-                    || model.edges.is_empty()
-                    || model.vertices.is_empty()
-                    || model.points.len() != model.vertices.len()
-                    || model.curves.len() != model.edges.len()
-                    || model.surfaces.len() != model.faces.len()
+                geometry.faces.len() < 2
+                    || geometry.loops.len() < geometry.faces.len()
+                    || edge_count < 3 * geometry.faces.len()
+                    || geometry.edges.is_empty()
+                    || geometry.vertices.is_empty()
+                    || geometry.points.len() != geometry.vertices.len()
+                    || geometry.curves.len() != geometry.edges.len()
+                    || geometry.surfaces.len() != geometry.faces.len()
             }
         };
-        if model.bodies.len() != 1
-            || model.regions.len() != 1
-            || model.shells.len() != 1
+        if geometry.bodies.len() != 1
+            || geometry.regions.len() != 1
+            || geometry.shells.len() != 1
             || !model.tessellations.is_empty()
             || invalid_counts
         {
@@ -309,11 +310,11 @@ impl<'a> WritableModel<'a> {
             ));
         }
         check_object_attributes(body.id.as_str(), body.name.as_deref())?;
-        let region = &model.regions[0];
-        let shell = &model.shells[0];
+        let region = &geometry.regions[0];
+        let shell = &geometry.shells[0];
         let mut shell_faces: Vec<_> = shell.faces().iter().collect();
         shell_faces.sort_unstable();
-        let mut arena_faces: Vec<_> = model.faces.iter().map(|face| &face.id).collect();
+        let mut arena_faces: Vec<_> = geometry.faces.iter().map(|face| &face.id).collect();
         arena_faces.sort_unstable();
         if region.id != body.regions[0]
             || region.body != body.id
@@ -327,18 +328,19 @@ impl<'a> WritableModel<'a> {
                 "Brep ownership graph is inconsistent".into(),
             ));
         }
-        let original_coedges = positions(model.coedges.iter().map(|coedge| coedge.id.as_str()))?;
-        let original_edges = positions(model.edges.iter().map(|edge| edge.id.as_str()))?;
-        let original_vertices = positions(model.vertices.iter().map(|vertex| vertex.id.as_str()))?;
+        let original_coedges = positions(geometry.coedges.iter().map(|coedge| coedge.id.as_str()))?;
+        let original_edges = positions(geometry.edges.iter().map(|edge| edge.id.as_str()))?;
+        let original_vertices =
+            positions(geometry.vertices.iter().map(|vertex| vertex.id.as_str()))?;
         let mut ordered_coedges = Vec::new();
         let mut ordered_edges = Vec::new();
         let mut ordered_vertices = Vec::new();
         match layout {
             Layout::SingleFace => {
-                if !model.faces[0]
+                if !geometry.faces[0]
                     .loops
                     .iter()
-                    .eq(model.loops.iter().map(|loop_| &loop_.id))
+                    .eq(geometry.loops.iter().map(|loop_| &loop_.id))
                 {
                     return Err(CodecError::Malformed(
                         "single-face loop order is inconsistent".into(),
@@ -346,10 +348,10 @@ impl<'a> WritableModel<'a> {
                 }
                 let mut used_edges = BTreeSet::new();
                 let mut used_vertices = BTreeSet::new();
-                for loop_ in &model.loops {
+                for loop_ in &geometry.loops {
                     for id in loop_.coedges() {
-                        let coedge = &model.coedges[resolve(&original_coedges, id.as_str())?];
-                        let edge = &model.edges[resolve(&original_edges, coedge.edge.as_str())?];
+                        let coedge = &geometry.coedges[resolve(&original_coedges, id.as_str())?];
+                        let edge = &geometry.edges[resolve(&original_edges, coedge.edge.as_str())?];
                         if !used_edges.insert(edge.id.as_str()) {
                             return Err(CodecError::NotImplemented(
                                 "planar sheet cannot reuse an edge in one loop".into(),
@@ -360,7 +362,8 @@ impl<'a> WritableModel<'a> {
                         } else {
                             &edge.end
                         };
-                        let vertex = &model.vertices[resolve(&original_vertices, start.as_str())?];
+                        let vertex =
+                            &geometry.vertices[resolve(&original_vertices, start.as_str())?];
                         if !used_vertices.insert(vertex.id.as_str()) {
                             return Err(CodecError::Malformed(
                                 "planar loop has repeated traversal vertices".into(),
@@ -373,23 +376,23 @@ impl<'a> WritableModel<'a> {
                 }
             }
             Layout::MultiFace => {
-                ordered_coedges.extend(&model.coedges);
-                ordered_edges.extend(&model.edges);
-                ordered_vertices.extend(&model.vertices);
+                ordered_coedges.extend(&geometry.coedges);
+                ordered_edges.extend(&geometry.edges);
+                ordered_vertices.extend(&geometry.vertices);
             }
         }
         let vertex_positions = positions(ordered_vertices.iter().map(|vertex| vertex.id.as_str()))?;
         let edge_positions = positions(ordered_edges.iter().map(|edge| edge.id.as_str()))?;
         let coedge_positions = positions(ordered_coedges.iter().map(|coedge| coedge.id.as_str()))?;
-        let loop_positions = positions(model.loops.iter().map(|loop_| loop_.id.as_str()))?;
-        let face_positions = positions(model.faces.iter().map(|face| face.id.as_str()))?;
+        let loop_positions = positions(geometry.loops.iter().map(|loop_| loop_.id.as_str()))?;
+        let face_positions = positions(geometry.faces.iter().map(|face| face.id.as_str()))?;
         let surface_positions =
-            positions(model.surfaces.iter().map(|surface| surface.id.as_str()))?;
+            positions(geometry.surfaces.iter().map(|surface| surface.id.as_str()))?;
         let mut used_points = BTreeSet::new();
         let vertices = ordered_vertices
             .into_iter()
             .map(|vertex| {
-                let point = model
+                let point = geometry
                     .points
                     .iter()
                     .find(|point| point.id == vertex.point)
@@ -420,7 +423,7 @@ impl<'a> WritableModel<'a> {
                     edge.id.as_str()
                 ))
             })?;
-            let curve = model
+            let curve = geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == *curve_id)
@@ -549,12 +552,12 @@ impl<'a> WritableModel<'a> {
                 uses: Vec::new(),
             });
         }
-        if layout == Layout::MultiFace && used_curves.len() != model.curves.len() {
+        if layout == Layout::MultiFace && used_curves.len() != geometry.curves.len() {
             return Err(CodecError::NotImplemented(
                 "multi-face planar sheet requires one distinct line curve per edge".into(),
             ));
         }
-        let surfaces = model
+        let surfaces = geometry
             .surfaces
             .iter()
             .map(WritableFaceSurface::try_new)
@@ -570,7 +573,7 @@ impl<'a> WritableModel<'a> {
         }
         let mut used_surfaces = BTreeSet::new();
         let mut owned_loops = BTreeSet::new();
-        let faces = model
+        let faces = geometry
             .faces
             .iter()
             .map(|face| {
@@ -605,13 +608,13 @@ impl<'a> WritableModel<'a> {
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
-        if owned_loops.len() != model.loops.len() {
+        if owned_loops.len() != geometry.loops.len() {
             return Err(CodecError::NotImplemented(
                 "Brep contains orphan loops".into(),
             ));
         }
         let mut owned_coedges = BTreeSet::new();
-        let loops = model
+        let loops = geometry
             .loops
             .iter()
             .map(|loop_| {
@@ -642,7 +645,7 @@ impl<'a> WritableModel<'a> {
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
-        if owned_coedges.len() != model.coedges.len() {
+        if owned_coedges.len() != geometry.coedges.len() {
             return Err(CodecError::NotImplemented(
                 "Brep contains orphan coedges".into(),
             ));
@@ -669,7 +672,7 @@ impl<'a> WritableModel<'a> {
                                 id.as_str()
                             )));
                         }
-                        let pcurve = model
+                        let pcurve = geometry
                             .pcurves
                             .iter()
                             .find(|pcurve| pcurve.id == *id)
@@ -738,7 +741,7 @@ impl<'a> WritableModel<'a> {
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
-        if used_pcurves.len() != model.pcurves.len() {
+        if used_pcurves.len() != geometry.pcurves.len() {
             return Err(CodecError::NotImplemented(
                 "orphan Brep pcurves are not writable".into(),
             ));

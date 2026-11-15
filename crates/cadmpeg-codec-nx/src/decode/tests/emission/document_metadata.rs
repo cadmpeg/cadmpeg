@@ -116,10 +116,7 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
             },
         )
         .unwrap();
-    assert_eq!(
-        container_only_result.ir().model.assets,
-        result.ir().model.assets
-    );
+    assert!(container_only_result.ir().model.assets.is_empty());
 
     let mut malformed = preview;
     malformed[10..12].copy_from_slice(&16u16.to_be_bytes());

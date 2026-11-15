@@ -97,7 +97,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
             row(35, crate::surface::SurfaceKind::Plane),
         ]);
         let mut ir = CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#31".to_string())
                     .expect("identity grammar"),
@@ -152,7 +152,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         let mut local_only = ir.clone();
         for surface_id in [32, 33] {
             local_only
-                .model
+                .geometry
                 .surfaces
                 .iter_mut()
                 .find(|surface| {

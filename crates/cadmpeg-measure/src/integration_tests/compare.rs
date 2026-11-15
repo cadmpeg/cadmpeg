@@ -31,7 +31,7 @@ fn comparison_with(a: &CadIr, b: &CadIr, options: CompareOptions) -> Comparison 
 fn translated(ir: &CadIr, x: f64) -> CadIr {
     let mut moved = ir.clone();
     let shift = FiniteVector3::new(Vector3::new(x, 0.0, 0.0)).expect("finite");
-    moved.model.bodies[0].transform = Some(Transform::identity().with_translation(shift));
+    moved.geometry.bodies[0].transform = Some(Transform::identity().with_translation(shift));
     moved
 }
 
@@ -43,14 +43,14 @@ fn a_document_agrees_with_itself_and_with_a_renamed_copy() {
     assert_eq!(result.pairs().len(), 1);
     assert!(result.inconclusive_causes().is_empty());
     let copy = renamed(&cube, "synthetic:cube:", "synthetic:copy:");
-    assert_ne!(copy.model.bodies[0].id, cube.model.bodies[0].id);
+    assert_ne!(copy.geometry.bodies[0].id, cube.geometry.bodies[0].id);
     let result = comparison(&cube, &copy);
     assert_eq!(result.verdict(), Verdict::Agree);
     let [pair] = result.pairs() else {
         panic!("one pair");
     };
-    assert_eq!(pair.a(), cube.model.bodies[0].id.as_str());
-    assert_eq!(pair.b(), copy.model.bodies[0].id.as_str());
+    assert_eq!(pair.a(), cube.geometry.bodies[0].id.as_str());
+    assert_eq!(pair.b(), copy.geometry.bodies[0].id.as_str());
     assert!(pair
         .quantities()
         .iter()
@@ -96,7 +96,7 @@ fn the_relative_floor_widens_every_tolerance() {
 fn coincident_bodies_pair_by_multiplicity() {
     let cube = cube();
     let twice = merged(&cube, &renamed(&cube, "synthetic:cube:", "synthetic:twin:"));
-    assert_eq!(twice.model.bodies.len(), 2);
+    assert_eq!(twice.geometry.bodies.len(), 2);
     let copy = renamed(&twice, "synthetic:", "synthetic-b:");
     let result = comparison(&twice, &copy);
     assert_eq!(result.verdict(), Verdict::Agree);
@@ -210,7 +210,7 @@ fn occurrences_that_place_bodies_keep_the_verdict_inconclusive() {
             description: None,
             part_number: None,
             bom_properties: std::collections::BTreeMap::new(),
-            bodies: vec![cube.model.bodies[0].id.clone()],
+            bodies: vec![cube.geometry.bodies[0].id.clone()],
             native_ref: None,
         });
         let one = cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite");
@@ -280,7 +280,7 @@ fn nurbs_rectangle(transform: Option<Transform>) -> CadIr {
         .collect();
     builder.face(&surface, Sense::Forward, &[ring], false);
     let mut ir = builder.finish(BodyKind::Sheet);
-    ir.model.bodies[0].transform = transform;
+    ir.geometry.bodies[0].transform = transform;
     ir
 }
 
@@ -331,7 +331,7 @@ fn disjoint_bodies_evaluate_only_overlapping_pairs() {
             .expect("cubes")
     };
     let (a, b) = (row("synthetic:a"), row("synthetic:b"));
-    assert_eq!(a.model.bodies.len(), 40);
+    assert_eq!(a.geometry.bodies.len(), 40);
     let result = comparison(&a, &b);
     assert_eq!(result.verdict(), Verdict::Agree);
     assert_eq!(result.pairs().len(), 40);

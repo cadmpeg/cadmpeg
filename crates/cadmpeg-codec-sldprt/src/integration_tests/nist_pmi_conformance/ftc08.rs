@@ -52,7 +52,7 @@ fn ftc_08_row_54_emits_the_size_and_opposed_face_pair() {
         .targets
         .iter()
         .filter_map(|target| match target {
-            PmiTarget::Face { face } => ir.model.faces.iter().find(|item| &item.id == face),
+            PmiTarget::Face { face } => ir.geometry.faces.iter().find(|item| &item.id == face),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -62,7 +62,7 @@ fn ftc_08_row_54_emits_the_size_and_opposed_face_pair() {
         .iter()
         .map(|face| {
             let surface = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == face.surface)
@@ -149,13 +149,13 @@ fn assert_single_cylinder_target(
         );
     };
     let face = ir
-        .model
+        .geometry
         .faces
         .iter()
         .find(|candidate| &candidate.id == face)
         .expect("position target face");
     let surface = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|candidate| candidate.id == face.surface)

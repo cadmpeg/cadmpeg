@@ -42,7 +42,7 @@ fn an_occt_endpoint_a_whole_period_off_a_circle_subset_start_maps_to_local_zero(
     let source = CurveId::mint("test:model:curve#circle").unwrap();
     let subset = CurveId::mint("test:model:curve#subset").unwrap();
     let construction = ProceduralCurveId::mint("test:model:construction#subset").unwrap();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: source.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             CircleCurve::try_new(
@@ -56,7 +56,7 @@ fn an_occt_endpoint_a_whole_period_off_a_circle_subset_start_maps_to_local_zero(
         parameter_range: None,
         source_object: None,
     });
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: subset.clone(),
         geometry: CurveGeometry::Procedural {
             construction: construction.clone(),
@@ -65,7 +65,7 @@ fn an_occt_endpoint_a_whole_period_off_a_circle_subset_start_maps_to_local_zero(
         parameter_range: None,
         source_object: None,
     });
-    ir.model
+    ir.geometry
         .add_procedural_curve(
             &subset,
             ProceduralCurve::new(

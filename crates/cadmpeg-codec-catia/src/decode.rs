@@ -235,7 +235,7 @@ fn finish_decode(
         report.losses.push(note);
     }
     ctx.admit_entities(
-        u64_from_index(ir.model.entity_count()),
+        u64_from_index(ir.entity_count()),
         &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
@@ -252,7 +252,7 @@ fn finish_decode(
     }
     let modeling_graph_scope =
         modeling_graph_scope(scan.has_outer_container_declarations, &native.object_graphs);
-    crate::native::project_range::bind(ctx, &mut native, &ir.model, &modeling_graph_scope)?;
+    crate::native::project_range::bind(ctx, &mut native, &ir.geometry, &modeling_graph_scope)?;
     let modeling_object_records = (native
         .object_graphs
         .iter()
@@ -1886,7 +1886,7 @@ fn finish_decode(
         .map(|block| block.schema_selections.len())
         .sum();
     let transferred_line_profile_count = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -2003,7 +2003,7 @@ fn finish_decode(
         ),
         (
             crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT,
-            ir.model
+            ir.geometry
                 .procedural_surfaces
                 .iter()
                 .filter(|surface| {

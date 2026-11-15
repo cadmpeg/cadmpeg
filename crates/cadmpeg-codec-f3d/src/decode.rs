@@ -2523,7 +2523,7 @@ fn report_design_projection_gaps(
             &mut report.losses,
             F3dLossCode::HistoryOnlyBodyOmitted,
             format_args!(
-                "{} Design body-map pair(s) name a body outside the current model: every Body container omits its entity and its browser node is hidden. The body stays in the named BREP blob and in the native body map, and does not reach `model.bodies`.",
+                "{} Design body-map pair(s) name a body outside the current model: every Body container omits its entity and its browser node is hidden. The body stays in the named BREP blob and in the native body map, and does not reach `geometry.bodies`.",
                 gaps.history_only_body_bindings
             ),
         );
@@ -2995,7 +2995,7 @@ enum SessionPath {
 enum DesignState {
     /// Phase 2 ran. Its native records wait for finalization.
     Projected(Box<design_intent::DesignNative>),
-    /// No phase-2 output: the request is below [`DecodeDepth::Full`], or
+    /// No phase-2 output: the request is below [`DecodeDepth::Design`], or
     /// phase 2 failed and the containment loss and a native
     /// [`design_intent::DesignIntentFailure`] say so. The design reports read
     /// phase-2 records, so they do not run.
@@ -3009,14 +3009,16 @@ enum FinalizePath {
 }
 
 pub(crate) fn saved_free_edge_bodies_loss(
-    model: &cadmpeg_ir::document::Model,
+    ir: &cadmpeg_ir::CadIr,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    let owned = model
+    let owned = ir
+        .model
         .product_definitions
         .iter()
         .flat_map(|definition| &definition.bodies)
         .collect::<std::collections::BTreeSet<_>>();
-    let count = model
+    let count = ir
+        .geometry
         .bodies
         .iter()
         .filter(|body| {
@@ -3111,20 +3113,20 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
-        let mut admitted_entities = u64_from_index(ir.model.entity_count());
+        let mut admitted_entities = u64_from_index(ir.entity_count());
         let AsmTransferRemainder {
             unknowns,
             stats: _,
             annotation_records,
         } = asm_remainder;
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
-        ir.model.subds = subds;
+        ir.geometry.subds = subds;
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         report.losses.extend(subd_losses);
         native.body_visibilities = body_visibilities;
         native.design_body_bindings = design_body_bindings;
         ctx.admit_entities(
-            u64_from_index(ir.model.entity_count()),
+            u64_from_index(ir.entity_count()),
             &mut admitted_entities,
             "admit F3D geometry entities",
         )?;
@@ -3196,7 +3198,7 @@ impl<'a> F3dDecodeSession<'a> {
 
     fn admit_model_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
         self.ctx.admit_entities(
-            u64_from_index(self.ir.model.entity_count()),
+            u64_from_index(self.ir.entity_count()),
             &mut self.admitted_entities,
             operation,
         )
@@ -3260,9 +3262,9 @@ impl<'a> F3dDecodeSession<'a> {
     ///
     /// This is the one point that decides whether design intent enters the
     /// document. Phase 2 does not run when the phase-1 timelines did not
-    /// decode, nor below [`DecodeDepth::Full`] where
+    /// decode, nor below [`DecodeDepth::Design`] where
     /// [`Self::cuts_design_intent`] holds; where it does not, phase 2 runs and
-    /// the session delivers `Full`. [`DesignState::Absent`] leaves a complete
+    /// the session delivers `Design`. [`DesignState::Absent`] leaves a complete
     /// product and geometry document from phase 1. A resource refusal, or any
     /// error after the session fused, still refuses the document.
     fn decode_design_state(
@@ -3270,12 +3272,12 @@ impl<'a> F3dDecodeSession<'a> {
         path: &FinalizePath,
         prereqs: &prereqs::ProductPrereqs,
     ) -> Result<DesignState, CodecError> {
-        if self.ctx.depth() < DecodeDepth::Full {
+        if self.ctx.depth() < DecodeDepth::Design {
             if self.cuts_design_intent(path, prereqs) {
                 return Ok(DesignState::Absent);
             }
             self.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
-                DecodeDepth::Full,
+                DecodeDepth::Design,
                 self.report.transfer.geometry_transferred(),
             );
         }
@@ -3359,6 +3361,7 @@ impl<'a> F3dDecodeSession<'a> {
         timelines: &[crate::records::entity_header::DesignFeatureTimeline],
     ) -> Result<design_intent::DesignOutputs, CodecError> {
         let model = &self.ir.model;
+        let geometry = &self.ir.geometry;
         design_intent::decode(&design_intent::DesignInputs {
             ctx: self.ctx,
             scan: self.scan,
@@ -3375,12 +3378,12 @@ impl<'a> F3dDecodeSession<'a> {
                     FinalizePath::Geometry(index) => Some(&index.primary_model_brep_name),
                     FinalizePath::Bodyless(_) => None,
                 },
-                bodies: &model.bodies,
-                regions: &model.regions,
-                shells: &model.shells,
-                faces: &model.faces,
-                surfaces: &model.surfaces,
-                subds: &model.subds,
+                bodies: &geometry.bodies,
+                regions: &geometry.regions,
+                shells: &geometry.shells,
+                faces: &geometry.faces,
+                surfaces: &geometry.surfaces,
+                subds: &geometry.subds,
                 assets: &model.assets,
                 tolerances: &self.ir.tolerances,
                 persistent_design_links: &self.native.persistent_design_links,
@@ -3515,14 +3518,14 @@ impl<'a> F3dDecodeSession<'a> {
                 &local_components,
             ));
         let bodies = finalize_path.component_bodies(
-            &self.ir.model.bodies,
+            &self.ir.geometry.bodies,
             !prereqs.design_body_members.is_empty()
                 || !prereqs.design_body_bindings.is_empty()
                 || container::text_brep_names(scan).next().is_some(),
         );
         let hidden_bodies = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| body.visible == Some(false))
@@ -3659,7 +3662,7 @@ impl<'a> F3dDecodeSession<'a> {
                     crate::design::owners::attach(
                         scan,
                         &self.native,
-                        &mut self.ir.model,
+                        &mut self.ir,
                         &mut self.report.losses,
                     )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
@@ -3694,7 +3697,7 @@ impl<'a> F3dDecodeSession<'a> {
                         crate::design::owners::attach(
                             scan,
                             &self.native,
-                            &mut self.ir.model,
+                            &mut self.ir,
                             &mut self.report.losses,
                         )?;
                         true
@@ -3707,7 +3710,7 @@ impl<'a> F3dDecodeSession<'a> {
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
                 }
                 ctx.admit_entities(
-                    u64_from_index(self.ir.model.entity_count()),
+                    u64_from_index(self.ir.entity_count()),
                     &mut self.admitted_entities,
                     "admit F3D entities",
                 )?;
@@ -3773,7 +3776,7 @@ impl<'a> F3dDecodeSession<'a> {
         };
 
         ctx.admit_entities(
-            u64_from_index(self.ir.model.entity_count()),
+            u64_from_index(self.ir.entity_count()),
             &mut self.admitted_entities,
             "admit F3D entities",
         )?;
@@ -4945,11 +4948,11 @@ fn decode_result(
     // ASM transfer already charged its delta; admit any remaining neutral entities
     // (sketches, appearances, products) before finalizing.
     ctx.admit_entities(
-        u64_from_index(ir.model.entity_count()),
+        u64_from_index(ir.entity_count()),
         admitted_entities,
         "admit F3D entities",
     )?;
-    report.losses.extend(saved_free_edge_bodies_loss(&ir.model));
+    report.losses.extend(saved_free_edge_bodies_loss(&ir));
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
@@ -5958,7 +5961,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         })
         .collect::<std::collections::HashMap<_, _>>();
     let mut face_indices = std::collections::HashMap::new();
-    for (index, face) in ir.model.faces.iter().enumerate() {
+    for (index, face) in ir.geometry.faces.iter().enumerate() {
         let id = face.id.as_str().to_owned();
         face_indices.insert(id, index);
     }
@@ -5981,7 +5984,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         for face in faces {
             if let Some(color) = assignment.color {
                 if let Some(index) = face_indices.get(face.as_str()).copied() {
-                    let target = &mut ir.model.faces[index];
+                    let target = &mut ir.geometry.faces[index];
                     if target.color.is_none() {
                         target.color = Some(color);
                     }
@@ -6066,12 +6069,12 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
             _ => {}
         }
     }
-    for body in &mut ir.model.bodies {
+    for body in &mut ir.geometry.bodies {
         if body.color.is_none() {
             body.color = body_colors.get(&body.id).copied().flatten();
         }
     }
-    for face in &mut ir.model.faces {
+    for face in &mut ir.geometry.faces {
         if face.color.is_none() {
             face.color = face_colors.get(&face.id).copied().flatten();
         }
@@ -6188,7 +6191,7 @@ pub(crate) fn apply_body_presentation_names(
         }
     }
 
-    for body in &mut ir.model.bodies {
+    for body in &mut ir.geometry.bodies {
         if let Some(Some(name)) = body_names.get(&body.id) {
             if body.name.is_none() {
                 body.name = Some(name.clone());

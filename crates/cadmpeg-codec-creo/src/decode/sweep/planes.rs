@@ -226,7 +226,7 @@ fn cylinder_frame_agrees_with_model(
     frame: &crate::surface::PositionalCylinderFrame,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> bool {
-    let mut model_surfaces = ir.model.surfaces.iter().filter(|surface| {
+    let mut model_surfaces = ir.geometry.surfaces.iter().filter(|surface| {
         crate::identity::matches_numbered_identity(
             surface.id.as_str(),
             "creo:visibgeom:surface#",

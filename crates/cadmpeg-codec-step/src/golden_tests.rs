@@ -190,6 +190,16 @@ fn golden_output_is_deterministic() {
     harness().check_determinism_inputs(&encode_inputs(), &encode_branch());
 }
 
+#[test]
+fn each_depth_records_the_scope_it_requests() {
+    let (_, bytes) = harness()
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "ap242_geometry")
+        .expect("the B-rep fixture");
+    cadmpeg_test_support::depth::assert_each_depth_records_its_scope(&StepCodec::default(), &bytes);
+}
+
 /// A geometry-depth decode agrees with the full decode outside the design
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]

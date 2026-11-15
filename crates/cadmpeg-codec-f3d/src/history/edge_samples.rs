@@ -92,8 +92,8 @@ fn helix_sample(
         return Ok(None);
     }
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.curves.push(curve.clone());
-    ir.model.procedural_curves.push(definition.clone());
+    ir.geometry.curves.push(curve.clone());
+    ir.geometry.procedural_curves.push(definition.clone());
     let index = cadmpeg_ir::index::ModelIndex::build(&ir);
     let Some(interior) = finite_or_refusal(cadmpeg_ir::eval::model_curve_point_by_id(
         EvaluationAdmission::Standard,
