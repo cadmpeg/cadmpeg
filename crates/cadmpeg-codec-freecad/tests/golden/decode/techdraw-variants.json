@@ -1,11 +1,14 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [
         {
@@ -512,297 +515,325 @@
           "sense": "forward"
         }
       ],
+      "colliders": [],
       "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:10",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:11",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 10.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:12",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 42.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 42.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 42.0,
-              "y": 0.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 42.0,
+                "y": 0.0,
+                "z": 10.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 42.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 42.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:7",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 42.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 42.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:8",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:9",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 11.0,
-              "y": -2.69e-15,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 11.0,
+                "y": -2.69e-15,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Cylinder:Shape:Cylinder.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Cylinder"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 11.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            }
-          },
-          "id": "fcstd:model:curve#Cylinder:Shape:Cylinder.Shape.brp:2",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Cylinder"
-          }
-        },
-        {
-          "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
               "axis": {
                 "x": 0.0,
                 "y": 0.0,
@@ -820,96 +851,142 @@
                 "y": 0.0,
                 "z": -0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                10.0
-              ]
-            ]
+            }
           },
-          "id": "fcstd:model:curve#Cylinder:Shape:Cylinder.Shape.brp:2%4076889a8b8100da92",
+          "id": "fcstd:model:curve#Cylinder:Shape:Cylinder.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Cylinder"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "axis": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "center": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "kind": "circle",
+                "radius": 11.0,
+                "ref_direction": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": -0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  10.0
+                ]
+              ]
+            }
+          },
+          "id": "fcstd:model:curve#Cylinder:Shape:Cylinder.Shape.brp:2%4076889a8b8100da92",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Cylinder"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Triangle:Shape:Triangle.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Triangle"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.9701425001453319,
-              "y": 0.24253562503633297,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 50.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.9701425001453319,
+                "y": 0.24253562503633297,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Triangle:Shape:Triangle.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Triangle"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 30.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 30.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Triangle:Shape:Triangle.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Triangle"
           }
         }
       ],
+      "declared_measures": [],
       "drawings": [
         {
           "assets": [
@@ -917,6 +994,7 @@
             "fcstd:native:entry#Angle.SavedGeometry.0.brp",
             "fcstd:native:entry#Angle.SavedGeometry.1.brp"
           ],
+          "curves": [],
           "id": "fcstd:model:drawing#Angle:entity",
           "kind": "dimension",
           "native_ref": "fcstd:native:drawing#Angle",
@@ -960,6 +1038,8 @@
           "scale": 1.0
         },
         {
+          "assets": [],
+          "curves": [],
           "direction": [
             0.0,
             0.0,
@@ -987,6 +1067,7 @@
           "relationships": {
             "Source": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:native:object#Cylinder"
@@ -1004,6 +1085,8 @@
           ]
         },
         {
+          "assets": [],
+          "curves": [],
           "direction": [
             0.0,
             -1.0,
@@ -1031,6 +1114,7 @@
           "relationships": {
             "BaseView": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Front:entity"
@@ -1052,6 +1136,7 @@
             "fcstd:native:entry#BoxCorners4",
             "fcstd:native:entry#Diameter.SavedGeometry.0.brp"
           ],
+          "curves": [],
           "id": "fcstd:model:drawing#Diameter:entity",
           "kind": "dimension",
           "native_ref": "fcstd:native:drawing#Diameter",
@@ -1090,6 +1175,7 @@
             "fcstd:native:entry#BoxCorners1",
             "fcstd:native:entry#Euclidean.SavedGeometry.0.brp"
           ],
+          "curves": [],
           "id": "fcstd:model:drawing#Euclidean:entity",
           "kind": "dimension",
           "native_ref": "fcstd:native:drawing#Euclidean",
@@ -1124,6 +1210,8 @@
           "scale": 1.0
         },
         {
+          "assets": [],
+          "curves": [],
           "direction": [
             0.0,
             -1.0,
@@ -1151,6 +1239,7 @@
           "relationships": {
             "Source": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:native:object#Box"
@@ -1172,6 +1261,7 @@
             "fcstd:native:entry#BoxCorners",
             "fcstd:native:entry#Length.SavedGeometry.0.brp"
           ],
+          "curves": [],
           "id": "fcstd:model:drawing#Length:entity",
           "kind": "dimension",
           "native_ref": "fcstd:native:drawing#Length",
@@ -1206,6 +1296,8 @@
           "scale": 1.0
         },
         {
+          "assets": [],
+          "curves": [],
           "id": "fcstd:model:drawing#Note:entity",
           "kind": "annotation",
           "native_ref": "fcstd:native:drawing#Note",
@@ -1227,6 +1319,7 @@
           "relationships": {
             "Owner": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -1238,6 +1331,8 @@
           "scale": 1.0
         },
         {
+          "assets": [],
+          "curves": [],
           "id": "fcstd:model:drawing#Page:entity",
           "kind": "page",
           "native_ref": "fcstd:native:drawing#Page",
@@ -1250,6 +1345,7 @@
           "relationships": {
             "Template": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Template:entity"
@@ -1258,90 +1354,105 @@
             ],
             "Views": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Front:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Top:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Length:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Note:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Projection:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Section:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Detail:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Euclidean:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Vertical:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#TriangleView:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Circular:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Radius:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Diameter:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Angle:entity"
                 }
               },
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#TriangleBase:entity"
@@ -1354,6 +1465,8 @@
           "template": "fcstd:model:drawing#Template:entity"
         },
         {
+          "assets": [],
+          "curves": [],
           "direction": [
             0.0,
             -1.0,
@@ -1381,6 +1494,7 @@
           "relationships": {
             "Source": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:native:object#Box"
@@ -1398,6 +1512,8 @@
           ]
         },
         {
+          "assets": [],
+          "curves": [],
           "id": "fcstd:model:drawing#Projection:entity",
           "kind": "projection",
           "native_ref": "fcstd:native:drawing#Projection",
@@ -1420,6 +1536,7 @@
           "relationships": {
             "Anchor": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#ProjItem:entity"
@@ -1428,6 +1545,7 @@
             ],
             "Source": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:native:object#Box"
@@ -1436,6 +1554,7 @@
             ],
             "Views": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#ProjItem:entity"
@@ -1452,6 +1571,7 @@
             "fcstd:native:entry#BoxCorners3",
             "fcstd:native:entry#Radius.SavedGeometry.0.brp"
           ],
+          "curves": [],
           "id": "fcstd:model:drawing#Radius:entity",
           "kind": "dimension",
           "native_ref": "fcstd:native:drawing#Radius",
@@ -1489,6 +1609,7 @@
           "assets": [
             "fcstd:native:entry#techdraw-template1.svg"
           ],
+          "curves": [],
           "direction": [
             1.0,
             0.0,
@@ -1516,6 +1637,7 @@
           "relationships": {
             "BaseView": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:model:drawing#Front:entity"
@@ -1524,6 +1646,7 @@
             ],
             "Source": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:native:object#Box"
@@ -1544,11 +1667,14 @@
           "assets": [
             "fcstd:native:entry#techdraw-template.svg"
           ],
+          "curves": [],
           "id": "fcstd:model:drawing#Template:entity",
           "kind": "template",
           "native_ref": "fcstd:native:drawing#Template",
           "object": "fcstd:native:object#Template",
           "order": 1,
+          "parameters": {},
+          "relationships": {},
           "runtime_type": "TechDraw::DrawSVGTemplate",
           "sheet": {
             "fields": [
@@ -1670,6 +1796,8 @@
           }
         },
         {
+          "assets": [],
+          "curves": [],
           "direction": [
             0.0,
             0.0,
@@ -1697,6 +1825,7 @@
           "relationships": {
             "Source": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:native:object#Box"
@@ -1718,6 +1847,7 @@
             "fcstd:native:entry#BoxCorners6",
             "fcstd:native:entry#TriangleBase.SavedGeometry.0.brp"
           ],
+          "curves": [],
           "id": "fcstd:model:drawing#TriangleBase:entity",
           "kind": "dimension",
           "native_ref": "fcstd:native:drawing#TriangleBase",
@@ -1752,6 +1882,8 @@
           "scale": 1.0
         },
         {
+          "assets": [],
+          "curves": [],
           "direction": [
             0.0,
             0.0,
@@ -1779,6 +1911,7 @@
           "relationships": {
             "Source": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "local",
                   "target": "fcstd:native:object#Triangle"
@@ -1800,6 +1933,7 @@
             "fcstd:native:entry#BoxCorners2",
             "fcstd:native:entry#Vertical.SavedGeometry.0.brp"
           ],
+          "curves": [],
           "id": "fcstd:model:drawing#Vertical:entity",
           "kind": "dimension",
           "native_ref": "fcstd:native:drawing#Vertical",
@@ -2074,7 +2208,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:10%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:10%40location1%3A1"
             ]
@@ -2087,7 +2221,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:20%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:20%40location1%3A1"
             ]
@@ -2100,7 +2234,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:24%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:24%40location1%3A1"
             ]
@@ -2113,7 +2247,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:28%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:28%40location1%3A1"
             ]
@@ -2126,7 +2260,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:30%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:30%40location1%3A1"
             ]
@@ -2139,7 +2273,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:32%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:32%40location1%3A1"
             ]
@@ -2152,7 +2286,7 @@
         {
           "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:5%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:5%40location1%3A1"
             ]
@@ -2165,7 +2299,7 @@
         {
           "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:7%40location1%3A1"
             ]
@@ -2178,7 +2312,7 @@
         {
           "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%40location4",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:7%40location4%3A1"
             ]
@@ -2189,38 +2323,46 @@
           "tolerance": 1e-7
         }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [
         {
           "definition": {
-            "definition": "primitive",
-            "op": "new_body",
-            "placement": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                0.0
-              ]
-            ],
-            "solid": {
-              "height": 10.0,
-              "kind": "box",
-              "length": 42.0,
-              "width": 20.0
+            "kind": "operation",
+            "value": {
+              "kind": "primitive",
+              "value": {
+                "op": "new_body",
+                "placement": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ]
+                ],
+                "solid": {
+                  "height": 10.0,
+                  "kind": "box",
+                  "length": 42.0,
+                  "width": 20.0
+                }
+              }
             }
           },
+          "dependencies": [],
           "id": "fcstd:design:feature#Box",
           "name": "Box",
           "native_ref": "fcstd:native:object#Box",
@@ -2228,44 +2370,50 @@
           "outputs": [
             "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
           ],
+          "source_content": [],
           "source_properties": {
             "MapMode": "0",
             "Visibility": "true"
           },
-          "source_tag": "Part::Box",
-          "suppressed": null
+          "source_tag": "Part::Box"
         },
         {
           "definition": {
-            "definition": "primitive",
-            "op": "new_body",
-            "placement": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                0.0
-              ]
-            ],
-            "solid": {
-              "angle": 6.283185307179586,
-              "height": 10.0,
-              "kind": "cylinder",
-              "radius": 11.0
+            "kind": "operation",
+            "value": {
+              "kind": "primitive",
+              "value": {
+                "op": "new_body",
+                "placement": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ]
+                ],
+                "solid": {
+                  "angle": 6.283185307179586,
+                  "height": 10.0,
+                  "kind": "cylinder",
+                  "radius": 11.0
+                }
+              }
             }
           },
+          "dependencies": [],
           "id": "fcstd:design:feature#Cylinder",
           "name": "Cylinder",
           "native_ref": "fcstd:native:object#Cylinder",
@@ -2273,17 +2421,22 @@
           "outputs": [
             "fcstd:model:body#Cylinder:Shape:Cylinder.Shape.brp:9%40location1"
           ],
+          "source_content": [],
           "source_properties": {
             "MapMode": "0",
             "Visibility": "true"
           },
-          "source_tag": "Part::Cylinder",
-          "suppressed": null
+          "source_tag": "Part::Cylinder"
         },
         {
           "definition": {
-            "definition": "stored_geometry"
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
           },
+          "dependencies": [],
           "id": "fcstd:design:feature#Triangle",
           "name": "Triangle",
           "native_ref": "fcstd:native:object#Triangle",
@@ -2291,13 +2444,14 @@
           "outputs": [
             "fcstd:model:body#Triangle:Shape:Triangle.Shape.brp:7%40location1"
           ],
+          "source_content": [],
           "source_properties": {
             "Visibility": "true"
           },
-          "source_tag": "Part::Feature",
-          "suppressed": null
+          "source_tag": "Part::Feature"
         }
       ],
+      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -2307,7 +2461,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:10%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:10%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:10%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:10%40location1%3A1"
@@ -2320,7 +2475,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:20%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:20%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:20%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:20%40location1%3A1"
@@ -2333,7 +2489,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:24%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:24%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:24%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:24%40location1%3A1"
@@ -2346,7 +2503,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:28%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:28%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:28%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:28%40location1%3A1"
@@ -2359,7 +2517,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:30%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:30%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:30%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:30%40location1%3A1"
@@ -2372,7 +2531,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:32%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:32%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:32%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:32%40location1%3A1"
@@ -2385,7 +2545,8 @@
               "fcstd:model:coedge#Cylinder:Shape:Cylinder.Shape.brp:5%40location1%3A1%3A2",
               "fcstd:model:coedge#Cylinder:Shape:Cylinder.Shape.brp:5%40location1%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:5%40location1",
           "id": "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:5%40location1%3A1"
@@ -2395,7 +2556,8 @@
             "coedges": [
               "fcstd:model:coedge#Cylinder:Shape:Cylinder.Shape.brp:7%40location1%3A1%3A1"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%40location1",
           "id": "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:7%40location1%3A1"
@@ -2405,45 +2567,53 @@
             "coedges": [
               "fcstd:model:coedge#Cylinder:Shape:Cylinder.Shape.brp:7%40location4%3A1%3A1"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%40location4",
           "id": "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:7%40location4%3A1"
         }
       ],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [
         {
+          "dependencies": [],
           "expression": "42.0000000000000000",
           "id": "fcstd:design:parameter#Box:Length",
           "name": "Length",
           "native_ref": "fcstd:native:property#Box:Length",
           "ordinal": 8,
           "owner": "fcstd:design:feature#Box",
+          "properties": {},
           "value": {
             "kind": "length",
             "value": 42.0
           }
         },
         {
+          "dependencies": [],
           "expression": "360.0000000000000000",
           "id": "fcstd:design:parameter#Cylinder:Angle",
           "name": "Angle",
           "native_ref": "fcstd:native:property#Cylinder:Angle",
           "ordinal": 0,
           "owner": "fcstd:design:feature#Cylinder",
+          "properties": {},
           "value": {
             "kind": "angle",
             "value": 6.283185307179586
           }
         },
         {
+          "dependencies": [],
           "expression": "11.0000000000000000",
           "id": "fcstd:design:parameter#Cylinder:Radius",
           "name": "Radius",
           "native_ref": "fcstd:native:property#Cylinder:Radius",
           "ordinal": 14,
           "owner": "fcstd:design:feature#Cylinder",
+          "properties": {},
           "value": {
             "kind": "length",
             "value": 11.0
@@ -2471,7 +2641,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2494,7 +2664,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2517,7 +2687,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2540,7 +2710,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2563,7 +2733,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2586,7 +2756,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2609,7 +2779,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2632,7 +2802,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2655,7 +2825,7 @@
                 42.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2678,7 +2848,7 @@
                 42.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2701,7 +2871,7 @@
                 42.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2724,7 +2894,7 @@
                 42.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2747,7 +2917,7 @@
                 42.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2770,7 +2940,7 @@
                 42.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2793,7 +2963,7 @@
                 42.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2816,7 +2986,7 @@
                 42.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2839,7 +3009,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2862,7 +3032,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2885,7 +3055,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2908,7 +3078,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2931,7 +3101,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2954,7 +3124,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2977,7 +3147,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3000,7 +3170,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3038,7 +3208,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3076,7 +3246,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3104,7 +3274,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3142,7 +3312,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3180,11 +3350,14 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         }
       ],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:1%40location1",
@@ -3195,6 +3368,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -3207,6 +3381,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -3219,6 +3394,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -3231,6 +3407,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -3243,6 +3420,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -3255,6 +3433,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -3267,6 +3446,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -3279,6 +3459,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -3291,6 +3472,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Cylinder"
           }
         },
@@ -3303,6 +3485,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Cylinder"
           }
         },
@@ -3315,6 +3498,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Triangle"
           }
         },
@@ -3327,6 +3511,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Triangle"
           }
         },
@@ -3339,6 +3524,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Triangle"
           }
         }
@@ -3371,6 +3557,7 @@
           ]
         }
       ],
+      "rigid_bodies": [],
       "semantic_annotations": [
         {
           "assets": [
@@ -3425,6 +3612,7 @@
             200.0,
             0.0
           ],
+          "reference_anchors": [],
           "references": {
             "References2D": [
               {
@@ -3451,6 +3639,7 @@
           "text": [
             "%.2w"
           ],
+          "text_style": {},
           "value": 90.0
         },
         {
@@ -3532,6 +3721,7 @@
           "text": [
             "⌀%.2w"
           ],
+          "text_style": {},
           "value": 22.0
         },
         {
@@ -3613,6 +3803,7 @@
           "text": [
             "%.2w"
           ],
+          "text_style": {},
           "value": 42.0
         },
         {
@@ -3694,9 +3885,11 @@
           "text": [
             "%.2w"
           ],
+          "text_style": {},
           "value": 42.0
         },
         {
+          "assets": [],
           "id": "fcstd:model:semantic-annotation#Note:content",
           "kind": "text",
           "native_ref": "fcstd:native:annotation#Note",
@@ -3727,9 +3920,11 @@
             100.0,
             0.0
           ],
+          "reference_anchors": [],
           "references": {
             "Owner": [
               {
+                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -3825,6 +4020,7 @@
           "text": [
             "R%.2w"
           ],
+          "text_style": {},
           "value": 11.0
         },
         {
@@ -3906,6 +4102,7 @@
           "text": [
             "%.2w"
           ],
+          "text_style": {},
           "value": 40.0
         },
         {
@@ -3987,6 +4184,7 @@
           "text": [
             "%.2w"
           ],
+          "text_style": {},
           "value": 10.0
         }
       ],
@@ -4061,6 +4259,8 @@
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -4068,208 +4268,124 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            }
-          },
-          "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:5",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Box"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "origin": {
-              "x": 42.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            }
-          },
-          "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:6",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Box"
-          }
-        },
-        {
-          "geometry": {
-            "axis": {
-              "x": -0.0,
-              "y": -0.0,
-              "z": -1.0
-            },
-            "kind": "cylinder",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "radius": 11.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            }
-          },
-          "id": "fcstd:model:surface#Cylinder:Shape:Cylinder.Shape.brp:1",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Cylinder"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            }
-          },
-          "id": "fcstd:model:surface#Cylinder:Shape:Cylinder.Shape.brp:2",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Cylinder"
-          }
-        },
-        {
-          "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
               "kind": "plane",
               "normal": {
                 "x": 0.0,
@@ -4286,32 +4402,152 @@
                 "y": 0.0,
                 "z": -0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                10.0
+            }
+          },
+          "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:5",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Box"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "origin": {
+                "x": 42.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            }
+          },
+          "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:6",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Box"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": -0.0,
+                "y": -0.0,
+                "z": -1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 11.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
+            }
+          },
+          "id": "fcstd:model:surface#Cylinder:Shape:Cylinder.Shape.brp:1",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Cylinder"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
+            }
+          },
+          "id": "fcstd:model:surface#Cylinder:Shape:Cylinder.Shape.brp:2",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Cylinder"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "kind": "plane",
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "origin": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "u_axis": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": -0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  10.0
+                ]
               ]
-            ]
+            }
           },
           "id": "fcstd:model:surface#Cylinder:Shape:Cylinder.Shape.brp:2%4076889a8b8100da92",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Cylinder"
           }
         }
@@ -4434,7 +4670,7 @@
           "physical_ledger": "2e591b2441822531a91187c051c0372b5af392a910fb1ac002ab4f9a6662e37b",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "e199e091434bcdf71f6a325e8759e12c7444ceb3e5e5add5895cdf49cb470c56",
-          "shape_payloads": "8bcd24f8b8fbd972abdf22c6fffa4c73b9396d3dcffb4f356b8fcc77e2e72b68",
+          "shape_payloads": "246a4b7e5524afc239ea4353f5aac5240791ef7494f29362fb391d3c22d61952",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
       },
@@ -4686,11 +4922,12 @@
         "program_version": "1.1R45039 (Git)"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_version": "1",
               "program_version": "1.1R45039 (Git)",
@@ -4698,7 +4935,8 @@
             },
             "dialect": "fcstd:schema-4"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -4706,16 +4944,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_version": "1",
             "program_version": "1.1R45039 (Git)",
@@ -4723,175 +4966,210 @@
           },
           "dialect": "fcstd:schema-4"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Template: SVG stroke, fill and font appearance remain in the asset; specified text em sizes are millimetres",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.view-geometry-not-stored",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.view-geometry-not-stored",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Front: projected view edges are runtime geometry; source B-rep and view parameters are retained",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.view-geometry-not-stored",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.view-geometry-not-stored",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Top: projected view edges are runtime geometry; source B-rep and view parameters are retained",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Length: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Note: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.view-geometry-not-stored",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.view-geometry-not-stored",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Projection: projected view edges are runtime geometry; source B-rep and view parameters are retained",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.view-geometry-not-stored",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.view-geometry-not-stored",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#ProjItem: projected view edges are runtime geometry; source B-rep and view parameters are retained",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.view-geometry-not-stored",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.view-geometry-not-stored",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Section: projected view edges are runtime geometry; source B-rep and view parameters are retained",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.view-geometry-not-stored",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.view-geometry-not-stored",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Detail: projected view edges are runtime geometry; source B-rep and view parameters are retained",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Euclidean: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Vertical: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.view-geometry-not-stored",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.view-geometry-not-stored",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#TriangleView: projected view edges are runtime geometry; source B-rep and view parameters are retained",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.view-geometry-not-stored",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.view-geometry-not-stored",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Circular: projected view edges are runtime geometry; source B-rep and view parameters are retained",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Radius: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Diameter: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#Angle: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#TriangleBase: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
@@ -4908,10 +5186,17 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

@@ -34,22 +34,18 @@ fn every_example_document_has_one_spelling() {
     for value in &values {
         sweep.learn(value);
     }
+    let mut accepting = std::collections::BTreeSet::new();
     for (ir, value) in documents.iter().zip(&values) {
-        sweep.sweep(value).expect("an example reads back");
+        accepting.extend(sweep.sweep(value).expect("an example reads back"));
         let text = ir.to_canonical_json().expect("an example writes");
         let read = cadmpeg_ir::CadIr::from_json(&text).expect("an example reads its own text");
         assert_eq!(read.to_canonical_json().expect("rewrites"), text);
     }
     assert!(sweep.probes > 0);
     assert!(
-        sweep.accepting.is_empty(),
+        accepting.is_empty(),
         "{} second spellings are admitted:\n{}",
-        sweep.accepting.len(),
-        sweep
-            .accepting
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n")
+        accepting.len(),
+        accepting.into_iter().collect::<Vec<_>>().join("\n")
     );
 }

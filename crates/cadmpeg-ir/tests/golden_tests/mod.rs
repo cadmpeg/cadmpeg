@@ -141,13 +141,19 @@ fn every_golden_document_has_one_spelling() {
     for (_, _, ir) in &documents {
         sweep.learn(ir);
     }
+    let mut accepting = Vec::new();
     for (path, pointer, ir) in &documents {
-        sweep.sweep(ir).unwrap_or_else(|error| {
+        let found = sweep.sweep(ir).unwrap_or_else(|error| {
             panic!(
                 "{} at {pointer} does not read back: {error}",
                 path.display()
             )
         });
+        accepting.extend(
+            found
+                .into_iter()
+                .map(|finding| format!("{} at {pointer}{finding}", path.display())),
+        );
     }
     assert!(
         sweep.probes > 0,
@@ -160,15 +166,10 @@ fn every_golden_document_has_one_spelling() {
         documents.len()
     );
     assert!(
-        sweep.accepting.is_empty(),
+        accepting.is_empty(),
         "{} second spellings are admitted:\n{}",
-        sweep.accepting.len(),
-        sweep
-            .accepting
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n")
+        accepting.len(),
+        accepting.join("\n")
     );
 }
 

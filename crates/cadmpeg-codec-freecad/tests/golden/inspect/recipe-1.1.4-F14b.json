@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 35779,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 3355
@@ -21,8 +21,8 @@
         "data_offset": "3441",
         "header_offset": "3397"
       },
-      "compression": "deflate",
       "expanded": 6047,
+      "kind": "deflate",
       "name": "Body.Shape.brp",
       "role": "brep",
       "stored": 608
@@ -34,8 +34,8 @@
         "data_offset": "4097",
         "header_offset": "4049"
       },
-      "compression": "deflate",
       "expanded": 268,
+      "kind": "deflate",
       "name": "Body.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 138
@@ -47,8 +47,8 @@
         "data_offset": "4292",
         "header_offset": "4235"
       },
-      "compression": "deflate",
       "expanded": 8717,
+      "kind": "deflate",
       "name": "AdditiveBox.AddSubShape.brp",
       "role": "brep",
       "stored": 716
@@ -60,8 +60,8 @@
         "data_offset": "5059",
         "header_offset": "5008"
       },
-      "compression": "deflate",
       "expanded": 8939,
+      "kind": "deflate",
       "name": "AdditiveBox.Shape.brp",
       "role": "brep",
       "stored": 736
@@ -73,8 +73,8 @@
         "data_offset": "5856",
         "header_offset": "5795"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "AdditiveBox.SuppressedShape.brp",
       "role": "brep",
       "stored": 2
@@ -86,8 +86,8 @@
         "data_offset": "5912",
         "header_offset": "5858"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "Sketch.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -99,8 +99,8 @@
         "data_offset": "5960",
         "header_offset": "5914"
       },
-      "compression": "deflate",
       "expanded": 489,
+      "kind": "deflate",
       "name": "Sketch.Shape.brp",
       "role": "brep",
       "stored": 178
@@ -112,19 +112,20 @@
         "data_offset": "6188",
         "header_offset": "6138"
       },
-      "compression": "deflate",
       "expanded": 133,
+      "kind": "deflate",
       "name": "Sketch.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 100
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.1R20260928 (Git shallow)",
@@ -132,8 +133,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

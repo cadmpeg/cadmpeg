@@ -8,12 +8,12 @@
         "record_count": "1",
         "size": "36"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000014",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 24
       }
     },
@@ -24,12 +24,12 @@
         "record_count": "1",
         "size": "72"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000015",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 60
       }
     },
@@ -40,12 +40,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000016",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -56,12 +56,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000025",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -72,12 +72,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000010",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -88,12 +88,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000023",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -104,12 +104,12 @@
         "record_count": "1",
         "size": "211"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000011",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 199
       }
     },
@@ -120,12 +120,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000018",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -136,12 +136,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000019",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -152,12 +152,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000020",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -168,12 +168,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000012",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -184,12 +184,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000022",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -200,12 +200,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000021",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -217,12 +217,12 @@
         "record_count": "1",
         "size": "199"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000013",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 187
       }
     },
@@ -233,12 +233,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000026",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -249,29 +249,32 @@
         "nil_uuid": "false",
         "total_record_bytes": "175"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "class-c3101a1d-f157-11d3-bfe7-0010830122f0",
       "role": "object-class",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 175
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "archive_version": "80",
           "opennurbs_writer_version": "200712190"
         },
         "dialect": "rhino:archive-80"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "archive version 80"
   ]

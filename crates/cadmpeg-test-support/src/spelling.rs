@@ -30,9 +30,6 @@ use crate::unknown_keys::{grafted_document, normalise, object_at_mut, Step, FREE
 pub struct SpellingSweep {
     keys: BTreeMap<String, BTreeSet<String>>,
     probed: BTreeSet<String>,
-    /// Each second spelling a document admits, with the path and edit that
-    /// states it.
-    pub accepting: BTreeSet<String>,
     /// The number of edited documents read.
     pub probes: usize,
 }
@@ -54,14 +51,22 @@ impl SpellingSweep {
     /// Reads every edit of each shape of `ir` not yet probed, and checks that
     /// `ir` writes back as itself.
     ///
+    /// Returns each second spelling `ir` admits, with the path and edit that
+    /// states it.
+    ///
     /// # Errors
     ///
     /// Returns the serde error when `ir` does not read back as a `CadIr`.
-    pub fn sweep(&mut self, ir: &Value) -> Result<(), serde_json::Error> {
+    pub fn sweep(&mut self, ir: &Value) -> Result<BTreeSet<String>, serde_json::Error> {
+        let mut accepting = BTreeSet::new();
         let read = CadIr::deserialize(ir)?;
-        if serde_json::to_value(&read)? != *ir {
-            self.accepting
-                .insert("a document does not write back as itself".to_owned());
+        let canonical = canonical_text(&read)?;
+        let written: Value = serde_json::from_str(&canonical)?;
+        if let Some(at) = first_difference(ir, &written, String::new()) {
+            accepting.insert(format!("{at}: the document does not write back as itself"));
+        }
+        if canonical_text(&CadIr::from_json(&canonical)?)? != canonical {
+            accepting.insert("its canonical text does not write back byte for byte".to_owned());
         }
         let empty = serde_json::to_value(CadIr::empty())?;
         for node in nodes(ir) {
@@ -89,13 +94,17 @@ impl SpellingSweep {
                 for key in absent {
                     let mut edited = document.clone();
                     object_at_mut(&mut edited, &path)?.insert(key.clone(), Value::Null);
-                    self.probe(&edited, || format!("{at}: `{key}` written null"));
+                    self.probe(&edited, &mut accepting, || {
+                        format!("{at}: `{key}` written null")
+                    });
                 }
                 for (key, value) in fields {
                     if is_empty_collection(value) {
                         let mut edited = document.clone();
                         object_at_mut(&mut edited, &path)?.remove(key);
-                        self.probe(&edited, || format!("{at}: empty `{key}` left out"));
+                        self.probe(&edited, &mut accepting, || {
+                            format!("{at}: empty `{key}` left out")
+                        });
                     }
                 }
             }
@@ -104,17 +113,22 @@ impl SpellingSweep {
                 write_repeating(&document, &path, &mut text);
                 self.probes += 1;
                 if serde_json::from_str::<CadIr>(&text).is_ok() {
-                    self.accepting.insert(format!("{at}: `{key}` stated twice"));
+                    accepting.insert(format!("{at}: `{key}` stated twice"));
                 }
             }
         }
-        Ok(())
+        Ok(accepting)
     }
 
-    fn probe(&mut self, document: &Value, edit: impl FnOnce() -> String) {
+    fn probe(
+        &mut self,
+        document: &Value,
+        accepting: &mut BTreeSet<String>,
+        edit: impl FnOnce() -> String,
+    ) {
         self.probes += 1;
         if CadIr::deserialize(document).is_ok() {
-            self.accepting.insert(edit());
+            accepting.insert(edit());
         }
     }
 }
@@ -194,6 +208,56 @@ fn signature(shape: &str, fields: &Map<String, Value>) -> String {
         }
     }
     text
+}
+
+fn canonical_text(ir: &CadIr) -> Result<String, serde_json::Error> {
+    ir.to_canonical_json()
+        .map_err(<serde_json::Error as serde::ser::Error>::custom)
+}
+
+/// Whether two numbers state one value of a number field.
+///
+/// A golden harness stores an `f32` field either widened to `f64` or in its
+/// shortest `f32` digits, so two numbers that round to one `f32`, one of them
+/// exactly, state the same `f32`.
+fn numbers_agree(left: &serde_json::Number, right: &serde_json::Number) -> bool {
+    if left == right {
+        return true;
+    }
+    let narrow = |number: &serde_json::Number| number.to_string().parse::<f32>().ok();
+    let (Some(wide_left), Some(wide_right)) = (left.as_f64(), right.as_f64()) else {
+        return false;
+    };
+    let (Some(narrow_left), Some(narrow_right)) = (narrow(left), narrow(right)) else {
+        return false;
+    };
+    narrow_left == narrow_right
+        && (f64::from(narrow_left) == wide_left || f64::from(narrow_right) == wide_right)
+}
+
+/// The JSON pointer of the first value `read` and `written` differ at.
+fn first_difference(read: &Value, written: &Value, at: String) -> Option<String> {
+    match (read, written) {
+        (Value::Object(left), Value::Object(right)) => {
+            left.keys()
+                .chain(right.keys())
+                .find_map(|key| match (left.get(key), right.get(key)) {
+                    (Some(left), Some(right)) => {
+                        first_difference(left, right, format!("{at}/{key}"))
+                    }
+                    _ => Some(format!("{at}/{key}")),
+                })
+        }
+        (Value::Array(left), Value::Array(right)) if left.len() == right.len() => left
+            .iter()
+            .zip(right)
+            .enumerate()
+            .find_map(|(index, (left, right))| {
+                first_difference(left, right, format!("{at}/{index}"))
+            }),
+        (Value::Number(left), Value::Number(right)) => (!numbers_agree(left, right)).then_some(at),
+        _ => (read != written).then_some(at),
+    }
 }
 
 fn is_empty_collection(value: &Value) -> bool {
