@@ -5905,24 +5905,15 @@ fn bind_historical_face_operand_candidates<'a>(
     for reference in &mut operand.recipe_references {
         bind_historical_recipe_reference_candidates(reference, topology, recipe_topologies)?;
     }
-    let extrude_group = |matches: &dyn Fn(&crate::records::topology::construction::DesignConstructionOperandGroup) -> bool| {
-        feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
-            && operand_groups.iter().any(|group| {
-                crate::ids::native_stream(&group.id) == stream
-                    && group.scope_record_index == scope.record_index
-                    && Some(group.record_index) == operand.group_record_index()
-                    && matches(group)
-            })
-    };
-    let has_extrude_profile_group = extrude_group(&|group| {
-        group.extrude_role()
-            == Some(crate::records::topology::extrude_selection::DesignExtrudeOperandRole::Profile)
-    });
-    let has_extrude_start_group = has_extrude_profile_group
-        || extrude_group(&|group| {
-            group.extrude_face_role()
-                == Some(crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Start)
-        });
+    let roles = recipe_fill::ExtrudeOperandRoles::of(
+        operand,
+        scope,
+        operand_groups,
+        feature_family == Some(crate::design::DesignFeatureFamily::Extrude),
+    );
+    let has_extrude_profile_group = roles.profile;
+    let legacy_group = roles.legacy;
+    let has_extrude_start_group = roles.start_or_profile();
     let recipe_face = face_recipes
         .get(topology, face_recipe::FaceRecipeIndex::new)
         .resolve(operand);
@@ -6264,10 +6255,11 @@ fn bind_historical_face_operand_candidates<'a>(
             .get(topology, face_recipe::FaceRecipeIndex::new)
             .resolve_loop(operand)
         {
-            if !(operand.has_closed_edge_node()
-                && has_extrude_start_group
-                && !changed_faces.contains(&face))
-            {
+            if recipe_fill::recipe_face_replaces_selection(
+                operand.has_closed_edge_node(),
+                true,
+                has_extrude_start_group && !changed_faces.contains(&face),
+            ) {
                 operand.resolved_face_slots = vec![face];
             }
         }
@@ -6281,7 +6273,7 @@ fn bind_historical_face_operand_candidates<'a>(
                 states,
             },
             &changed_faces,
-            has_extrude_profile_group,
+            has_extrude_profile_group || legacy_group,
             recipe_fill::is_new_body_extrude(scope),
         );
     }
