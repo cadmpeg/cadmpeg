@@ -5850,6 +5850,7 @@ fn bind_historical_face_operand<'a>(
         crate::records::feature::scope::DesignFeatureKind::MoveFace
             | crate::records::feature::scope::DesignFeatureKind::OffsetFaces
     ) && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+        && !operand.has_closed_edge_node()
     {
         operand.resolved_face_slots = caches
             .face_recipes
@@ -6241,7 +6242,7 @@ fn bind_historical_face_operand_candidates<'a>(
         if recipe_fill::recipe_face_replaces_selection(
             operand.has_closed_edge_node(),
             operand.resolved_face_slots.is_empty(),
-            has_extrude_start_group && !changed_faces.contains(&face),
+            !(has_extrude_start_group && changed_faces.contains(&face)),
         ) {
             operand.resolved_face_slots = vec![face];
         }
@@ -6258,7 +6259,7 @@ fn bind_historical_face_operand_candidates<'a>(
             if recipe_fill::recipe_face_replaces_selection(
                 operand.has_closed_edge_node(),
                 true,
-                has_extrude_start_group && !changed_faces.contains(&face),
+                !(has_extrude_start_group && changed_faces.contains(&face)),
             ) {
                 operand.resolved_face_slots = vec![face];
             }

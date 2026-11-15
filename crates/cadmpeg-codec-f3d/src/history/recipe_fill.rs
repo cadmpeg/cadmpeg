@@ -8,7 +8,9 @@ use super::AsmDeltaState;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
-use crate::records::topology::extrude_selection::{DesignExtrudeFaceRole, DesignExtrudeOperandRole};
+use crate::records::topology::extrude_selection::{
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole,
+};
 use crate::records::topology::face::DesignFaceOperand;
 
 /// Whether any selected face slot is absent from the faces the transition
@@ -19,17 +21,16 @@ pub(super) fn selection_has_unchanged_face(slots: &[i64], changed: &HashSet<i64>
 
 /// Whether a recipe face replaces the operand's current selection. A recipe
 /// without a closed-edge node always does. A closed-edge recipe face fills an
-/// empty selection only, and not as an Extrude start or profile face the
-/// transition left unchanged: the Extrude joins to or cuts from that face, so
-/// the transition changes it.
+/// empty selection only, and only as an Extrude start or profile face that
+/// the transition changes: the Extrude joins to or cuts from that face, so
+/// the transition changes it. Any other face is `unproven`.
 pub(super) fn recipe_face_replaces_selection(
     closed_edge_node: bool,
     selection_empty: bool,
-    unchanged_extrude_face: bool,
+    unproven: bool,
 ) -> bool {
-    !closed_edge_node || (selection_empty && !unchanged_extrude_face)
+    !closed_edge_node || (selection_empty && !unproven)
 }
-
 
 /// The state chain a face selection reads.
 pub(super) struct Transition<'a> {
