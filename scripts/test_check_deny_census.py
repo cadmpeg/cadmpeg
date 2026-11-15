@@ -805,6 +805,63 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         self.assertEqual(status, 1, output)
         self.assertIn("Reader::A", output)
 
+    CHECKED_QUANTITY = '''
+        macro_rules! checked_quantity {
+            ($(#[$attribute:meta])* $name:ident, $value:ident, $condition:expr, $error:literal) => {
+                $(#[$attribute])*
+                #[derive(Clone, Copy, Serialize, Deserialize)]
+                #[serde(into = "f64", try_from = "{target}")]
+                pub struct $name(f64);
+            };
+        }
+        checked_quantity!(
+            /// A positive finite area.
+            PositiveArea, value, value > 0.0, "a PositiveArea is finite and positive"
+        );
+        #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+        enum Reader { A(PositiveArea) }
+    '''
+
+    def test_checked_quantity_macro_expands_its_conversion_reader(self) -> None:
+        status, output = self.run_census(
+            {"lib.rs": self.CHECKED_QUANTITY.replace("{target}", "f64")}
+        )
+        self.assertEqual(status, 0, output)
+
+    def test_checked_quantity_macro_with_an_open_conversion_fails_closed(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)]
+            struct Open { value: f64 }
+        ''' + self.CHECKED_QUANTITY.replace("{target}", "Open")})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_checked_quantity_macro_without_a_conversion_route_fails_closed(self) -> None:
+        source = self.CHECKED_QUANTITY.replace(
+            '#[serde(into = "f64", try_from = "{target}")]', ""
+        ).replace("pub struct $name(f64);", "pub struct $name { value: f64 }")
+        status, output = self.run_census({"lib.rs": source})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_an_imported_nonzero_integer_is_a_scalar_reader(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            use std::num::NonZeroU32;
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Reader { A(NonZeroU32), B(core::num::NonZeroI8) }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_a_local_nonzero_declaration_is_not_the_std_scalar(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)]
+            struct NonZeroU32 { value: u32 }
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Reader { A(NonZeroU32) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
     def test_conflicting_deserializer_macro_contracts_do_not_admit_a_helper(self) -> None:
         status, output = self.run_census({
             "first.rs": '''
@@ -2203,6 +2260,32 @@ class GenericParameterProofTests(unittest.TestCase):
         self.assertIn(
             "instantiated with the generic parameter U of Forwarder", output
         )
+
+    FORWARDED_DIMENSION = CLOSED + '''
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct AlsoClosed { other: u8 }
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", content = "value", deny_unknown_fields,
+                bound(deserialize = "T: Deserialize<'de>, P: Deserialize<'de>"))]
+        enum Dimension<T, P = Closed> { Literal(T), Parameter(P) }
+        #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+        enum Offset { Distance(Dimension<AlsoClosed>) }
+        #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+        enum Law<Q> { Constant(Dimension<Q>) }
+    '''
+
+    def test_a_concrete_use_is_unproved_while_a_forwarder_has_no_instantiation(self) -> None:
+        status, output = self.run_census({"lib.rs": self.FORWARDED_DIMENSION})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Offset::Distance: payload Dimension<AlsoClosed>", output)
+        self.assertIn("generic parameter Q of Law", output)
+
+    def test_instantiating_the_forwarder_proves_every_use(self) -> None:
+        status, output = self.run_census({"lib.rs": self.FORWARDED_DIMENSION + '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Twist { law: Law<Closed> }
+        '''})
+        self.assertEqual(status, 0, output)
 
     def test_two_generic_owners_forward_to_checked_readers(self) -> None:
         status, output = self.run_census({"lib.rs": self.CLOSED + '''
