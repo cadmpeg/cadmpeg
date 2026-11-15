@@ -67,12 +67,6 @@
     },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "28",
-        "bytes_structural": "539",
-        "bytes_typed": "30",
-        "bytes_unclassified": "0",
-        "data_sections": "2",
-        "entity_instances": "2",
         "schema": "AP242"
       },
       "identity": {
@@ -103,6 +97,14 @@
     }
   },
   "report": {
+    "coverage": {
+      "bytes_named_opaque": 28,
+      "bytes_structural": 539,
+      "bytes_typed": 30,
+      "bytes_unclassified": 0,
+      "data_sections": 2,
+      "entity_instances": 2
+    },
     "identity": {
       "classification": "classified",
       "dialects": {

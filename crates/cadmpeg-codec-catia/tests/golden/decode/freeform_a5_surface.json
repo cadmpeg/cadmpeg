@@ -164,20 +164,7 @@
       }
     },
     "source": {
-      "attributes": {
-        "brep_stream_len": "285",
-        "brep_stream_sha256": "7e57371680433a13a008f5d299786e128113596d3ffed3088a1b35f421ec7dbc",
-        "external_reference_count": "0",
-        "fbb_face_rows": "0",
-        "fbb_runs": "0",
-        "file_size": "548",
-        "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "548",
-        "preview_count": "0",
-        "stream_count": "2",
-        "vertex_records": "0"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {

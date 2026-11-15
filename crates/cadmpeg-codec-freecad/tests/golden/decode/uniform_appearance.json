@@ -2441,13 +2441,9 @@
     "source": {
       "attributes": {
         "application_domains": "Part",
-        "archive_entry_count": "6",
         "document_kind": "part",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "1",
-        "physical_archive_bytes": "3744",
-        "physical_ledger_spans": "43",
         "program_version": "1.0R39109 (Git)"
       },
       "identity": {

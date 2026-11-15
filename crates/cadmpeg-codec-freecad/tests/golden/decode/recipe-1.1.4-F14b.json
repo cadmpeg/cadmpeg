@@ -5844,13 +5844,9 @@
     "source": {
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
-        "archive_entry_count": "9",
         "document_kind": "part-design",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "11",
-        "physical_archive_bytes": "6923",
-        "physical_ledger_spans": "64",
         "program_version": "1.1R20260928 (Git shallow)"
       },
       "identity": {

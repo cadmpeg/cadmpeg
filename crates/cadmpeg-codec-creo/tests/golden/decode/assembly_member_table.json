@@ -216,21 +216,13 @@
     "native": {},
     "source": {
       "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "365",
         "model_name": "TOP_ASSY",
-        "section.0.length": "36",
         "section.0.name": "BasBasData",
-        "section.0.offset": "91",
         "section.0.raw_name": "BasBasData",
         "section.0.role": "model-data",
-        "section.1.length": "238",
         "section.1.name": "NeuAsmSld",
-        "section.1.offset": "127",
         "section.1.raw_name": "NeuAsmSld",
         "section.1.role": "metadata",
-        "section_count": "2",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 ASSEMBLY 2562 2120"
       },

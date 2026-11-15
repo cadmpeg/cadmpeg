@@ -3316,13 +3316,9 @@
     "source": {
       "attributes": {
         "application_domains": "Part,TechDraw",
-        "archive_entry_count": "11",
         "document_kind": "drawing",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "15",
-        "physical_archive_bytes": "8548",
-        "physical_ledger_spans": "78",
         "program_version": "1.1R45039 (Git)"
       },
       "identity": {

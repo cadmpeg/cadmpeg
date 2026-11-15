@@ -58,12 +58,6 @@
     "native": {},
     "source": {
       "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "294",
-        "bytes_typed": "513",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "7",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
       "identity": {
@@ -90,6 +84,14 @@
     }
   },
   "report": {
+    "coverage": {
+      "bytes_named_opaque": 0,
+      "bytes_structural": 294,
+      "bytes_typed": 513,
+      "bytes_unclassified": 0,
+      "data_sections": 1,
+      "entity_instances": 7
+    },
     "identity": {
       "classification": "classified",
       "dialects": {

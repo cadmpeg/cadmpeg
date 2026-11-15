@@ -105,13 +105,7 @@
       }
     },
     "source": {
-      "attributes": {
-        "external_reference_count": "0",
-        "file_size": "163",
-        "finjpl_segment_count": "0",
-        "outer_dir_offset": "36",
-        "preview_count": "0"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {

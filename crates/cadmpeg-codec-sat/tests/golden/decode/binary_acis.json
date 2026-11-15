@@ -143,7 +143,6 @@
     "source": {
       "attributes": {
         "acis_save_format_version": "21800",
-        "kernel_entity_count": "2",
         "kernel_family": "acis",
         "kernel_flags": "2",
         "product_family": "Autodesk Neutron",

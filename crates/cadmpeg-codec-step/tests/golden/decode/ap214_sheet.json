@@ -383,12 +383,6 @@
     "native": {},
     "source": {
       "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "290",
-        "bytes_typed": "2125",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "59",
         "schema": "AUTOMOTIVE_DESIGN"
       },
       "identity": {
@@ -415,6 +409,14 @@
     }
   },
   "report": {
+    "coverage": {
+      "bytes_named_opaque": 0,
+      "bytes_structural": 290,
+      "bytes_typed": 2125,
+      "bytes_unclassified": 0,
+      "data_sections": 1,
+      "entity_instances": 59
+    },
     "identity": {
       "classification": "classified",
       "dialects": {
