@@ -116,6 +116,23 @@ pub(crate) fn fill(
     }
     for feature in features {
         let Some((history_index, state, slots)) =
+            unbound_base_slots(feature, scopes, histories, bindings)
+        else {
+            continue;
+        };
+        let wanted = wants.entry(history_index).or_default();
+        for slot in slots {
+            wanted.push(Want {
+                origin: feature,
+                producer: Some(feature),
+                consumer: None,
+                state,
+                slot,
+            });
+        }
+    }
+    for feature in features {
+        let Some((history_index, state, slots)) =
             split_targets(feature, scopes, histories, bindings)
         else {
             continue;
@@ -153,6 +170,77 @@ pub(crate) fn fill(
     Ok(bodies_out)
 }
 
+/// The one history that holds both states of a scope exactly once: the
+/// history the scope binds, else the one that joins the two states.
+fn scope_history(
+    native: &str,
+    (current, previous): (i64, i64),
+    histories: &[AsmHistory],
+    bindings: &HashMap<String, String>,
+) -> Option<usize> {
+    let holds = |history: &AsmHistory| {
+        [current, previous].into_iter().all(|id| {
+            history
+                .states()
+                .iter()
+                .filter(|state| state.state_id == id)
+                .count()
+                == 1
+        })
+    };
+    match bindings.get(native) {
+        Some(bound) => {
+            let mut matches = histories
+                .iter()
+                .enumerate()
+                .filter(|(_, history)| history.id == *bound);
+            let (index, history) = matches.next()?;
+            (matches.next().is_none() && holds(history)).then_some(index)
+        }
+        None => {
+            let (history, _, _) =
+                super::unique_history_state_pair(histories, current, previous)?;
+            let index = histories
+                .iter()
+                .position(|candidate| std::ptr::eq(candidate, history))?;
+            holds(history).then_some(index)
+        }
+    }
+}
+
+/// The history, state and body slots that a Base Feature without a resolved
+/// result stored: the bodies its state inserts, one for each stored body.
+fn unbound_base_slots(
+    feature: &Feature,
+    scopes: &[DesignParameterScope],
+    histories: &[AsmHistory],
+    bindings: &HashMap<String, String>,
+) -> Option<(usize, i64, Vec<i64>)> {
+    if !matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: BodySelection::Native(_) | BodySelection::Unresolved,
+        })
+    ) {
+        return None;
+    }
+    let native = feature.native_ref.as_deref()?;
+    let scope = scopes.iter().find(|scope| scope.id == native)?;
+    let (current, previous) = (scope.history_state_id()?, scope.previous_history_state_id()?);
+    let stored = scope.base_feature_construction()?.body_entity_suffixes().len();
+    let index = scope_history(native, (current, previous), histories, bindings)?;
+    let state = histories[index]
+        .states()
+        .iter()
+        .find(|state| state.state_id == current)?;
+    let transition = state.transition.as_ref()?;
+    if transition.previous_state_id != Some(previous) {
+        return None;
+    }
+    let slots = transition.topology.bodies.inserted.clone();
+    (stored != 0 && slots.len() == stored).then_some((index, current, slots))
+}
+
 /// The history, input state and body slots a Split selects, when the scope
 /// binds one history that holds the input state and the feature's own state
 /// exactly once.
@@ -185,33 +273,7 @@ fn split_targets<'a>(
         .iter()
         .find(|scope| scope.id == native)?
         .history_state_id()?;
-    let holds = |history: &AsmHistory| {
-        [current, input].into_iter().all(|id| {
-            history
-                .states()
-                .iter()
-                .filter(|state| state.state_id == id)
-                .count()
-                == 1
-        })
-    };
-    let index = match bindings.get(native) {
-        Some(bound) => {
-            let mut matches = histories
-                .iter()
-                .enumerate()
-                .filter(|(_, history)| history.id == *bound);
-            let (index, history) = matches.next()?;
-            (matches.next().is_none() && holds(history)).then_some(index)?
-        }
-        None => {
-            let (history, _, _) = super::unique_history_state_pair(histories, current, input)?;
-            let index = histories
-                .iter()
-                .position(|candidate| std::ptr::eq(candidate, history))?;
-            holds(history).then_some(index)?
-        }
-    };
+    let index = scope_history(native, (current, input), histories, bindings)?;
     let mut slots = Vec::new();
     for id in ids {
         slots.push(id.rsplit(':').next()?.parse::<i64>().ok()?);
