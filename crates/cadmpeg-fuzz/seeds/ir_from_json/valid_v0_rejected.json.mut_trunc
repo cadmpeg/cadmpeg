@@ -1,8 +1,12 @@
 {
+  "fragment": false,
   "ir_version": "0",
   "decode_depth": "full",
   "units": {
-    "length": "millimeter"
+    "length": "millimeter",
+    "angle": "radian",
+    "mass": "kilogram",
+    "time": "second"
   },
   "tolerances": {
     "linear": 1e-6,
@@ -24,6 +28,12 @@
     "pcurves": [],
     "procedural_surfaces": [],
     "procedural_curves": [],
+    "assets": [],
     "features": [],
+    "feature_input_topologies": [],
+    "feature_result_topologies": [],
     "configurations": [],
-    "parameters": 
+    "parameters": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sk

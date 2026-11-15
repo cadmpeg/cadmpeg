@@ -11,92 +11,62 @@ use std::collections::{BTreeMap, HashSet};
 #[serde(deny_unknown_fields)]
 #[doc = include_str!("form-api-item.md")]
 pub struct FormInputs {
-    #[serde(
-        default,
-        skip_serializing_if = "BTreeMap::is_empty",
-        deserialize_with = "cadmpeg_core::distinct_keys::btree_map"
-    )]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     #[doc = include_str!("form-api-item.md")]
     pub parameters: BTreeMap<NonBlankString, String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[doc = include_str!("form-api-item.md")]
     pub references: Vec<NativeId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<Vec<NativeId>>")
     )]
     #[doc = include_str!("form-api-item.md")]
     pub reference_runs: Vec<Vec<NativeId>>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormNativeList>")
     )]
     #[doc = include_str!("form-api-item.md")]
     pub lists: Vec<FormNativeList>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormNativeReference>")
     )]
     #[doc = include_str!("form-api-item.md")]
     pub reference_evidence: Vec<FormNativeReference>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormPositionEvidence>")
     )]
     #[doc = include_str!("form-api-item.md")]
     pub position_evidence: Vec<FormPositionEvidence>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormOrderEvidence>")
     )]
     #[doc = include_str!("form-api-item.md")]
     pub order_evidence: Vec<FormOrderEvidence>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "schema", schemars(schema_with = "unique_form_vec::<u32>"))]
     #[doc = include_str!("form-api-item.md")]
     pub cardinality_evidence: Vec<u32>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormClosureEvidence>")
     )]
     #[doc = include_str!("form-api-item.md")]
     pub closure_evidence: Vec<FormClosureEvidence>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormResource>")
     )]
     #[doc = include_str!("form-api-item.md")]
     pub resource_evidence: Vec<FormResource>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormResourceStateEvidence>")
     )]
     #[doc = include_str!("form-api-item.md")]
     pub resource_state_evidence: Vec<FormResourceStateEvidence>,
-}
-
-impl FormInputs {
-    fn is_empty(&self) -> bool {
-        self.parameters.is_empty()
-            && self.references.is_empty()
-            && self.reference_runs.is_empty()
-            && self.lists.is_empty()
-            && self.reference_evidence.is_empty()
-            && self.position_evidence.is_empty()
-            && self.order_evidence.is_empty()
-            && self.cardinality_evidence.is_empty()
-            && self.closure_evidence.is_empty()
-            && self.resource_evidence.is_empty()
-            && self.resource_state_evidence.is_empty()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,7 +189,7 @@ pub enum FormReferenceRole {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "namespace", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[doc = include_str!("form-api-item.md")]
 pub enum FormNativeReferenceTarget {
     #[doc = include_str!("form-api-item.md")]
@@ -376,7 +346,7 @@ pub struct FormCageObservation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[doc = include_str!("form-api-item.md")]
 pub enum FormCageBinding {
     #[doc = include_str!("form-api-item.md")]
@@ -491,7 +461,7 @@ pub enum FormOrder {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[doc = include_str!("form-api-item.md")]
 pub enum FormMembership {
     #[doc = include_str!("form-api-item.md")]
@@ -555,9 +525,9 @@ impl JsonSchema for FormConstruction {
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         let mut schema = FormWire::json_schema(generator);
         schema.insert("allOf".into(), serde_json::json!([{
-            "if": {"required":["cages"], "properties":{"cages":{"type":"array"}}},
-            "then": {"properties":{"cages":{"uniqueItems":true},"cage_inputs":{"properties":{"membership":{"properties":{"state":{"const":"complete"}}}}}}},
-            "else": {"not":{"required":["cage_inputs"]}, "properties":{"cages":{"properties":{"membership":{"properties":{"state":{"const":"partial"}}}}}}}
+            "if": {"required":["cages"], "properties":{"cages":{"properties":{"kind":{"const":"complete"}}}}},
+            "then": {"properties":{"cages":{"properties":{"value":{"uniqueItems":true}}},"cage_inputs":{"properties":{"membership":{"properties":{"kind":{"const":"complete"}}}}}}},
+            "else": {"not":{"required":["cage_inputs"]}, "properties":{"cages":{"properties":{"value":{"properties":{"membership":{"properties":{"kind":{"const":"partial"}}}}}}}}}
         }]));
         schema
     }
@@ -1048,7 +1018,12 @@ struct FormEvidence {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 enum FormCagesWire {
     Complete(Vec<SubdId>),
     Retained(FormEvidence),
@@ -1059,7 +1034,6 @@ enum FormCagesWire {
 #[serde(deny_unknown_fields)]
 struct FormWire {
     cages: FormCagesWire,
-    #[serde(default, skip_serializing_if = "FormInputs::is_empty")]
     inputs: FormInputs,
     #[serde(
         default,

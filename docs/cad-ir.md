@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"10"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"11"`, whose wire form [`cadir-v11.md`](cadir-v11.md) states. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -200,7 +200,7 @@ Each feature has an ID, source-history `ordinal`, optional name, suppression sta
 
 Neutral definitions include directly stored geometry, solid and surface construction, direct editing, body composition, sketches, datums, holes, and patterns. A stored-geometry feature identifies retained exact bodies as outputs. A body extraction identifies the source body selection independently of its copied outputs. One `unresolved` definition covers every operation kind that is established without its construction operands; its `family` field names the kind, such as `datum_plane`, `datum_coordinate_system`, `loft`, or `freeform_surface`. A Boolean combination whose operation or operand construction cannot be completed retains the `combine` family as an unresolved operation. An edge fillet consumes an edge selection; a face blend keeps its two support-face selections distinct. Both carry a constant, variable, or unresolved radius law. `sew_bodies` joins an ordered body selection and carries an optional nonnegative gap tolerance. It remains distinct from `knit_surface`, whose operands are selected faces. `unstitch_faces` separates each selected face from its body into an individual surface body. A historical body set is ordered when each resolved body corresponds to the native member at the same position. A historical unordered body set records the resolved body membership and the ordered native members separately when only collective membership is established. A surface trim retains independently resolved face, path, and inside-or-outside region semantics. A surface extension independently retains its face selection, positive distance, and natural, linear, or perpendicular continuation law. A surface untrim retains its face selection, all, interior, exterior or selected trim loops, and signed exterior-boundary extension. `trim_bodies` keeps target and tool body selections distinct and records a forward, reverse, or unresolved retained side. `native` holds a feature with no neutral definition and carries its source kind, parameter map, and non-parameter property map. Length wrappers are millimeters and angle wrappers are radians.
 
-A `form` operation owns one checked construction. Complete membership stores its ordered cage IDs in the `cages` array; a known empty session stores `[]`. Partial membership stores canonical `observations` and a `membership` object under `cages`. The membership states its known cardinality when available, its source, assumed, or unknown order, and its confirmed member positions. Decoded observations outside membership are candidates. Every decoded member and candidate references an existing subdivision cage.
+A `form` operation owns one checked construction. Complete membership stores its ordered cage IDs in the `value` array of the `cages` `complete` arm; a known empty session stores `[]`. Partial membership stores canonical `observations` and a `membership` object in the `value` of the `cages` `retained` arm. The membership states its known cardinality when available, its source, assumed, or unknown order, and its confirmed member positions. Decoded observations outside membership are candidates. Every decoded member and candidate references an existing subdivision cage.
 
 `inputs` retains exact native parameter expressions, ordered qualified references, and native counted lists with their original member positions. Reference evidence records its source, role, slot, optional run position, inline type, and local, segment, or document target. Document targets retain their asset, type, link and version text. Position and cardinality evidence retain conflicting claims without selecting a second cage list. A position source identifies the native list when its path establishes that association. Resource evidence retains independently named resources. Each observation retains qualified native paths and its decoded cage or resource availability. Resource entries keep their literal archive spelling and a typed native anchor. Identity rewriting visits all typed cage and native references, including absent native endpoints. Parameter expressions, foreign link text and archive entry text retain their literal values.
 
@@ -420,7 +420,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "10"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "11"` ([`cadir-v11.md`](cadir-v11.md) §3.6). The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -434,9 +434,10 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "10",
+  "fragment": false,
+  "ir_version": "11",
   "decode_depth": "full",
-  "units": { "length": "millimeter" },
+  "units": { "length": "millimeter", "angle": "radian", "mass": "kilogram", "time": "second" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {
     "bodies": [

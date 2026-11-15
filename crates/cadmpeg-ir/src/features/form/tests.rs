@@ -56,21 +56,36 @@ fn partial() -> FormConstruction {
     .unwrap()
 }
 
+fn no_inputs() -> serde_json::Value {
+    serde_json::to_value(FormInputs::default()).unwrap()
+}
+
+/// The wire of a Form operation whose `cages` arm is `kind`.
+fn form_wire(kind: &str, cages: serde_json::Value, inputs: serde_json::Value) -> serde_json::Value {
+    let mut form = serde_json::json!({"cages": {"kind": kind}});
+    form["cages"]["value"] = cages;
+    form["inputs"] = inputs;
+    let mut operation = serde_json::json!({"kind": "form"});
+    operation["value"] = form;
+    operation
+}
+
 #[test]
 fn complete_form_arrays_retain_their_v10_values() {
     for cages in [
         serde_json::json!([]),
         serde_json::json!(["test:model:subd#1", "test:model:subd#2"]),
     ] {
-        let value = serde_json::json!({"definition":"form","cages":cages});
+        let value = form_wire("complete", cages, no_inputs());
         let operation: FeatureOperation = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(operation).unwrap(), value);
     }
     let unknown =
         serde_json::to_value(FeatureOperation::Form(FormConstruction::default())).unwrap();
-    assert!(unknown["cages"].is_object());
-    assert_eq!(unknown["cages"]["membership"]["state"], "partial");
-    assert!(unknown["cages"]["membership"].get("cardinality").is_none());
+    let cages = &unknown["value"]["cages"];
+    assert_eq!(cages["kind"], "retained");
+    assert_eq!(cages["value"]["membership"]["kind"], "partial");
+    assert!(cages["value"]["membership"].get("cardinality").is_none());
 }
 
 #[test]
@@ -92,14 +107,17 @@ fn partial_and_complete_forms_retain_inputs_candidates_and_certainty() {
     )
     .unwrap();
     let value = serde_json::to_value(FeatureOperation::Form(complete.clone())).unwrap();
-    assert_eq!(value["cages"], serde_json::json!(["test:model:subd#1"]));
-    assert!(value["cage_inputs"].is_object());
+    assert_eq!(
+        value["value"]["cages"],
+        serde_json::json!({"kind": "complete", "value": ["test:model:subd#1"]})
+    );
+    assert!(value["value"]["cage_inputs"].is_object());
     assert_eq!(
         serde_json::from_value::<FeatureOperation>(value.clone()).unwrap(),
         FeatureOperation::Form(complete)
     );
     let mut conflicting = value;
-    conflicting["cages"] = serde_json::json!([]);
+    conflicting["value"]["cages"]["value"] = serde_json::json!([]);
     assert!(serde_json::from_value::<FeatureOperation>(conflicting).is_err());
     assert_eq!(construction.referenced_cages().count(), 2);
     assert_eq!(construction.committed_cages().count(), 1);
@@ -197,12 +215,16 @@ fn form_admission_rejects_invalid_members_and_native_positions() {
         construction.membership.clone()
     )
     .is_err());
+    let mut unknown = form_wire("complete", serde_json::json!([]), no_inputs());
+    unknown["value"]["unknown"] = 1.into();
+    let mut null_inputs = form_wire("complete", serde_json::json!([]), no_inputs());
+    null_inputs["value"]["cage_inputs"] = serde_json::Value::Null;
     for value in [
-        r#"{"definition":"form","cages":[],"unknown":1}"#,
-        r#"{"definition":"form","cages":[],"cage_inputs":null}"#,
-        r#"{"definition":"form","cages":[],"inputs":{"parameters":{"width":"a","width":"b"}}}"#,
+        unknown.to_string(),
+        null_inputs.to_string(),
+        r#"{"kind":"form","value":{"cages":{"kind":"complete","value":[]},"inputs":{"parameters":{"width":"a","width":"b"},"references":[],"lists":[]}}}"#.to_owned(),
     ] {
-        assert!(serde_json::from_str::<FeatureOperation>(value).is_err());
+        assert!(serde_json::from_str::<FeatureOperation>(&value).is_err());
     }
 }
 
@@ -278,17 +300,17 @@ fn form_schema_covers_legacy_arrays_and_retained_construction() {
         .any(|field| field == "cage_inputs"));
     let condition = &schema["allOf"][0];
     assert_eq!(
-        condition["then"]["properties"]["cages"]["uniqueItems"],
+        condition["then"]["properties"]["cages"]["properties"]["value"]["uniqueItems"],
         true
     );
     assert_eq!(
         condition["then"]["properties"]["cage_inputs"]["properties"]["membership"]["properties"]
-            ["state"]["const"],
+            ["kind"]["const"],
         "complete"
     );
     assert_eq!(
-        condition["else"]["properties"]["cages"]["properties"]["membership"]["properties"]["state"]
-            ["const"],
+        condition["else"]["properties"]["cages"]["properties"]["value"]["properties"]["membership"]
+            ["properties"]["kind"]["const"],
         "partial"
     );
 }
@@ -527,9 +549,11 @@ fn known_bindings_can_have_unknown_membership_and_inactive_resources_cannot_be_m
         serde_json::json!(["invalid"]),
         serde_json::json!(["test:model:subd#1", "test:model:subd#1"]),
     ] {
-        assert!(serde_json::from_value::<FeatureOperation>(
-            serde_json::json!({"definition":"form","cages":cages})
-        )
+        assert!(serde_json::from_value::<FeatureOperation>(form_wire(
+            "complete",
+            cages,
+            no_inputs()
+        ))
         .is_err());
     }
 }
@@ -537,8 +561,16 @@ fn known_bindings_can_have_unknown_membership_and_inactive_resources_cannot_be_m
 #[test]
 fn form_candidate_and_native_references_require_checked_identities() {
     for value in [
-        serde_json::json!({"definition":"form","cages":{"observations":[{"paths":[],"binding":{"state":"decoded","cage":"invalid"}}],"membership":{"state":"partial","order":"unknown","members":[]}}}),
-        serde_json::json!({"definition":"form","cages":[],"inputs":{"references":["invalid"]}}),
+        form_wire(
+            "retained",
+            serde_json::json!({"observations":[{"paths":[],"binding":{"kind":"decoded","cage":"invalid"}}],"membership":{"kind":"partial","order":"unknown","members":[]}}),
+            no_inputs(),
+        ),
+        form_wire(
+            "complete",
+            serde_json::json!([]),
+            serde_json::json!({"parameters": {}, "references": ["invalid"], "lists": []}),
+        ),
     ] {
         assert!(serde_json::from_value::<FeatureOperation>(value).is_err());
     }
@@ -546,13 +578,12 @@ fn form_candidate_and_native_references_require_checked_identities() {
 
 #[test]
 fn complete_form_rejects_contradictory_supplemental_membership_claims() {
-    let valid = serde_json::json!({
-        "cages": ["test:model:subd#1"],
-        "inputs": {
-            "cardinality_evidence": [1],
-            "position_evidence": [{"observation": 0, "ordinal": 0}]
-        }
-    });
+    let mut valid = serde_json::to_value(
+        FormConstruction::complete(vec![SubdId::mint("test:model:subd#1").unwrap()]).unwrap(),
+    )
+    .unwrap();
+    valid["inputs"]["cardinality_evidence"] = serde_json::json!([1]);
+    valid["inputs"]["position_evidence"] = serde_json::json!([{"observation": 0, "ordinal": 0}]);
     assert!(serde_json::from_value::<FormConstruction>(valid.clone()).is_ok());
     let mut wrong_count = valid.clone();
     wrong_count["inputs"]["cardinality_evidence"] = serde_json::json!([2]);
@@ -603,15 +634,26 @@ fn form_wire_rejects_duplicate_evidence_and_invalid_type_claims() {
         serde_json::json!({"cages":[],"inputs":{"cardinality_evidence":[0,0]}}),
         serde_json::json!({"cages":[],"inputs":{"resource_evidence":[{"source":"test:stream:record#1","entry":"literal"},{"source":"test:stream:record#1","entry":"literal"}]}}),
         serde_json::json!({"cages":["test:model:subd#1"],"inputs":{"position_evidence":[{"observation":0,"ordinal":0},{"observation":0,"ordinal":0}]}}),
-        serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"inline_type_guid":"not-a-guid","target":{"namespace":"local","target":"test:stream:record#2"}}]}}),
+        serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"inline_type_guid":"not-a-guid","target":{"kind":"local","target":"test:stream:record#2"}}]}}),
         serde_json::json!({"cages":[],"inputs":{"reference_runs":[["test:stream:record#1"],["test:stream:record#1","test:stream:record#2"]]}}),
-        serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"inline_type_guid":"11111111-1111-4111-8111-111111111111","target":{"namespace":"null"}}]}}),
+        serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"inline_type_guid":"11111111-1111-4111-8111-111111111111","target":{"kind":"null"}}]}}),
     ];
-    for value in bad {
+    let wire = |mut value: serde_json::Value| {
+        let cages = value["cages"].take();
+        let mut inputs = no_inputs();
+        inputs
+            .as_object_mut()
+            .unwrap()
+            .extend(value["inputs"].as_object().unwrap().clone());
+        serde_json::json!({"cages":{"kind":"complete","value":cages},"inputs":inputs})
+    };
+    for value in bad.into_iter().map(wire) {
         assert!(serde_json::from_value::<FormConstruction>(value).is_err());
     }
     for namespace in ["null", "unreadable", "unvisited"] {
-        let value = serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"target":{"namespace":namespace}}]}});
+        let value = wire(
+            serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"target":{"kind":namespace}}]}}),
+        );
         let parsed: FormConstruction = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(parsed).unwrap(), value);
         let mut unexpected = value;

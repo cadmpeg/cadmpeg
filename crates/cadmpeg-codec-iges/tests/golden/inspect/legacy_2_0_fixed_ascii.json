@@ -6,11 +6,11 @@
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "start",
       "role": "section",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 81
       }
     },
@@ -19,11 +19,11 @@
         "cards": "2",
         "line_endings": "lf:2"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "global",
       "role": "section",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 162
       }
     },
@@ -32,11 +32,11 @@
         "cards": "2",
         "line_endings": "lf:2"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "directory-entry",
       "role": "section",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 162
       }
     },
@@ -45,11 +45,11 @@
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "parameter-data",
       "role": "section",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 81
       }
     },
@@ -58,24 +58,22 @@
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "terminate",
       "role": "section",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 81
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
         "admission": {
-          "unverified": {
-            "using": "5.3-fixed-ascii"
-          }
+          "kind": "unverified",
+          "using": "5.3-fixed-ascii"
         },
         "declared": {
           "effective_version": "2.0",
@@ -84,16 +82,19 @@
         },
         "dialect": "iges:2.0-fixed-ascii"
       }
-    }
+    },
+    "kind": "classified"
   },
   "losses": [
     {
       "code": {
-        "code": "source.dialect-unverified",
-        "kind": "source_dialect_unverified",
-        "namespace": "iges",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "kind": "namespaced",
+        "value": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "iges",
+          "strict_floor": "warning"
+        }
       },
       "message": "IGES Global version flag 3 names effective specification version 2.0; this decode interpreted the file with the semantics verified for versions 4.0, 5.0, 5.1, 5.2, 5.3",
       "severity": "warning"

@@ -151,6 +151,7 @@ pub fn document_local_sha256_without_carried(
     let unknowns = reduced_unknowns(ctx, ir, format, source_image_id)?;
     let document = (|| {
         Ok::<_, CodecError>(NormalizedDocument {
+            fragment: ir.fragment,
             ir_version: ir.ir_version(),
             source: source.map(SourceMeta::normalized_digest_copy),
             units: CanonicalUnitsWire::default(),
@@ -192,6 +193,7 @@ fn reduced_unknowns(
 /// records the depth.
 #[derive(Serialize)]
 struct NormalizedDocument<'a> {
+    fragment: bool,
     ir_version: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<SourceMeta>,
@@ -600,7 +602,7 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
-            "2cf1aea125851f8aa50d45c4fbf1150a075f8c8f7525e9f53d48cc49921f2135"
+            "31bda5fde27bacb08bcf92cd451780dd72dcc5e96d0c804640da64f449dfe14e"
         );
         assert_eq!(
             document_local_sha256(
@@ -611,7 +613,7 @@ mod tests {
                 "pin:test:source-image#0"
             )
             .unwrap(),
-            "75ab44e54fa118cbd10ff244c38f890c60bfef5149ccb742136cec0a589f6178"
+            "fb8a416bddfb499f9318540ae3b04091a185cf0bdf23f7705f0dbe83e4c4304e"
         );
     }
 
@@ -672,11 +674,12 @@ mod tests {
     /// ```text
     ///   "source": {
     ///     "identity": {
-    ///       "classification": "classified",
+    ///       "kind": "classified",
     ///       "dialects": {
     ///         "primary": {
     ///           "dialect": "pin:test",
-    ///           "admission": "admitted"
+    ///           "declared": {},
+    ///           "admission": {"kind": "admitted"}
     ///         },
     ///         "extra": []
     ///       }
@@ -697,7 +700,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "cdc604f944f65c3bc2ebb64098e127197c949b233784db34dcf2a6310d3a6b92"
+            "70c604780224f930b3faccc2645ee01b3b67c2142f847c21aabc439c770294a4"
         );
         assert_eq!(
             document_local_sha256(

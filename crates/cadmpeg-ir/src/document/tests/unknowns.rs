@@ -42,7 +42,7 @@ fn reserved_unknown_arena_accepts_owned_and_borrowed_records() {
         value["native"]["test"]["unknowns"],
         serde_json::json!([
             {"id": "test:native:unknown#a", "links": ["test:model:body#0"]},
-            {"id": "test:native:unknown#b"}
+            {"id": "test:native:unknown#b", "links": []}
         ])
     );
 }

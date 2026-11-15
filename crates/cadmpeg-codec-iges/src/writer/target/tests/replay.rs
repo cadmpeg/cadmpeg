@@ -89,7 +89,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
     let format = source.format().to_owned();
     unclassified.source = Some(
         serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": format},
+            "identity": {"kind": "unclassified", "format": format},
             "attributes": source.attributes,
         }))
         .expect("unclassified source deserializes"),

@@ -245,7 +245,7 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
 }
 
 #[test]
-fn current_json_without_configurations_defaults_to_empty() {
+fn current_json_without_configurations_is_refused() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut value = serde_json::to_value(&ir).unwrap();
     value
@@ -254,14 +254,18 @@ fn current_json_without_configurations_defaults_to_empty() {
         .unwrap()
         .remove("configurations");
 
-    let decoded: CadIr = serde_json::from_value(value).unwrap();
-    assert!(decoded.model.configurations.is_empty());
+    let error = serde_json::from_value::<CadIr>(value)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("missing field `configurations`"), "{error}");
 }
 
-/// The structural edge is on the wire once, inside the owning tree node's
-/// ordered children, and a tree child states no regeneration parent.
-#[test]
-fn feature_parent_wire_is_derived_from_its_single_owner() {
+/// A tree node `parent` that owns `child`, its one history child.
+fn tree_node_model() -> (
+    Model,
+    crate::features::FeatureId,
+    crate::features::FeatureId,
+) {
     use crate::features::{
         Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
     };
@@ -311,12 +315,21 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         features: vec![parent, child],
         ..Model::default()
     };
+    (model, parent_id, child_id)
+}
 
+/// The structural edge is on the wire once, inside the owning tree node's
+/// ordered children, and a tree child states no regeneration parent.
+#[test]
+fn feature_parent_wire_is_derived_from_its_single_owner() {
+    use crate::features::{Feature, FeatureDefinition, FeatureOperation};
+
+    let (model, parent_id, child_id) = tree_node_model();
     let value = serde_json::to_value(&model).unwrap();
     assert!(value["features"][1].get("parent").is_none());
     assert!(value["features"][1].get("regeneration_parent").is_none());
     assert_eq!(
-        value["features"][0]["definition"]["children"]["children"][0],
+        value["features"][0]["definition"]["value"]["value"]["children"]["children"][0],
         child_id.as_str()
     );
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
@@ -376,27 +389,9 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
 /// The deleted `parent` key is refused at the level it was deleted from.
 #[test]
 fn feature_wire_refuses_the_deleted_parent_key() {
-    let wire = serde_json::json!({
-        "features": [
-            {
-                "id": "test:model:feature#parent",
-                "ordinal": 0,
-                "suppressed": null,
-                "definition": {
-                    "definition": "tree_node",
-                    "role": "history",
-                    "children": {"children": ["test:model:feature#child"], "active_child": "test:model:feature#child"}
-                }
-            },
-            {
-                "id": "test:model:feature#child",
-                "ordinal": 1,
-                "suppressed": null,
-                "parent": "test:model:feature#parent",
-                "definition": {"definition": "stored_geometry"}
-            }
-        ]
-    });
+    let (model, parent_id, _) = tree_node_model();
+    let mut wire = serde_json::to_value(&model).unwrap();
+    wire["features"][1]["parent"] = serde_json::json!(parent_id.as_str());
     let error = serde_json::from_value::<Model>(wire)
         .unwrap_err()
         .to_string();
@@ -536,11 +531,16 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
 
     let value = serde_json::to_value(&ir).unwrap();
     let model = value["model"].as_object().unwrap();
-    assert_eq!(model["surfaces"][0]["geometry"]["kind"], "plane");
-    assert!(model["surfaces"][0]["geometry"].get("cache").is_none());
+    assert_eq!(model["surfaces"][0]["geometry"]["kind"], "solved");
+    assert_eq!(model["surfaces"][0]["geometry"]["value"]["kind"], "plane");
+    assert!(model["surfaces"][0]["geometry"]["value"]
+        .get("cache")
+        .is_none());
     assert_eq!(model["procedural_surfaces"][0]["surface"], surface.as_str());
     assert_eq!(model["curves"][0]["geometry"]["kind"], "procedural");
-    assert!(model["curves"][0]["geometry"].get("cache").is_none());
+    assert!(model["curves"][0]["geometry"]["value"]
+        .get("cache")
+        .is_none());
     assert_eq!(model["procedural_curves"][0]["curve"], curve.as_str());
     assert_eq!(serde_json::from_value::<CadIr>(value).unwrap(), ir);
 
@@ -637,7 +637,7 @@ fn procedural_curve_attachment_moves_solved_cache() {
 }
 
 #[test]
-fn current_json_without_parameters_defaults_to_empty() {
+fn current_json_without_parameters_is_refused() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut value = serde_json::to_value(&ir).unwrap();
     value
@@ -646,26 +646,32 @@ fn current_json_without_parameters_defaults_to_empty() {
         .unwrap()
         .remove("parameters");
 
-    let decoded: CadIr = serde_json::from_value(value).unwrap();
-    assert!(decoded.model.parameters.is_empty());
+    let error = serde_json::from_value::<CadIr>(value)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("missing field `parameters`"), "{error}");
 }
 
 #[test]
-fn current_json_without_sketch_arenas_defaults_to_empty() {
+fn current_json_without_a_sketch_arena_is_refused() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let mut value = serde_json::to_value(&ir).unwrap();
-    let model = value
-        .get_mut("model")
-        .and_then(serde_json::Value::as_object_mut)
-        .unwrap();
-    model.remove("sketches");
-    model.remove("sketch_entities");
-    model.remove("sketch_constraints");
+    let document = serde_json::to_value(&ir).unwrap();
+    for arena in ["sketches", "sketch_entities", "sketch_constraints"] {
+        let mut value = document.clone();
+        value
+            .get_mut("model")
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap()
+            .remove(arena);
 
-    let decoded: CadIr = serde_json::from_value(value).unwrap();
-    assert!(decoded.model.sketches.is_empty());
-    assert!(decoded.model.sketch_entities.is_empty());
-    assert!(decoded.model.sketch_constraints.is_empty());
+        let error = serde_json::from_value::<CadIr>(value)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains(&format!("missing field `{arena}`")),
+            "{error}"
+        );
+    }
 }
 
 #[test]
@@ -717,7 +723,7 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
         (Some(serde_json::Value::String("7".into())), "Some(\"7\")"),
         (Some(serde_json::Value::String("8".into())), "Some(\"8\")"),
         (Some(serde_json::Value::String("9".into())), "Some(\"9\")"),
-        (Some(serde_json::Value::String("11".into())), "Some(\"11\")"),
+        (Some(serde_json::Value::String("12".into())), "Some(\"12\")"),
         (Some(serde_json::Value::String("37".into())), "Some(\"37\")"),
         (Some(serde_json::Value::String("36".into())), "Some(\"36\")"),
         (Some(serde_json::Value::String("35".into())), "Some(\"35\")"),
@@ -889,7 +895,7 @@ fn every_design_arena_is_classified_design() {
 /// its format once and a classified one never restates its payload's format.
 #[test]
 fn an_unclassified_source_states_its_format_inside_the_identity() {
-    let stored = "{\"identity\":{\"classification\":\"unclassified\",\"format\":\"rhino\"},\
+    let stored = "{\"identity\":{\"kind\":\"unclassified\",\"format\":\"rhino\"},\
                   \"attributes\":{\"object_count\":\"3\"}}";
     let source: SourceMeta = serde_json::from_str(stored).unwrap();
 
@@ -899,7 +905,7 @@ fn an_unclassified_source_states_its_format_inside_the_identity() {
     let rewritten = serde_json::to_string(&source).unwrap();
     assert_eq!(
         rewritten,
-        "{\"identity\":{\"classification\":\"unclassified\",\"format\":\"rhino\"},\
+        "{\"identity\":{\"kind\":\"unclassified\",\"format\":\"rhino\"},\
          \"attributes\":{\"object_count\":\"3\"}}"
     );
     assert_eq!(
@@ -926,7 +932,7 @@ fn a_classified_source_carries_its_format_once() {
     assert_eq!(source.dialect(), Some(&matched));
     assert_eq!(source.dialects(), Some(&layers));
     let rendered = serde_json::to_value(&source).unwrap();
-    assert_eq!(rendered["identity"]["classification"], "classified");
+    assert_eq!(rendered["identity"]["kind"], "classified");
     assert!(rendered["identity"].get("format").is_none());
     assert!(rendered["identity"]["dialects"]["primary"]
         .get("format")
@@ -1014,7 +1020,10 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     assert_eq!(model.feature_tree_parent(&child_id), None);
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
     let wire = serde_json::to_value(&model).unwrap();
-    assert!(wire["features"][0]["definition"].get("children").is_none());
+    assert_eq!(
+        wire["features"][0]["definition"]["value"]["value"]["children"],
+        serde_json::json!({"children": []})
+    );
     assert_eq!(
         wire["features"][1]["regeneration_parent"],
         parent_id.as_str()
@@ -1027,7 +1036,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
 
     // The structural edge is stated once, by the owning tree node's children.
     let mut owned = wire;
-    owned["features"][0]["definition"]["children"]["children"] =
+    owned["features"][0]["definition"]["value"]["value"]["children"]["children"] =
         serde_json::json!([child_id.as_str()]);
     let error = serde_json::from_value::<Model>(owned)
         .unwrap_err()
@@ -1035,15 +1044,8 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     assert!(error.contains("states no regeneration parent"), "{error}");
 }
 
-/// The live document route reads `feature.name` through
-/// [`crate::features::FeatureRowWire`], and absence is the one spelling that
-/// route produces: `FeatureWriteWire` omits the key for `None`. A stated
+/// Every optional feature key is left out when it holds no value, so a stated
 /// `null` is refused by name.
-///
-/// `suppressed` is the counter-case in the same record: its writing
-/// declaration states no `skip_serializing_if`, so `null` is that key's own
-/// spelling, the same document reads it back, and the key is required. Leaving
-/// it out is refused by name.
 #[test]
 fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
@@ -1068,7 +1070,15 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
     let canonical = ir.to_canonical_json().unwrap();
     let document: serde_json::Value = serde_json::from_str(&canonical).unwrap();
 
-    for key in ["name", "source_tag", "source_text", "native_ref"] {
+    for key in [
+        "product_definition",
+        "name",
+        "suppressed",
+        "regeneration_parent",
+        "source_tag",
+        "source_text",
+        "native_ref",
+    ] {
         let mut value = document.clone();
         value["model"]["features"][0]
             .as_object_mut()
@@ -1081,24 +1091,6 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
             "feature.{key}: {error}"
         );
     }
-
-    let mut value = document.clone();
-    value["model"]["features"][0]
-        .as_object_mut()
-        .unwrap()
-        .insert("suppressed".to_owned(), serde_json::Value::Null);
-    let json = serde_json::to_string(&value).unwrap();
-    let read = CadIr::from_json(&json).unwrap();
-    assert_eq!(read.model.features[0].suppressed, None);
-
-    let mut value = document;
-    value["model"]["features"][0]
-        .as_object_mut()
-        .unwrap()
-        .remove("suppressed");
-    let json = serde_json::to_string(&value).unwrap();
-    let error = CadIr::from_json(&json).unwrap_err().to_string();
-    assert!(error.contains("missing field `suppressed`"), "{error}");
 }
 
 #[test]
