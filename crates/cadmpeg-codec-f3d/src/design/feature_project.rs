@@ -7734,35 +7734,34 @@ fn project_rectangular_pattern_scalars(
         },
         |distribution| !distribution.total_extent.value,
     );
-    let direction_one_active = construction.u_count() > 1 && construction.u_extent() != 0.0;
-    let stored_symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
-    let symmetric = stored_symmetric && direction_one_active;
-    if stored_symmetric && !direction_one_active {
-        losses.push(
-            crate::loss::F3dLossCode::FeatureRectangularPatternInactiveSymmetricDropped.note(format!(
-                "RectangularPattern scope {} drops the symmetric flag of its inactive direction one.",
-                scope.id
-            )),
-        );
-    }
+    let stored_symmetric = distribution.map_or([false; 2], |distribution| {
+        [
+            distribution.symmetric.value,
+            distribution.symmetric_two.value,
+        ]
+    });
     let payload_names_direction_one = construction.secondary_direction().is_some();
-    if symmetric && !adjacent {
-        losses.push(
-            crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.note(format!(
-                "RectangularPattern scope {} reads the total extent of its symmetric direction one as the span from the first to the last instance.",
-                scope.id
-            )),
-        );
-    }
-    for (axis, (count, extent)) in [
+    let mut symmetric_extents = Vec::new();
+    for (axis, ((count, extent), stored_symmetric)) in [
         (construction.u_count(), construction.u_extent()),
         (construction.v_count(), construction.v_extent()),
     ]
     .into_iter()
+    .zip(stored_symmetric)
     .enumerate()
     {
         let payload_direction = axis == 1 && construction.secondary_direction().is_some();
         let axis_active = count > 1 && extent != 0.0;
+        let symmetric = stored_symmetric && axis_active;
+        if stored_symmetric && !axis_active {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureRectangularPatternInactiveSymmetricDropped.note(format!(
+                    "RectangularPattern scope {} drops the symmetric flag of its inactive direction {}.",
+                    scope.id,
+                    ["one", "two"][axis]
+                )),
+            );
+        }
         let record =
             if payload_direction || !(axis_active || (axis == 0 && payload_names_direction_one)) {
                 None
@@ -7815,7 +7814,10 @@ fn project_rectangular_pattern_scalars(
             f64::from(intervals.get())
         };
         let spacing = PositiveLength::new(extent.abs() * 10.0 / divisor)?;
-        active.push((count, spacing, direction));
+        if symmetric && !axis_adjacent {
+            symmetric_extents.push(["one", "two"][axis]);
+        }
+        active.push((count, spacing, direction, symmetric));
     }
     let instance_direction = construction.instances().and_then(|instances| {
         let first = &instances.frames().next()?.transform.value;
@@ -7827,11 +7829,11 @@ fn project_rectangular_pattern_scalars(
         );
         cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(delta)
     });
-    let (count, spacing, direction, second) = match active.as_slice() {
+    let (count, spacing, direction, symmetric, second) = match active.as_slice() {
         // The instance run is the established direction of a single-direction
         // pattern; a direction record only fills it in when the run is absent
         // and must agree with it otherwise.
-        [(count, spacing, direction)] => {
+        [(count, spacing, direction, symmetric)] => {
             let direction = match (instance_direction, *direction) {
                 (Some(run), Some(record))
                     if 1.0 - run.as_raw().dot(*record.as_raw())
@@ -7848,19 +7850,26 @@ fn project_rectangular_pattern_scalars(
                 }
                 (run, record) => run.or(record),
             };
-            (*count, *spacing, direction, None)
+            (*count, *spacing, direction, *symmetric, None)
         }
-        [(count, spacing, direction), (second_count, second_spacing, Some(second_direction))] => (
-            *count,
-            *spacing,
-            *direction,
-            Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                direction: cadmpeg_ir::features::FeatureDirection3::from(*second_direction),
-                spacing: *second_spacing,
-                count: *second_count,
-                symmetric: false,
-            }),
-        ),
+        [(count, spacing, direction, symmetric), second] => {
+            let (second_count, second_spacing, Some(second_direction), second_symmetric) = second
+            else {
+                return None;
+            };
+            (
+                *count,
+                *spacing,
+                *direction,
+                *symmetric,
+                Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
+                    direction: cadmpeg_ir::features::FeatureDirection3::from(*second_direction),
+                    spacing: *second_spacing,
+                    count: *second_count,
+                    symmetric: *second_symmetric,
+                }),
+            )
+        }
         _ => return None,
     };
     let pattern = PatternKind::new(PatternTransform::Linear {
@@ -7881,6 +7890,17 @@ fn project_rectangular_pattern_scalars(
             "RectangularPattern scope {} reads its distances as seed-to-final-instance extents: direction record {} stores distance type 10 without a readable distribution block.",
             scope.id, record.record_index
         )));
+    }
+    if !symmetric_extents.is_empty() {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.note(
+                format!(
+                    "RectangularPattern scope {} reads the total extent of its symmetric direction {} as the span from the first to the last instance.",
+                    scope.id,
+                    symmetric_extents.join(" and ")
+                ),
+            ),
+        );
     }
     if direction.is_none() {
         losses.push(

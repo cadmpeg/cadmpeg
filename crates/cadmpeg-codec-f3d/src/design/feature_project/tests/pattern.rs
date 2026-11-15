@@ -938,6 +938,10 @@ fn coincident_direction_scope_with_seed_words(
                                 value: symmetric,
                                 offset: 109,
                             },
+                            symmetric_two: crate::records::identity::Located {
+                                value: false,
+                                offset: 110,
+                            },
                             total_extent: crate::records::identity::Located {
                                 value: total_extent,
                                 offset: 158,
@@ -1120,6 +1124,10 @@ fn a_payload_seed_kind_or_body_reference_that_disagrees_with_the_seed_group_is_c
             symmetric: Located {
                 value: false,
                 offset: 109,
+            },
+            symmetric_two: Located {
+                value: false,
+                offset: 110,
             },
             total_extent: Located {
                 value: false,
@@ -1470,4 +1478,112 @@ fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() 
     assert_eq!(count, 2);
     assert!(!symmetric);
     assert_eq!(codes(&losses), [placement]);
+}
+
+/// `scope` with a pattern payload distribution that stores the symmetric
+/// bytes of both directions and the given distance type.
+fn with_distribution(
+    scope: &DesignParameterScope,
+    [one, two]: [bool; 2],
+    total_extent: bool,
+    counts: Option<(u32, f64)>,
+) -> DesignParameterScope {
+    use crate::records::feature::patterns::{
+        DesignRectangularPatternConstructionWire, DesignRectangularPatternDistribution,
+    };
+    use crate::records::identity::Located;
+    let mut wire = DesignRectangularPatternConstructionWire::from(
+        scope.rectangular_pattern_construction().unwrap().clone(),
+    );
+    if let Some((u_count, u_extent)) = counts {
+        wire.u_count = u_count;
+        wire.u_extent = u_extent;
+        // An inactive direction one keeps no direction record.
+        wire.directions.remove(0);
+    }
+    wire.distribution = Some(DesignRectangularPatternDistribution {
+        record_index: 15,
+        symmetric: Located {
+            value: one,
+            offset: 109,
+        },
+        symmetric_two: Located {
+            value: two,
+            offset: 110,
+        },
+        total_extent: Located {
+            value: total_extent,
+            offset: 158,
+        },
+        compute_option: Located {
+            value: 2,
+            offset: 146,
+        },
+        seed_kind: Located {
+            value: 0,
+            offset: 150,
+        },
+        body_references: Located {
+            value: 0,
+            offset: 134,
+        },
+        untyped_body_references: 0,
+    });
+    let mut scope = scope.clone();
+    if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::RectangularPattern(slot) =
+        scope.payload_mut()
+    {
+        *slot = Some(DesignRectangularPatternConstruction::try_from(wire).unwrap());
+    }
+    scope
+}
+
+/// The symmetric flags of the two directions of a projected linear pattern.
+fn symmetric_flags(scope: &DesignParameterScope) -> Option<(bool, Option<bool>)> {
+    let definition =
+        project_rectangular_pattern_scalars(scope, &[], &[], &[], &[], &mut Vec::new())?;
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = definition else {
+        panic!("rectangular pattern definition");
+    };
+    let PatternTransform::Linear {
+        symmetric, second, ..
+    } = pattern.definition().clone()
+    else {
+        panic!("linear rectangular pattern");
+    };
+    Some((symmetric, second.map(|second| second.symmetric)))
+}
+
+#[test]
+fn rectangular_pattern_carries_the_symmetric_byte_of_each_direction() {
+    let scope = two_direction_scope(vec![
+        direction_record(20, [2.0, 0.0, 0.0]),
+        direction_record(30, [0.0, 2.5, 0.0]),
+    ]);
+    for flags in [[false, false], [true, false], [false, true], [true, true]] {
+        assert_eq!(
+            symmetric_flags(&with_distribution(&scope, flags, false, None)),
+            Some((flags[0], Some(flags[1]))),
+            "{flags:?}"
+        );
+    }
+}
+
+#[test]
+fn the_only_active_direction_takes_its_own_symmetric_byte() {
+    // Direction one has count one, so direction two is the pattern's one direction.
+    let scope = two_direction_scope(vec![
+        direction_record(20, [2.0, 0.0, 0.0]),
+        direction_record(30, [0.0, 2.5, 0.0]),
+    ]);
+    let only_two = |flags| with_distribution(&scope, flags, false, Some((1, 3.0)));
+    assert_eq!(
+        symmetric_flags(&only_two([false, true])),
+        Some((true, None))
+    );
+    assert_eq!(
+        symmetric_flags(&only_two([true, false])),
+        Some((false, None))
+    );
 }

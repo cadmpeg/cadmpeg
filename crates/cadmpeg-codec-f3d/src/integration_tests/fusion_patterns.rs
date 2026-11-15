@@ -141,3 +141,54 @@ fn a_pattern_of_a_cut_through_two_bodies_reads_its_distribution() {
     assert_eq!(pattern["count"], 3);
     assert_eq!(distribution_compute(&ir), [2]);
 }
+
+#[test]
+fn each_direction_of_a_rectangular_pattern_reads_its_own_symmetric_byte() {
+    // Fusion repeats one slot along +x at 5 mm and along +y at 10 mm. A
+    // symmetric direction of count 3 places one copy on each side of the seed;
+    // count 4 places two copies along +y and one against it.
+    let files: [(&[u8], u64, u64, bool, bool); 4] = [
+        (
+            include_bytes!("../../../../corpus/f3d/sym_q3_dir1only.f3d"),
+            3,
+            3,
+            true,
+            false,
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_q3_dir2only.f3d"),
+            3,
+            3,
+            false,
+            true,
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_q3_both.f3d"),
+            3,
+            3,
+            true,
+            true,
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_q4_dir2only.f3d"),
+            2,
+            4,
+            false,
+            true,
+        ),
+    ];
+    for (bytes, count, second_count, symmetric, second_symmetric) in files {
+        let ir = decoded(bytes);
+        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        assert_eq!(pattern["kind"], "linear", "{pattern}");
+        assert_eq!(pattern["direction"], json!({"x": 1.0, "y": 0.0, "z": 0.0}));
+        assert_eq!(pattern["spacing"], 5.0);
+        assert_eq!(pattern["count"], count);
+        assert_eq!(pattern["symmetric"], symmetric, "{pattern}");
+        let second = &pattern["second"];
+        assert_eq!(second["direction"], json!({"x": 0.0, "y": 1.0, "z": 0.0}));
+        assert_eq!(second["spacing"], 10.0);
+        assert_eq!(second["count"], second_count);
+        assert_eq!(second["symmetric"], second_symmetric, "{pattern}");
+    }
+}

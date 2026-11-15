@@ -452,7 +452,7 @@ pub(crate) enum F3dLossCode {
     /// The total extent of a symmetric rectangular-pattern direction is read
     /// as the span from the first to the last instance.
     FeatureRectangularPatternSymmetricTotalExtentAssumed,
-    /// The symmetric flag of an inactive rectangular-pattern direction one is
+    /// The symmetric flag of an inactive rectangular-pattern direction is
     /// dropped.
     FeatureRectangularPatternInactiveSymmetricDropped,
     /// The record that a rectangular-pattern payload names as its
