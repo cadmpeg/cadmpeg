@@ -415,7 +415,7 @@ fn separate_null_invalid_and_duplicate_outputs_remain_native_positions() {
 #[test]
 fn separate_incomplete_membership_retains_raw_members_controls_and_auxiliary_words() {
     for (record, relative) in [(96, 22), (57, 26)] {
-        let (mut stream, meta) = fixture(2, [1, 0], 2, |_| {});
+        let (mut stream, meta) = fixture(0x0002_0000, [1, 0], 2, |_| {});
         let parsed = crate::metastream::parse(&meta, "synthetic metadata").unwrap();
         let at = usize::try_from(
             parsed
