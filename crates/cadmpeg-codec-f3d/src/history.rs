@@ -5915,9 +5915,13 @@ fn bind_historical_face_operand_candidates<'a>(
     let has_extrude_profile_group = roles.profile;
     let legacy_group = roles.legacy;
     let has_extrude_start_group = roles.start_or_profile();
-    let recipe_face = face_recipes
+    // A closed-edge recipe face is a separate case: the checks that read the
+    // recipe face as a settled selection ignore it.
+    let resolved_recipe_face = face_recipes
         .get(topology, face_recipe::FaceRecipeIndex::new)
         .resolve(operand);
+    let closed_edge_face = resolved_recipe_face.filter(|_| operand.has_closed_edge_node());
+    let recipe_face = resolved_recipe_face.filter(|_| !operand.has_closed_edge_node());
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace {
         operand.resolved_face_slots = recipe_face.into_iter().collect();
         return Ok(());
@@ -6235,7 +6239,7 @@ fn bind_historical_face_operand_candidates<'a>(
             }
         }
     }
-    if let Some(face) = recipe_face {
+    if let Some(face) = recipe_face.or(closed_edge_face) {
         // Every recipe node matches one boundary edge of this face and the
         // face fans around both of its ends. An earlier selection that no
         // check withdrew stays: the recipe fills an empty selection only.
