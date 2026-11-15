@@ -3371,7 +3371,7 @@ Spec §3.1 · layout: byte offsets · size: 32 B
 
 Spec §3.1 · layout: byte offsets · size: 40 B
 
-Offsets are relative to the N+3 selection header. The ordered variable-length region run starts at offset 40.
+Offsets are relative to the N+3 selection header. The first selected region's loop count is at offset 36, and its ordered variable-length loop run starts at offset 40.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3380,8 +3380,8 @@ Offsets are relative to the N+3 selection header. The ordered variable-length re
 | 21 | 1 | `profile_reference_marker` | `u8` | little | spec | a marked reference to `N` |
 | 22 | 4 | `profile_record_index` | `u32` | little | spec | a marked reference to `N` |
 | 26 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
-| 32 | 4 | `format_version` | `u32` | little | spec | u32 `1` |
-| 36 | 4 | `region_count` | `u32` | little | spec | a nonzero u32 region count |
+| 32 | 4 | `region_count` | `u32` | little | spec | a nonzero u32 region count |
+| 36 | 4 | `loop_count` | `u32` | little | spec | Each selected region starts with a nonzero u32 loop count. |
 
 ## `sketch_profile_region_member`
 
