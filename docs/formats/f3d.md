@@ -489,7 +489,7 @@ The type table is followed by `u32 count` and that many u64 named-entity IDs, th
 
 When bytes remain after the counter, a u32 version-context count follows. Exactly that many complete contexts follow. The count is bounded by the remaining byte extent at the minimum context length.
 
-Each context starts with an opaque u64 token and an LP-UTF16 asset GUID. A zero u32 can precede each GUID. A short context then carries an LP-UTF16 revision GUID and a u32 revision. A full context can carry an LP-UTF16 revision GUID after the asset GUID. Its remaining fields are an LP-UTF16 version URN, an LP-UTF16 asset-revision GUID, and a u32 revision. The GUIDs are canonical 36-character hyphenated GUIDs. A short context without zero prefixes occupies 164 bytes, the minimum context length. The version URN is a nonempty ASCII URN.
+Each context starts with an opaque u64 token and an LP-UTF16 asset identity. The identity is a GUID, or a GUID, an underscore, and a version URN in one LP-UTF16 string. A zero u32 can precede each GUID. A short context then carries an LP-UTF16 revision GUID and a u32 revision. A full context can carry an LP-UTF16 revision GUID after the asset GUID. Its remaining fields are an LP-UTF16 version URN, an LP-UTF16 asset-revision GUID, and a u32 revision. The GUIDs are canonical 36-character hyphenated GUIDs. A short context without zero prefixes occupies 164 bytes, the minimum context length. The version URN is a nonempty ASCII URN.
 
 The stream can end after the context list. Otherwise a property block follows: `u32 count` and that many `(LP-ASCII key, u32 value)` pairs. These fields close the stream exactly.
 
