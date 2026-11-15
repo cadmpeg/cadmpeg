@@ -3259,13 +3259,3 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A stored carrier or a derivation rule for the absent curves, and the owner join for the third design.
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
-
-### DR-656. Sketch curve records with a nested geometry record
-
-**Question.** Which field of a sketch-curve record that stores no inline geometry gives the curve's geometry?
-
-**Known.** Public RailCore II 300ZL curve records of a class with `crv_primary_id` and `crv_secondary_id` followed by eight `0xff` bytes, a nested class record, and typed references store no f64 line or arc values at the geometry offset. Their profile selections resolve to identities that have no neutral sketch entity.
-
-**Need.** The geometry carrier of these records.
-
-**Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
