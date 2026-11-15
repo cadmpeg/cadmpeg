@@ -1249,7 +1249,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the operand proofs for these groups.
 
-### DR-642. `Chamfer` edges on bevel faces without a plane carrier
+### DR-653. `Chamfer` edges on bevel faces without a plane carrier
 
 **Question.** Which edges does a `Chamfer` group select when its transition inserts a bevel face on a carrier without a plane row, such as the bevel of an edge between a plane and a cylinder?
 
