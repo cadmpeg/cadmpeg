@@ -594,7 +594,8 @@ fn a_planar_face_is_behind_the_start_when_its_offset_plane_precedes_it_along_the
         sweep,
         &topology,
         -1.5,
-        LINEAR_TOLERANCE
+        LINEAR_TOLERANCE,
+        false
     ));
     assert!(!slot_behind_start(
         3465,
@@ -602,7 +603,8 @@ fn a_planar_face_is_behind_the_start_when_its_offset_plane_precedes_it_along_the
         sweep,
         &topology,
         8.0,
-        LINEAR_TOLERANCE
+        LINEAR_TOLERANCE,
+        false
     ));
     assert!(!slot_behind_start(
         3465,
@@ -610,7 +612,8 @@ fn a_planar_face_is_behind_the_start_when_its_offset_plane_precedes_it_along_the
         sweep,
         &topology,
         7.5,
-        LINEAR_TOLERANCE
+        LINEAR_TOLERANCE,
+        false
     ));
     assert!(!slot_behind_start(
         3999,
@@ -618,6 +621,29 @@ fn a_planar_face_is_behind_the_start_when_its_offset_plane_precedes_it_along_the
         sweep,
         &topology,
         -1.5,
-        LINEAR_TOLERANCE
+        LINEAR_TOLERANCE,
+        false
     ));
+}
+
+#[test]
+fn a_planar_face_on_the_start_is_behind_it_only_when_the_start_counts() {
+    let mut topology = AsmHistoricalTopology::default();
+    add_plane(&mut topology, 3465, 0.0);
+    let start = Point3::new(0.0, 0.0, 7.5);
+    let sweep = Vector3::new(0.0, 0.0, 1.0);
+    for (on_start_counts, expected) in [(false, false), (true, true)] {
+        assert_eq!(
+            slot_behind_start(
+                3465,
+                start,
+                sweep,
+                &topology,
+                7.5,
+                LINEAR_TOLERANCE,
+                on_start_counts
+            ),
+            expected
+        );
+    }
 }

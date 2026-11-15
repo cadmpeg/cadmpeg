@@ -100,6 +100,7 @@ pub(crate) fn bind(
                     before,
                     offset.map_or(0.0, Length::get),
                     input.linear_tolerance,
+                    operand.has_closed_edge_node(),
                 )
             });
             let referenced: BTreeSet<_> = operand.recipe_references.iter()
@@ -186,6 +187,7 @@ pub(crate) fn bind(
                             before,
                             offset.map_or(0.0, Length::get),
                             input.linear_tolerance,
+                            false,
                         ))
                     }).collect()
                 };
@@ -323,6 +325,7 @@ fn selection_behind_start(
     before: &AsmHistoricalTopology,
     offset: f64,
     linear_tolerance: f64,
+    on_start_counts: bool,
 ) -> bool {
     let behind = || {
         let (origin, normal, _) =
@@ -348,13 +351,15 @@ fn selection_behind_start(
             before,
             offset,
             linear_tolerance,
+            on_start_counts,
         ))
     };
     behind().unwrap_or(false)
 }
 
 /// Whether the planar face `slot`, moved by `offset` along `sweep`, lies
-/// behind `start`. A face without an exact plane is not behind.
+/// behind `start`, or on it when `on_start_counts`: a sweep that ends on its
+/// start has no length. A face without an exact plane is not behind.
 fn slot_behind_start(
     slot: i64,
     start: Point3,
@@ -362,14 +367,19 @@ fn slot_behind_start(
     before: &AsmHistoricalTopology,
     offset: f64,
     linear_tolerance: f64,
+    on_start_counts: bool,
 ) -> bool {
     exact_plane(before, slot).is_some_and(|plane| {
-        plane
+        let along = plane
             .origin
             .translated(sweep, offset)
             .vector_from(start)
-            .dot(sweep)
-            < -linear_tolerance
+            .dot(sweep);
+        if on_start_counts {
+            along <= linear_tolerance
+        } else {
+            along < -linear_tolerance
+        }
     })
 }
 

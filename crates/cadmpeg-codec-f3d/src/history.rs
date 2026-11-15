@@ -5910,10 +5910,14 @@ fn bind_historical_face_operand_candidates<'a>(
             crate::ids::native_stream(&group.id) == stream
                 && group.scope_record_index == scope.record_index
                 && Some(group.record_index) == operand.group_record_index()
-                && group.extrude_face_role()
+                && (group.extrude_face_role()
                     == Some(
                         crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Start,
                     )
+                    || group.extrude_role()
+                        == Some(
+                            crate::records::topology::extrude_selection::DesignExtrudeOperandRole::Profile,
+                        ))
         });
     let recipe_face = face_recipes
         .get(topology, face_recipe::FaceRecipeIndex::new)
@@ -6264,15 +6268,15 @@ fn bind_historical_face_operand_candidates<'a>(
 
 /// Whether a recipe face replaces the operand's current selection. A recipe
 /// without a closed-edge node always does. A closed-edge recipe face fills an
-/// empty selection only, and not as an Extrude start face the transition left
-/// unchanged: the Extrude joins to or cuts from its start face, so the
-/// transition changes it.
+/// empty selection only, and not as an Extrude start or profile face the
+/// transition left unchanged: the Extrude joins to or cuts from that face, so
+/// the transition changes it.
 fn recipe_face_replaces_selection(
     closed_edge_node: bool,
     selection_empty: bool,
-    unchanged_extrude_start: bool,
+    unchanged_extrude_face: bool,
 ) -> bool {
-    !closed_edge_node || (selection_empty && !unchanged_extrude_start)
+    !closed_edge_node || (selection_empty && !unchanged_extrude_face)
 }
 
 /// Resolve a Draft face whose persistent selector lane is ambiguous in the

@@ -14,6 +14,6 @@ fn a_closed_edge_recipe_face_fills_an_empty_selection_only() {
 }
 
 #[test]
-fn a_closed_edge_recipe_face_the_transition_left_unchanged_does_not_start_an_extrude() {
+fn a_closed_edge_recipe_face_the_transition_left_unchanged_does_not_start_or_profile_an_extrude() {
     assert!(!recipe_face_replaces_selection(true, true, true));
 }
