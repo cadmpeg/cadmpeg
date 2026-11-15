@@ -6268,7 +6268,22 @@ fn bind_historical_face_operand_candidates<'a>(
             }
         }
     }
+    if has_extrude_start_group && operand.has_closed_edge_node() {
+        // The Extrude joins to or cuts from its start or profile face, so the
+        // transition changes that face. A selection the transition left
+        // unchanged does not come from a closed-edge recipe.
+        if selection_has_unchanged_face(&operand.resolved_face_slots, &changed_faces) {
+            operand.resolved_face_slots.clear();
+            operand.resolved_active_face = None;
+        }
+    }
     Ok(())
+}
+
+/// Whether any selected face slot is absent from the faces the transition
+/// changes.
+fn selection_has_unchanged_face(slots: &[i64], changed: &HashSet<i64>) -> bool {
+    slots.iter().any(|slot| !changed.contains(slot))
 }
 
 /// Whether a recipe face replaces the operand's current selection. A recipe
