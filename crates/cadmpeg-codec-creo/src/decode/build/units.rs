@@ -784,7 +784,7 @@ fn scale_sheet_metal_flange_height(
 
     match height {
         SheetMetalFlangeHeight::ToObject(construction) => {
-            scale_optional_length(&mut construction.offset, scale)?
+            scale_optional_length(&mut construction.offset, scale)?;
         }
         SheetMetalFlangeHeight::Distance(distance) => scale_positive_length(distance, scale)?,
     }
@@ -804,7 +804,7 @@ fn scale_sheet_metal_flange_width(
             }
         }
         SheetMetalFlangeWidth::Symmetric(width) => {
-            scale_optional_positive_length(&mut width.width, scale)?
+            scale_optional_positive_length(&mut width.width, scale)?;
         }
         SheetMetalFlangeWidth::TwoSides(width) => {
             scale_optional_positive_length(&mut width.first, scale)?;
