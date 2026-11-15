@@ -2175,8 +2175,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         && binding.entity_reference_offset < scope.paired_byte_offset()
                 })
         });
-        let valid_sketch_profile =
-            |profile: &records::topology::sketch_profile::DesignSketchProfileOperand| {
+        let valid_profile_frame =
+            |profile: &records::topology::sketch_profile::DesignSketchProfileOperand,
+             allow_absent: bool| {
                 let header = records_by_index.get(&(native_stream, profile.record_index));
                 let entity = entities_by_suffix.get(&(native_stream, profile.entity_id.suffix()));
                 usize::try_from(profile.scope_reference_ordinal)
@@ -2187,17 +2188,27 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         header.byte_offset == profile.byte_offset()
                             && header.class_tag == profile.class_tag
                     })
-                    && entity.is_some_and(|entity| {
-                        entity.in_sketch_module() && entity.entity_id == profile.entity_id
-                    })
+                    && if profile.sketch_absent {
+                        allow_absent && entity.is_none()
+                    } else {
+                        entity.is_some_and(|entity| {
+                            entity.in_sketch_module() && entity.entity_id == profile.entity_id
+                        })
+                    }
                     && profile.region_selection.as_ref().is_none_or(|selection| {
                         valid_sketch_profile_region_selection(profile, selection)
                     })
             };
+        let valid_sketch_profile =
+            |profile: &records::topology::sketch_profile::DesignSketchProfileOperand| {
+                valid_profile_frame(profile, false)
+            };
         let native_profiles_link = scope.extrude_native_profiles().is_none_or(|profiles| {
-            profiles.len() > 1
+            (profiles.len() > 1 || profiles.iter().any(|profile| profile.sketch_absent))
                 && scope.extrude_profile().is_none()
-                && profiles.iter().all(valid_sketch_profile)
+                && profiles
+                    .iter()
+                    .all(|profile| valid_profile_frame(profile, true))
                 && profiles
                     .iter()
                     .map(|profile| profile.record_index)
@@ -4540,6 +4551,7 @@ fn direct_extrude_operation_valid(
         ]
     } else {
         &[
+            crate::layout::offset_23_extrude_prologue::OPERATION,
             crate::layout::offset_24_extrude_prologue::OPERATION,
             crate::layout::compact_shifted_extrude_prologue::OPERATION,
             crate::layout::shifted_extrude_prologue::OPERATION,
@@ -5026,9 +5038,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             header.byte_offset == transform.byte_offset()
                                 && header.class_tag == transform.class_tag
                         })
+                    // The following header can be the lone paired header of an
+                    // omitted primary frame, which has no header entry.
                     && records_by_index
                         .get(&(native_stream, transform.following_record_index()))
-                        .is_some_and(|header| {
+                        .is_none_or(|header| {
                             header.byte_offset == transform.following_byte_offset()
                                 && header.class_tag == transform.following_class_tag
                         })
@@ -9070,19 +9084,31 @@ fn validate_sketch_relations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
 /// record of every sketch point, curve, and surface.
 fn validate_sketch_geometry_identities(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let native = ctx.native;
-    let mut sketch_point_identities = HashSet::new();
+    // First holder of each point identity, by incident-curve count.
+    let mut sketch_point_identities = std::collections::HashMap::new();
     let mut sketch_geometry_records = HashSet::new();
     // An unresolved owner is not one shared sketch. Enforce uniqueness only
-    // when the owning sketch reference is known.
+    // when the owning sketch reference is known. The center point of a fillet
+    // arc has one incident curve and repeats the identity of the filleted
+    // corner point, which has other incident curves.
     for point in &native.sketch_points {
         let duplicate = if let (Some(persistent_id), Some(owner_reference)) =
             (point.persistent_id(), point.owner_reference)
         {
-            !sketch_point_identities.insert((
+            let incident = point.companion().incident_curves.len();
+            match sketch_point_identities.entry((
                 design_stream(&point.id),
                 owner_reference,
                 persistent_id,
-            ))
+            )) {
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(incident);
+                    false
+                }
+                std::collections::hash_map::Entry::Occupied(first) => {
+                    (incident == 1) == (*first.get() == 1)
+                }
+            }
         } else {
             false
         };

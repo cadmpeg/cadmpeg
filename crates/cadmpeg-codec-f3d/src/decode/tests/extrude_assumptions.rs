@@ -152,6 +152,7 @@ fn group(index: u32, role: DesignConstructionOperandRole) -> DesignConstructionO
 
 fn sketch_profile() -> DesignSketchProfileOperand {
     DesignSketchProfileOperand::try_new(DesignSketchProfileOperandDraft {
+        sketch_absent: false,
         scope_reference_ordinal: 0,
         record_index: 100,
         byte_offset: 300,

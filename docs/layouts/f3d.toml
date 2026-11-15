@@ -14954,6 +14954,33 @@ source = "spec"
 anchor = "at primary-header offset 24 after thirteen zero bytes"
 
 [[record]]
+name = "offset_23_extrude_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs"
+kind = "byte"
+section = "3.1"
+anchor = "at primary-header offset 23 after twelve zero bytes"
+size = 27
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_12"
+offset = 11
+type = "bytes[12]"
+source = "spec"
+anchor = "at primary-header offset 23 after twelve zero bytes"
+
+[[record.field]]
+name = "operation"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "at primary-header offset 23 after twelve zero bytes"
+
+[[record]]
 name = "current_extrude_operation_fields"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

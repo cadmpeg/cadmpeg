@@ -39,6 +39,10 @@ pub(super) struct ProductPrereqs {
         Vec<crate::design::decode::parameters::StreamParameterCount>,
     /// Native parameter identities retained without an interpreted owner frame.
     pub(super) design_parameter_owner_unparsed: Vec<String>,
+    /// Per-stream counts of decoded owners whose compact trailer sets its
+    /// final flag byte; the session reports them as losses.
+    pub(super) design_parameter_owner_trailer_flags:
+        Vec<crate::design::decode::parameters::StreamParameterCount>,
     /// Non-equivalent duplicate scope envelopes superseded by the
     /// primary-indexed envelope; the session reports them as a loss.
     pub(super) design_superseded_scope_envelopes: usize,
@@ -116,6 +120,7 @@ impl ProductPrereqs {
             design_parameter_trailer_flags: _,
             design_parameter_null_owners: _,
             design_parameter_owner_unparsed: _,
+            design_parameter_owner_trailer_flags: _,
             design_superseded_scope_envelopes: _,
             design_entity_headers,
             design_record_headers,
@@ -201,6 +206,7 @@ pub(super) fn decode(
     let crate::design::decode::parameters::DecodedParameterOwners {
         owners: design_parameter_owners,
         unparsed: design_parameter_owner_unparsed,
+        trailer_flags: design_parameter_owner_trailer_flags,
     } = crate::design::decode::parameters::decode_parameter_owners(
         scan,
         &design_parameters,
@@ -278,6 +284,7 @@ pub(super) fn decode(
         design_parameter_trailer_flags,
         design_parameter_null_owners,
         design_parameter_owner_unparsed,
+        design_parameter_owner_trailer_flags,
         design_superseded_scope_envelopes,
         design_entity_headers,
         design_record_headers,

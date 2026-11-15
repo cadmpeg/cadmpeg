@@ -3773,13 +3773,19 @@ fn resolved_selection_member_point(
     else {
         return None;
     };
-    let entity_id = persistent_id.map_or_else(
-        || crate::ids::neutral_sketch_record_id(&sketch.id, *record_index),
-        |persistent_id| crate::ids::neutral_sketch_point_id(&sketch.id, persistent_id),
-    );
+    let record_id = crate::ids::neutral_sketch_record_id(&sketch.id, *record_index);
+    let tag_id = persistent_id
+        .map(|persistent_id| crate::ids::neutral_sketch_point_id(&sketch.id, persistent_id));
+    // A point that repeats the tag of an earlier point of its Sketch has only
+    // the record-index key.
     let SketchGeometryDefinition::Point { position } = entities
         .iter()
-        .find(|entity| entity.id() == &entity_id && entity.sketch == sketch.id)?
+        .find(|entity| entity.id() == &record_id && entity.sketch == sketch.id)
+        .or_else(|| {
+            entities
+                .iter()
+                .find(|entity| Some(entity.id()) == tag_id.as_ref() && entity.sketch == sketch.id)
+        })?
         .geometry
         .definition()
     else {

@@ -388,6 +388,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             slot.get_or_insert_with(Default::default).extrude_profile = Some(
                 DesignSketchProfileOperand::try_new(
                     crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                        sketch_absent: false,
                         scope_reference_ordinal: 1,
                         record_index: 300,
                         byte_offset: 3000,

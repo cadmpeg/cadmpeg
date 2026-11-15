@@ -480,6 +480,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     }];
     let profile_operand = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            sketch_absent: false,
             scope_reference_ordinal: 0,
             record_index: 10,
             byte_offset: 0,
@@ -567,6 +568,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
 
     let whole_sketch_operand = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            sketch_absent: false,
             compact_tail_flags: None,
             region_selection: None,
             ..profile_operand.clone().into_draft()
@@ -988,6 +990,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
     };
     let operand = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            sketch_absent: false,
             scope_reference_ordinal: 0,
             record_index: 10,
             byte_offset: 0,
