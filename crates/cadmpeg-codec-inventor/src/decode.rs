@@ -1253,21 +1253,34 @@ fn decode_container<'a>(
                 "retain Inventor kernel carrier that read no geometry",
             )?;
             let data = carrier.bytes.window().to_vec();
+            let id = UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
+                carrier.segment_token.clone().dash(carrier.record_ordinal),
+            );
             source_fidelity.retain_unknown_records(
                 format!("RSeStorage/B{}:expanded", carrier.segment_token),
                 [UnknownRecord::retained(
-                    UnknownId::compose(
-                        &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
-                        carrier.segment_token.clone().dash(carrier.record_ordinal),
-                    ),
+                    id.clone(),
                     carrier.carrier_offset,
                     data,
                     vec![active_carrier.id().to_owned()],
                 )],
             )?;
+            if !empty_kernel_stream {
+                source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
+            }
         }
     }
     if !kernel_unknowns.is_empty() {
+        // Topology-only vertex and edge records carry nothing the arenas lack.
+        let untyped = kernel_unknowns
+            .iter()
+            .filter(|record| {
+                let id = record.id().as_str();
+                !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+            })
+            .map(|record| record.id().clone())
+            .collect::<Vec<_>>();
         source_fidelity
             .attach_native_unknown_records(&mut ir, "inventor", kernel_unknowns, ctx)
             .map_err(|error| {
@@ -1275,6 +1288,9 @@ fn decode_container<'a>(
                     "Inventor kernel unknown retention failed: {error}"
                 ))
             })?;
+        for id in untyped {
+            source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
+        }
     }
     let kernel_unknown_record_count = ir.native_unknowns("inventor")?.len();
     let appearance_binding_count = ir.model.appearance_bindings.len();
