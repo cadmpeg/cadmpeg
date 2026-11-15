@@ -303,7 +303,14 @@ fn selection_behind_start(
         let [slot] = slots.as_slice() else {
             return None;
         };
-        Some(slot_behind_start(*slot, start, sweep, before, offset, linear_tolerance))
+        Some(slot_behind_start(
+            *slot,
+            start,
+            sweep,
+            before,
+            offset,
+            linear_tolerance,
+        ))
     };
     behind().unwrap_or(false)
 }
