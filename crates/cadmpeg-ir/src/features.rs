@@ -1459,16 +1459,22 @@ pub struct ParameterPmi {
 #[serde(deny_unknown_fields)]
 pub enum PmiDimensionSubtype {
     /// Linear distance.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Linear,
     /// Angular extent in radians.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Angle,
     /// Diameter.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Diameter,
     /// Radius.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Radial,
     /// Linear coordinate measured from an ordinate origin.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Ordinate,
     /// Dimensionless integral instance count.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Count,
     /// Source-native family without a neutral equivalent.
     Native(String),
@@ -2198,6 +2204,7 @@ pub enum DatumPlaneReference {
 #[serde(deny_unknown_fields)]
 pub enum SketchPointSelection {
     /// Selection exists semantically but its sketch entity is not resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Point in a planar sketch.
     Planar {
@@ -3728,6 +3735,10 @@ pub enum FeatureOperation {
         /// Adjacent faces supplying tangent or curvature conditions.
         support_faces: FaceSelection,
         /// Uniform, component-specific, or unresolved boundary continuity.
+        #[serde(
+            default = "FilledSurfaceContinuityState::unresolved",
+            skip_serializing_if = "FilledSurfaceContinuityState::is_unresolved"
+        )]
         continuity: FilledSurfaceContinuityState,
         /// Whether the generated patch is merged into adjacent surface bodies,
         /// when resolved.
@@ -4369,8 +4380,10 @@ pub enum GeometryImportFormat {
 )]
 pub enum FuzzyTolerance {
     /// Let the modeling kernel use its default tolerance.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     KernelDefault,
     /// Determine a suitable tolerance from the participating shapes.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Automatic,
     /// Use the supplied positive model-unit tolerance.
     Explicit(PositiveLength),
@@ -5489,8 +5502,10 @@ pub enum RibSide {
 pub enum RibDraft {
     /// Draft semantics are present but unresolved.
     #[default]
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Rib walls have no draft.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     None,
     /// Rib walls use the specified draft angle.
     Angle(SlopeAngle),
@@ -5835,8 +5850,14 @@ impl FilledSurfaceContinuity {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct FilledSurfaceContinuityState(
-    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    #[serde(deserialize_with = "deserialize_filled_surface_continuity")]
     Option<FilledSurfaceContinuity>,
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_filled_surface_continuity,
+    FilledSurfaceContinuity,
+    "continuity"
 );
 
 impl FilledSurfaceContinuityState {
@@ -6022,8 +6043,10 @@ pub enum RuledSurfaceCorner {
 #[serde(deny_unknown_fields)]
 pub enum ScaleCenter {
     /// Combined centroid of the selected bodies.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Centroid,
     /// Model coordinate-system origin.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ModelOrigin,
     /// Explicit model-space point.
     Point(FinitePoint3),
@@ -6438,8 +6461,10 @@ selection_field_deserializer!(deserialize_local_value, "value");
 )]
 pub enum EdgeSelection {
     /// Selection exists semantically but its operands are not resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Every edge of the operation's input body.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     All,
     /// Resolved topological edges.
     Edges(Vec<EdgeId>),
@@ -6533,6 +6558,7 @@ pub struct GeneratedVertexRef {
 #[serde(deny_unknown_fields)]
 pub enum VertexSelection {
     /// Selection exists semantically but its operand is not resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Vertex in an intermediate regenerated feature result, paired with the
     /// format-native selection required for rewrite.
@@ -6568,6 +6594,7 @@ pub enum VertexSelection {
 )]
 pub enum FaceSelection {
     /// Selection exists semantically but its operands are not resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Resolved topological faces; empty for no selected faces.
     Faces(Vec<FaceId>),
@@ -7397,6 +7424,7 @@ where
 )]
 pub enum BodySelection {
     /// Selection exists semantically but its operands are not resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Resolved topological bodies.
     Bodies(#[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))] DistinctMembers<BodyId>),
@@ -8277,15 +8305,43 @@ pub type SheetSweepSection = SweepSection<NoGeneratedSection>;
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
-    deny_unknown_fields
+    deny_unknown_fields,
+    into = "SweepSectionWire<G>",
+    bound(serialize = "G: Clone + Serialize")
 )]
 pub enum SweepSection<G = GeneratedSweepSection> {
     /// The source requires a cross-section, but its carrier is unresolved.
-    Unresolved(#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<String>),
+    Unresolved(#[serde(deserialize_with = "deserialize_sweep_section_native")] Option<String>),
     /// Cross-section supplied by referenced profile geometry.
     Profile(PlanarProfileRef),
     /// Cross-section generated by the sweep construction itself.
     Generated(G),
+}
+
+cadmpeg_core::named_optional_field!(deserialize_sweep_section_native, String, "value");
+
+/// The written form of a [`SweepSection`]: an unresolved section without a
+/// native name states its kind alone.
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+enum SweepSectionWire<G> {
+    #[serde(rename = "unresolved")]
+    UnresolvedUnnamed,
+    Unresolved(String),
+    Profile(PlanarProfileRef),
+    Generated(G),
+}
+
+impl<G> From<SweepSection<G>> for SweepSectionWire<G> {
+    fn from(section: SweepSection<G>) -> Self {
+        match section {
+            SweepSection::Unresolved(None) => Self::UnresolvedUnnamed,
+            SweepSection::Unresolved(Some(native)) => Self::Unresolved(native),
+            SweepSection::Profile(profile) => Self::Profile(profile),
+            SweepSection::Generated(generated) => Self::Generated(generated),
+        }
+    }
 }
 
 impl<G> SweepSection<G> {

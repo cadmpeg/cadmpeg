@@ -919,10 +919,20 @@ fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
         reverse_normal: None,
     });
     let wire = serde_json::to_value(&definition).unwrap();
-    assert!(wire.get("continuity").is_none());
+    assert!(wire["value"]["value"].get("continuity").is_none(), "{wire}");
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
         definition
+    );
+
+    let mut null = wire;
+    null["value"]["value"]["continuity"] = serde_json::Value::Null;
+    let error = serde_json::from_value::<FeatureDefinition>(null)
+        .expect_err("null is a second spelling of unresolved continuity")
+        .to_string();
+    assert!(
+        error.contains("continuity: this key states a value or is left out"),
+        "{error}"
     );
 }
 
@@ -936,9 +946,9 @@ fn empty_filled_surface_continuity_list_is_refused() {
         .expect_err("an empty continuity list is refused");
     assert!(error.to_string().contains("empty"), "{error}");
 
-    let unresolved: FilledSurfaceContinuityState =
-        serde_json::from_value(serde_json::Value::Null).unwrap();
-    assert!(unresolved.is_unresolved());
+    let error = serde_json::from_value::<FilledSurfaceContinuityState>(serde_json::Value::Null)
+        .expect_err("null is refused");
+    assert!(error.to_string().contains("does not state null"), "{error}");
 
     let resolved: FilledSurfaceContinuityState =
         serde_json::from_value(serde_json::json!([{ "kind": "tangent" }])).unwrap();
@@ -949,6 +959,38 @@ fn empty_filled_surface_continuity_list_is_refused() {
                 SurfaceContinuity::Tangent
             )][..]
         )
+    );
+}
+
+#[test]
+fn an_unresolved_sweep_section_states_its_native_name_only_where_it_has_one() {
+    use crate::features::{SheetSweepSection, SweepSection};
+
+    let unnamed = SweepSection::Unresolved(None);
+    let wire = serde_json::json!({"kind": "unresolved"});
+    assert_eq!(serde_json::to_value(&unnamed).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<SweepSection>(wire.clone()).unwrap(),
+        unnamed
+    );
+    assert_eq!(
+        serde_json::from_value::<SheetSweepSection>(wire).unwrap(),
+        SheetSweepSection::Unresolved(None)
+    );
+
+    let named = SweepSection::Unresolved(Some("native section".to_owned()));
+    let wire = serde_json::json!({"kind": "unresolved", "value": "native section"});
+    assert_eq!(serde_json::to_value(&named).unwrap(), wire);
+    assert_eq!(serde_json::from_value::<SweepSection>(wire).unwrap(), named);
+
+    let error = serde_json::from_value::<SweepSection>(serde_json::json!({
+        "kind": "unresolved", "value": null
+    }))
+    .expect_err("null is a second spelling of an unnamed unresolved section")
+    .to_string();
+    assert!(
+        error.contains("value: this key states a value or is left out"),
+        "{error}"
     );
 }
 

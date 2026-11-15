@@ -153,18 +153,25 @@ pub enum PmiQuantity {
 #[serde(deny_unknown_fields)]
 pub enum DimensionKind {
     /// Size of one shape aspect.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Size,
     /// Relative location of two shape aspects.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Location,
     /// Angular size or location.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Angular,
     /// Diameter.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Diameter,
     /// Radius.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Radius,
     /// Diameter of a spherical feature.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     SphericalDiameter,
     /// Radius of a spherical feature.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     SphericalRadius,
     /// Source-defined dimensional subtype.
     Other(String),
@@ -177,14 +184,19 @@ pub enum DimensionKind {
 #[serde(deny_unknown_fields)]
 pub enum DatumTargetForm {
     /// Point target.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Point,
     /// Line target.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Line,
     /// Rectangular target.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Rectangle,
     /// Circular target.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Circle,
     /// Circular-curve target.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     CircularCurve,
     /// Source-defined or invalid target form.
     Other(String),
@@ -197,34 +209,49 @@ pub enum DatumTargetForm {
 #[serde(deny_unknown_fields)]
 pub enum GeometricToleranceKind {
     /// Straightness.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Straightness,
     /// Flatness.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Flatness,
     /// Roundness or circularity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Roundness,
     /// Cylindricity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Cylindricity,
     /// Coaxiality.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Coaxiality,
     /// Profile of a line.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     LineProfile,
     /// Profile of a surface.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     SurfaceProfile,
     /// Angularity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Angularity,
     /// Perpendicularity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Perpendicularity,
     /// Parallelism.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Parallelism,
     /// Position.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Position,
     /// Concentricity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Concentricity,
     /// Symmetry.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Symmetry,
     /// Circular runout.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     CircularRunout,
     /// Total runout.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     TotalRunout,
     /// Source-defined tolerance subtype.
     Other(String),
@@ -725,6 +752,27 @@ mod tests {
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
+    }
+
+    #[test]
+    fn a_unit_dimension_kind_states_its_kind_alone() {
+        let size = serde_json::json!({"kind": "size"});
+        assert_eq!(
+            serde_json::to_value(DimensionKind::Size).expect("a unit kind serializes"),
+            size
+        );
+        assert_eq!(
+            serde_json::from_value::<DimensionKind>(size).expect("the bare kind reads"),
+            DimensionKind::Size
+        );
+        for value in [serde_json::Value::Null, serde_json::json!({})] {
+            let error = serde_json::from_value::<DimensionKind>(serde_json::json!({
+                "kind": "size", "value": value
+            }))
+            .expect_err("a stated value is a second spelling of the unit kind")
+            .to_string();
+            assert!(error.contains("does not state value"), "{value}: {error}");
+        }
     }
 
     #[test]
