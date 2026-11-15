@@ -46,8 +46,9 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
         .code(2);
 
     let mut invalid = unit_cube().expect("unit cube fixture is admitted");
-    invalid.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
-        .expect("valid identity for an absent surface");
+    invalid.geometry.faces[0].surface =
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
+            .expect("valid identity for an absent surface");
     let invalid = fixture(dir.path(), "invalid.json", &invalid);
     Command::cargo_bin("cadmpeg")
         .unwrap()

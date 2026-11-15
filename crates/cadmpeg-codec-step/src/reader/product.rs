@@ -256,7 +256,7 @@ pub(super) fn decode(
             let missing = bodies
                 .iter()
                 .filter(|body| {
-                    !ir.model
+                    !ir.geometry
                         .bodies
                         .iter()
                         .any(|candidate| candidate.id == **body)
@@ -265,7 +265,7 @@ pub(super) fn decode(
                 .collect::<Vec<_>>()
                 .join(", ");
             bodies.retain(|body| {
-                ir.model
+                ir.geometry
                     .bodies
                     .iter()
                     .any(|candidate| candidate.id == *body)
@@ -398,7 +398,7 @@ pub(super) fn decode(
             native_ref: None,
         });
         ctx.admit_entities(
-            u64_from_index(ir.model.entity_count()),
+            u64_from_index(ir.entity_count()),
             admitted_ir_entities,
             "step_assembly_occurrence",
         )?;
@@ -543,7 +543,7 @@ pub(super) fn decode(
                 native_ref: Some(format!("#{usage_id}")),
             });
             ctx.admit_entities(
-                u64_from_index(ir.model.entity_count()),
+                u64_from_index(ir.entity_count()),
                 admitted_ir_entities,
                 "step_assembly_occurrence",
             )?;
@@ -681,7 +681,7 @@ fn apply_body_placements(
     }
 
     let mut body_indices = BTreeMap::new();
-    for (index, body) in ir.model.bodies.iter().enumerate() {
+    for (index, body) in ir.geometry.bodies.iter().enumerate() {
         body_indices.insert(body.id.clone(), index);
     }
     let mut representation_cache = BTreeMap::new();
@@ -741,7 +741,7 @@ fn apply_body_placements(
         match unique.as_slice() {
             [(_, transform)] => {
                 if let Some(index) = body_indices.get(&body) {
-                    ir.model.bodies[*index].transform = Some(*transform);
+                    ir.geometry.bodies[*index].transform = Some(*transform);
                 }
             }
             [] => {}

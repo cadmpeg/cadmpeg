@@ -504,8 +504,8 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
         .unwrap();
         let mut scratch = CadIr::empty();
         cadmpeg_asm::brep::transfer::transfer_into_ir(&ctx, &mut scratch, "f3d", brep).unwrap();
-        let body = &scratch.model.bodies[0];
-        let Extract::Nest(topology) = extract(&ctx, &scratch.model, body.id.as_str()).unwrap()
+        let body = &scratch.geometry.bodies[0];
+        let Extract::Nest(topology) = extract(&ctx, &scratch.geometry, body.id.as_str()).unwrap()
         else {
             panic!("reference-closed historical nest")
         };
@@ -657,10 +657,10 @@ fn subtype_references_follow_archive_byte_order_across_revisions() {
 }
 
 fn cube_candidate() -> HistoryBody {
-    let model = cadmpeg_ir::examples::unit_cube().expect("cube").model;
+    let geometry = cadmpeg_ir::examples::unit_cube().expect("cube").geometry;
     let ctx = cadmpeg_test_support::service_decode_context();
     let Extract::Nest(mut topology) =
-        extract(&ctx, &model, model.bodies[0].id.as_str()).expect("extract cube")
+        extract(&ctx, &geometry, geometry.bodies[0].id.as_str()).expect("extract cube")
     else {
         panic!("closed cube")
     };

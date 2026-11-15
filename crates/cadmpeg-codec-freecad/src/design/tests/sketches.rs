@@ -157,7 +157,7 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
     ));
     assert!(result
         .ir()
-        .model
+        .geometry
         .shells
         .iter()
         .any(|shell| shell.wire_edges().len() == 3));

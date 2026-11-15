@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::document::{CadIr, Model, SourceMeta, Topology};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
@@ -78,7 +78,7 @@ fn decode_container<'a>(
     } else {
         ctx.depth()
     };
-    let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+    let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.entity_count());
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "cfb_major_version".to_owned(),
@@ -265,7 +265,7 @@ fn decode_container<'a>(
         cadmpeg_core::text::named_entries("the inventor document", attributes)?,
     ));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
-        let entity_count = ir.model.entity_count();
+        let entity_count = ir.entity_count();
         ir.model.product_definitions.push(project_root_product(
             ctx,
             &document_kind,
@@ -431,7 +431,7 @@ fn decode_container<'a>(
     let pm_graphics_style_collections = presentation_native.graphics_style_collections;
     let pm_graphics_primary_color_styles = presentation_native.graphics_primary_color_styles;
     ctx.admit_entities(
-        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+        cadmpeg_core::decode::u64_from_index(ir.entity_count()),
         &mut admitted_entities,
         "admit Inventor pre-assembly entities",
     )?;
@@ -618,7 +618,7 @@ fn decode_container<'a>(
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
-    let body_keys = if delivered == DecodeDepth::Full {
+    let body_keys = if delivered >= DecodeDepth::Design {
         kernel_brep.body_native_keys.clone()
     } else {
         Vec::new()
@@ -636,7 +636,7 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
-    let mut unresolved = if delivered == DecodeDepth::Full {
+    let mut unresolved = if delivered >= DecodeDepth::Design {
         project_design(
             ctx,
             &mut ir,
@@ -648,7 +648,7 @@ fn decode_container<'a>(
     } else {
         UnresolvedDesign::default()
     };
-    if delivered == DecodeDepth::Full {
+    if delivered >= DecodeDepth::Design {
         losses.extend(crate::annotation::project(
             ctx,
             &crate::annotation::Inputs {
@@ -657,7 +657,7 @@ fn decode_container<'a>(
                 parameters: &design_inventory.parameters,
                 properties: &feature_inventory.properties,
             },
-            &mut ir.model,
+            &mut ir,
         )?);
     }
     let mut stored_body_losses = Vec::new();
@@ -669,7 +669,7 @@ fn decode_container<'a>(
             &design_inventory,
             &sketch_inventory.transforms,
             &body_keys,
-            &mut ir.model,
+            &mut ir,
         )?;
         unresolved.features = unresolved
             .features
@@ -679,7 +679,7 @@ fn decode_container<'a>(
             })?;
         stored_body_losses = projection.losses;
     }
-    let composite_links = if delivered == DecodeDepth::Full {
+    let composite_links = if delivered >= DecodeDepth::Design {
         crate::feature::composite::links(
             ctx,
             &container.rse,
@@ -699,7 +699,7 @@ fn decode_container<'a>(
             roots: &design_inventory.model_roots,
         },
         &body_keys,
-        &mut ir.model,
+        &mut ir,
     )?;
     unresolved.features = unresolved
         .features
@@ -715,7 +715,7 @@ fn decode_container<'a>(
             &composite_links,
         )?;
     }
-    if delivered == DecodeDepth::Full {
+    if delivered >= DecodeDepth::Design {
         let links = crate::feature::body_selection::links(
             ctx,
             &container.rse,
@@ -728,14 +728,14 @@ fn decode_container<'a>(
             &links,
             &active_carrier,
             &body_keys,
-            &ir.model,
+            &ir.geometry,
             &crate::feature::body_selection::Scope {
                 metadata: &segment_meta,
                 roots: &design_inventory.model_roots,
             },
         );
         joined.extend(composite.bodies);
-        crate::feature::body_selection::project(&mut ir.model, &joined, &feature_inventory);
+        crate::feature::body_selection::project(&mut ir, &joined, &feature_inventory);
         if !links.is_empty() {
             ir.native
                 .namespace_mut("inventor")
@@ -768,10 +768,11 @@ fn decode_container<'a>(
         ));
     }
     ir.set_native_unknowns(ctx, "inventor", &[])?;
-    let geometry_transferred =
-        !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
+    let geometry_transferred = !(ir.geometry.surfaces.is_empty()
+        && ir.geometry.points.is_empty()
+        && ir.geometry.faces.is_empty());
     let body_ids = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())
@@ -823,7 +824,7 @@ fn decode_container<'a>(
             }
         })
         .collect::<HashMap<_, _>>();
-    for face in &mut ir.model.faces {
+    for face in &mut ir.geometry.faces {
         if face.color.is_none() {
             face.color = face_colors.get(&face.id).copied();
         }
@@ -1504,6 +1505,10 @@ fn decode_container<'a>(
                 .filter(|(_, count)| *count != 0),
         )
         .collect();
+    if ctx.container_only() {
+        ir.geometry = Topology::default();
+        ir.model = Model::default();
+    }
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
@@ -1581,7 +1586,7 @@ fn project_design(
             sketches: &ir.model.sketches,
             entities: &ir.model.sketch_entities,
             profile_bodies: &profile_bodies.bodies,
-            result_model: Some(&ir.model),
+            result_model: Some(ir),
         },
     )?;
     let mut added_profiles = features.added_profiles;

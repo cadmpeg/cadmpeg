@@ -103,14 +103,14 @@ pub(crate) fn append(
         );
         return Ok(());
     };
-    if ir.model.bodies.len() != 1 || ir.model.bodies[0].id != *body_id {
+    if ir.geometry.bodies.len() != 1 || ir.geometry.bodies[0].id != *body_id {
         not_compared(
             losses,
             "the active configuration body does not resolve uniquely",
         );
         return Ok(());
     }
-    if ir.model.bodies[0].visible == Some(false) {
+    if ir.geometry.bodies[0].visible == Some(false) {
         not_compared(losses, "the active configuration body is hidden");
         return Ok(());
     }

@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::Model;
+
 use cadmpeg_ir::drawings::Drawing;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -18,31 +18,35 @@ use crate::brep::{
 use crate::loss::FreecadLossCode;
 
 pub(super) fn transfer(
-    model: &mut Model,
+    ir: &mut cadmpeg_ir::CadIr,
     properties: &Properties<'_>,
     entries: &BTreeMap<String, View<'_>>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if !model.semantic_annotations.iter().any(|annotation| {
+    if !ir.model.semantic_annotations.iter().any(|annotation| {
         annotation.kind == cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension
     }) {
         return Ok(());
     }
-    let drawings = model
+    let drawings = ir
+        .model
         .drawings
         .iter()
         .map(|drawing| (drawing.object.as_str(), drawing))
         .collect::<BTreeMap<_, _>>();
     let sources = super::reference::Sources::new(
-        &model.curves,
-        &model.edges,
-        &model.vertices,
-        &model.points,
-        &model.surfaces,
-        &model.faces,
-        model.bodies.iter().all(|body| body.transform.is_none()),
+        &ir.geometry.curves,
+        &ir.geometry.edges,
+        &ir.geometry.vertices,
+        &ir.geometry.points,
+        &ir.geometry.surfaces,
+        &ir.geometry.faces,
+        ir.geometry
+            .bodies
+            .iter()
+            .all(|body| body.transform.is_none()),
     );
-    for annotation in &mut model.semantic_annotations {
+    for annotation in &mut ir.model.semantic_annotations {
         if annotation.kind != cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension {
             continue;
         }
@@ -90,7 +94,8 @@ pub(super) fn transfer(
             losses.push(FreecadLossCode::DrawingDimensionGeometryNotTransferred.note(format!("{owner}: no exact admitted saved reference geometry and page placement; value and anchors remain absent")));
         }
     }
-    if model
+    if ir
+        .model
         .semantic_annotations
         .iter()
         .any(|annotation| !annotation.reference_anchors_are_valid())

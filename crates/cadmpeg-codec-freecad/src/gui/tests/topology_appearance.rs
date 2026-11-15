@@ -31,14 +31,15 @@ fn face_materials_follow_shape_indices_without_complete_persistent_names() {
             decoded.report().losses
         );
         let model = &decoded.ir().model;
-        assert_eq!(model.faces.len(), 8);
+        let geometry = &decoded.ir().geometry;
+        assert_eq!(geometry.faces.len(), 8);
         let face_bindings = model
             .appearance_bindings
             .iter()
             .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
             .collect::<Vec<_>>();
         assert_eq!(face_bindings.len(), 8);
-        for face in &model.faces {
+        for face in &geometry.faces {
             assert_eq!(
                 face_bindings
                     .iter()
@@ -69,14 +70,15 @@ fn accepted_primitive_color_arrays_replace_defaults_and_keep_primitive_sizes() {
                 .decode(&mut Cursor::new(source), &DecodeOptions::default())
                 .unwrap();
             let model = &decoded.ir().model;
+            let geometry = &decoded.ir().geometry;
             let targets = if entry == "LineColorArray" {
-                model
+                geometry
                     .edges
                     .iter()
                     .map(|edge| AppearanceTarget::Edge(edge.id.clone()))
                     .collect::<Vec<_>>()
             } else {
-                model
+                geometry
                     .vertices
                     .iter()
                     .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone()))

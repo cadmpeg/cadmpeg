@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::Model;
+use cadmpeg_ir::document::{Model, Topology};
 use cadmpeg_ir::features::{
     patterns::PatternSeed, BodySelection, CombineOperands, FeatureDefinition, FeatureOperation,
     TrimBodyOperands,
@@ -188,7 +188,7 @@ pub(crate) fn body_map(
     joins: &[WrapperLink],
     carrier: &ActiveCarrierRecord,
     keys: &[BodyNativeKey],
-    model: &Model,
+    geometry: &Topology,
     scope: &Scope<'_>,
 ) -> HashMap<String, BodyId> {
     let mut bodies = HashMap::new();
@@ -208,7 +208,7 @@ pub(crate) fn body_map(
     let join_ids =
         cadmpeg_core::decode::unique_index(joins.iter().map(|join| (join.wrapper.as_str(), join)));
     let model_bodies =
-        cadmpeg_core::decode::unique_index(model.bodies.iter().map(|body| (&body.id, body)));
+        cadmpeg_core::decode::unique_index(geometry.bodies.iter().map(|body| (&body.id, body)));
     for join in joins {
         let Some(wrapper) = properties.get(&join.wrapper).and_then(Option::as_ref) else {
             continue;
@@ -609,7 +609,7 @@ pub(crate) fn outputs_match(
 }
 
 pub(crate) fn project(
-    model: &mut Model,
+    ir: &mut cadmpeg_ir::CadIr,
     bodies: &HashMap<String, BodyId>,
     inventory: &FeatureInventory,
 ) {
@@ -619,8 +619,8 @@ pub(crate) fn project(
             .iter()
             .map(|source| (source.id(), source)),
     );
-    let features = model.features.clone();
-    for feature in &mut model.features {
+    let features = ir.model.features.clone();
+    for feature in &mut ir.model.features {
         let group = matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Combine { .. })
@@ -636,7 +636,7 @@ pub(crate) fn project(
         .flatten();
         let earlier = produced_before(
             &features,
-            &model.feature_result_topologies,
+            &ir.model.feature_result_topologies,
             feature,
             &ProducerRecords {
                 features: &inventory.features,
@@ -658,11 +658,11 @@ pub(crate) fn project(
             combine_local(value, &earlier, group.as_deref());
             split_local(value, &earlier, qualified_target);
         });
-        if let Some(outputs) = outputs(&feature.id, &model.feature_result_topologies, bodies) {
+        if let Some(outputs) = outputs(&feature.id, &ir.model.feature_result_topologies, bodies) {
             feature.evaluation.set_outputs(outputs);
         }
     }
-    name_bodies(model, bodies, inventory);
+    name_bodies(&mut ir.geometry, bodies, inventory);
 }
 
 /// Names each current body from the feature label that the body's wrapper
@@ -670,7 +670,11 @@ pub(crate) fn project(
 /// surface-body wrapper joins it, exactly one label in the wrapper's
 /// segment names the wrapper as its owner, and the stored name is faithful and
 /// non-blank.
-fn name_bodies(model: &mut Model, bodies: &HashMap<String, BodyId>, inventory: &FeatureInventory) {
+fn name_bodies(
+    geometry: &mut Topology,
+    bodies: &HashMap<String, BodyId>,
+    inventory: &FeatureInventory,
+) {
     let properties = cadmpeg_core::decode::unique_index(
         inventory
             .properties
@@ -697,7 +701,7 @@ fn name_bodies(model: &mut Model, bodies: &HashMap<String, BodyId>, inventory: &
                 .push(label);
         }
     }
-    for body in &mut model.bodies {
+    for body in &mut geometry.bodies {
         if body.name.is_some() {
             continue;
         }

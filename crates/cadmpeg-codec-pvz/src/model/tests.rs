@@ -159,7 +159,7 @@ fn shared_definitions_expand_to_one_occurrence_per_path() {
     );
     assert!(losses.is_empty());
     let mut ir = ir;
-    ir.model.finalize();
+    ir.finalize();
     let report = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
     assert!(report.is_ok(), "{report:?}");
 }

@@ -95,7 +95,7 @@ pub(super) fn ordered_parameter_range(mut range: [f64; 2]) -> Option<[f64; 2]> {
 
 fn vertex_point_positions(ir: &CadIr) -> BTreeMap<VertexId, Point3> {
     let mut point_positions = BTreeMap::new();
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         let point_key = &point.id;
 
         point_positions
@@ -103,7 +103,7 @@ fn vertex_point_positions(ir: &CadIr) -> BTreeMap<VertexId, Point3> {
             .or_insert(point.position().get());
     }
     let mut vertices = BTreeMap::new();
-    for vertex in &ir.model.vertices {
+    for vertex in &ir.geometry.vertices {
         let Some(position) = point_positions.get(&vertex.point).copied() else {
             continue;
         };
@@ -114,7 +114,7 @@ fn vertex_point_positions(ir: &CadIr) -> BTreeMap<VertexId, Point3> {
 
 fn edge_indices_by_curve(ir: &CadIr) -> BTreeMap<CurveId, Vec<usize>> {
     let mut indices = BTreeMap::new();
-    for (index, edge) in ir.model.edges.iter().enumerate() {
+    for (index, edge) in ir.geometry.edges.iter().enumerate() {
         let Some(curve) = edge.curve() else {
             continue;
         };
@@ -150,14 +150,14 @@ pub(super) struct IntersectionIncidenceIndex {
 
 impl IntersectionIncidenceIndex {
     fn index_stream(&mut self, ir: &CadIr, starts: IntersectionEntityStarts) -> BTreeSet<CurveId> {
-        for loop_ in ir.model.loops.iter().skip(starts.loops) {
+        for loop_ in ir.geometry.loops.iter().skip(starts.loops) {
             self.loop_faces.insert(loop_.id.clone(), loop_.face.clone());
         }
-        for face in ir.model.faces.iter().skip(starts.faces) {
+        for face in ir.geometry.faces.iter().skip(starts.faces) {
             self.face_surfaces
                 .insert(face.id.clone(), face.surface.clone());
         }
-        for edge in ir.model.edges.iter().skip(starts.edges) {
+        for edge in ir.geometry.edges.iter().skip(starts.edges) {
             let Some(curve) = edge.curve() else {
                 continue;
             };
@@ -167,13 +167,13 @@ impl IntersectionIncidenceIndex {
 
         let mut affected_curves = BTreeSet::new();
         for (index, procedural) in ir
-            .model
+            .geometry
             .procedural_curves
             .iter()
             .enumerate()
             .skip(starts.procedural_curves)
         {
-            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) else {
                 continue;
             };
             let owner_key = owner.clone();
@@ -183,7 +183,7 @@ impl IntersectionIncidenceIndex {
             indices.push(index);
             affected_curves.insert(owner.clone());
         }
-        for coedge in ir.model.coedges.iter().skip(starts.coedges) {
+        for coedge in ir.geometry.coedges.iter().skip(starts.coedges) {
             let Some(curve) = self.edge_curves.get(&coedge.edge) else {
                 continue;
             };
@@ -214,7 +214,7 @@ impl IntersectionIncidenceIndex {
     }
 
     fn index_new_pcurves(&mut self, ir: &CadIr, start: usize) {
-        for (index, pcurve) in ir.model.pcurves.iter().enumerate().skip(start) {
+        for (index, pcurve) in ir.geometry.pcurves.iter().enumerate().skip(start) {
             let pcurve_key = pcurve.id.clone();
 
             self.pcurves_by_id.entry(pcurve_key).or_insert(index);
@@ -230,7 +230,8 @@ impl IntersectionIncidenceIndex {
                 continue;
             };
             for &procedural_index in procedural_indices {
-                let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
+                let Some(procedural) = ir.geometry.procedural_curves.get_mut(procedural_index)
+                else {
                     continue;
                 };
                 let Some(context) = procedural.intersection_context_mut() else {
@@ -269,7 +270,8 @@ impl IntersectionIncidenceIndex {
                 continue;
             };
             for &procedural_index in procedural_indices {
-                let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
+                let Some(procedural) = ir.geometry.procedural_curves.get_mut(procedural_index)
+                else {
                     continue;
                 };
                 let Some(context) = procedural.intersection_context_mut() else {
@@ -295,7 +297,7 @@ impl IntersectionIncidenceIndex {
                         continue;
                     };
                     let Some(geometry) = ir
-                        .model
+                        .geometry
                         .pcurves
                         .get(*carrier_index)
                         .map(|carrier| carrier.geometry.clone())
@@ -403,22 +405,22 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut loop_faces = BTreeMap::new();
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         loop_faces.insert(&loop_.id, &loop_.face);
     }
     let mut face_surfaces = BTreeMap::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         face_surfaces.insert(&face.id, &face.surface);
     }
     let mut edge_curves = BTreeMap::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         let Some(curve) = edge.curve() else {
             continue;
         };
         edge_curves.insert(&edge.id, curve);
     }
     let mut incident = BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveId, Option<[f64; 2]>)>>::new();
-    for coedge in ir.model.coedges.iter().skip(coedge_start) {
+    for coedge in ir.geometry.coedges.iter().skip(coedge_start) {
         let Some(curve) = edge_curves.get(&coedge.edge) else {
             continue;
         };
@@ -451,15 +453,15 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
     let replacements = {
         let edges_by_curve = edge_indices_by_curve(ir);
         let mut pcurves_by_id = BTreeMap::<PcurveId, usize>::new();
-        for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
+        for (index, pcurve) in ir.geometry.pcurves.iter().enumerate() {
             let pcurve_key = pcurve.id.clone();
 
             pcurves_by_id.entry(pcurve_key).or_insert(index);
         }
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut replacements = Vec::new();
-        for procedural in ir.model.procedural_curves.iter().skip(procedural_start) {
-            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+        for procedural in ir.geometry.procedural_curves.iter().skip(procedural_start) {
+            let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) else {
                 continue;
             };
             let ProceduralCurveDefinition::TolerantIntersection {
@@ -479,7 +481,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let [edge_index] = edge_indices.as_slice() else {
                 continue;
             };
-            let Some(edge) = ir.model.edges.get(*edge_index) else {
+            let Some(edge) = ir.geometry.edges.get(*edge_index) else {
                 continue;
             };
             let Some(endpoint_tolerance) =
@@ -518,7 +520,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let carriers = [first_id, second_id].map(|id| {
                 pcurves_by_id
                     .get(id)
-                    .and_then(|index| ir.model.pcurves.get(*index))
+                    .and_then(|index| ir.geometry.pcurves.get(*index))
             });
             let [Some(first), Some(second)] = carriers else {
                 continue;
@@ -602,7 +604,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
 
     for (procedural_id, edge_id, edge_reversed, parameterization) in replacements {
         let Some(procedural) = ir
-            .model
+            .geometry
             .procedural_curves
             .iter_mut()
             .find(|procedural| procedural.id == procedural_id)
@@ -627,7 +629,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         let Some(range) = range else {
             continue;
         };
-        if let Some(edge) = ir.model.edges.iter_mut().find(|edge| edge.id == edge_id) {
+        if let Some(edge) = ir.geometry.edges.iter_mut().find(|edge| edge.id == edge_id) {
             if edge_reversed {
                 std::mem::swap(&mut edge.start, &mut edge.end);
             }
@@ -1184,7 +1186,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut edge_tolerances = BTreeMap::<CurveId, f64>::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         let (Some(curve), Some(tolerance)) = (
             edge.curve(),
             edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
@@ -1203,7 +1205,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     let mut blend_parameter_grids = BlendParameterGridCache::new();
     let mut candidates = Vec::new();
     for (procedural_index, procedural) in ir
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .enumerate()
@@ -1258,10 +1260,10 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         );
         let replacement =
             (|| -> Result<Option<OppositeChartReplacement>, cadmpeg_core::CodecError> {
-                let Some(procedural) = ir.model.procedural_curves.get(procedural_index) else {
+                let Some(procedural) = ir.geometry.procedural_curves.get(procedural_index) else {
                     return Ok(None);
                 };
-                let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+                let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) else {
                     return Ok(None);
                 };
                 let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -1358,7 +1360,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     }
     drop(model_index);
     for (procedural_index, side, pcurve, tolerance, cache_backed) in replacements {
-        let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
+        let Some(procedural) = ir.geometry.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
         let completed = procedural.edit_definition(|definition| {
@@ -1490,15 +1492,15 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
     let vertex_points = vertex_point_positions(ir);
     let edges_by_curve = edge_indices_by_curve(ir);
     let mut procedural_indices = BTreeMap::<ProceduralCurveId, usize>::new();
-    for (index, procedural) in ir.model.procedural_curves.iter().enumerate() {
+    for (index, procedural) in ir.geometry.procedural_curves.iter().enumerate() {
         let procedural_key = procedural.id.clone();
 
         procedural_indices.entry(procedural_key).or_insert(index);
     }
     let mut blend_parameter_grids = BlendParameterGridCache::new();
     let mut replacements = Vec::new();
-    for procedural in ir.model.procedural_curves.iter().skip(procedural_start) {
-        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+    for procedural in ir.geometry.procedural_curves.iter().skip(procedural_start) {
+        let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) else {
             continue;
         };
         let Some(edge_indices) = edges_by_curve.get(owner) else {
@@ -1507,7 +1509,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         let [edge_index] = edge_indices.as_slice() else {
             continue;
         };
-        let Some(edge) = ir.model.edges.get(*edge_index) else {
+        let Some(edge) = ir.geometry.edges.get(*edge_index) else {
             continue;
         };
         let (supports, endpoints, range, admitted_tolerance) = match procedural.definition() {
@@ -1705,7 +1707,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         let Some(procedural_index) = procedural_indices.get(&procedural_id).copied() else {
             continue;
         };
-        let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
+        let Some(procedural) = ir.geometry.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
         let mut tolerant_range = None;
@@ -1750,7 +1752,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         let [edge_index] = edge_indices.as_slice() else {
             continue;
         };
-        if let Some(edge) = ir.model.edges.get_mut(*edge_index) {
+        if let Some(edge) = ir.geometry.edges.get_mut(*edge_index) {
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
             annotations
                 .derived(&edge.id, "param_range")
@@ -4094,7 +4096,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
 ) -> Result<(), cadmpeg_core::CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let candidates = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
@@ -4285,7 +4287,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             },
         );
         let Some(edge) = ir
-            .model
+            .geometry
             .edges
             .iter_mut()
             .find(|candidate| candidate.id == edge_id)
@@ -4318,7 +4320,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             .derived(&procedural_id, "definition")
             .map_err(cadmpeg_core::CodecError::from)?;
 
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Procedural {
@@ -4328,7 +4330,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             source_object: None,
         });
 
-        let _attached = procedural_admission.add_curve(&mut ir.model, &curve_id, procedural)?;
+        let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve_id, procedural)?;
     }
     Ok(())
 }
@@ -4644,7 +4646,7 @@ mod tests {
         let vertex_id = VertexId::mint("nx:s1:vertex#0").expect("identity grammar");
 
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Procedural {
@@ -4653,7 +4655,7 @@ mod tests {
             },
             source_object: None,
         });
-        ir.model
+        ir.geometry
             .add_procedural_curve(
                 &curve,
                 ProceduralCurve::new(
@@ -4680,7 +4682,7 @@ mod tests {
                 ),
             )
             .unwrap();
-        ir.model.coedges.push(Coedge {
+        ir.geometry.coedges.push(Coedge {
             id: coedge_id,
             owner_loop: loop_id.clone(),
             edge: edge_id.clone(),
@@ -4699,14 +4701,14 @@ mod tests {
             index.complete_from_stream(&mut ir, super::IntersectionEntityStarts::default());
 
             let later_starts = super::IntersectionEntityStarts {
-                loops: ir.model.loops.len(),
-                faces: ir.model.faces.len(),
-                edges: ir.model.edges.len(),
-                coedges: ir.model.coedges.len(),
-                pcurves: ir.model.pcurves.len(),
-                procedural_curves: ir.model.procedural_curves.len(),
+                loops: ir.geometry.loops.len(),
+                faces: ir.geometry.faces.len(),
+                edges: ir.geometry.edges.len(),
+                coedges: ir.geometry.coedges.len(),
+                pcurves: ir.geometry.pcurves.len(),
+                procedural_curves: ir.geometry.procedural_curves.len(),
             };
-            ir.model.faces.push(Face {
+            ir.geometry.faces.push(Face {
                 id: face_id.clone(),
                 shell: ShellId::mint("nx:s1:shell#0").expect("identity grammar"),
                 surface: completed_surface.clone(),
@@ -4716,7 +4718,7 @@ mod tests {
                 color: None,
                 tolerance: None,
             });
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: loop_id,
                 face: face_id,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -4727,7 +4729,7 @@ mod tests {
                     .expect("valid loop ring"),
                 ),
             });
-            ir.model.edges.push(Edge {
+            ir.geometry.edges.push(Edge {
                 id: edge_id,
                 carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
                     CurveId::mint("nx:s0:intersection-crv#0").expect("identity grammar"),
@@ -4736,7 +4738,7 @@ mod tests {
                 end: vertex_id,
                 tolerance: None,
             });
-            ir.model.pcurves.push(Pcurve {
+            ir.geometry.pcurves.push(Pcurve {
                 id: pcurve_id,
                 geometry: PcurveGeometry::Line(
                     cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -4749,7 +4751,7 @@ mod tests {
             });
 
             index.complete_from_stream(&mut ir, later_starts);
-            let procedural = &ir.model.procedural_curves[0];
+            let procedural = &ir.geometry.procedural_curves[0];
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 panic!("test construction is not an intersection");
@@ -4758,7 +4760,7 @@ mod tests {
             assert!(context.sides()[1].pcurve.is_none());
 
             index.complete_from_model(&mut ir);
-            let procedural = &ir.model.procedural_curves[0];
+            let procedural = &ir.geometry.procedural_curves[0];
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 panic!("test construction is not an intersection");

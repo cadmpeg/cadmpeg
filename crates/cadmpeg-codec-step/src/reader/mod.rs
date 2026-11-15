@@ -235,7 +235,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
     }
 
     fn charge_pending_ir_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
-        let current_entities = u64_from_index(self.ir.model.entity_count());
+        let current_entities = u64_from_index(self.ir.entity_count());
         if current_entities < self.admitted_ir_entities {
             self.admitted_ir_entities = current_entities;
             return Ok(());
@@ -453,10 +453,10 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
     )?;
-    if !session.ir.model.points.is_empty()
-        || !session.ir.model.curves.is_empty()
-        || !session.ir.model.surfaces.is_empty()
-        || !session.ir.model.bodies.is_empty()
+    if !session.ir.geometry.points.is_empty()
+        || !session.ir.geometry.curves.is_empty()
+        || !session.ir.geometry.surfaces.is_empty()
+        || !session.ir.geometry.bodies.is_empty()
         || !session.ir.model.tessellations.is_empty()
     {
         session.body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
@@ -741,17 +741,17 @@ fn retain_unowned_carriers(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut owned = BTreeSet::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         for use_ in &coedge.pcurves {
             insert_retained_identity(&mut owned, use_.pcurve.as_str());
         }
     }
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         for pcurve in loop_.vertex_pcurves() {
             insert_retained_identity(&mut owned, pcurve.pcurve.as_str());
         }
     }
-    for surface in &ir.model.procedural_surfaces {
+    for surface in &ir.geometry.procedural_surfaces {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves,
             ..
@@ -781,27 +781,27 @@ fn retain_unowned_carriers(
         let transferred = carrier_index
             .points
             .get(&id)
-            .and_then(|carrier| ir.model.points.get(carrier.index.0))
+            .and_then(|carrier| ir.geometry.points.get(carrier.index.0))
             .is_some_and(|point| point.source_object.is_some());
         if !transferred && !referenced.get(&id).copied().unwrap_or_default() {
             typed_records.remove(id);
         }
     }
     let direct_carriers = ir
-        .model
+        .geometry
         .points
         .iter()
         .filter(|point| point.source_object.is_none())
         .map(|point| point.id.as_str())
         .chain(
-            ir.model
+            ir.geometry
                 .curves
                 .iter()
                 .filter(|curve| curve.source_object.is_none())
                 .map(|curve| curve.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .surfaces
                 .iter()
                 .filter(|surface| surface.source_object.is_none())
@@ -818,32 +818,32 @@ fn retain_unowned_carriers(
         return Ok(());
     }
     let protected_roots = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| vertex.point.as_str())
         .chain(
-            ir.model
+            ir.geometry
                 .edges
                 .iter()
                 .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str)),
         )
-        .chain(ir.model.faces.iter().map(|face| face.surface.as_str()))
+        .chain(ir.geometry.faces.iter().map(|face| face.surface.as_str()))
         .chain(
-            ir.model
+            ir.geometry
                 .coedges
                 .iter()
                 .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| use_.curve.as_str())),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .pcurves
                 .iter()
                 .filter(|pcurve| owned.contains(pcurve.id.as_str()))
                 .map(|pcurve| pcurve.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .points
                 .iter()
                 .filter(|point| {
@@ -854,7 +854,7 @@ fn retain_unowned_carriers(
                 .map(|point| point.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .curves
                 .iter()
                 .filter(|curve| {
@@ -865,7 +865,7 @@ fn retain_unowned_carriers(
                 .map(|curve| curve.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .surfaces
                 .iter()
                 .filter(|surface| {
@@ -876,13 +876,13 @@ fn retain_unowned_carriers(
                 .map(|surface| surface.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .procedural_curves
                 .iter()
                 .map(|curve| curve.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .procedural_surfaces
                 .iter()
                 .map(|surface| surface.id.as_str()),
@@ -892,57 +892,57 @@ fn retain_unowned_carriers(
     let protected = record_closure(protected_roots, exchange, ctx)?;
     let removed_closure = record_closure(unowned_pcurves.iter().copied(), exchange, ctx)?;
     let deleted_pcurves = ir
-        .model
+        .geometry
         .pcurves
         .iter()
         .filter(|pcurve| !retains_carrier(pcurve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_points = ir
-        .model
+        .geometry
         .points
         .iter()
         .filter(|point| !retains_carrier(point.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_curves = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_surfaces = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_procedural_curves = ir
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_procedural_surfaces = ir
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
-    ir.model
+    ir.geometry
         .pcurves
         .retain(|pcurve| owned.contains(pcurve.id.as_str()));
-    ir.model
+    ir.geometry
         .points
         .retain(|point| retains_carrier(point.id.as_str(), &removed_closure, &protected));
-    ir.model
+    ir.geometry
         .curves
         .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
-    ir.model
+    ir.geometry
         .surfaces
         .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
-    ir.model
+    ir.geometry
         .procedural_curves
         .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
-    ir.model
+    ir.geometry
         .procedural_surfaces
         .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
     typed_records.retain(&mut |id| {
@@ -960,7 +960,7 @@ fn retain_unowned_carriers(
 }
 
 fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
-    for point in &mut ir.model.points {
+    for point in &mut ir.geometry.points {
         let Some(id) = step_instance_id(point.id.as_str()) else {
             continue;
         };
@@ -968,7 +968,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             point.source_object = Some(step_source_association(id, None));
         }
     }
-    for curve in &mut ir.model.curves {
+    for curve in &mut ir.geometry.curves {
         let Some(id) = step_instance_id(curve.id.as_str()) else {
             continue;
         };
@@ -976,7 +976,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             curve.source_object = Some(step_source_association(id, None));
         }
     }
-    for surface in &mut ir.model.surfaces {
+    for surface in &mut ir.geometry.surfaces {
         let Some(id) = step_instance_id(surface.id.as_str()) else {
             continue;
         };
@@ -1083,17 +1083,17 @@ fn referenced_record_ids(
         let point = carrier_index
             .points
             .get(&id)
-            .and_then(|carrier| ir.model.points.get(carrier.index.0));
+            .and_then(|carrier| ir.geometry.points.get(carrier.index.0));
         point.is_some_and(|point| point.source_object.is_none())
             || carrier_index
                 .curves
                 .get(&id)
-                .and_then(|index| ir.model.curves.get(index.0))
+                .and_then(|index| ir.geometry.curves.get(index.0))
                 .is_some_and(|curve| curve.source_object.is_none())
             || carrier_index
                 .surfaces
                 .get(&id)
-                .and_then(|index| ir.model.surfaces.get(index.0))
+                .and_then(|index| ir.geometry.surfaces.get(index.0))
                 .is_some_and(|surface| surface.source_object.is_none())
             || (point.is_none_or(|point| point.source_object.is_none())
                 && exchange

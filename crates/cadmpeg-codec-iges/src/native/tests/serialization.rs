@@ -56,7 +56,7 @@ fn optional_cards_keep_exact_bytes() {
     let result = crate::IgesCodec
         .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let first = &result.ir().native.namespace("iges").unwrap().arenas()["cards"][0];
     let payload = first.field("payload").unwrap();
     let hex = payload.as_str().unwrap();

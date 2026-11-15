@@ -401,8 +401,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
     );
     let surface_coverage = surface_transfer_coverage(
         &scan.surfaces.rows,
-        &ir.model.surfaces,
-        &ir.model.procedural_surfaces,
+        &ir.geometry.surfaces,
+        &ir.geometry.procedural_surfaces,
     )?;
     let decoded_type24_round_edge_envelope_count = scan
         .surfaces
@@ -419,7 +419,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             record.type24_round_edge_envelope()
         })
         .count();
-    let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves)?;
+    let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.geometry.curves)?;
     {
         coverage.record(
             crate::coverage::UNIQUE_VISIBLE_SURFACE_ROW_COUNT,
@@ -942,7 +942,7 @@ mod tests {
         ));
 
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -956,7 +956,7 @@ mod tests {
             )),
             source_object: None,
         });
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -988,7 +988,7 @@ mod tests {
         .expect("synthetic geometry transfer");
 
         let curve = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| {
