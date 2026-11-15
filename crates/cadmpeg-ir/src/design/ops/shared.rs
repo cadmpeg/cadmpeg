@@ -466,32 +466,35 @@ pub struct TableRow {
     pub values: Vec<Option<ScalarDimension>>,
 }
 
-/// What a Boolean does with its tools. Which bodies the current geometry
-/// holds is stated by the current states and never derived from it.
+/// What the source does with the tools of an operation. Which bodies the
+/// current geometry holds is stated by the current states, never derived from
+/// this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ToolDisposition {
-    /// Leaves them as bodies.
+    /// The tools stay as bodies.
     Kept,
-    /// Removes them.
+    /// The tools are removed.
     Consumed,
-    /// Moves the tool body under the Boolean with its history editable.
+    /// The tool body moves under the operation with its history editable.
     Absorbed,
 }
 
-/// One of the two elements of a pair.
+/// One member of a pair of elements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum PairElement {
-    /// The first element.
+    /// The first member.
     First,
-    /// The second element.
+    /// The second member.
     Second,
 }
 
-/// A connector of a joint: a construction of the element the joint relates.
+/// A connector: a construction of the element a joint relates, or the picked
+/// entity itself. Its resolved value is in the coordinates of the definition
+/// its picks resolve in.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -505,13 +508,12 @@ pub enum JointConnector {
     /// A point.
     Point(Construction<kinds::Point>),
     /// The picked entity itself: a face whose surface the relation uses, the
-    /// faces a rigid or native relation fixes, or a pick whose geometric kind
-    /// the decoder cannot read.
+    /// faces a rigid or native joint fixes, or a pick whose geometric kind the
+    /// decoder cannot read.
     Entity(OrderedSelection),
 }
 
-/// The relative sense of a joint's connectors' z axes or normals. It is the
-/// only home of the sense.
+/// The relative sense of a joint's connectors' z axes or normals.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -523,17 +525,16 @@ pub enum JointConnector {
 pub enum Alignment {
     /// The same sense.
     Aligned,
-    /// Opposite senses: `z₁ = −z₀`.
+    /// Opposite senses: z₁ = −z₀.
     Opposed,
     /// The source fixes no sense and the solver keeps the nearer one; the
     /// solved sense is in the connectors' resolved frames.
     Nearest,
-    /// A sense whose meaning is not established.
+    /// A source alignment whose meaning is not established.
     Native(NonBlankString),
 }
 
-/// The relation a joint holds between its connectors. Every value is a
-/// dimension, so a design parameter drives it.
+/// What a joint does to its connectors.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -557,13 +558,12 @@ pub enum JointKind {
         axes: Option<Box<Construction<kinds::Frame>>>,
         /// The displacement of the second connector from the first.
         offset: JointOffset,
-        /// The limits of the freedoms the motion leaves, at most one per
-        /// axis.
+        /// The limits of the freedoms, at most one entry per axis.
         limits: Vec<AxisLimits>,
         /// The motors and springs on the freedoms.
         drives: Vec<JointDrive>,
     },
-    /// The second element on the first.
+    /// The second element lies on the first.
     Coincident {
         /// The offset, signed along the first element's normal.
         #[serde(
@@ -573,9 +573,9 @@ pub enum JointKind {
         )]
         offset: Option<Dimension<Length>>,
     },
-    /// Two axes made to coincide.
+    /// Two axes coincide.
     Concentric,
-    /// Two circles made coaxial with coincident or offset planes.
+    /// Two circles are coaxial, with coincident or offset planes.
     Insert {
         /// The offset of the planes.
         #[serde(
@@ -594,7 +594,7 @@ pub enum JointKind {
             deserialize_with = "deserialize_distance"
         )]
         distance: Option<Dimension<Length>>,
-        /// The range the separation is held in.
+        /// The limits of the separation.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -611,7 +611,7 @@ pub enum JointKind {
             deserialize_with = "deserialize_angle"
         )]
         angle: Option<Dimension<Angle>>,
-        /// The range the angle is held in.
+        /// The limits of the angle.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -619,11 +619,11 @@ pub enum JointKind {
         )]
         limits: Option<Bounds<Angle>>,
     },
-    /// Parallel elements.
+    /// The elements are parallel.
     Parallel,
-    /// Perpendicular elements.
+    /// The elements are perpendicular.
     Perpendicular,
-    /// Tangent elements.
+    /// The elements touch tangentially.
     Tangent {
         /// Whether the elements touch from outside or from inside.
         #[serde(
@@ -633,9 +633,9 @@ pub enum JointKind {
         )]
         contact: Option<TangentContact>,
     },
-    /// The first point at `distance` from the second axis.
+    /// The first point lies at a distance from the second axis.
     PointOnAxis {
-        /// The distance from the axis.
+        /// The distance.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -643,16 +643,16 @@ pub enum JointKind {
         )]
         distance: Option<Dimension<Length>>,
     },
-    /// The two elements mirror images in `plane`.
+    /// The two elements are mirror images in a plane.
     Symmetric {
         /// The plane of symmetry.
         plane: Construction<kinds::Plane>,
     },
-    /// The second element held between the two elements of `pair`.
+    /// The second element is held between the two elements of `pair`.
     Width {
-        /// The two elements the second element is held between.
+        /// The two elements that hold it.
         pair: Box<[JointConnector; 2]>,
-        /// Where the element is held between them. `None` centres it.
+        /// Where it is held. `None` centres it.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -661,8 +661,8 @@ pub enum JointKind {
         mode: Option<WidthMode>,
     },
     /// A pin in a slot: the axis of the second element stays on the slot's
-    /// centre path between the first element's side faces, free to slide
-    /// along it and to turn about itself.
+    /// centre path between the first element's side faces, free to slide along
+    /// it and to turn about itself. Its connectors are `Entity` picks.
     Slot {
         /// Where the pin lies along the slot.
         #[serde(
@@ -679,10 +679,10 @@ pub enum JointKind {
         )]
         lock_rotation: Option<Dimension<bool>>,
     },
-    /// A point of the second element kept on a path, the chain its first
+    /// A point of the second element stays on a path, the chain the first
     /// connector picks.
     Path {
-        /// Where the point lies on the path.
+        /// Where the point lies along the path.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -706,12 +706,12 @@ pub enum JointKind {
         )]
         roll: Option<PathRollControl>,
     },
-    /// The rotations or translations of the two connectors related.
+    /// A coupling of the rotations or translations of the two connectors.
     Coupling {
-        /// The relation.
+        /// The coupling.
         coupling: Coupling,
-        /// The two joints the coupling acts on, as `Feature` targets, gear or
-        /// pinion first, where it acts on two other joints.
+        /// The two other joints the coupling acts on, as `Feature` picks, gear
+        /// or pinion first.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -719,13 +719,12 @@ pub enum JointKind {
         )]
         joints: Option<OrderedSelection>,
     },
-    /// A relation whose meaning is not established.
+    /// A source joint kind whose meaning is not established.
     Native(NonBlankString),
 }
 
-/// The degrees of freedom a motion joint leaves. A kind that names an axis
-/// holds the axis of the first connector's frame about or along which it
-/// moves.
+/// The degrees of freedom a motion joint leaves. An axis is an axis of the
+/// first connector's frame, or of `axes` where that is stated.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -735,69 +734,70 @@ pub enum JointKind {
     deny_unknown_fields
 )]
 pub enum JointMotion {
-    /// None: the current relative placement of the two connectors is fixed.
+    /// None: the current relative placement of the two connectors is fixed. It
+    /// needs no frame, so its connectors may be any variant.
     Rigid,
     /// Rotation about `axis`.
     Revolute {
-        /// The axis of rotation.
+        /// The axis.
         axis: FrameAxis,
     },
     /// Translation along `axis`.
     Slider {
-        /// The axis of translation.
+        /// The axis.
         axis: FrameAxis,
     },
     /// Rotation about and translation along `axis`.
     Cylindrical {
-        /// The axis of rotation and translation.
+        /// The axis.
         axis: FrameAxis,
     },
     /// Translation in the plane normal to `axis` and rotation about it.
     Planar {
-        /// The normal of the plane.
+        /// The axis.
         axis: FrameAxis,
     },
     /// Rotation about the origin.
     Ball,
-    /// Rotation about `axis` and translation along `slide`, another axis of
-    /// the same frame.
+    /// Rotation about `axis` and translation along `slide`, another axis of the
+    /// same frame.
     PinSlot {
-        /// The axis of rotation.
+        /// The rotation axis.
         axis: FrameAxis,
-        /// The axis of translation.
+        /// The translation axis.
         slide: FrameAxis,
     },
-    /// Freedoms whose meaning is not established.
+    /// A source motion whose meaning is not established.
     Native(NonBlankString),
 }
 
-/// The displacement of a joint's second connector from its first.
+/// The displacement of a motion joint's second connector from the first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct JointOffset {
-    /// The displacement along the x axis.
+    /// Along x.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_x"
     )]
     pub x: Option<Dimension<Length>>,
-    /// The displacement along the y axis.
+    /// Along y.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_y"
     )]
     pub y: Option<Dimension<Length>>,
-    /// The displacement along the z axis.
+    /// Along z.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_z"
     )]
     pub z: Option<Dimension<Length>>,
-    /// The rotation about the z axis.
+    /// About z.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -806,17 +806,17 @@ pub struct JointOffset {
     pub angle: Option<Dimension<Angle>>,
 }
 
-/// The limits of one degree of freedom a motion leaves. It states `limits`,
+/// The limits of one degree of freedom a motion leaves; it states `limits`,
 /// `rest`, or both.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AxisLimits {
-    /// A rotation about `axis`.
+    /// A rotation about an axis.
     Rotation {
-        /// The axis of the freedom.
+        /// The axis.
         axis: FrameAxis,
-        /// The range of the rotation.
+        /// The range.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -831,11 +831,11 @@ pub enum AxisLimits {
         )]
         rest: Option<Dimension<Angle>>,
     },
-    /// A translation along `axis`.
+    /// A translation along an axis.
     Translation {
-        /// The axis of the freedom.
+        /// The axis.
         axis: FrameAxis,
-        /// The range of the translation.
+        /// The range.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -852,7 +852,7 @@ pub enum AxisLimits {
     },
 }
 
-/// A range. It holds at least one bound.
+/// A range; it holds at least one bound.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -876,8 +876,7 @@ pub struct Bounds<Q> {
     pub max: Option<Dimension<Q>>,
 }
 
-/// How a coupling relates the rotations or translations of a joint's two
-/// connectors.
+/// A coupling of the rotations or translations of two members.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -887,7 +886,7 @@ pub struct Bounds<Q> {
     deny_unknown_fields
 )]
 pub enum Coupling {
-    /// A gear pair.
+    /// A gear.
     Gear {
         /// The second member's rotation per rotation of the first, as a
         /// magnitude whose sign the frames give.
@@ -897,7 +896,7 @@ pub enum Coupling {
             deserialize_with = "deserialize_ratio"
         )]
         ratio: Option<Dimension<FiniteReal>>,
-        /// The radii the source states instead.
+        /// The radii the source states instead of the ratio.
         radii: [Option<Dimension<Length>>; 2],
     },
     /// A belt.
@@ -910,7 +909,7 @@ pub enum Coupling {
             deserialize_with = "deserialize_ratio"
         )]
         ratio: Option<Dimension<FiniteReal>>,
-        /// The radii the source states instead.
+        /// The radii the source states instead of the ratio.
         radii: [Option<Dimension<Length>>; 2],
     },
     /// A rack and pinion.
@@ -923,7 +922,7 @@ pub enum Coupling {
             deserialize_with = "deserialize_ratio"
         )]
         ratio: Option<Dimension<FiniteReal>>,
-        /// The pitch radius the source states instead.
+        /// The pitch radius the source states instead of the ratio.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -933,7 +932,7 @@ pub enum Coupling {
     },
     /// A screw.
     Screw {
-        /// The pitch the source states.
+        /// The pitch.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -941,52 +940,52 @@ pub enum Coupling {
         )]
         pitch: Option<Dimension<Length>>,
     },
-    /// A coupling whose meaning is not established.
+    /// A source coupling whose meaning is not established.
     Native(NonBlankString),
 }
 
-/// A motor or spring on one degree of freedom of a `Motion` joint. Its
-/// output is `stiffness · (target_position − position) + damping ·
-/// (target_velocity − velocity)`, limited to `max_force`, with positions in
-/// radians or millimetres, velocities per second, and every coefficient in
-/// §2.3's canonical units.
+/// A motor or spring on one degree of freedom of a motion joint. Its output is
+/// `stiffness · (target_position − position) + damping · (target_velocity −
+/// velocity)`, limited to `max_force`, with positions in radians or
+/// millimetres, velocities per second, and every coefficient in canonical
+/// units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct JointDrive {
-    /// The degree of freedom it drives.
+    /// The freedom it drives.
     pub axis: DriveAxis,
     /// How its output applies.
     pub mode: DriveMode,
-    /// The position it drives toward.
+    /// The target position.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_target_position"
     )]
     pub target_position: Option<FiniteReal>,
-    /// The velocity it drives toward.
+    /// The target velocity.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_target_velocity"
     )]
     pub target_velocity: Option<FiniteReal>,
-    /// The coefficient of the position error.
+    /// The stiffness.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_stiffness"
     )]
     pub stiffness: Option<NonNegativeReal>,
-    /// The coefficient of the velocity error.
+    /// The damping.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_damping"
     )]
     pub damping: Option<NonNegativeReal>,
-    /// The limit of the output. `None` is unlimited.
+    /// The limit of the output; `None` is unlimited.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1024,7 +1023,7 @@ pub enum DriveMode {
     Acceleration,
 }
 
-/// Whether a `Tangent` joint's elements touch from outside or from inside.
+/// Whether a tangent joint's elements touch from outside or from inside.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
@@ -1035,8 +1034,7 @@ pub enum TangentContact {
     Inside,
 }
 
-/// Where a `Width` joint holds its element between the two elements of its
-/// pair.
+/// Where a width joint holds its element between the pair.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -1050,13 +1048,13 @@ pub enum WidthMode {
     Centered,
     /// Free to move between them.
     Free,
-    /// So that the distance from the `from` element of the pair to the held
-    /// element's face that faces it is `distance`.
+    /// At a distance from one element of the pair: the distance from the `from`
+    /// element to the held element's face that faces it.
     Gap {
         /// The distance.
         distance: Dimension<NonNegativeLength>,
-        /// The element of the pair the distance runs from. `None` does not
-        /// state which.
+        /// The element of the pair the distance is measured from. `None` does
+        /// not state which.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -1064,11 +1062,11 @@ pub enum WidthMode {
         )]
         from: Option<PairElement>,
     },
-    /// A mode whose meaning is not established.
+    /// A source width mode whose meaning is not established.
     Native(NonBlankString),
 }
 
-/// Where a `Slot` joint's pin lies along the slot.
+/// Where a slot joint's pin lies along the slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -1082,11 +1080,11 @@ pub enum SlotPosition {
     Free,
     /// At the middle of the slot's centre path.
     Centered,
-    /// A position whose meaning is not established.
+    /// A source slot position whose meaning is not established.
     Native(NonBlankString),
 }
 
-/// Where a `Path` joint's point lies on the path.
+/// Where a path joint's point lies along the path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -1097,8 +1095,8 @@ pub enum PathPosition {
     Distance {
         /// The distance.
         distance: Dimension<NonNegativeLength>,
-        /// Whether the distance runs from the path's end rather than its
-        /// start. It decides how the distance is read.
+        /// Whether the distance is measured from the path's end, not its start.
+        /// It decides how the value is read.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -1110,8 +1108,8 @@ pub enum PathPosition {
     Percent {
         /// The fraction.
         fraction: Dimension<Fraction>,
-        /// Whether the fraction runs from the path's end rather than its
-        /// start. It decides how the fraction is read.
+        /// Whether the fraction is measured from the path's end, not its start.
+        /// It decides how the value is read.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -1121,12 +1119,13 @@ pub enum PathPosition {
     },
 }
 
-/// The axis of a `Path` joint's second element held tangent to the path.
+/// How a path joint holds an axis of the second element against the path's
+/// tangent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathAxisControl {
-    /// No axis is held.
+    /// Not held.
     Free {},
     /// One axis of the second element's definition frame held tangent to the
     /// path.
@@ -1143,19 +1142,18 @@ pub enum PathAxisControl {
     },
 }
 
-/// The axis of a `Path` joint's second element held along a constructed
-/// direction.
+/// How a path joint holds an axis of the second element along a direction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathRollControl {
-    /// No axis is held.
+    /// Not held.
     Free {},
     /// One axis held along a constructed direction.
     UpVector {
         /// The direction.
         vector: Box<Construction<kinds::Direction>>,
-        /// The axis held along it.
+        /// The axis.
         axis: FrameAxis,
         /// Whether the axis is reversed.
         #[serde(
