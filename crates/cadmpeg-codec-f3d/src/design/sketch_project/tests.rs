@@ -1913,3 +1913,74 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
         });
     });
 }
+
+#[test]
+fn point_repeating_an_earlier_point_tag_takes_the_record_index_key() {
+    let placement = DesignSketchPlacement {
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            0,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
+        id: "f3d:BulkStream.dat:placement#0".into(),
+        scope_record_index: None,
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
+            .expect("valid entity ID"),
+        visibility: None,
+        display_name: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: 1,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
+    };
+    let point = |record_index: u32, tag: u64, incident: Vec<u32>| {
+        SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            id: format!("f3d:BulkStream.dat:point#{record_index}"),
+            record_index,
+            owner_reference: Some(42),
+            geometry_group: None,
+            class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned())
+                .unwrap(),
+            byte_offset: u64::from(record_index),
+            coordinate_offset: 0,
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
+                incident_curves: incident,
+            },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                tag,
+                crate::records::sketch_geometry::SketchPointClosure::Selector4State0,
+                None,
+                0.0,
+            ),
+            paired_reference: record_index + 1,
+            coordinates: Point2::new(f64::from(record_index), 0.0),
+        })
+        .unwrap()
+    };
+    let points = [
+        point(10, 7, vec![20, 21]),
+        point(12, 8, vec![22]),
+        point(14, 7, vec![22]),
+    ];
+    let (_, entities) = crate::test_support::with_decode_context(|ctx| {
+        project_sketch_design(
+            ctx,
+            &SketchProjectInputs::new(&[placement], &points, &[], &[], &[]),
+            EPS_POINT_PROJECTION,
+        )
+    })
+    .unwrap()
+    .into_tuple();
+    let sketch = entities[0].sketch.clone();
+    let mut expected = vec![
+        crate::ids::neutral_sketch_point_id(&sketch, 7),
+        crate::ids::neutral_sketch_point_id(&sketch, 8),
+        crate::ids::neutral_sketch_record_id(&sketch, 14),
+    ];
+    expected.sort();
+    let ids = entities
+        .iter()
+        .map(|entity| entity.id().clone())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, expected);
+}

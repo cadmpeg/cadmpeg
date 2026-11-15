@@ -23,8 +23,11 @@ pub(super) fn resolve(
     let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {
         return Ok(None);
     };
+    let Some(regions) = selection.resolution_regions() else {
+        return Ok(None);
+    };
     let mut rings = Vec::new();
-    for region in &selection.regions {
+    for region in regions {
         let mut members = Vec::new();
         for member in &region.members {
             let Some(entity) =
@@ -109,8 +112,11 @@ pub(super) fn resolve_stale(
         return Ok(None);
     };
     let mut stale = false;
+    let Some(regions) = selection.resolution_regions() else {
+        return Ok(None);
+    };
     let mut owned = Vec::new();
-    for region in &selection.regions {
+    for region in regions {
         let mut members = Vec::new();
         for member in &region.members {
             let has_identity = curves.iter().any(|curve| {

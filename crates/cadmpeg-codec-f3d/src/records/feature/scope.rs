@@ -41,6 +41,7 @@ use super::primitives::{
     DesignBoxPrimitive, DesignCylinderPrimitive, DesignSolidPrimitive, DesignSpherePrimitive,
     DesignTorusPrimitive,
 };
+use super::sheet_metal::edge::{DesignEdgeFlangeScope, DesignReferenceEdgeFlange};
 use super::sheet_metal::{
     DesignBaseFlangeOperation, DesignEdgeFlangeOperation, DesignHemOperation,
 };
@@ -179,6 +180,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_edge_flange_operation,
     DesignEdgeFlangeOperation,
     "edge_flange_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_flange_construction,
+    DesignReferenceEdgeFlange,
+    "edge_flange_construction"
 );
 cadmpeg_core::named_optional_field!(deserialize_entity_id, String, "entity_id");
 cadmpeg_core::named_optional_field!(
@@ -444,6 +450,12 @@ impl<T> ScopePayloadCompleteness for Option<T> {
 impl<T> ScopePayloadCompleteness for Vec<T> {
     fn is_uninterpreted(&self) -> bool {
         false
+    }
+}
+
+impl ScopePayloadCompleteness for DesignEdgeFlangeScope {
+    fn is_uninterpreted(&self) -> bool {
+        matches!(self, Self::Unresolved)
     }
 }
 
@@ -771,7 +783,7 @@ design_feature_kinds! {
         Scale => "Scale": Option<DesignScaleOperation>,
         Thread => "Thread": Option<DesignThreadConstruction>,
         Emboss => "Emboss": Option<DesignEmbossConstruction>,
-        EdgeFlange => "EdgeFlange": Option<DesignEdgeFlangeOperation>,
+        EdgeFlange => "EdgeFlange": DesignEdgeFlangeScope,
         Hem => "Hem": Option<DesignHemOperation>,
         BaseFlange => "BaseFlange": Option<DesignBaseFlangeScope>,
         ComponentInsert => "Component Insert": DesignComponentInsertScope,
@@ -1206,6 +1218,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_edge_flange_operation"
     )]
     edge_flange_operation: Option<DesignEdgeFlangeOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_flange_construction"
+    )]
+    edge_flange_construction: Option<DesignReferenceEdgeFlange>,
     /// Exact edge, parameter, and settings records carried by a `Hem` scope.
     #[serde(
         default,
@@ -1966,6 +1984,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.edge_flange_operation.is_some() {
             present.push("edge_flange_operation");
         }
+        if wire.edge_flange_construction.is_some() {
+            present.push("edge_flange_construction");
+        }
         if wire.hem_operation.is_some() {
             present.push("hem_operation");
         }
@@ -2225,7 +2246,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::Thread(wire.thread_construction.take())
             }
             DesignFeatureKind::EdgeFlange => {
-                DesignScopePayload::EdgeFlange(wire.edge_flange_operation.take())
+                DesignScopePayload::EdgeFlange(match wire.edge_flange_construction.take() {
+                    Some(construction) => DesignEdgeFlangeScope::ReferenceFramed(construction),
+                    None => wire.edge_flange_operation.take().into(),
+                })
             }
             DesignFeatureKind::Hem => DesignScopePayload::Hem(wire.hem_operation.take()),
             DesignFeatureKind::BaseFlange => {
@@ -2373,6 +2397,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.surface_patch_normal.is_some()
             || wire.surface_patch_selection.is_some()
             || wire.edge_flange_operation.is_some()
+            || wire.edge_flange_construction.is_some()
             || wire.hem_operation.is_some()
             || wire.fixed_fillet_parameters.is_some()
             || wire.fillet_sets.is_some()
@@ -2563,6 +2588,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             surface_patch_normal: None,
             surface_patch_selection: None,
             edge_flange_operation: None,
+            edge_flange_construction: None,
             hem_operation: None,
             fixed_fillet_parameters: None,
             fillet_sets: None,
@@ -2678,7 +2704,15 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.surface_patch_normal = value.normal;
                 wire.surface_patch_selection = value.selection;
             }
-            DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = value,
+            DesignScopePayload::EdgeFlange(value) => match value {
+                DesignEdgeFlangeScope::Legacy(operation) => {
+                    wire.edge_flange_operation = Some(operation);
+                }
+                DesignEdgeFlangeScope::ReferenceFramed(construction) => {
+                    wire.edge_flange_construction = Some(construction);
+                }
+                DesignEdgeFlangeScope::Unresolved => {}
+            },
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
             DesignScopePayload::ContourFlange(value) => wire.contour_flange_operation = value,
             DesignScopePayload::Unfold(value) => wire.unfold_operation = value,
@@ -3335,7 +3369,16 @@ impl DesignParameterScope {
 
     pub(crate) fn edge_flange_operation(&self) -> Option<&DesignEdgeFlangeOperation> {
         match &self.payload {
-            DesignScopePayload::EdgeFlange(value) => value.as_ref(),
+            DesignScopePayload::EdgeFlange(DesignEdgeFlangeScope::Legacy(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn edge_flange_construction(&self) -> Option<&DesignReferenceEdgeFlange> {
+        match &self.payload {
+            DesignScopePayload::EdgeFlange(DesignEdgeFlangeScope::ReferenceFramed(value)) => {
+                Some(value)
+            }
             _ => None,
         }
     }

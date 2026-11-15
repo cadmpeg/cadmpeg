@@ -4838,6 +4838,186 @@ source = "spec"
 anchor = "a flag byte at offset 20"
 
 [[record]]
+name = "mesh_separate_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "a u32 reference count at offset 21"
+size = 25
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs"
+note = "Offsets are relative to the Separate primary indexed header in the flag-zero form."
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Indexed header, nine zero bytes and flag byte, as specified by mesh_operation_scope_prefix."
+
+[[record.field]]
+name = "reference_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 reference count at offset 21"
+
+[[record]]
+name = "mesh_separate_scope_tail"
+kind = "byte"
+section = "3.1"
+anchor = "Separate post-run fields"
+size = 24
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs"
+note = "Relative origin is the first byte after the complete counted body-reference run. The source reference in this fixed-width form is eleven bytes."
+
+[[record.field]]
+name = "selector"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a u32 selector at relative offset 0"
+
+[[record.field]]
+name = "raw_lane"
+offset = 4
+type = "bytes[8]"
+source = "spec"
+anchor = "an eight-byte raw lane at relative offset 4"
+
+[[record.field]]
+name = "source_group"
+offset = 12
+type = "bytes[11]"
+source = "spec"
+anchor = "a source-group reference at relative offset 12"
+
+[[record.field]]
+name = "separator"
+offset = 23
+type = "u8"
+value = 0
+source = "spec"
+anchor = "the separator is at relative offset 23"
+
+[[record]]
+name = "mesh_separate_common_envelope"
+kind = "byte"
+section = "3.1"
+anchor = "Separate common envelope"
+size = 79
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs"
+note = "Relative origin is the first byte after the Separate source-group separator. The common table count follows this envelope."
+
+[[record.field]]
+name = "guid_count"
+offset = 0
+type = "u32"
+value = 36
+source = "spec"
+anchor = "a u32 character count of 36"
+
+[[record.field]]
+name = "guid_utf16"
+offset = 4
+type = "u16[36]"
+source = "derived"
+anchor = "36 UTF-16LE GUID code units"
+note = "The u32 count precedes 36 two-byte code units."
+
+[[record.field]]
+name = "zeros"
+offset = 76
+type = "bytes[3]"
+source = "derived"
+anchor = "and three zero bytes"
+note = "The u32 count and 72 identifier bytes precede these three bytes."
+
+[[record]]
+name = "mesh_separate_group_tail"
+kind = "byte"
+section = "3.1"
+anchor = "Separate group tail"
+size = 25
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs"
+note = "Relative origin is the first byte after the complete group-member reference run in the two-null-reference form."
+
+[[record.field]]
+name = "null_references"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero reference slots"
+
+[[record.field]]
+name = "word"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "the word is at relative offset 2"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 6
+type = "bytes[11]"
+source = "spec"
+anchor = "the auxiliary reference at relative offset 6"
+
+[[record.field]]
+name = "role"
+offset = 17
+type = "u64"
+source = "spec"
+anchor = "the role at relative offset 17"
+
+[[record]]
+name = "mesh_separate_member_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "the auxiliary reference starts at member offset 32"
+size = 47
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs"
+note = "Offsets are relative to the member indexed header in the ordinary local-reference form. The identifier count follows this prefix."
+
+[[record.gap]]
+offset = 0
+size = 32
+note = "The indexed header, ten zero bytes and body reference use paramesh_operation_member_prefix."
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "the auxiliary reference starts at member offset 32"
+
+[[record.field]]
+name = "word"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "the first word at offset 43"
+
+[[record]]
+name = "mesh_separate_member_words"
+kind = "byte"
+section = "3.1"
+anchor = "Separate member words"
+size = 8
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs"
+note = "Relative origin is the first byte after the second complete counted UTF-16LE identifier."
+
+[[record.field]]
+name = "first"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "the two words are at relative offsets 0 and 4"
+
+[[record.field]]
+name = "second"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "the two words are at relative offsets 0 and 4"
+
+[[record]]
 name = "mesh_convert_scope_prefix"
 kind = "byte"
 section = "3.1"
@@ -9957,9 +10137,9 @@ anchor = "two opaque bytes at offsets 30 and 31"
 name = "sketch_profile_region_selection_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "The `N+3` selection starts with its eleven-byte indexed header, ten zero bytes, a marked reference to `N`, six zero bytes, u32 `1`, and a nonzero u32 region count."
+anchor = "The `N+3` selection starts with its eleven-byte indexed header, ten zero bytes, a marked reference to `N`, six zero bytes, and a nonzero u32 region count."
 size = 40
-note = "Offsets are relative to the N+3 selection header. The ordered variable-length region run starts at offset 40."
+note = "Offsets are relative to the N+3 selection header. The first selected region's loop count is at offset 36, and its ordered variable-length loop run starts at offset 40."
 
 [[record.field]]
 name = "indexed_header"
@@ -9997,18 +10177,18 @@ source = "spec"
 anchor = "six zero bytes"
 
 [[record.field]]
-name = "format_version"
+name = "region_count"
 offset = 32
 type = "u32"
 source = "spec"
-anchor = "u32 `1`"
+anchor = "a nonzero u32 region count"
 
 [[record.field]]
-name = "region_count"
+name = "loop_count"
 offset = 36
 type = "u32"
 source = "spec"
-anchor = "a nonzero u32 region count"
+anchor = "Each selected region starts with a nonzero u32 loop count."
 
 [[record]]
 name = "sketch_profile_region_member"
@@ -14952,6 +15132,33 @@ offset = 24
 type = "u32"
 source = "spec"
 anchor = "at primary-header offset 24 after thirteen zero bytes"
+
+[[record]]
+name = "offset_23_extrude_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs"
+kind = "byte"
+section = "3.1"
+anchor = "at primary-header offset 23 after twelve zero bytes"
+size = 27
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_12"
+offset = 11
+type = "bytes[12]"
+source = "spec"
+anchor = "at primary-header offset 23 after twelve zero bytes"
+
+[[record.field]]
+name = "operation"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "at primary-header offset 23 after twelve zero bytes"
 
 [[record]]
 name = "current_extrude_operation_fields"
@@ -38199,6 +38406,252 @@ type = "u8"
 note = "Presence byte of the first local reference. A complete local reference occupies 11 or 51 bytes."
 source = "spec"
 anchor = "The `UnfoldRefoldGroupMode` carrier has type GUID"
+
+[[record]]
+name = "edge_flange_reference_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+size = 8
+note = "Offsets are relative to the first bend-position byte of the operation window."
+
+[[record.field]]
+name = "bend_position"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "edge_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record]]
+name = "edge_flange_reference_side_short"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+size = 18
+note = "Offsets are relative to the reference-side discriminator."
+
+[[record.field]]
+name = "reference_side"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+value = 4
+
+[[record.field]]
+name = "side_zero"
+offset = 4
+type = "bytes[2]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "radius_control"
+offset = 6
+type = "f64"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "radius_zero"
+offset = 14
+type = "bytes[4]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record]]
+name = "edge_flange_reference_side_wide"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+size = 29
+note = "Offsets are relative to the reference-side discriminator."
+
+[[record.field]]
+name = "reference_side"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+value = 4
+
+[[record.field]]
+name = "side_zero"
+offset = 4
+type = "bytes[11]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "radius_control"
+offset = 15
+type = "f64"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "radius_zero"
+offset = 23
+type = "bytes[6]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record]]
+name = "edge_flange_reference_groups_short"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+size = 12
+note = "Offsets are relative to the first padding byte after the aggregate reference."
+
+[[record.field]]
+name = "group_zero"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "group_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record]]
+name = "edge_flange_reference_groups_wide"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+size = 16
+note = "Offsets are relative to the first padding byte after the aggregate reference."
+
+[[record.field]]
+name = "group_zero"
+offset = 0
+type = "bytes[12]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "group_count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record]]
+name = "edge_flange_two_offset_wrapper"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+size = 112
+note = "Offsets are relative to the indexed header with compact local references. Null and inline-type reference widths shift following fields."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed record header."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[13]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "member_count"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+value = 5
+
+[[record.field]]
+name = "control"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+value = 1
+
+[[record.field]]
+name = "main_group"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "first_boundary"
+offset = 43
+type = "bytes[11]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "second_boundary"
+offset = 54
+type = "bytes[11]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "first_owner"
+offset = 65
+type = "bytes[11]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "second_owner"
+offset = 76
+type = "bytes[11]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "middle_zero"
+offset = 87
+type = "bytes[2]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "nested"
+offset = 89
+type = "bytes[11]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+
+[[record.field]]
+name = "closing_zero"
+offset = 100
+type = "u8"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
+value = 0
+
+[[record.field]]
+name = "owner_scope"
+offset = 101
+type = "bytes[11]"
+source = "spec"
+anchor = "The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`."
 
 [[record]]
 name = "sheet_metal_contour_short_prefix"

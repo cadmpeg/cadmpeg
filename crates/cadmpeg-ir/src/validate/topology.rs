@@ -3116,7 +3116,8 @@ fn check_feature_references(
                         | FeatureOperation::MeshGenerateFaceGroups { .. }
                         | FeatureOperation::MeshCombineFaceGroups { .. }
                         | FeatureOperation::MeshModify {
-                            modification: crate::features::mesh::MeshModification::PlaneCut { .. },
+                            modification: crate::features::mesh::MeshModification::Separate { .. }
+                                | crate::features::mesh::MeshModification::PlaneCut { .. },
                             ..
                         }
                 ) {
@@ -3275,12 +3276,14 @@ fn check_feature_references(
                     );
                 }
             }
-            FeatureOperation::Form { cages } => {
+            FeatureOperation::Form(construction) => {
                 check_ids(
                     findings,
                     feature.id.as_str(),
                     "Form control cage",
-                    cages.iter().map(super::super::ids::SubdId::as_str),
+                    construction
+                        .referenced_cages()
+                        .map(super::super::ids::SubdId::as_str),
                     |identity| ids.subds(identity, crate::index::StandardIndex).is_some(),
                 );
             }
@@ -3341,11 +3344,11 @@ fn check_feature_references(
                     }
                 }
             }
-            FeatureOperation::SheetMetalEdgeFlange { edges, height, .. } => {
-                edge_selections.push(edges);
-                if matches!(height, crate::features::SheetMetalFlangeHeight::ToObject {
-                    target: crate::features::SheetMetalFlangeHeightTarget::Native(native), ..
-                } if native.is_empty())
+            FeatureOperation::SheetMetalEdgeFlange(construction) => {
+                if let Some(edges) = &construction.edges {
+                    edge_selections.push(edges);
+                }
+                if matches!(&construction.height, Some(crate::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(&target.target, Some(crate::features::SheetMetalFlangeHeightTarget::Native(native)) if native.is_empty()))
                 {
                     geometry_error(
                         findings,

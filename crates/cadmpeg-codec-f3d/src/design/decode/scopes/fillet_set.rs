@@ -78,9 +78,9 @@ pub(super) fn fillet_set_list(
         return None;
     }
     let mut sets = Vec::new();
-    for (position, (set_record_index, group_record_index)) in
-        (0_u32..).zip(set_references.into_iter().zip(group_references))
-    {
+    let mut ordinals = Vec::new();
+    let set_count = count;
+    for (set_record_index, group_record_index) in set_references.into_iter().zip(group_references) {
         if !scope
             .reference_members()
             .values()
@@ -88,10 +88,10 @@ pub(super) fn fillet_set_list(
         {
             return None;
         }
-        let set = fillet_set(
+        let (set, ordinal) = fillet_set(
             bytes,
             records,
-            (set_record_index, position),
+            (set_record_index, set_count),
             scope,
             parameters,
             parameter_owners,
@@ -100,8 +100,9 @@ pub(super) fn fillet_set_list(
             return None;
         }
         sets.push(set);
+        ordinals.push(ordinal);
     }
-    if sets.is_empty() {
+    if !ordinals_are_a_permutation(&ordinals) {
         return None;
     }
     Some(DesignFilletSetList {
@@ -215,16 +216,29 @@ impl SetForm {
     }
 }
 
-/// The fillet set record `record_index` at `position` in the prefix list,
-/// admitted in exactly one form.
+/// Whether `ordinals` holds each of `0..ordinals.len()` exactly once and is
+/// not empty.
+pub(super) fn ordinals_are_a_permutation(ordinals: &[u32]) -> bool {
+    let mut seen = vec![false; ordinals.len()];
+    !ordinals.is_empty()
+        && ordinals.iter().all(|ordinal| {
+            usize::try_from(*ordinal)
+                .ok()
+                .and_then(|at| seen.get_mut(at))
+                .is_some_and(|slot| !std::mem::replace(slot, true))
+        })
+}
+
+/// The fillet set record `record_index` of a prefix list of `count` sets,
+/// admitted in exactly one form, with its stored set ordinal.
 fn fillet_set(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-    (record_index, position): (u32, u32),
+    (record_index, count): (u32, u32),
     scope: &DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignFilletSet> {
+) -> Option<(DesignFilletSet, u32)> {
     let [start] = records.offsets(record_index) else {
         return None;
     };
@@ -238,7 +252,7 @@ fn fillet_set(
             || form
                 .curvature
                 .is_some_and(|at| !matches!(frame.get(at), Some(0 | 1)))
-            || View::u32_le_at(frame, form.ordinal)? != position
+            || View::u32_le_at(frame, form.ordinal)? >= count
             || !form.unnamed_bytes_are_zero(frame)
         {
             return None;
@@ -257,16 +271,20 @@ fn fillet_set(
                 radius_owner_record_index: law_owner,
             },
         };
-        Some(DesignFilletSet {
-            record_index,
-            byte_offset: u64::try_from(start).ok()?,
-            frame_length: u64::try_from(form.len).ok()?,
-            group_record_index: marked_record_reference(frame, form.group)?,
-            law,
-            tangency_weight_owner_record_index: owner(form.tangency_weight, "TangencyWeight")?,
-            tangent_chain: frame.get(form.tangent_chain) == Some(&1),
-            curvature_continuity: form.curvature.map(|at| frame.get(at) == Some(&1)),
-        })
+        let ordinal = View::u32_le_at(frame, form.ordinal)?;
+        Some((
+            DesignFilletSet {
+                record_index,
+                byte_offset: u64::try_from(start).ok()?,
+                frame_length: u64::try_from(form.len).ok()?,
+                group_record_index: marked_record_reference(frame, form.group)?,
+                law,
+                tangency_weight_owner_record_index: owner(form.tangency_weight, "TangencyWeight")?,
+                tangent_chain: frame.get(form.tangent_chain) == Some(&1),
+                curvature_continuity: form.curvature.map(|at| frame.get(at) == Some(&1)),
+            },
+            ordinal,
+        ))
     });
     let set = matches.next()?;
     matches.next().is_none().then_some(set)

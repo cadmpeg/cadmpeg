@@ -3799,13 +3799,19 @@ fn resolved_selection_member_point(
     else {
         return None;
     };
-    let entity_id = persistent_id.map_or_else(
-        || crate::ids::neutral_sketch_record_id(&sketch.id, *record_index),
-        |persistent_id| crate::ids::neutral_sketch_point_id(&sketch.id, persistent_id),
-    );
+    let record_id = crate::ids::neutral_sketch_record_id(&sketch.id, *record_index);
+    let tag_id = persistent_id
+        .map(|persistent_id| crate::ids::neutral_sketch_point_id(&sketch.id, persistent_id));
+    // A point that repeats the tag of an earlier point of its Sketch has only
+    // the record-index key.
     let SketchGeometryDefinition::Point { position } = entities
         .iter()
-        .find(|entity| entity.id() == &entity_id && entity.sketch == sketch.id)?
+        .find(|entity| entity.id() == &record_id && entity.sketch == sketch.id)
+        .or_else(|| {
+            entities
+                .iter()
+                .find(|entity| Some(entity.id()) == tag_id.as_ref() && entity.sketch == sketch.id)
+        })?
         .geometry
         .definition()
     else {
@@ -4094,7 +4100,7 @@ fn resolve_profile_curve_regions(
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
     let stream = native_stream(&group.id)?;
-    let (sketch, curves) = profile_curve_selection_curves(group, stream, resolution, false)?;
+    let (sketch, curves) = profile_curve_selection_candidates(group, stream, resolution, false)?;
     let source = resolution
         .sketches
         .iter()
@@ -4121,17 +4127,18 @@ fn resolve_profile_curve_regions(
                 let selected = curves.get(curve_cursor..end)?;
                 curve_cursor = end;
                 let mut distinct = HashSet::new();
-                if selected.iter().any(|curve| !distinct.insert(curve)) {
+                if selected
+                    .iter()
+                    .flatten()
+                    .any(|curve| !distinct.insert(curve))
+                {
                     return None;
                 }
-                let mut matches = source.profiles.iter().enumerate().filter(|(_, profile)| {
-                    profile.len() == selected.len()
-                        && profile.iter().all(|use_| selected.contains(&use_.entity))
-                        && (!selection.compact_references()
-                            || selected
-                                .iter()
-                                .all(|entity| profile.iter().any(|use_| &use_.entity == entity)))
-                });
+                let mut matches = source
+                    .profiles
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, profile)| profile_matches_entry_candidates(profile, selected));
                 let (index, _) = matches.next()?;
                 if matches.next().is_some() {
                     return None;
@@ -4538,14 +4545,34 @@ fn selection_placements<'a>(
         .collect()
 }
 
-fn profile_curve_selection_curves(
+/// Whether a profile loop is the boundary that the selected entries name:
+/// every use is a candidate of some entry, and every entry has a candidate in
+/// the loop. An entry whose identity pair names several curve records of one
+/// Sketch (one source curve split into pieces) names the pieces that the loop
+/// holds. With one candidate per entry the loop also holds exactly one use per
+/// entry.
+fn profile_matches_entry_candidates(
+    profile: &[cadmpeg_ir::sketches::SketchEntityUse],
+    entries: &[Vec<cadmpeg_ir::sketches::SketchEntityId>],
+) -> bool {
+    let single = entries.iter().all(|ids| ids.len() == 1);
+    (!single || profile.len() == entries.len())
+        && profile
+            .iter()
+            .all(|use_| entries.iter().any(|ids| ids.contains(&use_.entity)))
+        && entries
+            .iter()
+            .all(|ids| profile.iter().any(|use_| ids.contains(&use_.entity)))
+}
+
+fn profile_curve_selection_candidates(
     group: &DesignConstructionOperandGroup,
     stream: &str,
     resolution: &EntitySelectionPathResolution<'_>,
     allow_compact_fragments: bool,
 ) -> Option<(
     cadmpeg_ir::sketches::SketchId,
-    Vec<cadmpeg_ir::sketches::SketchEntityId>,
+    Vec<Vec<cadmpeg_ir::sketches::SketchEntityId>>,
 )> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
@@ -4608,28 +4635,57 @@ fn profile_curve_selection_curves(
         return None;
     }
     let mut curves = Vec::new();
-    for entry in selections.iter().flat_map(|selection| {
-        selection
-            .regions()
-            .flatten()
-            .flat_map(|loop_| &loop_.entries)
-    }) {
-        let mut matches = resolution.curve_identities.iter().filter(|curve| {
-            native_stream(&curve.id) == Some(stream)
-                && curve.owner_reference == Some(owner_reference)
-                && curve.primary_id.get() == entry.primary_id
-                && (entry.secondary_id == 0 || curve.secondary_id == entry.secondary_id)
-        });
-        let curve = available!(matches.next());
-        if matches.next().is_some() {
-            return None;
+    for loop_ in selections
+        .iter()
+        .flat_map(|selection| selection.regions().flatten())
+    {
+        let mut candidates = Vec::new();
+        for entry in &loop_.entries {
+            let matches: Vec<_> = resolution
+                .curve_identities
+                .iter()
+                .filter(|curve| {
+                    native_stream(&curve.id) == Some(stream)
+                        && curve.owner_reference == Some(owner_reference)
+                        && curve.primary_id.get() == entry.primary_id
+                        && (entry.secondary_id == 0 || curve.secondary_id == entry.secondary_id)
+                })
+                .collect();
+            // A curve record projects under its record index when several
+            // records of the Sketch carry its identity pair.
+            let ids: Vec<_> = matches
+                .iter()
+                .map(|curve| {
+                    let shared = resolution
+                        .curve_identities
+                        .iter()
+                        .filter(|other| {
+                            native_stream(&other.id) == Some(stream)
+                                && other.owner_reference == Some(owner_reference)
+                                && other.primary_id == curve.primary_id
+                                && other.secondary_id == curve.secondary_id
+                        })
+                        .count()
+                        > 1;
+                    if shared {
+                        crate::ids::neutral_sketch_record_id(&sketch, curve.record_index)
+                    } else {
+                        crate::ids::neutral_sketch_curve_id(
+                            &sketch,
+                            curve.primary_id.get(),
+                            curve.secondary_id,
+                        )
+                    }
+                })
+                .collect();
+            if ids.is_empty() {
+                return None;
+            }
+            candidates.push(ids);
         }
-        let identity = (curve.primary_id.get(), curve.secondary_id);
-        curves.push(crate::ids::neutral_sketch_curve_id(
-            &sketch, identity.0, identity.1,
-        ));
+        curves.extend(candidates);
     }
-    if curves.iter().any(|curve| {
+    if curves.iter().flatten().any(|curve| {
         !resolution.sketch_entities.iter().any(|entity| {
             entity.sketch == sketch
                 && entity.id() == curve
@@ -4641,6 +4697,25 @@ fn profile_curve_selection_curves(
     }) {
         return None;
     }
+    Some((sketch, curves))
+}
+
+/// The one curve of each selected entry, when every entry names one curve.
+fn profile_curve_selection_curves(
+    group: &DesignConstructionOperandGroup,
+    stream: &str,
+    resolution: &EntitySelectionPathResolution<'_>,
+    allow_compact_fragments: bool,
+) -> Option<(
+    cadmpeg_ir::sketches::SketchId,
+    Vec<cadmpeg_ir::sketches::SketchEntityId>,
+)> {
+    let (sketch, entries) =
+        profile_curve_selection_candidates(group, stream, resolution, allow_compact_fragments)?;
+    let curves = entries
+        .into_iter()
+        .map(|mut ids| (ids.len() == 1).then(|| ids.remove(0)))
+        .collect::<Option<Vec<_>>>()?;
     Some((sketch, curves))
 }
 
@@ -4908,7 +4983,7 @@ fn resolved_sketch_profile_regions(
         return None;
     };
     let mut resolved = Vec::new();
-    for region in &selection.regions {
+    for region in selection.resolution_regions()? {
         let first_member = region.members.first()?;
         let first = sketch_profile_member_entity(
             stream,
@@ -5006,14 +5081,17 @@ pub(in crate::design) fn planar_selection_agrees_with_region_operand(
     let Some(selection) = operand.region_selection.as_ref() else {
         return false;
     };
-    if selection.regions.is_empty() || selection.has_extended_incidence() {
+    let Some(regions) = selection.resolution_regions() else {
+        return false;
+    };
+    if regions.is_empty() || selection.has_extended_incidence() {
         return false;
     }
     let Ok(owner_reference) = u32::try_from(operand.entity_id.suffix()) else {
         return false;
     };
-    let mut explicit_regions = Vec::with_capacity(selection.regions.len());
-    for region in &selection.regions {
+    let mut explicit_regions = Vec::with_capacity(regions.len());
+    for region in regions {
         if region.members.is_empty() {
             return false;
         }
@@ -5164,7 +5242,7 @@ fn resolved_spatial_sketch_profile_regions(
         return None;
     };
     let mut resolved = Vec::new();
-    for region in &selection.regions {
+    for region in selection.resolution_regions()? {
         let first_member = region.members.first()?;
         let first = spatial_profile_member_entity(
             stream,

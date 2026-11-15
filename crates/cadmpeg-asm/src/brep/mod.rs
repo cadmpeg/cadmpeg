@@ -591,7 +591,8 @@ pub fn decode_history_with_subtypes(
     )
 }
 
-fn decode_with_table(
+/// Keep stream subtype ordinals when decoding a materialized record table.
+pub fn decode_with_table(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     bytes: &[u8],

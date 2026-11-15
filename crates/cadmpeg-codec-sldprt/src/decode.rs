@@ -1412,7 +1412,7 @@ pub(crate) fn append_design_losses(
                         || !state.dependencies.contains(source)
                 }
                 FeatureOperation::ImportedGeometry { path, .. } => path.trim().is_empty(),
-                FeatureOperation::Form { cages } => cages.is_empty(),
+                FeatureOperation::Form(construction) => !construction.membership_is_complete() || construction.committed_cages().next().is_none(),
                 FeatureOperation::PointGeometry { .. }
                 | FeatureOperation::LineSegment { .. }
                 | FeatureOperation::CircularArc { .. }
@@ -1667,8 +1667,10 @@ pub(crate) fn append_design_losses(
                         || construction.inside_radius.is_none()
                 }
                 FeatureOperation::SheetMetalCorner { .. } => false,
-                FeatureOperation::SheetMetalEdgeFlange { edges, .. } => {
-                    incomplete_edge_selection(edges)
+                FeatureOperation::SheetMetalEdgeFlange(construction) => {
+                    !construction.has_all_inputs()
+                        || construction.edges.as_ref().is_none_or(incomplete_edge_selection)
+                        || matches!(construction.width, Some(cadmpeg_ir::features::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
                 }
                 FeatureOperation::SheetMetalHem { .. } => true,
                 FeatureOperation::Fillet { groups } => {

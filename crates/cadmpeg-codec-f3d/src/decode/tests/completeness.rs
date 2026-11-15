@@ -5,6 +5,93 @@ use super::super::feature_definition_is_incomplete;
 use cadmpeg_ir::features::surfaces::UntrimLoops;
 
 #[test]
+fn separate_completeness_requires_shell_geometry_and_keep_body() {
+    use cadmpeg_ir::features::mesh::{
+        MeshModification, MeshSelection, MeshSeparation, MeshSeparationGroups, MeshSeparationMethod,
+    };
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    };
+    for (method, keep_body, native, incomplete) in [
+        (None, Some(false), false, true),
+        (Some(MeshSeparationMethod::Shells), None, false, true),
+        (
+            Some(MeshSeparationMethod::Shells),
+            Some(false),
+            false,
+            false,
+        ),
+        (Some(MeshSeparationMethod::Shells), Some(true), false, false),
+        (Some(MeshSeparationMethod::Shells), Some(true), true, true),
+        (
+            Some(MeshSeparationMethod::FaceGroups),
+            Some(true),
+            false,
+            true,
+        ),
+    ] {
+        for groups in [
+            None,
+            Some(MeshSeparationGroups::All {}),
+            Some(MeshSeparationGroups::Selected { members: None }),
+        ] {
+            let source: MeshSelection = serde_json::from_value(if native {
+                serde_json::json!({"native":"native-scope"})
+            } else {
+                serde_json::json!(["test:mesh:tessellation#41"])
+            })
+            .unwrap();
+            let definition = FeatureDefinition::Operation(FeatureOperation::MeshModify {
+                source,
+                modification: MeshModification::Separate {
+                    separation: MeshSeparation {
+                        method,
+                        groups,
+                        keep_body,
+                        ..MeshSeparation::default()
+                    },
+                },
+            });
+            assert_eq!(feature_definition_is_incomplete(&definition), incomplete);
+            let wrapped = FeatureDefinition::PostProcess {
+                operation: definition.operation().clone(),
+                refine: true,
+                fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Automatic,
+            };
+            assert_eq!(feature_definition_is_incomplete(&wrapped), incomplete);
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            ir.model.features.push(Feature {
+                product_definition: None,
+                id: FeatureId::mint("test:model:feature#separate").unwrap(),
+                ordinal: 0,
+                name: None,
+                suppressed: None,
+                dependencies: Default::default(),
+                source_properties: Default::default(),
+                source_tag: Some("MeshSeparate".into()),
+                source_text: None,
+                source_content: Default::default(),
+                evaluation: FeatureEvaluation::from_definition(definition),
+                native_ref: None,
+            });
+            assert_eq!(
+                super::super::incomplete_feature_families(&ir)
+                    .get("MeshSeparate")
+                    .copied()
+                    .unwrap_or(0),
+                usize::from(incomplete)
+            );
+            assert_eq!(
+                super::super::design_projection_gaps(&ir, &crate::native::F3dNative::default())
+                    .unwrap()
+                    .incomplete_features,
+                usize::from(incomplete)
+            );
+        }
+    }
+}
+
+#[test]
 fn surface_untrim_completeness_tracks_faces_loops_and_extension_independently() {
     use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
     let faces = FaceSelection::Faces(vec![
@@ -59,6 +146,40 @@ fn surface_untrim_completeness_tracks_faces_loops_and_extension_independently() 
             incomplete
         );
     }
+}
+
+#[test]
+fn form_completeness_requires_complete_membership_with_a_committed_cage() {
+    let definition = |value| {
+        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+            .expect("Form definition")
+    };
+    assert!(feature_definition_is_incomplete(
+        &cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Form(
+                cadmpeg_ir::features::form::FormConstruction::default()
+            ),
+        )
+    ));
+    for members in [
+        serde_json::json!([]),
+        serde_json::json!([{"observation":0,"ordinal":0}]),
+    ] {
+        assert!(feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition":"form", "cages": {
+                    "observations":[{"paths":[],"binding":{"state":"decoded","cage":"test:model:subd#1"}}],
+                    "membership":{"state":"partial","cardinality":2,"order":"unknown","members":members}
+                }
+            })
+        )));
+    }
+    assert!(!feature_definition_is_incomplete(&definition(
+        serde_json::json!({
+            "definition":"form","cages":["test:model:subd#1"],
+            "cage_inputs":{"observations":[{"paths":[],"binding":{"state":"decoded","cage":"test:model:subd#1"}}],"membership":{"state":"complete","members":[0],"order":"assumed","certainty":"assumed"}}
+        })
+    )));
 }
 
 #[test]

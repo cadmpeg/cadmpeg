@@ -1079,15 +1079,15 @@ One flange control form has the following values and reference relations. Direct
 | Attachment first mode, second mode | Enumeration `(9, 1)` |
 | Attachment states | `[1, 1, 1]` |
 | Attachment first direction | Parallel or antiparallel to the consumed sketch U axis; its sign does not change thickness side |
-| Attachment second direction | Parallel to the consumed sketch V axis, `normal × U`; antiparallel to V when the first direction is antiparallel to U. Neither sign changes the thickness side |
+| Attachment second direction | Perpendicular to the first direction, with a positive component along the consumed sketch V axis, `normal × U`; or antiparallel to V when the first direction is antiparallel to U. Neither sign nor the angle to V changes the thickness side |
 | Attachment thickness | Same reference as plate slot 3 |
 | Attachment extension | Absent, or state 10 with repeated thickness, radius, attachment, relief width, minimum remnant, and option references |
-| Relief control | Boolean true |
+| Relief control | Boolean |
 | Relief form | Same enumeration type and value as the document-style bend-relief form |
 | Relief width, minimum remnant | Same references as the attachment operands |
 | Relief width, depth | Positive lengths |
 | Relief minimum remnant, seam gap | Nonnegative lengths |
-| Transition control | Boolean true |
+| Transition control | Boolean |
 | Transition form | Same enumeration type and value as the document-style transition form |
 | Transition radius | Nonnegative length |
 | Corner control, option | Boolean |
@@ -1349,6 +1349,8 @@ A feature record has the `source_index` of its content header. The state after t
 A body key of a surface-body wrapper is the entity identifier of the kernel-entity link that the wrapper selects through the current-model join of section 13.4. A wrapper without that join has no body key.
 
 A Split with a solid target is bound only when its target body key leaves between the two states. The target wrapper is the slot-7 surface-body wrapper of the Split (section 13.3). The key is the key of a body record live in `state_before` and of no body record live in `state_after`. A Base feature is bound only when the body key of its result wrapper, the slot-1 wrapper of the Base (section 13.4), is the key of a body record live in `state_after` and of none in `state_before`. The two checks refuse a feature whose key does not resolve, whose state before is absent, or whose key does not change as stated. The disappearance or appearance of a body key without a naming tag that lists the source index does not bind a feature. Features of other kinds are bound by the naming tag alone.
+
+A bound Split or Base feature that projects to a neutral feature has a history body when the state that holds its body materializes to a closed solid. The state is `state_before` for a Split and `state_after` for a Base. The record table of a state has, for each slot of the entity-version map of the state, the record of the revision that the map selects. The record index is the slot, and each non-negative reference names the slot of the revision it referred to. The table exists when every reference names a slot of the map. The body of the feature is the `body` record with the checked body key, and the records it reaches through references. The body is closed when it is a solid body and each edge that has a carrier joins exactly two coedges. A carrier that a procedural construction produces keeps its solved cache as its geometry; a carrier without a cache gives no history body. The history body of a Split is consumed by the Split feature. The history body of a Base is produced by the Base feature. The native record of the feature names its history body.
 
 ### 13.11 Part annotations
 

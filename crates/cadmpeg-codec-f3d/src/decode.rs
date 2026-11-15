@@ -605,6 +605,20 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. }) => true,
         FeatureDefinition::Operation(FeatureOperation::MeshModify {
             source,
+            modification: cadmpeg_ir::features::mesh::MeshModification::Separate { separation },
+        }) | FeatureDefinition::PostProcess {
+            operation: FeatureOperation::MeshModify {
+                source,
+                modification: cadmpeg_ir::features::mesh::MeshModification::Separate { separation },
+            },
+            ..
+        } => {
+            !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
+                || separation.method != Some(cadmpeg_ir::features::mesh::MeshSeparationMethod::Shells)
+                || separation.keep_body.is_none()
+        }
+        FeatureDefinition::Operation(FeatureOperation::MeshModify {
+            source,
             modification: cadmpeg_ir::features::mesh::MeshModification::PlaneCut { cut },
         }) => {
             use cadmpeg_ir::features::mesh::{MeshPlaneCutMode, MeshSelection};
@@ -884,7 +898,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block, .. }) => {
             block.is_none()
         }
-        FeatureDefinition::Operation(FeatureOperation::Form { cages }) => cages.is_empty(),
+        FeatureDefinition::Operation(FeatureOperation::Form(construction)) => !construction.membership_is_complete() || construction.committed_cages().next().is_none(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies }) => {
             !base_feature_body_selection_is_resolved(bodies)
         }
@@ -1028,19 +1042,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile, ..
         }) => !planar_profile_ref_is_resolved(profile),
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
-            edges,
-            height,
-            ..
-        }) => {
-            !edge_selection_is_resolved(edges)
-                || matches!(
-                    height,
-                    cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject {
-                        target: cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_),
-                        ..
-                    }
-                )
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
+            !construction.has_all_inputs()
+                || construction.edges.as_ref().is_none_or(|edges| !edge_selection_is_resolved(edges))
+                || matches!(&construction.height, Some(cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(target.target, Some(cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_))))
+                || matches!(construction.width, Some(cadmpeg_ir::features::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
         }
         FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {
             edges,
@@ -1930,10 +1936,16 @@ fn design_projection_gaps(
             }) => {
                 gaps.profile_selections += usize::from(!planar_profile_ref_is_resolved(profile));
             }
-            FeatureDefinition::Operation(
-                FeatureOperation::SheetMetalEdgeFlange { edges, .. }
-                | FeatureOperation::SheetMetalHem { edges, .. },
-            ) => edge_selection(edges),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
+                if let Some(edges) = &construction.edges {
+                    edge_selection(edges);
+                } else {
+                    edge_selection(&EdgeSelection::Unresolved);
+                }
+            }
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalHem { edges, .. }) => {
+                edge_selection(edges);
+            }
             FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => {
                 face_selection(faces);
             }
@@ -2055,6 +2067,22 @@ fn report_parameter_trailer_flags(
             format_args!(
                 "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted, and their driven and favorite flags are assumed false.",
                 parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
+fn report_parameter_owner_trailer_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for owners in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterOwnerTrailerFlagUninterpreted,
+            format_args!(
+                "{} decoded parameter owner(s) in {} set the final byte of the compact trailer before the companion reference; the flag is not interpreted.",
+                owners.count, owners.stream
             ),
         );
     }
@@ -3187,6 +3215,10 @@ impl<'a> F3dDecodeSession<'a> {
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
+        report_parameter_owner_trailer_flags(
+            &mut self.report,
+            &prereqs.design_parameter_owner_trailer_flags,
+        );
         report_unparsed_parameter_owners(
             &mut self.report,
             prereqs.design_parameter_owner_unparsed.len(),
@@ -3522,6 +3554,14 @@ impl<'a> F3dDecodeSession<'a> {
         }
         self.ir.model.product_definitions.extend(local.definitions);
         self.ir.model.occurrences.extend(local.occurrences);
+        crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
+            &mut self.ir.model.occurrences,
+            &prereqs.design_component_occurrences,
+            prereqs
+                .xref_table()
+                .map_or(&[], |table| table.references.as_slice()),
+            &prereqs.design_hidden_occurrences,
+        );
         self.report.losses.extend(local.losses);
         let mut component_inserts = crate::design::components::ComponentInserts::decide(
             &prereqs.design_parameter_scopes,

@@ -1210,6 +1210,36 @@ pub(crate) mod mesh_operation_scope_prefix {
     pub(crate) const FLAG: usize = 20;
 }
 
+/// Byte offsets for the `mesh_separate_scope_tail` record.
+///
+/// Spec §3.1. Record length 24 B.
+///
+/// ```text
+/// Relative origin is the first byte after the complete counted body-reference run. The source reference in this fixed-width form is eleven bytes.
+/// ```
+pub(crate) mod mesh_separate_scope_tail {
+    /// Offset of `raw_lane` (`bytes[8]`). Spec §3.1.
+    pub(crate) const RAW_LANE: usize = 4;
+    /// Offset of `source_group` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SOURCE_GROUP: usize = 12;
+}
+
+/// Byte offsets for the `mesh_separate_common_envelope` record.
+///
+/// Spec §3.1. Record length 79 B.
+///
+/// ```text
+/// Relative origin is the first byte after the Separate source-group separator. The common table count follows this envelope.
+/// ```
+pub(crate) mod mesh_separate_common_envelope {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 79;
+    /// Offset of `guid_utf16` (`u16[36]`, little-endian). Spec §3.1.
+    pub(crate) const GUID_UTF16: usize = 4;
+    /// Offset of `zeros` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZEROS: usize = 76;
+}
+
 /// Byte offsets for the `mesh_convert_input_prefix` record.
 ///
 /// Spec §3.1. Record length 33 B.
@@ -2782,7 +2812,7 @@ pub(crate) mod legacy_pipe_operation_prefix {
 /// Spec §3.1. Record length 40 B.
 ///
 /// ```text
-/// Offsets are relative to the N+3 selection header. The ordered variable-length region run starts at offset 40.
+/// Offsets are relative to the N+3 selection header. The first selected region's loop count is at offset 36, and its ordered variable-length loop run starts at offset 40.
 /// ```
 pub(crate) mod sketch_profile_region_selection_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -2793,10 +2823,10 @@ pub(crate) mod sketch_profile_region_selection_prefix {
     pub(crate) const PROFILE_REFERENCE_MARKER: usize = 21;
     /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
     pub(crate) const ZERO_RUN_6: usize = 26;
-    /// Offset of `format_version` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FORMAT_VERSION: usize = 32;
     /// Offset of `region_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REGION_COUNT: usize = 36;
+    pub(crate) const REGION_COUNT: usize = 32;
+    /// Offset of `loop_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LOOP_COUNT: usize = 36;
 }
 
 /// Byte offsets for the `sketch_profile_region_member` record.
@@ -4281,6 +4311,16 @@ pub(crate) mod offset_24_extrude_prologue {
     pub(crate) const ZERO_RUN_13: usize = 11;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERATION: usize = 24;
+}
+
+/// Byte offsets for the `offset_23_extrude_prologue` record.
+///
+/// Spec §3.1. Record length 27 B.
+pub(crate) mod offset_23_extrude_prologue {
+    /// Offset of `zero_run_12` (`bytes[12]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_12: usize = 11;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 23;
 }
 
 /// Byte offsets for the `current_extrude_operation_fields` record.
@@ -10029,6 +10069,104 @@ pub(crate) mod sheet_metal_unfold_refold_group {
     pub(crate) const MODE: usize = 67;
     /// Offset of `first_member` (`u8`). Spec §3.1.
     pub(crate) const FIRST_MEMBER: usize = 76;
+}
+
+/// Byte offsets for the `edge_flange_reference_prologue` record.
+///
+/// Spec §3.1. Record length 8 B.
+///
+/// ```text
+/// Offsets are relative to the first bend-position byte of the operation window.
+/// ```
+pub(crate) mod edge_flange_reference_prologue {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 8;
+}
+
+/// Byte offsets for the `edge_flange_reference_side_short` record.
+///
+/// Spec §3.1. Record length 18 B.
+///
+/// ```text
+/// Offsets are relative to the reference-side discriminator.
+/// ```
+pub(crate) mod edge_flange_reference_side_short {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 18;
+    /// Stated value of `reference_side` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_SIDE_VALUE: u32 = 0x0000_0004;
+    /// Offset of `side_zero` (`bytes[2]`). Spec §3.1.
+    pub(crate) const SIDE_ZERO: usize = 4;
+    /// Offset of `radius_control` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const RADIUS_CONTROL: usize = 6;
+    /// Offset of `radius_zero` (`bytes[4]`). Spec §3.1.
+    pub(crate) const RADIUS_ZERO: usize = 14;
+}
+
+/// Byte offsets for the `edge_flange_reference_side_wide` record.
+///
+/// Spec §3.1. Record length 29 B.
+///
+/// ```text
+/// Offsets are relative to the reference-side discriminator.
+/// ```
+pub(crate) mod edge_flange_reference_side_wide {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `side_zero` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SIDE_ZERO: usize = 4;
+    /// Offset of `radius_control` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const RADIUS_CONTROL: usize = 15;
+    /// Offset of `radius_zero` (`bytes[6]`). Spec §3.1.
+    pub(crate) const RADIUS_ZERO: usize = 23;
+}
+
+/// Byte offsets for the `edge_flange_reference_groups_short` record.
+///
+/// Spec §3.1. Record length 12 B.
+///
+/// ```text
+/// Offsets are relative to the first padding byte after the aggregate reference.
+/// ```
+pub(crate) mod edge_flange_reference_groups_short {
+    /// Offset of `group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GROUP_COUNT: usize = 8;
+}
+
+/// Byte offsets for the `edge_flange_reference_groups_wide` record.
+///
+/// Spec §3.1. Record length 16 B.
+///
+/// ```text
+/// Offsets are relative to the first padding byte after the aggregate reference.
+/// ```
+pub(crate) mod edge_flange_reference_groups_wide {
+    /// Offset of `group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GROUP_COUNT: usize = 12;
+}
+
+/// Byte offsets for the `edge_flange_two_offset_wrapper` record.
+///
+/// Spec §3.1. Record length 112 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header with compact local references. Null and inline-type reference widths shift following fields.
+/// ```
+pub(crate) mod edge_flange_two_offset_wrapper {
+    /// Offset of `zero_prefix` (`bytes[13]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 24;
+    /// Stated value of `member_count` (`u32`). Spec §3.1.
+    pub(crate) const MEMBER_COUNT_VALUE: u32 = 0x0000_0005;
+    /// Stated value of `control` (`u32`). Spec §3.1.
+    pub(crate) const CONTROL_VALUE: u32 = 0x0000_0001;
+    /// Offset of `middle_zero` (`bytes[2]`). Spec §3.1.
+    pub(crate) const MIDDLE_ZERO: usize = 87;
+    /// Offset of `nested` (`bytes[11]`). Spec §3.1.
+    pub(crate) const NESTED: usize = 89;
+    /// Stated value of `closing_zero` (`u8`). Spec §3.1.
+    pub(crate) const CLOSING_ZERO_VALUE: u8 = 0;
 }
 
 /// Byte offsets for the `sheet_metal_contour_short_prefix` record.

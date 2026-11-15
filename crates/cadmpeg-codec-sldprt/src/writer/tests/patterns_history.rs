@@ -64,7 +64,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
                 spacing: actual_spacing,
                 count: 3,
                 second: None,
-                omitted_instances,
+                omitted_instances, ..
             } if omitted_instances.is_empty() && *actual_direction == Vector3::new(1.0, 0.0, 0.0)
                 && (seeds == &[cadmpeg_ir::features::patterns::PatternSeed::Feature(seed.clone())]) && actual_spacing.get() == 10.0)
     ));
@@ -325,7 +325,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
                 spacing: actual_spacing,
                 count: 15,
                 second: None,
-                omitted_instances,
+                omitted_instances, ..
             } if omitted_instances.is_empty() && (seeds.is_empty()) && actual_spacing.get() == 2.54)
     ));
     assert_eq!(
@@ -385,7 +385,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
                     spacing: actual_spacing,
                     count: 12,
                     second: None,
-                    omitted_instances,
+                    omitted_instances, ..
                 } if omitted_instances.is_empty() && actual_spacing.get() == 3.5)
         )
     );

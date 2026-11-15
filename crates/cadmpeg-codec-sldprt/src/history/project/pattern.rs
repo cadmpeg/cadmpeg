@@ -127,11 +127,13 @@ pub(super) fn project_pattern(
                             direction: parse_valid_direction(direction)?,
                             spacing: parse_positive_dimension_length_mm(spacing)?,
                             count: parse_count(count)?,
+                            symmetric: false,
                         })
                     }
                     _ => None,
                 },
                 omitted_instances: Vec::new(),
+                symmetric: false,
             })
             .ok()?,
             NativePatternClass::Circular => PatternKind::new(PatternTransform::Circular {

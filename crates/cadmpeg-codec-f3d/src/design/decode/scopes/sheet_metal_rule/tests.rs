@@ -1,20 +1,13 @@
 use super::*;
 use crate::test_support::{indexed_header, lp_utf16};
 
-fn matching_material_scalar(
+fn material_scalar(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     types: &Types<'_>,
     index: u32,
 ) -> Option<Located<FiniteReal>> {
-    rule_values(
-        bytes,
-        records,
-        types,
-        index,
-        RuleReadMode::MatchingThickness,
-    )
-    .map(|values| values.material_scalar)
+    rule_values(bytes, records, types, index).map(|values| values.material_scalar)
 }
 
 fn reference(out: &mut Vec<u8>, index: u32, guid: Option<&str>) {
@@ -74,14 +67,14 @@ fn rule_material_scalar_requires_one_finite_trailer_and_bounded_consumers() {
             let records = IndexedRecordOffsets::build(&bytes);
             let types = HashMap::from([(60, (RULE_GUID, version))]);
             assert_eq!(
-                matching_material_scalar(&bytes, &records, &types, 60)
+                material_scalar(&bytes, &records, &types, 60)
                     .unwrap()
                     .value
                     .get(),
                 scalar
             );
             let duplicated = rule_bytes(version, scalar, true);
-            assert!(matching_material_scalar(
+            assert!(material_scalar(
                 &duplicated,
                 &IndexedRecordOffsets::build(&duplicated),
                 &types,
@@ -89,17 +82,14 @@ fn rule_material_scalar_requires_one_finite_trailer_and_bounded_consumers() {
             )
             .is_none());
             let invalid = rule_bytes(version, f64::INFINITY, false);
-            assert!(matching_material_scalar(
-                &invalid,
-                &IndexedRecordOffsets::build(&invalid),
-                &types,
-                60
-            )
-            .is_none());
+            assert!(
+                material_scalar(&invalid, &IndexedRecordOffsets::build(&invalid), &types, 60)
+                    .is_none()
+            );
             if version == 0 {
                 let mut invalid = bytes.clone();
                 invalid[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
-                assert!(matching_material_scalar(
+                assert!(material_scalar(
                     &invalid,
                     &IndexedRecordOffsets::build(&invalid),
                     &types,
@@ -202,15 +192,14 @@ fn independent_rule_entries_preserve_radius_and_explicit_thickness_separately() 
     bytes[47..55].copy_from_slice(&0.2_f64.to_le_bytes());
     let records = IndexedRecordOffsets::build(&bytes);
     let types = HashMap::from([(60, (RULE_GUID, 1))]);
-    assert!(matching_material_scalar(&bytes, &records, &types, 60).is_none());
-    let value = rule_values(
-        &bytes,
-        &records,
-        &types,
-        60,
-        RuleReadMode::IndependentEntries,
-    )
-    .unwrap();
+    assert_eq!(
+        material_scalar(&bytes, &records, &types, 60)
+            .expect("independent scalar")
+            .value
+            .get(),
+        0.44
+    );
+    let value = rule_values(&bytes, &records, &types, 60).unwrap();
     assert_eq!(value.first_value.value.get(), 0.2);
     assert_eq!(value.thickness.value.get(), 0.125);
     assert_eq!(value.material_scalar.value.get(), 0.44);

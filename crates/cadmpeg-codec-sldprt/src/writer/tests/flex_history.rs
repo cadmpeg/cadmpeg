@@ -1195,8 +1195,10 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
                 .unwrap(),
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(20.0).unwrap(),
                 count: 4,
+                symmetric: false,
             }),
             omitted_instances: Vec::new(),
+            symmetric: false,
         })
         .unwrap(),
         PatternKind::new(PatternTransform::Circular {
@@ -1301,7 +1303,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
                     second: Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                         direction: actual_direction,
                         spacing: actual_spacing,
-                        count: 4,
+                        count: 4, ..
                     }),
                     ..
                 } if *actual_direction == Vector3::new(0.0, 1.0, 0.0)

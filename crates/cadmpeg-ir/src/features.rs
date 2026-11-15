@@ -7,7 +7,7 @@ use crate::assets::AssetId;
 use crate::ids::ProductDefinitionId;
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, FeatureResultTopologyId,
-    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, OccurrenceId, SubdId,
+    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, OccurrenceId,
     VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
@@ -44,6 +44,9 @@ mod selection_overlap;
 
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
+
+#[doc(hidden)]
+pub mod form;
 
 pub mod holes;
 use holes::{HoleBottom, HolePlacement, HoleProfileFilter, HoleShape};
@@ -2900,10 +2903,7 @@ pub enum FeatureOperation {
         joint: JointId,
     },
     /// Freeform modeling session represented by its final subdivision cages.
-    Form {
-        /// Ordered control cages committed by the session.
-        cages: Vec<SubdId>,
-    },
+    Form(form::FormConstruction),
     /// Thread attached to a cylindrical face.
     ///
     /// The source may also model the helical form in the body geometry;
@@ -3100,7 +3100,11 @@ pub enum FeatureOperation {
         /// Finite right-handed coordinate frame.
         frame: FeatureCoordinateFrame,
     },
-    /// Rectangular solid primitive.
+    /// Rectangular solid primitive. The solid is the set of points of the
+    /// placement origin plus `a`, `b`, and `c` times the first, second, and
+    /// third dimension along the local x, y, and z axes, for `a`, `b`, and `c`
+    /// in the closed unit interval. The placement origin is the box corner,
+    /// not its centre.
     Block {
         /// Ordered local x, y, and z dimensions, when resolved.
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
@@ -3496,22 +3500,7 @@ pub enum FeatureOperation {
         effect: SheetMetalCornerEffect,
     },
     /// Sheet-metal wall grown from selected edges of an existing sheet body.
-    SheetMetalEdgeFlange {
-        /// Edges the flange is grown from.
-        edges: EdgeSelection,
-        /// Height of the flange wall.
-        height: SheetMetalFlangeHeight,
-        /// Angle between the flange wall and its source face.
-        angle: Angle,
-        /// Face pair the height is measured from.
-        height_datum: SheetMetalHeightDatum,
-        /// Placement of the bend region against the selected edge.
-        bend_position: SheetMetalBendPosition,
-        /// Extent of the flange along the selected edge.
-        width: SheetMetalFlangeWidth,
-        /// Inside radius of the bend joining the flange to its source face.
-        bend_radius: PositiveLength,
-    },
+    SheetMetalEdgeFlange(sheet_metal::SheetMetalEdgeFlangeConstruction),
     /// Sheet-metal hem grown from one or more selected edges.
     SheetMetalHem {
         /// Edges the hem is grown from.
@@ -6282,12 +6271,17 @@ pub enum SheetMetalFlangeHeight {
     /// Fixed distance from the operation's height datum.
     Distance(PositiveLength),
     /// Signed offset from a selected construction entity.
-    ToObject {
-        /// Construction entity that supplies the height reference.
-        target: SheetMetalFlangeHeightTarget,
-        /// Signed distance from the target entity.
-        offset: Length,
-    },
+    ToObject(sheet_metal::SheetMetalFlangeTargetConstruction),
+}
+
+impl SheetMetalFlangeHeight {
+    #[doc = "Construct a to-object height with a known target and signed offset."]
+    pub fn to_object(target: SheetMetalFlangeHeightTarget, offset: Length) -> Self {
+        Self::ToObject(sheet_metal::SheetMetalFlangeTargetConstruction {
+            target: Some(target),
+            offset: Some(offset),
+        })
+    }
 }
 
 /// Extent of a sheet-metal flange along its selected edge.
@@ -6296,20 +6290,22 @@ pub enum SheetMetalFlangeHeight {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SheetMetalFlangeWidth {
+    #[doc = "Independently decoded symmetric widths in source-edge order."]
+    SymmetricPerEdge {
+        #[doc = "One width input for each source edge."]
+        widths: NonEmptyMembers<sheet_metal::SheetMetalFlangeSymmetricWidth>,
+    },
+    #[doc = "Independent signed offsets and boundary programs in selected-edge order."]
+    TwoOffsetsPerEdge {
+        #[doc = "One independently decoded offset pair for each selected source edge."]
+        offsets: NonEmptyMembers<sheet_metal::SheetMetalFlangeOffset>,
+    },
     /// The flange spans the complete selected edge.
     FullEdge,
     /// The flange is centred on the edge with one width.
-    Symmetric {
-        /// Total width centred on the edge.
-        width: PositiveLength,
-    },
+    Symmetric(sheet_metal::SheetMetalFlangeSymmetricWidth),
     /// The flange is measured inward from each end of the edge.
-    TwoSides {
-        /// Distance measured from the edge's first end.
-        first: PositiveLength,
-        /// Distance measured from the edge's second end.
-        second: PositiveLength,
-    },
+    TwoSides(SheetMetalFlangeTwoSidedWidth),
     /// Independent two-sided extents for each selected edge.
     ///
     /// The entries are in the same order as the operation's selected-edge
@@ -6319,6 +6315,17 @@ pub enum SheetMetalFlangeWidth {
         /// One first-end/second-end pair for each selected edge.
         widths: SheetMetalFlangeEdgeWidths,
     },
+}
+
+impl SheetMetalFlangeWidth {
+    #[doc = "Construct a known total symmetric width."]
+    pub fn symmetric(width: PositiveLength) -> Self {
+        Self::Symmetric(sheet_metal::SheetMetalFlangeSymmetricWidth { width: Some(width) })
+    }
+    #[doc = "Construct known first-end and second-end distances."]
+    pub fn two_sides(first: PositiveLength, second: PositiveLength) -> Self {
+        Self::TwoSides(SheetMetalFlangeTwoSidedWidth::complete(first, second))
+    }
 }
 
 /// Nonempty source-ordered per-edge flange widths.
@@ -6341,6 +6348,11 @@ impl SheetMetalFlangeEdgeWidths {
     pub fn as_mut_slice(&mut self) -> &mut [SheetMetalFlangeTwoSidedWidth] {
         &mut self.0
     }
+
+    #[doc = "Source-ordered width inputs."]
+    pub fn as_slice(&self) -> &[SheetMetalFlangeTwoSidedWidth] {
+        &self.0
+    }
 }
 
 impl<'de> Deserialize<'de> for SheetMetalFlangeEdgeWidths {
@@ -6353,16 +6365,36 @@ impl<'de> Deserialize<'de> for SheetMetalFlangeEdgeWidths {
 }
 
 /// Two-sided extent assigned to one selected sheet-metal flange edge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SheetMetalFlangeTwoSidedWidth {
     /// Distance measured from the edge's first end.
-    #[serde(deserialize_with = "deserialize_flange_first")]
-    pub first: PositiveLength,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_flange_first"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "PositiveLength"))]
+    pub first: Option<PositiveLength>,
     /// Distance measured from the edge's second end.
-    #[serde(deserialize_with = "deserialize_flange_second")]
-    pub second: PositiveLength,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_flange_second"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "PositiveLength"))]
+    pub second: Option<PositiveLength>,
+}
+
+impl SheetMetalFlangeTwoSidedWidth {
+    #[doc = "Construct a width pair with both distances present."]
+    pub fn complete(first: PositiveLength, second: PositiveLength) -> Self {
+        Self {
+            first: Some(first),
+            second: Some(second),
+        }
+    }
 }
 
 /// Distribution of sheet thickness relative to its construction plane.
@@ -6384,8 +6416,8 @@ selection_field_deserializer!(deserialize_selection_local_id, "local_id");
 selection_field_deserializer!(deserialize_selection_edges, "edges");
 selection_field_deserializer!(deserialize_selection_faces, "faces");
 selection_field_deserializer!(deserialize_selection_unresolved, "unresolved");
-selection_field_deserializer!(deserialize_flange_first, "first");
-selection_field_deserializer!(deserialize_flange_second, "second");
+cadmpeg_core::named_optional_field!(deserialize_flange_first, PositiveLength, "first");
+cadmpeg_core::named_optional_field!(deserialize_flange_second, PositiveLength, "second");
 selection_field_deserializer!(deserialize_selection_profiles, "profiles");
 selection_field_deserializer!(deserialize_selection_entities, "entities");
 selection_field_deserializer!(deserialize_selection_selections, "selections");
