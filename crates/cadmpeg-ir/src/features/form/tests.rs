@@ -219,10 +219,16 @@ fn form_admission_rejects_invalid_members_and_native_positions() {
     unknown["value"]["unknown"] = 1.into();
     let mut null_inputs = form_wire("complete", serde_json::json!([]), no_inputs());
     null_inputs["value"]["cage_inputs"] = serde_json::Value::Null;
+    let valid = form_wire("complete", serde_json::json!([]), no_inputs()).to_string();
+    let duplicate_parameters = valid.replace(
+        r#""parameters":{}"#,
+        r#""parameters":{"width":"a","width":"b"}"#,
+    );
+    assert_ne!(duplicate_parameters, valid);
     for value in [
         unknown.to_string(),
         null_inputs.to_string(),
-        r#"{"kind":"form","value":{"cages":{"kind":"complete","value":[]},"inputs":{"parameters":{"width":"a","width":"b"},"references":[],"lists":[]}}}"#.to_owned(),
+        duplicate_parameters,
     ] {
         assert!(serde_json::from_str::<FeatureOperation>(&value).is_err());
     }
@@ -298,6 +304,15 @@ fn form_schema_covers_legacy_arrays_and_retained_construction() {
         .unwrap()
         .iter()
         .any(|field| field == "cage_inputs"));
+    let reference_conditions = &schema["$defs"]["FormNativeReference"]["allOf"];
+    assert_eq!(
+        reference_conditions[0]["if"]["properties"]["target"]["properties"]["kind"]["const"],
+        "document"
+    );
+    assert_eq!(
+        reference_conditions[1]["if"]["properties"]["target"]["properties"]["kind"]["enum"],
+        serde_json::json!(["null", "unreadable", "unvisited"])
+    );
     let condition = &schema["allOf"][0];
     assert_eq!(
         condition["then"]["properties"]["cages"]["properties"]["value"]["uniqueItems"],
@@ -560,17 +575,15 @@ fn known_bindings_can_have_unknown_membership_and_inactive_resources_cannot_be_m
 
 #[test]
 fn form_candidate_and_native_references_require_checked_identities() {
+    let mut invalid_reference = no_inputs();
+    invalid_reference["references"] = serde_json::json!(["invalid"]);
     for value in [
         form_wire(
             "retained",
             serde_json::json!({"observations":[{"paths":[],"binding":{"kind":"decoded","cage":"invalid"}}],"membership":{"kind":"partial","order":"unknown","members":[]}}),
             no_inputs(),
         ),
-        form_wire(
-            "complete",
-            serde_json::json!([]),
-            serde_json::json!({"parameters": {}, "references": ["invalid"], "lists": []}),
-        ),
+        form_wire("complete", serde_json::json!([]), invalid_reference),
     ] {
         assert!(serde_json::from_value::<FeatureOperation>(value).is_err());
     }

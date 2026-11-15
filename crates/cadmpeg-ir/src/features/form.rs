@@ -121,8 +121,8 @@ pub struct FormClosureEvidence {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", schemars(extend("allOf" = [
-    {"if": {"properties": {"target": {"properties": {"namespace": {"const": "document"}}}}}, "then": {"anyOf": [{"required": ["inline_type_guid"]}, {"properties": {"target": {"required": ["target_type_guid"]}}}]}},
-    {"if": {"properties": {"target": {"properties": {"namespace": {"enum": ["null", "unreadable", "unvisited"]}}}}}, "then": {"not": {"required": ["inline_type_guid"]}}}
+    {"if": {"properties": {"target": {"properties": {"kind": {"const": "document"}}}}}, "then": {"anyOf": [{"required": ["inline_type_guid"]}, {"properties": {"target": {"required": ["target_type_guid"]}}}]}},
+    {"if": {"properties": {"target": {"properties": {"kind": {"enum": ["null", "unreadable", "unvisited"]}}}}}, "then": {"not": {"required": ["inline_type_guid"]}}}
 ])))]
 #[doc = include_str!("form-api-item.md")]
 pub struct FormNativeReference {
