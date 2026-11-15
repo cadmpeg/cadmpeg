@@ -3249,3 +3249,23 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled to-object flanges whose selected construction remains external or unresolved while the signed offset is retained.
 
 **Note.** `feature.edge-flange-height-target-native` retains the decoded target selection program. `feature.edge-flange-height-target-scope-assumed` retains the owning scope program when that target selection is unresolved. The target and signed offset remain independent neutral construction inputs.
+
+### DR-655. Profile loop entries without a sketch-curve record
+
+**Question.** Which record carries the curve of a profile loop entry when no sketch-curve record of the owning Sketch has the entry's primary identity?
+
+**Known.** A public RailCore II 300ZL design stores a typed-reference profile selection under Sketch owner 1115 with one loop of seven entries. Their primary identities are 241, 233, 244, 228, 231, 237, and 238. The Sketch holds curve records for every identity except 231. No uint64 property in the stream holds the value 231 outside the selection and ASM history records. A second design names primary identity 392 under Sketch owner 6681 with the same absence. A third design lists fifteen entries under owner 1977; the curve records that carry those identities name owner 1014.
+
+**Need.** A stored carrier or a derivation rule for the absent curves, and the owner join for the third design.
+
+**Note.** The selection stays native with `feature.profile-selection-native`.
+
+### DR-656. Sketch curve records with a nested geometry record
+
+**Question.** Which field of a sketch-curve record that stores no inline geometry gives the curve's geometry?
+
+**Known.** Public RailCore II 300ZL curve records of a class with `crv_primary_id` and `crv_secondary_id` followed by eight `0xff` bytes, a nested class record, and typed references store no f64 line or arc values at the geometry offset. Their profile selections resolve to identities that have no neutral sketch entity.
+
+**Need.** The geometry carrier of these records.
+
+**Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
