@@ -154,7 +154,8 @@ pub(crate) fn bind(
                     ExtrudeDirection::Unresolved {} => return None,
                 };
                 let sweep = sweep.unit()?;
-                let start = start_origin(start, origin.get(), normal.get(), sweep, before);
+                let start_kind = &*start;
+                let start = start_origin(start_kind, origin.get(), normal.get(), sweep, before);
                 let caps: Vec<_> = transition.topology.faces.inserted.iter()
                     .chain(&transition.topology.faces.updated)
                     .filter_map(|slot| exact_plane(after, *slot))
@@ -178,7 +179,7 @@ pub(crate) fn bind(
                 );
                 let not_behind = |slots: &BTreeSet<i64>| -> BTreeSet<i64> {
                     slots.iter().copied().filter(|slot| {
-                        !start.is_some_and(|start| slot_behind_start(
+                        !profile_start(start_kind, origin.get(), normal.get()).is_some_and(|start| slot_behind_start(
                             *slot,
                             start,
                             sweep,
@@ -264,6 +265,19 @@ fn exact_plane(topology: &AsmHistoricalTopology, slot: i64) -> Option<&AsmHistor
     planes.next().is_none().then_some(plane)
 }
 
+/// The start of a sweep that begins on the profile plane, or `None` when a
+/// face sets the start: the start face is a selection of its own, so a
+/// termination is not judged against it.
+fn profile_start(start: &ExtrudeStart, origin: Point3, normal: Vector3) -> Option<Point3> {
+    match start {
+        ExtrudeStart::ProfilePlane {} => Some(origin),
+        ExtrudeStart::OffsetProfilePlane { offset } => {
+            Some(origin.translated(normal, offset.get()))
+        }
+        _ => None,
+    }
+}
+
 fn start_origin(
     start: &ExtrudeStart,
     origin: Point3,
@@ -300,7 +314,7 @@ struct SweepFrame<'a> {
 }
 
 /// Whether the selected planar termination face, moved by `offset` along the
-/// sweep, lies behind the start of the sweep. A to-face extent ends ahead of
+/// sweep, lies behind the profile-plane start of the sweep. A to-face extent ends ahead of
 /// its start, so such a face is not the termination.
 fn selection_behind_start(
     face: &FaceSelection,
@@ -322,7 +336,7 @@ fn selection_behind_start(
             ExtrudeDirection::Unresolved {} => return None,
         }
         .unit()?;
-        let start = start_origin(frame.start, origin.get(), normal.get(), sweep, before)?;
+        let start = profile_start(frame.start, origin.get(), normal.get())?;
         let slots = selection_slots(face)?;
         let [slot] = slots.as_slice() else {
             return None;
