@@ -5905,14 +5905,12 @@ fn bind_historical_face_operand_candidates<'a>(
     for reference in &mut operand.recipe_references {
         bind_historical_recipe_reference_candidates(reference, topology, recipe_topologies)?;
     }
-    let roles = recipe_fill::ExtrudeOperandRoles::of(
+    let has_extrude_profile_group = recipe_fill::is_extrude_profile_member(
         operand,
         scope,
         operand_groups,
         feature_family == Some(crate::design::DesignFeatureFamily::Extrude),
     );
-    let has_extrude_profile_group = roles.profile;
-    let has_extrude_start_group = roles.start_or_profile();
     // A closed-edge recipe face is a separate case: the checks that read the
     // recipe face as a settled selection ignore it.
     let resolved_recipe_face = face_recipes
@@ -6245,7 +6243,7 @@ fn bind_historical_face_operand_candidates<'a>(
             operand.has_closed_edge_node()
                 && feature_family == Some(crate::design::DesignFeatureFamily::Extrude),
             operand.resolved_face_slots.is_empty(),
-            !(has_extrude_start_group && changed_faces.contains(&face)),
+            !(has_extrude_profile_group && changed_faces.contains(&face)),
         ) {
             operand.resolved_face_slots = vec![face];
         }
@@ -6262,7 +6260,7 @@ fn bind_historical_face_operand_candidates<'a>(
             if recipe_fill::recipe_face_replaces_selection(
                 operand.has_closed_edge_node(),
                 true,
-                !(has_extrude_start_group && changed_faces.contains(&face)),
+                !(has_extrude_profile_group && changed_faces.contains(&face)),
             ) {
                 operand.resolved_face_slots = vec![face];
             }

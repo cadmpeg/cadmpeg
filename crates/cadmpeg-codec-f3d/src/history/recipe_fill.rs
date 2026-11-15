@@ -8,9 +8,7 @@ use super::AsmDeltaState;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
-use crate::records::topology::extrude_selection::{
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole,
-};
+use crate::records::topology::extrude_selection::DesignExtrudeOperandRole;
 use crate::records::topology::face::DesignFaceOperand;
 
 /// Whether any selected face slot is absent from the faces the transition
@@ -60,49 +58,23 @@ pub(super) fn drop_unconsumed_closed_edge_profile(
     }
 }
 
-/// The Extrude roles of the group that holds a face operand.
-pub(super) struct ExtrudeOperandRoles {
-    pub(super) profile: bool,
-    start: bool,
-    /// The group is not a construction operand group of its scope: a legacy
-    /// Extrude selection group.
-    pub(super) legacy: bool,
-}
-
-impl ExtrudeOperandRoles {
-    pub(super) fn of(
-        operand: &DesignFaceOperand,
-        scope: &DesignParameterScope,
-        groups: &[DesignConstructionOperandGroup],
-        extrude: bool,
-    ) -> Self {
-        let mut roles = Self {
-            profile: false,
-            start: false,
-            legacy: false,
-        };
-        let Some(record) = operand.group_record_index().filter(|_| extrude) else {
-            return roles;
-        };
-        let stream = crate::ids::native_stream(&operand.id);
-        let mut found = false;
-        for group in groups.iter().filter(|group| {
-            crate::ids::native_stream(&group.id) == stream
-                && group.scope_record_index == scope.record_index
-                && group.record_index == record
-        }) {
-            found = true;
-            roles.profile |= group.extrude_role() == Some(DesignExtrudeOperandRole::Profile);
-            roles.start |= group.extrude_face_role() == Some(DesignExtrudeFaceRole::Start);
-        }
-        roles.legacy = !found;
-        roles
-    }
-
-    /// A start face, a profile face, or a legacy selection.
-    pub(super) fn start_or_profile(&self) -> bool {
-        self.profile || self.start || self.legacy
-    }
+/// Whether the operand belongs to an Extrude profile group of its scope.
+pub(super) fn is_extrude_profile_member(
+    operand: &DesignFaceOperand,
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    extrude: bool,
+) -> bool {
+    let Some(record) = operand.group_record_index().filter(|_| extrude) else {
+        return false;
+    };
+    let stream = crate::ids::native_stream(&operand.id);
+    groups.iter().any(|group| {
+        crate::ids::native_stream(&group.id) == stream
+            && group.scope_record_index == scope.record_index
+            && group.record_index == record
+            && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
+    })
 }
 
 /// Whether the scope is an Extrude that makes a new body.
