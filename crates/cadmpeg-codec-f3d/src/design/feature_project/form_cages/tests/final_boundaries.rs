@@ -61,7 +61,7 @@ fn tracking_owner_survives_missing_or_impossible_member_count() {
                     &FormRecordTypes::of(&meta),
                     &mut losses,
                 )?;
-                Ok((facts.inputs, losses))
+                Ok::<_, cadmpeg_core::CodecError>((facts.inputs, losses))
             })
             .unwrap();
             let reference = inputs
