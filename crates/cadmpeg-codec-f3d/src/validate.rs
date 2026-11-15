@@ -2259,7 +2259,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let edge_flange_link = match scope.edge_flange_operation() {
-            None => true,
+            None => scope
+                .edge_flange_construction()
+                .is_none_or(|construction| construction.valid_for_scope(scope)),
             Some(operation) => {
                 // The ordered reference table is in record-index order, so the
                 // check is that every role names a distinct table entry and that

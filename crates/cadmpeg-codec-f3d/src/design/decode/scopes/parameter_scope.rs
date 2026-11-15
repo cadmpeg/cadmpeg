@@ -812,6 +812,13 @@ pub(crate) fn decode_parameter_scopes(
 
             out.push(scope);
         }
+        super::edge_flange::bind(
+            ctx,
+            bytes,
+            &records,
+            &stream_types,
+            &mut out[stream_scope_start..],
+        )?;
         super::contour::bind(
             bytes,
             &records,
@@ -2061,7 +2068,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             {
                 let construction = Some(operation);
                 if let scope::DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    *slot = construction.into();
                 }
             }
         }

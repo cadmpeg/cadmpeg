@@ -11456,6 +11456,108 @@ Parsed by:
 | 72 | 4 | `member_count` | `u32` | little | spec | The `UnfoldRefoldGroupMode` carrier has type GUID |
 | 76 | 1 | `first_member` | `u8` | little | spec | Presence byte of the first local reference. A complete local reference occupies 11 or 51 bytes. |
 
+## `edge_flange_reference_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 8 B
+
+Offsets are relative to the first bend-position byte of the operation window.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `bend_position` | `u32` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 4 | 4 | `edge_count` | `u32` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+
+## `edge_flange_reference_side_short`
+
+Spec §3.1 · layout: byte offsets · size: 18 B
+
+Offsets are relative to the reference-side discriminator.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `reference_side` | `u32` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. · value `4` |
+| 4 | 2 | `side_zero` | `bytes[2]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 6 | 8 | `radius_control` | `f64` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 14 | 4 | `radius_zero` | `bytes[4]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+
+## `edge_flange_reference_side_wide`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the reference-side discriminator.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `reference_side` | `u32` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. · value `4` |
+| 4 | 11 | `side_zero` | `bytes[11]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 15 | 8 | `radius_control` | `f64` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 23 | 6 | `radius_zero` | `bytes[6]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+
+## `edge_flange_reference_groups_short`
+
+Spec §3.1 · layout: byte offsets · size: 12 B
+
+Offsets are relative to the first padding byte after the aggregate reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `group_zero` | `bytes[8]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 8 | 4 | `group_count` | `u32` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+
+## `edge_flange_reference_groups_wide`
+
+Spec §3.1 · layout: byte offsets · size: 16 B
+
+Offsets are relative to the first padding byte after the aggregate reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `group_zero` | `bytes[12]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 12 | 4 | `group_count` | `u32` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+
+## `edge_flange_two_offset_wrapper`
+
+Spec §3.1 · layout: byte offsets · size: 112 B
+
+Offsets are relative to the indexed header with compact local references. Null and inline-type reference widths shift following fields.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/edge_flange.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 13 | `zero_prefix` | `bytes[13]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 24 | 4 | `member_count` | `u32` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. · value `5` |
+| 28 | 4 | `control` | `u32` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. · value `1` |
+| 32 | 11 | `main_group` | `bytes[11]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 43 | 11 | `first_boundary` | `bytes[11]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 54 | 11 | `second_boundary` | `bytes[11]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 65 | 11 | `first_owner` | `bytes[11]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 76 | 11 | `second_owner` | `bytes[11]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 87 | 2 | `middle_zero` | `bytes[2]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 89 | 11 | `nested` | `bytes[11]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+| 100 | 1 | `closing_zero` | `u8` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. · value `0` |
+| 101 | 11 | `owner_scope` | `bytes[11]` | little | spec | The reference-framed `EdgeFlange` blocks and its two-offset wrapper use the fixed fields in `docs/layouts/f3d.toml`. |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed record header.
+
 ## `sheet_metal_contour_short_prefix`
 
 Spec §3.1 · layout: byte offsets · size: not stated

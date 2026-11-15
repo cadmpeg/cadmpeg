@@ -19,6 +19,7 @@ mod copy_paste_bodies;
 mod derived_instance;
 pub(crate) mod direct_face;
 mod draft;
+mod edge_flange;
 mod emboss;
 pub(crate) mod extrude;
 pub(crate) mod fillet_set;

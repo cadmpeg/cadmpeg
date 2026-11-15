@@ -1057,7 +1057,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** The layout slot name does not establish the control's physical role.
+**Note.** `feature.edge-flange-stored-radius-inside-assumed` records the reading of this control as an inside radius when an explicit scoped radius is absent. An explicit `BendRadius` value takes precedence and admits zero.
 
 ### DR-117. Current mixed face and distance extent payload
 
@@ -3101,3 +3101,33 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The tool stays native and reports `feature.combine-tool-body-unbound`. Proven tools of the same `Combine` still add their generating features as dependencies.
+
+### DR-564. Reference-framed EdgeFlange width and boundary programs
+
+**Question.** How do wrapper members and boundary programs select the flange width law across reference-framed operation variants?
+
+**Known.** The operation prologue and closing group run have equal edge counts. Their wrapper and main-group slots pair by ordinal. A five-member wrapper carries a main-group reference, two boundary-group references and two owners named `EdgeOffset_1` and `EdgeOffset_2`. The signed owners retain zero and negative lengths. The boundary references retain independent source programs.
+
+**Need.** Controlled saves that vary each boundary object and each signed offset independently, and compare full-edge and offset modes while preserving the main-edge order.
+
+**Note.** `feature.edge-flange-signed-offsets-assumed` records the wrapper-linked offset association. `feature.edge-flange-full-width-assumed` records full-edge width for reference-framed wrappers without a decoded offset pair. `feature.edge-flange-boundary-reference-native` retains decoded boundary programs. `feature.edge-flange-boundary-scope-reference-assumed` retains the owning scope when a boundary definition is unresolved. A missing construction stays neutral with independent fields and `feature.edge-flange-reference-envelope-unresolved`.
+
+### DR-565. Independent EdgeFlange parameter recovery
+
+**Question.** Which saved parameter value is authoritative when an EdgeFlange owner or definition is unresolved?
+
+**Known.** The operation names height and angle owners. A parameter definition can retain its owner backlink, and a parameter owner stores an independent finite cached scalar. Length values use database centimetres and angular values use radians. The display-unit token is stored separately.
+
+**Need.** Controlled saves with a changed definition, changed owner cache or unresolved display-unit token while the other parameter fields remain fixed.
+
+**Note.** `feature.edge-flange-parameter-owner-backlink-assumed` permits a unique definition backlink when its owner frame is absent. `feature.edge-flange-cached-parameter-assumed` permits a cached scalar when its definition is absent. `feature.edge-flange-parameter-unit-assumed` permits the database unit convention when the display-unit token is unresolved. A missing value reports `feature.edge-flange-parameter-unresolved` and preserves other inputs.
+
+### DR-566. Unresolved EdgeFlange height targets
+
+**Question.** Which neutral construction does a retained to-object height selection identify when its source target is unresolved?
+
+**Known.** A to-object height carries a target group, target selection and signed offset owner. Each input has an independent source identity. A local WorkPlane or WorkPoint target has its own construction scope.
+
+**Need.** Controlled to-object flanges whose selected construction remains external or unresolved while the signed offset is retained.
+
+**Note.** `feature.edge-flange-height-target-native` retains the decoded target selection program. `feature.edge-flange-height-target-scope-assumed` retains the owning scope program when that target selection is unresolved. The target and signed offset remain independent neutral construction inputs.

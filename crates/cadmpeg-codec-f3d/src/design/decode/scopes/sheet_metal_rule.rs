@@ -175,12 +175,6 @@ fn exact_settings_rule(
     result
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum RuleReadMode {
-    MatchingThickness,
-    IndependentEntries,
-}
-
 pub(super) struct RuleValues {
     pub(super) first_value: Located<FiniteReal>,
     pub(super) thickness: Located<PositiveReal>,
@@ -192,7 +186,6 @@ pub(super) fn rule_values(
     records: &IndexedRecordOffsets,
     types: &Types<'_>,
     index: u32,
-    mode: RuleReadMode,
 ) -> Option<RuleValues> {
     let (guid, version) = *types.get(&u64::from(index))?;
     if !guid.eq_ignore_ascii_case(RULE_GUID) || !matches!(version, 0 | 1) {
@@ -214,7 +207,7 @@ pub(super) fn rule_values(
             }
         }
         view.u32_le()?;
-        let (name, after_name) = lp_utf16_bounded(bytes, view.position(), 1..=64)?;
+        let (_, after_name) = lp_utf16_bounded(bytes, view.position(), 1..=64)?;
         if after_name > end {
             continue;
         }
@@ -222,11 +215,6 @@ pub(super) fn rule_values(
         let Some(first) = FiniteReal::new(view.f64_le()?) else {
             continue;
         };
-        if matches!(mode, RuleReadMode::MatchingThickness)
-            && (name != "Thickness" || first.get() <= 0.0)
-        {
-            continue;
-        }
         for at in view.position()..end {
             let Some((material, after_material)) = lp_utf16_bounded(bytes, at, 1..=128) else {
                 continue;
@@ -244,9 +232,6 @@ pub(super) fn rule_values(
             let mut scalar_view = frame;
             scalar_view.seek(after_thickness)?;
             let thickness = scalar_view.f64_le()?;
-            if matches!(mode, RuleReadMode::MatchingThickness) && thickness != first.get() {
-                continue;
-            }
             let thickness = PositiveReal::new(thickness)?;
             let offset = at.checked_sub(8)?;
             scalar_view.seek(offset)?;

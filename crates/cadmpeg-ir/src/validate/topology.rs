@@ -3341,11 +3341,11 @@ fn check_feature_references(
                     }
                 }
             }
-            FeatureOperation::SheetMetalEdgeFlange { edges, height, .. } => {
-                edge_selections.push(edges);
-                if matches!(height, crate::features::SheetMetalFlangeHeight::ToObject {
-                    target: crate::features::SheetMetalFlangeHeightTarget::Native(native), ..
-                } if native.is_empty())
+            FeatureOperation::SheetMetalEdgeFlange(construction) => {
+                if let Some(edges) = &construction.edges {
+                    edge_selections.push(edges);
+                }
+                if matches!(&construction.height, Some(crate::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(&target.target, Some(crate::features::SheetMetalFlangeHeightTarget::Native(native)) if native.is_empty()))
                 {
                     geometry_error(
                         findings,
