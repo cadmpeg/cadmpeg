@@ -149,22 +149,26 @@ pub(super) fn enter(ceiling: Ceiling) -> Result<Depth, ResourceLimit> {
     Ok(Depth(ceiling))
 }
 
-/// Enters one level of `ceiling` inside a deserializer.
-pub(super) fn enter_de<E: serde::de::Error>(ceiling: Ceiling) -> Result<Depth, E> {
-    enter(ceiling).map_err(|limit| refusal(&limit))
-}
-
-/// Records a refusal that a deserializer reports, and states it as `E`.
-pub(super) fn refuse<E: serde::de::Error>(limit: ResourceLimit) -> E {
+/// Admits a value whose nesting under `ceiling` is `depth` levels, counting
+/// the value itself, or refuses it past the ceiling's value.
+pub(super) fn within(ceiling: Ceiling, depth: u64) -> Result<(), String> {
     let mut session = SESSION.get();
-    session.refusal.get_or_insert(limit);
+    let limit = ceiling.of(&session.limits.unwrap_or_default());
+    if depth <= limit {
+        return Ok(());
+    }
+    let refusal = ResourceLimit {
+        dimension: ResourceDimension::RecursionDepth,
+        reason: ResourceFailure::BudgetExceeded,
+        limit,
+        used: limit,
+        additional: depth - limit,
+        operation: ceiling.operation(),
+    };
+    session.refusal.get_or_insert(refusal);
     SESSION.set(session);
-    refusal(&limit)
-}
-
-fn refusal<E: serde::de::Error>(limit: &ResourceLimit) -> E {
-    E::custom(format_args!(
-        "{} exceeds the ceiling of {}",
-        limit.operation, limit.limit
+    Err(format!(
+        "{} exceeds the ceiling of {limit}",
+        refusal.operation
     ))
 }

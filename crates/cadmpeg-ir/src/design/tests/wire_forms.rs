@@ -13,7 +13,7 @@ use crate::design::construction::SourceMode;
 use crate::design::dimension::Dimension;
 use crate::design::expr::{self, BinaryOp, Expression, ExpressionDialect, Neutral, Node};
 use crate::design::names::{CodecId, NameTable, TopoName};
-use crate::design::options::{Boolean, BooleanOp, Hand, Span};
+use crate::design::options::{Boolean, BooleanOp, Hand};
 use crate::design::refs::{Evaluated, StateRef};
 use crate::design::selection::{Members, Ordered, PickTarget, Picked, Picks, Unordered};
 use crate::design::units::{Duration, Unit, UnitFactor, UnitSymbol};
@@ -34,14 +34,6 @@ fn the_examples_of_section_2_5() {
             targets: None
         }),
         json!({"kind": "apply", "op": {"kind": "cut"}})
-    );
-    let span = Span::<Length>::Symmetric {
-        amount: literal,
-        measure: None,
-    };
-    assert_eq!(
-        to_value(&span),
-        json!({"kind": "symmetric", "amount": {"kind": "literal", "value": 2.5}})
     );
 }
 
@@ -105,6 +97,7 @@ fn an_omitted_optional_field_refuses_null_and_unknown_fields_are_refused() {
     // An internally tagged enum.
     refuses::<Boolean>(r#"{"kind": "apply", "op": {"kind": "cut"}, "targets": null}"#);
     refuses::<Boolean>(r#"{"kind": "apply", "op": {"kind": "cut"}, "extra": 1}"#);
+    refuses::<Boolean>(r#"{"kind": "new_body", "extra": 1}"#);
     // An adjacently tagged enum.
     refuses::<TopoName>(
         r#"{"kind": "root", "value": {"container": "test:design:container#1"}, "extra": 1}"#,

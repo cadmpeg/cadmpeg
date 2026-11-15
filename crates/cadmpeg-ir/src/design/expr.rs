@@ -59,7 +59,11 @@ pub enum Expression<R = ParameterRef> {
 
 /// A neutral expression tree. It serializes as canonical text with its
 /// references and measures in side lists.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(
+    try_from = "NeutralWire<R>",
+    bound(deserialize = "R: Deserialize<'de> + PartialEq + Clone")
+)]
 pub struct Neutral<R = ParameterRef>(pub Node<R>);
 
 /// One token of source expression text.
@@ -357,7 +361,7 @@ pub struct Measure {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_cached"
     )]
     pub cached: Option<FiniteReal>,
 }
@@ -397,7 +401,7 @@ pub enum MeasureKind {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeasureTarget {
     /// The scope's whole current model.
-    Model,
+    Model {},
     /// The selected geometry.
     Selection(OrderedSelection),
 }
@@ -469,14 +473,12 @@ impl<R: Serialize + PartialEq + Clone> Serialize for Neutral<R> {
     }
 }
 
-impl<'de, R: Deserialize<'de> + PartialEq + Clone> Deserialize<'de> for Neutral<R> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = NeutralWire::<R>::deserialize(deserializer)?;
-        match read(&wire) {
-            Ok(node) => Ok(Self(node)),
-            Err(ExprError::ResourceLimit(limit)) => Err(read::refuse(limit)),
-            Err(error) => Err(serde::de::Error::custom(error)),
-        }
+impl<R: PartialEq + Clone> TryFrom<NeutralWire<R>> for Neutral<R> {
+    type Error = ExprError;
+
+    /// Reads a wire payload; see [`read`].
+    fn try_from(wire: NeutralWire<R>) -> Result<Self, Self::Error> {
+        read(&wire).map(Self)
     }
 }
 
@@ -494,3 +496,5 @@ impl<R: JsonSchema> JsonSchema for Neutral<R> {
 fn level() -> Result<read::Depth, ExprError> {
     Ok(read::enter(Ceiling::Expression)?)
 }
+
+cadmpeg_core::named_optional_field!(deserialize_cached, FiniteReal, "cached");

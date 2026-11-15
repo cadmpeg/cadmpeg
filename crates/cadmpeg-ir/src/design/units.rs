@@ -153,14 +153,14 @@ pub struct UnitSystem {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_mass"
     )]
     pub mass: Option<UnitSymbol>,
     /// The time unit.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_time"
     )]
     pub time: Option<UnitSymbol>,
 }
@@ -227,9 +227,9 @@ impl Quantity {
 macro_rules! checked_quantity {
     ($(#[$attribute:meta])* $name:ident, $value:ident, $condition:expr, $error:literal) => {
         $(#[$attribute])*
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[serde(transparent)]
+        #[serde(into = "f64", try_from = "f64")]
         pub struct $name(f64);
 
         impl $name {
@@ -251,10 +251,18 @@ macro_rules! checked_quantity {
             }
         }
 
-        impl<'de> Deserialize<'de> for $name {
-            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                Self::new(f64::deserialize(deserializer)?)
-                    .ok_or_else(|| serde::de::Error::custom($error))
+        impl TryFrom<f64> for $name {
+            type Error = &'static str;
+
+            /// Admits a value within the quantity's domain.
+            fn try_from($value: f64) -> Result<Self, Self::Error> {
+                Self::new($value).ok_or($error)
+            }
+        }
+
+        impl From<$name> for f64 {
+            fn from(quantity: $name) -> Self {
+                quantity.0
             }
         }
     };
@@ -279,3 +287,6 @@ checked_quantity!(
     /// A positive finite area in square millimetres.
     PositiveArea, value, value > 0.0, "a PositiveArea is finite and positive"
 );
+
+cadmpeg_core::named_optional_field!(deserialize_mass, UnitSymbol, "mass");
+cadmpeg_core::named_optional_field!(deserialize_time, UnitSymbol, "time");

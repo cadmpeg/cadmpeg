@@ -11,14 +11,13 @@ use std::marker::PhantomData;
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use super::construction::FrameValue;
 use super::dimension::Dimension;
 use super::ids::{ContainerId, PublicationId};
 use super::names::{NameKind, NativeName, TopoName};
-use super::read::{enter_de, Ceiling};
+use super::read::{self, Ceiling};
 use super::refs::{ConfigurationRef, EntityRef, Position};
 use super::topology::Topology;
 use crate::features::{FeatureId, FinitePoint3, NativeSelections};
@@ -54,7 +53,11 @@ impl MemberOrder for Unordered {
 
 /// A list of members that are distinct by identity. A member type's `Ord`
 /// is its identity key, so distinctness and order read only that key.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(
+    try_from = "Vec<T>",
+    bound(deserialize = "T: Deserialize<'de> + Ord, O: MemberOrder")
+)]
 pub struct Members<T, O> {
     items: Vec<T>,
     order: PhantomData<O>,
@@ -97,9 +100,12 @@ impl<T: Serialize, O> Serialize for Members<T, O> {
     }
 }
 
-impl<'de, T: Deserialize<'de> + Ord, O: MemberOrder> Deserialize<'de> for Members<T, O> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::new(Vec::<T>::deserialize(deserializer)?).map_err(D::Error::custom)
+impl<T: Ord, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
+    type Error = &'static str;
+
+    /// Admits a list of members that are distinct by identity.
+    fn try_from(items: Vec<T>) -> Result<Self, Self::Error> {
+        Self::new(items)
     }
 }
 
@@ -131,7 +137,7 @@ pub struct Selection<O: MemberOrder> {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_native_selections"
     )]
     pub native: Option<NativeSelections>,
 }
@@ -191,7 +197,7 @@ pub enum Picks<O: MemberOrder> {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_resolved_members"
         )]
         resolved: Option<Members<Picked, O>>,
     },
@@ -200,48 +206,28 @@ pub enum Picks<O: MemberOrder> {
 /// One pick of a selection. Its identity key is
 /// `(target, context, native, domain)`; neither the witness nor `resolved`
 /// is part of it.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, try_from = "PickedWire")]
 pub struct Picked {
     /// What the pick picks.
     pub target: PickTarget,
     /// Where the pick resolves, where it is not the definition of the
     /// selection's owner.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<PickContext>,
     /// The source's own name for the pick.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub native: Option<NativeName>,
     /// The part of the entity that the pick is restricted to.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub domain: Option<PickDomain>,
     /// The pick's evaluated geometry as the source cached it.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub witness: Option<Witness>,
     /// The entities the pick resolves to in its anchored state, as the source
     /// identifies them there.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved: Option<Vec<EntityRef>>,
 }
 
@@ -272,27 +258,39 @@ impl Ord for Picked {
     }
 }
 
-/// The reading form of [`Picked`]. A pick nested in it reads through
-/// [`Picked`]'s reader, which holds one level of the pick ceiling.
+/// The reading form of [`Picked`]. Each pick nested in its domain has
+/// passed the pick ceiling; the conversion admits this one level above the
+/// deepest of them.
 #[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct PickedWire {
+    /// What the pick picks.
     target: PickTarget,
-    #[serde(default, deserialize_with = "super::wire::present")]
+    /// Where the pick resolves, where it is not the definition of the
+    /// selection's owner.
+    #[serde(default, deserialize_with = "deserialize_context")]
     context: Option<PickContext>,
-    #[serde(default, deserialize_with = "super::wire::present")]
+    /// The source's own name for the pick.
+    #[serde(default, deserialize_with = "deserialize_native_name")]
     native: Option<NativeName>,
-    #[serde(default, deserialize_with = "super::wire::present")]
+    /// The part of the entity that the pick is restricted to.
+    #[serde(default, deserialize_with = "deserialize_domain")]
     domain: Option<PickDomain>,
-    #[serde(default, deserialize_with = "super::wire::present")]
+    /// The pick's evaluated geometry as the source cached it.
+    #[serde(default, deserialize_with = "deserialize_witness")]
     witness: Option<Witness>,
-    #[serde(default, deserialize_with = "super::wire::present")]
+    /// The entities the pick resolves to in its anchored state, as the source
+    /// identifies them there.
+    #[serde(default, deserialize_with = "deserialize_resolved_entities")]
     resolved: Option<Vec<EntityRef>>,
 }
 
-impl<'de> Deserialize<'de> for Picked {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let _level = enter_de::<D::Error>(Ceiling::Pick)?;
+impl TryFrom<PickedWire> for Picked {
+    type Error = String;
+
+    /// Admits a pick nested no deeper than the pick ceiling.
+    fn try_from(wire: PickedWire) -> Result<Self, Self::Error> {
         let PickedWire {
             target,
             context,
@@ -300,15 +298,36 @@ impl<'de> Deserialize<'de> for Picked {
             domain,
             witness,
             resolved,
-        } = PickedWire::deserialize(deserializer)?;
-        Ok(Self {
+        } = wire;
+        let pick = Self {
             target,
             context,
             native,
             domain,
             witness,
             resolved,
-        })
+        };
+        read::within(Ceiling::Pick, pick.depth())?;
+        Ok(pick)
+    }
+}
+
+impl Picked {
+    /// The levels of this pick and the picks nested in its domain.
+    fn depth(&self) -> u64 {
+        let below = match &self.domain {
+            Some(PickDomain::Limits { start, end }) => {
+                let depth = |pick: &Option<Box<Self>>| pick.as_ref().map_or(0, |pick| pick.depth());
+                depth(start).max(depth(end))
+            }
+            Some(
+                PickDomain::EdgeInterval { .. }
+                | PickDomain::Fragment(_)
+                | PickDomain::Containing(_),
+            )
+            | None => 0,
+        };
+        below + 1
     }
 }
 
@@ -330,7 +349,7 @@ pub enum PickTarget {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_within"
         )]
         within: Option<NativeOwner>,
     },
@@ -362,7 +381,7 @@ pub enum PickTarget {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_part"
         )]
         part: Option<DatumPart>,
     },
@@ -375,7 +394,7 @@ pub enum PickTarget {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_container"
         )]
         container: Option<ContainerId>,
     },
@@ -437,14 +456,14 @@ pub enum PickContext {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_own"
         )]
         own: Option<OccurrencePath>,
         /// The path from the assembly to the target.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_target"
         )]
         target: Option<OccurrencePath>,
     },
@@ -461,7 +480,7 @@ pub struct DefinitionRef {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_configuration"
     )]
     pub configuration: Option<ConfigurationRef>,
 }
@@ -485,7 +504,7 @@ pub struct PathStep {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_configuration"
     )]
     pub configuration: Option<ConfigurationRef>,
 }
@@ -556,28 +575,28 @@ pub struct Witness {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_point"
     )]
     pub point: Option<FinitePoint3>,
     /// A direction.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_direction"
     )]
     pub direction: Option<UnitVector3>,
     /// An edge sample: its two end points.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_endpoints"
     )]
     pub endpoints: Option<[FinitePoint3; 2]>,
     /// A frame.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_frame"
     )]
     pub frame: Option<FrameValue>,
     /// The chain curves.
@@ -586,14 +605,14 @@ pub struct Witness {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_surface"
     )]
     pub surface: Option<SolvedSurfaceGeometry>,
     /// The face group or body that the source backs up for the pick.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_body"
     )]
     pub body: Option<Box<Topology>>,
 }
@@ -621,14 +640,14 @@ pub enum PickDomain {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_start"
         )]
         start: Option<Box<Picked>>,
         /// The element that limits the end.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_end"
         )]
         end: Option<Box<Picked>>,
     },
@@ -708,7 +727,7 @@ pub struct RuleTerm<O: MemberOrder> {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_propagation"
     )]
     pub propagation: Option<Propagation>,
 }
@@ -748,7 +767,7 @@ pub enum SelectionRule {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_end"
         )]
         end: Option<Box<Picked>>,
     },
@@ -789,21 +808,21 @@ pub enum Propagation {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_continuity"
         )]
         continuity: Option<Continuity>,
         /// The angle tolerance.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<Dimension<Angle>>,
         /// The gap tolerance.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_gap"
         )]
         gap: Option<Dimension<Length>>,
     },
@@ -855,7 +874,7 @@ pub struct BoundaryUse {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_fragment"
     )]
     pub fragment: Option<Fragment>,
 }
@@ -870,3 +889,30 @@ pub struct Fragment {
     /// The number of fragments.
     pub count: u32,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_angle, Dimension<Angle>, "angle");
+cadmpeg_core::named_optional_field!(deserialize_body, Box<Topology>, "body");
+cadmpeg_core::named_optional_field!(deserialize_configuration, ConfigurationRef, "configuration");
+cadmpeg_core::named_optional_field!(deserialize_container, ContainerId, "container");
+cadmpeg_core::named_optional_field!(deserialize_context, PickContext, "context");
+cadmpeg_core::named_optional_field!(deserialize_continuity, Continuity, "continuity");
+cadmpeg_core::named_optional_field!(deserialize_direction, UnitVector3, "direction");
+cadmpeg_core::named_optional_field!(deserialize_domain, PickDomain, "domain");
+cadmpeg_core::named_optional_field!(deserialize_end, Box<Picked>, "end");
+cadmpeg_core::named_optional_field!(deserialize_endpoints, [FinitePoint3; 2], "endpoints");
+cadmpeg_core::named_optional_field!(deserialize_fragment, Fragment, "fragment");
+cadmpeg_core::named_optional_field!(deserialize_frame, FrameValue, "frame");
+cadmpeg_core::named_optional_field!(deserialize_gap, Dimension<Length>, "gap");
+cadmpeg_core::named_optional_field!(deserialize_native_name, NativeName, "native");
+cadmpeg_core::named_optional_field!(deserialize_native_selections, NativeSelections, "native");
+cadmpeg_core::named_optional_field!(deserialize_own, OccurrencePath, "own");
+cadmpeg_core::named_optional_field!(deserialize_part, DatumPart, "part");
+cadmpeg_core::named_optional_field!(deserialize_point, FinitePoint3, "point");
+cadmpeg_core::named_optional_field!(deserialize_propagation, Propagation, "propagation");
+cadmpeg_core::named_optional_field!(deserialize_resolved_members<O>, Members<Picked, O>, "resolved");
+cadmpeg_core::named_optional_field!(deserialize_resolved_entities, Vec<EntityRef>, "resolved");
+cadmpeg_core::named_optional_field!(deserialize_start, Box<Picked>, "start");
+cadmpeg_core::named_optional_field!(deserialize_surface, SolvedSurfaceGeometry, "surface");
+cadmpeg_core::named_optional_field!(deserialize_target, OccurrencePath, "target");
+cadmpeg_core::named_optional_field!(deserialize_within, NativeOwner, "within");
+cadmpeg_core::named_optional_field!(deserialize_witness, Witness, "witness");

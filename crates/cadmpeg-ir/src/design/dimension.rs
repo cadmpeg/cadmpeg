@@ -37,10 +37,6 @@ pub enum Dimension<T, P = ParameterId> {
     Negated(P),
 }
 
-/// A dimension of a process value, which can bind a process or a design
-/// parameter.
-pub type ProcessDimension<T> = Dimension<T, ParamRef>;
-
 /// A reference to a design parameter of any scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -53,7 +49,7 @@ pub struct ParameterRef {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_through"
     )]
     pub through: Option<OccurrencePath>,
 }
@@ -96,3 +92,5 @@ pub enum ParamRef {
     /// A design parameter.
     Design(ParameterRef),
 }
+
+cadmpeg_core::named_optional_field!(deserialize_through, OccurrencePath, "through");
