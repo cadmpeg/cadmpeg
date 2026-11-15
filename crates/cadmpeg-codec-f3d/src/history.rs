@@ -30,6 +30,7 @@ mod face_recipe;
 mod fallback_face;
 pub(crate) mod fillet_blends;
 pub(crate) mod fragment_edge;
+pub(crate) mod history_bodies;
 mod hole_support;
 mod loop_index;
 mod move_face;
@@ -557,85 +558,13 @@ fn historical_record_archive(
     active_records: &[cadmpeg_asm::sab::Record],
     archived_frames: HashMap<i64, cadmpeg_asm::sab::Record>,
 ) -> Option<HistoricalRecordArchive> {
-    let active_count = i64::try_from(active_records.len()).ok()?;
-
-    let mut revision_entities = HashMap::new();
-
-    for entity_ref in 0..active_count {
-        revision_entities.insert(entity_ref, entity_ref);
-    }
-    for change in states
-        .iter()
-        .flat_map(|state| &state.bulletin_boards)
-        .flat_map(|board| &board.changes)
-    {
-        let Some(old_ref) = change.old_ref() else {
-            continue;
-        };
-        let entity_ref = change.new_ref().unwrap_or(old_ref);
-
-        if revision_entities.insert(old_ref, entity_ref).is_some() {
-            return None;
-        }
-    }
-
-    let mut records = HashMap::new();
-
-    for (revision, record) in active_records.iter().enumerate() {
-        let revision = i64::try_from(revision).ok()?;
-        records.insert(revision, clone_historical_record(record));
-    }
-    for (revision_id, framed) in archived_frames {
-        if records.insert(revision_id, framed).is_some() {
-            return None;
-        }
-    }
-    if records.len() != revision_entities.len() {
-        return None;
-    }
-    for (&revision_ref, record) in &mut records {
-        let &entity_ref = revision_entities.get(&revision_ref)?;
-        let index = usize::try_from(entity_ref).ok()?;
-        record.index = index;
-        if std::sync::Arc::strong_count(&record.tokens) > 1 {
-            let mut tokens = Vec::new();
-            for token in record.tokens.iter() {
-                tokens.push(clone_historical_token(token));
-            }
-            record.tokens = tokens.into();
-        }
-        for token in std::sync::Arc::make_mut(&mut record.tokens) {
-            let cadmpeg_asm::sab::Token::Ref(reference) = token else {
-                continue;
-            };
-            if *reference >= 0 {
-                let &entity_ref = revision_entities.get(reference)?;
-                *reference = entity_ref;
-            }
-        }
-    }
-    Some(records)
-}
-
-fn clone_historical_record(record: &cadmpeg_asm::sab::Record) -> cadmpeg_asm::sab::Record {
-    let name = record.name.clone();
-    cadmpeg_asm::sab::Record {
-        index: record.index,
-        name,
-        tokens: record.tokens.clone(),
-        offset: record.offset,
-        len: record.len,
-    }
-}
-
-fn clone_historical_token(token: &cadmpeg_asm::sab::Token) -> cadmpeg_asm::sab::Token {
-    use cadmpeg_asm::sab::Token;
-    match token {
-        Token::Str(value) => Token::Str(value.to_owned()),
-        Token::Ident(value) => Token::Ident(value.to_owned()),
-        Token::SubIdent(value) => Token::SubIdent(value.to_owned()),
-        _ => token.clone(),
-    }
+    cadmpeg_asm::history::historical_record_archive(
+        &delta_state_views(states),
+        cadmpeg_asm::history::RecordArchiveFrames {
+            active: active_records.to_vec(),
+            archived: archived_frames,
+        },
+    )
 }
 
 /// Release derived topologies after projection and retain only late-selection rows.
