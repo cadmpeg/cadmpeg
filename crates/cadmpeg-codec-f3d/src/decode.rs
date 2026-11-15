@@ -603,6 +603,21 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
         FeatureDefinition::Operation(FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. }) => true,
+        FeatureDefinition::Operation(FeatureOperation::MeshModify {
+            source,
+            modification: cadmpeg_ir::features::mesh::MeshModification::PlaneCut { cut },
+        }) => {
+            use cadmpeg_ir::features::mesh::{MeshPlaneCutMode, MeshSelection};
+            !matches!(source, MeshSelection::Tessellations(_))
+                || cut.origin.is_none()
+                || cut.normal.is_none()
+                || match cut.mode {
+                    Some(MeshPlaneCutMode::Trim) => cut.fill.is_none() || cut.retained_side.is_none(),
+                    Some(MeshPlaneCutMode::SplitBodies) => cut.fill.is_none(),
+                    Some(MeshPlaneCutMode::SplitFaces) => false,
+                    None => true,
+                }
+        }
         FeatureDefinition::Operation(
             FeatureOperation::MeshImport {
                 tessellations: source,
