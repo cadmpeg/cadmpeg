@@ -145,10 +145,15 @@ pub enum MeshRepair {
 }
 
 #[doc = "Change that a mesh operation applies to its source."]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshModification {
+    #[doc = "Separates connected shells or face groups into meshes."]
+    Separate {
+        #[doc = "Independent separation controls."]
+        separation: MeshSeparation,
+    },
     #[doc = "Lowers the face count."]
     Reduce {
         #[doc = "Face distribution of the result, when resolved."]
@@ -212,6 +217,89 @@ pub enum MeshModification {
     },
 }
 cadmpeg_core::named_optional_field!(deserialize_members, NativeSelections, "members");
+
+#[doc = "Partition used to separate a mesh."]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshSeparationMethod {
+    #[doc = "Separate connected shells."]
+    Shells,
+    #[doc = "Separate face groups."]
+    FaceGroups,
+}
+
+#[doc = "Face groups selected for mesh separation, independently of the source meshes."]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MeshSeparationGroups {
+    #[doc = "Separate all source face groups."]
+    All {},
+    #[doc = "Separate selected face groups whose identities can remain unresolved."]
+    Selected {
+        #[doc = "Ordered native group selectors relative to the mesh source."]
+        #[cfg_attr(feature = "schema", schemars(with = "NativeSelections"))]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_members"
+        )]
+        members: Option<NativeSelections>,
+    },
+}
+
+#[doc = "Independent mesh separation settings; absent fields remain unknown."]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MeshSeparation {
+    #[doc = "Separation partition when resolved."]
+    #[cfg_attr(feature = "schema", schemars(with = "MeshSeparationMethod"))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_separation_method"
+    )]
+    pub method: Option<MeshSeparationMethod>,
+    #[doc = "Face-group scope when resolved, including inactive stored scope."]
+    #[cfg_attr(feature = "schema", schemars(with = "MeshSeparationGroups"))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_separation_groups"
+    )]
+    pub groups: Option<MeshSeparationGroups>,
+    #[doc = "Whether face-group separation creates multiple bodies, including an inactive stored value."]
+    #[cfg_attr(feature = "schema", schemars(with = "bool"))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_multiple_bodies"
+    )]
+    pub multiple_bodies: Option<bool>,
+    #[doc = "Whether separation keeps the source body when resolved."]
+    #[cfg_attr(feature = "schema", schemars(with = "bool"))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_keep_body"
+    )]
+    pub keep_body: Option<bool>,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_separation_method,
+    MeshSeparationMethod,
+    "method"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_separation_groups,
+    MeshSeparationGroups,
+    "groups"
+);
+cadmpeg_core::named_optional_field!(deserialize_multiple_bodies, bool, "multiple_bodies");
+cadmpeg_core::named_optional_field!(deserialize_keep_body, bool, "keep_body");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

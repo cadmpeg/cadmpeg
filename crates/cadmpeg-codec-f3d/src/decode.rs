@@ -603,6 +603,20 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
         FeatureDefinition::Operation(FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. }) => true,
+        FeatureDefinition::Operation(FeatureOperation::MeshModify {
+            source,
+            modification: cadmpeg_ir::features::mesh::MeshModification::Separate { separation },
+        }) | FeatureDefinition::PostProcess {
+            operation: FeatureOperation::MeshModify {
+                source,
+                modification: cadmpeg_ir::features::mesh::MeshModification::Separate { separation },
+            },
+            ..
+        } => {
+            !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
+                || separation.method != Some(cadmpeg_ir::features::mesh::MeshSeparationMethod::Shells)
+                || separation.keep_body.is_none()
+        }
         FeatureDefinition::Operation(
             FeatureOperation::MeshImport {
                 tessellations: source,

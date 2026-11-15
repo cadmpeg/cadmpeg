@@ -2139,6 +2139,102 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Boolean projection reports `feature.mesh-combine-keep-tools-assumed-false` and `feature.mesh-combine-destination-assumed-target-component`. Compound projection reports `feature.mesh-combine-keep-tools-unresolved` and `feature.mesh-combine-destination-unresolved`.
 
+### MS-01. Mesh separation method selector
+
+**Question.** Which Separate selector values identify shell and face-group partitioning?
+
+**Known.** Shell-correlated scopes store selector 0. A face-group-correlated scope stores 1. The decoder provisionally reads 0 as Shells and 1 or 2 as FaceGroups, preserving the raw selector.
+
+**Need.** Matched saves that change each method alone and distinguish method encoding from selection state.
+
+**Conflict.** Labels and body counts also vary between these scopes. Selector 2 is an extrapolation from the dialog choices.
+
+**Note.** The readings report `feature.mesh-separate-shells-method-assumed` and `feature.mesh-separate-face-groups-method-assumed`. Other values report `feature.mesh-separate-selector-unruled`.
+
+### MS-02. Mesh separation face-group scope
+
+**Question.** Which Separate fields select all groups or an ordered subset of groups?
+
+**Known.** The decoder provisionally reads selector 1 as All and 2 as Selected with unknown members. Source member body references and UTF-16 identifiers remain independent native facts.
+
+**Need.** Matched All and Selected saves with known, independently varied group identities and historical triangle assignments.
+
+**Conflict.** An independent scope field or member-tail selection could carry the selection category. The unseen selector-2 reading follows UI choice order.
+
+**Note.** The readings report `feature.mesh-separate-all-groups-assumed` and `feature.mesh-separate-selected-groups-assumed`. DR-504 tracks general member-tail selection semantics.
+
+### MS-03. Mesh separation Multiple Bodies carrier and polarity
+
+**Question.** Which bytes encode Multiple Bodies, and which value enables it?
+
+**Known.** The eight-byte lane retains zeros in the inspected scopes. The decoder provisionally reads its first little-endian u32 as Multiple Bodies, with 0=false and 1=true, including inactive stored values. A different word leaves this control unknown and preserves the word.
+
+**Need.** Matched face-group saves that vary Multiple Bodies alone, including the inactive Shells state.
+
+**Conflict.** Reserved or count words, narrower flags, reversed word order or polarity, and different controls fit the same lane.
+
+**Note.** The readings report `feature.mesh-separate-multiple-bodies-carrier-assumed` and `feature.mesh-separate-multiple-bodies-polarity-assumed` independently. Unsupported values report `feature.mesh-separate-selector-unruled`.
+
+### MS-04. Mesh separation Keep Body carrier and polarity
+
+**Question.** Which bytes encode Keep Body, and which value enables it?
+
+**Known.** The decoder provisionally reads the lane's second little-endian u32 as Keep Body, with 0=false and 1=true. Its raw bytes and an inactive stored value survive independently of Multiple Bodies and the method.
+
+**Need.** Matched saves that vary Keep Body alone across the separation methods and Multiple Bodies states.
+
+**Conflict.** Reserved or count words, narrower flags, reversed word order or polarity, and different controls fit the zero-filled lane.
+
+**Note.** The readings report `feature.mesh-separate-keep-body-carrier-assumed` and `feature.mesh-separate-keep-body-polarity-assumed` independently. Unsupported values report `feature.mesh-separate-selector-unruled`.
+
+### MS-05. Flagged Separate prefix applicability
+
+**Question.** Does Separate flag 1 insert the common mesh-family u32 prefix word?
+
+**Known.** Separate scopes establish flag 0 framing. The decoder provisionally admits flag 1 through the mesh-family insertion rule and retains the word.
+
+**Need.** A Separate save with flag 1 and checked scope, count and tail bounds.
+
+**Conflict.** A Separate-specific flag meaning could move the later fields differently.
+
+**Note.** This extrapolation reports `feature.mesh-separate-prefix-assumed`. DR-372 tracks the inserted word's meaning.
+
+### MS-06. Separate reference roles and neutral identities
+
+**Question.** Which native references identify produced bodies, whole-mesh inputs and common-table associations?
+
+**Known.** Counted body records reference the Separate scope; source-group members reference different mesh bodies. The common table repeats the source group and a member. The decoder provisionally reads output and input roles, retains every slot position and raw envelope, and preserves both references on a disagreement.
+
+**Need.** Controlled source and result membership changes with independent body-identity and history joins.
+
+**Conflict.** Stored reference runs can describe cached or intermediate states. Native record identities and counts alone do not establish neutral result ownership.
+
+**Note.** The readings report `feature.mesh-separate-output-role-assumed`, `feature.mesh-separate-source-membership-assumed` and `feature.mesh-separate-reference-roles-assumed`. Unresolved output ownership reports `feature.mesh-separate-output-unresolved`. Reference failures and repetition disagreements report `feature.mesh-separate-reference-unresolved` and `feature.mesh-separate-reference-mismatch`. Incomplete or invalid native source membership reports `feature.mesh-separate-membership-unresolved` independently of historical geometry binding.
+
+### MS-07. Separate group and member auxiliary fields
+
+**Question.** What do the Separate auxiliary references, group role, two native identifiers and member words encode?
+
+**Known.** The group carries an auxiliary reference and a u64 role. A member carries an auxiliary reference, a word, two UTF-16 identifiers and two further words. The final word varies independently between inspected source members. The decoder retains these fields and bounded raw records.
+
+**Need.** Matched saves changing whole-mesh selection, selected groups, controls and serialization generation independently.
+
+**Conflict.** State, selection detail and serialization generation can each explain the varying word. Body references and these identifiers do not yet establish selected face-group names.
+
+**Note.** The decoder reports `feature.mesh-separate-source-fields-uninterpreted`. DR-504 tracks selection-tail semantics across mesh operations.
+
+### MS-08. Separate historical source geometry
+
+**Question.** How do Separate source-member bodies bind to historical tessellations and face-group assignments?
+
+**Known.** Complete admissible native membership yields an ordered input-local selection under MS-06. Selected scope can retain unknown members. Face-group definitions remain incomplete until their historical assignments and identities are bound. Shell definitions require actual tessellation selections and known Keep Body; stored group controls are inactive.
+
+**Need.** A history-aware join from source member records to geometry states and triangle-group identities.
+
+**Conflict.** Current displayed geometry can differ from the operation's input state.
+
+**Note.** The decoder reports `feature.mesh-separate-source-unresolved`. Unavailable scope admission reports `feature.mesh-separate-scope-unparsed`; truncated dependent framing reports `feature.mesh-separate-tail-partial` while readable fields survive.
+
 ### MC-06. Legacy mesh combination Boolean selectors
 
 **Question.** Which operations do version-1 mesh combination selectors `0`, `1`, and `2` select?

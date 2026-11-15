@@ -1210,6 +1210,36 @@ pub(crate) mod mesh_operation_scope_prefix {
     pub(crate) const FLAG: usize = 20;
 }
 
+/// Byte offsets for the `mesh_separate_scope_tail` record.
+///
+/// Spec §3.1. Record length 24 B.
+///
+/// ```text
+/// Relative origin is the first byte after the complete counted body-reference run. The source reference in this fixed-width form is eleven bytes.
+/// ```
+pub(crate) mod mesh_separate_scope_tail {
+    /// Offset of `raw_lane` (`bytes[8]`). Spec §3.1.
+    pub(crate) const RAW_LANE: usize = 4;
+    /// Offset of `source_group` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SOURCE_GROUP: usize = 12;
+}
+
+/// Byte offsets for the `mesh_separate_common_envelope` record.
+///
+/// Spec §3.1. Record length 79 B.
+///
+/// ```text
+/// Relative origin is the first byte after the Separate source-group separator. The common table count follows this envelope.
+/// ```
+pub(crate) mod mesh_separate_common_envelope {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 79;
+    /// Offset of `guid_utf16` (`u16[36]`, little-endian). Spec §3.1.
+    pub(crate) const GUID_UTF16: usize = 4;
+    /// Offset of `zeros` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZEROS: usize = 76;
+}
+
 /// Byte offsets for the `mesh_convert_input_prefix` record.
 ///
 /// Spec §3.1. Record length 33 B.

@@ -3115,6 +3115,10 @@ fn check_feature_references(
                     FeatureOperation::MeshImport { .. }
                         | FeatureOperation::MeshGenerateFaceGroups { .. }
                         | FeatureOperation::MeshCombineFaceGroups { .. }
+                        | FeatureOperation::MeshModify {
+                            modification: crate::features::mesh::MeshModification::Separate { .. },
+                            ..
+                        }
                 ) {
                     if let crate::features::mesh::MeshSelection::Unresolved { feature: origin } =
                         tessellations

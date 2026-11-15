@@ -1544,6 +1544,102 @@ Unstated regions:
 
 - `0..11` (11 B): Indexed header.
 
+## `mesh_separate_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the Separate primary indexed header in the flag-zero form.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 4 | `reference_count` | `u32` | little | spec | a u32 reference count at offset 21 |
+
+Unstated regions:
+
+- `0..21` (21 B): Indexed header, nine zero bytes and flag byte, as specified by mesh_operation_scope_prefix.
+
+## `mesh_separate_scope_tail`
+
+Spec §3.1 · layout: byte offsets · size: 24 B
+
+Relative origin is the first byte after the complete counted body-reference run. The source reference in this fixed-width form is eleven bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `selector` | `u32` | little | spec | a u32 selector at relative offset 0 |
+| 4 | 8 | `raw_lane` | `bytes[8]` | little | spec | an eight-byte raw lane at relative offset 4 |
+| 12 | 11 | `source_group` | `bytes[11]` | little | spec | a source-group reference at relative offset 12 |
+| 23 | 1 | `separator` | `u8` | little | spec | the separator is at relative offset 23 · value `0` |
+
+## `mesh_separate_common_envelope`
+
+Spec §3.1 · layout: byte offsets · size: 79 B
+
+Relative origin is the first byte after the Separate source-group separator. The common table count follows this envelope.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `guid_count` | `u32` | little | spec | a u32 character count of 36 · value `36` |
+| 4 | 72 | `guid_utf16` | `u16[36]` | little | derived | The u32 count precedes 36 two-byte code units. |
+| 76 | 3 | `zeros` | `bytes[3]` | little | derived | The u32 count and 72 identifier bytes precede these three bytes. |
+
+## `mesh_separate_group_tail`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Relative origin is the first byte after the complete group-member reference run in the two-null-reference form.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `null_references` | `bytes[2]` | little | spec | two zero reference slots |
+| 2 | 4 | `word` | `u32` | little | spec | the word is at relative offset 2 |
+| 6 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | the auxiliary reference at relative offset 6 |
+| 17 | 8 | `role` | `u64` | little | spec | the role at relative offset 17 |
+
+## `mesh_separate_member_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 47 B
+
+Offsets are relative to the member indexed header in the ordinary local-reference form. The identifier count follows this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 32 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | the auxiliary reference starts at member offset 32 |
+| 43 | 4 | `word` | `u32` | little | spec | the first word at offset 43 |
+
+Unstated regions:
+
+- `0..32` (32 B): The indexed header, ten zero bytes and body reference use paramesh_operation_member_prefix.
+
+## `mesh_separate_member_words`
+
+Spec §3.1 · layout: byte offsets · size: 8 B
+
+Relative origin is the first byte after the second complete counted UTF-16LE identifier.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/separate.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `first` | `u32` | little | spec | the two words are at relative offsets 0 and 4 |
+| 4 | 4 | `second` | `u32` | little | spec | the two words are at relative offsets 0 and 4 |
+
 ## `mesh_convert_scope_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 33 B
