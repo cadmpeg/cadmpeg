@@ -3259,13 +3259,3 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A stored carrier or a derivation rule for the absent curves, and the Sketch that owner 1977 names.
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
-
-### DR-675. Sketch arrangement undefined with adjacent NURBS edges
-
-**Question.** Which separation certificate lets the planar arrangement of a Sketch stay defined when the profile loops hold many NURBS edges that touch or have overlapping boxes?
-
-**Known.** The public RailCore II 300ZL design with a front panel holds a Sketch of owner 5097 with 63 NURBS curves that form closed loops beside its lines and circles. The arrangement of all profile loops of that Sketch is undefined: two edges that share a node, or whose boxes overlap, are not certified to meet only at their nodes. A profile selection of that Sketch that names two coincident circles and one further circle resolved through the arrangement before these curves had geometry. The selection stays native with the curves decoded. The circles lie more than nine millimetres from every NURBS curve.
-
-**Need.** A separation certificate for the NURBS edge pairs, or an arrangement limited to the curves connected to the selected loops.
-
-**Note.** The selection stays native with `feature.profile-selection-native`.
