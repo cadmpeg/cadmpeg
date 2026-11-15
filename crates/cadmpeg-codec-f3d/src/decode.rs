@@ -3060,6 +3060,8 @@ struct F3dDecodeSession<'a> {
     report: DecodeBody,
     report_scope: crate::report::ReportScope,
     unknowns: Vec<UnknownRecord>,
+    /// Classes of the content the source image holds that no arena carries.
+    untyped: std::collections::BTreeSet<cadmpeg_ir::ArenaClass>,
     admitted_entities: u64,
     component_definitions_by_record:
         std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
@@ -3079,6 +3081,18 @@ impl<'a> F3dDecodeSession<'a> {
             admitted_entities: _,
             report_scope,
         } = session_state;
+        let mut untyped = std::collections::BTreeSet::new();
+        let stats = &brep.asm.stats;
+        if undecoded_candidates != 0
+            || stats.missing_face_surfaces() != 0
+            || stats.unknown_surface_faces() != 0
+            || stats.procedural_curve_edges() != 0
+            || stats.undecoded_pcurve_refs() != 0
+            || stats.partial_procedural_supports != 0
+            || stats.other_records() != 0
+        {
+            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+        }
         let mut report = crate::report::build_decode_report(
             scan,
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), true),
@@ -3138,6 +3152,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report,
                 report_scope,
                 unknowns,
+                untyped,
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
             },
@@ -3174,6 +3189,12 @@ impl<'a> F3dDecodeSession<'a> {
             container_losses(scan, brep_outcome),
         )?;
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
+        let mut untyped = std::collections::BTreeSet::new();
+        if container::design_breps(scan).next().is_some()
+            || container::text_brep_names(scan).next().is_some()
+        {
+            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+        }
         Ok((
             Self {
                 ctx,
@@ -3184,6 +3205,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report,
                 report_scope,
                 unknowns,
+                untyped,
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
             },
@@ -3272,6 +3294,7 @@ impl<'a> F3dDecodeSession<'a> {
     ) -> Result<DesignState, CodecError> {
         if self.ctx.depth() < DecodeDepth::Full {
             if self.cuts_design_intent(path, prereqs) {
+                self.note_undecoded_design()?;
                 return Ok(DesignState::Absent);
             }
             self.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
@@ -3308,7 +3331,38 @@ impl<'a> F3dDecodeSession<'a> {
                 id: crate::ids::DESIGN_INTENT_FAILURE_ID.to_owned(),
                 reason: failure,
             });
+        self.note_undecoded_design()?;
         Ok(DesignState::Absent)
+    }
+
+    fn note_undecoded_design(&mut self) -> Result<(), CodecError> {
+        if source_has_design_records(self.scan)? {
+            self.untyped.insert(cadmpeg_ir::ArenaClass::Design);
+        }
+        Ok(())
+    }
+
+    /// Note design content held in typed native envelopes whose payload the
+    /// decoder did not interpret.
+    fn note_uninterpreted_design(&mut self) {
+        if self
+            .native
+            .design_parameter_scopes
+            .iter()
+            .any(|scope| scope.payload().is_uninterpreted())
+            || self
+                .native
+                .sketch_curve_identities
+                .iter()
+                .any(|curve| curve.geometry.is_none())
+            || self
+                .native
+                .asm_histories
+                .iter()
+                .any(|history| history.binding_budget_exceeded)
+        {
+            self.untyped.insert(cadmpeg_ir::ArenaClass::Design);
+        }
     }
 
     /// Whether a decode below full depth can stop before phase 2; see
@@ -3438,6 +3492,9 @@ impl<'a> F3dDecodeSession<'a> {
         let finalize_path = match path {
             SessionPath::Geometry(geometry_path) => {
                 let GeometrySessionPath { index, materials } = *geometry_path;
+                if materials.untyped_distance_properties != 0 {
+                    self.untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                }
                 report_untyped_material_distances(
                     &mut self.report,
                     materials.untyped_distance_properties,
@@ -3480,6 +3537,9 @@ impl<'a> F3dDecodeSession<'a> {
                 model_body_maps_empty,
             } => {
                 let decoded_materials = materials::decode(self.ctx, scan)?;
+                if decoded_materials.untyped_distance_properties != 0 {
+                    self.untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                }
                 report_untyped_material_distances(
                     &mut self.report,
                     decoded_materials.untyped_distance_properties,
@@ -3749,6 +3809,7 @@ impl<'a> F3dDecodeSession<'a> {
                     Ok(None) => {}
                     Err(error) => report_xref_parse_loss(&mut self.report, &error),
                 }
+                self.note_uninterpreted_design();
                 self.native
                     .store(ctx, self.ir.native.namespace_mut("f3d"))?;
                 let annotations =
@@ -3765,6 +3826,7 @@ impl<'a> F3dDecodeSession<'a> {
                         annotations,
                         unknowns: self.unknowns,
                         source_image,
+                        untyped: self.untyped,
                         source_attributes: self.source_attributes,
                     },
                     &mut admitted_entities,
@@ -3777,6 +3839,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.admitted_entities,
             "admit F3D entities",
         )?;
+        self.note_uninterpreted_design();
         self.native
             .store(ctx, self.ir.native.namespace_mut("f3d"))?;
         let annotations = populate_annotations(
@@ -3801,6 +3864,7 @@ impl<'a> F3dDecodeSession<'a> {
                 annotations,
                 unknowns: self.unknowns,
                 source_image,
+                untyped: self.untyped,
                 source_attributes: self.source_attributes,
             },
             &mut admitted_entities,
@@ -3916,6 +3980,15 @@ fn decode_scanned_document<'a>(
     )?;
 
     if ctx.container_only() {
+        let mut untyped = std::collections::BTreeSet::new();
+        if container::design_breps(scan).next().is_some()
+            || container::text_brep_names(scan).next().is_some()
+        {
+            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+        }
+        if source_has_design_records(scan)? {
+            untyped.insert(cadmpeg_ir::ArenaClass::Design);
+        }
         let MetadataIr {
             ir,
             mut source_attributes,
@@ -3949,6 +4022,7 @@ fn decode_scanned_document<'a>(
                 annotations,
                 unknowns,
                 source_image,
+                untyped,
                 source_attributes,
             },
             &mut admitted_entities,
@@ -4930,6 +5004,8 @@ struct RetainedArtifacts {
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
+    /// Classes of the content the source image holds that no arena carries.
+    untyped: std::collections::BTreeSet<cadmpeg_ir::ArenaClass>,
     source_attributes: std::collections::BTreeMap<String, String>,
 }
 
@@ -4956,6 +5032,9 @@ fn decode_result(
     );
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
+    if !retained.untyped.is_empty() {
+        source_fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, retained.untyped)?;
+    }
     let mut source = crate::report::classify_document(
         scan,
         report_scope,
@@ -5303,6 +5382,33 @@ fn trailing_offset(id: &str) -> u64 {
     id.rsplit(':')
         .find_map(|part| part.parse::<u64>().ok())
         .unwrap_or(0)
+}
+
+fn source_has_design_records(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
+    Ok(scan
+        .entries
+        .iter()
+        .any(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+        || source_has_history_records(scan)?)
+}
+
+/// A bare EOF delta-state identifier is an empty partition boundary, not a
+/// historical record. Every other declared history tail remains conservative.
+fn source_has_history_records(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
+    for brep in container::history_breps(scan) {
+        let Some(limit) = brep
+            .kernel
+            .as_ref()
+            .and_then(crate::container::KernelFraming::solved_record_limit)
+        else {
+            return Ok(true);
+        };
+        let bytes = scan.entry_bytes(&brep.name)?;
+        if bytes.get(limit..) != Some(b"\x0d\x0bdelta_state".as_slice()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Frame and decode one Design-selected or explicit fallback BREP SAB stream.

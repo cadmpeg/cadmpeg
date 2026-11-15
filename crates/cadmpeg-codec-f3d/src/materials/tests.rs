@@ -1432,6 +1432,17 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .unwrap();
 
     assert!(result.report().geometry_transferred());
+    assert_eq!(
+        cadmpeg_test_support::EditableDecodeResult::from(result.clone())
+            .source_fidelity()
+            .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+            .unwrap()
+            .untyped()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [cadmpeg_ir::ArenaClass::Model]
+    );
     // Two faces (one plane, one spline), sharing one edge; five edges total.
     assert_eq!(result.ir().model.faces.len(), 2);
     assert_eq!(result.ir().model.edges.len(), 5);
