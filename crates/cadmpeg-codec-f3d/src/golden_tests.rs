@@ -1034,8 +1034,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         .to_string();
     assert!(error.contains("inner_count"), "{error}");
 
-    let face_maker_object = serde_json::json!({
-        "definition": "extrude",
+    let face_maker_object = serde_json::json!({"kind": "extrude", "value": {
         "direction": {"kind": "explicit", "source": {"kind": "custom"},
                       "vector": {"x": 0.0, "y": 0.0, "z": 1.0}},
         "extent": {"kind": "symmetric",
@@ -1046,7 +1045,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         "profile": {"kind": "native", "value": "fcstd:native:property#X:Base"},
         "solid": true,
         "start": {"kind": "profile_plane"},
-    });
+    }});
     assert!(serde_json::from_value::<FeatureDefinition>(face_maker_object.clone()).is_err());
     let error = serde_json::from_value::<cadmpeg_ir::features::FeatureOperation>(face_maker_object)
         .expect_err("the face maker is its class")

@@ -10,22 +10,10 @@ use std::collections::{BTreeMap, HashSet};
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct FormInputs {
-    #[serde(
-        default,
-        skip_serializing_if = "BTreeMap::is_empty",
-        deserialize_with = "cadmpeg_core::distinct_keys::btree_map"
-    )]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameters: BTreeMap<NonBlankString, String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<NativeId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lists: Vec<FormNativeList>,
-}
-
-impl FormInputs {
-    fn is_empty(&self) -> bool {
-        self.parameters.is_empty() && self.references.is_empty() && self.lists.is_empty()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,7 +60,7 @@ pub struct FormCageObservation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FormCageBinding {
     Decoded {
         cage: SubdId,
@@ -149,7 +137,7 @@ pub enum FormOrder {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FormMembership {
     Complete {
         members: Vec<FormObservationIndex>,
@@ -195,9 +183,9 @@ impl JsonSchema for FormConstruction {
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         let mut schema = FormWire::json_schema(generator);
         schema.insert("allOf".into(), serde_json::json!([{
-            "if": {"required":["cages"], "properties":{"cages":{"type":"array"}}},
-            "then": {"properties":{"cage_inputs":{"properties":{"membership":{"properties":{"state":{"const":"complete"}}}}}}},
-            "else": {"not":{"required":["cage_inputs"]}, "properties":{"cages":{"properties":{"membership":{"properties":{"state":{"const":"partial"}}}}}}}
+            "if": {"required":["cages"], "properties":{"cages":{"properties":{"kind":{"const":"complete"}}}}},
+            "then": {"properties":{"cage_inputs":{"properties":{"membership":{"properties":{"kind":{"const":"complete"}}}}}}},
+            "else": {"not":{"required":["cage_inputs"]}, "properties":{"cages":{"properties":{"value":{"properties":{"membership":{"properties":{"kind":{"const":"partial"}}}}}}}}}
         }]));
         schema
     }
@@ -360,7 +348,12 @@ struct FormEvidence {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 enum FormCagesWire {
     Complete(Vec<SubdId>),
     Retained(FormEvidence),
@@ -371,7 +364,6 @@ enum FormCagesWire {
 #[serde(deny_unknown_fields)]
 struct FormWire {
     cages: FormCagesWire,
-    #[serde(default, skip_serializing_if = "FormInputs::is_empty")]
     inputs: FormInputs,
     #[serde(
         default,

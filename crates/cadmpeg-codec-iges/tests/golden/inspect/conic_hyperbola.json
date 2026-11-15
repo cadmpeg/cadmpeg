@@ -6,11 +6,11 @@
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "start",
       "role": "section",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 81
       }
     },
@@ -19,11 +19,11 @@
         "cards": "2",
         "line_endings": "lf:2"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "global",
       "role": "section",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 162
       }
     },
@@ -32,11 +32,11 @@
         "cards": "2",
         "line_endings": "lf:2"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "directory-entry",
       "role": "section",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 162
       }
     },
@@ -45,11 +45,11 @@
         "cards": "2",
         "line_endings": "lf:2"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "parameter-data",
       "role": "section",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 162
       }
     },
@@ -58,21 +58,22 @@
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "terminate",
       "role": "section",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 81
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "effective_version": "5.3",
           "representation": "fixed-ascii",
@@ -80,16 +81,19 @@
         },
         "dialect": "iges:5.3-fixed-ascii"
       }
-    }
+    },
+    "kind": "classified"
   },
   "losses": [
     {
       "code": {
-        "code": "parameter.data-quarantined",
-        "kind": "noncanonical_source_syntax",
-        "namespace": "iges",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "kind": "namespaced",
+        "value": {
+          "code": "parameter.data-quarantined",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "iges",
+          "strict_floor": "warning"
+        }
       },
       "message": "IGES Parameter Data of D1 (P1 through P2) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
       "provenance": {

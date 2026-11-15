@@ -1,12 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {},
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1",
@@ -45,6 +41,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:8%40location16",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location15%3A1%3A1",
           "sense": "reversed"
         },
@@ -52,6 +49,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:7%40location19",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location18%3A1%3A4",
           "sense": "forward"
         },
@@ -59,6 +57,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:6%40location1",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:17%40location1%3A1%3A4",
           "sense": "forward"
         },
@@ -66,6 +65,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:3%40location1",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A3",
           "sense": "reversed"
         },
@@ -73,6 +73,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:15%40location16",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:17%40location1%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:17%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location15%3A1%3A2",
           "sense": "reversed"
         },
@@ -80,6 +81,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:14%40location19",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:17%40location1%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:17%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location18%3A1%3A3",
           "sense": "forward"
         },
@@ -87,6 +89,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:13%40location1",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:17%40location1%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:17%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A4",
           "sense": "forward"
         },
@@ -94,6 +97,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:6%40location1",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:17%40location1%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:17%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A3",
           "sense": "reversed"
         },
@@ -101,6 +105,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:22%40location16",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location15%3A1%3A3",
           "sense": "reversed"
         },
@@ -108,6 +113,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:21%40location19",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location18%3A1%3A2",
           "sense": "forward"
         },
@@ -115,6 +121,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:20%40location1",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A4",
           "sense": "forward"
         },
@@ -122,6 +129,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:13%40location1",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:17%40location1%3A1%3A3",
           "sense": "reversed"
         },
@@ -129,6 +137,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:26%40location16",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location15%3A1%3A4",
           "sense": "reversed"
         },
@@ -136,6 +145,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:25%40location19",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location18%3A1%3A1",
           "sense": "forward"
         },
@@ -143,6 +153,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:3%40location1",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A4",
           "sense": "forward"
         },
@@ -150,6 +161,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:20%40location1",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A3",
           "sense": "reversed"
         },
@@ -157,6 +169,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:25%40location19",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location18%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location18%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A2",
           "sense": "reversed"
         },
@@ -164,6 +177,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:21%40location19",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location18%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location18%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A2",
           "sense": "reversed"
         },
@@ -171,6 +185,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:14%40location19",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location18%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location18%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:17%40location1%3A1%3A2",
           "sense": "reversed"
         },
@@ -178,6 +193,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:7%40location19",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location18%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location18%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A2",
           "sense": "reversed"
         },
@@ -185,6 +201,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:8%40location16",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location15%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location15%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A1",
           "sense": "forward"
         },
@@ -192,6 +209,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:15%40location16",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location15%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location15%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:17%40location1%3A1%3A1",
           "sense": "forward"
         },
@@ -199,6 +217,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:22%40location16",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location15%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location15%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A1",
           "sense": "forward"
         },
@@ -206,6 +225,7 @@
           "edge": "fcstd:model:edge#Body:Shape:PartShape.brp:26%40location16",
           "id": "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location15%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location15%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A1",
           "sense": "forward"
         },
@@ -213,6 +233,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:10%40location6",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:12%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:12%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1%3A2",
           "sense": "reversed"
         },
@@ -220,6 +241,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:10%40location4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:12%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:12%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1%3A3",
           "sense": "forward"
         },
@@ -227,6 +249,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:9",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:12%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:12%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:17%3A1%3A4",
           "sense": "forward"
         },
@@ -234,6 +257,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:12%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:12%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:7%3A1%3A3",
           "sense": "reversed"
         },
@@ -241,6 +265,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:15%40location6",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:17%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:17%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1%3A3",
           "sense": "reversed"
         },
@@ -248,6 +273,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:15%40location4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:17%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:17%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1%3A2",
           "sense": "forward"
         },
@@ -255,6 +281,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:14",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:17%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:17%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:20%3A1%3A4",
           "sense": "forward"
         },
@@ -262,6 +289,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:9",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:17%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:17%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:12%3A1%3A3",
           "sense": "reversed"
         },
@@ -269,6 +297,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:18%40location6",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:20%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:20%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1%3A4",
           "sense": "reversed"
         },
@@ -276,6 +305,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:18%40location4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:20%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:20%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1%3A1",
           "sense": "forward"
         },
@@ -283,6 +313,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:2",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:20%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:20%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:7%3A1%3A4",
           "sense": "forward"
         },
@@ -290,6 +321,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:14",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:20%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:20%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:17%3A1%3A3",
           "sense": "reversed"
         },
@@ -297,6 +329,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:18%40location4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:20%3A1%3A2",
           "sense": "reversed"
         },
@@ -304,6 +337,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:15%40location4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:17%3A1%3A2",
           "sense": "reversed"
         },
@@ -311,6 +345,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:10%40location4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:12%3A1%3A2",
           "sense": "reversed"
         },
@@ -318,6 +353,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:5%40location4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:7%3A1%3A2",
           "sense": "reversed"
         },
@@ -325,6 +361,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:5%40location6",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:7%3A1%3A1",
           "sense": "forward"
         },
@@ -332,6 +369,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:10%40location6",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:12%3A1%3A1",
           "sense": "forward"
         },
@@ -339,6 +377,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:15%40location6",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:17%3A1%3A1",
           "sense": "forward"
         },
@@ -346,6 +385,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:18%40location6",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:20%3A1%3A1",
           "sense": "forward"
         },
@@ -353,6 +393,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:5%40location6",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:7%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1%3A1",
           "sense": "reversed"
         },
@@ -360,6 +401,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:5%40location4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:7%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:7%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1%3A4",
           "sense": "forward"
         },
@@ -367,6 +409,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:7%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:7%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:12%3A1%3A4",
           "sense": "forward"
         },
@@ -374,6 +417,7 @@
           "edge": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:2",
           "id": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:7%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:7%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:20%3A1%3A3",
           "sense": "reversed"
         },
@@ -381,6 +425,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:10%40location12",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:12%40location1%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:12%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location11%3A1%3A2",
           "sense": "reversed"
         },
@@ -388,6 +433,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:10%40location14",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:12%40location1%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:12%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location13%3A1%3A3",
           "sense": "forward"
         },
@@ -395,6 +441,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:9%40location1",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:12%40location1%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:12%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:17%40location1%3A1%3A4",
           "sense": "forward"
         },
@@ -402,6 +449,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:4%40location1",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:12%40location1%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:12%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:7%40location1%3A1%3A3",
           "sense": "reversed"
         },
@@ -409,6 +457,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:15%40location12",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:17%40location1%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:17%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location11%3A1%3A3",
           "sense": "reversed"
         },
@@ -416,6 +465,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:15%40location14",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:17%40location1%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:17%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location13%3A1%3A2",
           "sense": "forward"
         },
@@ -423,6 +473,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:14%40location1",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:17%40location1%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:17%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:20%40location1%3A1%3A4",
           "sense": "forward"
         },
@@ -430,6 +481,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:9%40location1",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:17%40location1%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:17%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:12%40location1%3A1%3A3",
           "sense": "reversed"
         },
@@ -437,6 +489,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:18%40location12",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:20%40location1%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:20%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location11%3A1%3A4",
           "sense": "reversed"
         },
@@ -444,6 +497,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:18%40location14",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:20%40location1%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:20%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location13%3A1%3A1",
           "sense": "forward"
         },
@@ -451,6 +505,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:2%40location1",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:20%40location1%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:20%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:7%40location1%3A1%3A4",
           "sense": "forward"
         },
@@ -458,6 +513,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:14%40location1",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:20%40location1%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:20%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:17%40location1%3A1%3A3",
           "sense": "reversed"
         },
@@ -465,6 +521,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:5%40location12",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location11%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location11%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:7%40location1%3A1%3A1",
           "sense": "forward"
         },
@@ -472,6 +529,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:10%40location12",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location11%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location11%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:12%40location1%3A1%3A1",
           "sense": "forward"
         },
@@ -479,6 +537,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:15%40location12",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location11%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location11%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:17%40location1%3A1%3A1",
           "sense": "forward"
         },
@@ -486,6 +545,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:18%40location12",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location11%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location11%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:20%40location1%3A1%3A1",
           "sense": "forward"
         },
@@ -493,6 +553,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:18%40location14",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location13%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location13%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:20%40location1%3A1%3A2",
           "sense": "reversed"
         },
@@ -500,6 +561,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:15%40location14",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location13%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location13%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:17%40location1%3A1%3A2",
           "sense": "reversed"
         },
@@ -507,6 +569,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:10%40location14",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location13%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location13%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:12%40location1%3A1%3A2",
           "sense": "reversed"
         },
@@ -514,6 +577,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:5%40location14",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location13%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location13%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:7%40location1%3A1%3A2",
           "sense": "reversed"
         },
@@ -521,6 +585,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:5%40location12",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:7%40location1%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:7%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location11%3A1%3A1",
           "sense": "reversed"
         },
@@ -528,6 +593,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:5%40location14",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:7%40location1%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:7%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location13%3A1%3A4",
           "sense": "forward"
         },
@@ -535,6 +601,7 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:4%40location1",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:7%40location1%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:7%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:12%40location1%3A1%3A4",
           "sense": "forward"
         },
@@ -542,570 +609,635 @@
           "edge": "fcstd:model:edge#Pad:Shape:PartShape3.brp:2%40location1",
           "id": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:7%40location1%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:PartShape3.brp:7%40location1%3A1",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#Pad:Shape:PartShape3.brp:20%40location1%3A1%3A3",
           "sense": "reversed"
         }
       ],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:10",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "basis": {
-              "direction": {
-                "x": -1.0,
-                "y": 0.0,
-                "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": -1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 40.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
               },
-              "kind": "line",
-              "origin": {
-                "x": 40.0,
-                "y": 20.0,
-                "z": 0.0
-              }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
               ]
-            ]
+            }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:10%40d1a9e4f5209d212d",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:11",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:12",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "basis": {
-              "direction": {
-                "x": 0.0,
-                "y": -1.0,
-                "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": 0.0,
+                  "y": -1.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
               },
-              "kind": "line",
-              "origin": {
-                "x": 0.0,
-                "y": 20.0,
-                "z": 0.0
-              }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
               ]
-            ]
+            }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:12%40d1a9e4f5209d212d",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "basis": {
-              "direction": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
               },
-              "kind": "line",
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
               ]
-            ]
+            }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:4%40d1a9e4f5209d212d",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:7",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "basis": {
-              "direction": {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 40.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
               },
-              "kind": "line",
-              "origin": {
-                "x": 40.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
               ]
-            ]
+            }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:7%40d1a9e4f5209d212d",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:8",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Body:Shape:PartShape.brp:9",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "basis": {
-              "direction": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
               },
-              "kind": "line",
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
               ]
-            ]
+            }
           },
           "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:3%40d1a9e4f5209d212d",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:5",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
               "direction": {
                 "x": 0.0,
                 "y": 1.0,
@@ -1117,78 +1249,90 @@
                 "y": 0.0,
                 "z": 0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
-              ]
-            ]
+            }
           },
-          "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:5%40d1a9e4f5209d212d",
+          "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 40.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
+              ]
+            }
+          },
+          "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:5%40d1a9e4f5209d212d",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Pad"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
-            }
-          },
-          "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:7",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
               "direction": {
                 "x": -1.0,
                 "y": 0.0,
@@ -1200,58 +1344,66 @@
                 "y": 20.0,
                 "z": 0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
+            }
+          },
+          "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:7",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Pad"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": -1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 40.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
               ]
-            ]
+            }
           },
           "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:7%40d1a9e4f5209d212d",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
-            }
-          },
-          "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:8",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
               "direction": {
                 "x": 0.0,
                 "y": -1.0,
@@ -1263,98 +1415,114 @@
                 "y": 20.0,
                 "z": 0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
-              ]
-            ]
+            }
           },
-          "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:8%40d1a9e4f5209d212d",
+          "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:8",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": 0.0,
+                  "y": -1.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
+              ]
+            }
+          },
+          "id": "fcstd:model:curve#Pad:AddSubShape:PartShape2.brp:8%40d1a9e4f5209d212d",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Pad"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:3",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
@@ -1366,78 +1534,90 @@
                 "y": 0.0,
                 "z": 0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
-              ]
-            ]
+            }
           },
-          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:3%40d1a9e4f5209d212d",
+          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
+              ]
+            }
+          },
+          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:3%40d1a9e4f5209d212d",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Pad"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:5",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
               "direction": {
                 "x": 0.0,
                 "y": 1.0,
@@ -1449,78 +1629,90 @@
                 "y": 0.0,
                 "z": 0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
-              ]
-            ]
+            }
           },
-          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:5%40d1a9e4f5209d212d",
+          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 40.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
+              ]
+            }
+          },
+          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:5%40d1a9e4f5209d212d",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Pad"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
-            }
-          },
-          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:7",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
               "direction": {
                 "x": -1.0,
                 "y": 0.0,
@@ -1532,58 +1724,66 @@
                 "y": 20.0,
                 "z": 0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
+            }
+          },
+          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:7",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Pad"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": -1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 40.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
               ]
-            ]
+            }
           },
           "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:7%40d1a9e4f5209d212d",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
-            }
-          },
-          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:8",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
               "direction": {
                 "x": 0.0,
                 "y": -1.0,
@@ -1595,117 +1795,159 @@
                 "y": 20.0,
                 "z": 0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
-              ]
-            ]
+            }
           },
-          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:8%40d1a9e4f5209d212d",
+          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:8",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "direction": {
+                  "x": 0.0,
+                  "y": -1.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
+              ]
+            }
+          },
+          "id": "fcstd:model:curve#Pad:Shape:PartShape3.brp:8%40d1a9e4f5209d212d",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Pad"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Sketch:Shape:PartShape1.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Sketch"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Sketch:Shape:PartShape1.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Sketch"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 40.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Sketch:Shape:PartShape1.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Sketch"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Sketch:Shape:PartShape1.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Sketch"
           }
         }
       ],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -2232,7 +2474,7 @@
         {
           "id": "fcstd:model:face#Body:Shape:PartShape.brp:10%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1"
             ]
@@ -2245,7 +2487,7 @@
         {
           "id": "fcstd:model:face#Body:Shape:PartShape.brp:17%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Body:Shape:PartShape.brp:17%40location1%3A1"
             ]
@@ -2258,7 +2500,7 @@
         {
           "id": "fcstd:model:face#Body:Shape:PartShape.brp:24%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1"
             ]
@@ -2271,7 +2513,7 @@
         {
           "id": "fcstd:model:face#Body:Shape:PartShape.brp:28%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1"
             ]
@@ -2284,7 +2526,7 @@
         {
           "id": "fcstd:model:face#Body:Shape:PartShape.brp:30%40location18",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location18%3A1"
             ]
@@ -2297,7 +2539,7 @@
         {
           "id": "fcstd:model:face#Body:Shape:PartShape.brp:32%40location15",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location15%3A1"
             ]
@@ -2310,7 +2552,7 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:12",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:12%3A1"
             ]
@@ -2323,7 +2565,7 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:17",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:17%3A1"
             ]
@@ -2336,7 +2578,7 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:20",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:20%3A1"
             ]
@@ -2349,7 +2591,7 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:22%40location7",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1"
             ]
@@ -2362,7 +2604,7 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:22%40location9",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1"
             ]
@@ -2375,7 +2617,7 @@
         {
           "id": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:7",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:7%3A1"
             ]
@@ -2388,7 +2630,7 @@
         {
           "id": "fcstd:model:face#Pad:Shape:PartShape3.brp:12%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:Shape:PartShape3.brp:12%40location1%3A1"
             ]
@@ -2401,7 +2643,7 @@
         {
           "id": "fcstd:model:face#Pad:Shape:PartShape3.brp:17%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:Shape:PartShape3.brp:17%40location1%3A1"
             ]
@@ -2414,7 +2656,7 @@
         {
           "id": "fcstd:model:face#Pad:Shape:PartShape3.brp:20%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:Shape:PartShape3.brp:20%40location1%3A1"
             ]
@@ -2427,7 +2669,7 @@
         {
           "id": "fcstd:model:face#Pad:Shape:PartShape3.brp:22%40location11",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location11%3A1"
             ]
@@ -2440,7 +2682,7 @@
         {
           "id": "fcstd:model:face#Pad:Shape:PartShape3.brp:22%40location13",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location13%3A1"
             ]
@@ -2453,7 +2695,7 @@
         {
           "id": "fcstd:model:face#Pad:Shape:PartShape3.brp:7%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Pad:Shape:PartShape3.brp:7%40location1%3A1"
             ]
@@ -2462,116 +2704,6 @@
           "shell": "fcstd:model:shell#Pad:Shape:PartShape3.brp:23%40location1",
           "surface": "fcstd:model:surface#Pad:Shape:PartShape3.brp:1",
           "tolerance": 1e-7
-        }
-      ],
-      "features": [
-        {
-          "definition": {
-            "children": {
-              "active_child": "fcstd:design:feature#Pad",
-              "children": [
-                "fcstd:design:feature#Sketch",
-                "fcstd:design:feature#Pad"
-              ]
-            },
-            "definition": "tree_node",
-            "role": "solid_bodies"
-          },
-          "id": "fcstd:design:feature#Body",
-          "name": "Body",
-          "native_ref": "fcstd:native:object#Body",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1"
-          ],
-          "source_properties": {
-            "Tip": "fcstd:native:object#Pad",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Body",
-          "suppressed": null
-        },
-        {
-          "definition": {
-            "definition": "post_process",
-            "fuzzy_tolerance": {
-              "kind": "kernel_default"
-            },
-            "operation": {
-              "allow_multi_profile_faces": true,
-              "definition": "extrude",
-              "direction": {
-                "kind": "explicit",
-                "source": {
-                  "kind": "profile_normal"
-                },
-                "vector": {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 1.0
-                }
-              },
-              "extent": {
-                "kind": "one_sided",
-                "side": {
-                  "termination": {
-                    "kind": "blind",
-                    "length": 20.0
-                  }
-                }
-              },
-              "length_along_profile_normal": true,
-              "op": "join",
-              "profile": {
-                "kind": "sketch",
-                "value": "fcstd:design:sketch#Sketch"
-              },
-              "solid": true,
-              "start": {
-                "kind": "profile_plane"
-              }
-            },
-            "refine": false
-          },
-          "dependencies": [
-            "fcstd:design:feature#Sketch",
-            "fcstd:design:feature#Body"
-          ],
-          "id": "fcstd:design:feature#Pad",
-          "name": "Pad",
-          "native_ref": "fcstd:native:object#Pad",
-          "ordinal": 9,
-          "outputs": [
-            "fcstd:model:body#Pad:Shape:PartShape3.brp:24%40location1"
-          ],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Pad",
-          "suppressed": null
-        },
-        {
-          "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "sketch": "fcstd:design:sketch#Sketch",
-              "space": "planar"
-            }
-          },
-          "id": "fcstd:design:feature#Sketch",
-          "name": "Sketch",
-          "native_ref": "fcstd:native:object#Sketch",
-          "ordinal": 8,
-          "outputs": [
-            "fcstd:model:body#Sketch:Shape:PartShape1.brp:9%40location1"
-          ],
-          "source_properties": {
-            "MapMode": "5",
-            "Support": "fcstd:native:object#XY_Plane",
-            "Visibility": "false"
-          },
-          "source_tag": "Sketcher::SketchObject",
-          "suppressed": null
         }
       ],
       "loops": [
@@ -2583,7 +2715,8 @@
               "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A2",
               "fcstd:model:coedge#Body:Shape:PartShape.brp:10%40location1%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:10%40location1",
           "id": "fcstd:model:loop#Body:Shape:PartShape.brp:10%40location1%3A1"
@@ -2596,7 +2729,8 @@
               "fcstd:model:coedge#Body:Shape:PartShape.brp:17%40location1%3A1%3A2",
               "fcstd:model:coedge#Body:Shape:PartShape.brp:17%40location1%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:17%40location1",
           "id": "fcstd:model:loop#Body:Shape:PartShape.brp:17%40location1%3A1"
@@ -2609,7 +2743,8 @@
               "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A2",
               "fcstd:model:coedge#Body:Shape:PartShape.brp:24%40location1%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:24%40location1",
           "id": "fcstd:model:loop#Body:Shape:PartShape.brp:24%40location1%3A1"
@@ -2622,7 +2757,8 @@
               "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A2",
               "fcstd:model:coedge#Body:Shape:PartShape.brp:28%40location1%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:28%40location1",
           "id": "fcstd:model:loop#Body:Shape:PartShape.brp:28%40location1%3A1"
@@ -2635,7 +2771,8 @@
               "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location18%3A1%3A3",
               "fcstd:model:coedge#Body:Shape:PartShape.brp:30%40location18%3A1%3A4"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:30%40location18",
           "id": "fcstd:model:loop#Body:Shape:PartShape.brp:30%40location18%3A1"
@@ -2648,7 +2785,8 @@
               "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location15%3A1%3A3",
               "fcstd:model:coedge#Body:Shape:PartShape.brp:32%40location15%3A1%3A4"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Body:Shape:PartShape.brp:32%40location15",
           "id": "fcstd:model:loop#Body:Shape:PartShape.brp:32%40location15%3A1"
@@ -2661,7 +2799,8 @@
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:12%3A1%3A2",
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:12%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:12",
           "id": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:12%3A1"
@@ -2674,7 +2813,8 @@
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:17%3A1%3A2",
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:17%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:17",
           "id": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:17%3A1"
@@ -2687,7 +2827,8 @@
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:20%3A1%3A2",
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:20%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:20",
           "id": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:20%3A1"
@@ -2700,7 +2841,8 @@
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1%3A3",
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1%3A4"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:22%40location7",
           "id": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location7%3A1"
@@ -2713,7 +2855,8 @@
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1%3A3",
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1%3A4"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:22%40location9",
           "id": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:22%40location9%3A1"
@@ -2726,7 +2869,8 @@
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:7%3A1%3A2",
               "fcstd:model:coedge#Pad:AddSubShape:PartShape2.brp:7%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:7",
           "id": "fcstd:model:loop#Pad:AddSubShape:PartShape2.brp:7%3A1"
@@ -2739,7 +2883,8 @@
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:12%40location1%3A1%3A2",
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:12%40location1%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:Shape:PartShape3.brp:12%40location1",
           "id": "fcstd:model:loop#Pad:Shape:PartShape3.brp:12%40location1%3A1"
@@ -2752,7 +2897,8 @@
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:17%40location1%3A1%3A2",
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:17%40location1%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:Shape:PartShape3.brp:17%40location1",
           "id": "fcstd:model:loop#Pad:Shape:PartShape3.brp:17%40location1%3A1"
@@ -2765,7 +2911,8 @@
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:20%40location1%3A1%3A2",
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:20%40location1%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:Shape:PartShape3.brp:20%40location1",
           "id": "fcstd:model:loop#Pad:Shape:PartShape3.brp:20%40location1%3A1"
@@ -2778,7 +2925,8 @@
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location11%3A1%3A3",
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location11%3A1%3A4"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:Shape:PartShape3.brp:22%40location11",
           "id": "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location11%3A1"
@@ -2791,7 +2939,8 @@
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location13%3A1%3A3",
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:22%40location13%3A1%3A4"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:Shape:PartShape3.brp:22%40location13",
           "id": "fcstd:model:loop#Pad:Shape:PartShape3.brp:22%40location13%3A1"
@@ -2804,79 +2953,14 @@
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:7%40location1%3A1%3A2",
               "fcstd:model:coedge#Pad:Shape:PartShape3.brp:7%40location1%3A1%3A3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Pad:Shape:PartShape3.brp:7%40location1",
           "id": "fcstd:model:loop#Pad:Shape:PartShape3.brp:7%40location1%3A1"
         }
       ],
-      "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [
-            "fcstd:design:parameter#Sketch:constraint:10"
-          ],
-          "expression": "Sketch.Constraints.width / 2",
-          "id": "fcstd:design:parameter#Pad:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#Pad:Length",
-          "ordinal": 8,
-          "owner": "fcstd:design:feature#Pad",
-          "properties": {
-            "expression_native_ref": "fcstd:native:property#Pad:ExpressionEngine"
-          },
-          "value": {
-            "kind": "length",
-            "value": 20.0
-          }
-        },
-        {
-          "expression": "10.0000000000000000",
-          "id": "fcstd:design:parameter#Pad:Length2",
-          "name": "Length2",
-          "native_ref": "fcstd:native:property#Pad:Length2",
-          "ordinal": 9,
-          "owner": "fcstd:design:feature#Pad",
-          "value": {
-            "kind": "length",
-            "value": 10.0
-          }
-        },
-        {
-          "expression": "40.0000000000000000",
-          "id": "fcstd:design:parameter#Sketch:constraint:10",
-          "name": "Constraint10",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "ordinal": 9,
-          "owner": "fcstd:design:feature#Sketch",
-          "properties": {
-            "is_driving": "1",
-            "source_name": "width"
-          },
-          "value": {
-            "kind": "length",
-            "value": 40.0
-          }
-        },
-        {
-          "expression": "20.0000000000000000",
-          "id": "fcstd:design:parameter#Sketch:constraint:11",
-          "name": "Constraint11",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "ordinal": 10,
-          "owner": "fcstd:design:feature#Sketch",
-          "properties": {
-            "is_driving": "1",
-            "source_name": "height"
-          },
-          "value": {
-            "kind": "length",
-            "value": 20.0
-          }
-        }
-      ],
       "pcurves": [],
-      "pmi": [],
       "points": [
         {
           "id": "fcstd:model:point#Body:Shape:PartShape.brp:1%40location17",
@@ -2887,6 +2971,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
@@ -2899,6 +2984,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
@@ -2911,6 +2997,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
@@ -2923,6 +3010,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
@@ -2935,6 +3023,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
@@ -2947,6 +3036,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
@@ -2959,6 +3049,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
@@ -2971,6 +3062,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
@@ -2983,6 +3075,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -2995,6 +3088,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3007,6 +3101,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3019,6 +3114,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3031,6 +3127,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3043,6 +3140,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3055,6 +3153,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3067,6 +3166,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3079,6 +3179,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3091,6 +3192,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3103,6 +3205,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3115,6 +3218,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3127,6 +3231,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3139,6 +3244,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3151,6 +3257,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3163,6 +3270,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
@@ -3175,6 +3283,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Sketch"
           }
         },
@@ -3187,6 +3296,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Sketch"
           }
         },
@@ -3199,6 +3309,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Sketch"
           }
         },
@@ -3211,15 +3322,13 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Sketch"
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1",
@@ -3250,7 +3359,6 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "fcstd:model:shell#Body:Shape:PartShape.brp:33%40location1",
@@ -3365,309 +3473,17 @@
           "region": "fcstd:model:region#Sketch:Shape:PartShape1.brp:9%40location1"
         }
       ],
-      "sketch_constraints": [
+      "subds": [],
+      "surfaces": [
         {
-          "active": true,
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:1",
-                "kind": "end"
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:2",
-                "kind": "start"
-              }
-            ]
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:1",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        },
-        {
-          "active": true,
-          "definition": {
-            "entities": [
-              "fcstd:design:sketch-entity#Sketch:1"
-            ],
-            "kind": "distance",
-            "parameter": "fcstd:design:parameter#Sketch:constraint:10"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:10",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "name": "width",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        },
-        {
-          "active": true,
-          "definition": {
-            "entities": [
-              "fcstd:design:sketch-entity#Sketch:2"
-            ],
-            "kind": "distance",
-            "parameter": "fcstd:design:parameter#Sketch:constraint:11"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:11",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "name": "height",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        },
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Sketch:1",
-            "kind": "horizontal"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:2",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        },
-        {
-          "active": true,
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:2",
-                "kind": "end"
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:3",
-                "kind": "start"
-              }
-            ]
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:3",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        },
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Sketch:2",
-            "kind": "vertical"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:4",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        },
-        {
-          "active": true,
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:3",
-                "kind": "end"
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:4",
-                "kind": "start"
-              }
-            ]
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:5",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        },
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Sketch:3",
-            "kind": "horizontal"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:6",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        },
-        {
-          "active": true,
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:4",
-                "kind": "end"
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:1",
-                "kind": "start"
-              }
-            ]
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:7",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        },
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Sketch:4",
-            "kind": "vertical"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:8",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        },
-        {
-          "active": true,
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:1",
-                "kind": "start"
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:reference-root-point",
-                "kind": "entity"
-              }
-            ]
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:9",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        }
-      ],
-      "sketch_entities": [
-        {
-          "construction": false,
           "geometry": {
-            "end": {
-              "u": 40.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:1",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        },
-        {
-          "construction": false,
-          "geometry": {
-            "end": {
-              "u": 40.0,
-              "v": 20.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 40.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:2",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        },
-        {
-          "construction": false,
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 20.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 40.0,
-              "v": 20.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:3",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        },
-        {
-          "construction": false,
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 20.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:4",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        },
-        {
-          "construction": true,
-          "geometry": {
-            "kind": "point",
-            "position": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:reference-root-point",
-          "native_ref": "fcstd:native:object#Sketch",
-          "sketch": "fcstd:design:sketch#Sketch"
-        }
-      ],
-      "sketches": [
-        {
-          "id": "fcstd:design:sketch#Sketch",
-          "name": "Sketch",
-          "native_ref": "fcstd:native:object#Sketch",
-          "placement": {
-            "frame": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
               "normal": {
                 "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
+                "y": 1.0,
+                "z": 0.0
               },
               "origin": {
                 "x": 0.0,
@@ -3679,198 +3495,225 @@
                 "y": 0.0,
                 "z": 0.0
               }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:1",
-                "reversed": false
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:2",
-                "reversed": false
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:3",
-                "reversed": false
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:4",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
-      "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
             }
           },
           "id": "fcstd:model:surface#Body:Shape:PartShape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Body:Shape:PartShape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 40.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Body:Shape:PartShape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Body:Shape:PartShape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 20.0,
-              "y": 10.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 20.0,
+                "y": 10.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Body:Shape:PartShape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 20.0,
-              "y": 10.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 20.0,
+                "y": 10.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Body:Shape:PartShape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
         },
         {
           "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "kind": "plane",
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "origin": {
+                  "x": 20.0,
+                  "y": 10.0,
+                  "z": 0.0
+                },
+                "u_axis": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
+              ]
+            }
+          },
+          "id": "fcstd:model:surface#Body:Shape:PartShape.brp:6%40d1a9e4f5209d212d",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Body"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
               "kind": "plane",
               "normal": {
                 "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
+                "y": 1.0,
+                "z": 0.0
               },
               "origin": {
-                "x": 20.0,
-                "y": 10.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": 0.0
               },
               "u_axis": {
@@ -3878,336 +3721,303 @@
                 "y": 0.0,
                 "z": 0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
-              ]
-            ]
-          },
-          "id": "fcstd:model:surface#Body:Shape:PartShape.brp:6%40d1a9e4f5209d212d",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Body"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
             }
           },
           "id": "fcstd:model:surface#Pad:AddSubShape:PartShape2.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Pad:AddSubShape:PartShape2.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 40.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Pad:AddSubShape:PartShape2.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Pad:AddSubShape:PartShape2.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 20.0,
-              "y": 10.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 20.0,
+                "y": 10.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Pad:AddSubShape:PartShape2.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "kind": "plane",
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "origin": {
+                  "x": 20.0,
+                  "y": 10.0,
+                  "z": 0.0
+                },
+                "u_axis": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": -0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
+              ]
+            }
+          },
+          "id": "fcstd:model:surface#Pad:AddSubShape:PartShape2.brp:5%40d1a9e4f5209d212d",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Pad"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
               "kind": "plane",
               "normal": {
                 "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
+                "y": 1.0,
+                "z": 0.0
               },
               "origin": {
-                "x": 20.0,
-                "y": 10.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": 0.0
               },
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
-              ]
-            ]
-          },
-          "id": "fcstd:model:surface#Pad:AddSubShape:PartShape2.brp:5%40d1a9e4f5209d212d",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
             }
           },
           "id": "fcstd:model:surface#Pad:Shape:PartShape3.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 40.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Pad:Shape:PartShape3.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 40.0,
-              "y": 20.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 40.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Pad:Shape:PartShape3.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Pad:Shape:PartShape3.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 20.0,
-              "y": 10.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            }
-          },
-          "id": "fcstd:model:surface#Pad:Shape:PartShape3.brp:5",
-          "source_object": {
-            "format": "fcstd",
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "basis": {
+            "kind": "solved",
+            "value": {
               "kind": "plane",
               "normal": {
                 "x": 0.0,
@@ -4224,37 +4034,68 @@
                 "y": 0.0,
                 "z": -0.0
               }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                20.0
+            }
+          },
+          "id": "fcstd:model:surface#Pad:Shape:PartShape3.brp:5",
+          "source_object": {
+            "format": "fcstd",
+            "instance_path": [],
+            "object_id": "fcstd:native:object#Pad"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "basis": {
+                "kind": "plane",
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "origin": {
+                  "x": 20.0,
+                  "y": 10.0,
+                  "z": 0.0
+                },
+                "u_axis": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": -0.0
+                }
+              },
+              "kind": "transformed",
+              "transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  20.0
+                ]
               ]
-            ]
+            }
           },
           "id": "fcstd:model:surface#Pad:Shape:PartShape3.brp:5%40d1a9e4f5209d212d",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Pad"
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location17",
@@ -4396,7 +4237,581 @@
           "point": "fcstd:model:point#Sketch:Shape:PartShape1.brp:6%40location1",
           "tolerance": 1e-7
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "tree_node",
+              "value": {
+                "children": {
+                  "active_child": "fcstd:design:feature#Pad",
+                  "children": [
+                    "fcstd:design:feature#Sketch",
+                    "fcstd:design:feature#Pad"
+                  ]
+                },
+                "role": "solid_bodies"
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Body",
+          "name": "Body",
+          "native_ref": "fcstd:native:object#Body",
+          "ordinal": 0,
+          "outputs": [
+            "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Tip": "fcstd:native:object#Pad",
+            "Visibility": "true"
+          },
+          "source_tag": "PartDesign::Body"
+        },
+        {
+          "definition": {
+            "kind": "post_process",
+            "value": {
+              "fuzzy_tolerance": {
+                "kind": "kernel_default"
+              },
+              "operation": {
+                "kind": "extrude",
+                "value": {
+                  "allow_multi_profile_faces": true,
+                  "direction": {
+                    "kind": "explicit",
+                    "source": {
+                      "kind": "profile_normal"
+                    },
+                    "vector": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 1.0
+                    }
+                  },
+                  "extent": {
+                    "kind": "one_sided",
+                    "side": {
+                      "termination": {
+                        "kind": "blind",
+                        "length": 20.0
+                      }
+                    }
+                  },
+                  "length_along_profile_normal": true,
+                  "op": "join",
+                  "profile": {
+                    "kind": "planar",
+                    "value": {
+                      "kind": "sketch",
+                      "value": "fcstd:design:sketch#Sketch"
+                    }
+                  },
+                  "solid": true,
+                  "start": {
+                    "kind": "profile_plane"
+                  }
+                }
+              },
+              "refine": false
+            }
+          },
+          "dependencies": [
+            "fcstd:design:feature#Sketch",
+            "fcstd:design:feature#Body"
+          ],
+          "id": "fcstd:design:feature#Pad",
+          "name": "Pad",
+          "native_ref": "fcstd:native:object#Pad",
+          "ordinal": 9,
+          "outputs": [
+            "fcstd:model:body#Pad:Shape:PartShape3.brp:24%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "PartDesign::Pad"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#Sketch"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Sketch",
+          "name": "Sketch",
+          "native_ref": "fcstd:native:object#Sketch",
+          "ordinal": 8,
+          "outputs": [
+            "fcstd:model:body#Sketch:Shape:PartShape1.brp:9%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "5",
+            "Support": "fcstd:native:object#XY_Plane",
+            "Visibility": "false"
+          },
+          "source_tag": "Sketcher::SketchObject"
+        }
       ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [
+        {
+          "dependencies": [
+            "fcstd:design:parameter#Sketch:constraint:10"
+          ],
+          "expression": "Sketch.Constraints.width / 2",
+          "id": "fcstd:design:parameter#Pad:Length",
+          "name": "Length",
+          "native_ref": "fcstd:native:property#Pad:Length",
+          "ordinal": 8,
+          "owner": "fcstd:design:feature#Pad",
+          "properties": {
+            "expression_native_ref": "fcstd:native:property#Pad:ExpressionEngine"
+          },
+          "value": {
+            "kind": "length",
+            "value": 20.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "10.0000000000000000",
+          "id": "fcstd:design:parameter#Pad:Length2",
+          "name": "Length2",
+          "native_ref": "fcstd:native:property#Pad:Length2",
+          "ordinal": 9,
+          "owner": "fcstd:design:feature#Pad",
+          "properties": {},
+          "value": {
+            "kind": "length",
+            "value": 10.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "40.0000000000000000",
+          "id": "fcstd:design:parameter#Sketch:constraint:10",
+          "name": "Constraint10",
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "ordinal": 9,
+          "owner": "fcstd:design:feature#Sketch",
+          "properties": {
+            "is_driving": "1",
+            "source_name": "width"
+          },
+          "value": {
+            "kind": "length",
+            "value": 40.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "20.0000000000000000",
+          "id": "fcstd:design:parameter#Sketch:constraint:11",
+          "name": "Constraint11",
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "ordinal": 10,
+          "owner": "fcstd:design:feature#Sketch",
+          "properties": {
+            "is_driving": "1",
+            "source_name": "height"
+          },
+          "value": {
+            "kind": "length",
+            "value": 20.0
+          }
+        }
+      ],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [
+        {
+          "active": true,
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "kind": "end",
+                "value": "fcstd:design:sketch-entity#Sketch:1"
+              },
+              {
+                "kind": "start",
+                "value": "fcstd:design:sketch-entity#Sketch:2"
+              }
+            ]
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:1",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        },
+        {
+          "active": true,
+          "definition": {
+            "entities": [
+              "fcstd:design:sketch-entity#Sketch:1"
+            ],
+            "kind": "distance",
+            "parameter": "fcstd:design:parameter#Sketch:constraint:10"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:10",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "name": "width",
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        },
+        {
+          "active": true,
+          "definition": {
+            "entities": [
+              "fcstd:design:sketch-entity#Sketch:2"
+            ],
+            "kind": "distance",
+            "parameter": "fcstd:design:parameter#Sketch:constraint:11"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:11",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "name": "height",
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        },
+        {
+          "active": true,
+          "definition": {
+            "entity": "fcstd:design:sketch-entity#Sketch:1",
+            "kind": "horizontal"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:2",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        },
+        {
+          "active": true,
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "kind": "end",
+                "value": "fcstd:design:sketch-entity#Sketch:2"
+              },
+              {
+                "kind": "start",
+                "value": "fcstd:design:sketch-entity#Sketch:3"
+              }
+            ]
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:3",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        },
+        {
+          "active": true,
+          "definition": {
+            "entity": "fcstd:design:sketch-entity#Sketch:2",
+            "kind": "vertical"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:4",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        },
+        {
+          "active": true,
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "kind": "end",
+                "value": "fcstd:design:sketch-entity#Sketch:3"
+              },
+              {
+                "kind": "start",
+                "value": "fcstd:design:sketch-entity#Sketch:4"
+              }
+            ]
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:5",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        },
+        {
+          "active": true,
+          "definition": {
+            "entity": "fcstd:design:sketch-entity#Sketch:3",
+            "kind": "horizontal"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:6",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        },
+        {
+          "active": true,
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "kind": "end",
+                "value": "fcstd:design:sketch-entity#Sketch:4"
+              },
+              {
+                "kind": "start",
+                "value": "fcstd:design:sketch-entity#Sketch:1"
+              }
+            ]
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:7",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        },
+        {
+          "active": true,
+          "definition": {
+            "entity": "fcstd:design:sketch-entity#Sketch:4",
+            "kind": "vertical"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:8",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        },
+        {
+          "active": true,
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "kind": "start",
+                "value": "fcstd:design:sketch-entity#Sketch:1"
+              },
+              {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:reference-root-point"
+              }
+            ]
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:9",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        }
+      ],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "endpoint_refs": [],
+          "geometry": {
+            "end": {
+              "u": 40.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:1",
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "sketch": "fcstd:design:sketch#Sketch"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [],
+          "geometry": {
+            "end": {
+              "u": 40.0,
+              "v": 20.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 40.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:2",
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "sketch": "fcstd:design:sketch#Sketch"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [],
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 20.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 40.0,
+              "v": 20.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:3",
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "sketch": "fcstd:design:sketch#Sketch"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [],
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 0.0,
+              "v": 20.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:4",
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "sketch": "fcstd:design:sketch#Sketch"
+        },
+        {
+          "construction": true,
+          "endpoint_refs": [],
+          "geometry": {
+            "kind": "point",
+            "position": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:reference-root-point",
+          "native_ref": "fcstd:native:object#Sketch",
+          "sketch": "fcstd:design:sketch#Sketch"
+        }
+      ],
+      "sketches": [
+        {
+          "id": "fcstd:design:sketch#Sketch",
+          "name": "Sketch",
+          "native_ref": "fcstd:native:object#Sketch",
+          "placement": {
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "kind": "resolved"
+          },
+          "profiles": [
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#Sketch:1",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#Sketch:2",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#Sketch:3",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#Sketch:4",
+                "reversed": false
+              }
+            ]
+          ]
+        }
+      ],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -4447,7 +4862,7 @@
           "physical_ledger": "1eb58819bbab5b3b2c1b377d1d3d065f921194bad56445c1b8a2cd9f7fdbad66",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "f6f656a951f0fbd1ece89ddbaebe2632e9b4f3de11ce444e97a7608fa51a5516",
-          "shape_payloads": "7f651bdd2b86ccf46bf7072d0aa71c20678b5ef6182bcfcfd32471d03d8129fb",
+          "shape_payloads": "83acef59903059dd2926822e3e6f1e9c8a8d37a52bcedc216a4b4e89d8831967",
           "string_tables": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
         }
       },
@@ -4836,21 +5251,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -4866,21 +5281,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -4895,21 +5310,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -4925,21 +5340,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -4954,21 +5369,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -1.0000000000000002,
-                  -2.220446049250313e-16,
+                  2.220446049250313e-16,
+                  -0.9999999999999999,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
-                  -1.0000000000000002,
+                  -0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
+                  0.9999999999999999,
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
                   0.0
                 ],
                 [
@@ -4984,21 +5399,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -1.0000000000000002,
-                  -2.220446049250313e-16,
+                  2.220446049250313e-16,
+                  -0.9999999999999999,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
-                  -1.0000000000000002,
+                  -0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
+                  0.9999999999999999,
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
                   0.0
                 ],
                 [
@@ -5015,6 +5430,12 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
@@ -5028,11 +5449,12 @@
         "program_version": "0.21R33771 (Git)"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_version": "1",
               "program_version": "0.21R33771 (Git)",
@@ -5040,7 +5462,8 @@
             },
             "dialect": "fcstd:schema-4"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -5048,16 +5471,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_version": "1",
             "program_version": "0.21R33771 (Git)",
@@ -5065,7 +5493,8 @@
           },
           "dialect": "fcstd:schema-4"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [
@@ -5079,10 +5508,17 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

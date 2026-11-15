@@ -57,16 +57,18 @@
       }
     },
     "identity": {
-      "payload": "native",
+      "kind": "native",
       "target": "usd:usda-1.0"
     },
     "losses": [
       {
         "code": {
-          "code": "export.vertex-precision",
-          "kind": "mesh_vertex_precision",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "export.vertex-precision",
+            "kind": "mesh_vertex_precision",
+            "namespace": "usd"
+          }
         },
         "message": "211 points were written as binary32 coordinates, which round them",
         "severity": "info"
@@ -77,9 +79,9 @@
     ],
     "write_path": {
       "fidelity": {
-        "status": "not_provided"
+        "kind": "not_provided"
       },
-      "path": "synthesized"
+      "kind": "synthesized"
     }
   },
   "usda": [

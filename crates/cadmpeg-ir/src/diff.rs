@@ -52,9 +52,11 @@ pub struct AttributeChange {
     pub key: NonBlankString,
     /// Value in the left-hand document, absent when only the right-hand document
     /// carries the key.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub left: Option<String>,
     /// Value in the right-hand document, absent when only the left-hand document
     /// carries the key.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub right: Option<String>,
 }
 
@@ -63,6 +65,7 @@ pub struct AttributeChange {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceDiff {
     /// `(left, right)` source format ids, present only when they differ.
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "schema", schemars(with = "Option<(String, String)>"))]
     pub format_change: Option<FormatChange>,
     /// `(left, right)` complete dialect-layer sets, present when they differ.
@@ -331,10 +334,12 @@ impl IrDiff {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(rename = "IrDiff"))]
 struct IrDiffWriteWire<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
     unit_change: Option<(
         crate::units::CanonicalUnitsWire,
         crate::units::CanonicalUnitsWire,
     )>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tolerance_change: &'a Option<(crate::units::Tolerances, crate::units::Tolerances)>,
     source: &'a SourceDiff,
     per_arena: &'a [ArenaDiff],

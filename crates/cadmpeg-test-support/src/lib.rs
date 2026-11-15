@@ -26,6 +26,7 @@ pub mod refusal;
 pub mod revolve;
 pub mod roundtrip;
 pub mod solids;
+pub mod spelling;
 pub mod unknown_keys;
 pub mod wire;
 pub mod zip_fixture;

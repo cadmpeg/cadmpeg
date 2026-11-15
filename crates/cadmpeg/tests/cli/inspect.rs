@@ -44,7 +44,7 @@ fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
             String::from_utf8_lossy(&output.stderr)
         );
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["source"]["identity"]["classification"], "classified");
+        assert_eq!(value["source"]["identity"]["kind"], "classified");
         assert!(
             value["source"]["identity"]["dialects"]["primary"]["dialect"]
                 .as_str()
@@ -128,7 +128,7 @@ fn a_file_of_one_iges_start_card_is_detected_and_dumped() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| loss["code"]["code"] == "card.framing-recovered"));
+        .any(|loss| loss["code"]["value"]["code"] == "card.framing-recovered"));
 }
 
 #[cfg(feature = "iges")]

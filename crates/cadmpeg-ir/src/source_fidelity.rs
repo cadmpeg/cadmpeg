@@ -105,7 +105,7 @@ pub enum DecodeSidecarParseError {
 /// of bytes that are not retained.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "retention", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RetainedBytes {
     /// The source bytes themselves. Their length and digest are functions of
     /// them, so neither is stored.
@@ -327,10 +327,8 @@ impl RetainedSourceRecord {
 #[serde(deny_unknown_fields)]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
-    #[serde(default)]
     pub annotations: Annotations,
     /// Native records retained for recovery or replay, keyed by record id.
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
 }
@@ -473,16 +471,12 @@ impl SourceFidelity {
         for product in &products {
             let id = product.id.clone().into();
             let mut fields = serde_json::Map::new();
-            if !product.links.is_empty() {
-                let mut links = Vec::new();
-
-                for link in &product.links {
-                    links.push(serde_json::Value::String(link.as_str().to_owned()));
-                }
-
-                let field = "links".to_owned();
-                fields.insert(field, serde_json::Value::Array(links));
-            }
+            let links = product
+                .links
+                .iter()
+                .map(|link| serde_json::Value::String(link.as_str().to_owned()))
+                .collect();
+            fields.insert("links".to_owned(), serde_json::Value::Array(links));
             native_records.push(crate::native::NativeRecord::new(id, fields)?);
         }
         native_records.sort_by(|left, right| left.id().cmp(right.id()));
@@ -582,11 +576,11 @@ mod tests {
         // under one id. `serde_json` hands both to the visitor, so the reader
         // refuses the second by name rather than keeping the last.
         let error = serde_json::from_str::<SourceFidelity>(
-            r#"{"retained_records":{
+            r#"{"annotations":{"provenance":{},"exactness":{}},"retained_records":{
                  "synthetic:source:record#a":{"stream":"source","offset":0,
-                      "bytes":{"retention":"inline","data":"AQ=="}},
+                      "bytes":{"kind": "inline", "data":"AQ=="}},
                  "synthetic:source:record#a":{"stream":"source","offset":0,
-                      "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
+                      "bytes":{"kind": "inline", "data":"Ag=="}}}}"#,
         )
         .expect_err("a repeated record id states two records under one identity")
         .to_string();
@@ -596,9 +590,9 @@ mod tests {
         );
 
         let single = serde_json::from_str::<SourceFidelity>(
-            r#"{"retained_records":{
+            r#"{"annotations":{"provenance":{},"exactness":{}},"retained_records":{
                  "synthetic:source:record#a":{"stream":"source","offset":0,
-                      "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
+                      "bytes":{"kind": "inline", "data":"Ag=="}}}}"#,
         )
         .expect("one record under one id reads");
         assert_eq!(
@@ -617,7 +611,7 @@ mod tests {
         assert_eq!(inline.data(), Some([1, 2, 3].as_slice()));
 
         let wire = serde_json::to_value(&inline).expect("serializes");
-        assert_eq!(wire["bytes"]["retention"], "inline");
+        assert_eq!(wire["bytes"]["kind"], "inline");
         assert!(wire["bytes"].get("byte_len").is_none());
         assert!(wire["bytes"].get("sha256").is_none());
         assert_eq!(
@@ -643,7 +637,8 @@ mod tests {
             let unknown: UnknownRecord = serde_json::from_value(serde_json::json!({
                 "id": "synthetic:model:unknown#0",
                 "offset": 7,
-                "retention": {"retention": "inline", "data": "AQID"}
+                "retention": {"kind": "inline", "data": "AQID"},
+                "links": []
             }))
             .unwrap();
             let mut fidelity = SourceFidelity::default();
@@ -680,20 +675,20 @@ mod tests {
                 "stream": stream,
                 "offset": 0,
                 "bytes": {
-                    "retention": "digest",
-                    "byte_len": 3,
+                    "kind": "digest", "byte_len": 3,
                     "sha256": crate::hash::sha256_hex(&[1, 2, 3])
                 }
             })
         };
         let one: SourceFidelity = serde_json::from_value(serde_json::json!({
+            "annotations": {"provenance": {}, "exactness": {}},
             "retained_records": {"synthetic:source:record#a": record("s")}
         }))
         .expect("one record reads");
         assert_eq!(one.retained_records.len(), 1);
 
         let text = format!(
-            r#"{{"retained_records":{{"synthetic:source:record#a":{},"synthetic:source:record#a":{}}}}}"#,
+            r#"{{"annotations":{{"provenance":{{}},"exactness":{{}}}},"retained_records":{{"synthetic:source:record#a":{},"synthetic:source:record#a":{}}}}}"#,
             record("s"),
             record("t")
         );
@@ -797,8 +792,7 @@ mod tests {
         );
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert!(
-            json.contains("\"classification\": \"unclassified\"")
-                && json.contains("\"format\": \"test\""),
+            json.contains("\"kind\": \"unclassified\"") && json.contains("\"format\": \"test\""),
             "{json}"
         );
 

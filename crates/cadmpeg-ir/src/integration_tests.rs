@@ -305,5 +305,7 @@ mod features_admission;
 
 mod borrowed_serialization;
 
+mod wire_form_census;
+
 #[cfg(feature = "schema")]
 mod repro;

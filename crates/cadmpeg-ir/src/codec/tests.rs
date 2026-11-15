@@ -214,9 +214,10 @@ impl CodecBackend for ForeignIdentityCodec {
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         Ok(serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": "foreign"},
+            "identity": {"kind": "unclassified", "format": "foreign"},
             "container_kind": "flat",
             "entries": [],
+            "losses": [],
             "notes": []
         }))
         .expect("foreign inspection fixture"))
@@ -393,7 +394,7 @@ fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": "test"},
+            "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
         .unwrap(),

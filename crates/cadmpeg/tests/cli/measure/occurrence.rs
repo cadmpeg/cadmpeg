@@ -233,8 +233,8 @@ fn a_scaled_chain_or_an_external_prototype_gives_no_rows() {
 
     let external = edited(dir.path(), |document| {
         occurrence_mut(document, "step:product:occurrence#140")["prototype"] = serde_json::json!({
-            "scope": "external",
-            "document": {"resolution": "path", "path": "pin.step"}
+            "kind": "external",
+            "document": {"kind": "path", "path": "pin.step"}
         });
     });
     let report = occurrence_report(&external, "occurrence#140", &[]);
@@ -289,7 +289,7 @@ fn occurrence_selectors_resolve_and_scope_the_rows() {
     let dir = tempdir().unwrap();
     let detached = edited(dir.path(), |document| {
         occurrence_mut(document, "step:product:occurrence#160")["prototype"] =
-            serde_json::json!({"scope": "unresolved"});
+            serde_json::json!({"kind": "unresolved"});
     });
     cadmpeg()
         .arg("measure")

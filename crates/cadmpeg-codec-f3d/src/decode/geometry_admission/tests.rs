@@ -214,8 +214,8 @@ fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
         ir.geometry.surfaces.push(
             serde_json::from_value(serde_json::json!({
                 "id": "test:brep:surface#1",
-                "geometry": {"kind": "plane", "origin": {"x":0.0,"y":0.0,"z":0.0},
-                    "normal": {"x":0.0,"y":0.0,"z":1.0}, "u_axis":{"x":1.0,"y":0.0,"z":0.0}}
+                "geometry": {"kind": "solved", "value": {"kind": "plane", "origin": {"x":0.0,"y":0.0,"z":0.0},
+                    "normal": {"x":0.0,"y":0.0,"z":1.0}, "u_axis":{"x":1.0,"y":0.0,"z":0.0}}}
             }))
             .unwrap(),
         );
@@ -225,7 +225,7 @@ fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
                 "context":{"sides":[{"surface":"test:brep:surface#1",
                     "pcurve":{"geometry":{"kind":"nurbs", "degree":1,
                         "knots":[0.0,0.0,1.0,1.0], "periodic":false,
-                        "poles":{"form":"polynomial","points":[{"u":4.0,"v":4.0},{"u":6.0,"v":4.0}]}}}},{}],
+                        "poles":{"kind":"polynomial","points":[{"u":4.0,"v":4.0},{"u":6.0,"v":4.0}]}}}},{}],
                     "parameter_range":[0.0,1.0], "discontinuities":[[],[],[]]},
                 "form":{"revision":23000,"cache":{"kind":"solved_cache","fit_tolerance":0.0},
                     "support_bounds":[[null,null,null,null],[null,null,null,null]],

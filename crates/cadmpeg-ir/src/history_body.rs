@@ -34,37 +34,26 @@ pub struct BodyTopology {
     /// The body.
     pub body: Body,
     /// Regions of the body.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub regions: Vec<Region>,
     /// Shells of the regions.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shells: Vec<Shell>,
     /// Faces of the shells.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub faces: Vec<Face>,
     /// Loops of the faces.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loops: Vec<Loop>,
     /// Coedges of the loops.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub coedges: Vec<Coedge>,
     /// Edges of the coedges.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edges: Vec<Edge>,
     /// Vertices of the edges.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vertices: Vec<Vertex>,
     /// Surface carriers of the faces. A carrier states solved geometry.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surfaces: Vec<Surface>,
     /// Curve carriers of the edges and coedges. A carrier states solved geometry.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub curves: Vec<Curve>,
     /// Parameter-space curves of the coedges.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<Pcurve>,
     /// Points of the vertices.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<Point>,
 }
 

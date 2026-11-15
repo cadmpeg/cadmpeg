@@ -49,8 +49,7 @@ fn surface_untrim_requires_resolved_faces_loops_and_distance() {
             extension,
         });
         ir.model.features.push(serde_json::from_value(serde_json::json!({
-            "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false, "definition": definition
-        })).unwrap());
+            "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false, "definition": definition, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap());
         let mut report = super::empty_report(true);
         append_design_losses(
             &cadmpeg_test_support::service_decode_context(),

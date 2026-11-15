@@ -99,7 +99,6 @@ fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
     let slot_wire = serde_json::json!({
         "kind": "slot",
         "edge": 3,
-        "sector_face": null,
         "spokes": [],
         "sectors": [],
     });
@@ -120,7 +119,6 @@ fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
     let error = serde_json::from_value::<SubdGripWedge>(serde_json::json!({
         "kind": "slot",
         "edge": 3,
-        "sector_face": null,
         "spokes": [],
         "sectors": [],
         "phantom": false,
@@ -168,6 +166,9 @@ fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
                 "first_axis": { "x": 1.0, "y": 0.0, "z": 0.0 },
                 "second_axis": { "x": 0.0, "y": 1.0, "z": 0.0 },
             },
+            "face_pairs": [],
+            "edge_pairs": [],
+            "vertex_pairs": [],
         })
     );
     assert_eq!(
@@ -189,6 +190,9 @@ fn a_correspondence_symmetry_has_no_radial_maps_key() {
         "kind": { "kind": "correspondence" },
         "plane": plane,
         "radial_maps": maps,
+        "face_pairs": [],
+        "edge_pairs": [],
+        "vertex_pairs": [],
     }))
     .unwrap_err()
     .to_string();
@@ -197,6 +201,9 @@ fn a_correspondence_symmetry_has_no_radial_maps_key() {
     let error = serde_json::from_value::<SubdSymmetry>(serde_json::json!({
         "kind": { "kind": "correspondence", "radial_maps": maps },
         "plane": plane,
+        "face_pairs": [],
+        "edge_pairs": [],
+        "vertex_pairs": [],
     }))
     .unwrap_err()
     .to_string();
@@ -205,6 +212,9 @@ fn a_correspondence_symmetry_has_no_radial_maps_key() {
     let symmetry = serde_json::from_value::<SubdSymmetry>(serde_json::json!({
         "kind": { "kind": "radial", "segments": 4, "sweep": 1.0, "radial_maps": maps },
         "plane": plane,
+        "face_pairs": [],
+        "edge_pairs": [],
+        "vertex_pairs": [],
     }))
     .unwrap();
     assert_eq!(
@@ -294,7 +304,7 @@ fn cage_admission_requires_non_empty_grip_layouts_and_valid_sector_arity() {
     for wedges in [
         serde_json::json!([]),
         serde_json::json!([{
-            "kind": "slot", "edge": 0, "sector_face": null, "spokes": [null], "sectors": []
+            "kind": "slot", "edge": 0, "spokes": [null], "sectors": []
         }]),
     ] {
         let mut wire = serde_json::to_value(triangle_cage()).unwrap();
@@ -317,9 +327,15 @@ fn cage_admission_requires_incident_grip_topology() {
             let extra = wire["vertices"][0].clone();
             wire["vertices"].as_array_mut().unwrap().push(extra);
         }
-        wire["vertices"][owner]["secondary_grips"] = serde_json::json!({
-            "direction": "north", "wedges": [{ "kind": "slot", "edge": edge, "sector_face": face, "spokes": [], "sectors": [] }]
-        });
+        let mut wedge = serde_json::json!({ "kind": "slot", "spokes": [], "sectors": [] });
+        if let Some(edge) = edge {
+            wedge["edge"] = edge.into();
+        }
+        if let Some(face) = face {
+            wedge["sector_face"] = face.into();
+        }
+        wire["vertices"][owner]["secondary_grips"] =
+            serde_json::json!({ "direction": "north", "wedges": [wedge] });
         rejects_cage_wire(wire);
     }
 }
@@ -329,7 +345,7 @@ fn grip_indices_are_unique_across_the_whole_cage() {
     let mut wire = serde_json::to_value(triangle_cage()).unwrap();
     for owner in 0..2 {
         wire["vertices"][owner]["secondary_grips"] = serde_json::json!({
-            "direction": "north", "wedges": [{ "kind": "slot", "edge": 0, "sector_face": null,
+            "direction": "north", "wedges": [{ "kind": "slot", "edge": 0,
             "spokes": [{ "source_index": 42, "point": { "x": 0.0, "y": 0.0, "z": 0.0 }, "weight": 1.0 }], "sectors": [null] }]
         });
     }
@@ -367,6 +383,8 @@ fn cage_symmetry_references_stay_in_range() {
     wire["symmetries"] = serde_json::json!([{
         "kind": { "kind": "correspondence" },
         "plane": { "origin": { "x": 0.0, "y": 0.0, "z": 0.0 }, "first_axis": { "x": 1.0, "y": 0.0, "z": 0.0 }, "second_axis": { "x": 0.0, "y": 1.0, "z": 0.0 } },
+        "face_pairs": [],
+        "edge_pairs": [],
         "vertex_pairs": [[0, 3]]
     }]);
     rejects_cage_wire(wire.clone());
