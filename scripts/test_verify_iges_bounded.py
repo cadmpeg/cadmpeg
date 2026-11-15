@@ -80,7 +80,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         self.assertEqual(error, "decode refusal report status is not refused")
 
     def test_rejects_unsupported_refusal_version(self) -> None:
-        for version in ("5", "8", "9", "11", "37"):
+        for version in ("5", "8", "9", "10", "37"):
             with self.subTest(version=version):
                 self.write(
                     {
