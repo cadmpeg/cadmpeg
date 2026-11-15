@@ -142,10 +142,28 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
             )
             .unwrap()
             .is_empty());
-            assert!(decoded.report().losses.iter().any(|loss| loss.code
-                == crate::loss::F3dLossCode::ArchiveEntryUnreadable
-                    .note(String::new())
-                    .code));
+            let losses: Vec<_> = decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0]
+                .message
+                .starts_with(&format!("part archive-entry {name:?} stream=\"\" offset=")));
+            let stubs = decoded.ir().native_unknowns("f3d").unwrap();
+            let stub = stubs
+                .iter()
+                .find(|stub| losses[0].message.contains(&format!("record={}", stub.id)))
+                .expect("the loss names the stub");
+            let retained = decoded
+                .source_fidelity()
+                .retained_record(stub.id.as_str())
+                .expect("the entry's stored bytes are retained");
+            let start = usize::try_from(retained.offset()).unwrap();
+            let end = usize::try_from(retained.end_offset()).unwrap();
+            assert_eq!(retained.data(), Some(&changed[start..end]));
             assert!(decoded
                 .source_fidelity()
                 .retained_records()
@@ -182,7 +200,45 @@ fn required_brep_payload_defects_remain_fatal() {
 }
 
 #[test]
-fn optional_asset_resource_limits_are_not_recovered() {
+fn optional_asset_past_the_per_expansion_allowance_is_given_up_alone() {
+    let bytes = optional_deflated_preview();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_per_expand = 1;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let [given_up] = scan.given_up.as_slice() else {
+        panic!("one given-up part");
+    };
+    let loss = given_up.loss();
+    assert_eq!(loss.code.to_string(), "decode/record.unreadable");
+    assert!(loss.message.starts_with(
+        "part archive-entry \"FusionAssetName[Active]/Previews/thumbnail.png\" stream=\"\" offset="
+    ));
+    assert!(loss.message.contains("scope Part"));
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn optional_asset_past_the_session_allowance_refuses_the_session() {
+    let bytes = optional_deflated_preview();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_total = 1;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = crate::container::scan(&ctx, root)
+        .err()
+        .expect("the session allowance refuses");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+            scope: cadmpeg_core::decode::LimitScope::Session,
+            ..
+        })
+    ));
+}
+
+fn optional_deflated_preview() -> Vec<u8> {
     use std::io::Write;
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -198,13 +254,5 @@ fn optional_asset_resource_limits_are_not_recovered() {
         )
         .unwrap();
     writer.write_all(b"preview").unwrap();
-    let bytes = writer.finish().unwrap().into_inner();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_decompressed_bytes_per_expand = 1;
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = crate::container::scan(&ctx, root)
-        .err()
-        .expect("optional expansion must refuse");
-    assert!(matches!(error, CodecError::ResourceLimit(_)));
+    writer.finish().unwrap().into_inner()
 }

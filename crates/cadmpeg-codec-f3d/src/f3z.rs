@@ -89,6 +89,10 @@ fn compose(
         .ok_or_else(|| CodecError::malformed("F3Z root has no source metadata"))?;
     fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
+    for given_up in scan.given_up.iter().cloned() {
+        // `header_losses` already put the part's loss in the archive's losses.
+        given_up.commit(ctx, &mut ir, &mut fidelity)?;
+    }
     if let Some(drawing_root) = &session.omitted_drawing_root {
         push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"

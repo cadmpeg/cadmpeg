@@ -89,9 +89,7 @@ pub(crate) fn header_losses(
     scan: &ContainerScan<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for diagnostic in &scan.entry_diagnostics {
-        losses.push(crate::loss::F3dLossCode::ArchiveEntryUnreadable.note(diagnostic.to_owned()));
-    }
+    losses.extend(scan.given_up.iter().map(|part| part.loss().clone()));
     for (name, run, stored) in &scan.unindexed_record_runs {
         let retained = stored.checked_sub(run.start).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(

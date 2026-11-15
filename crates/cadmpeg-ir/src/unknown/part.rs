@@ -118,7 +118,7 @@ impl<'a> Part<'a> {
 }
 
 /// A part its decoder gave up: the stub, the retained bytes, and the loss.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GivenUpPart {
     codec: &'static str,
     stub: NativeUnknownRecord,

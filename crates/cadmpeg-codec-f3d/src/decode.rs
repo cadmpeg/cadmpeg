@@ -4953,6 +4953,10 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
+    for given_up in scan.given_up.iter().cloned() {
+        // `header_losses` already put the part's loss in the report.
+        given_up.commit(ctx, &mut ir, &mut source_fidelity)?;
+    }
     let mut source = crate::report::classify_document(
         scan,
         report_scope,
