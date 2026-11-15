@@ -1996,11 +1996,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.fillet_sets.is_some() {
             present.push("fillet_sets");
         }
-        if wire.fixed_chamfer_parameters.is_some() {
-            present.push("fixed_chamfer_parameters");
-        }
-        if wire.chamfer_sets.is_some() {
-            present.push("chamfer_sets");
+        // A chamfer scope keeps its fixed lanes beside its set list, so both
+        // fields are one payload family.
+        if wire.fixed_chamfer_parameters.is_some() || wire.chamfer_sets.is_some() {
+            present.push("chamfer");
         }
         if wire.combine_operation.is_some() || wire.combine_named_tail.is_some() {
             present.push("combine_operation");
