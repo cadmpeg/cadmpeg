@@ -254,8 +254,15 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     })
     .unwrap();
     let scopes = vec![scope.clone(), next_scope];
-    let bindings =
-        { bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories) };
+    let bindings = {
+        bind_scope_histories(
+            &scopes,
+            std::slice::from_ref(&binding),
+            &[],
+            &[],
+            &histories,
+        )
+    };
     assert_eq!(bindings[&scope.id], histories[1].id);
     assert_eq!(
         bound_scope_history(&scope.id, &bindings, &histories)
@@ -310,9 +317,50 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         },
     )
     .unwrap();
-    let bindings =
-        { bind_scope_histories(&scopes, &[], std::slice::from_ref(&operand), &histories) };
+    let bindings = {
+        bind_scope_histories(
+            &scopes,
+            &[],
+            std::slice::from_ref(&operand),
+            &[],
+            &histories,
+        )
+    };
     assert_eq!(bindings[&scope.id], histories[1].id);
+
+    // Two histories hold the state pair; the BREP that the faces of an edge
+    // operand's recipe reference lie in names the history.
+    let edge_operand: crate::records::topology::edge_identity::DesignEdgeOperand =
+        serde_json::from_value(serde_json::json!({
+            "id": format!("{stream}:design-edge-operand#130"),
+            "scope_record_index": scope.record_index,
+            "scope_reference_ordinal": 0,
+            "record_index": 130,
+            "byte_offset": 0,
+            "class_tag": "314",
+            "paired_byte_offset": 16,
+            "paired_class_tag": "262",
+            "recipe_record_index": 133,
+            "recipe_record_byte_offset": 32,
+            "recipe_id": format!("{stream}:construction-recipe#1"),
+            "recipe_prefix_offset": 43,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_program_offset": 0,
+            "recipe_program": [],
+            "candidate_faces": ["f3d:brep/first.smbh/brep:entity#7"],
+            "next_record_index": 134,
+            "next_byte_offset": 160
+        }))
+        .expect("edge operand");
+    let bindings = bind_scope_histories(
+        &scopes,
+        &[],
+        &[],
+        std::slice::from_ref(&edge_operand),
+        &histories,
+    );
+    assert_eq!(bindings[&scope.id], histories[0].id);
 }
 
 #[test]
@@ -398,7 +446,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         })
         .unwrap();
     let scopes = vec![root, successor];
-    let bindings = bind_scope_histories(&scopes, &[], &[], &histories);
+    let bindings = bind_scope_histories(&scopes, &[], &[], &[], &histories);
     assert_eq!(bindings.len(), 2);
     assert_eq!(bindings["f3d:native:scope#1"], "history");
     assert_eq!(bindings["f3d:native:scope#2"], "history");

@@ -754,6 +754,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
+        &design.design_edge_operands,
         &design.asm_histories,
     );
     let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
@@ -1914,6 +1915,7 @@ fn extend_related_design_records(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
+        &[],
         &design.asm_histories,
     );
     let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(

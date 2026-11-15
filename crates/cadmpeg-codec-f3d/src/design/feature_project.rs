@@ -411,6 +411,7 @@ impl<'a> ScopeHistoryGraph<'a> {
         scopes: &'a [DesignParameterScope],
         body_bindings: &[DesignBodyBinding],
         body_recipe_operands: &[DesignBodyRecipeOperand],
+        edge_operands: &[DesignEdgeOperand],
         component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
         histories: &[crate::history_records::AsmHistory],
     ) -> Self {
@@ -421,6 +422,7 @@ impl<'a> ScopeHistoryGraph<'a> {
                 scopes,
                 body_bindings,
                 body_recipe_operands,
+                edge_operands,
                 histories,
             ))
         };
@@ -1696,6 +1698,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         scopes,
         body_bindings,
         body_recipe_operands,
+        edge_operands,
         component_naming_spaces,
         histories,
     );

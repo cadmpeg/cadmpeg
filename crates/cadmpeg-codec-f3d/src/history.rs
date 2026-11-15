@@ -5268,6 +5268,7 @@ pub(crate) fn bind_scope_histories(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
+    edge_operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
     histories: &[AsmHistory],
 ) -> HashMap<String, String> {
     let mut candidates = Vec::new();
@@ -5350,6 +5351,33 @@ pub(crate) fn bind_scope_histories(
                         .clone()
                         .any(|face| active_brep_face_matches_source(face, source))
                 })
+            });
+            if let Some(history) = matching.next().filter(|_| matching.next().is_none()) {
+                insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+                continue;
+            }
+        }
+        // The faces that carry an edge operand's recipe reference lie in the
+        // BREP the recipe was evaluated against: two histories that hold the
+        // state pair differ by the BREP those faces name.
+        let operand_sources = edge_operands
+            .iter()
+            .filter(|operand| {
+                crate::ids::same_native_occurrence(&operand.id, &scope.id)
+                    && operand.scope_record_index == scope.record_index
+            })
+            .flat_map(|operand| &operand.candidate_faces)
+            .filter_map(|face| {
+                face.as_str()
+                    .strip_prefix("f3d:brep/")
+                    .and_then(|tail| tail.split_once('/'))
+                    .map(|(source, _)| source)
+            })
+            .collect::<HashSet<_>>();
+        if !operand_sources.is_empty() {
+            let mut matching = candidates.iter().filter(|history| {
+                historical_brep_source(&history.id)
+                    .is_some_and(|source| operand_sources.contains(source))
             });
             if let Some(history) = matching.next().filter(|_| matching.next().is_none()) {
                 insert_scope_history_binding(&mut resolved, &scope.id, &history.id);

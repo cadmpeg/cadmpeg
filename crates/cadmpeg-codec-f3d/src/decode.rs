@@ -1279,6 +1279,7 @@ fn design_projection_gaps(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        &native.design_edge_operands,
         &native.design_component_naming_spaces,
         &native.asm_histories,
     );
