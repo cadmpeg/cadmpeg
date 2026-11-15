@@ -711,6 +711,14 @@ fn arrangement_focus_bounds(entity: &cadmpeg_ir::sketches::SketchEntity) -> Opti
     }
 }
 
+/// Whether the box `outer` holds the box `inner` within `tolerance`.
+fn box_holds(outer: [Point2; 2], inner: [Point2; 2], tolerance: f64) -> bool {
+    outer[0].u <= inner[0].u + tolerance
+        && outer[0].v <= inner[0].v + tolerance
+        && outer[1].u + tolerance >= inner[1].u
+        && outer[1].v + tolerance >= inner[1].v
+}
+
 /// The sketch and entities restricted to the units that can change the faces
 /// of the `focus` curves. A unit is a profile loop or a curve in no loop. The
 /// box that holds the focus units grows over every unit whose box meets it
@@ -789,7 +797,8 @@ fn arrangement_focus(
         let hull = hull_of(&kept)?;
         let mut grew = false;
         for (index, unit) in units.iter().enumerate() {
-            if !kept[index] && bounds_meet(unit.1, hull, tolerance) {
+            let container = unit.2 && box_holds(unit.1, hull, tolerance);
+            if !kept[index] && !container && bounds_meet(unit.1, hull, tolerance) {
                 kept[index] = true;
                 grew = true;
             }
@@ -800,12 +809,7 @@ fn arrangement_focus(
     }
     let hull = hull_of(&kept)?;
     for (index, unit) in units.iter().enumerate() {
-        let holds = unit.2
-            && unit.1[0].u <= hull[0].u + tolerance
-            && unit.1[0].v <= hull[0].v + tolerance
-            && unit.1[1].u + tolerance >= hull[1].u
-            && unit.1[1].v + tolerance >= hull[1].v;
-        if holds {
+        if unit.2 && box_holds(unit.1, hull, tolerance) {
             kept[index] = true;
         }
     }
