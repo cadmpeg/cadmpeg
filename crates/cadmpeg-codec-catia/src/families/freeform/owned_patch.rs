@@ -514,6 +514,18 @@ pub(super) fn append(
         return Ok(None);
     }
     let sheets = sheet_group::patches(admission.context(), ir, stream, carriers, refusal)?;
+    if let Some(selected) = &sheets.selection {
+        for (&position, &index) in carriers {
+            if sources[selected.source]
+                .iter()
+                .any(|extent| extent.range().contains(&position))
+            {
+                if let Some(source) = ir.model.surfaces[index].source_object.as_mut() {
+                    source.geometry_role = Some(cadmpeg_ir::SourceGeometryRole::Support);
+                }
+            }
+        }
+    }
     let mut patches = sheets.patches;
     let sheet_members = sheets.members;
     let recovered = patches
