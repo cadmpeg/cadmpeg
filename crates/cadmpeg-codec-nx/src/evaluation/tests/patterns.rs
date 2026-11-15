@@ -49,6 +49,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
                 count: 3,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             })
             .unwrap(),
         }),

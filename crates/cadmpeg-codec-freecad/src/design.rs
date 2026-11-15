@@ -8561,6 +8561,7 @@ fn linear_pattern_axis(
             count,
             second: None,
             omitted_instances: Vec::new(),
+            symmetric: false,
         })
         .ok())
     } else {
