@@ -869,14 +869,18 @@ def collect_deserialize_functions(path):
     return functions
 
 
+DECLARATION_MACROS = (
+    "id_type|local_id_type|checked_scalar|checked_feature_geometry|checked_quantity"
+)
+
+
 def macro_templates(path, items):
     """Return recognized declaration macro templates found in ``path``."""
     source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
     templates = {}
     for definition in re.finditer(
-        r"\bmacro_rules\s*!\s*(?P<name>"
-        r"id_type|local_id_type|checked_scalar|checked_feature_geometry)\s*\{",
+        rf"\bmacro_rules\s*!\s*(?P<name>{DECLARATION_MACROS})\s*\{{",
         code,
     ):
         body_end = delimited_end(code, definition.end() - 1)
@@ -913,11 +917,23 @@ def macro_templates(path, items):
                 )
                 and macro_reader_contract(macro_body, "$raw")
             ),
+            # The template derives its reader through an unconditional
+            # conversion route; the generated declaration proves that route's
+            # target like any other `try_from` declaration.
+            "checked_quantity": bool(
+                template is not None
+                and derives_deserialize(template.attrs)
+                and any(
+                    key == "try_from" and not conditional
+                    for key, _, conditional in serde_options(template.attrs)
+                )
+            ),
         }
+        name = definition.group("name")
         if (
             template is not None
-            and has_serde_flag(template.attrs, "transparent")
-            and body_contract[definition.group("name")]
+            and (name == "checked_quantity" or has_serde_flag(template.attrs, "transparent"))
+            and body_contract[name]
         ):
             contract = template
         else:
@@ -925,7 +941,6 @@ def macro_templates(path, items):
             # definition with the same macro name in another module must not
             # silently certify this one.
             contract = None
-        name = definition.group("name")
         if name in templates:
             # Duplicate macro definitions are not a deterministic expansion
             # contract, even when both happen to look valid.
@@ -950,10 +965,7 @@ def macro_generated_items(path, items, templates=None):
     if templates is None:
         templates = macro_templates(path, items)
     generated = []
-    call_re = re.compile(
-        r"\b(?P<macro>"
-        r"id_type|local_id_type|checked_scalar|checked_feature_geometry)\s*!\s*\("
-    )
+    call_re = re.compile(rf"\b(?P<macro>{DECLARATION_MACROS})\s*!\s*\(")
     for call in call_re.finditer(code):
         end = delimited_end(code, call.end() - 1, "(", ")")
         if end is None:
@@ -1439,9 +1451,15 @@ SEQUENCE_TYPES = {
     "ByteBuf",
 }
 MAP_TYPES = {"HashMap", "BTreeMap", "IndexMap"}
+NONZERO_INTEGER_TYPES = {
+    f"NonZero{sign}{width}"
+    for sign in ("U", "I")
+    for width in ("8", "16", "32", "64", "128", "size")
+}
 QUALIFIED_SCALAR_TYPES = {
     *{f"core::primitive::{name}" for name in SCALAR_TYPES if name not in {"String"}},
     *{f"std::primitive::{name}" for name in SCALAR_TYPES if name not in {"String"}},
+    *{f"{root}::num::{name}" for root in ("core", "std") for name in NONZERO_INTEGER_TYPES},
     "alloc::string::String",
     "std::string::String",
 }
