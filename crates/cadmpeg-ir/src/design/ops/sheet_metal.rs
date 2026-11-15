@@ -743,16 +743,16 @@ pub enum RipPath {
         /// The face.
         face: SetSelection,
         /// The start point.
-        at: Construction<kinds::Point>,
+        at: Box<Construction<kinds::Point>>,
     },
     /// Straight in `face` between two points on its boundary.
     Line {
         /// The face.
         face: SetSelection,
         /// The first point.
-        from: Construction<kinds::Point>,
+        from: Box<Construction<kinds::Point>>,
         /// The second point.
-        to: Construction<kinds::Point>,
+        to: Box<Construction<kinds::Point>>,
     },
     /// Along each picked edge where two walls meet, cutting both walls back
     /// from it. It occurs only in a conversion's rip.
@@ -1338,7 +1338,7 @@ pub enum FlangeWidth {
     /// where `reversed`; it may run past the edge's end.
     FromReference {
         /// The reference point.
-        from: Construction<kinds::Point>,
+        from: Box<Construction<kinds::Point>>,
         /// The offset from the point.
         offset: Dimension<Length>,
         /// The width.

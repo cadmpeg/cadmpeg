@@ -245,7 +245,7 @@ pub(in crate::design::ops) fn joint_kind_samples() -> Vec<JointKind> {
     vec![
         JointKind::Motion {
             motion: joint_motion_samples().remove(0),
-            axes: Some(frame()),
+            axes: Some(Box::new(frame())),
             offset: joint_offset_samples().remove(0),
             limits: vec![axis_limits_samples().remove(0)],
             drives: vec![joint_drive_samples().remove(0)],
@@ -531,12 +531,12 @@ pub(in crate::design::ops) fn path_roll_control_samples() -> Vec<PathRollControl
     vec![
         PathRollControl::Free {},
         PathRollControl::UpVector {
-            vector: direction(),
+            vector: Box::new(direction()),
             axis: FrameAxis::Z,
             flip: Some(lit(true)),
         },
         PathRollControl::UpVector {
-            vector: direction(),
+            vector: Box::new(direction()),
             axis: FrameAxis::Z,
             flip: None,
         },

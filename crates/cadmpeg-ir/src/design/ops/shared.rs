@@ -641,7 +641,7 @@ pub enum JointKind {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_axes"
         )]
-        axes: Option<Construction<kinds::Frame>>,
+        axes: Option<Box<Construction<kinds::Frame>>>,
         /// The displacement of the second connector from the first.
         offset: JointOffset,
         /// The limits of the freedoms, at most one entry per axis.
@@ -1031,9 +1031,10 @@ pub enum Coupling {
 }
 
 /// A motor or spring on one degree of freedom of a motion joint. Its output is
-/// stiffness · (target_position − position) + damping · (target_velocity −
-/// velocity), limited to `max_force`, with positions in radians or millimetres,
-/// velocities per second, and every coefficient in canonical units.
+/// `stiffness · (target_position − position) + damping · (target_velocity −
+/// velocity)`, limited to `max_force`, with positions in radians or
+/// millimetres, velocities per second, and every coefficient in canonical
+/// units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1237,7 +1238,7 @@ pub enum PathRollControl {
     /// One axis held along a constructed direction.
     UpVector {
         /// The direction.
-        vector: Construction<kinds::Direction>,
+        vector: Box<Construction<kinds::Direction>>,
         /// The axis.
         axis: FrameAxis,
         /// Whether the axis is reversed.

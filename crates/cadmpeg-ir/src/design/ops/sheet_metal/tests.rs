@@ -387,12 +387,12 @@ fn rip_path_samples() -> Vec<RipPath> {
     vec![
         RipPath::Ruling {
             face: selection(1),
-            at: point_construction(),
+            at: Box::new(point_construction()),
         },
         RipPath::Line {
             face: selection(1),
-            from: point_construction(),
-            to: point_construction(),
+            from: Box::new(point_construction()),
+            to: Box::new(point_construction()),
         },
         RipPath::Edges(selection(1)),
         RipPath::Sketched {
@@ -698,7 +698,7 @@ fn flange_width_samples() -> Vec<FlangeWidth> {
             second: lit(nonnegative(0.5)),
         },
         FlangeWidth::FromReference {
-            from: point_construction(),
+            from: Box::new(point_construction()),
             offset: lit(length(-1.5)),
             width: lit(positive(2.0)),
             reversed: true,
