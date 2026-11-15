@@ -1,11 +1,14 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [
         {
@@ -403,201 +406,239 @@
           "sense": "reversed"
         }
       ],
+      "colliders": [],
       "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:0"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:1"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:10"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 10.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 10.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:11"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:2"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:3"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:4"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 10.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:5"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 10.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:6"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:7"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:8"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#part.ol:9"
         }
       ],
+      "declared_measures": [],
       "drawings": [],
       "edges": [
         {
@@ -749,8 +790,8 @@
         {
           "id": "pvz:model:face#part.ol:0:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#part.ol:0"
           },
           "sense": "forward",
@@ -760,8 +801,8 @@
         {
           "id": "pvz:model:face#part.ol:1:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#part.ol:1"
           },
           "sense": "forward",
@@ -771,8 +812,8 @@
         {
           "id": "pvz:model:face#part.ol:2:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#part.ol:2"
           },
           "sense": "forward",
@@ -782,8 +823,8 @@
         {
           "id": "pvz:model:face#part.ol:3:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#part.ol:3"
           },
           "sense": "forward",
@@ -793,8 +834,8 @@
         {
           "id": "pvz:model:face#part.ol:4:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#part.ol:4"
           },
           "sense": "forward",
@@ -804,8 +845,8 @@
         {
           "id": "pvz:model:face#part.ol:5:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#part.ol:5"
           },
           "sense": "forward",
@@ -813,7 +854,10 @@
           "surface": "pvz:model:surface#part.ol:5"
         }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
+      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -823,7 +867,8 @@
               "pvz:model:coedge#part.ol:0:2",
               "pvz:model:coedge#part.ol:0:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#part.ol:0:0",
           "id": "pvz:model:loop#part.ol:0"
@@ -836,7 +881,8 @@
               "pvz:model:coedge#part.ol:1:2",
               "pvz:model:coedge#part.ol:1:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#part.ol:1:0",
           "id": "pvz:model:loop#part.ol:1"
@@ -849,7 +895,8 @@
               "pvz:model:coedge#part.ol:2:2",
               "pvz:model:coedge#part.ol:2:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#part.ol:2:0",
           "id": "pvz:model:loop#part.ol:2"
@@ -862,7 +909,8 @@
               "pvz:model:coedge#part.ol:3:2",
               "pvz:model:coedge#part.ol:3:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#part.ol:3:0",
           "id": "pvz:model:loop#part.ol:3"
@@ -875,7 +923,8 @@
               "pvz:model:coedge#part.ol:4:2",
               "pvz:model:coedge#part.ol:4:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#part.ol:4:0",
           "id": "pvz:model:loop#part.ol:4"
@@ -888,12 +937,14 @@
               "pvz:model:coedge#part.ol:5:2",
               "pvz:model:coedge#part.ol:5:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#part.ol:5:0",
           "id": "pvz:model:loop#part.ol:5"
         }
       ],
+      "mass_properties": [],
       "occurrences": [
         {
           "id": "pvz:model:occurrence#0",
@@ -904,7 +955,7 @@
           },
           "prototype": {
             "definition": "pvz:model:definition#0",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -943,7 +994,7 @@
           },
           "prototype": {
             "definition": "pvz:model:definition#1",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -989,7 +1040,7 @@
           "id": "pvz:model:pcurve#part.ol:0:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1007,7 +1058,7 @@
           "id": "pvz:model:pcurve#part.ol:0:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1025,7 +1076,7 @@
           "id": "pvz:model:pcurve#part.ol:0:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1043,7 +1094,7 @@
           "id": "pvz:model:pcurve#part.ol:0:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1061,7 +1112,7 @@
           "id": "pvz:model:pcurve#part.ol:1:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1079,7 +1130,7 @@
           "id": "pvz:model:pcurve#part.ol:1:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1097,7 +1148,7 @@
           "id": "pvz:model:pcurve#part.ol:1:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1115,7 +1166,7 @@
           "id": "pvz:model:pcurve#part.ol:1:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1133,7 +1184,7 @@
           "id": "pvz:model:pcurve#part.ol:2:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1151,7 +1202,7 @@
           "id": "pvz:model:pcurve#part.ol:2:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1169,7 +1220,7 @@
           "id": "pvz:model:pcurve#part.ol:2:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1187,7 +1238,7 @@
           "id": "pvz:model:pcurve#part.ol:2:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1205,7 +1256,7 @@
           "id": "pvz:model:pcurve#part.ol:3:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1223,7 +1274,7 @@
           "id": "pvz:model:pcurve#part.ol:3:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1241,7 +1292,7 @@
           "id": "pvz:model:pcurve#part.ol:3:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1259,7 +1310,7 @@
           "id": "pvz:model:pcurve#part.ol:3:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1277,7 +1328,7 @@
           "id": "pvz:model:pcurve#part.ol:4:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1295,7 +1346,7 @@
           "id": "pvz:model:pcurve#part.ol:4:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1313,7 +1364,7 @@
           "id": "pvz:model:pcurve#part.ol:4:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1331,7 +1382,7 @@
           "id": "pvz:model:pcurve#part.ol:4:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1349,7 +1400,7 @@
           "id": "pvz:model:pcurve#part.ol:5:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1367,7 +1418,7 @@
           "id": "pvz:model:pcurve#part.ol:5:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1385,7 +1436,7 @@
           "id": "pvz:model:pcurve#part.ol:5:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1403,11 +1454,14 @@
           "id": "pvz:model:pcurve#part.ol:5:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         }
       ],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [
         {
           "id": "pvz:model:point#part.ol:0",
@@ -1480,18 +1534,23 @@
       "procedural_surfaces": [],
       "product_definitions": [
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "pvz:model:definition#0",
           "kind": "part",
           "native_ref": "definition 0",
+          "sketches": [],
           "source_name": "TOP.ASM"
         },
         {
           "bodies": [
             "pvz:model:body#part.ol"
           ],
+          "bom_properties": {},
           "id": "pvz:model:definition#1",
           "kind": "part",
           "native_ref": "definition 1",
+          "sketches": [],
           "source_name": "PART.PRT"
         }
       ],
@@ -1504,6 +1563,7 @@
           ]
         }
       ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [
         {
@@ -1540,6 +1600,8 @@
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -1547,168 +1609,187 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#part.ol:0"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "rational",
-              "rows": [
-                [
-                  {
-                    "point": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 10.0
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "rational",
+                "rows": [
+                  [
+                    {
+                      "point": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 10.0
+                      },
+                      "weight": 2.0
                     },
-                    "weight": 2.0
-                  },
-                  {
-                    "point": {
-                      "x": 0.0,
-                      "y": 10.0,
-                      "z": 10.0
+                    {
+                      "point": {
+                        "x": 0.0,
+                        "y": 10.0,
+                        "z": 10.0
+                      },
+                      "weight": 2.0
+                    }
+                  ],
+                  [
+                    {
+                      "point": {
+                        "x": 10.0,
+                        "y": 0.0,
+                        "z": 10.0
+                      },
+                      "weight": 2.0
                     },
-                    "weight": 2.0
-                  }
-                ],
-                [
-                  {
-                    "point": {
-                      "x": 10.0,
-                      "y": 0.0,
-                      "z": 10.0
-                    },
-                    "weight": 2.0
-                  },
-                  {
-                    "point": {
-                      "x": 10.0,
-                      "y": 10.0,
-                      "z": 10.0
-                    },
-                    "weight": 2.0
-                  }
+                    {
+                      "point": {
+                        "x": 10.0,
+                        "y": 10.0,
+                        "z": 10.0
+                      },
+                      "weight": 2.0
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              0.0,
-              0.0,
-              0.01,
-              0.01
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              0.0,
-              0.0,
-              0.01,
-              0.01
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                0.0,
+                0.0,
+                0.01,
+                0.01
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                0.0,
+                0.0,
+                0.01,
+                0.01
+              ],
+              "v_periodic": false
+            }
           },
           "id": "pvz:model:surface#part.ol:1"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#part.ol:2"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "pvz:model:surface#part.ol:3"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "pvz:model:surface#part.ol:4"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#part.ol:5"
@@ -1766,17 +1847,19 @@
         "structure_member": "model.pvs"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "pvs_signature": "PV-PVS0304"
             },
             "dialect": "pvz:pvs-0304"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -1784,40 +1867,50 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "pvs_signature": "PV-PVS0304"
           },
           "dialect": "pvz:pvs-0304"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "structure.bounds-not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "pvz",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "structure.bounds-not-transferred",
+            "kind": "metadata_not_transferred",
+            "namespace": "pvz"
+          }
         },
         "message": "1 geometry elements carry bounds; the model has no definition bounds field, so the bounds were not transferred (PVZ-27)",
         "severity": "info"
       },
       {
         "code": {
-          "code": "attributes.appearance-tail-undecoded",
-          "kind": "material_not_transferred",
-          "namespace": "pvz",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "attributes.appearance-tail-undecoded",
+            "kind": "material_not_transferred",
+            "namespace": "pvz"
+          }
         },
         "message": "1 appearance references carry a 17-byte tail whose meaning is an open item (PVZ-12); the tails were not transferred",
         "severity": "info"
@@ -1826,7 +1919,10 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -1834,463 +1930,564 @@
       "exactness": {
         "pvz:model:body#part.ol": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:0:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:0:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:0:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:0:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:1:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:1:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:1:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:1:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:2:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:2:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:2:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:2:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:3:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:3:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:3:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:3:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:4:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:4:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:4:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:4:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:5:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:5:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:5:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#part.ol:5:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:10": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:11": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:6": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:7": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:8": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#part.ol:9": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:10": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:11": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:6": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:7": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:8": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#part.ol:9": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#part.ol:0:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#part.ol:1:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#part.ol:2:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#part.ol:3:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#part.ol:4:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#part.ol:5:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#part.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#part.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#part.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#part.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#part.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#part.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:0:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:0:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:0:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:0:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:1:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:1:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:1:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:1:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:2:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:2:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:2:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:2:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:3:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:3:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:3:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:3:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:4:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:4:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:4:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:4:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:5:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:5:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:5:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#part.ol:5:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#part.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#part.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#part.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#part.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#part.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#part.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#part.ol:6": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#part.ol:7": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:region#part.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:shell#part.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#part.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#part.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#part.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#part.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#part.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#part.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:vertex#part.ol:0": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#part.ol:1": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#part.ol:2": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#part.ol:3": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#part.ol:4": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#part.ol:5": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#part.ol:6": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#part.ol:7": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -2745,6 +2942,7 @@
           "tag": "0x13"
         }
       }
-    }
+    },
+    "retained_records": {}
   }
 }

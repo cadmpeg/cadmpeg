@@ -66,7 +66,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     };
     assert_eq!(
         serde_json::to_value(refusal).expect("serialize refusal")["refusal"],
-        serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "format": "step"}})
+        serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "value": "step"}})
     );
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
@@ -378,7 +378,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     let format = source.format().to_owned();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": format},
+            "identity": {"kind": "unclassified", "format": format},
             "attributes": source.attributes,
         }))
         .unwrap(),

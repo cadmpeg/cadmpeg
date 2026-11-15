@@ -1,8 +1,12 @@
 {
-  "ir_version": "10",
+  "fragment": false,
+  "ir_version": "11",
   "decode_depth": "full",
   "units": {
-    "length": "millimeter"
+    "length": "millimeter",
+    "angle": "radian",
+    "mass": "kilogram",
+    "time": "second"
   },
   "tolerances": {
     "linear": 1e-6,
@@ -22,21 +26,24 @@
       {
         "id": "synthetic:v2:surface#sum-cache",
         "geometry": {
-          "kind": "plane",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "normal": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 1.0
-          },
-          "u_axis": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       }
@@ -45,32 +52,38 @@
       {
         "id": "synthetic:v2:curve#u",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       },
-      {
+  ÿÿÿÿ{
         "id": "synthetic:v2:curve#v",
         "geometry": {
-         ÿÿÿÿnd": "line",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
           }
         }
       }
@@ -170,7 +183,8 @@
                 }
               ]
             }
-          ]
+          ],
+          "symmetries": []
         }
       }
     ],
@@ -189,7 +203,7 @@
             "z": 0.0
           },
           "cache": {
-            "layout": "legacy",
+            "kind": "legacy",
             "cache": {
               "fit_tolerance": 1e-9
             }
@@ -198,7 +212,10 @@
       }
     ],
     "procedural_curves": [],
+    "assets": [],
     "features": [],
+    "feature_input_topologies": [],
+    "feature_result_topologies": [],
     "configurations": [],
     "parameters": [],
     "sketches": [],
@@ -206,6 +223,7 @@
     "sketch_constraints": [],
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
     "spreadsheets": [],
     "product_definitions": [],
     "occurrences": [],
@@ -219,7 +237,17 @@
     "appearance_bindings": [],
     "attributes": [],
     "pmi": [],
-    "presentation_layers": []
+    "presentation_layers": [],
+    "physical_materials": [],
+    "mass_properties": [],
+    "rigid_bodies": [],
+    "colliders": [],
+    "articulations": [],
+    "physics_scenes": [],
+    "solver_settings": [],
+    "declared_measures": [],
+    "point_clouds": [],
+    "history_bodies": []
   },
   "native": {}
 }

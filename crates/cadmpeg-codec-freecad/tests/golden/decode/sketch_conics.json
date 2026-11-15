@@ -1,11 +1,14 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "fragment": false,
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
       "bodies": [
         {
@@ -21,182 +24,212 @@
         }
       ],
       "coedges": [],
+      "colliders": [],
       "configurations": [],
       "curves": [
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": -0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 8.0,
-            "ref_direction": {
-              "x": 0.9323273456060345,
-              "y": 0.361615431964962,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": -0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 8.0,
+              "ref_direction": {
+                "x": 0.9323273456060345,
+                "y": 0.361615431964962,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.9872296614027263,
-              "y": -0.1593034702906954,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 12.0,
-              "y": 10.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.9872296614027263,
+                "y": -0.1593034702906954,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 12.0,
+                "y": 10.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.7373852133281609,
-              "y": 0.6754724621810889,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 6.368670388392447,
-              "y": 4.841491245888316,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.7373852133281609,
+                "y": 0.6754724621810889,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 6.368670388392447,
+                "y": 4.841491245888316,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": -0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 30.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "ellipse",
-            "major_direction": {
-              "x": 0.8628070705147609,
-              "y": 0.505533341204847,
-              "z": 0.0
-            },
-            "major_radius": 10.999999999999998,
-            "minor_radius": 4.000000000000001
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": -0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 30.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "ellipse",
+              "major_direction": {
+                "x": 0.8628070705147609,
+                "y": 0.505533341204847,
+                "z": 0.0
+              },
+              "major_radius": 10.999999999999998,
+              "minor_radius": 4.000000000000001
+            }
           },
           "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": -0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 30.0,
-              "z": 0.0
-            },
-            "kind": "ellipse",
-            "major_direction": {
-              "x": 0.7583618759905084,
-              "y": 0.6518337710215366,
-              "z": 0.0
-            },
-            "major_radius": 9.0,
-            "minor_radius": 2.9999999999999973
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": -0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 30.0,
+                "z": 0.0
+              },
+              "kind": "ellipse",
+              "major_direction": {
+                "x": 0.7583618759905084,
+                "y": 0.6518337710215366,
+                "z": 0.0
+              },
+              "major_radius": 9.0,
+              "minor_radius": 2.9999999999999973
+            }
           },
           "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": -0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 30.0,
-              "y": 30.0,
-              "z": 0.0
-            },
-            "kind": "hyperbola",
-            "major_direction": {
-              "x": 0.8915682881953287,
-              "y": 0.4528862853790689,
-              "z": 0.0
-            },
-            "major_radius": 7.000000000000004,
-            "minor_radius": 3.0000000000000027
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": -0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 30.0,
+                "y": 30.0,
+                "z": 0.0
+              },
+              "kind": "hyperbola",
+              "major_direction": {
+                "x": 0.8915682881953287,
+                "y": 0.4528862853790689,
+                "z": 0.0
+              },
+              "major_radius": 7.000000000000004,
+              "minor_radius": 3.0000000000000027
+            }
           },
           "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "focal_distance": 3.9999999999999996,
-            "kind": "parabola",
-            "major_direction": {
-              "x": 0.7838216658808489,
-              "y": 0.6209859870365603,
-              "z": -0.0
-            },
-            "vertex": {
-              "x": 60.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "focal_distance": 3.9999999999999996,
+              "kind": "parabola",
+              "major_direction": {
+                "x": 0.7838216658808489,
+                "y": 0.6209859870365603,
+                "z": -0.0
+              },
+              "vertex": {
+                "x": 60.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:7",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         }
       ],
+      "declared_measures": [],
       "drawings": [],
       "edges": [
         {
@@ -292,15 +325,23 @@
         }
       ],
       "faces": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [
         {
           "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "sketch": "fcstd:design:sketch#ConicWitness",
-              "space": "planar"
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#ConicWitness"
+                }
+              }
             }
           },
+          "dependencies": [],
           "id": "fcstd:design:feature#ConicWitness",
           "name": "ConicWitness",
           "native_ref": "fcstd:native:object#ConicWitness",
@@ -308,19 +349,24 @@
           "outputs": [
             "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1"
           ],
+          "source_content": [],
           "source_properties": {
             "MapMode": "0",
             "Visibility": "true"
           },
-          "source_tag": "Sketcher::SketchObject",
-          "suppressed": null
+          "source_tag": "Sketcher::SketchObject"
         }
       ],
+      "history_bodies": [],
       "loops": [],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
       "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
+      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1",
@@ -331,6 +377,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
@@ -343,6 +390,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
@@ -355,6 +403,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
@@ -367,6 +416,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
@@ -379,6 +429,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
@@ -391,6 +442,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
@@ -403,6 +455,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
@@ -415,6 +468,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
@@ -427,6 +481,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         },
@@ -439,6 +494,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ConicWitness"
           }
         }
@@ -485,6 +541,7 @@
           ]
         }
       ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
       "shells": [
         {
@@ -550,6 +607,7 @@
       "sketch_entities": [
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 0.0,
@@ -566,6 +624,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 12.0,
@@ -583,6 +642,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": -2.0504872658201823,
@@ -600,6 +660,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "bounds": [
               5.863185307179586,
@@ -620,6 +681,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 0.0,
@@ -636,6 +698,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "bounds": [
               -0.63,
@@ -656,6 +719,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "axis_angle": 0.6700000000000007,
             "bounds": [
@@ -745,6 +809,8 @@
           ]
         }
       ],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
@@ -853,7 +919,7 @@
           "physical_ledger": "c3fe2f7131da19d4ff368f764390c3a6de884ddb603b301a6ae73e7f71a53255",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "a3f2563079b2c8e7d779dd8a501568cf48a4393e57b996586c2396425690a182",
-          "shape_payloads": "9ff907d131a3b203cd6ace078cd764701e76e4dca6a0a9841ee03ccb4e37fe95",
+          "shape_payloads": "0077e52bf1954feea1a50e2286bf089aec3257b7752dde8151dc9f42a5e21471",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
       },
@@ -962,11 +1028,12 @@
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_version": "1",
               "program_version": "1.1R20260414 (Git shallow)",
@@ -974,7 +1041,8 @@
             },
             "dialect": "fcstd:schema-4"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -982,16 +1050,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_version": "1",
             "program_version": "1.1R20260414 (Git shallow)",
@@ -999,7 +1072,8 @@
           },
           "dialect": "fcstd:schema-4"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [
@@ -1013,10 +1087,17 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

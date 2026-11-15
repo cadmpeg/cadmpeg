@@ -9,15 +9,15 @@ fn vertex_blend_twists_preserve_exact_forms_and_reject_count_conflicts() {
     for (value, expected) in [
         (
             VertexBlendTwists::None {},
-            serde_json::json!({ "form": "none" }),
+            serde_json::json!({ "kind": "none"}),
         ),
         (
             VertexBlendTwists::One { twist: point },
-            serde_json::json!({ "form": "one", "twist": point }),
+            serde_json::json!({ "kind": "one", "twist": point }),
         ),
         (
             VertexBlendTwists::Two { twists: [point; 2] },
-            serde_json::json!({ "form": "two", "twists": [point, point] }),
+            serde_json::json!({ "kind": "two", "twists": [point, point] }),
         ),
     ] {
         assert_eq!(serde_json::to_value(&value).unwrap(), expected);
@@ -30,13 +30,13 @@ fn vertex_blend_twists_preserve_exact_forms_and_reject_count_conflicts() {
     // exactly the entries it carries, and the native integer forms 0, 1 and 3
     // are the names none, one and two.
     for invalid in [
-        serde_json::json!({ "form": "none", "twist": point }),
-        serde_json::json!({ "form": "one", "twists": [point] }),
-        serde_json::json!({ "form": "one" }),
-        serde_json::json!({ "form": "two", "twists": [point] }),
-        serde_json::json!({ "form": "two", "twists": [point, point, point] }),
-        serde_json::json!({ "form": 2, "twists": [point, point] }),
-        serde_json::json!({ "form": 1, "twists": [point] }),
+        serde_json::json!({ "kind": "none", "twist": point }),
+        serde_json::json!({ "kind": "one", "twists": [point] }),
+        serde_json::json!({ "kind": "one"}),
+        serde_json::json!({ "kind": "two", "twists": [point] }),
+        serde_json::json!({ "kind": "two", "twists": [point, point, point] }),
+        serde_json::json!({ "kind": 2, "twists": [point, point] }),
+        serde_json::json!({ "kind": 1, "twists": [point] }),
     ] {
         assert!(serde_json::from_value::<VertexBlendTwists>(invalid).is_err());
     }
@@ -49,13 +49,13 @@ fn vertex_blend_circle_keeps_the_flat_form_and_twists_fields() {
         "kind": "circle",
         "curve": "test:model:curve#0",
         "curve_endpoints": [null, null],
-        "twists": {"form": "one", "twist": {"x": 2.0, "y": 3.0, "z": 4.0}},
+        "twists": {"kind": "one", "twist": {"x": 2.0, "y": 3.0, "z": 4.0}},
         "parameters": [0.0, 1.0],
         "sense": true,
     });
     let definition: VertexBlendBoundaryGeometry = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
     let mut invalid = wire;
-    invalid["twists"]["form"] = serde_json::json!("two");
+    invalid["twists"]["kind"] = serde_json::json!("two");
     assert!(serde_json::from_value::<VertexBlendBoundaryGeometry>(invalid).is_err());
 }

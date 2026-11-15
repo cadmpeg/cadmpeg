@@ -309,7 +309,7 @@ struct ExportReportProbe {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "payload", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 enum ExportIdentityProbe {
     Cadir {},
     Native { target: String },
@@ -336,7 +336,7 @@ struct DecodeReportProbe {
 #[derive(Deserialize)]
 struct DecodeTransferProbe {
     #[serde(default)]
-    transfer: Option<String>,
+    kind: Option<String>,
     #[serde(default)]
     geometry_transferred: Option<bool>,
 }
@@ -373,16 +373,22 @@ struct LossProbe {
     message: Option<String>,
 }
 
-/// Wire loss code: `{ namespace, code, kind }`; `kind` is not projected.
+/// Wire loss code: `{ kind, value: { namespace, code, kind } }`; the loss
+/// kind is not projected.
 #[derive(Deserialize)]
 struct LossCodeProbe {
+    value: NamespacedLossCodeProbe,
+}
+
+#[derive(Deserialize)]
+struct NamespacedLossCodeProbe {
     namespace: String,
     code: String,
 }
 
 impl LossCodeProbe {
     fn display(&self) -> String {
-        format!("{}/{}", self.namespace, self.code)
+        format!("{}/{}", self.value.namespace, self.value.code)
     }
 }
 
@@ -412,12 +418,12 @@ mod tests {
                 "primary": {
                     "dialect": "f3d:archive-2",
                     "declared": {"manifest_version": "2"},
-                    "admission": "admitted"
+                    "admission": {"kind": "admitted"}
                 },
                 "extra": [{
                     "dialect": "acis:sab-22300",
                     "declared": {"save_format": "22300"},
-                    "admission": {"unverified": {"using": "sab-22200"}},
+                    "admission": {"kind": "unverified", "using": "sab-22200"},
                     "instance": "member:model.sab"
                 }]
             }
@@ -792,7 +798,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                     if let Some(transfer) = decode
                         .transfer
                         .as_ref()
-                        .and_then(|state| state.transfer.as_ref())
+                        .and_then(|state| state.kind.as_ref())
                     {
                         rows.push(("decode_transfer".to_owned(), cell(transfer).into()));
                     }

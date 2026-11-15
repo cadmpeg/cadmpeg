@@ -23,7 +23,8 @@ fn model(start: f64, normal: f64) -> Model {
             "origin":{"x":0.0,"y":0.0,"z":start},
             "normal":{"x":0.0,"y":0.0,"z":normal},
             "u_axis":{"x":1.0,"y":0.0,"z":0.0}
-        }}
+        }},
+        "profiles":[]
     }))
     .expect("synthetic frame");
     let corners = [(2.0, 2.0), (8.0, 2.0), (8.0, 8.0), (2.0, 8.0)];
@@ -36,6 +37,7 @@ fn model(start: f64, normal: f64) -> Model {
         model.sketch_entities.push(
             serde_json::from_value(json!({
                 "id":format!("synthetic:travel:entity#{i}"),"sketch":sketch.id,
+                "construction":false,"endpoint_refs":[],
                 "geometry":{"kind":"line","start":{"u":a.0,"v":a.1*normal},
                 "end":{"u":b.0,"v":b.1*normal}}
             }))
@@ -221,7 +223,9 @@ fn active_state_retention_preserves_inactive_configuration_travel() {
     for active in [true, false] {
         let mut configuration: cadmpeg_ir::features::DesignConfiguration =
             serde_json::from_value(json!({
-                "id":format!("synthetic:travel:configuration#{active}"),"active":active
+                "id":format!("synthetic:travel:configuration#{active}"),"active":active,
+                "ordinal":0,"feature_states":{},"parameter_overrides":{},"parameter_values":{},
+                "properties":{}
             }))
             .expect("synthetic configuration");
         configuration
