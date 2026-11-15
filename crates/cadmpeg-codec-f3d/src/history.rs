@@ -5912,7 +5912,6 @@ fn bind_historical_face_operand_candidates<'a>(
         feature_family == Some(crate::design::DesignFeatureFamily::Extrude),
     );
     let has_extrude_profile_group = roles.profile;
-    let legacy_group = roles.legacy;
     let has_extrude_start_group = roles.start_or_profile();
     // A closed-edge recipe face is a separate case: the checks that read the
     // recipe face as a settled selection ignore it.
@@ -6243,7 +6242,8 @@ fn bind_historical_face_operand_candidates<'a>(
         // face fans around both of its ends. An earlier selection that no
         // check withdrew stays: the recipe fills an empty selection only.
         if recipe_fill::recipe_face_replaces_selection(
-            operand.has_closed_edge_node(),
+            operand.has_closed_edge_node()
+                && feature_family == Some(crate::design::DesignFeatureFamily::Extrude),
             operand.resolved_face_slots.is_empty(),
             !(has_extrude_start_group && changed_faces.contains(&face)),
         ) {
@@ -6268,16 +6268,14 @@ fn bind_historical_face_operand_candidates<'a>(
             }
         }
     }
-    if has_extrude_start_group {
-        recipe_fill::drop_unchanged_closed_edge_selection(
+    if has_extrude_profile_group {
+        recipe_fill::drop_unconsumed_closed_edge_profile(
             operand,
             &recipe_fill::Transition {
                 state,
                 previous_state_id,
                 states,
             },
-            &changed_faces,
-            has_extrude_profile_group || legacy_group,
             recipe_fill::is_new_body_extrude(scope),
         );
     }

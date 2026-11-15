@@ -39,77 +39,24 @@ pub(super) struct Transition<'a> {
     pub(super) states: &'a HashMap<i64, Option<&'a AsmDeltaState>>,
 }
 
-/// Drop the selection of a closed-edge Extrude start or profile operand that
-/// holds a face the transition left unchanged. The Extrude joins to or cuts
-/// from its start face, so the transition changes it, and it consumes its
-/// profile face, so the transition deletes that face. An Extrude that makes a
-/// new body leaves its profile face in place.
-pub(super) fn drop_unchanged_closed_edge_selection(
+/// Drop the selection of a closed-edge Extrude profile operand that holds a
+/// face the transition did not delete. The sweep consumes its profile face, so
+/// the transition deletes that face. An Extrude that makes a new body leaves
+/// its profile face in place.
+pub(super) fn drop_unconsumed_closed_edge_profile(
     operand: &mut DesignFaceOperand,
     transition: &Transition<'_>,
-    changed_faces: &HashSet<i64>,
-    profile: bool,
     new_body: bool,
 ) {
     if !operand.has_closed_edge_node() || new_body {
         return;
     }
-    let required = if profile {
-        let Some(deleted) = deleted_faces(transition) else {
-            return;
-        };
-        deleted
-    } else {
-        changed_faces.clone()
+    let Some(deleted) = deleted_faces(transition) else {
+        return;
     };
-    if selection_has_unchanged_face(&operand.resolved_face_slots, &required) {
+    if selection_has_unchanged_face(&operand.resolved_face_slots, &deleted) {
         operand.resolved_face_slots.clear();
         operand.resolved_active_face = None;
-    }
-}
-
-/// The Extrude roles of the group that holds a face operand.
-pub(super) struct ExtrudeOperandRoles {
-    pub(super) profile: bool,
-    start: bool,
-    /// The group is not a construction operand group of its scope: a legacy
-    /// Extrude selection group.
-    pub(super) legacy: bool,
-}
-
-impl ExtrudeOperandRoles {
-    pub(super) fn of(
-        operand: &DesignFaceOperand,
-        scope: &DesignParameterScope,
-        groups: &[DesignConstructionOperandGroup],
-        extrude: bool,
-    ) -> Self {
-        let mut roles = Self {
-            profile: false,
-            start: false,
-            legacy: false,
-        };
-        let Some(record) = operand.group_record_index().filter(|_| extrude) else {
-            return roles;
-        };
-        let stream = crate::ids::native_stream(&operand.id);
-        let mut found = false;
-        for group in groups.iter().filter(|group| {
-            crate::ids::native_stream(&group.id) == stream
-                && group.scope_record_index == scope.record_index
-                && group.record_index == record
-        }) {
-            found = true;
-            roles.profile |= group.extrude_role() == Some(DesignExtrudeOperandRole::Profile);
-            roles.start |= group.extrude_face_role() == Some(DesignExtrudeFaceRole::Start);
-        }
-        roles.legacy = !found;
-        roles
-    }
-
-    /// A start face, a profile face, or a legacy selection.
-    pub(super) fn start_or_profile(&self) -> bool {
-        self.profile || self.start || self.legacy
     }
 }
 
