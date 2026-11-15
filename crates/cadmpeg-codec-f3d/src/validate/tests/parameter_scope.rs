@@ -96,14 +96,21 @@ fn offset_faces_counted_member_runs_validate() {
                 continue;
             }
             assert!(findings(&native).is_empty(), "{count} {count_offset}");
-            let mut changed = native.clone();
-            if let crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(Some(
-                operation,
-            )) = changed.design_parameter_scopes[0].payload_mut()
-            {
-                operation.distance_record_index = 301;
-            }
-            assert_eq!(findings(&changed).len(), 1);
+            let with_distance = |distance_record_index| {
+                let mut changed = native.clone();
+                if let crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(Some(
+                    operation,
+                )) = changed.design_parameter_scopes[0].payload_mut()
+                {
+                    operation.distance_record_index = distance_record_index;
+                }
+                changed
+            };
+            assert!(
+                findings(&with_distance(301)).is_empty(),
+                "{count} {count_offset}"
+            );
+            assert_eq!(findings(&with_distance(302)).len(), 1);
             native.design_record_headers.pop();
             assert_eq!(findings(&native).len(), 1);
         }
