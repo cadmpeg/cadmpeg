@@ -5,6 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use super::AsmDeltaState;
 
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::topology::face::DesignFaceOperand;
 
 /// Whether any selected face slot is absent from the faces the transition
@@ -37,21 +39,16 @@ pub(super) struct Transition<'a> {
 /// Drop the selection of a closed-edge Extrude start or profile operand that
 /// holds a face the transition left unchanged. The Extrude joins to or cuts
 /// from its start face, so the transition changes it, and it consumes its
-/// profile face, so the transition deletes that face. An Extrude that inserts
-/// a body leaves its profile face in place.
+/// profile face, so the transition deletes that face. An Extrude that makes a
+/// new body leaves its profile face in place.
 pub(super) fn drop_unchanged_closed_edge_selection(
     operand: &mut DesignFaceOperand,
     transition: &Transition<'_>,
     changed_faces: &HashSet<i64>,
     profile: bool,
+    new_body: bool,
 ) {
-    if !operand.has_closed_edge_node()
-        || transition
-            .state
-            .transition
-            .as_ref()
-            .is_some_and(|step| !step.topology.bodies.inserted.is_empty())
-    {
+    if !operand.has_closed_edge_node() || new_body {
         return;
     }
     let required = if profile {
@@ -66,6 +63,17 @@ pub(super) fn drop_unchanged_closed_edge_selection(
         operand.resolved_face_slots.clear();
         operand.resolved_active_face = None;
     }
+}
+
+/// Whether the scope is an Extrude that makes a new body.
+pub(super) fn is_new_body_extrude(scope: &DesignParameterScope) -> bool {
+    matches!(
+        scope.payload(),
+        DesignScopePayload::Extrude(Some(extrude))
+            if extrude.extrude_prologue.as_ref().is_some_and(|prologue| {
+                prologue.operation() == DesignExtrudeOperation::NewBody
+            })
+    )
 }
 
 fn deleted_faces(transition: &Transition<'_>) -> Option<HashSet<i64>> {

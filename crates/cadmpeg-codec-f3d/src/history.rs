@@ -6282,6 +6282,7 @@ fn bind_historical_face_operand_candidates<'a>(
             },
             &changed_faces,
             has_extrude_profile_group,
+            recipe_fill::is_new_body_extrude(scope),
         );
     }
     Ok(())
