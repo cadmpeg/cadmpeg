@@ -1659,6 +1659,130 @@ pub(super) fn exact_base_feature_construction(
         }))
     })()
     .transpose()
+    .map(|construction| {
+        construction.or_else(|| {
+            usize::try_from(scope.byte_offset())
+                .ok()
+                .and_then(|start| exact_suffix_result_bodies(bytes, scope, start))
+        })
+    })
+}
+
+/// Kind-offset increase per body of a suffix result-body frame: one entity
+/// entry, one repeated entry and one result entry.
+const SUFFIX_RESULT_BODY_KIND_STRIDE: usize = 37;
+/// Kind offset of a suffix result-body frame without bodies.
+const SUFFIX_RESULT_BODY_KIND_BASE: usize = 169;
+/// Distance from the null GUID length field to the scope kind.
+const SUFFIX_RESULT_BODY_GUID_COUNT_BEFORE_KIND: usize = 102;
+
+/// The suffix result-body form: u32 `N` at offset 20, `N` body entries, the
+/// marked null reference, u32 `N`, the repeated body suffixes, one zero byte,
+/// the metadata record with a six-byte field, u32 `N`, and `N` result entries.
+fn exact_suffix_result_bodies(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<DesignBaseFeatureConstruction> {
+    if scope.kind() != scope::DesignFeatureKind::BaseFeature
+        || bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)?
+            != [0; 8]
+        || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
+    {
+        return None;
+    }
+    let body_count = usize::try_from(View::u32_le_at(
+        bytes,
+        start + result_body::COMBINED_BODY_REFERENCE_COUNT,
+    )?)
+    .ok()?;
+    let kind_offset =
+        usize::try_from(scope.kind_offset().checked_sub(scope.byte_offset())?).ok()?;
+    if body_count == 0
+        || kind_offset
+            != SUFFIX_RESULT_BODY_KIND_BASE
+                .checked_add(body_count.checked_mul(SUFFIX_RESULT_BODY_KIND_STRIDE)?)?
+    {
+        return None;
+    }
+    let mut cursor = start + result_body::LEN;
+    let mut bodies = Vec::new();
+    for _ in 0..body_count {
+        bodies.push(read_base_feature_entry_at(bytes, &mut cursor)?);
+    }
+    let flagged = marked_null_reference_flag(bytes, cursor)?;
+    let null_reference_flag_offset = if flagged {
+        Some(u64::try_from(cursor + null_count::NULL_REFERENCE_FLAG).ok()?)
+    } else {
+        None
+    };
+    if usize::try_from(View::u32_le_at(bytes, cursor + null_count::BODY_COUNT)?).ok()? != body_count
+    {
+        return None;
+    }
+    cursor += null_count::LEN;
+    let mut repeated_fields = Vec::new();
+    for body in &bodies {
+        if bytes.get(cursor + compact_entry::BODY_MARKER) != Some(&1)
+            || u64::from(View::u32_le_at(
+                bytes,
+                cursor + compact_entry::BODY_ENTITY_SUFFIX,
+            )?) != body.value
+        {
+            return None;
+        }
+        repeated_fields.push(
+            bytes
+                .get(cursor + compact_entry::BODY_FIELD..cursor + compact_entry::LEN)?
+                .try_into()
+                .ok()?,
+        );
+        cursor += compact_entry::LEN;
+    }
+    if bytes.get(cursor) != Some(&0) || bytes.get(cursor + 1) != Some(&1) {
+        return None;
+    }
+    cursor += 1;
+    let metadata_record = u32::try_from(View::u64_le_at(bytes, cursor + 1)?).ok()?;
+    let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
+    let metadata_field = bytes.get(cursor + 9..cursor + 15)?.to_vec();
+    cursor += 15;
+    if usize::try_from(View::u32_le_at(bytes, cursor)?).ok()? != body_count {
+        return None;
+    }
+    cursor += 4;
+    let mut results = Vec::new();
+    for _ in 0..body_count {
+        if bytes.get(cursor) != Some(&1) {
+            return None;
+        }
+        results.push(DesignBaseFeatureEntry {
+            value: View::u32_le_at(bytes, cursor + 1)?,
+            offset: u64::try_from(cursor + 1).ok()?,
+            field: bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?,
+        });
+        cursor += 11;
+    }
+    let guid_count_at = start
+        .checked_add(kind_offset)?
+        .checked_sub(SUFFIX_RESULT_BODY_GUID_COUNT_BEFORE_KIND)?;
+    if cursor > guid_count_at
+        || bytes
+            .get(cursor..guid_count_at)?
+            .iter()
+            .any(|byte| *byte != 0)
+    {
+        return None;
+    }
+    Some(DesignBaseFeatureConstruction::SuffixResultBodies {
+        bodies,
+        repeated_fields,
+        results,
+        metadata_record,
+        metadata_record_offset,
+        metadata_field: metadata_field.into(),
+        null_reference_flag_offset,
+    })
 }
 
 fn exact_base_feature_body_snapshot(

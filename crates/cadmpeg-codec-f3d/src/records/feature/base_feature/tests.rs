@@ -59,7 +59,33 @@ fn construction_wires() -> Vec<serde_json::Value> {
             "linkage_record_offset":234, "auxiliary_record":401,
             "auxiliary_record_offset":253
         }),
+        json!({
+            "body_entity_suffixes":[218], "body_entity_suffix_offsets":[25],
+            "body_entity_fields":["000001000000"],
+            "repeated_suffix_fields":["000000000000"],
+            "metadata_record":215, "metadata_record_offset":67,
+            "metadata_field":"000000000000", "result_records":[229],
+            "result_record_offsets":[86], "result_fields":["000000000000"],
+            "null_reference_flag_offset":48
+        }),
     ]
+}
+
+#[test]
+fn a_suffix_result_body_wire_reads_as_its_own_form() {
+    let value: DesignBaseFeatureConstruction =
+        serde_json::from_value(construction_wires().remove(5)).unwrap();
+    assert!(matches!(
+        value,
+        DesignBaseFeatureConstruction::SuffixResultBodies { .. }
+    ));
+    assert_eq!(value.body_entity_suffixes().collect::<Vec<_>>(), [218]);
+    assert_eq!(value.body_reference_records().count(), 0);
+    assert_eq!(value.null_reference_flag_offset(), Some(48));
+
+    let mut unparallel = construction_wires().remove(5);
+    unparallel["result_records"] = json!([229, 230]);
+    assert!(serde_json::from_value::<DesignBaseFeatureConstruction>(unparallel).is_err());
 }
 
 #[test]

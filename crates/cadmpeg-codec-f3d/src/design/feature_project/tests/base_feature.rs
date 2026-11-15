@@ -78,6 +78,36 @@ fn null_flag_losses(
 }
 
 #[test]
+fn a_flagged_suffix_result_body_frame_projects_its_bodies_with_the_loss() {
+    let mut scope = base_feature(None);
+    if let DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
+        *slot = Some(DesignBaseFeatureConstruction::SuffixResultBodies {
+            bodies: vec![DesignBaseFeatureEntry {
+                value: 218,
+                offset: 25,
+                field: [0; 6],
+            }],
+            repeated_fields: vec![[0; 6]],
+            results: vec![DesignBaseFeatureEntry {
+                value: 229,
+                offset: 86,
+                field: [0; 6],
+            }],
+            metadata_record: 215,
+            metadata_record_offset: 67,
+            metadata_field: vec![0; 6].into(),
+            null_reference_flag_offset: Some(48),
+        });
+    }
+    let projection = project(scope);
+    assert!(matches!(
+        projection.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
+    ));
+    assert_eq!(null_flag_losses(&projection), 1);
+}
+
+#[test]
 fn a_flagged_null_reference_projects_the_result_bodies_with_its_loss() {
     for (flag_offset, losses) in [(None, 0), (Some(63), 1)] {
         let projection = project(base_feature(flag_offset));

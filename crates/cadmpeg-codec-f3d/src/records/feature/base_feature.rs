@@ -174,6 +174,26 @@ pub(crate) enum DesignBaseFeatureConstruction {
         /// GUID names one browser node; otherwise empty.
         copy_sources: Vec<DesignPasteSource>,
     },
+    /// Counted body, repeated body-suffix, metadata, and result runs without a
+    /// passive-reference run.
+    SuffixResultBodies {
+        /// Ordered Design body entity suffixes with their source fields.
+        bodies: Vec<DesignBaseFeatureEntry<u64>>,
+        /// Six-byte source fields of the repeated body-suffix run, parallel to
+        /// `bodies`.
+        repeated_fields: Vec<[u8; 6]>,
+        /// Result records with their source fields, parallel to `bodies`.
+        results: Vec<DesignBaseFeatureEntry<u32>>,
+        /// Shared metadata record.
+        metadata_record: u32,
+        /// Byte offset of the shared metadata record.
+        metadata_record_offset: u64,
+        /// Source field following the metadata record.
+        metadata_field: NativeBytes<Vec<u8>>,
+        /// Byte offset of the flag byte of the marked null reference when the
+        /// flag is `1`.
+        null_reference_flag_offset: Option<u64>,
+    },
 }
 
 /// Source body of one pasted copy, joined through its browser-node GUID.
@@ -273,6 +293,23 @@ impl Clone for DesignBaseFeatureConstruction {
                 owner_record: *owner_record,
                 owner_reference_offset: *owner_reference_offset,
                 copy_sources: copy_sources.clone(),
+            },
+            Self::SuffixResultBodies {
+                bodies,
+                repeated_fields,
+                results,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                null_reference_flag_offset,
+            } => Self::SuffixResultBodies {
+                bodies: bodies.clone(),
+                repeated_fields: repeated_fields.clone(),
+                results: results.clone(),
+                metadata_record: *metadata_record,
+                metadata_record_offset: *metadata_record_offset,
+                metadata_field: metadata_field.clone(),
+                null_reference_flag_offset: *null_reference_flag_offset,
             },
         }
     }
@@ -394,6 +431,21 @@ impl Serialize for DesignBaseFeatureConstruction {
                 copy_source_entity_suffixes: SliceColumn<'a, DesignPasteSource, u64>,
                 #[serde(skip_serializing_if = "SliceColumn::is_empty")]
                 copy_source_node_guid_offsets: SliceColumn<'a, DesignPasteSource, u64>,
+            },
+            SuffixResultBodies {
+                body_entity_suffixes: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                body_entity_suffix_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                body_entity_fields:
+                    SliceColumn<'a, DesignBaseFeatureEntry<u64>, NativeBytes<[u8; 6]>>,
+                repeated_suffix_fields: SliceColumn<'a, [u8; 6], NativeBytes<[u8; 6]>>,
+                metadata_record: u32,
+                metadata_record_offset: u64,
+                metadata_field: NativeBytes<&'a [u8]>,
+                result_records: SliceColumn<'a, DesignBaseFeatureEntry<u32>, u32>,
+                result_record_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u32>, u64>,
+                result_fields: SliceColumn<'a, DesignBaseFeatureEntry<u32>, NativeBytes<[u8; 6]>>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                null_reference_flag_offset: Option<u64>,
             },
         }
         let wire = match self {
@@ -561,6 +613,27 @@ impl Serialize for DesignBaseFeatureConstruction {
                 copy_source_node_guid_offsets: SliceColumn::new(copy_sources, |row| {
                     row.node_guid_offset
                 }),
+            },
+            Self::SuffixResultBodies {
+                bodies,
+                repeated_fields,
+                results,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                null_reference_flag_offset,
+            } => BorrowedWire::SuffixResultBodies {
+                body_entity_suffixes: SliceColumn::new(bodies, |row| row.value),
+                body_entity_suffix_offsets: SliceColumn::new(bodies, |row| row.offset),
+                body_entity_fields: SliceColumn::new(bodies, |row| row.field.into()),
+                repeated_suffix_fields: SliceColumn::new(repeated_fields, |field| (*field).into()),
+                metadata_record: *metadata_record,
+                metadata_record_offset: *metadata_record_offset,
+                metadata_field: metadata_field.into(),
+                result_records: SliceColumn::new(results, |row| row.value),
+                result_record_offsets: SliceColumn::new(results, |row| row.offset),
+                result_fields: SliceColumn::new(results, |row| row.field.into()),
+                null_reference_flag_offset: *null_reference_flag_offset,
             },
         };
         wire.serialize(serializer)
@@ -779,6 +852,38 @@ enum DesignBaseFeatureConstructionWire {
         /// `copy_source_entity_suffixes`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         copy_source_node_guid_offsets: Vec<u64>,
+    },
+    /// Counted body, repeated body-suffix, metadata, and result runs without a
+    /// passive-reference run.
+    SuffixResultBodies {
+        /// Ordered Design body entity suffixes.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_entity_suffixes`.
+        body_entity_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Six-byte source fields of the repeated body-suffix run.
+        repeated_suffix_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Shared metadata record.
+        metadata_record: u32,
+        /// Byte offset of `metadata_record`.
+        metadata_record_offset: u64,
+        /// Source field following `metadata_record`.
+        metadata_field: NativeBytes<Vec<u8>>,
+        /// Result records parallel to `body_entity_suffixes`.
+        result_records: Vec<u32>,
+        /// Byte offsets parallel to `result_records`.
+        result_record_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `result_records`.
+        result_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Byte offset of the flag byte of the marked null reference when the
+        /// flag is `1`.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_null_reference_flag_offset"
+        )]
+        null_reference_flag_offset: Option<u64>,
     },
 }
 
@@ -1129,6 +1234,54 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     copy_sources,
                 }
             }
+            DesignBaseFeatureConstructionWire::SuffixResultBodies {
+                body_entity_suffixes,
+                body_entity_suffix_offsets,
+                body_entity_fields,
+                repeated_suffix_fields,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                result_records,
+                result_record_offsets,
+                result_fields,
+                null_reference_flag_offset,
+            } => {
+                let count = body_entity_suffixes.len();
+                if count == 0
+                    || repeated_suffix_fields.len() != count
+                    || result_records.len() != count
+                    || result_record_offsets.len() != count
+                    || result_fields.len() != count
+                {
+                    return Err("suffix result-body columns must be nonempty and parallel".into());
+                }
+                Self::SuffixResultBodies {
+                    bodies: entry_rows(
+                        body_entity_suffixes,
+                        body_entity_suffix_offsets,
+                        body_entity_fields,
+                    )?,
+                    repeated_fields: repeated_suffix_fields
+                        .into_iter()
+                        .map(NativeBytes::into_inner)
+                        .collect(),
+                    results: result_records
+                        .into_iter()
+                        .zip(result_record_offsets)
+                        .zip(result_fields)
+                        .map(|((value, offset), field)| DesignBaseFeatureEntry {
+                            value,
+                            offset,
+                            field: *field,
+                        })
+                        .collect(),
+                    metadata_record,
+                    metadata_record_offset,
+                    metadata_field,
+                    null_reference_flag_offset,
+                }
+            }
         })
     }
 }
@@ -1343,6 +1496,30 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                     .map(|row| row.node_guid_offset)
                     .collect(),
             },
+            DesignBaseFeatureConstruction::SuffixResultBodies {
+                bodies,
+                repeated_fields,
+                results,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                null_reference_flag_offset,
+            } => Self::SuffixResultBodies {
+                body_entity_suffixes: bodies.iter().map(|row| row.value).collect(),
+                body_entity_suffix_offsets: bodies.iter().map(|row| row.offset).collect(),
+                body_entity_fields: bodies.iter().map(|row| row.field.into()).collect(),
+                repeated_suffix_fields: repeated_fields
+                    .into_iter()
+                    .map(NativeBytes::from)
+                    .collect(),
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                result_records: results.iter().map(|row| row.value).collect(),
+                result_record_offsets: results.iter().map(|row| row.offset).collect(),
+                result_fields: results.iter().map(|row| row.field.into()).collect(),
+                null_reference_flag_offset,
+            },
         }
     }
 }
@@ -1371,6 +1548,10 @@ impl DesignBaseFeatureConstruction {
             Self::ResultBodies {
                 null_reference_flag_offset,
                 ..
+            }
+            | Self::SuffixResultBodies {
+                null_reference_flag_offset,
+                ..
             } => *null_reference_flag_offset,
             _ => None,
         }
@@ -1379,17 +1560,17 @@ impl DesignBaseFeatureConstruction {
     /// Return the body suffixes in source order for any Base Feature form.
     pub(crate) fn body_entity_suffixes(&self) -> impl ExactSizeIterator<Item = u64> + '_ {
         let count = match self {
-            Self::BodySnapshot { bodies, .. } | Self::TimelineOwnedBodies { bodies, .. } => {
-                bodies.len()
-            }
+            Self::BodySnapshot { bodies, .. }
+            | Self::TimelineOwnedBodies { bodies, .. }
+            | Self::SuffixResultBodies { bodies, .. } => bodies.len(),
             Self::BodyBasedOnFaces { .. } => 1,
             Self::ResultBodies { bodies, .. } => bodies.iter().len(),
             Self::LegacyBodyBasedOnFaces { form, .. } => form.bodies().len(),
         };
         (0..count).map(move |index| match self {
-            Self::BodySnapshot { bodies, .. } | Self::TimelineOwnedBodies { bodies, .. } => {
-                bodies[index].value
-            }
+            Self::BodySnapshot { bodies, .. }
+            | Self::TimelineOwnedBodies { bodies, .. }
+            | Self::SuffixResultBodies { bodies, .. } => bodies[index].value,
             Self::BodyBasedOnFaces { body, .. } => u64::from(body.value),
             Self::ResultBodies { bodies, .. } => match bodies {
                 DesignBaseFeatureResults::WithoutRepeatedFields(bodies) => {
@@ -1414,7 +1595,9 @@ impl DesignBaseFeatureConstruction {
             Self::ResultBodies { bodies, .. } => (Some(bodies), &[][..], None),
             Self::LegacyBodyBasedOnFaces { form, .. } => (None, form.bodies(), None),
             Self::BodyBasedOnFaces { body, .. } => (None, &[][..], Some(body.value)),
-            Self::BodySnapshot { .. } | Self::TimelineOwnedBodies { .. } => (None, &[][..], None),
+            Self::BodySnapshot { .. }
+            | Self::TimelineOwnedBodies { .. }
+            | Self::SuffixResultBodies { .. } => (None, &[][..], None),
         };
         results
             .into_iter()

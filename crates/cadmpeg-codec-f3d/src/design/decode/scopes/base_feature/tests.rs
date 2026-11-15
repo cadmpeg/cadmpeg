@@ -971,6 +971,122 @@ fn a_flagged_ordinary_frame_of_65536_bodies_keeps_the_ordinary_reading() {
     assert!(construction.null_reference_flag_offset().is_some());
 }
 
+/// Suffix result-body form with one body per entry of `entities`: the
+/// entity run, the marked null reference with `flag`, the repeated run of
+/// `repeated`, the metadata record with a six-byte field, and the result run;
+/// the kind starts at `169 + 37N`.
+fn suffix_frame(entities: &[u32], repeated: &[u32], flag: u8) -> (Vec<u8>, DesignParameterScope) {
+    let count = entities.len();
+    let count_u32 = u32::try_from(count).expect("fixture count fits u32");
+    let kind_offset = 169 + 37 * count;
+    let frame_length = kind_offset + 110;
+    let mut bytes = vec![0u8; frame_length];
+    bytes[19] = 1;
+    bytes[20..24].copy_from_slice(&count_u32.to_le_bytes());
+    let mut cursor = 24;
+    for value in entities {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&u64::from(*value).to_le_bytes());
+        cursor += 15;
+    }
+    bytes[cursor] = 1;
+    bytes[cursor + 9] = flag;
+    bytes[cursor + 11..cursor + 15].copy_from_slice(&count_u32.to_le_bytes());
+    cursor += 15;
+    for value in repeated {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&value.to_le_bytes());
+        cursor += 11;
+    }
+    cursor += 1;
+    bytes[cursor] = 1;
+    bytes[cursor + 1..cursor + 9].copy_from_slice(&215u64.to_le_bytes());
+    cursor += 15;
+    bytes[cursor..cursor + 4].copy_from_slice(&count_u32.to_le_bytes());
+    cursor += 4;
+    for ordinal in 0..count_u32 {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&(229 + ordinal).to_le_bytes());
+        cursor += 11;
+    }
+    bytes[kind_offset - 102..kind_offset - 98].copy_from_slice(&36u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-suffix",
+        DesignFeatureKind::BaseFeature,
+        211,
+    );
+    scope.class_tag = DesignClassTag::try_from("368".to_owned()).unwrap();
+    scope.paired_class_tag = DesignClassTag::try_from("258".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = u64_from_index(frame_length);
+            draft.kind_offset = u64_from_index(kind_offset);
+            draft.paired_byte_offset = u64_from_index(frame_length);
+            draft.reference_members = ReferenceRun::unlocated(vec![215]);
+            draft.reference_count_offset =
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    (bytes, scope)
+}
+
+#[test]
+fn a_suffix_result_body_frame_reads_its_body_and_result_runs() {
+    for (entities, flag, flag_offset) in [(&[218][..], 1, Some(48)), (&[218, 219][..], 0, None)] {
+        let (bytes, scope) = suffix_frame(entities, entities, flag);
+        let Some(DesignBaseFeatureConstruction::SuffixResultBodies {
+            bodies,
+            results,
+            metadata_record,
+            null_reference_flag_offset,
+            ..
+        }) = exact_base_feature_construction(&bytes, &scope).unwrap()
+        else {
+            panic!("suffix result-body frame decodes: {entities:?}");
+        };
+        assert_eq!(
+            bodies.iter().map(|body| body.value).collect::<Vec<_>>(),
+            entities
+                .iter()
+                .map(|value| u64::from(*value))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.value)
+                .collect::<Vec<_>>(),
+            (229..).take(entities.len()).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            (metadata_record, null_reference_flag_offset),
+            (215, flag_offset)
+        );
+    }
+}
+
+#[test]
+fn a_suffix_result_body_frame_refuses_a_broken_run() {
+    let (bytes, scope) = suffix_frame(&[218], &[300], 1);
+    assert!(exact_base_feature_construction(&bytes, &scope)
+        .unwrap()
+        .is_none());
+
+    let (bytes, scope) = suffix_frame(&[218], &[218], 1);
+    for (offset, value) in [(48, 2), (49, 1), (20, 2), (100, 1)] {
+        let mut broken = bytes.clone();
+        broken[offset] = value;
+        assert!(
+            exact_base_feature_construction(&broken, &scope)
+                .unwrap()
+                .is_none(),
+            "byte {offset} = {value}"
+        );
+    }
+}
+
 #[test]
 fn a_scope_that_two_timeline_objects_name_belongs_to_the_lowest_readable_record() {
     let mut owner_tail = removal_key(29, NULL_KEY);
