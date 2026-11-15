@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::features::{
@@ -846,4 +847,98 @@ fn a_consumed_body_the_final_state_still_holds_needs_no_history_body() {
     );
     assert!(bodies.is_empty());
     assert!(losses.is_empty());
+}
+
+fn split_fixture() -> (Feature, DesignParameterScope, AsmHistory) {
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+    use crate::records::feature::scope::DesignFeatureKind;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#2",
+        DesignFeatureKind::BaseFeature,
+        1,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut feature = feature("split");
+    feature.native_ref = Some(scope.id.clone());
+    let prefix = crate::ids::feature_input_prefix(&feature.id, 1);
+    let targets = BodySelection::historical(
+        crate::ids::history_input_state_id(&prefix),
+        vec![crate::ids::history_input_body_id(&prefix, 7)],
+        "f3d:test:scope#split".to_owned(),
+    )
+    .unwrap();
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            targets,
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(
+                cadmpeg_ir::features::FaceSelection::Unresolved,
+            ),
+        }));
+    let state = |state_id, node_index, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("f3d:asm-delta-state#{state_id}"),
+                parent: "f3d:asm-history#1".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
+    };
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![state(2, 1, Some(0)), state(1, 0, None)],
+    );
+    (feature, scope, history)
+}
+
+#[test]
+fn a_split_names_the_slots_of_its_input_state_in_the_history_that_holds_both_states() {
+    let (feature, scope, history) = split_fixture();
+    let histories = [history];
+    let scopes = [scope];
+    let none = HashMap::new();
+    assert_eq!(
+        split_targets(&feature, &scopes, &histories, &none),
+        Some((0, 1, vec![7]))
+    );
+    let bound = HashMap::from([(scopes[0].id.clone(), histories[0].id.clone())]);
+    assert_eq!(
+        split_targets(&feature, &scopes, &histories, &bound),
+        Some((0, 1, vec![7]))
+    );
+    let elsewhere = HashMap::from([(scopes[0].id.clone(), "f3d:asm-history#9".to_owned())]);
+    assert_eq!(
+        split_targets(&feature, &scopes, &histories, &elsewhere),
+        None
+    );
+    // A Base Feature selects no body from an input state.
+    let mut base = feature.clone();
+    base.evaluation.set_definition(FeatureDefinition::Operation(
+        FeatureOperation::BaseFeature {
+            bodies: BodySelection::Unresolved,
+        },
+    ));
+    assert_eq!(split_targets(&base, &scopes, &histories, &none), None);
 }
