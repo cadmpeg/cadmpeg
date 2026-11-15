@@ -544,7 +544,7 @@ pub(super) fn move_transform_prefix_losses(
                     .references
                     .iter()
                     .any(|reference| !matches!(reference, direct_face::DesignMoveReference::Null))
-        }) || prefix.codes != [0; 2]
+        }) || prefix.codes != [0; 2] && !translation_direction_flag(scope, operation)
             || prefix
                 .references
                 .iter()
@@ -564,6 +564,20 @@ pub(super) fn move_transform_prefix_losses(
         "{} scope {} applies the rigid matrix of form {} in transform record {}; its prefix references and codes {:?} are assumed to leave that motion unchanged (DR-306).",
         scope.kind().as_str(), scope.id, u32::from(operation.form), operation.transform_record_index, operation.prefix
     )) }).collect()
+}
+
+/// Code word `[0, 1]` of a form-0 `Move` transform selects world translation
+/// directions; the stored matrix already holds the resulting motion.
+fn translation_direction_flag(
+    scope: &DesignParameterScope,
+    operation: &DesignMoveOperation,
+) -> bool {
+    design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
+        && operation.form == direct_face::DesignMoveForm::Form0
+        && operation
+            .prefix
+            .as_ref()
+            .is_some_and(|prefix| prefix.codes == [0, 1])
 }
 
 /// The one admitted rigid-transform frame among `record_indices`.
