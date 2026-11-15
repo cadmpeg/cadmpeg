@@ -45,7 +45,7 @@ fn zero_angle_cone_cube(radius: f64, ratio: f64) -> (CadIr, SolvedSurfaceGeometr
         )
         .unwrap(),
     );
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(cone.clone());
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(cone.clone());
     (ir, cone)
 }
 
@@ -94,7 +94,7 @@ fn zero_angle_circular_cone_round_trips_as_its_cylinder() {
     assert!(text.contains("CYLINDRICAL_SURFACE("), "{text}");
     assert_no_cone_reduction(&report, &text);
     let written = decoded
-        .model
+        .geometry
         .surfaces
         .iter()
         .find_map(|surface| match surface.geometry.solved() {
@@ -122,7 +122,7 @@ fn zero_angle_elliptical_cone_round_trips_as_an_extruded_ellipse() {
     assert!(text.contains(",2.,0.8)"), "{text}");
     assert_no_cone_reduction(&report, &text);
     let sweep = decoded
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find_map(|surface| match surface.definition() {
@@ -131,7 +131,7 @@ fn zero_angle_elliptical_cone_round_trips_as_an_extruded_ellipse() {
         })
         .expect("written linear extrusion");
     let section = decoded
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| &curve.id == sweep.directrix())
@@ -172,14 +172,14 @@ fn zero_angle_cone_of_zero_radius_is_refused_at_planning() {
 #[test]
 fn point_edge_ring_is_written_as_vertex_loop() {
     let mut ir = edgeless_doc();
-    ir.model
+    ir.geometry
         .vertices
         .retain(|vertex| vertex.id.as_str() != "test:model:vertex#v1");
-    ir.model
+    ir.geometry
         .points
         .retain(|point| point.id.as_str() != "test:model:point#p1");
     let point_curve = CurveId::mint("test:model:curve#point").expect("identity grammar");
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: point_curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
@@ -188,7 +188,7 @@ fn point_edge_ring_is_written_as_vertex_loop() {
         )),
         source_object: None,
     });
-    let edge = &mut ir.model.edges[0];
+    let edge = &mut ir.geometry.edges[0];
     edge.carrier = cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(point_curve));
     edge.end = edge.start.clone();
 
@@ -231,9 +231,9 @@ fn negative_cone_face_pcurve_is_written_in_reversed_chart() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    let surface_id = ir.model.faces[0].surface.clone();
+    let surface_id = ir.geometry.faces[0].surface.clone();
     let surface = ir
-        .model
+        .geometry
         .surfaces
         .iter_mut()
         .find(|surface| surface.id == surface_id)
@@ -279,9 +279,9 @@ fn unmappable_negative_cone_pcurve_loss_names_its_face() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    let face_id = ir.model.faces[0].id.clone();
-    let surface_id = ir.model.faces[0].surface.clone();
-    ir.model
+    let face_id = ir.geometry.faces[0].id.clone();
+    let surface_id = ir.geometry.faces[0].surface.clone();
+    ir.geometry
         .surfaces
         .iter_mut()
         .find(|surface| surface.id == surface_id)
@@ -297,7 +297,7 @@ fn unmappable_negative_cone_pcurve_loss_names_its_face() {
         )
         .expect("negative cone"),
     ));
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Harmonic(
+    ir.geometry.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Harmonic(
         cadmpeg_ir::geometry::pcurve::HarmonicPcurve::try_new(
             cadmpeg_ir::math::Point2::new(0.0, 0.0),
             cadmpeg_ir::math::Point2::new(1.0, 0.0),
@@ -320,6 +320,6 @@ fn unmappable_negative_cone_pcurve_loss_names_its_face() {
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveCarrierUnwritable.kind()
             && loss.message.contains(face_id.as_str())
-            && loss.message.contains(ir.model.pcurves[0].id.as_str())
+            && loss.message.contains(ir.geometry.pcurves[0].id.as_str())
     }));
 }

@@ -153,7 +153,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         ));
     }
-    let derived_census = (ir.decode_depth() == DecodeDepth::Full)
+    let derived_census = ir
+        .scope()
+        .design
         .then(|| design::census(&objects, &ir.model.features));
     match derived_census {
         None => {}
@@ -580,15 +582,15 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     let topology_ids = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|entity| entity.id.as_str())
-        .chain(ir.model.edges.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.loops.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.faces.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.shells.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.bodies.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.geometry.edges.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.geometry.loops.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.geometry.faces.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.geometry.shells.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.geometry.bodies.iter().map(|entity| entity.id.as_str()))
         .collect::<HashSet<_>>();
     for map in &element_maps {
         if !property_ids.contains(map.property.as_str())
@@ -1017,12 +1019,12 @@ impl CodecBackend for FcstdCodec {
             )?;
             geometry_transferred =
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
-            ir.model.curves = curve_transfer.curves;
-            ir.model
+            ir.geometry.curves = curve_transfer.curves;
+            ir.geometry
                 .add_procedural_curves(curve_transfer.procedural)?
                 .map_err(CodecError::malformed)?;
-            ir.model.surfaces = surface_transfer.surfaces;
-            ir.model
+            ir.geometry.surfaces = surface_transfer.surfaces;
+            ir.geometry
                 .add_procedural_surfaces(surface_transfer.procedural)?
                 .map_err(CodecError::malformed)?;
             geometry_transferred |= application_geometry::transfer(
@@ -1039,7 +1041,7 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &mut transfer_losses,
             )?;
-            if ctx.depth() == DecodeDepth::Full {
+            if ctx.depth() >= DecodeDepth::Design {
                 let (cycle_affected, design_losses) = design::transfer(
                     ctx,
                     &mut ir,
@@ -1065,19 +1067,19 @@ impl CodecBackend for FcstdCodec {
             }
             transfer_losses.extend(drawing_content::transfer(
                 ctx,
-                &mut ir.model,
+                &mut ir,
                 &graph.properties,
                 &scan.data,
             )?);
             ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                cadmpeg_core::decode::u64_from_index(ir.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
             let link_occurrences =
                 product::link_occurrence_count(&product_nodes, &graph.objects, &graph.properties)?;
             ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count())
+                cadmpeg_core::decode::u64_from_index(ir.entity_count())
                     .checked_add(link_occurrences)
                     .ok_or_else(|| CodecError::malformed("FCStd entity count overflows u64"))?,
                 &mut admitted_entities,
@@ -1090,12 +1092,12 @@ impl CodecBackend for FcstdCodec {
                 &graph.objects,
                 &graph.properties,
                 &shape_payloads,
-                &ir.model.bodies,
+                &ir.geometry.bodies,
             )?;
             product::localize_definition_bodies(
                 &product_definitions,
                 &occurrences,
-                &mut ir.model.bodies,
+                &mut ir.geometry.bodies,
             );
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
@@ -1110,11 +1112,11 @@ impl CodecBackend for FcstdCodec {
             ir.model.assembly_joints =
                 joint::transfer_neutral(&joint_records, &ir.model.occurrences)?;
             ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                cadmpeg_core::decode::u64_from_index(ir.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            if ctx.depth() == DecodeDepth::Full {
+            if ctx.depth() >= DecodeDepth::Design {
                 let design_census = design::census(&graph.objects, &ir.model.features)?;
                 ir.native
                     .namespace_mut("fcstd")
@@ -1148,7 +1150,7 @@ impl CodecBackend for FcstdCodec {
             );
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                cadmpeg_core::decode::u64_from_index(ir.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
@@ -1257,7 +1259,7 @@ impl CodecBackend for FcstdCodec {
             }
         }
         ctx.admit_entities(
-            cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+            cadmpeg_core::decode::u64_from_index(ir.entity_count()),
             &mut admitted_entities,
             "admit FCStd entities",
         )?;

@@ -56,7 +56,7 @@ fn bounded_defects_preserve_independent_instances_and_exact_bytes() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(&decoded_source), &DecodeOptions::default())
             .expect("independent points decode");
-        assert_eq!(decoded.ir().model.points.len(), 2);
+        assert_eq!(decoded.ir().geometry.points.len(), 2);
         let losses = given_up_losses(decoded.report());
         let [loss] = losses.as_slice() else {
             panic!("one record.unreadable loss for {defective}");
@@ -110,7 +110,7 @@ fn a_given_up_statement_names_the_records_that_need_it() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("the independent point decodes");
-    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().geometry.points.len(), 1);
     let losses = given_up_losses(decoded.report());
     let [loss] = losses.as_slice() else {
         panic!("one record.unreadable loss");
@@ -151,7 +151,7 @@ fn a_statement_past_the_nesting_ceiling_is_given_up_alone() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(&source), &options)
         .expect("a Part refusal gives up its statement only");
-    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().geometry.points.len(), 1);
     let losses = given_up_losses(decoded.report());
     let [loss] = losses.as_slice() else {
         panic!("one record.unreadable loss");
@@ -301,7 +301,7 @@ fn draft_envelope_uses_declared_recovery_grammar_and_retains_header() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("draft point decoded");
-    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().geometry.points.len(), 1);
     assert!(decoded
         .report()
         .losses
@@ -385,7 +385,7 @@ fn bounded_draft_header_defects_retain_source_and_independent_geometry() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .expect("independent point");
-        assert_eq!(decoded.ir().model.points.len(), 1);
+        assert_eq!(decoded.ir().geometry.points.len(), 1);
         assert_eq!(given_up_losses(decoded.report()).len(), 1);
         let (ir, _, fidelity) = decoded.into_parts();
         let unknowns = ir.native_unknowns("step").expect("retained statements");

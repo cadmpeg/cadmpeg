@@ -55,7 +55,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .expect("revision surface decode");
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .first()
         .expect("revision surface construction");
@@ -81,7 +81,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
     let actual = scrubbed_definition(
         round_trip
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .first()
             .expect("round-trip construction")
@@ -345,6 +345,89 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_form(smbh: &[u8]) -> Vec<
             "FusionAssetName[Active]/TSplines.BlobParts/TSpline.synthetic.tsm",
             &tsm,
         )],
+    )
+}
+
+pub(crate) fn f3d_with_form_body_resource(tsm: &[u8]) -> Vec<u8> {
+    use crate::test_support::{indexed_header, lp_utf16, push_marked_reference};
+    let (mut bulk, mut records) = generated_design_form_bulkstream();
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::Form);
+    let rows = [
+        (
+            "830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06571",
+            "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            0,
+            "Fusion",
+            &[1700u64][..],
+        ),
+        (
+            "FA1F0081-C9A1-4E14-8F25-D12DD868ED90",
+            "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+            10,
+            "Fusion",
+            &[1701u64][..],
+        ),
+        (
+            "22709494-9149-4A70-A829-7D748A7B5DB1",
+            "1B7920A0-725B-4368-9448-E4D323D53E7C",
+            6,
+            "Fusion",
+            &[1702u64][..],
+        ),
+        (
+            "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA",
+            "",
+            4,
+            "Fusion",
+            &[1703u64][..],
+        ),
+        (
+            "702B9CD2-537C-429E-8CC4-22BEEEB98C37",
+            "",
+            1,
+            "Fusion",
+            &[1704u64][..],
+        ),
+    ];
+    let first = types.len();
+    types.extend(rows);
+    for (ordinal, record) in (1700u32..=1704).enumerate() {
+        records.push((u64::from(record), u64::try_from(bulk.len()).unwrap()));
+        let tag: [u8; 3] = format!("{:03}", first + ordinal + 256)
+            .as_bytes()
+            .try_into()
+            .unwrap();
+        indexed_header(&mut bulk, tag, record);
+        match record {
+            1700 => {
+                bulk.extend_from_slice(&[0; 10]);
+                lp_utf16(
+                    &mut bulk,
+                    "TSpline.00000000-0000-4000-8000-000000000099.tsm",
+                );
+                push_marked_reference(&mut bulk, 1702);
+            }
+            1701 => {
+                for value in [
+                    "00000000-0000-4000-8000-000000000001",
+                    "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+                    "",
+                    "PrismMaterial-001",
+                ] {
+                    lp_utf16(&mut bulk, value);
+                }
+                for target in [1400, 1703, 1702, 1704] {
+                    push_marked_reference(&mut bulk, target);
+                }
+                indexed_header(&mut bulk, *b"258", record);
+            }
+            _ => bulk.extend_from_slice(&[0; 10]),
+        }
+    }
+    let meta = crate::test_support::streams_test::design_metastream_with_records(&types, &records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
+        &synthetic_geometry_smbh(), &[], &bulk, &meta,
+        &[("FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000099.tsm", tsm)],
     )
 }
 

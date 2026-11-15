@@ -163,7 +163,7 @@ pub(crate) fn prepare_features_for_write(
         validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
         validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
         validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
-        return sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native);
+        return sync_neutral_features(ir, &ir.model.parameters, &ir.geometry.bodies, native);
     }
     match (neutral_changed, native_changed) {
         (false, _) => Ok(Vec::new()),
@@ -189,7 +189,7 @@ pub(crate) fn prepare_features_for_write(
             validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
             validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
             validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
-            sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native)
+            sync_neutral_features(ir, &ir.model.parameters, &ir.geometry.bodies, native)
         }
     }
 }

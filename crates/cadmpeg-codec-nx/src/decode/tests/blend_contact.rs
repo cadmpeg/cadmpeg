@@ -71,7 +71,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
             (first.clone(), Vector3::new(1.0, 0.0, 0.0)),
             (second.clone(), Vector3::new(0.0, 1.0, 0.0)),
         ] {
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -86,7 +86,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
         }
         let spine =
             CurveId::mint("test:model:entity#nx:test:wide-blend-spine").expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -106,7 +106,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
         let construction =
             ProceduralSurfaceId::mint("test:model:entity#nx:test:wide-blend-construction")
                 .expect("identity grammar");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
@@ -114,7 +114,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             construction,
             ProceduralSurfaceDefinition::Blend(
                 cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -216,7 +216,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             .expect("identity grammar");
         let second = SurfaceId::mint("test:model:entity#synthetic:second-intersection-plane")
             .expect("identity grammar");
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: first.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -302,7 +302,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         let section_plane =
             SurfaceId::mint("test:model:entity#synthetic:intersection-section-plane")
                 .expect("identity grammar");
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: cylinder.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -365,7 +365,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             .expect("identity grammar");
         let tangent_plane =
             SurfaceId::mint("test:model:entity#synthetic:tangent-plane").expect("identity grammar");
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: tangent_cylinder.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -434,7 +434,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             None,
             true,
         );
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: periodic_nurbs.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -491,7 +491,7 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
         let vertical = SurfaceId::mint("test:model:entity#synthetic:large-vertical-plane")
             .expect("identity grammar");
         let origin = Point3::new(1.0e16, 1.0e16, 0.0);
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: horizontal.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -578,7 +578,7 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
             .expect("identity grammar"),
     ];
     for side in 0..2 {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surfaces[side].clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: constructions[side].clone(),
@@ -586,7 +586,7 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             constructions[side].clone(),
             ProceduralSurfaceDefinition::Offset(
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -706,7 +706,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         let curve =
             CurveId::mint("test:model:entity#synthetic:piecewise-spine").expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -930,7 +930,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         )),
         source_object: None,
     };
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         cylinder(support.clone(), 294.0),
         cylinder(offset.clone(), 299.0),
     ]);
@@ -940,7 +940,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         Some(5.0)
     );
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-        &mut ir.model.surfaces[1].geometry
+        &mut ir.geometry.surfaces[1].geometry
     else {
         unreachable!()
     };
@@ -975,7 +975,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         )),
         source_object: None,
     };
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         plane(support_plane.clone(), Point3::new(10.0, 20.0, 30.0)),
         plane(offset_plane.clone(), Point3::new(10.0, 20.0, 35.0)),
     ]);
@@ -984,7 +984,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         Some(5.0)
     );
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-        &mut ir.model.surfaces[3].geometry
+        &mut ir.geometry.surfaces[3].geometry
     else {
         unreachable!()
     };
@@ -1018,7 +1018,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
         )),
         source_object: None,
     };
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         plane(
             first.clone(),
             Point3::new(0.0, 0.0, 0.0),
@@ -1057,7 +1057,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
     ] {
         let construction =
             ProceduralSurfaceId::mint(format!("{surface}:construction")).expect("identity grammar");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
@@ -1065,7 +1065,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             construction,
             ProceduralSurfaceDefinition::Blend(
                 cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -1091,7 +1091,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
         Some(3.0)
     );
     let outer_definition = ir
-        .model
+        .geometry
         .procedural_surfaces
         .iter_mut()
         .find(|candidate| {
@@ -1171,7 +1171,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             source_object: None,
         };
         let mut ir = cadmpeg_ir::document::CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             plane(
                 support.clone(),
                 Point3::new(0.0, 0.0, 0.0),
@@ -1196,7 +1196,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 source_object: None,
             },
         ]);
-        let _attached = ir.model.add_procedural_surface(
+        let _attached = ir.geometry.add_procedural_surface(
             &support_offset,
             ProceduralSurface::new(
                 support_offset_construction.clone(),
@@ -1217,7 +1217,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 None,
             ),
         );
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             blend_construction,
             ProceduralSurfaceDefinition::Blend(
                 cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -1240,7 +1240,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             ),
             None,
         ));
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1258,7 +1258,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
         );
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.geometry.add_procedural_curve(
             &spine,
             ProceduralCurve::new(
                 spine_procedural,
@@ -1351,7 +1351,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         .unwrap()
         .get();
         point.y += 3.0;
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: ellipse.clone(),
             geometry,

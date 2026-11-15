@@ -99,7 +99,7 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
         )
         .expect("synthetic mixed-loop fixture decodes");
     let mut decoded = EditableDecodeResult::from(decoded);
-    let model_only_loop_id = decoded.ir().model.faces[0]
+    let model_only_loop_id = decoded.ir().geometry.faces[0]
         .loops
         .iter()
         .next()
@@ -107,12 +107,12 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
         .clone();
     {
         let mut ir = decoded.ir_mut();
-        for face in &mut ir.model.faces {
+        for face in &mut ir.geometry.faces {
             let ids = face.loops.to_vec();
             face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(ids);
         }
         let coedge_ids = ir
-            .model
+            .geometry
             .loops
             .iter()
             .find(|loop_| loop_.id == model_only_loop_id)
@@ -120,7 +120,7 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
             .coedges()
             .to_vec();
         for coedge_id in coedge_ids {
-            ir.model
+            ir.geometry
                 .coedges
                 .iter_mut()
                 .find(|coedge| coedge.id == coedge_id)
@@ -129,13 +129,13 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
                 .clear();
         }
         let used_pcurves = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .flat_map(|coedge| coedge.pcurves.iter())
             .map(|pcurve| pcurve.pcurve.clone())
             .collect::<std::collections::BTreeSet<_>>();
-        ir.model
+        ir.geometry
             .pcurves
             .retain(|pcurve| used_pcurves.contains(&pcurve.id));
     }
@@ -245,7 +245,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     let vertex_end = VertexId::mint("test:model:vertex#end").expect("identity grammar");
     let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.points.extend([
+    ir.geometry.points.extend([
         Point::new(
             point_start.clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_000.0, 0.0, 0.0))
@@ -259,7 +259,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
             None,
         ),
     ]);
-    ir.model.vertices.extend([
+    ir.geometry.vertices.extend([
         Vertex {
             id: vertex_start.clone(),
             point: point_start,
@@ -271,7 +271,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
             tolerance: None,
         },
     ]);
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -283,7 +283,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
         )),
         source_object: None,
     });
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#line").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
             .expect("valid edge carrier"),
@@ -304,7 +304,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 #[test]
 fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#global-profile").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(123.0, -4.0, 5.0))
             .expect("a finite position is a point"),
@@ -401,7 +401,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
         cadmpeg_ir::scalar::PositiveLength::new(2.5).expect("positive finite tolerance");
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -1044,7 +1044,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         tolerance: None,
     };
     let mut ir = CadIr::empty();
-    ir.model.loops = vec![
+    ir.geometry.loops = vec![
         Loop {
             id: inner_id,
             face: face_id.clone(),
@@ -1097,7 +1097,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
         tolerance: None,
     };
     let mut ir = CadIr::empty();
-    ir.model.loops = vec![
+    ir.geometry.loops = vec![
         Loop {
             id: inner_id,
             face: face_id.clone(),

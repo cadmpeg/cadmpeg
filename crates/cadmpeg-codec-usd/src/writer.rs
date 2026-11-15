@@ -452,7 +452,7 @@ impl<'ir> Writer<'ir> {
         let (free_curves, free_points) = self.free_carriers();
         let orphans = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .any(|body| !self.owned.contains(&body.id))
@@ -486,7 +486,7 @@ impl<'ir> Writer<'ir> {
                 for occurrence in roots {
                     self.occurrence(occurrence, &mut names, None);
                 }
-                for body in &self.ir.model.bodies {
+                for body in &self.ir.geometry.bodies {
                     if !self.owned.contains(&body.id) {
                         self.body(body, &mut names, &Placement::default(), None);
                     }
@@ -1456,8 +1456,8 @@ impl<'ir> Writer<'ir> {
 
     /// The NURBS form of a wire edge.
     fn edge_nurbs(&self, edge: &cadmpeg_ir::topology::Edge) -> Option<WireCurve> {
-        let model = &self.ir.model;
-        let curve = model
+        let geometry = &self.ir.geometry;
+        let curve = geometry
             .curves
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve())?;
@@ -1484,23 +1484,30 @@ impl<'ir> Writer<'ir> {
         Vec<&'ir cadmpeg_ir::geometry::Curve>,
         Vec<&'ir cadmpeg_ir::topology::Point>,
     ) {
-        let model = &self.ir.model;
-        let vertex_points: BTreeSet<_> =
-            model.vertices.iter().map(|vertex| &vertex.point).collect();
-        let edge_curves: BTreeSet<_> = model.edges.iter().filter_map(|edge| edge.curve()).collect();
+        let geometry = &self.ir.geometry;
+        let vertex_points: BTreeSet<_> = geometry
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.point)
+            .collect();
+        let edge_curves: BTreeSet<_> = geometry
+            .edges
+            .iter()
+            .filter_map(|edge| edge.curve())
+            .collect();
         let independent = |source: Option<&cadmpeg_ir::SourceObjectAssociation>| {
             source.is_none_or(|source| {
                 source.geometry_role != Some(cadmpeg_ir::SourceGeometryRole::Support)
             })
         };
-        let curves = model
+        let curves = geometry
             .curves
             .iter()
             .filter(|curve| {
                 !edge_curves.contains(&curve.id) && independent(curve.source_object.as_ref())
             })
             .collect();
-        let points = model
+        let points = geometry
             .points
             .iter()
             .filter(|point| {
@@ -1596,6 +1603,7 @@ impl<'ir> Writer<'ir> {
     fn losses(&self) -> Vec<LossNote> {
         let unwritten = &self.unwritten;
         let model = &self.ir.model;
+        let geometry = &self.ir.geometry;
         let mut losses = Vec::new();
         if unwritten.solver_properties > 0 {
             losses.push(UsdLossCode::ExportSolverPropertyNotWritten.note(format!(
@@ -1660,8 +1668,8 @@ impl<'ir> Writer<'ir> {
                 unwritten.curves
             )));
         }
-        let face_surfaces: BTreeSet<_> = model.faces.iter().map(|face| &face.surface).collect();
-        let free_surfaces = model
+        let face_surfaces: BTreeSet<_> = geometry.faces.iter().map(|face| &face.surface).collect();
+        let free_surfaces = geometry
             .surfaces
             .iter()
             .filter(|surface| !face_surfaces.contains(&surface.id))
@@ -1846,18 +1854,18 @@ mod tests;
 
 /// The arena position of each region, shell, face, and edge of `ir`.
 fn positions(ir: &CadIr) -> BTreeMap<&str, usize> {
-    let model = &ir.model;
+    let geometry = &ir.geometry;
     let mut out = BTreeMap::new();
-    for (position, region) in model.regions.iter().enumerate() {
+    for (position, region) in geometry.regions.iter().enumerate() {
         out.insert(region.id.as_str(), position);
     }
-    for (position, shell) in model.shells.iter().enumerate() {
+    for (position, shell) in geometry.shells.iter().enumerate() {
         out.insert(shell.id.as_str(), position);
     }
-    for (position, face) in model.faces.iter().enumerate() {
+    for (position, face) in geometry.faces.iter().enumerate() {
         out.insert(face.id.as_str(), position);
     }
-    for (position, edge) in model.edges.iter().enumerate() {
+    for (position, edge) in geometry.edges.iter().enumerate() {
         out.insert(edge.id.as_str(), position);
     }
     out

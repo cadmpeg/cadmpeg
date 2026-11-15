@@ -56,7 +56,7 @@ fn decode_projects_a_v4_composite_with_a_point_attachment() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 1);
     assert!(!result
         .report()
         .losses
@@ -106,7 +106,7 @@ fn decode_projects_a_v5_composite_with_a_point_attachment() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 1);
     assert!(!result
         .report()
         .losses
@@ -156,7 +156,7 @@ fn decode_projects_a_v5_composite_with_a_connect_point_attachment() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 1);
     assert!(!result
         .report()
         .losses
@@ -211,7 +211,7 @@ fn decode_rejects_a_composite_point_attachment_at_the_wrong_curve_endpoint() {
         )
         .unwrap();
 
-    assert!(result.ir().model.procedural_curves.is_empty());
+    assert!(result.ir().geometry.procedural_curves.is_empty());
     assert_eq!(
         result
             .report()
@@ -277,7 +277,7 @@ fn decode_rejects_consecutive_point_members_in_a_composite_with_curve_members() 
         )
         .unwrap();
 
-    assert!(result.ir().model.procedural_curves.is_empty());
+    assert!(result.ir().geometry.procedural_curves.is_empty());
     assert_eq!(
         result
             .report()

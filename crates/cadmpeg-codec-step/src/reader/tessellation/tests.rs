@@ -140,7 +140,7 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
         .expect("decode AP242 tessellation");
 
     assert_eq!(result.ir().model.tessellations.len(), 2);
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     let mesh = &result.ir().model.tessellations[0];
     assert_eq!(mesh.vertices().len(), 3);
     assert!((mesh.vertices()[1].x - 10.0).abs() < EPS_SAME_POINT);
@@ -195,7 +195,7 @@ fn complex_tessellated_face_retains_its_surface_carrier() {
 
     let surface = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#90")
@@ -1042,7 +1042,7 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
         .expect("decode complex tessellated support");
     let support = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#79")

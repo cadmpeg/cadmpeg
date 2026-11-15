@@ -121,7 +121,7 @@ fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
         &cadmpeg_ir::codec::DecodeOptions::default(),
     )
     .unwrap();
-    assert!(!decoded.ir().model.bodies.is_empty());
+    assert!(!decoded.ir().geometry.bodies.is_empty());
     for model_body_maps_empty in [true, false] {
         let path = super::super::FinalizePath::Bodyless(super::super::DeferredBodylessInputs {
             model_body_maps_empty,
@@ -131,14 +131,14 @@ fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
                 tessellations_by_scope: std::collections::HashMap::new(),
             },
         });
-        let bodies = path.component_bodies(&decoded.ir().model.bodies, false);
+        let bodies = path.component_bodies(&decoded.ir().geometry.bodies, false);
         if model_body_maps_empty {
             assert!(bodies.unwrap().is_empty());
         } else {
             assert!(bodies.is_none());
         }
         assert!(path
-            .component_bodies(&decoded.ir().model.bodies, true)
+            .component_bodies(&decoded.ir().geometry.bodies, true)
             .is_none());
     }
 }
@@ -180,25 +180,25 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(required, expected);
     assert_eq!(bodies.len(), 5);
-    let mut model = cadmpeg_ir::document::Model::default();
-    model.bodies.extend(bodies);
-    let loss = super::super::saved_free_edge_bodies_loss(&model).unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.geometry.bodies.extend(bodies);
+    let loss = super::super::saved_free_edge_bodies_loss(&ir).unwrap();
     assert!(loss.message.starts_with("2 saved free-edge bodies"));
     let definition: cadmpeg_ir::products::ProductDefinition =
         serde_json::from_value(serde_json::json!({
-            "id": "f3d:design:product-definition#1", "kind": "part", "bodies": []
+            "id": "f3d:design:product-definition#1", "kind": "part", "bodies": [], "bom_properties": {}, "sketches": []
         }))
         .unwrap();
-    model.product_definitions.push(definition);
-    let loss = super::super::saved_free_edge_bodies_loss(&model).unwrap();
+    ir.model.product_definitions.push(definition);
+    let loss = super::super::saved_free_edge_bodies_loss(&ir).unwrap();
     assert_eq!(
         loss.code,
         crate::loss::F3dLossCode::SavedFreeEdgeBodyUnowned.kind()
     );
     assert!(loss.message.starts_with("2 saved free-edge bodies"));
-    model.product_definitions[0].bodies = model.bodies[3..]
+    ir.model.product_definitions[0].bodies = ir.geometry.bodies[3..]
         .iter()
         .map(|body| body.id.clone())
         .collect();
-    assert!(super::super::saved_free_edge_bodies_loss(&model).is_none());
+    assert!(super::super::saved_free_edge_bodies_loss(&ir).is_none());
 }

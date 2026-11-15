@@ -1,12 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {},
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/Assembly/Plate/Large",
@@ -22,13 +18,37 @@
         }
       ],
       "coedges": [],
-      "configurations": [],
       "curves": [],
-      "drawings": [],
       "edges": [],
       "faces": [],
-      "features": [],
       "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
       "occurrences": [
         {
           "id": "usd:stage:occurrence#/Assembly",
@@ -40,7 +60,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Assembly",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -79,7 +99,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#prototype0",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -118,7 +138,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#prototype0/Shank",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -157,7 +177,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#prototype0",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -196,7 +216,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#prototype0/Shank",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -235,7 +255,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Assembly/Plate",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -274,7 +294,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Assembly/Plate/Large",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -304,66 +324,79 @@
         }
       ],
       "parameters": [],
-      "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
-      "points": [],
+      "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Assembly",
           "kind": "part",
           "native_ref": "/Assembly",
+          "sketches": [],
           "source_name": "Assembly"
         },
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Assembly/Plate",
           "kind": "group",
           "native_ref": "/Assembly/Plate",
+          "sketches": [],
           "source_name": "Plate"
         },
         {
           "bodies": [
             "usd:stage:body#/Assembly/Plate/Large"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Assembly/Plate/Large",
           "kind": "object",
           "native_ref": "/Assembly/Plate/Large",
+          "sketches": [],
           "source_name": "Large"
         },
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#prototype0",
           "kind": "group",
           "native_ref": "/Assembly/BoltA",
+          "sketches": [],
           "source_name": "Bolt"
         },
         {
           "bodies": [
             "usd:stage:body#prototype0/Shank"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#prototype0/Shank",
           "kind": "object",
           "native_ref": "/Assembly/BoltA/Shank",
+          "sketches": [],
           "source_name": "Shank"
         }
       ],
-      "regions": [],
+      "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [
         {
           "body": "usd:stage:body#/Assembly/Plate/Large",
           "channels": [],
+          "faces": [],
+          "feature_edges": [],
           "id": "usd:stage:tessellation#/Assembly/Plate/Large",
           "mesh": {
             "kind": "list",
@@ -401,11 +434,16 @@
                 "z": 0.0
               }
             ]
-          }
+          },
+          "texture_assignments": [],
+          "texture_coordinates": [],
+          "triangle_groups": []
         },
         {
           "body": "usd:stage:body#prototype0/Shank",
           "channels": [],
+          "faces": [],
+          "feature_edges": [],
           "id": "usd:stage:tessellation#prototype0/Shank",
           "mesh": {
             "kind": "list",
@@ -443,13 +481,21 @@
                 "z": 0.0
               }
             ]
-          }
+          },
+          "texture_assignments": [],
+          "texture_coordinates": [],
+          "triangle_groups": []
         }
       ],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Assembly",
@@ -457,17 +503,19 @@
         "up_axis": "Z"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "header": "#usda 1.0"
             },
             "dialect": "usd:usda-1.0"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -475,30 +523,38 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "header": "#usda 1.0"
           },
           "dialect": "usd:usda-1.0"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "composition.variant-not-selected",
-          "kind": "parametric_record_omitted",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "composition.variant-not-selected",
+            "kind": "parametric_record_omitted",
+            "namespace": "usd"
+          }
         },
         "message": "1 variants that no selection names were not composed",
         "severity": "info"
@@ -507,10 +563,17 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

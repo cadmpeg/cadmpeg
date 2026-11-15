@@ -156,7 +156,7 @@ fn cylinder_groups(
 ) -> Result<Vec<PhysicalCylinder>, CodecError> {
     let index = ModelIndex::new_model_only(ir);
     let owners = (ir
-        .model
+        .geometry
         .shells
         .iter()
         .flat_map(|shell| shell.faces().iter().map(move |face| (face.as_str(), shell))))
@@ -168,7 +168,7 @@ fn cylinder_groups(
         },
     );
     let mut groups: Vec<PhysicalCylinder> = Vec::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         let Some(surface) = index.surfaces(face.surface.as_str(), cadmpeg_ir::index::StandardIndex)
         else {
             continue;

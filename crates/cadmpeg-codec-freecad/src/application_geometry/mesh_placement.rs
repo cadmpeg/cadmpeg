@@ -152,7 +152,7 @@ pub(crate) fn project(
         };
         output.push(placed_mesh(mesh, transform, None)?);
     }
-    let mut population = u64_from_index(ir.model.entity_count());
+    let mut population = u64_from_index(ir.entity_count());
     for occurrence in scene.occurrences {
         let Some(record) = occurrence
             .native_ref

@@ -47,9 +47,12 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
     inject_failure(malformed_design);
     let contained = decode(design_archive());
 
-    assert_eq!(contained.ir().model.bodies, full.ir().model.bodies);
-    assert_eq!(contained.ir().model.faces, full.ir().model.faces);
-    assert_eq!(contained.ir().model.surfaces, full.ir().model.surfaces);
+    assert_eq!(contained.ir().geometry.bodies, full.ir().geometry.bodies);
+    assert_eq!(contained.ir().geometry.faces, full.ir().geometry.faces);
+    assert_eq!(
+        contained.ir().geometry.surfaces,
+        full.ir().geometry.surfaces
+    );
     assert_eq!(
         contained.ir().model.appearances,
         full.ir().model.appearances
@@ -100,8 +103,8 @@ fn strict_mode_refuses_a_contained_design_intent_failure() {
 
 fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
     let mut edited = result.ir().clone();
-    let moved = edited.model.points[0].position().get();
-    edited.model.points[0].set_position(
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,

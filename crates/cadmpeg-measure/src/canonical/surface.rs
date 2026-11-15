@@ -1021,7 +1021,7 @@ mod tests {
         builder.face(&patch, Sense::Forward, &[], false);
         let ir = builder.finish(BodyKind::Sheet);
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
-            &ir.model.surfaces[0].geometry
+            &ir.geometry.surfaces[0].geometry
         else {
             panic!("a NURBS surface");
         };
@@ -1077,7 +1077,7 @@ mod tests {
         builder.face(&patch, Sense::Forward, &[], false);
         let ir = builder.finish(BodyKind::Sheet);
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
-            &ir.model.surfaces[0].geometry
+            &ir.geometry.surfaces[0].geometry
         else {
             panic!("a NURBS surface");
         };

@@ -649,7 +649,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         annotate(
@@ -804,7 +804,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         annotate(
@@ -985,7 +985,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
         };
         let id = crate::identity::compose_checked::<SurfaceId>(namespace, carrier.surface_id)?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         annotate(

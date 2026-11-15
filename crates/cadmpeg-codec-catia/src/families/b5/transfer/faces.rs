@@ -384,7 +384,7 @@ pub(super) fn emit_faces(
     }
     let body_record_id = body_id.clone();
     admission.charge()?;
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: body_record_id,
         kind: ownership.body_kind,
         regions: body_regions,
@@ -415,7 +415,7 @@ pub(super) fn emit_faces(
         let region_shell_id = shell_id.clone();
         let region_shells = vec![region_shell_id];
         admission.charge()?;
-        ir.model.regions.push(Region {
+        ir.geometry.regions.push(Region {
             id: region_record_id,
             body: region_body_id,
             shells: region_shells,
@@ -440,7 +440,7 @@ pub(super) fn emit_faces(
             shell_faces.push(face_id);
         }
         admission.charge()?;
-        ir.model.shells.push(
+        ir.geometry.shells.push(
             match Shell::new(shell_id, region_id, shell_faces, Vec::new(), Vec::new()) {
                 Ok(shell) => shell,
                 Err(_) => {
@@ -476,9 +476,9 @@ pub(super) fn emit_faces(
         let face_record_id = face_id.clone();
         let face_shell_id = shell_id.clone();
         let face_surface_id = surface_ids[&face.surface].clone();
-        let face_record_index = ir.model.faces.len();
+        let face_record_index = ir.geometry.faces.len();
         admission.charge()?;
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: face_record_id,
             shell: face_shell_id,
             surface: face_surface_id,
@@ -532,7 +532,7 @@ pub(super) fn emit_faces(
             for field in ["face", "coedges", "vertex_uses"] {
                 annotations.derived(loop_id.as_str(), field)?;
             }
-            if ir.model.faces[face_record_index].loops.role(&loop_id)
+            if ir.geometry.faces[face_record_index].loops.role(&loop_id)
                 != LoopBoundaryRole::Unspecified
             {
                 annotations
@@ -545,7 +545,7 @@ pub(super) fn emit_faces(
             let loop_record_id = loop_id.clone();
             let loop_face_id = face_id.clone();
             admission.charge()?;
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: loop_record_id,
                 face: loop_face_id,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -564,7 +564,7 @@ pub(super) fn emit_faces(
                 for field in ["owner_loop", "edge", "radial_next", "sense", "pcurves"] {
                     annotations.derived(id.as_str(), field)?;
                 }
-                let arena_index = ir.model.coedges.len();
+                let arena_index = ir.geometry.coedges.len();
 
                 coedges_by_edge.entry(edge).or_default().push(arena_index);
                 let coedge_record_id = id.clone();
@@ -592,7 +592,7 @@ pub(super) fn emit_faces(
                     });
                 }
                 admission.charge()?;
-                ir.model.coedges.push(Coedge {
+                ir.geometry.coedges.push(Coedge {
                     id: coedge_record_id,
                     owner_loop: owner_loop_id,
                     edge: edge_ref_id,
@@ -611,8 +611,8 @@ pub(super) fn emit_faces(
     for occurrences in coedges_by_edge.values() {
         for (position, &arena_index) in occurrences.iter().enumerate() {
             let radial = occurrences[(position + 1) % occurrences.len()];
-            let next = ir.model.coedges[radial].id.clone();
-            ir.model.coedges[arena_index].radial_next = next;
+            let next = ir.geometry.coedges[radial].id.clone();
+            ir.geometry.coedges[arena_index].radial_next = next;
         }
     }
     Ok(true)

@@ -126,7 +126,7 @@ fn decoded(
     admitted_entities: &mut u64,
 ) -> Result<Decoded, CodecError> {
     ctx.admit_entities(
-        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+        cadmpeg_core::decode::u64_from_index(ir.entity_count()),
         admitted_entities,
         "admit NX entities",
     )?;

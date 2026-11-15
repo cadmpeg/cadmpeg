@@ -387,6 +387,154 @@ fn framed_move_face_refuses_conflicting_registration_and_actual_transform_ambigu
 }
 
 #[test]
+fn framed_move_face_admits_a_version_3_registration_in_its_longer_frame() {
+    for form in [0, 1, 2, 5] {
+        let mut fixture = MoveFaceFixture {
+            frames: vec![MoveFaceFrame {
+                form,
+                version_3_length: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        fixture.types[1] = (TRANSFORM_GUID, 3);
+        let result = project(&fixture);
+        assert_projected(&result, TRANSLATION, true);
+        for code in [
+            F3dLossCode::FeatureMoveFaceTypeConflict,
+            F3dLossCode::FeatureMoveFaceTypeAssumed,
+            F3dLossCode::FeatureMoveTransformAssumed,
+        ] {
+            assert!(
+                !result.losses.contains(&code.kind()),
+                "form {form}: {code:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn framed_move_face_keeps_a_version_3_matrix_in_a_version_2_frame_length() {
+    let mut fixture = MoveFaceFixture::default();
+    fixture.types[1] = (TRANSFORM_GUID, 3);
+    let result = project(&fixture);
+    assert_projected(&result, TRANSLATION, true);
+    assert!(result
+        .losses
+        .contains(&F3dLossCode::FeatureMoveTransformAssumed.kind()));
+    assert!(!result
+        .losses
+        .contains(&F3dLossCode::FeatureMoveFaceTypeConflict.kind()));
+}
+
+#[test]
+fn framed_move_face_prefers_a_version_2_frame_over_a_version_3_sibling() {
+    let mut different = TRANSLATION;
+    different[2][3] = 3.;
+    for version_3_length in [false, true] {
+        for first in [false, true] {
+            let mut frames = vec![
+                MoveFaceFrame::default(),
+                MoveFaceFrame {
+                    class: *b"258",
+                    matrix: different,
+                    version_3_length,
+                    ..Default::default()
+                },
+            ];
+            if first {
+                frames.reverse();
+            }
+            let mut fixture = MoveFaceFixture {
+                frames,
+                ..Default::default()
+            };
+            fixture.types[2] = (TRANSFORM_GUID, 3);
+            let result = project(&fixture);
+            assert_projected(&result, TRANSLATION, true);
+            assert!(!result
+                .losses
+                .contains(&F3dLossCode::FeatureMoveTransformAssumed.kind()));
+        }
+    }
+}
+
+#[test]
+fn framed_move_face_prefers_a_version_3_frame_that_keeps_its_frame_rules() {
+    let mut different = TRANSLATION;
+    different[2][3] = 3.;
+    for first in [false, true] {
+        let mut frames = vec![
+            MoveFaceFrame {
+                version_3_length: true,
+                ..Default::default()
+            },
+            MoveFaceFrame {
+                class: *b"258",
+                matrix: different,
+                ..Default::default()
+            },
+        ];
+        if first {
+            frames.reverse();
+        }
+        let mut fixture = MoveFaceFixture {
+            frames,
+            ..Default::default()
+        };
+        fixture.types[1] = (TRANSFORM_GUID, 3);
+        fixture.types[2] = (TRANSFORM_GUID, 3);
+        let result = project(&fixture);
+        assert_projected(&result, TRANSLATION, true);
+        assert!(!result
+            .losses
+            .contains(&F3dLossCode::FeatureMoveTransformAssumed.kind()));
+    }
+}
+
+#[test]
+fn framed_move_face_reports_a_version_3_frame_without_the_transform_grammar() {
+    let mut fixture = MoveFaceFixture {
+        frames: vec![MoveFaceFrame {
+            malformed: true,
+            version_3_length: true,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    fixture.types[1] = (TRANSFORM_GUID, 3);
+    let result = project(&fixture);
+    assert!(result.scope.move_operation().is_none());
+    assert!(result
+        .losses
+        .contains(&F3dLossCode::FeatureMoveFaceTypeConflict.kind()));
+    assert!(matches!(result.operation, FeatureOperation::Native { .. }));
+}
+
+#[test]
+fn framed_move_face_keeps_a_matrix_whose_form_word_breaks_its_frame_length() {
+    for (version, form, length) in [(3, 5, 276), (2, 0, 253)] {
+        let mut fixture = MoveFaceFixture {
+            frames: vec![MoveFaceFrame {
+                form,
+                length: Some(length),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        fixture.types[1] = (TRANSFORM_GUID, version);
+        let result = project(&fixture);
+        assert_projected(&result, TRANSLATION, true);
+        assert!(
+            result
+                .losses
+                .contains(&F3dLossCode::FeatureMoveTransformAssumed.kind()),
+            "version {version}, form {form}, {length} bytes"
+        );
+    }
+}
+
+#[test]
 fn archive_move_face_keeps_the_selected_header_when_the_table_omits_its_transform() {
     let fixture = MoveFaceFixture {
         references: vec![50, 60],

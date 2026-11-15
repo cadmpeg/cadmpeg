@@ -704,4 +704,4 @@ fn edge_height_is_bounded(
 }
 
 #[cfg(test)]
-mod tests;
+pub(in crate::design::profile_select) mod tests;

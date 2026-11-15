@@ -1,45 +1,62 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "10",
+      "design": {},
+      "fragment": false,
+      "geometry": {
+        "bodies": [],
+        "coedges": [],
+        "curves": [],
+        "edges": [],
+        "faces": [],
+        "loops": [],
+        "pcurves": [],
+        "points": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "regions": [],
+        "shells": [],
+        "subds": [],
+        "surfaces": [],
+        "vertices": []
+      },
+      "ir_version": "11",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
+        "articulations": [],
         "assembly_joints": [],
+        "assets": [],
         "attributes": [],
-        "bodies": [],
-        "coedges": [],
+        "colliders": [],
         "configurations": [],
-        "curves": [],
+        "declared_measures": [],
         "drawings": [],
-        "edges": [],
-        "faces": [],
+        "feature_input_topologies": [],
+        "feature_result_topologies": [],
         "features": [],
-        "loops": [],
+        "history_bodies": [],
+        "mass_properties": [],
         "occurrences": [],
         "parameters": [],
-        "pcurves": [],
+        "physical_materials": [],
+        "physics_scenes": [],
         "pmi": [],
-        "points": [],
+        "point_clouds": [],
         "presentation_documents": [],
         "presentation_layers": [],
-        "procedural_curves": [],
-        "procedural_surfaces": [],
         "product_definitions": [],
-        "regions": [],
+        "rigid_bodies": [],
         "semantic_annotations": [],
-        "shells": [],
         "sketch_constraints": [],
         "sketch_entities": [],
         "sketches": [],
+        "solver_settings": [],
+        "spatial_sketch_constraints": [],
         "spatial_sketch_entities": [],
         "spatial_sketches": [],
         "spreadsheets": [],
-        "subds": [],
-        "surfaces": [],
         "tessellations": [],
-        "vertices": [],
         "view_presentations": []
       },
       "native": {
@@ -86,10 +103,17 @@
           ],
           "unknowns": [
             {
-              "id": "nx:container:parasolid#0"
+              "id": "nx:container:parasolid#0",
+              "links": []
             }
           ]
         }
+      },
+      "process": {},
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
       },
       "source": {
         "attributes": {
@@ -112,11 +136,12 @@
           "plain_streams": "0"
         },
         "identity": {
-          "classification": "classified",
           "dialects": {
             "extra": [
               {
-                "admission": "residual",
+                "admission": {
+                  "kind": "residual"
+                },
                 "declared": {
                   "carrier": "stream@116",
                   "schema": "SCH_test"
@@ -125,13 +150,16 @@
               }
             ],
             "primary": {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "splmsstr_version": "6"
               },
               "dialect": "nx:splmsstr"
             }
-          }
+          },
+          "kind": "classified"
         }
       },
       "tolerances": {
@@ -139,16 +167,21 @@
         "linear": 1e-6
       },
       "units": {
-        "length": "millimeter"
+        "angle": "radian",
+        "length": "millimeter",
+        "mass": "kilogram",
+        "time": "second"
       }
     },
     "report": {
+      "coverage": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [
             {
-              "admission": "residual",
+              "admission": {
+                "kind": "residual"
+              },
               "declared": {
                 "carrier": "stream@116",
                 "schema": "SCH_test"
@@ -157,33 +190,40 @@
             }
           ],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "splmsstr_version": "6"
             },
             "dialect": "nx:splmsstr"
           }
-        }
+        },
+        "kind": "classified"
       },
       "losses": [
         {
           "code": {
-            "code": "geometry.not-transferred",
-            "kind": "geometry_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "geometry.not-transferred",
+              "kind": "geometry_not_transferred",
+              "namespace": "nx",
+              "strict_floor": "warning"
+            }
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
         },
         {
           "code": {
-            "code": "source.kernel-dialect-unverified",
-            "kind": "source_dialect_unverified",
-            "namespace": "nx",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "source.kernel-dialect-unverified",
+              "kind": "source_dialect_unverified",
+              "namespace": "nx",
+              "strict_floor": "warning"
+            }
           },
           "message": "The Parasolid stream at stream@116 declares schema \"SCH_test\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
@@ -195,7 +235,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "kind": "full"
+      },
+      "transfer_ledger": {
+        "entries": []
       }
     },
     "source_fidelity": {
@@ -203,7 +246,8 @@
         "exactness": {
           "nx:container:parasolid#0": {
             "entity": "derived",
-            "scope": "entity"
+            "fields": {},
+            "kind": "entity"
           }
         },
         "provenance": {
@@ -238,7 +282,7 @@
         "nx:container:parasolid#0": {
           "bytes": {
             "data": "UFMAAAA/OiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgdGVzdCBzZWdtZW50IHN0cmVhbSBwYXlsb2FkAAAACFNDSF90ZXN0AA==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 116,
           "stream": "nx:container"
@@ -254,11 +298,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compression": "none",
+        "kind": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
         "size": {
-          "form": "exact",
+          "kind": "exact",
           "size": 133
         }
       },
@@ -272,18 +316,19 @@
           "records.delta.selection": "unresolved",
           "schema": "SCH_test"
         },
-        "compression": "zlib",
         "expanded": 82,
+        "kind": "zlib",
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
     ],
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [
           {
-            "admission": "residual",
+            "admission": {
+              "kind": "residual"
+            },
             "declared": {
               "carrier": "stream@116",
               "schema": "SCH_test"
@@ -292,22 +337,27 @@
           }
         ],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "splmsstr_version": "6"
           },
           "dialect": "nx:splmsstr"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "source.kernel-dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "nx",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx",
+            "strict_floor": "warning"
+          }
         },
         "message": "The Parasolid stream at stream@116 declares schema \"SCH_test\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
         "severity": "warning"

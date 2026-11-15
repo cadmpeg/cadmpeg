@@ -3,7 +3,7 @@
 fn active_body() -> cadmpeg_ir::topology::Body {
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
-        .model
+        .geometry
         .bodies
         .remove(0);
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();

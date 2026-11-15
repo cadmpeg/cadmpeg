@@ -36,7 +36,7 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             &DecodeOptions::default(),
         )
         .unwrap();
-        assert!(!baseline.ir().model.faces.is_empty());
+        assert!(!baseline.ir().geometry.faces.is_empty());
         let mut changed = original;
         damage_local_frame(&mut changed, name);
         let decoded = cadmpeg_test_support::EditableDecodeResult::from(
@@ -46,6 +46,7 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             )
             .unwrap(),
         );
+        assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
         assert_eq!(decoded.ir().model, baseline.ir().model);
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .unwrap()
@@ -96,6 +97,7 @@ fn unreadable_unreferenced_document_does_not_hide_a_readable_model_root() {
         &DecodeOptions::default(),
     )
     .unwrap();
+    assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
     assert_eq!(decoded.ir().model, baseline.ir().model);
     assert!(decoded
         .report()
@@ -154,15 +156,15 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
         &DecodeOptions::default(),
     )
     .unwrap();
-    assert!(!baseline.ir().model.faces.is_empty());
+    assert!(!baseline.ir().geometry.faces.is_empty());
     damage_local_frame(&mut changed, "component.f3d");
     let decoded = crate::test_support::archive_session::decode(
         &mut Cursor::new(changed),
         &DecodeOptions::default(),
     )
     .unwrap();
-    assert!(decoded.ir().model.faces.is_empty());
-    assert!(decoded.ir().model.surfaces.is_empty());
+    assert!(decoded.ir().geometry.faces.is_empty());
+    assert!(decoded.ir().geometry.surfaces.is_empty());
     assert!(decoded
         .report()
         .losses

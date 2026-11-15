@@ -235,15 +235,12 @@ fn definition(
     start: serde_json::Value,
     extent: serde_json::Value,
 ) -> cadmpeg_ir::features::FeatureDefinition {
-    let mut value = serde_json::json!({
-        "definition": "extrude",
-        "profile": {"kind": "native", "value": profile},
+    let mut value = serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "native", "value": profile}},
         "direction": {"kind": "profile_normal"},
         "op": "new_body",
-        "solid": true
-    });
-    value["start"] = start;
-    value["extent"] = extent;
+        "solid": true}}});
+    value["value"]["value"]["start"] = start;
+    value["value"]["value"]["extent"] = extent;
     serde_json::from_value(value).unwrap()
 }
 

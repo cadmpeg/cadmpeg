@@ -1,29 +1,53 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
+    "design": {},
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
-      "bodies": [],
-      "coedges": [],
+      "colliders": [],
       "configurations": [],
-      "curves": [],
+      "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
-      "loops": [],
+      "history_bodies": [],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [
         {
           "definition": {
-            "dimension": "size",
+            "dimension": {
+              "kind": "size"
+            },
             "kind": "dimension",
+            "modifiers": [],
             "nominal": {
               "quantity": "length",
               "value": 12.0
@@ -35,7 +59,7 @@
                 "source": "ISO 286",
                 "zone_variance": ""
               },
-              "form": "plus_minus_fit",
+              "kind": "plus_minus_fit",
               "lower": {
                 "quantity": "length",
                 "value": -0.1
@@ -57,12 +81,18 @@
         },
         {
           "definition": {
+            "constraints": {
+              "zones": []
+            },
             "kind": "geometric_tolerance",
             "magnitude": {
               "quantity": "length",
               "value": 0.05
             },
-            "tolerance": "flatness"
+            "modifiers": [],
+            "tolerance": {
+              "kind": "flatness"
+            }
           },
           "id": "step:presentation:pmi#12",
           "name": "surface flatness",
@@ -75,10 +105,13 @@
         },
         {
           "definition": {
-            "dimension": "diameter",
+            "dimension": {
+              "kind": "diameter"
+            },
             "kind": "dimension",
+            "modifiers": [],
             "tolerance": {
-              "form": "plus_minus",
+              "kind": "plus_minus",
               "lower": {
                 "quantity": "length",
                 "value": -0.1
@@ -126,31 +159,34 @@
             ]
           },
           "id": "step:presentation:pmi#8",
-          "name": "primary system"
+          "name": "primary system",
+          "targets": []
         }
       ],
-      "points": [],
+      "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [],
+      "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "bytes_named_opaque": "0",
@@ -162,18 +198,20 @@
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
               "implementation_level": "2;1"
             },
             "dialect": "step:ap242"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -181,32 +219,40 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
             "implementation_level": "2;1"
           },
           "dialect": "step:ap242"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.document-angle-unit-unresolved",
-          "kind": "geometry_not_transferred",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.document-angle-unit-unresolved",
+            "kind": "geometry_not_transferred",
+            "namespace": "step",
+            "strict_floor": "warning"
+          }
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -217,10 +263,17 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "retained_records": {}
   }
 }

@@ -596,7 +596,7 @@ pub(crate) fn append_design_losses(
             )));
     }
     let model_body_ids = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| &body.id)
@@ -1412,7 +1412,7 @@ pub(crate) fn append_design_losses(
                         || !state.dependencies.contains(source)
                 }
                 FeatureOperation::ImportedGeometry { path, .. } => path.trim().is_empty(),
-                FeatureOperation::Form { cages } => cages.is_empty(),
+                FeatureOperation::Form(construction) => !construction.membership_is_complete() || construction.committed_cages().next().is_none(),
                 FeatureOperation::PointGeometry { .. }
                 | FeatureOperation::LineSegment { .. }
                 | FeatureOperation::CircularArc { .. }
@@ -3534,32 +3534,32 @@ fn build_geometry_ir(
     ir.model.sketch_constraints = sketch_constraints;
 
     let brep_entities = brep.neutral_entity_count()?;
-    ir.model.bodies = brep.bodies;
-    ir.model.regions = brep.regions;
-    ir.model.shells = brep.shells;
-    ir.model.faces = brep.faces;
-    ir.model.loops = brep.loops;
-    ir.model.coedges = brep.coedges;
-    ir.model.edges = brep.edges;
-    ir.model.vertices = brep.vertices;
-    ir.model.points = brep.points;
-    ir.model.surfaces = brep.surfaces;
-    ir.model.procedural_surfaces = brep.procedural_surfaces;
-    ir.model.curves = brep.curves;
-    ir.model
+    ir.geometry.bodies = brep.bodies;
+    ir.geometry.regions = brep.regions;
+    ir.geometry.shells = brep.shells;
+    ir.geometry.faces = brep.faces;
+    ir.geometry.loops = brep.loops;
+    ir.geometry.coedges = brep.coedges;
+    ir.geometry.edges = brep.edges;
+    ir.geometry.vertices = brep.vertices;
+    ir.geometry.points = brep.points;
+    ir.geometry.surfaces = brep.surfaces;
+    ir.geometry.procedural_surfaces = brep.procedural_surfaces;
+    ir.geometry.curves = brep.curves;
+    ir.geometry
         .procedural_curves
         .append(&mut brep.procedural_curves);
-    ir.model.pcurves = brep.pcurves;
+    ir.geometry.pcurves = brep.pcurves;
     *admitted_entities = brep_entities;
     let face_bridge_sequences = std::mem::take(&mut brep.face_bridge_sequences);
     let edge_use_sequences = std::mem::take(&mut brep.edge_use_sequences);
     let vertex_use_sequences = std::mem::take(&mut brep.vertex_use_sequences);
     let topology_index = crate::swift::TopologyIdentityIndex::from_model(
         crate::swift::PrimaryTopology {
-            bodies: &ir.model.bodies,
-            faces: &ir.model.faces,
-            edges: &ir.model.edges,
-            vertices: &ir.model.vertices,
+            bodies: &ir.geometry.bodies,
+            faces: &ir.geometry.faces,
+            edges: &ir.geometry.edges,
+            vertices: &ir.geometry.vertices,
         },
         &face_bridge_sequences,
         &edge_use_sequences,
@@ -3597,16 +3597,16 @@ fn build_geometry_ir(
             face_producers: &face_producers,
             body_modifiers: &body_modifiers,
         },
-        &ir.model.faces,
-        &ir.model.shells,
-        &ir.model.regions,
+        &ir.geometry.faces,
+        &ir.geometry.shells,
+        &ir.geometry.regions,
     )?;
     let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
-        bodies: &ir.model.bodies,
-        faces: &ir.model.faces,
-        surfaces: &ir.model.surfaces,
-        edges: &ir.model.edges,
-        curves: &ir.model.curves,
+        bodies: &ir.geometry.bodies,
+        faces: &ir.geometry.faces,
+        surfaces: &ir.geometry.surfaces,
+        edges: &ir.geometry.edges,
+        curves: &ir.geometry.curves,
         lanes: &all_lanes,
         face_identities: &face_identities,
     };
@@ -3620,8 +3620,8 @@ fn build_geometry_ir(
         &histories,
         &all_lanes,
         &face_identities,
-        &ir.model.faces,
-        &ir.model.surfaces,
+        &ir.geometry.faces,
+        &ir.geometry.surfaces,
     )?;
     crate::resolved_features::holes::project_profiled_hole_constructions(
         ctx,
@@ -3641,7 +3641,7 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &ir.model.spatial_sketches,
         &ir.model.spatial_sketch_entities,
-        &ir.model.surfaces,
+        &ir.geometry.surfaces,
         &histories,
         &all_lanes,
     );
@@ -3650,19 +3650,19 @@ fn build_geometry_ir(
         &histories,
         &all_lanes,
         &face_identities,
-        &ir.model.faces,
-        &ir.model.surfaces,
+        &ir.geometry.faces,
+        &ir.geometry.surfaces,
     );
     crate::resolved_features::holes::project_topological_hole_constructions(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
-            surfaces: &ir.model.surfaces,
-            faces: &ir.model.faces,
-            loops: &ir.model.loops,
-            coedges: &ir.model.coedges,
-            edges: &ir.model.edges,
-            vertices: &ir.model.vertices,
-            points: &ir.model.points,
+            surfaces: &ir.geometry.surfaces,
+            faces: &ir.geometry.faces,
+            loops: &ir.geometry.loops,
+            coedges: &ir.geometry.coedges,
+            edges: &ir.geometry.edges,
+            vertices: &ir.geometry.vertices,
+            points: &ir.geometry.points,
         },
     )?;
     crate::resolved_features::holes::project_hole_axes(
@@ -3670,13 +3670,13 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &crate::resolved_features::holes::HoleTopology {
-            surfaces: &ir.model.surfaces,
-            faces: &ir.model.faces,
-            loops: &ir.model.loops,
-            coedges: &ir.model.coedges,
-            edges: &ir.model.edges,
-            vertices: &ir.model.vertices,
-            points: &ir.model.points,
+            surfaces: &ir.geometry.surfaces,
+            faces: &ir.geometry.faces,
+            loops: &ir.geometry.loops,
+            coedges: &ir.geometry.coedges,
+            edges: &ir.geometry.edges,
+            vertices: &ir.geometry.vertices,
+            points: &ir.geometry.points,
         },
         &histories,
         &all_lanes,
@@ -3685,20 +3685,20 @@ fn build_geometry_ir(
         ctx,
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
-            surfaces: &ir.model.surfaces,
-            faces: &ir.model.faces,
-            loops: &ir.model.loops,
-            coedges: &ir.model.coedges,
-            edges: &ir.model.edges,
-            vertices: &ir.model.vertices,
-            points: &ir.model.points,
+            surfaces: &ir.geometry.surfaces,
+            faces: &ir.geometry.faces,
+            loops: &ir.geometry.loops,
+            coedges: &ir.geometry.coedges,
+            edges: &ir.geometry.edges,
+            vertices: &ir.geometry.vertices,
+            points: &ir.geometry.points,
         },
     )?;
     crate::resolved_features::holes::project_bore_backed_position_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
-        &ir.model.surfaces,
+        &ir.geometry.surfaces,
         &histories,
         &all_lanes,
     );
@@ -3734,13 +3734,13 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &histories,
         &all_lanes,
-        &ir.model.faces,
-        &ir.model.surfaces,
+        &ir.geometry.faces,
+        &ir.geometry.surfaces,
     )?;
     crate::resolved_features::projections::project_unbound_offset_plane_faces(
         &mut ir.model.features,
-        &ir.model.faces,
-        &ir.model.surfaces,
+        &ir.geometry.faces,
+        &ir.geometry.surfaces,
     );
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     sync_active_configuration_resolutions(&mut ir)?;
@@ -3759,7 +3759,7 @@ fn build_geometry_ir(
         ctx,
         scan,
         crate::appearance::visual_states::Inputs {
-            model: &ir.model,
+            ir: &ir,
             histories: &histories,
             lanes: &all_lanes,
             faces: &brep.native_face_identities,
@@ -3783,7 +3783,7 @@ fn build_geometry_ir(
         );
     }
     ctx.admit_entities(
-        u64_from_index(ir.model.entity_count()),
+        u64_from_index(ir.entity_count()),
         admitted_entities,
         "admit SLDPRT entities",
     )?;
@@ -3958,18 +3958,15 @@ fn build_geometry_ir(
     ) {
         pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
     }
-    let mut assigned_tessellations = crate::tessellation::assign_face_key_owners(
-        &mut ir.model,
-        &brep.face_keys,
-        &face_key_bindings,
-    );
+    let mut assigned_tessellations =
+        crate::tessellation::assign_face_key_owners(&mut ir, &brep.face_keys, &face_key_bindings);
     assigned_tessellations.extend(crate::tessellation::assign_persistent_owners(
-        &mut ir.model,
+        &mut ir,
         &face_identities,
         &persistent_face_bindings,
     ));
     let remaining_assignments =
-        crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model, &mut pmi_losses)?;
+        crate::tessellation::assign_unique_surface_owners(ctx, &mut ir, &mut pmi_losses)?;
     assigned_tessellations.extend(remaining_assignments);
     if native_appearance_plan.unresolved > 0 {
         pmi_losses.push(
@@ -3984,7 +3981,7 @@ fn build_geometry_ir(
         let Some(definition) = choice.definition.as_ref() else {
             continue;
         };
-        let Some(face) = ir.model.faces.iter().find(|face| &face.id == face_id) else {
+        let Some(face) = ir.geometry.faces.iter().find(|face| &face.id == face_id) else {
             continue;
         };
         if face.color.is_some() && choice.rank < 4 {
@@ -4004,7 +4001,12 @@ fn build_geometry_ir(
             &mut annotations,
             ScopedAppearanceOrigin::VisualState,
         )?;
-        if let Some(face) = ir.model.faces.iter_mut().find(|face| &face.id == face_id) {
+        if let Some(face) = ir
+            .geometry
+            .faces
+            .iter_mut()
+            .find(|face| &face.id == face_id)
+        {
             face.color = Some(definition.color);
             scoped_color_faces.push(face_id.clone());
         }
@@ -4080,7 +4082,7 @@ fn build_geometry_ir(
         ));
     }
     let mut opaque_links = BTreeMap::<&str, Vec<String>>::new();
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
             record: Some(record),
         }) = &surface.geometry
@@ -4091,7 +4093,7 @@ fn build_geometry_ir(
                 .push(surface.id.as_str().to_owned());
         }
     }
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         if let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
             record: Some(record),
         }) = &curve.geometry
@@ -4114,7 +4116,7 @@ fn build_geometry_ir(
         source.links_mut().extend(links);
     }
     crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
-    if crate::history::extrude_direction::retain_contradicted_directions(&mut ir.model) {
+    if crate::history::extrude_direction::retain_contradicted_directions(&mut ir) {
         stamp_feature_baseline(ctx, &mut ir)?;
     }
     stamp_configuration_baseline(ctx, &mut ir)?;
@@ -4758,7 +4760,7 @@ fn build_metadata_ir(
         &histories,
         lanes,
         &ir.model.sketches,
-        &ir.model.surfaces,
+        &ir.geometry.surfaces,
     );
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
@@ -4769,7 +4771,7 @@ fn build_metadata_ir(
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
-        &ir.model.surfaces,
+        &ir.geometry.surfaces,
         &ir.model.features,
         &ir.model.parameters,
         sketch_lanes,
@@ -4836,20 +4838,20 @@ fn build_metadata_ir(
         &mut ir.model.features,
         &ir.model.spatial_sketches,
         &ir.model.spatial_sketch_entities,
-        &ir.model.surfaces,
+        &ir.geometry.surfaces,
         &histories,
         lanes,
     );
     crate::resolved_features::holes::project_topological_hole_constructions(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
-            surfaces: &ir.model.surfaces,
-            faces: &ir.model.faces,
-            loops: &ir.model.loops,
-            coedges: &ir.model.coedges,
-            edges: &ir.model.edges,
-            vertices: &ir.model.vertices,
-            points: &ir.model.points,
+            surfaces: &ir.geometry.surfaces,
+            faces: &ir.geometry.faces,
+            loops: &ir.geometry.loops,
+            coedges: &ir.geometry.coedges,
+            edges: &ir.geometry.edges,
+            vertices: &ir.geometry.vertices,
+            points: &ir.geometry.points,
         },
     )?;
     crate::resolved_features::holes::project_hole_axes(
@@ -4857,13 +4859,13 @@ fn build_metadata_ir(
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &crate::resolved_features::holes::HoleTopology {
-            surfaces: &ir.model.surfaces,
-            faces: &ir.model.faces,
-            loops: &ir.model.loops,
-            coedges: &ir.model.coedges,
-            edges: &ir.model.edges,
-            vertices: &ir.model.vertices,
-            points: &ir.model.points,
+            surfaces: &ir.geometry.surfaces,
+            faces: &ir.geometry.faces,
+            loops: &ir.geometry.loops,
+            coedges: &ir.geometry.coedges,
+            edges: &ir.geometry.edges,
+            vertices: &ir.geometry.vertices,
+            points: &ir.geometry.points,
         },
         &histories,
         lanes,
@@ -4872,20 +4874,20 @@ fn build_metadata_ir(
         ctx,
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
-            surfaces: &ir.model.surfaces,
-            faces: &ir.model.faces,
-            loops: &ir.model.loops,
-            coedges: &ir.model.coedges,
-            edges: &ir.model.edges,
-            vertices: &ir.model.vertices,
-            points: &ir.model.points,
+            surfaces: &ir.geometry.surfaces,
+            faces: &ir.geometry.faces,
+            loops: &ir.geometry.loops,
+            coedges: &ir.geometry.coedges,
+            edges: &ir.geometry.edges,
+            vertices: &ir.geometry.vertices,
+            points: &ir.geometry.points,
         },
     )?;
     crate::resolved_features::holes::project_bore_backed_position_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
-        &ir.model.surfaces,
+        &ir.geometry.surfaces,
         &histories,
         lanes,
     );
@@ -4903,13 +4905,13 @@ fn build_metadata_ir(
         &mut ir.model.features,
         &histories,
         lanes,
-        &ir.model.faces,
-        &ir.model.surfaces,
+        &ir.geometry.faces,
+        &ir.geometry.surfaces,
     )?;
     crate::resolved_features::projections::project_unbound_offset_plane_faces(
         &mut ir.model.features,
-        &ir.model.faces,
-        &ir.model.surfaces,
+        &ir.geometry.faces,
+        &ir.geometry.surfaces,
     );
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
@@ -4954,16 +4956,13 @@ fn build_metadata_ir(
             retain_unresolved_appearance(&mut ir, &unresolved);
         }
         let _assigned = crate::tessellation::assign_persistent_owners(
-            &mut ir.model,
+            &mut ir,
             &[],
             &push.persistent_face_bindings,
         );
         let mut owner_losses = Vec::new();
-        let _assigned_unique = crate::tessellation::assign_unique_surface_owners(
-            ctx,
-            &mut ir.model,
-            &mut owner_losses,
-        )?;
+        let _assigned_unique =
+            crate::tessellation::assign_unique_surface_owners(ctx, &mut ir, &mut owner_losses)?;
         pmi_losses.append(&mut owner_losses);
         if push.mesh_count > 0 {
             pmi_losses.push(
@@ -4980,7 +4979,7 @@ fn build_metadata_ir(
         pmi_dimensions,
     };
     ctx.admit_entities(
-        u64_from_index(ir.model.entity_count()),
+        u64_from_index(ir.entity_count()),
         admitted_entities,
         "admit SLDPRT entities",
     )?;
@@ -5839,27 +5838,28 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
 pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
-    let mut partition = cadmpeg_ir::document::Model::default();
-    partition.bodies.clone_from(&ir.model.bodies);
-    partition.regions.clone_from(&ir.model.regions);
-    partition.shells.clone_from(&ir.model.shells);
-    partition.faces.clone_from(&ir.model.faces);
-    partition.loops.clone_from(&ir.model.loops);
-    partition.coedges.clone_from(&ir.model.coedges);
-    partition.edges.clone_from(&ir.model.edges);
-    partition.vertices.clone_from(&ir.model.vertices);
-    partition.points.clone_from(&ir.model.points);
-    partition.surfaces.clone_from(&ir.model.surfaces);
-    partition.curves.clone_from(&ir.model.curves);
-    partition.pcurves.clone_from(&ir.model.pcurves);
-    partition
+    let mut geometry = cadmpeg_ir::document::Topology::default();
+    let mut model = cadmpeg_ir::document::Model::default();
+    geometry.bodies.clone_from(&ir.geometry.bodies);
+    geometry.regions.clone_from(&ir.geometry.regions);
+    geometry.shells.clone_from(&ir.geometry.shells);
+    geometry.faces.clone_from(&ir.geometry.faces);
+    geometry.loops.clone_from(&ir.geometry.loops);
+    geometry.coedges.clone_from(&ir.geometry.coedges);
+    geometry.edges.clone_from(&ir.geometry.edges);
+    geometry.vertices.clone_from(&ir.geometry.vertices);
+    geometry.points.clone_from(&ir.geometry.points);
+    geometry.surfaces.clone_from(&ir.geometry.surfaces);
+    geometry.curves.clone_from(&ir.geometry.curves);
+    geometry.pcurves.clone_from(&ir.geometry.pcurves);
+    geometry
         .procedural_surfaces
-        .clone_from(&ir.model.procedural_surfaces);
-    partition
+        .clone_from(&ir.geometry.procedural_surfaces);
+    geometry
         .procedural_curves
-        .clone_from(&ir.model.procedural_curves);
-    partition.appearances.clone_from(&ir.model.appearances);
-    partition
+        .clone_from(&ir.geometry.procedural_curves);
+    model.appearances.clone_from(&ir.model.appearances);
+    model
         .appearance_bindings
         .clone_from(&ir.model.appearance_bindings);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -5868,7 +5868,7 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )?;
-    brep_partition_sha256(&ctx, ir.tolerances, partition).0
+    brep_partition_sha256(&ctx, ir.tolerances, geometry, model).0
 }
 
 /// [`brep_local_sha256`] without the deep clone, for the decode stamp path.
@@ -5897,48 +5897,50 @@ fn brep_local_sha256_in_place(
             matches!(binding.target, AppearanceTarget::Face(_))
         });
     let mut saved_body_display = Vec::new();
-    for body in &mut ir.model.bodies {
+    for body in &mut ir.geometry.bodies {
         saved_body_display.push((take(&mut body.name), body.color));
     }
-    let mut partition = cadmpeg_ir::document::Model::default();
-    partition.bodies = take(&mut ir.model.bodies);
-    partition.regions = take(&mut ir.model.regions);
-    partition.shells = take(&mut ir.model.shells);
-    partition.faces = take(&mut ir.model.faces);
-    partition.loops = take(&mut ir.model.loops);
-    partition.coedges = take(&mut ir.model.coedges);
-    partition.edges = take(&mut ir.model.edges);
-    partition.vertices = take(&mut ir.model.vertices);
-    partition.points = take(&mut ir.model.points);
-    partition.surfaces = take(&mut ir.model.surfaces);
-    partition.curves = take(&mut ir.model.curves);
-    partition.pcurves = take(&mut ir.model.pcurves);
-    partition.procedural_surfaces = take(&mut ir.model.procedural_surfaces);
-    partition.procedural_curves = take(&mut ir.model.procedural_curves);
-    partition.appearances = appearance_partition.take_kept();
-    partition.appearance_bindings = binding_partition.take_kept();
-    let (hash, mut partition) = brep_partition_sha256(ctx, ir.tolerances, partition);
-    ir.model.bodies = take(&mut partition.bodies);
-    for (body, (name, color)) in ir.model.bodies.iter_mut().zip(saved_body_display) {
+    let mut geometry = cadmpeg_ir::document::Topology::default();
+    let mut model = cadmpeg_ir::document::Model::default();
+    geometry.bodies = take(&mut ir.geometry.bodies);
+    geometry.regions = take(&mut ir.geometry.regions);
+    geometry.shells = take(&mut ir.geometry.shells);
+    geometry.faces = take(&mut ir.geometry.faces);
+    geometry.loops = take(&mut ir.geometry.loops);
+    geometry.coedges = take(&mut ir.geometry.coedges);
+    geometry.edges = take(&mut ir.geometry.edges);
+    geometry.vertices = take(&mut ir.geometry.vertices);
+    geometry.points = take(&mut ir.geometry.points);
+    geometry.surfaces = take(&mut ir.geometry.surfaces);
+    geometry.curves = take(&mut ir.geometry.curves);
+    geometry.pcurves = take(&mut ir.geometry.pcurves);
+    geometry.procedural_surfaces = take(&mut ir.geometry.procedural_surfaces);
+    geometry.procedural_curves = take(&mut ir.geometry.procedural_curves);
+    model.appearances = appearance_partition.take_kept();
+    model.appearance_bindings = binding_partition.take_kept();
+    let (hash, mut geometry, mut model) =
+        brep_partition_sha256(ctx, ir.tolerances, geometry, model);
+    ir.geometry.bodies = take(&mut geometry.bodies);
+    for (body, (name, color)) in ir.geometry.bodies.iter_mut().zip(saved_body_display) {
         body.name = name;
         body.color = color;
     }
-    ir.model.regions = take(&mut partition.regions);
-    ir.model.shells = take(&mut partition.shells);
-    ir.model.faces = take(&mut partition.faces);
-    ir.model.loops = take(&mut partition.loops);
-    ir.model.coedges = take(&mut partition.coedges);
-    ir.model.edges = take(&mut partition.edges);
-    ir.model.vertices = take(&mut partition.vertices);
-    ir.model.points = take(&mut partition.points);
-    ir.model.surfaces = take(&mut partition.surfaces);
-    ir.model.curves = take(&mut partition.curves);
-    ir.model.pcurves = take(&mut partition.pcurves);
-    ir.model.procedural_surfaces = take(&mut partition.procedural_surfaces);
-    ir.model.procedural_curves = take(&mut partition.procedural_curves);
-    ir.model.appearances = appearance_partition.restore(take(&mut partition.appearances))?;
+    ir.geometry.regions = take(&mut geometry.regions);
+    ir.geometry.shells = take(&mut geometry.shells);
+    ir.geometry.faces = take(&mut geometry.faces);
+    ir.geometry.loops = take(&mut geometry.loops);
+    ir.geometry.coedges = take(&mut geometry.coedges);
+    ir.geometry.edges = take(&mut geometry.edges);
+    ir.geometry.vertices = take(&mut geometry.vertices);
+    ir.geometry.points = take(&mut geometry.points);
+    ir.geometry.surfaces = take(&mut geometry.surfaces);
+    ir.geometry.curves = take(&mut geometry.curves);
+    ir.geometry.pcurves = take(&mut geometry.pcurves);
+    ir.geometry.procedural_surfaces = take(&mut geometry.procedural_surfaces);
+    ir.geometry.procedural_curves = take(&mut geometry.procedural_curves);
+    ir.model.appearances = appearance_partition.restore(take(&mut model.appearances))?;
     ir.model.appearance_bindings =
-        binding_partition.restore(take(&mut partition.appearance_bindings))?;
+        binding_partition.restore(take(&mut model.appearance_bindings))?;
     hash
 }
 
@@ -5955,7 +5957,7 @@ mod digest_tests {
 
     fn named_body_document() -> CadIr {
         let mut ir = CadIr::empty();
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id: BodyId::mint("synthetic:test:id#digest-body").unwrap(),
             kind: BodyKind::default(),
             regions: Vec::new(),
@@ -6001,9 +6003,9 @@ mod digest_tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(b"digest", &arena, &DecodePolicy::service()).unwrap();
         let mut ir = named_body_document();
-        let original = ir.model.bodies[0].clone();
+        let original = ir.geometry.bodies[0].clone();
         brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
-        assert_eq!(ir.model.bodies[0], original);
+        assert_eq!(ir.geometry.bodies[0], original);
     }
 
     #[test]
@@ -6077,14 +6079,20 @@ mod digest_tests {
 fn brep_partition_sha256(
     ctx: &DecodeContext<'_>,
     tolerances: cadmpeg_ir::units::Tolerances,
+    geometry: cadmpeg_ir::document::Topology,
     model: cadmpeg_ir::document::Model,
-) -> (Result<String, CodecError>, cadmpeg_ir::document::Model) {
+) -> (
+    Result<String, CodecError>,
+    cadmpeg_ir::document::Topology,
+    cadmpeg_ir::document::Model,
+) {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let mut normalized = CadIr::empty();
     normalized.tolerances = tolerances;
+    normalized.geometry = geometry;
     normalized.model = model;
-    normalized.model.bodies.iter_mut().for_each(|body| {
+    normalized.geometry.bodies.iter_mut().for_each(|body| {
         body.name = None;
         body.color = None;
     });
@@ -6100,6 +6108,7 @@ fn brep_partition_sha256(
     });
     (
         cadmpeg_ir::hash::canonical_json_sha256(ctx, &normalized).map_err(Into::into),
+        normalized.geometry,
         normalized.model,
     )
 }

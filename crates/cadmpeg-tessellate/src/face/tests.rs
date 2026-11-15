@@ -15,7 +15,7 @@ fn surface_normals_follow_the_winding_without_losing_their_direction() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(1000);
-    let carrier = Carrier::new(&index, &work, &ir.model.faces[0].surface).unwrap();
+    let carrier = Carrier::new(&index, &work, &ir.geometry.faces[0].surface).unwrap();
     let mesh = Mesh {
         uv: vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
         points: vec![

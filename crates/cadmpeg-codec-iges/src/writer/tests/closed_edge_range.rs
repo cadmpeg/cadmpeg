@@ -21,12 +21,12 @@ fn vertices_at(positions: &[Point3]) -> CadIr {
     let mut ir = CadIr::empty();
     for (index, position) in positions.iter().enumerate() {
         let point = PointId::mint(format!("test:model:point#v{index}")).expect("identity grammar");
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             point.clone(),
             FinitePoint3::new(*position).expect("finite position"),
             None,
         ));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: VertexId::mint(format!("test:model:vertex#v{index}")).expect("identity grammar"),
             point,
             tolerance: None,
