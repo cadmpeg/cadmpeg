@@ -42,6 +42,21 @@ pub struct ResourceLimits {
     /// Maximum active recursive nesting depth.
     #[serde(default = "default_max_recursion_depth")]
     pub max_recursion_depth: u64,
+    /// Maximum nesting depth of canonical expression text that reading CADIR
+    /// admits.
+    #[serde(default = "default_max_expression_depth")]
+    pub max_expression_depth: u64,
+    /// Maximum nesting depth of a `TopoName` that reading CADIR admits.
+    #[serde(default = "default_max_name_depth")]
+    pub max_name_depth: u64,
+    /// Maximum nesting depth of a `Picked` inside a pick that reading CADIR
+    /// admits.
+    #[serde(default = "default_max_pick_depth")]
+    pub max_pick_depth: u64,
+    /// Maximum nesting depth of a construction's nested constructions that
+    /// reading CADIR admits.
+    #[serde(default = "default_max_construction_depth")]
+    pub max_construction_depth: u64,
 }
 
 impl ResourceLimits {
@@ -54,6 +69,10 @@ impl ResourceLimits {
             max_retained_bytes: 4 * GIB,
             max_entities: 64_000_000,
             max_recursion_depth: 256,
+            max_expression_depth: 64,
+            max_name_depth: 32,
+            max_pick_depth: 16,
+            max_construction_depth: 16,
         }
     }
 
@@ -66,6 +85,10 @@ impl ResourceLimits {
             max_retained_bytes: 512 * MIB,
             max_entities: 8_000_000,
             max_recursion_depth: 128,
+            max_expression_depth: 32,
+            max_name_depth: 16,
+            max_pick_depth: 8,
+            max_construction_depth: 8,
         }
     }
 }
@@ -139,6 +162,22 @@ const fn default_max_recursion_depth() -> u64 {
     ResourceLimits::desktop().max_recursion_depth
 }
 
+const fn default_max_expression_depth() -> u64 {
+    ResourceLimits::desktop().max_expression_depth
+}
+
+const fn default_max_name_depth() -> u64 {
+    ResourceLimits::desktop().max_name_depth
+}
+
+const fn default_max_pick_depth() -> u64 {
+    ResourceLimits::desktop().max_pick_depth
+}
+
+const fn default_max_construction_depth() -> u64 {
+    ResourceLimits::desktop().max_construction_depth
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -154,6 +193,10 @@ mod tests {
         assert_eq!(d.max_retained_bytes, 4 * GIB);
         assert_eq!(d.max_entities, 64_000_000);
         assert_eq!(d.max_recursion_depth, 256);
+        assert_eq!(d.max_expression_depth, 64);
+        assert_eq!(d.max_name_depth, 32);
+        assert_eq!(d.max_pick_depth, 16);
+        assert_eq!(d.max_construction_depth, 16);
     }
 
     #[test]
@@ -165,6 +208,10 @@ mod tests {
         assert_eq!(s.max_retained_bytes, 512 * MIB);
         assert_eq!(s.max_entities, 8_000_000);
         assert_eq!(s.max_recursion_depth, 128);
+        assert_eq!(s.max_expression_depth, 32);
+        assert_eq!(s.max_name_depth, 16);
+        assert_eq!(s.max_pick_depth, 8);
+        assert_eq!(s.max_construction_depth, 8);
     }
 
     #[test]
@@ -179,6 +226,13 @@ mod tests {
         assert_eq!(limits.max_retained_bytes, desktop.max_retained_bytes);
         assert_eq!(limits.max_entities, desktop.max_entities);
         assert_eq!(limits.max_recursion_depth, desktop.max_recursion_depth);
+        assert_eq!(limits.max_expression_depth, desktop.max_expression_depth);
+        assert_eq!(limits.max_name_depth, desktop.max_name_depth);
+        assert_eq!(limits.max_pick_depth, desktop.max_pick_depth);
+        assert_eq!(
+            limits.max_construction_depth,
+            desktop.max_construction_depth
+        );
     }
 
     #[test]
