@@ -318,7 +318,7 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** The record that dates an unbound Split or Base feature must be found before a history state can be assigned. A state must not be assigned from a body key that appears or disappears without a tag. The join of the body reference of an edge selector to a history body, which selects the owner edge in the state of that body, needs a rule.
 
-### DE-17. Contour-flange thickness side
+### DE-18. Contour-flange thickness side
 
 **Question.** Which contour-flange operands place the sheet thickness relative to the open profile, and which values select the other side or a centered sheet?
 
