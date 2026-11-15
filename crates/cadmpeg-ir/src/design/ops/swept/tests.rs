@@ -265,8 +265,8 @@ fn extrude_origins() -> Vec<ExtrudeOrigin> {
 
 fn hole_drafts() -> Vec<HoleDraft> {
     vec![
-        HoleDraft::WithRegion,
-        HoleDraft::WithOuter,
+        HoleDraft::WithRegion {},
+        HoleDraft::WithOuter {},
         HoleDraft::Angles {
             end: lit(angle(0.1)),
             start: Some(lit(angle(0.0))),
@@ -284,7 +284,7 @@ fn extrude_drafts() -> Vec<ExtrudeDraft> {
             end: Some(lit(angle(0.05))),
             start: Some(lit(angle(-0.05))),
             neutral: Some(DraftNeutral::Start),
-            holes: Some(HoleDraft::WithOuter),
+            holes: Some(HoleDraft::WithOuter {}),
         },
         ExtrudeDraft {
             end: None,
@@ -565,7 +565,7 @@ fn profile_positions() -> Vec<ProfilePosition> {
 }
 
 fn profile_placements() -> Vec<ProfilePlacement> {
-    let mut out = vec![ProfilePlacement::InPlace];
+    let mut out = vec![ProfilePlacement::InPlace {}];
     out.extend(
         profile_positions()
             .into_iter()
@@ -595,7 +595,7 @@ fn sweeps() -> Vec<Sweep> {
             controls: sweep_controls().remove(0),
             guides: sweep_guides(),
             extent: path_extents().into_iter().next(),
-            placement: Some(ProfilePlacement::InPlace),
+            placement: Some(ProfilePlacement::InPlace {}),
             limits: spine_limits().remove(0),
             transition: Some(CornerTransition::Round),
             output: solid(),
@@ -931,7 +931,7 @@ fn sections() -> Vec<Section> {
 
 fn point_conditions() -> Vec<PointCondition> {
     vec![
-        PointCondition::Sharp,
+        PointCondition::Sharp {},
         PointCondition::Tangent {
             weight: Some(lit(positive_real(2.0))),
         },
@@ -951,7 +951,7 @@ fn point_sections() -> Vec<PointSection> {
     vec![
         PointSection {
             point: point_construction(),
-            condition: Some(PointCondition::Sharp),
+            condition: Some(PointCondition::Sharp {}),
         },
         PointSection {
             point: construction(None),
@@ -1022,7 +1022,7 @@ fn spines() -> Vec<Spine> {
             sections: None,
             stations: Vec::new(),
         },
-        Spine::Computed,
+        Spine::Computed {},
     ]
 }
 
@@ -1137,7 +1137,7 @@ fn lofts() -> Vec<Loft> {
                 condition: Some(PointCondition::Tangent { weight: None }),
             }),
             cross: vec![sections().remove(1)],
-            spine: Some(Spine::Computed),
+            spine: Some(Spine::Computed {}),
             guides: guides(),
             correspondence: correspondences().into_iter().next(),
             shape: loft_shapes().remove(0),
@@ -1290,10 +1290,10 @@ fn each_enum_has_its_tag_form() {
         json!({"kind": "profile_normal", "reversed": {"kind": "literal", "value": true}})
     );
     assert_eq!(
-        to_value(&HoleDraft::WithRegion),
+        to_value(&HoleDraft::WithRegion {}),
         json!({"kind": "with_region"})
     );
-    assert_eq!(to_value(&Spine::Computed), json!({"kind": "computed"}));
+    assert_eq!(to_value(&Spine::Computed {}), json!({"kind": "computed"}));
     assert_eq!(
         to_value(&SpiralLaw::EndRadiusTurns {
             end: lit(positive(12.0)),
@@ -1326,6 +1326,10 @@ fn each_enum_has_its_tag_form() {
         json!({"kind": "spiral", "value": {}})
     );
     refuses::<HelixShape>(r#"{"kind": "spiral", "value": {"law": null}}"#);
+    refuses::<HoleDraft>(r#"{"kind": "with_region", "extra": 1}"#);
+    refuses::<ProfilePlacement>(r#"{"kind": "in_place", "extra": 1}"#);
+    refuses::<PointCondition>(r#"{"kind": "sharp", "extra": 1}"#);
+    refuses::<Spine>(r#"{"kind": "computed", "extra": 1}"#);
     refuses::<HoleDraft>(
         r#"{"kind": "angles", "end": {"kind": "literal", "value": 0.1}, "start": null}"#,
     );

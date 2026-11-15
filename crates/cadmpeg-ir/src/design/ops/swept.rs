@@ -24,6 +24,81 @@ use crate::scalar::{
     PositiveReal,
 };
 
+cadmpeg_core::named_optional_field!(deserialize_against<T>, T, "against");
+cadmpeg_core::named_optional_field!(deserialize_along<T>, T, "along");
+cadmpeg_core::named_optional_field!(deserialize_angle<T>, T, "angle");
+cadmpeg_core::named_optional_field!(deserialize_apex<T>, T, "apex");
+cadmpeg_core::named_optional_field!(deserialize_axis<T>, T, "axis");
+cadmpeg_core::named_optional_field!(deserialize_boolean<T>, T, "boolean");
+cadmpeg_core::named_optional_field!(deserialize_closed<T>, T, "closed");
+cadmpeg_core::named_optional_field!(deserialize_condition<T>, T, "condition");
+cadmpeg_core::named_optional_field!(deserialize_correspondence<T>, T, "correspondence");
+cadmpeg_core::named_optional_field!(deserialize_curvilinear<T>, T, "curvilinear");
+cadmpeg_core::named_optional_field!(deserialize_deviation<T>, T, "deviation");
+cadmpeg_core::named_optional_field!(deserialize_direction<T>, T, "direction");
+cadmpeg_core::named_optional_field!(deserialize_draft<T>, T, "draft");
+cadmpeg_core::named_optional_field!(deserialize_end<T>, T, "end");
+cadmpeg_core::named_optional_field!(deserialize_extend_profile<T>, T, "extend_profile");
+cadmpeg_core::named_optional_field!(deserialize_extent<T>, T, "extent");
+cadmpeg_core::named_optional_field!(deserialize_fit<T>, T, "fit");
+cadmpeg_core::named_optional_field!(deserialize_flip<T>, T, "flip");
+cadmpeg_core::named_optional_field!(deserialize_flipped<T>, T, "flipped");
+cadmpeg_core::named_optional_field!(deserialize_growth<T>, T, "growth");
+cadmpeg_core::named_optional_field!(deserialize_hand<T>, T, "hand");
+cadmpeg_core::named_optional_field!(deserialize_holes<T>, T, "holes");
+cadmpeg_core::named_optional_field!(deserialize_influence<T>, T, "influence");
+cadmpeg_core::named_optional_field!(deserialize_inner<T>, T, "inner");
+cadmpeg_core::named_optional_field!(deserialize_inner_diameter<T>, T, "inner_diameter");
+cadmpeg_core::named_optional_field!(deserialize_inner_join<T>, T, "inner_join");
+cadmpeg_core::named_optional_field!(deserialize_latitudes<T>, T, "latitudes");
+cadmpeg_core::named_optional_field!(deserialize_law<T>, T, "law");
+cadmpeg_core::named_optional_field!(
+    deserialize_lengths_along_normal<T>,
+    T,
+    "lengths_along_normal"
+);
+cadmpeg_core::named_optional_field!(deserialize_longitude<T>, T, "longitude");
+cadmpeg_core::named_optional_field!(deserialize_loops<T>, T, "loops");
+cadmpeg_core::named_optional_field!(deserialize_max_degree<T>, T, "max_degree");
+cadmpeg_core::named_optional_field!(deserialize_merge_tangent_faces<T>, T, "merge_tangent_faces");
+cadmpeg_core::named_optional_field!(deserialize_mode<T>, T, "mode");
+cadmpeg_core::named_optional_field!(deserialize_neutral<T>, T, "neutral");
+cadmpeg_core::named_optional_field!(deserialize_offset<T>, T, "offset");
+cadmpeg_core::named_optional_field!(deserialize_orientation<T>, T, "orientation");
+cadmpeg_core::named_optional_field!(deserialize_origin<T>, T, "origin");
+cadmpeg_core::named_optional_field!(deserialize_outer<T>, T, "outer");
+cadmpeg_core::named_optional_field!(deserialize_outer_join<T>, T, "outer_join");
+cadmpeg_core::named_optional_field!(deserialize_outside<T>, T, "outside");
+cadmpeg_core::named_optional_field!(deserialize_placement<T>, T, "placement");
+cadmpeg_core::named_optional_field!(deserialize_rebuild<T>, T, "rebuild");
+cadmpeg_core::named_optional_field!(deserialize_relimit<T>, T, "relimit");
+cadmpeg_core::named_optional_field!(deserialize_reversed<T>, T, "reversed");
+cadmpeg_core::named_optional_field!(deserialize_root_fillet<T>, T, "root_fillet");
+cadmpeg_core::named_optional_field!(deserialize_ruled<T>, T, "ruled");
+cadmpeg_core::named_optional_field!(deserialize_scaling<T>, T, "scaling");
+cadmpeg_core::named_optional_field!(deserialize_seam<T>, T, "seam");
+cadmpeg_core::named_optional_field!(deserialize_section_law<T>, T, "section_law");
+cadmpeg_core::named_optional_field!(deserialize_sections<T>, T, "sections");
+cadmpeg_core::named_optional_field!(deserialize_sheet_cut<T>, T, "sheet_cut");
+cadmpeg_core::named_optional_field!(deserialize_smoothing<T>, T, "smoothing");
+cadmpeg_core::named_optional_field!(deserialize_span<T>, T, "span");
+cadmpeg_core::named_optional_field!(deserialize_spine<T>, T, "spine");
+cadmpeg_core::named_optional_field!(deserialize_spine_point<T>, T, "spine_point");
+cadmpeg_core::named_optional_field!(deserialize_start<T>, T, "start");
+cadmpeg_core::named_optional_field!(deserialize_style<T>, T, "style");
+cadmpeg_core::named_optional_field!(deserialize_swap_axes<T>, T, "swap_axes");
+cadmpeg_core::named_optional_field!(deserialize_tangency<T>, T, "tangency");
+cadmpeg_core::named_optional_field!(deserialize_tangent<T>, T, "tangent");
+cadmpeg_core::named_optional_field!(deserialize_taper<T>, T, "taper");
+cadmpeg_core::named_optional_field!(deserialize_thickness<T>, T, "thickness");
+cadmpeg_core::named_optional_field!(deserialize_thickness_at<T>, T, "thickness_at");
+cadmpeg_core::named_optional_field!(deserialize_tolerance<T>, T, "tolerance");
+cadmpeg_core::named_optional_field!(deserialize_transition<T>, T, "transition");
+cadmpeg_core::named_optional_field!(deserialize_trim_support<T>, T, "trim_support");
+cadmpeg_core::named_optional_field!(deserialize_turn<T>, T, "turn");
+cadmpeg_core::named_optional_field!(deserialize_twist<T>, T, "twist");
+cadmpeg_core::named_optional_field!(deserialize_weight<T>, T, "weight");
+
 /// An extrude: a profile swept along a direction over a span measured from
 /// an origin.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -36,14 +111,14 @@ pub struct Extrude {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_loops"
     )]
     pub loops: Option<LoopNesting>,
     /// The direction the profile is swept along.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_direction"
     )]
     pub direction: Option<ExtrudeDirection>,
     /// The plane the span is measured from. `None` is not stated; a writer
@@ -51,14 +126,14 @@ pub struct Extrude {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_origin"
     )]
     pub origin: Option<ExtrudeOrigin>,
     /// The span, measured from the origin along the direction.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_span"
     )]
     pub span: Option<Span<Length>>,
     /// The taper of the swept material. A draft the source stores as off is
@@ -66,14 +141,14 @@ pub struct Extrude {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_draft"
     )]
     pub draft: Option<ExtrudeDraft>,
     /// The offset of the profile in its plane before the operation uses it.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_fit"
     )]
     pub fit: Option<ProfileFit>,
     /// `Some(true)` sweeps the part of the profile plane outside the
@@ -82,14 +157,14 @@ pub struct Extrude {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_outside"
     )]
     pub outside: Option<Dimension<bool>>,
     /// How a cut of a sheet-metal wall is made.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_sheet_cut"
     )]
     pub sheet_cut: Option<SheetCutNormal>,
     /// What the extrude makes and how it changes existing bodies.
@@ -114,7 +189,7 @@ pub enum ExtrudeDirection {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_reversed"
         )]
         reversed: Option<Dimension<bool>>,
     },
@@ -127,7 +202,7 @@ pub enum ExtrudeDirection {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_lengths_along_normal"
         )]
         lengths_along_normal: Option<Dimension<bool>>,
     },
@@ -160,7 +235,7 @@ pub enum ExtrudeOrigin {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_offset"
         )]
         offset: Option<Dimension<Length>>,
     },
@@ -177,7 +252,7 @@ pub struct ExtrudeDraft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_end"
     )]
     pub end: Option<Dimension<Angle>>,
     /// The taper of the material from the origin to the span's start. A
@@ -185,7 +260,7 @@ pub struct ExtrudeDraft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_start"
     )]
     pub start: Option<Dimension<Angle>>,
     /// The plane at which the cross-section equals the profile. `None` does
@@ -193,7 +268,7 @@ pub struct ExtrudeDraft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_neutral"
     )]
     pub neutral: Option<DraftNeutral>,
     /// How the inner loops of a tapered profile's regions taper. `None`
@@ -201,7 +276,7 @@ pub struct ExtrudeDraft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_holes"
     )]
     pub holes: Option<HoleDraft>,
 }
@@ -225,10 +300,10 @@ pub enum DraftNeutral {
 pub enum HoleDraft {
     /// Every boundary of a region moves by the same amount relative to its
     /// material, so a hole narrows where the outer loop widens.
-    WithRegion,
+    WithRegion {},
     /// Each inner loop tapers as the outer loop is tapered, in its own
     /// outward sense, so a hole widens where the outer loop widens.
-    WithOuter,
+    WithOuter {},
     /// Each inner loop drafts as a loop of its own at its own angle. A
     /// positive angle widens the hole away from the origin, and 0 leaves it
     /// straight.
@@ -239,7 +314,7 @@ pub enum HoleDraft {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_start"
         )]
         start: Option<Dimension<Angle>>,
     },
@@ -256,28 +331,28 @@ pub struct ProfileFit {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_outer"
     )]
     pub outer: Option<Dimension<Length>>,
     /// The offset of each inner loop.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_inner"
     )]
     pub inner: Option<Dimension<Length>>,
     /// The law at the outer loops' convex corners.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_outer_join"
     )]
     pub outer_join: Option<OffsetJoin>,
     /// The law at the inner loops' convex corners.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_inner_join"
     )]
     pub inner_join: Option<OffsetJoin>,
 }
@@ -294,7 +369,7 @@ pub struct Revolve {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_loops"
     )]
     pub loops: Option<LoopNesting>,
     /// The axis. Its direction, after the construction's `Flip` steps, fixes
@@ -302,21 +377,21 @@ pub struct Revolve {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_axis"
     )]
     pub axis: Option<Construction<kinds::Axis>>,
     /// The span, measured from the profile about the axis.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_span"
     )]
     pub span: Option<Span<Angle>>,
     /// The offset of the profile in its plane before the operation uses it.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_fit"
     )]
     pub fit: Option<ProfileFit>,
     /// What the revolve makes and how it changes existing bodies.
@@ -347,14 +422,14 @@ pub struct Sweep {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_extent"
     )]
     pub extent: Option<PathExtent>,
     /// Where the profile is swept from.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_placement"
     )]
     pub placement: Option<ProfilePlacement>,
     /// Relimiting elements on the path.
@@ -363,7 +438,7 @@ pub struct Sweep {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_transition"
     )]
     pub transition: Option<CornerTransition>,
     /// What the sweep makes and how it changes existing bodies.
@@ -421,7 +496,7 @@ pub enum SweepSection {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_turn"
         )]
         turn: Option<SectionTurn>,
     },
@@ -461,7 +536,7 @@ pub enum SectionShape {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_inner_diameter"
         )]
         inner_diameter: Option<Dimension<PositiveLength>>,
     },
@@ -480,7 +555,7 @@ pub enum SectionShape {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_apex"
         )]
         apex: Option<Apex>,
     },
@@ -508,21 +583,21 @@ pub struct SweepControls {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_orientation"
     )]
     pub orientation: Option<SweepOrientation>,
     /// The twist of the section along the path.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_twist"
     )]
     pub twist: Option<Twist>,
     /// The scaling of the section along the path.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_scaling"
     )]
     pub scaling: Option<ScalingLaw>,
 }
@@ -563,14 +638,14 @@ pub enum SweepOrientation {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_tangent"
         )]
         tangent: Option<Dimension<bool>>,
         /// The auxiliary curve's curvilinear flag.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_curvilinear"
         )]
         curvilinear: Option<Dimension<bool>>,
     },
@@ -643,7 +718,7 @@ pub struct SweepGuide {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_extent"
     )]
     pub extent: Option<PathExtent>,
 }
@@ -657,14 +732,14 @@ pub struct PathExtent {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_along"
     )]
     pub along: Option<Dimension<Fraction>>,
     /// The fraction against the path.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_against"
     )]
     pub against: Option<Dimension<Fraction>>,
 }
@@ -675,7 +750,7 @@ pub struct PathExtent {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProfilePlacement {
     /// Where the profile lies.
-    InPlace,
+    InPlace {},
     /// Moved onto the path start.
     Positioned(Box<ProfilePosition>),
 }
@@ -691,28 +766,28 @@ pub struct ProfilePosition {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_origin"
     )]
     pub origin: Option<Construction<kinds::Point>>,
     /// The profile direction aligned with the first axis of the moving frame.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_direction"
     )]
     pub direction: Option<Construction<kinds::Direction>>,
     /// The rotation after the alignment.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_angle"
     )]
     pub angle: Option<Dimension<Angle>>,
     /// Whether the frame axes are swapped.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_swap_axes"
     )]
     pub swap_axes: Option<Dimension<bool>>,
 }
@@ -726,14 +801,14 @@ pub struct SpineLimits {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_start"
     )]
     pub start: Option<SetSelection>,
     /// The element at the end.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_end"
     )]
     pub end: Option<SetSelection>,
 }
@@ -773,7 +848,7 @@ pub enum HelicalSection {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_placement"
         )]
         placement: Option<SectionPlacement>,
     },
@@ -805,7 +880,7 @@ pub struct Helix {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_start"
     )]
     pub start: Option<HelixStart>,
     /// The shape.
@@ -814,7 +889,7 @@ pub struct Helix {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_hand"
     )]
     pub hand: Option<Dimension<Hand>>,
 }
@@ -832,7 +907,7 @@ pub enum HelixStart {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<Dimension<Angle>>,
     },
@@ -858,14 +933,14 @@ pub enum HelixShape {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_law"
         )]
         law: Option<HelixLaw>,
         /// What makes the helix conical.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_taper"
         )]
         taper: Option<HelixTaper>,
     },
@@ -875,7 +950,7 @@ pub enum HelixShape {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_law"
         )]
         law: Option<SpiralLaw>,
     },
@@ -977,21 +1052,21 @@ pub struct Rib {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_thickness"
     )]
     pub thickness: Option<Thickness>,
     /// The direction the wall grows in.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_growth"
     )]
     pub growth: Option<RibGrowth>,
     /// Whether the wall grows toward the other side of the curves.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_flipped"
     )]
     pub flipped: Option<Dimension<bool>>,
     /// How far the wall grows: `Next`, an `Amount`, or a target. `None` is
@@ -999,14 +1074,14 @@ pub struct Rib {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_extent"
     )]
     pub extent: Option<Limit<Length>>,
     /// The draft of the wall.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_draft"
     )]
     pub draft: Option<Dimension<Angle>>,
     /// At which end a drafted wall has the stated thickness. It applies only
@@ -1014,7 +1089,7 @@ pub struct Rib {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_thickness_at"
     )]
     pub thickness_at: Option<RibEnd>,
     /// The constant radius that rounds the edges where the rib's walls meet
@@ -1022,7 +1097,7 @@ pub struct Rib {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_root_fillet"
     )]
     pub root_fillet: Option<Dimension<PositiveLength>>,
     /// `Some(true)` extends the open ends of the profile curves along their
@@ -1030,14 +1105,14 @@ pub struct Rib {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_extend_profile"
     )]
     pub extend_profile: Option<Dimension<bool>>,
     /// How the result combines with existing bodies.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_boolean"
     )]
     pub boolean: Option<Boolean>,
     /// Source options whose effect is not established.
@@ -1092,7 +1167,7 @@ pub struct Primitive {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_placement"
     )]
     pub placement: Option<Construction<kinds::Frame>>,
     /// What the primitive makes and how it changes existing bodies.
@@ -1131,7 +1206,7 @@ pub enum PrimitiveShape {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<Dimension<Angle>>,
     },
@@ -1145,7 +1220,7 @@ pub enum PrimitiveShape {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<Dimension<Angle>>,
     },
@@ -1157,14 +1232,14 @@ pub enum PrimitiveShape {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_latitudes"
         )]
         latitudes: Option<[Dimension<Angle>; 2]>,
         /// The longitude that bounds a partial sphere.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_longitude"
         )]
         longitude: Option<Dimension<Angle>>,
     },
@@ -1176,14 +1251,14 @@ pub enum PrimitiveShape {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_latitudes"
         )]
         latitudes: Option<[Dimension<Angle>; 2]>,
         /// The longitude that bounds a partial torus.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_longitude"
         )]
         longitude: Option<Dimension<Angle>>,
     },
@@ -1197,7 +1272,7 @@ pub enum PrimitiveShape {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_latitudes"
         )]
         latitudes: Option<[Dimension<Angle>; 2]>,
         /// The longitude that bounds it, as it bounds the sphere before the
@@ -1205,7 +1280,7 @@ pub enum PrimitiveShape {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_longitude"
         )]
         longitude: Option<Dimension<Angle>>,
     },
@@ -1251,7 +1326,7 @@ pub struct Loft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_start"
     )]
     pub start: Option<PointSection>,
     /// The sections, in loft order.
@@ -1260,7 +1335,7 @@ pub struct Loft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_end"
     )]
     pub end: Option<PointSection>,
     /// The sections of a second direction.
@@ -1269,7 +1344,7 @@ pub struct Loft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_spine"
     )]
     pub spine: Option<Spine>,
     /// The guides.
@@ -1278,7 +1353,7 @@ pub struct Loft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_correspondence"
     )]
     pub correspondence: Option<Correspondence>,
     /// The shape controls.
@@ -1304,21 +1379,21 @@ pub struct Section {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_flip"
     )]
     pub flip: Option<Dimension<bool>>,
     /// The section's seam.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_seam"
     )]
     pub seam: Option<Seam>,
     /// How the surface meets the section.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_condition"
     )]
     pub condition: Option<SectionCondition>,
     /// `Some(true)` splits the support that the condition names at the
@@ -1327,7 +1402,7 @@ pub struct Section {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_trim_support"
     )]
     pub trim_support: Option<Dimension<bool>>,
     /// The point of the spine the section belongs to, where the source states
@@ -1336,7 +1411,7 @@ pub struct Section {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_spine_point"
     )]
     pub spine_point: Option<Construction<kinds::Point>>,
 }
@@ -1384,7 +1459,7 @@ pub struct PointSection {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_condition"
     )]
     pub condition: Option<PointCondition>,
 }
@@ -1395,14 +1470,14 @@ pub struct PointSection {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PointCondition {
     /// A sharp point.
-    Sharp,
+    Sharp {},
     /// A tangent point.
     Tangent {
         /// The source's tangent magnitude.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_weight"
         )]
         weight: Option<Dimension<PositiveReal>>,
     },
@@ -1414,7 +1489,7 @@ pub enum PointCondition {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_weight"
         )]
         weight: Option<Dimension<PositiveReal>>,
     },
@@ -1431,14 +1506,14 @@ pub struct Guide {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_tangency"
     )]
     pub tangency: Option<SectionCondition>,
     /// How far along each section's boundary the guide shapes the surface.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_influence"
     )]
     pub influence: Option<GuideInfluence>,
 }
@@ -1480,14 +1555,14 @@ pub enum Spine {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_sections"
         )]
         sections: Option<Dimension<u32>>,
         /// Sections of a stated area placed along the centerline.
         stations: Vec<AreaStation>,
     },
     /// The source computes the spine.
-    Computed,
+    Computed {},
 }
 
 /// A section of a stated area placed along a loft's centerline.
@@ -1529,7 +1604,7 @@ pub struct Correspondence {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_mode"
     )]
     pub mode: Option<CouplingMode>,
     /// The couplings the user places.
@@ -1583,35 +1658,35 @@ pub struct LoftShape {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_style"
     )]
     pub style: Option<LoftStyle>,
     /// The loft degree.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_max_degree"
     )]
     pub max_degree: Option<Dimension<NonZeroU32>>,
     /// How the result approximates the exact loft.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_rebuild"
     )]
     pub rebuild: Option<Rebuild>,
     /// Whether the surface is ruled between its sections.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_ruled"
     )]
     pub ruled: Option<Dimension<bool>>,
     /// Whether the loft closes on itself.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_closed"
     )]
     pub closed: Option<Dimension<bool>>,
     /// `Some(true)` ends the result at the first and last section;
@@ -1619,21 +1694,21 @@ pub struct LoftShape {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_relimit"
     )]
     pub relimit: Option<Dimension<bool>>,
     /// Whether result faces that meet tangentially merge into one face.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_merge_tangent_faces"
     )]
     pub merge_tangent_faces: Option<Dimension<bool>>,
     /// The tolerances within which the result departs from the exact loft.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_smoothing"
     )]
     pub smoothing: Option<LoftSmoothing>,
     /// How the section changes from one section to the next where a loft has
@@ -1641,7 +1716,7 @@ pub struct LoftShape {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_section_law"
     )]
     pub section_law: Option<Interpolation>,
 }
@@ -1657,7 +1732,7 @@ pub struct LoftSmoothing {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_angle"
     )]
     pub angle: Option<Dimension<Angle>>,
     /// The distance by which the surface may leave the guides. `None` where
@@ -1665,7 +1740,7 @@ pub struct LoftSmoothing {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::design::wire::present"
+        deserialize_with = "deserialize_deviation"
     )]
     pub deviation: Option<Dimension<NonNegativeLength>>,
 }
@@ -1714,7 +1789,7 @@ pub enum Rebuild {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "crate::design::wire::present"
+            deserialize_with = "deserialize_tolerance"
         )]
         tolerance: Option<Length>,
     },
