@@ -999,11 +999,23 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** None.
 
+### DR-645. Legacy sole-scope serializer membership and order
+
+**Question.** Which native relations establish complete cage membership and order in the sole-scope legacy Form envelope?
+
+**Known.** `f3d.md` §1.1.1 defines the legacy scope, cage group, metadata group, and serializer frames. An active serializer entry establishes its cage identity. The decoder assigns the active serializer set to the sole Form with `feature.form-legacy-serializer-membership-assumed` and reads serializer frame order with `feature.form-legacy-serializer-order-assumed`. Present resources without neutral cages retain incomplete membership.
+
+**Need.** Controlled saves that vary session membership and cage order while retaining stale serializer records.
+
+**Conflict.** None.
+
+**Note.** Membership certainty and order certainty remain independent.
+
 ### DR-325. Empty Form selection group
 
 **Question.** What does a zero member count in a Form selection group mean for the cages committed by its scope?
 
-**Known.** A Form scope can have a selection group with zero members and no Form body record that names the scope. The decoder projects an empty cage list for that combination and reports `feature.form-empty-cages-assumed`.
+**Known.** A Form scope can have a selection group with zero members and no Form body record that names the scope. The neutral Form retains the zero tracking count with unknown cage cardinality and reports `feature.form-membership-unresolved`. An explicitly counted owned cage list establishes an empty cage sequence.
 
 **Need.** Controlled saves of empty and edited Form sessions that compare the selection group, body records, and committed cages.
 
@@ -1157,9 +1169,9 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** How do the ordered references beyond the body group, its members, and the transform record affect the motion of a `Move` scope?
 
-**Known.** `f3d.md` §3.1 defines the marked transform in the marker-zero, marker-one, and inline-typed prologues. The decoder applies the stored matrix to the group's whole bodies and records `feature.move-scope-references-assumed` with the auxiliary reference indices. A form-2 transform also records `feature.move-transform-references-assumed` for its four construction references (DR-375).
+**Known.** `f3d.md` §3.1 defines the marked transform in the marker-zero, marker-one, and inline-typed prologues. The decoder applies the stored matrix to the group's whole bodies. `f3d.md` §3.1 identifies the translation-distance owners of a form-0 scope and the angle owner of a form-1 scope. The decoder identifies these owners among the scope's reference members by scope and local ordinal and classifies them when their values agree with the matrix. With no prefix or code words `0, 0`, each distance equals its translation component. With code words `0, 1`, the distance vector has the length of the translation. Other code words leave the owners unclassified. The angle owner agrees when its angle modulo a full turn equals the matrix rotation angle or the full turn minus that angle. It records `feature.move-scope-references-assumed` with the remaining auxiliary reference indices and names identified owners whose values disagree with the matrix. A form-2 transform also records `feature.move-transform-references-assumed` for its four construction references (DR-375).
 
-**Need.** Controlled saves that change the pivot, source and target constructions, and auxiliary selections independently while preserving the stored matrix.
+**Need.** Controlled saves that change the rotation axis, the point-to-point source and target constructions, and other auxiliary selections independently while preserving the stored matrix.
 
 **Conflict.** None.
 
@@ -1167,11 +1179,11 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-306. Marked Move transform records outside the rigid-transform rules
 
-**Question.** What do the leading scalar, nullable reference slots, unsigned prefix codes, source forms four and six, and omitted-matrix marker of a rigid-transform record control, and what does a transform record that the marked reference of a `Move` or `Modify` scope selects store when its class type is not the rigid-transform type, its frame is not a length of its type version, or its form word is not the form word of its frame length, and what frame does a version-3 record with an omitted matrix have?
+**Question.** What do the leading scalar, nullable reference slots, unsigned prefix codes other than the form-0 `Move` code words `0, 1`, source forms four and six, and omitted-matrix marker of a rigid-transform record control, and what does a transform record that the marked reference of a `Move`, `Modify`, or `MoveFace` scope selects store when its class type is not the rigid-transform type, its frame is not a length of its type version, or its form word is not the form word of its frame length, and what frame does a version-3 record with an omitted matrix have?
 
-**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each frame length of type versions 2 and 3, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record with a finite leading scalar, six nullable reference slots, two unsigned code words, and source form `0`, `1`, `2`, `4`, `5`, or `6`. Zero leading scalar and first two null slots reduce this prefix to the four-slot form. `Move` and `Modify` scopes record `feature.move-transform-assumed` with each fixed-frame rule that the record breaks. A nonzero leading scalar, present leading references, partially populated remaining reference run, or nonzero code words project with `feature.move-transform-prefix-assumed`. Forms four and six project with `feature.move-transform-mode-assumed`. These fields are assumed to leave the stored matrix motion unchanged. The native operation retains the scalar, references, inline type GUIDs, code words, and matrix-omission flag. A one matrix-presence marker omits 128 matrix bytes and preserves the common tail. Form four, and form five with zero scalar, null references and zero codes, admit identity from a 77- or 78-byte tail with `feature.move-transform-identity-assumed`.
+**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each frame length of type versions 2 and 3, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record with a finite leading scalar, six nullable reference slots, two unsigned code words, and source form `0`, `1`, `2`, `4`, `5`, or `6`. Zero leading scalar and first two null slots reduce this prefix to the four-slot form. `Move` and `Modify` scopes record `feature.move-transform-assumed` with each fixed-frame rule that the record breaks, and `MoveFace` scopes with each frame-length or form-word rule. A nonzero leading scalar, present leading references, partially populated remaining reference run, or nonzero code words other than the form-0 `Move` code words `0, 1` of `f3d.md` §3.1 project with `feature.move-transform-prefix-assumed`. Forms four and six project with `feature.move-transform-mode-assumed`. These fields are assumed to leave the stored matrix motion unchanged. The native operation retains the scalar, references, inline type GUIDs, code words, and matrix-omission flag. A one matrix-presence marker omits 128 matrix bytes and preserves the common tail. Form four, and form five with zero scalar, null references and zero codes, admit identity from a 77- or 78-byte tail with `feature.move-transform-identity-assumed`.
 
-**Need.** `Move` saves that set a nonzero leading scalar or code word, and a version-3 `Move` record with an omitted matrix, each recording the frame length and the bytes from offset 11 to the matrix.
+**Need.** `Move` saves that set a nonzero leading scalar or a code word other than the form-0 `0, 1`, and a version-3 `Move` record with an omitted matrix, each recording the frame length and the bytes from offset 11 to the matrix.
 
 **Conflict.** None.
 
@@ -1193,7 +1205,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which coordinate frame and composition order apply to the marked MoveFace matrix, how do unclassified references and prefix fields affect it, and which transform families occur when registration is unavailable?
 
-**Known.** `f3d.md` §3.1 defines the marked references and counted table. The decoder prefers a unique frame registered as rigid-transform GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`, version `2`. It excludes positively conflicting registrations and reports `feature.move-face-type-conflict` when they leave the marked record without an admitted candidate. With no admitted registered frame, a unique framed candidate whose registration is unavailable keeps its motion with `feature.move-face-type-assumed`. Two admitted candidates within the preferred category remain ambiguous. Nonzero scope prefix fields keep marked motion with `feature.move-face-prologue-assumed`. Each projected matrix carries `feature.move-face-matrix-assumed`: the row-major matrix maps input face points to output model coordinates, with its translation converted from centimetres to millimetres. The complete ordered table, transform coefficients, prefix references and source prologue remain retained. References outside a bound group/member run and the transform remain unclassified; an unresolved selection leaves the entire table unclassified. Each unresolved table and each bound table with surplus references carries `feature.move-face-scope-references-assumed`. Form-two construction references retain the separate assumption in DR-375, and other transform-prefix fields retain DR-306.
+**Known.** `f3d.md` §3.1 defines the marked references and counted table. The decoder prefers a unique frame registered as rigid-transform GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`, version `2`. With no version-2 frame, it takes a unique version-3 frame and prefers a frame that keeps the version-3 frame-length and form-word rules. A version-3 frame without the rigid-transform grammar reports `feature.move-face-type-conflict` when no other frame is admitted. It excludes positively conflicting registrations and reports `feature.move-face-type-conflict` when they leave the marked record without an admitted candidate. With no admitted registered frame, a unique framed candidate whose registration is unavailable keeps its motion with `feature.move-face-type-assumed`. Two admitted candidates within the preferred category remain ambiguous. Nonzero scope prefix fields keep marked motion with `feature.move-face-prologue-assumed`. Each projected matrix carries `feature.move-face-matrix-assumed`: the row-major matrix maps input face points to output model coordinates, with its translation converted from centimetres to millimetres. The complete ordered table, transform coefficients, prefix references and source prologue remain retained. References outside a bound group/member run and the transform remain unclassified; an unresolved selection leaves the entire table unclassified. Each unresolved table and each bound table with surplus references carries `feature.move-face-scope-references-assumed`. Form-two construction references retain the separate assumption in DR-375, and other transform-prefix fields retain DR-306.
 
 **Need.** Controlled native saves that vary one pivot, construction point, selection, occurrence frame or move definition, joined through registered target identities, matrix coefficients and before/after geometry.
 
@@ -3237,3 +3249,23 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled to-object flanges whose selected construction remains external or unresolved while the signed offset is retained.
 
 **Note.** `feature.edge-flange-height-target-native` retains the decoded target selection program. `feature.edge-flange-height-target-scope-assumed` retains the owning scope program when that target selection is unresolved. The target and signed offset remain independent neutral construction inputs.
+
+### DR-655. Profile loop entries without a sketch-curve record
+
+**Question.** Which record carries the curve of a profile loop entry when no sketch-curve record of the owning Sketch has the entry's primary identity?
+
+**Known.** A public RailCore II 300ZL design stores a typed-reference profile selection under Sketch owner 1115 with one loop of seven entries. Their primary identities are 241, 233, 244, 228, 231, 237, and 238. The Sketch holds curve records for every identity except 231. No uint64 property in the stream holds the value 231 outside the selection and ASM history records. A second design names primary identity 392 under Sketch owner 6681 with the same absence. A third design lists fifteen entries under owner 1977; the curve records that carry those identities name owner 1014.
+
+**Need.** A stored carrier or a derivation rule for the absent curves, and the owner join for the third design.
+
+**Note.** The selection stays native with `feature.profile-selection-native`.
+
+### DR-656. Sketch curve records with a nested geometry record
+
+**Question.** Which field of a sketch-curve record that stores no inline geometry gives the curve's geometry?
+
+**Known.** Public RailCore II 300ZL curve records of a class with `crv_primary_id` and `crv_secondary_id` followed by eight `0xff` bytes, a nested class record, and typed references store no f64 line or arc values at the geometry offset. Their profile selections resolve to identities that have no neutral sketch entity.
+
+**Need.** The geometry carrier of these records.
+
+**Note.** The decoder reports `sketch.curve-unprojected` for each such curve.

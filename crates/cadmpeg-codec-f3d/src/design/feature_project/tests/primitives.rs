@@ -264,6 +264,22 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
         ]
     );
     assert!(losses.is_empty());
+    // A nonzero inferred-axis byte keeps the stored frame and reports it as assumed.
+    let mut stray = support.clone();
+    stray.fields.inferred_x_axis.value = 23;
+    stray.fields.inferred_z_axis.value = 96;
+    let Some(FeatureDefinition::Operation(FeatureOperation::Block {
+        placement: Some(stray_placement),
+        ..
+    })) = project_solid_primitive(&scope, &[stray], &mut losses)
+    else {
+        panic!("box with nonzero inferred-axis bytes");
+    };
+    assert_eq!(stray_placement.rows(), placement.rows());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::FeatureBoxSupportFlagsAssumed.kind()));
+    losses.clear();
     assert!(project_solid_primitive(&scope, &[], &mut losses).is_some());
     assert_eq!(losses.len(), 1);
     assert_eq!(
