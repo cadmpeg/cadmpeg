@@ -21,9 +21,9 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode FTC-07 CATPart");
-    let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
     assert_eq!(
-        model
+        geometry
             .faces
             .iter()
             .filter(|face| face.id.as_str().starts_with("catia:standard:face#"))
@@ -31,8 +31,8 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
         304
     );
     let mut nurbs = 0;
-    for face in &model.faces {
-        let surface = model
+    for face in &geometry.faces {
+        let surface = geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
@@ -190,9 +190,9 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode FTC-07 CATPart");
-    let model = &decoded.ir().model;
-    let surfaces: HashMap<_, _> = model.surfaces.iter().map(|s| (&s.id, s)).collect();
-    let freeform_faces: HashSet<_> = model
+    let geometry = &decoded.ir().geometry;
+    let surfaces: HashMap<_, _> = geometry.surfaces.iter().map(|s| (&s.id, s)).collect();
+    let freeform_faces: HashSet<_> = geometry
         .faces
         .iter()
         .filter(|face| {
@@ -203,13 +203,13 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         })
         .map(|face| &face.id)
         .collect();
-    let freeform_loops: HashSet<_> = model
+    let freeform_loops: HashSet<_> = geometry
         .loops
         .iter()
         .filter(|boundary| freeform_faces.contains(&boundary.face))
         .map(|boundary| &boundary.id)
         .collect();
-    let boundary_edges: HashSet<_> = model
+    let boundary_edges: HashSet<_> = geometry
         .coedges
         .iter()
         .filter(|coedge| freeform_loops.contains(&coedge.owner_loop))
@@ -217,12 +217,12 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         .collect();
     assert_eq!(freeform_faces.len(), 20);
     assert_eq!(boundary_edges.len(), 112);
-    let curves: HashMap<_, _> = model
+    let curves: HashMap<_, _> = geometry
         .curves
         .iter()
         .map(|curve| (&curve.id, curve))
         .collect();
-    let edges: HashMap<_, _> = model
+    let edges: HashMap<_, _> = geometry
         .edges
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
@@ -230,7 +230,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     let mut circle_count = 0;
     let mut nurbs_count = 0;
     let mut unresolved = Vec::new();
-    for edge in model
+    for edge in geometry
         .edges
         .iter()
         .filter(|edge| boundary_edges.contains(&edge.id))
@@ -251,27 +251,27 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     );
     assert_eq!(circle_count, 48);
     assert_eq!(nurbs_count, STEP_BOUNDARY_MIDPOINTS_MM.len());
-    let points: HashMap<_, _> = model
+    let points: HashMap<_, _> = geometry
         .points
         .iter()
         .map(|point| (&point.id, point.position().get()))
         .collect();
-    let vertices: HashMap<_, _> = model
+    let vertices: HashMap<_, _> = geometry
         .vertices
         .iter()
         .map(|vertex| (&vertex.id, points[&vertex.point]))
         .collect();
-    let pcurves: HashMap<_, _> = model
+    let pcurves: HashMap<_, _> = geometry
         .pcurves
         .iter()
         .map(|pcurve| (&pcurve.id, pcurve))
         .collect();
-    let loop_faces: HashMap<_, _> = model
+    let loop_faces: HashMap<_, _> = geometry
         .loops
         .iter()
         .map(|boundary| (&boundary.id, &boundary.face))
         .collect();
-    let faces: HashMap<_, _> = model.faces.iter().map(|face| (&face.id, face)).collect();
+    let faces: HashMap<_, _> = geometry.faces.iter().map(|face| (&face.id, face)).collect();
     let mut freeform_pcurve_uses = 0;
     let mut plane_pcurve_uses = 0;
     let admission = cadmpeg_ir::eval::admission::EvaluationAdmission::Standard;
@@ -312,7 +312,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
             midpoint_error < STEP_SAMPLE_TOLERANCE_MM,
             "{id}: STEP midpoint error {midpoint_error} mm"
         );
-        for coedge in model.coedges.iter().filter(|coedge| coedge.edge == edge.id) {
+        for coedge in geometry.coedges.iter().filter(|coedge| coedge.edge == edge.id) {
             let face = faces[loop_faces[&coedge.owner_loop]];
             let surface = surfaces[&face.surface];
             let plane_jet = PLANE_JET_EDGES.contains(&ordinal)

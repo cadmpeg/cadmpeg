@@ -350,14 +350,14 @@ mod tests {
         }));
         doc.index_ids();
         let names: Vec<String> = doc.arenas.iter().map(|a| a.target.dotted()).collect();
-        assert!(names.contains(&"model.faces".to_owned()));
+        assert!(names.contains(&"geometry.faces".to_owned()));
         assert!(names.contains(&"model.empty".to_owned()));
         assert!(names.contains(&"native.rhino.unknowns".to_owned()));
         assert!(!names.iter().any(|n| n.contains("null")));
         let location = doc.by_id["f1"][0];
-        assert_eq!(doc.arenas[location.arena].target.dotted(), "model.faces");
+        assert_eq!(doc.arenas[location.arena].target.dotted(), "geometry.faces");
         assert_eq!(location.rec, 0);
-        assert_eq!(doc.locator(location), "model.faces#f1");
+        assert_eq!(doc.locator(location), "geometry.faces#f1");
     }
 
     #[test]

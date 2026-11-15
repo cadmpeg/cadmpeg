@@ -53,8 +53,8 @@ fn model(start: f64, normal: f64) -> Model {
     model
 }
 
-fn remove_cap(model: &mut Model, z: f64) {
-    let ids: HashSet<_> = model
+fn remove_cap(geometry: &mut Topology, z: f64) {
+    let ids: HashSet<_> = geometry
         .surfaces
         .iter()
         .filter_map(|surface| {
@@ -65,7 +65,7 @@ fn remove_cap(model: &mut Model, z: f64) {
                 .then_some(surface.id.clone())
         })
         .collect();
-    model.faces.retain(|face| !ids.contains(&face.surface));
+    geometry.faces.retain(|face| !ids.contains(&face.surface));
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn decoded_side_cap_prevents_a_contradiction() {
 #[test]
 fn cut_witness_uses_the_cavity_face_sense() {
     let mut model = model(10.0, 1.0);
-    for face in &mut model.faces {
+    for face in &mut geometry.faces {
         face.sense = Sense::Reversed;
     }
     model.features[0].evaluation.edit(|definition, _| {
@@ -197,7 +197,7 @@ fn cut_witness_uses_the_cavity_face_sense() {
 #[test]
 fn placed_body_caps_are_compared_in_model_space() {
     let mut model = model(30.0, 1.0);
-    model.bodies[0].transform = Transform::affine([
+    geometry.bodies[0].transform = Transform::affine([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 20.0],
@@ -246,13 +246,13 @@ fn active_state_retention_preserves_inactive_configuration_travel() {
 fn bounded_planar_meshes_supply_finite_cap_witnesses() {
     use cadmpeg_ir::tessellation::{Tessellation, TessellationId, TessellationMesh};
     let mut model = model(10.0, 1.0);
-    model.loops.clear();
-    model.coedges.clear();
-    model.edges.clear();
-    model.vertices.clear();
-    model.points.clear();
-    model.curves.clear();
-    for (i, face) in model.faces.iter().enumerate() {
+    geometry.loops.clear();
+    geometry.coedges.clear();
+    geometry.edges.clear();
+    geometry.vertices.clear();
+    geometry.points.clear();
+    geometry.curves.clear();
+    for (i, face) in geometry.faces.iter().enumerate() {
         let surface = model
             .surfaces
             .iter()
@@ -308,7 +308,7 @@ fn mesh_work_counts_each_face_and_triangle_vertex() {
         Vec::new(),
     )
     .expect("shared mesh");
-    mesh.faces = model.faces.iter().map(|face| face.id.clone()).collect();
+    mesh.faces = geometry.faces.iter().map(|face| face.id.clone()).collect();
     model.tessellations.push(mesh);
     assert!(caps(&model, &WorkBudget::new(4000)).is_none());
 }

@@ -327,7 +327,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
                 format_args!("{}:{suffix}", definition.identity.id()),
             )?;
-            if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
+            if ir.geometry.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
             }
             let Some(placed) = placed_section_nurbs(transform, &nurbs) else {
@@ -601,7 +601,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 &crate::identity::VISIBGEOM_SURFACE,
                 surface_id,
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
             annotate(
@@ -667,7 +667,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 &crate::identity::VISIBGEOM_SURFACE,
                 native_surface_id,
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
             annotate(
@@ -792,7 +792,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
                 format_args!("{feature_id}:{internal_id}"),
             )?;
-            if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
+            if !ir.geometry.curves.iter().any(|curve| curve.id == curve_id) {
                 annotate(
                     annotations,
                     &curve_id,
@@ -828,7 +828,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 &crate::identity::VISIBGEOM_SURFACE,
                 native_surface_id,
             )?;
-            if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
+            if ir.geometry.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
             let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
@@ -1122,7 +1122,7 @@ pub(in crate::decode) fn transfer_envelope_replay_surfaces(
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         let [(first, section)] = candidates.as_slice() else {
@@ -1141,7 +1141,7 @@ pub(in crate::decode) fn transfer_envelope_replay_surfaces(
             first.id,
         )?;
         let Some(first_surface) = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == first_id)
@@ -1648,7 +1648,7 @@ pub(in crate::decode) fn transfer_sampled_sweep_circles(
                 ctx,
                 scan,
                 record,
-                &ir.model.surfaces,
+                &ir.geometry.surfaces,
                 source_carriers,
                 None,
             )?
@@ -1671,10 +1671,10 @@ pub(in crate::decode) fn transfer_sampled_sweep_circles(
             &crate::identity::VISIBGEOM_CURVE,
             record.curve_id,
         )?;
-        if ir.model.curves.iter().any(|curve| curve.id == id) {
+        if ir.geometry.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
-        let index = ModelSurfaceIndex::new(&ir.model.surfaces);
+        let index = ModelSurfaceIndex::new(&ir.geometry.surfaces);
         let mut circular = false;
         for (path, face) in record.faces.into_iter().enumerate() {
             if let Some(surface) = index.unique(face) {
@@ -1686,7 +1686,7 @@ pub(in crate::decode) fn transfer_sampled_sweep_circles(
         if !circular {
             continue;
         }
-        let Some(geometry) = sampled_carrier(ctx, record, &ir.model.surfaces, source_carriers)?
+        let Some(geometry) = sampled_carrier(ctx, record, &ir.geometry.surfaces, source_carriers)?
         else {
             losses.push(CreoLossCode::SampledPcurveCarrierUnresolved.note(format!("Curve {} at byte {} has no unique circular sweep construction from its complete paired charts",record.curve_id,record.offset)));
             continue;
@@ -2159,7 +2159,7 @@ pub(in crate::decode) fn transfer_hole_generators(
     points: &std::collections::BTreeMap<u32, [[f64; 3]; 2]>,
 ) -> Result<BTreeSet<CurveId>, CodecError> {
     let classes = crate::decode::sketch_transfer::recipe::FeatureSchemaClasses::new(scan);
-    let index = ModelSurfaceIndex::new(&ir.model.surfaces);
+    let index = ModelSurfaceIndex::new(&ir.geometry.surfaces);
     let rows = scan.curves.topology_rows.iter().filter(|row| {
         row.type_byte == 1
             && classes.get(row.feature_id) == Some(crate::feature::schema::SchemaClass::Hole)
@@ -2179,7 +2179,7 @@ pub(in crate::decode) fn transfer_hole_generators(
         }
         let id =
             crate::identity::compose_checked::<CurveId>(&crate::identity::VISIBGEOM_CURVE, row.id)?;
-        if ir.model.curves.iter().any(|curve| curve.id == id) {
+        if ir.geometry.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
         let Some(points) = points.get(&row.id).copied() else {

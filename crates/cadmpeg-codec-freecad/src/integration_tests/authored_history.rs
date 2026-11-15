@@ -314,6 +314,7 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
     let feature = |name: &str| {
         model
             .features

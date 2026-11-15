@@ -181,7 +181,7 @@ fn decode_explicit_empty_partition_and_deltas_as_an_empty_model() {
         .unwrap();
 
     assert!(decoded.report().geometry_transferred());
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.message.contains("geometry was not transferred")
             || loss.message.contains("topology graph")
@@ -283,10 +283,10 @@ fn retained_source_image_round_trips_byte_exactly() {
             .unwrap(),
     );
     assert!(!result.source_fidelity().annotations.provenance.is_empty());
-    for coedge in &result.ir().model.coedges {
+    for coedge in &result.ir().geometry.coedges {
         assert!(result
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .any(|candidate| candidate.id == coedge.radial_next));

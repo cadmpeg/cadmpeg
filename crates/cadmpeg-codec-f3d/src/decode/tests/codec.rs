@@ -137,19 +137,19 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
         .unwrap();
 
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     // The ASM-227 `lump` head is emitted as the region record.
-    assert_eq!(result.ir().model.regions.len(), 1);
-    assert_eq!(result.ir().model.shells.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.edges.len(), 3);
-    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().geometry.regions.len(), 1);
+    assert_eq!(result.ir().geometry.shells.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.edges.len(), 3);
+    assert_eq!(result.ir().geometry.points.len(), 3);
 
     // The circle arc's stored [-π, -π/2] range is wrapped into the canonical
     // [0, τ] domain with its sweep preserved.
     let arc = result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.curve().is_some())
@@ -166,8 +166,8 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated BinaryFile4 decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let moved = edited.model.points[0].position().get();
-    edited.model.points[0].set_position(
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 2.5,
             moved.y,
@@ -175,9 +175,9 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
         ))
         .expect("a finite position is a point"),
     );
-    let expected = edited.model.points[0].position().get();
+    let expected = edited.geometry.points[0].position().get();
     let edge = edited
-        .model
+        .geometry
         .edges
         .iter_mut()
         .find(|edge| edge.curve().is_some())
@@ -188,11 +188,11 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let expected_range = range;
     edge.carrier =
         cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some(range)).unwrap();
-    edited.model.faces[0].sense = match edited.model.faces[0].sense {
+    edited.geometry.faces[0].sense = match edited.geometry.faces[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
     };
-    let expected_face_sense = edited.model.faces[0].sense;
+    let expected_face_sense = edited.geometry.faces[0].sense;
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
@@ -200,11 +200,11 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 decode");
-    assert_eq!(round_trip.ir().model.points[0].position().get(), expected);
+    assert_eq!(round_trip.ir().geometry.points[0].position().get(), expected);
     assert_eq!(
         round_trip
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.curve().is_some())
@@ -212,7 +212,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some(expected_range)
     );
-    assert_eq!(round_trip.ir().model.faces[0].sense, expected_face_sense);
+    assert_eq!(round_trip.ir().geometry.faces[0].sense, expected_face_sense);
 }
 
 #[test]
@@ -223,7 +223,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
         .expect("generated BinaryFile4 NURBS decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let curve = edited
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|curve| {
@@ -261,7 +261,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 NURBS decode");
-    assert!(round_trip.ir().model.curves.iter().any(|curve| {
+    assert!(round_trip.ir().geometry.curves.iter().any(|curve| {
         matches!(curve.geometry.solved_cache(), Some(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs == &expected)
     }));
 }
@@ -279,7 +279,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
     // parameterization and transform exactly like a forward edge's.
     let arc = result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.curve().is_some())
@@ -291,7 +291,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
     let curve_id = arc.curve().expect("curve link");
     let carrier = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| &curve.id == curve_id)
@@ -622,7 +622,7 @@ fn decode_yields_metadata_and_honest_report() {
         EditableDecodeResult::from(codec.decode(&mut cur, &DecodeOptions::default()).unwrap());
 
     assert!(!result.report().geometry_transferred());
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(
         result
             .report()
@@ -732,7 +732,7 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
         )
         .unwrap();
     assert!(decoded.report().geometry_transferred());
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert_eq!(
         decoded
             .ir()
@@ -744,7 +744,7 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
     );
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .all(|body| !body.id.as_str().contains("BREP.sibling")));
@@ -758,7 +758,7 @@ fn decode_does_not_use_a_sibling_brep_for_a_brep_less_design_asset() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == F3dLossCode::MissingGeometryStream.kind()
             && loss.message == "no ASM BREP stream (.smb/.smbh) was found in the container"
@@ -842,7 +842,7 @@ fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
         let result = F3dCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        assert!(!result.ir().model.faces.is_empty());
+        assert!(!result.ir().geometry.faces.is_empty());
         let attributes = &result.ir().source.as_ref().unwrap().attributes;
         assert_eq!(
             attributes.get("active_brep").map(String::as_str),

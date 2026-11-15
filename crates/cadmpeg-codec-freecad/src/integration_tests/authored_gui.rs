@@ -23,11 +23,12 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
 
-    assert_eq!(model.bodies.len(), 1);
-    assert_eq!(model.faces.len(), 8);
-    assert_eq!(model.edges.len(), 15);
-    assert_eq!(model.vertices.len(), 10);
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.faces.len(), 8);
+    assert_eq!(geometry.edges.len(), 15);
+    assert_eq!(geometry.vertices.len(), 10);
 
     let report = measured("gui_appearance", decoded.ir()).unwrap();
     let [body] = report.bodies().as_slice() else {
@@ -118,7 +119,7 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
             .collect::<BTreeSet<_>>(),
         expected_face_targets
     );
-    let [region_id] = model.bodies[0].regions.as_slice() else {
+    let [region_id] = geometry.bodies[0].regions.as_slice() else {
         panic!("one authored solid region");
     };
     let region = model

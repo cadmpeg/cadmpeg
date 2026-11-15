@@ -104,15 +104,16 @@ fn member_definition_preserves_the_body_transform_inside_each_placement() {
 
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-    model.bodies[0].transform = Some(inner);
+    let mut geometry = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
+    geometry.bodies[0].transform = Some(inner);
     crate::f3z::merge::define_member(&ctx, &mut model, "member").unwrap();
     assert_eq!(
         model.product_definitions[0].bodies,
-        [model.bodies[0].id.clone()]
+        [geometry.bodies[0].id.clone()]
     );
     assert_eq!(
         outer
-            .compose(model.bodies[0].transform.unwrap())
+            .compose(geometry.bodies[0].transform.unwrap())
             .unwrap()
             .rows(),
         [
@@ -927,7 +928,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         ..Default::default()
     };
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    ir.model.bodies[0].transform = Some(
+    ir.geometry.bodies[0].transform = Some(
         Transform::affine([
             [1.0, 0.0, 0.0, 3.0],
             [0.0, 1.0, 0.0, 7.0],
@@ -935,7 +936,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         ])
         .unwrap(),
     );
-    let root_body = ir.model.bodies[0].clone();
+    let root_body = ir.geometry.bodies[0].clone();
     let mut children = Vec::new();
     for index in 0..2 {
         let parent = OccurrenceId::mint(format!("f3d:model:occurrence#group-{index}")).unwrap();
@@ -1007,9 +1008,9 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();
     assert_eq!(merged, 4);
-    assert_eq!(ir.model.bodies.len(), 2);
-    assert_eq!(ir.model.bodies[0], root_body);
-    assert!(ir.model.bodies[1].transform.is_none());
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    assert_eq!(ir.geometry.bodies[0], root_body);
+    assert!(ir.geometry.bodies[1].transform.is_none());
     assert_eq!(ir.model.product_definitions.len(), 2);
     let leaf_definition = ir
         .model
@@ -1017,7 +1018,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         .iter()
         .find(|definition| !definition.bodies.is_empty())
         .unwrap();
-    assert_eq!(leaf_definition.bodies, [ir.model.bodies[1].id.clone()]);
+    assert_eq!(leaf_definition.bodies, [ir.geometry.bodies[1].id.clone()]);
     let graph = cadmpeg_ir::products::AssemblyGraph::new(&ir.model.occurrences).unwrap();
     let mut translations = Vec::new();
     let mut member_definitions = Vec::new();
@@ -1053,7 +1054,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             cadmpeg_test_support::assembly::resolved_transform(&graph, &imported.id).unwrap();
         let body_world = world
             .compose(
-                ir.model.bodies[1]
+                ir.geometry.bodies[1]
                     .transform
                     .unwrap_or_else(Transform::identity),
             )
@@ -1081,7 +1082,8 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
 #[test]
 fn imported_definition_bodies_keep_their_definition_frame() {
     let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-    let body = model.bodies[0].id.clone();
+    let mut geometry = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
+    let body = geometry.bodies[0].id.clone();
     model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
@@ -1096,8 +1098,8 @@ fn imported_definition_bodies_keep_their_definition_frame() {
             sketches: Vec::new(),
             native_ref: None,
         });
-    let original = model.bodies[0].transform;
-    let mut free_body = model.bodies[0].clone();
+    let original = geometry.bodies[0].transform;
+    let mut free_body = geometry.bodies[0].clone();
     free_body.id = BodyId::mint("f3d:model:body#free").unwrap();
     free_body.regions.clear();
     free_body.transform = Some(
@@ -1108,11 +1110,11 @@ fn imported_definition_bodies_keep_their_definition_frame() {
         ])
         .unwrap(),
     );
-    model.bodies.push(free_body.clone());
+    geometry.bodies.push(free_body.clone());
     let ctx = cadmpeg_test_support::service_decode_context();
     let definition = crate::f3z::merge::define_member(&ctx, &mut model, "member").unwrap();
-    assert_eq!(model.bodies[0].transform, original);
-    assert_eq!(model.bodies[1], free_body);
+    assert_eq!(geometry.bodies[0].transform, original);
+    assert_eq!(geometry.bodies[1], free_body);
     assert_eq!(model.product_definitions[1].id, definition);
     assert_eq!(model.product_definitions[1].bodies, [free_body.id]);
 }

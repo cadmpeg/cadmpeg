@@ -20,7 +20,7 @@ fn support_ownership_survives_the_absence_of_projected_topology() {
     ] {
         let mut ir = edgeless_doc();
         ir.model = Default::default();
-        let mut surface = edgeless_doc().model.surfaces.remove(0);
+        let mut surface = edgeless_doc().geometry.surfaces.remove(0);
         surface.source_object = Some(cadmpeg_ir::SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Iges,
             geometry_role: Some(role),
@@ -31,7 +31,7 @@ fn support_ownership_survives_the_absence_of_projected_topology() {
             layer: None,
             instance_path: Vec::new(),
         });
-        ir.model.surfaces.push(surface);
+        ir.geometry.surfaces.push(surface);
         let mut bytes = Vec::new();
         let report = write_step(
             &ir,
@@ -74,8 +74,8 @@ fn failed_face_does_not_promote_its_surface_to_a_geometric_set() {
 fn an_unwritten_vertex_does_not_promote_its_support_point() {
     let mut fixture = edgeless_doc();
     let mut ir = CadIr::empty();
-    ir.model.points.push(fixture.model.points.remove(0));
-    ir.model.vertices.push(fixture.model.vertices.remove(0));
+    ir.geometry.points.push(fixture.geometry.points.remove(0));
+    ir.geometry.vertices.push(fixture.geometry.vertices.remove(0));
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
@@ -89,14 +89,14 @@ fn an_unwritten_vertex_does_not_promote_its_support_point() {
         .contains("GEOMETRIC_CURVE_SET("));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.message.contains(ir.model.points[0].id.as_str())
+            && loss.message.contains(ir.geometry.points[0].id.as_str())
     }));
 }
 
 #[test]
 fn independent_curve_preserves_its_active_parameter_interval() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: CurveId::mint("test:model:curve#active").unwrap(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
@@ -159,12 +159,12 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
     .unwrap();
     let mut ir = CadIr::empty();
     let id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#active").unwrap();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
         source_object: None,
     });
-    ir.model
+    ir.geometry
         .add_procedural_surface(
             &id,
             ProceduralSurface::new(
@@ -221,7 +221,7 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
     for senses in [Some(true), None] {
         for independent in [false, true] {
             let mut ir = CadIr::empty();
-            let mut support = edgeless_doc().model.surfaces.remove(0);
+            let mut support = edgeless_doc().geometry.surfaces.remove(0);
             if independent {
                 support.source_object = Some(cadmpeg_ir::SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Fcstd,
@@ -248,8 +248,8 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
                 ),
                 None,
             );
-            ir.model.surfaces.push(support);
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(support);
+            ir.geometry.surfaces.push(Surface {
                 id: "test:model:surface#subset".try_into().unwrap(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: construction.id.clone(),
@@ -257,7 +257,7 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
                 },
                 source_object: None,
             });
-            ir.model.procedural_surfaces.push(construction);
+            ir.geometry.procedural_surfaces.push(construction);
             let mut bytes = Vec::new();
             let report = write_step(
                 &ir,
@@ -324,7 +324,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
             SubsetCurveConstruction::try_new(basis.clone(), [2.0, 3.0], true, None).unwrap(),
         ),
     );
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: basis,
         parameter_range: None,
         source_object: None,
@@ -335,7 +335,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
             ),
         )),
     });
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: "test:model:curve#subset".try_into().unwrap(),
         parameter_range: None,
         source_object: None,
@@ -344,7 +344,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
             cache: None,
         },
     });
-    ir.model.procedural_curves.push(construction);
+    ir.geometry.procedural_curves.push(construction);
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
@@ -383,7 +383,7 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
     for missing_child in [false, true] {
         let mut ir = CadIr::empty();
         let child: CurveId = "test:model:curve#child".try_into().unwrap();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: child.clone(),
             parameter_range: None,
             source_object: None,
@@ -407,7 +407,7 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
                 transition: CompositeCurveTransition::Continuous,
             });
         }
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: "test:model:curve#composite".try_into().unwrap(),
             parameter_range: None,
             source_object: None,

@@ -369,7 +369,7 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
             &DecodeOptions::default(),
         )
         .expect("decode stored feature");
-    assert_eq!(decoded.ir().model.entity_count(), 1);
+    assert_eq!(decoded.ir().entity_count(), 1);
 
     let mut options = DecodeOptions::default();
     options.policy.limits.max_entities = 1;
@@ -556,7 +556,7 @@ fn invalid_file_version_preserves_independent_brep_geometry_and_declaration() {
     let expected = FcstdCodec
         .decode(&mut Cursor::new(original), &DecodeOptions::default())
         .unwrap();
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     let mut source = zip::ZipArchive::new(Cursor::new(original)).unwrap();
     let mut entries = Vec::new();
     for index in 0..source.len() {
@@ -639,7 +639,7 @@ fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() 
     let expected = FcstdCodec
         .decode(&mut Cursor::new(&schema_two), &DecodeOptions::default())
         .unwrap();
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     for spelling in ["02", "+2", "0002"] {
         let source = rewrite_schema_version(&schema_two, spelling);
         let recovered = FcstdCodec

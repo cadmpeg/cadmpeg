@@ -270,12 +270,12 @@ fn origin(
 
 fn faces(
     _ctx: &DecodeContext<'_>,
-    model: &Model,
+    geometry: &Topology,
     origin: [f64; 3],
     diameter: f64,
 ) -> Option<[FaceId; 2]> {
     let mut carriers = Vec::new();
-    for surface in &model.surfaces {
+    for surface in &geometry.surfaces {
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = &surface.geometry
         else {
             continue;
@@ -311,7 +311,7 @@ fn faces(
     }
     let mut selected = Vec::new();
     let mut used = [0_u8; 2];
-    for face in &model.faces {
+    for face in &geometry.faces {
         if &face.surface == first.0 || &face.surface == second.0 {
             if selected.len() == 2 {
                 return None;

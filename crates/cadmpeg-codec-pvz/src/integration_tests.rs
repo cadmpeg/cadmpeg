@@ -147,11 +147,12 @@ fn every_structure_signature_decodes_the_assembly() {
         let result = decode(&assembly(signature));
         assert_eq!(primary_dialect(&result), dialect);
         let model = &result.ir().model;
+        let geometry = &result.ir().geometry;
         assert_eq!(
             (
                 model.product_definitions.len(),
                 model.occurrences.len(),
-                model.bodies.len(),
+                geometry.bodies.len(),
                 model.tessellations.len(),
                 model.appearances.len(),
                 model.appearance_bindings.len(),
@@ -385,6 +386,7 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
 
     let result = decode(&exact_assembly());
     let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let body = |member: &str| {
         model
             .bodies
@@ -413,7 +415,7 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
     }
     assert_eq!(body("plate.ol").kind, BodyKind::General);
     assert!(body("plate.ol").regions.is_empty());
-    assert_eq!(model.bodies.len(), 3);
+    assert_eq!(geometry.bodies.len(), 3);
     for definition in &model.product_definitions[1..] {
         assert_eq!(definition.bodies.len(), 1);
     }
@@ -445,6 +447,7 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
 
     let result = decode(&cube_and_sheet_assembly());
     let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let of_kind = |kind: BodyKind| {
         let found: Vec<_> = model
             .bodies
@@ -455,7 +458,7 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
         found[0]
     };
     let (solid, sheet) = (of_kind(BodyKind::Solid), of_kind(BodyKind::Sheet));
-    assert_eq!(model.bodies.len(), 2);
+    assert_eq!(geometry.bodies.len(), 2);
     for body in [solid, sheet] {
         assert_eq!(body.name.as_deref(), Some("part.ol"));
     }

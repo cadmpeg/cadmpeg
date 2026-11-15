@@ -32,7 +32,7 @@ fn malformed_smt_metadata_keeps_geometry_and_reports_recovery() {
             .unwrap()
     };
     let expected = decode(original);
-    assert_eq!(expected.ir().model.faces.len(), 1);
+    assert_eq!(expected.ir().geometry.faces.len(), 1);
     for source in [
         original.replace("9 Synthetic", ""),
         original.replace(
@@ -85,7 +85,7 @@ fn binary_product_encoding_recovery_keeps_independent_geometry() {
             .unwrap()
     };
     let expected = decode(&original);
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     let mut cursor = 47; // ASM BinaryFile8 fixed words; docs/layouts/asm.toml.
     for _ in 0..3 {
         let mut source = original.clone();
@@ -149,7 +149,7 @@ fn invalid_binary_kernel_tolerances_keep_independent_geometry() {
             .unwrap()
     };
     let expected = decode(&original);
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     // The header builder ends with three tagged doubles; each payload is 8 bytes.
     let header_end = smbh_header_prefix().len();
     for (offset, values) in [

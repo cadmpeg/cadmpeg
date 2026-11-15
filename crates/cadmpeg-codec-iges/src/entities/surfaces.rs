@@ -352,13 +352,13 @@ fn equal_arc_length_parameterization(
         &mut second_storage,
     );
     let first = ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| Some(curve.id.as_str()) == first_id)
         .map(|curve| &curve.geometry);
     let second = ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| Some(curve.id.as_str()) == second_id)
@@ -453,7 +453,7 @@ fn source_parameter_interval(geometry: &CurveGeometry, carrier_interval: [f64; 2
 }
 
 fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeometry> {
-    ir.model
+    ir.geometry
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
@@ -1229,15 +1229,15 @@ fn indicator_normal(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vector3>, CodecError> {
     let constructions: Vec<_> = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter(|candidate| candidate.id == *surface)
         .filter_map(|candidate| candidate.geometry.procedural_construction())
         .collect();
-    let procedural = ir.model.procedural_surfaces.iter().find(|procedural| {
+    let procedural = ir.geometry.procedural_surfaces.iter().find(|procedural| {
         constructions.contains(&&procedural.id)
-            && ir.model.procedural_surface_owner(&procedural.id) == Some(surface)
+            && ir.geometry.procedural_surface_owner(&procedural.id) == Some(surface)
     });
     let parameters =
         procedural.map(|procedural| offset_indicator_parameters(procedural.record_bounds()));
@@ -1263,7 +1263,7 @@ fn indicator_normal(
             // identity is won by the last entry, and directory sequence numbers
             // come straight from the card, so duplicate ids are not excluded.
             let Some(carrier) = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .rev()
@@ -1474,7 +1474,7 @@ pub(super) fn project(
         );
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
@@ -1551,7 +1551,7 @@ pub(super) fn project(
         );
         let rails = (
             match ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| Some(curve.id.as_str()) == first_id)
@@ -1560,7 +1560,7 @@ pub(super) fn project(
                 None => Ok(None),
             },
             match ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| Some(curve.id.as_str()) == second_id)
@@ -1639,7 +1639,7 @@ pub(super) fn project(
         sequences.record_surface(&surface_id, entry.sequence);
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -1849,7 +1849,7 @@ pub(super) fn project(
                 sequences.record_curve(&placed_id, entry.sequence);
 
                 ctx.charge_entities(1, "iges_geometry_surfaces")?;
-                ir.model.curves.push(Curve {
+                ir.geometry.curves.push(Curve {
                     parameter_range: None,
                     id: placed_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -1871,7 +1871,7 @@ pub(super) fn project(
             sequences.record_surface(&surface_id, entry.sequence);
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
@@ -2075,7 +2075,7 @@ pub(super) fn project(
         };
         if entry.transform != 0 {
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_directrix)),
@@ -2085,7 +2085,7 @@ pub(super) fn project(
         sequences.record_surface(&surface_id, entry.sequence);
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -2200,7 +2200,7 @@ pub(super) fn project(
             }
         };
         let axis_id = crate::ids::curve(&crate::ids::Stem::directory(axis_sequence));
-        let Some(axis_curve) = ir.model.curves.iter().find(|curve| curve.id == axis_id) else {
+        let Some(axis_curve) = ir.geometry.curves.iter().find(|curve| curve.id == axis_id) else {
             super::push_geometry_loss(
                 &mut losses,
                 entry,
@@ -2282,7 +2282,7 @@ pub(super) fn project(
                 sequences.record_curve(&procedural_directrix, entry.sequence);
 
                 ctx.charge_entities(1, "iges_geometry_surfaces")?;
-                ir.model.curves.push(Curve {
+                ir.geometry.curves.push(Curve {
                     parameter_range: None,
                     id: procedural_directrix.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -2322,7 +2322,7 @@ pub(super) fn project(
             sequences.record_surface(&surface_id, entry.sequence);
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
@@ -2473,7 +2473,7 @@ pub(super) fn project(
         sequences.record_surface(&surface_id, entry.sequence);
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -2505,7 +2505,7 @@ pub(super) fn project(
             sequences.record_curve(&procedural_directrix, entry.sequence);
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
@@ -2985,7 +2985,7 @@ pub(super) fn project(
         sequences.record_surface(&surface_id, entry.sequence);
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -3076,7 +3076,7 @@ pub(super) fn project(
         }
         let support_id = crate::ids::surface(&crate::ids::Stem::directory(support_sequence));
         let Some(support) = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == support_id)
@@ -3152,7 +3152,7 @@ pub(super) fn project(
         sequences.record_surface(&surface_id, entry.sequence);
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry,
             source_object: Some(source_object(entry)?),

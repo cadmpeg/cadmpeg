@@ -103,7 +103,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
             row(35, crate::surface::SurfaceKind::Plane),
         ]);
         let mut ir = CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#31".to_string())
                     .expect("identity grammar"),

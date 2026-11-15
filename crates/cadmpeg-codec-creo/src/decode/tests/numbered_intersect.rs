@@ -1021,7 +1021,7 @@ fn mixed_current_and_generated_edges_remain_native() {
         ),
         native_ref: None,
     });
-    ir.model.edges.push(cadmpeg_ir::topology::Edge {
+    ir.geometry.edges.push(cadmpeg_ir::topology::Edge {
         id: EdgeId::mint("creo:visibgeom:edge#45".to_string()).expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: cadmpeg_ir::ids::VertexId::mint("test:model:entity#test:start".to_string())
@@ -1324,12 +1324,12 @@ fn geometry_signal_excludes_opaque_carriers() {
     let mut ir = CadIr::empty();
     let surface_id =
         SurfaceId::mint("test:model:entity#surface".to_string()).expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: CurveId::mint("test:model:entity#curve".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -1338,7 +1338,7 @@ fn geometry_signal_excludes_opaque_carriers() {
 
     assert!(!has_transferred_geometry(&ir));
 
-    let _attached = ir.model.add_procedural_surface(
+    let _attached = ir.geometry.add_procedural_surface(
         &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:entity#procedural".to_string())

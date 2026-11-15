@@ -569,7 +569,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
         serde_json::to_string(&result.ir().model).expect("serialize model")
     };
     assert_eq!(model(&drifted), model(&baseline));
-    assert!(!drifted.ir().model.bodies.is_empty());
+    assert!(!drifted.ir().geometry.bodies.is_empty());
 
     assert_eq!(
         baseline

@@ -35,7 +35,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             SurfaceId::mint("test:model:entity#synthetic:first-plane").expect("identity grammar");
         let second =
             SurfaceId::mint("test:model:entity#synthetic:second-plane").expect("identity grammar");
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: first.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -65,7 +65,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             .expect("identity grammar");
         let second_spine_side = SurfaceId::mint("test:model:entity#synthetic:second-spine-side")
             .expect("identity grammar");
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: first_spine_side.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -92,7 +92,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             },
         ]);
         let spine = CurveId::mint("test:model:entity#synthetic:spine").expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -109,7 +109,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         let construction =
             ProceduralSurfaceId::mint("test:model:entity#synthetic:blend-construction")
                 .expect("identity grammar");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
@@ -117,7 +117,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             construction,
             ProceduralSurfaceDefinition::Blend(
                 cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -206,7 +206,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 ),
             },
         );
-        ir.model.add_procedural_curve(&spine, procedural).unwrap();
+        ir.geometry.add_procedural_curve(&spine, procedural).unwrap();
         assert_eq!(
             crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
             1.0
@@ -298,7 +298,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
         let mut varying_frame = ir.clone();
         let carrier = varying_frame
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == spine)
@@ -321,7 +321,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             .clone(),
         );
         varying_frame
-            .model
+            .geometry
             .procedural_curves
             .iter_mut()
             .find(|curve| {
@@ -402,7 +402,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         assert!((exact.z - numerical.z).abs() < 1.0e-7);
 
         let mut translated = ir.clone();
-        for carrier in &mut translated.model.surfaces {
+        for carrier in &mut translated.geometry.surfaces {
             if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
                 &mut carrier.geometry
             {
@@ -419,7 +419,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             }
         }
         let carrier = translated
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == spine)
@@ -461,13 +461,13 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
         let boundary_curve = CurveId::mint("test:model:entity#synthetic:blend-boundary-curve")
             .expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: boundary_curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.geometry.add_procedural_curve(
             &boundary_curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:entity#synthetic:blend-boundary")
@@ -502,7 +502,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 },
             ),
         );
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: EdgeId::mint("test:model:entity#synthetic:blend-boundary-edge")
                 .expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(boundary_curve), Some([0.0, 1.0]))
@@ -522,7 +522,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         )
         .unwrap();
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            ir.model.procedural_curves.last().unwrap().definition()
+            ir.geometry.procedural_curves.last().unwrap().definition()
         else {
             unreachable!()
         };
@@ -550,7 +550,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             ),
             Ok(Some(Point2::new(0.0, 0.0)))
         );
-        ir.model
+        ir.geometry
             .procedural_curves
             .iter_mut()
             .find(|procedural| {
@@ -578,7 +578,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         );
 
         let carrier = ir
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == spine)
@@ -639,7 +639,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
         let third =
             SurfaceId::mint("test:model:entity#synthetic:third-plane").expect("identity grammar");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: third.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -653,7 +653,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         });
         let outer_spine =
             CurveId::mint("test:model:entity#synthetic:outer-spine").expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: outer_spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -670,7 +670,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         let outer_construction =
             ProceduralSurfaceId::mint("test:model:entity#synthetic:outer-blend-construction")
                 .expect("identity grammar");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: outer.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: outer_construction.clone(),
@@ -678,7 +678,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             outer_construction,
             ProceduralSurfaceDefinition::Blend(
                 cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -706,7 +706,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             .expect("evaluation stays within session limits")
             .unwrap();
         let outer_geometry = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|candidate| candidate.id == outer)
@@ -736,7 +736,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         assert!((actual.v - expected.v).abs() < 1.0e-8);
 
         let outer_definition = ir
-            .model
+            .geometry
             .procedural_surfaces
             .iter_mut()
             .find(|candidate| {

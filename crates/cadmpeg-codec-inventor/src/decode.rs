@@ -78,7 +78,7 @@ fn decode_container<'a>(
     } else {
         ctx.depth()
     };
-    let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+    let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.entity_count());
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "cfb_major_version".to_owned(),
@@ -265,7 +265,7 @@ fn decode_container<'a>(
         cadmpeg_core::text::named_entries("the inventor document", attributes)?,
     ));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
-        let entity_count = ir.model.entity_count();
+        let entity_count = ir.entity_count();
         ir.model.product_definitions.push(project_root_product(
             ctx,
             &document_kind,
@@ -431,7 +431,7 @@ fn decode_container<'a>(
     let pm_graphics_style_collections = presentation_native.graphics_style_collections;
     let pm_graphics_primary_color_styles = presentation_native.graphics_primary_color_styles;
     ctx.admit_entities(
-        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+        cadmpeg_core::decode::u64_from_index(ir.entity_count()),
         &mut admitted_entities,
         "admit Inventor pre-assembly entities",
     )?;
@@ -769,9 +769,9 @@ fn decode_container<'a>(
     }
     ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =
-        !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
+        !(ir.geometry.surfaces.is_empty() && ir.geometry.points.is_empty() && ir.geometry.faces.is_empty());
     let body_ids = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())
@@ -823,7 +823,7 @@ fn decode_container<'a>(
             }
         })
         .collect::<HashMap<_, _>>();
-    for face in &mut ir.model.faces {
+    for face in &mut ir.geometry.faces {
         if face.color.is_none() {
             face.color = face_colors.get(&face.id).copied();
         }

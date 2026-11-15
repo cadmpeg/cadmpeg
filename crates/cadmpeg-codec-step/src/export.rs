@@ -113,7 +113,7 @@ pub(crate) fn write_step_outcome(
             "STEP cannot write {missing_definitions} occurrence record(s) whose local product definition is missing"
         )));
     }
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         match surface.geometry.solved().and_then(unwritable_cone) {
             Some(UnwritableCone::SemiAngle(half_angle)) => {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
@@ -457,7 +457,7 @@ impl<'a> Builder<'a> {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let construction_supports = ownership::construction_supports(ir)?;
         let loop_faces = ir
-            .model
+            .geometry
             .faces
             .iter()
             .flat_map(|face| {
@@ -467,7 +467,7 @@ impl<'a> Builder<'a> {
             })
             .collect::<HashMap<_, _>>();
         let coedge_faces: HashMap<&str, (&str, &str)> =
-            ir.model
+            ir.geometry
                 .loops
                 .iter()
                 .filter_map(|loop_| loop_faces.get(loop_.id.as_str()).map(|face| (loop_, *face)))
@@ -478,7 +478,7 @@ impl<'a> Builder<'a> {
                 })
                 .collect();
         let mut edge_coedges = HashMap::<&str, Vec<PcurveUse<'_>>>::new();
-        for coedge in &ir.model.coedges {
+        for coedge in &ir.geometry.coedges {
             let Some((surface, face)) = coedge_faces.get(coedge.id.as_str()) else {
                 continue;
             };
@@ -502,74 +502,74 @@ impl<'a> Builder<'a> {
             model_name: "cadmpeg_model",
             emitter: Emitter::for_schema(schema),
             losses: Vec::new(),
-            points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
+            points: ir.geometry.points.iter().map(|p| (p.id.as_str(), p)).collect(),
             bodies: ir
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .map(|body| (body.id.as_str(), body))
                 .collect(),
             shells: ir
-                .model
+                .geometry
                 .shells
                 .iter()
                 .map(|shell| (shell.id.as_str(), shell))
                 .collect(),
             faces: ir
-                .model
+                .geometry
                 .faces
                 .iter()
                 .map(|face| (face.id.as_str(), face))
                 .collect(),
             loops: ir
-                .model
+                .geometry
                 .loops
                 .iter()
                 .map(|loop_| (loop_.id.as_str(), loop_))
                 .collect(),
             vertices: ir
-                .model
+                .geometry
                 .vertices
                 .iter()
                 .map(|v| (v.id.as_str(), v))
                 .collect(),
-            edges: ir.model.edges.iter().map(|e| (e.id.as_str(), e)).collect(),
+            edges: ir.geometry.edges.iter().map(|e| (e.id.as_str(), e)).collect(),
             coedges: ir
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .map(|c| (c.id.as_str(), c))
                 .collect(),
             surfaces: ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .map(|s| (s.id.as_str(), s))
                 .collect(),
-            curves: ir.model.curves.iter().map(|c| (c.id.as_str(), c)).collect(),
+            curves: ir.geometry.curves.iter().map(|c| (c.id.as_str(), c)).collect(),
             pcurves: ir
-                .model
+                .geometry
                 .pcurves
                 .iter()
                 .map(|p| (p.id.as_str(), p))
                 .collect(),
             procedural_surfaces: ir
-                .model
+                .geometry
                 .procedural_surfaces
                 .iter()
                 .filter_map(|surface| {
                     Some((
-                        ir.model.procedural_surface_owner(&surface.id)?.as_str(),
+                        ir.geometry.procedural_surface_owner(&surface.id)?.as_str(),
                         surface,
                     ))
                 })
                 .collect(),
             procedural_curves: ir
-                .model
+                .geometry
                 .procedural_curves
                 .iter()
                 .filter_map(|curve| {
-                    Some((ir.model.procedural_curve_owner(&curve.id)?.as_str(), curve))
+                    Some((ir.geometry.procedural_curve_owner(&curve.id)?.as_str(), curve))
                 })
                 .collect(),
             edge_coedges,
@@ -661,7 +661,7 @@ impl<'a> Builder<'a> {
     pub(crate) fn build(&mut self) {
         let surface_regions = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| matches!(body.kind, BodyKind::Solid | BodyKind::Sheet))
@@ -669,7 +669,7 @@ impl<'a> Builder<'a> {
             .collect::<BTreeSet<_>>();
         let mut wire_edges = BTreeSet::new();
         let mut free_vertices = BTreeSet::new();
-        for shell in &self.ir.model.shells {
+        for shell in &self.ir.geometry.shells {
             if surface_regions.contains(&shell.region) {
                 wire_edges.extend(shell.wire_edges());
                 free_vertices.extend(shell.free_vertices());
@@ -717,7 +717,7 @@ impl<'a> Builder<'a> {
         self.emit_visibility();
         self.emit_tessellations(context);
         if !has_model_items && self.tessellation_step_refs.is_empty() {
-            if !self.ir.model.bodies.is_empty() {
+            if !self.ir.geometry.bodies.is_empty() {
                 self.loss(
                     StepLossCode::NoExportableSolids,
                     "no body geometry could be placed in a STEP representation".to_string(),
@@ -857,7 +857,7 @@ impl<'a> Builder<'a> {
             .extend(conflicted_binding_ids);
         self.appearance_binding_target_conflicts
             .extend(target_conflicts);
-        for body in &ir.model.bodies {
+        for body in &ir.geometry.bodies {
             if !conflicting_body_targets.contains(body.id.as_str()) {
                 if let Some(color) = body.color {
                     body_colors.entry(body.id.as_str()).or_insert(ColorSpec {
@@ -868,7 +868,7 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        for face in &ir.model.faces {
+        for face in &ir.geometry.faces {
             if !conflicting_face_targets.contains(face.id.as_str()) {
                 if let Some(color) = face.color {
                     face_colors.entry(face.id.as_str()).or_insert(ColorSpec {
@@ -881,7 +881,7 @@ impl<'a> Builder<'a> {
         }
 
         let mut face_body: HashMap<&str, &str> = HashMap::new();
-        for region in &ir.model.regions {
+        for region in &ir.geometry.regions {
             let body = region.body.as_str();
             for shell_id in &region.shells {
                 let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
@@ -1025,7 +1025,7 @@ impl<'a> Builder<'a> {
                 ));
             }
         }
-        for body in &ir.model.bodies {
+        for body in &ir.geometry.bodies {
             let body_id = body.id.as_str();
             let Some(spec) = body_colors.get(body_id) else {
                 continue;
@@ -1857,7 +1857,7 @@ impl<'a> Builder<'a> {
             .collect::<BTreeSet<_>>();
         let bodies = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| !owned.contains(&body.id))
@@ -1966,7 +1966,7 @@ impl<'a> Builder<'a> {
     fn emit_shape_items(&mut self, context: Ref) -> Vec<Ref> {
         let mut items = Vec::new();
         let ir = self.ir;
-        for region in &ir.model.regions {
+        for region in &ir.geometry.regions {
             let body_kind = self
                 .bodies
                 .get(region.body.as_str())
@@ -2344,7 +2344,7 @@ impl<'a> Builder<'a> {
         if !self.schema.supports_visibility() {
             let hidden = self
                 .ir
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .filter(|body| body.visible == Some(false))
@@ -2363,7 +2363,7 @@ impl<'a> Builder<'a> {
         }
         let mut hidden = Vec::new();
         let mut hidden_without_items = Vec::new();
-        for body in &self.ir.model.bodies {
+        for body in &self.ir.geometry.bodies {
             if body.visible != Some(false) {
                 continue;
             }
@@ -2496,21 +2496,21 @@ impl<'a> Builder<'a> {
         // emission. A failed face must never expose its full support as a root.
         let owned_surfaces: BTreeSet<_> = self
             .ir
-            .model
+            .geometry
             .faces
             .iter()
             .map(|face| face.surface.as_str())
             .collect();
         let owned_curves: BTreeSet<_> = self
             .ir
-            .model
+            .geometry
             .edges
             .iter()
             .filter_map(|edge| edge.carrier.curve())
             .map(cadmpeg_ir::ids::CurveId::as_str)
             .chain(
                 self.ir
-                    .model
+                    .geometry
                     .coedges
                     .iter()
                     .filter_map(|coedge| coedge.use_curve.as_ref())
@@ -2519,12 +2519,12 @@ impl<'a> Builder<'a> {
             .collect();
         let owned_points: BTreeSet<_> = self
             .ir
-            .model
+            .geometry
             .vertices
             .iter()
             .map(|vertex| vertex.point.as_str())
             .collect();
-        for surface in &self.ir.model.surfaces {
+        for surface in &self.ir.geometry.surfaces {
             if !self.surface_refs.contains_key(surface.id.as_str())
                 && (owned_surfaces.contains(surface.id.as_str())
                     || ownership::is_support(
@@ -2537,7 +2537,7 @@ impl<'a> Builder<'a> {
                     .insert(surface.id.as_str().to_owned());
             }
         }
-        for curve in &self.ir.model.curves {
+        for curve in &self.ir.geometry.curves {
             if !self.curve_refs.contains_key(curve.id.as_str())
                 && !self.point_loop_curves.contains(curve.id.as_str())
                 && (owned_curves.contains(curve.id.as_str())
@@ -2551,7 +2551,7 @@ impl<'a> Builder<'a> {
                     .insert(curve.id.as_str().to_owned());
             }
         }
-        for point in &self.ir.model.points {
+        for point in &self.ir.geometry.points {
             if !self.point_refs.contains_key(point.id.as_str())
                 && !self.point_loop_points.contains(point.id.as_str())
                 && (owned_points.contains(point.id.as_str())
@@ -2567,7 +2567,7 @@ impl<'a> Builder<'a> {
         }
         let surface_ids = self
             .ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .filter(|surface| {
@@ -2616,7 +2616,7 @@ impl<'a> Builder<'a> {
         }
         let curve_ids = self
             .ir
-            .model
+            .geometry
             .curves
             .iter()
             .filter(|curve| {
@@ -2649,7 +2649,7 @@ impl<'a> Builder<'a> {
         }
         let point_ids = self
             .ir
-            .model
+            .geometry
             .points
             .iter()
             .filter(|point| {
@@ -5574,7 +5574,7 @@ impl<'a> Builder<'a> {
         let mut referenced_coedges = BTreeSet::new();
         let mut referenced_edges = BTreeSet::new();
         let mut referenced_vertices = BTreeSet::new();
-        for region in &self.ir.model.regions {
+        for region in &self.ir.geometry.regions {
             for shell_id in &region.shells {
                 if !referenced_shells.insert(shell_id.as_str()) {
                     continue;
@@ -5633,49 +5633,49 @@ impl<'a> Builder<'a> {
         }
         let omitted_bodies = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| !self.body_shape_refs.contains_key(body.id.as_str()))
             .count();
         let omitted_shells = self
             .ir
-            .model
+            .geometry
             .shells
             .iter()
             .filter(|shell| !referenced_shells.contains(shell.id.as_str()))
             .count();
         let omitted_faces = self
             .ir
-            .model
+            .geometry
             .faces
             .iter()
             .filter(|face| !referenced_faces.contains(face.id.as_str()))
             .count();
         let omitted_loops = self
             .ir
-            .model
+            .geometry
             .loops
             .iter()
             .filter(|loop_| !referenced_loops.contains(loop_.id.as_str()))
             .count();
         let omitted_coedges = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| !referenced_coedges.contains(coedge.id.as_str()))
             .count();
         let omitted_edges = self
             .ir
-            .model
+            .geometry
             .edges
             .iter()
             .filter(|edge| !referenced_edges.contains(edge.id.as_str()))
             .count();
         let omitted_vertices = self
             .ir
-            .model
+            .geometry
             .vertices
             .iter()
             .filter(|vertex| !referenced_vertices.contains(vertex.id.as_str()))
@@ -5939,7 +5939,7 @@ impl<'a> Builder<'a> {
         }
         let missing_pcurve_count = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter()
             .flat_map(|coedge| &coedge.pcurves)
@@ -5955,7 +5955,7 @@ impl<'a> Builder<'a> {
         }
         let reduced_pcurve_count = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter()
             .flat_map(|coedge| &coedge.pcurves)
@@ -5978,11 +5978,11 @@ impl<'a> Builder<'a> {
         }
         let pcurve_use_metadata_count = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter()
             .flat_map(|coedge| &coedge.pcurves)
-            .chain(self.ir.model.loops.iter().flat_map(Loop::vertex_pcurves))
+            .chain(self.ir.geometry.loops.iter().flat_map(Loop::vertex_pcurves))
             .filter(|use_| use_.isoparametric.is_some() || use_.parameter_range.is_some())
             .count();
         if pcurve_use_metadata_count > 0 {
@@ -5995,7 +5995,7 @@ impl<'a> Builder<'a> {
         }
         let coedge_use_curve_metadata_count = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| coedge.use_curve.is_some())
@@ -6022,7 +6022,7 @@ impl<'a> Builder<'a> {
                 "face tolerance",
                 census(
                     self.ir
-                        .model
+                        .geometry
                         .faces
                         .iter()
                         .filter_map(|face| face.tolerance)
@@ -6034,7 +6034,7 @@ impl<'a> Builder<'a> {
                 "edge tolerance",
                 census(
                     self.ir
-                        .model
+                        .geometry
                         .edges
                         .iter()
                         .filter_map(|edge| edge.tolerance)
@@ -6046,7 +6046,7 @@ impl<'a> Builder<'a> {
                 "vertex tolerance",
                 census(
                     self.ir
-                        .model
+                        .geometry
                         .vertices
                         .iter()
                         .filter_map(|vertex| vertex.tolerance)
@@ -6073,13 +6073,13 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.model.subds.is_empty() {
+        if !self.ir.geometry.subds.is_empty() {
             self.loss(
                 StepLossCode::SubdOmitted,
                 format!(
                     "{} subdivision surface(s) were omitted because this STEP writer \
                      does not encode SubD control cages",
-                    self.ir.model.subds.len()
+                    self.ir.geometry.subds.len()
                 ),
             );
         }
@@ -6302,7 +6302,7 @@ impl<'a> Builder<'a> {
         // codecs, which this writer cannot reproduce.
         let source_object_count = self
             .ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .filter(|surface| {
@@ -6314,7 +6314,7 @@ impl<'a> Builder<'a> {
             .count()
             + self
                 .ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .filter(|curve| {
@@ -6326,7 +6326,7 @@ impl<'a> Builder<'a> {
                 .count()
             + self
                 .ir
-                .model
+                .geometry
                 .subds
                 .iter()
                 .filter(|subd| {
@@ -6350,7 +6350,7 @@ impl<'a> Builder<'a> {
         let source_object_count = source_object_count
             + self
                 .ir
-                .model
+                .geometry
                 .points
                 .iter()
                 .filter(|point| {
@@ -6514,7 +6514,7 @@ impl<'a> Builder<'a> {
             .collect();
         let omitted_surface_count = self
             .ir
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .filter(|procedural| {
@@ -6529,7 +6529,7 @@ impl<'a> Builder<'a> {
             .count();
         let omitted_curve_count = self
             .ir
-            .model
+            .geometry
             .procedural_curves
             .iter()
             .filter(|procedural| {

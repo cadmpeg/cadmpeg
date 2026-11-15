@@ -238,11 +238,11 @@ pub(super) struct CompositeIndex {
 impl CompositeIndex {
     pub(super) fn from_ir(ir: &CadIr) -> Self {
         let mut curve_positions = BTreeMap::new();
-        for (position, curve) in ir.model.curves.iter().enumerate() {
+        for (position, curve) in ir.geometry.curves.iter().enumerate() {
             curve_positions.entry(curve.id.clone()).or_insert(position);
         }
         let mut edges = BTreeMap::<CurveId, Vec<CompositeEdge>>::new();
-        for edge in &ir.model.edges {
+        for edge in &ir.geometry.edges {
             if let Some(curve) = edge.curve() {
                 edges.entry(curve.clone()).or_default().push(CompositeEdge {
                     start: edge.start.clone(),
@@ -252,11 +252,11 @@ impl CompositeIndex {
             }
         }
         let mut points = BTreeMap::<PointId, FinitePoint3>::new();
-        for point in &ir.model.points {
+        for point in &ir.geometry.points {
             points.entry(point.id.clone()).or_insert(point.position());
         }
         let mut vertex_points = BTreeMap::<VertexId, FinitePoint3>::new();
-        for vertex in &ir.model.vertices {
+        for vertex in &ir.geometry.vertices {
             if let Some(point) = points.get(&vertex.point).copied() {
                 vertex_points.entry(vertex.id.clone()).or_insert(point);
             }
@@ -271,7 +271,7 @@ impl CompositeIndex {
     pub(super) fn curve_by_id<'a>(&self, ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a Curve> {
         self.curve_positions
             .get(curve_id)
-            .and_then(|position| ir.model.curves.get(*position))
+            .and_then(|position| ir.geometry.curves.get(*position))
     }
 
     fn add_model_entity(
@@ -298,12 +298,12 @@ fn point_for_vertex(
         return index.vertex_points.get(id).copied();
     }
     let point = &ir
-        .model
+        .geometry
         .vertices
         .iter()
         .find(|vertex| vertex.id == *id)?
         .point;
-    ir.model
+    ir.geometry
         .points
         .iter()
         .find(|candidate| candidate.id == *point)
@@ -1235,8 +1235,8 @@ fn bounded_edge_for_curve(
         Some(index) => index
             .curve_positions
             .get(curve_id)
-            .and_then(|position| ir.model.curves.get(*position)),
-        None => ir.model.curves.iter().find(|curve| curve.id == *curve_id),
+            .and_then(|position| ir.geometry.curves.get(*position)),
+        None => ir.geometry.curves.iter().find(|curve| curve.id == *curve_id),
     };
     let Some(curve) = curve else {
         return Ok(None);
@@ -1245,7 +1245,7 @@ fn bounded_edge_for_curve(
         Some(index) => Cow::Borrowed(index.edges.get(curve_id).map_or(&[][..], Vec::as_slice)),
         None => {
             let edges = ir
-                .model
+                .geometry
                 .edges
                 .iter()
                 .filter(|edge| edge.curve() == Some(curve_id));
@@ -1284,8 +1284,8 @@ fn bounded_nurbs_for_id(
         Some(index) => index
             .curve_positions
             .get(curve_id)
-            .and_then(|position| ir.model.curves.get(*position)),
-        None => ir.model.curves.iter().find(|curve| curve.id == *curve_id),
+            .and_then(|position| ir.geometry.curves.get(*position)),
+        None => ir.geometry.curves.iter().find(|curve| curve.id == *curve_id),
     };
     let Some(curve) = curve else {
         return Ok(None);
@@ -1512,7 +1512,7 @@ fn curve_endpoints(
     let Some(curve_position) = index.curve_positions.get(curve_id) else {
         return Ok(None);
     };
-    let Some(curve) = ir.model.curves.get(*curve_position) else {
+    let Some(curve) = ir.geometry.curves.get(*curve_position) else {
         return Ok(None);
     };
     let Some(candidates) = index.edges.get(curve_id) else {
@@ -1641,12 +1641,12 @@ fn project_native_composite(
     let edge_id = crate::ids::edge(&stem);
 
     ctx.charge_entities(2, "iges_geometry_composites")?;
-    ir.model.points.extend([
+    ir.geometry.points.extend([
         Point::new(start_point.clone(), start, None),
         Point::new(end_point.clone(), end, None),
     ]);
     ctx.charge_entities(2, "iges_geometry_composites")?;
-    ir.model.vertices.extend([
+    ir.geometry.vertices.extend([
         Vertex {
             id: start_vertex.clone(),
             point: start_point,
@@ -1672,7 +1672,7 @@ fn project_native_composite(
     };
 
     ctx.charge_entities(1, "iges_geometry_composites")?;
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
@@ -1683,7 +1683,7 @@ fn project_native_composite(
     });
 
     ctx.charge_entities(1, "iges_geometry_composites")?;
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: edge_id.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
         start: start_vertex.clone(),
@@ -1692,7 +1692,7 @@ fn project_native_composite(
     });
     index.add_model_entity(
         &curve_id,
-        ir.model.curves.len() - 1,
+        ir.geometry.curves.len() - 1,
         CompositeEdge {
             start: start_vertex.clone(),
             end: end_vertex.clone(),
@@ -2181,12 +2181,12 @@ fn project_with_type_130_policy(
         let edge = crate::ids::edge(&stem);
 
         ctx.charge_entities(2, "iges_geometry_composites")?;
-        ir.model.points.extend([
+        ir.geometry.points.extend([
             Point::new(start_point.clone(), start, None),
             Point::new(end_point.clone(), end, None),
         ]);
         ctx.charge_entities(2, "iges_geometry_composites")?;
-        ir.model.vertices.extend([
+        ir.geometry.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),
                 point: start_point,
@@ -2201,7 +2201,7 @@ fn project_with_type_130_policy(
         sequences.record_curve(&curve_id, entry.sequence);
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -2209,7 +2209,7 @@ fn project_with_type_130_policy(
         });
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
@@ -2222,7 +2222,7 @@ fn project_with_type_130_policy(
         });
         index.add_model_entity(
             &curve_id,
-            ir.model.curves.len() - 1,
+            ir.geometry.curves.len() - 1,
             CompositeEdge {
                 start: start_vertex.clone(),
                 end: end_vertex.clone(),

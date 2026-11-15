@@ -51,7 +51,7 @@ fn malformed_optional_weldment_keeps_the_primary_model_and_whole_source() {
             .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
             .unwrap(),
     );
-    assert!(!baseline.ir().model.faces.is_empty());
+    assert!(!baseline.ir().geometry.faces.is_empty());
     assert_eq!(decoded.ir().model, baseline.ir().model);
     let code = crate::loss::SldprtLossCode::ContainerAuxiliaryParasolidRefused.kind();
     assert_eq!(

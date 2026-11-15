@@ -50,7 +50,7 @@ const TESSELLATION_OWNER_WORK_PER_ROW: usize = 1 << 17;
 /// that face keys or persistent identities already own still count, so
 /// owning them first leaves the remaining tables the same budget.
 fn tessellation_owner_rows(model: &cadmpeg_ir::document::Model) -> Option<usize> {
-    let mut rows = model.faces.len().checked_add(model.coedges.len())?;
+    let mut rows = geometry.faces.len().checked_add(geometry.coedges.len())?;
     for mesh in &model.tessellations {
         rows = rows
             .checked_add(mesh.vertex_count())?
@@ -1285,7 +1285,7 @@ fn assign_unique_surface_owners_within(
     losses: &mut Vec<LossNote>,
     work_limit: usize,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
-    for face in &model.faces {
+    for face in &geometry.faces {
         if let Some(stated) = face.tolerance {
             if stated.get() < EPS_DISPLAY_QUANTIZATION {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -1361,7 +1361,7 @@ fn assign_unique_surface_owners_within(
     };
     let work = WorkBudget::new(work_limit);
     let mut candidates = Vec::new();
-    for face in &model.faces {
+    for face in &geometry.faces {
         let candidate = (|| {
             let body = *shell_bodies.get(&face.shell)?;
             let inverse = match body_transforms.get(body).copied().flatten() {

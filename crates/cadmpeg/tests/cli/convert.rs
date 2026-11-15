@@ -54,11 +54,11 @@ fn convert_native_owned_sheet_preserves_shared_edge_in_step() {
             &DecodeOptions::default(),
         )
         .expect("read the exported STEP sheet");
-    let model = &step.ir().model;
-    assert_eq!(model.faces.len(), 2);
-    assert_eq!(model.edges.len(), 7);
-    assert!(model.faces.iter().all(|face| face.sense == Sense::Forward));
-    let shared: Vec<_> = model
+    let geometry = &step.ir().geometry;
+    assert_eq!(geometry.faces.len(), 2);
+    assert_eq!(geometry.edges.len(), 7);
+    assert!(geometry.faces.iter().all(|face| face.sense == Sense::Forward));
+    let shared: Vec<_> = geometry
         .coedges
         .iter()
         .filter(|side| side.radial_next != side.id)
@@ -215,11 +215,11 @@ fn curveless_faces_keep_their_source_vertices_as_points() {
             .success();
         let decoded: serde_json::Value =
             serde_json::from_slice(&fs::read(decoded).unwrap()).unwrap();
-        let points = decoded["model"]["points"].as_array().unwrap();
+        let points = decoded["geometry"]["points"].as_array().unwrap();
         assert_eq!(points.len(), 3, "{name}");
         assert!(points.iter().any(|point| point["position"]["x"] == extent));
         assert!(points.iter().any(|point| point["position"]["y"] == extent));
-        assert!(decoded["model"]["faces"].as_array().unwrap().is_empty());
+        assert!(decoded["geometry"]["faces"].as_array().unwrap().is_empty());
     }
 }
 
@@ -556,7 +556,7 @@ fn source_less_sldprt_without_a_native_envelope_is_refused_prewrite() {
 fn source_less_ir_exports_to_decodable_rhino() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#cli").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -582,9 +582,9 @@ fn source_less_ir_exports_to_decodable_rhino() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().geometry.points.len(), 1);
     assert_eq!(
-        decoded.ir().model.points[0].position().get(),
+        decoded.ir().geometry.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
 }
@@ -599,7 +599,7 @@ fn source_less_ir_exports_to_decodable_rhino() {
 fn rhino_output_version_is_selected_explicitly() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#version").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -648,7 +648,7 @@ fn rhino_output_version_is_selected_explicitly() {
 fn check_blocks_conversion_unless_overridden() {
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube().expect("unit cube fixture is admitted");
-    invalid.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
+    invalid.geometry.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
         .expect("valid identity for an absent surface");
     let input = fixture(dir.path(), "invalid.json", &invalid);
     let output = dir.path().join("blocked.step");
@@ -1075,7 +1075,7 @@ fn convert_refuses_binary_output_to_stdout() {
     // With -o the write succeeds (Rhino is the binary writer that accepts a
     // source-less IR; the guard question is the destination, not the codec).
     let mut point_ir = cadmpeg_ir::CadIr::empty();
-    point_ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    point_ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#guard").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -1168,7 +1168,7 @@ fn from_and_to_aliases_match_input_format_and_format() {
 fn a_same_format_convert_replays_a_non_default_iges_version() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#iges").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -1237,7 +1237,7 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
 fn a_to_that_names_only_the_format_still_inherits() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#bare").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),

@@ -1213,7 +1213,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
     let asset_id = AssetId::mint("synthetic:test:asset#decal").expect("identity grammar");
     let feature_id = FeatureId::mint("synthetic:test:feature#decal").expect("identity grammar");
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let face_id = ir.model.faces[0].id.clone();
+    let face_id = ir.geometry.faces[0].id.clone();
     ir.model.assets.push(
         Asset::try_new(
             asset_id.clone(),

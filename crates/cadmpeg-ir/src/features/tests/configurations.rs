@@ -23,7 +23,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         ConfigurationId::mint("synthetic:test:configuration#0").expect("identity grammar");
     let parameter_id =
         ParameterId::mint("synthetic:test:parameter#width").expect("identity grammar");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.parameters.push(DesignParameter {
         product_definition: None,
         id: parameter_id.clone(),

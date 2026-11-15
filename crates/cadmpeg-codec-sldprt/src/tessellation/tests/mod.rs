@@ -224,7 +224,7 @@ fn analytic_surface_residuals_measure_normal_distance() {
 }
 
 fn add_face(
-    model: &mut cadmpeg_ir::document::Model,
+    geometry: &mut cadmpeg_ir::document::Topology,
     name: &str,
     geometry: SurfaceGeometry,
     corners: [Point3; 4],
@@ -235,7 +235,7 @@ fn add_face(
         LoopId::mint(format!("synthetic:test:loop#loop-{name}")).expect("identity grammar");
     let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
         .expect("identity grammar");
-    model.surfaces.push(Surface {
+    geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry,
         source_object: None,
@@ -252,12 +252,12 @@ fn add_face(
             .expect("identity grammar");
         let vertex_id = VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
             .expect("identity grammar");
-        model.points.push(Point::new(
+        geometry.points.push(Point::new(
             point_id.clone(),
             cadmpeg_ir::features::FinitePoint3::new(corner).expect("a finite position is a point"),
             None,
         ));
-        model.vertices.push(Vertex {
+        geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
             tolerance: None,
@@ -270,7 +270,7 @@ fn add_face(
         let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
             .expect("identity grammar");
         let direction = corners[next].vector_from(origin).unit().unwrap();
-        model.curves.push(Curve {
+        geometry.curves.push(Curve {
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -278,7 +278,7 @@ fn add_face(
             )),
             source_object: None,
         });
-        model.edges.push(Edge {
+        geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
             start: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
@@ -287,7 +287,7 @@ fn add_face(
                 .expect("identity grammar"),
             tolerance: None,
         });
-        model.coedges.push(Coedge {
+        geometry.coedges.push(Coedge {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -297,14 +297,14 @@ fn add_face(
             use_curve: None,
         });
     }
-    model.loops.push(Loop {
+    geometry.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
     });
-    model.faces.push(Face {
+    geometry.faces.push(Face {
         id: face_id.clone(),
         shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
         surface: surface_id,
@@ -440,7 +440,7 @@ fn test_nurbs_point_normal(surface: &NurbsSurface, u: f64, v: f64) -> (Point3, V
 }
 
 fn add_cylindrical_patch_face(
-    model: &mut cadmpeg_ir::document::Model,
+    geometry: &mut cadmpeg_ir::document::Topology,
     name: &str,
     min_z: f64,
     max_z: f64,
@@ -460,7 +460,7 @@ fn add_cylindrical_patch_face(
         LoopId::mint(format!("synthetic:test:loop#loop-{name}")).expect("identity grammar");
     let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
         .expect("identity grammar");
-    model.surfaces.push(Surface {
+    geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -482,13 +482,13 @@ fn add_cylindrical_patch_face(
                 .expect("identity grammar");
             let vertex_id = VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
                 .expect("identity grammar");
-            model.points.push(Point::new(
+            geometry.points.push(Point::new(
                 point_id.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(*point)
                     .expect("a finite position is a point"),
                 None,
             ));
-            model.vertices.push(Vertex {
+            geometry.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
@@ -542,20 +542,20 @@ fn add_cylindrical_patch_face(
             .expect("identity grammar");
         let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
             .expect("identity grammar");
-        model.curves.push(Curve {
+        geometry.curves.push(Curve {
             parameter_range: None,
             id: curve_id.clone(),
             geometry,
             source_object: None,
         });
-        model.edges.push(Edge {
+        geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
             start: vertex_ids[index].clone(),
             end: vertex_ids[next].clone(),
             tolerance: None,
         });
-        model.coedges.push(Coedge {
+        geometry.coedges.push(Coedge {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -565,14 +565,14 @@ fn add_cylindrical_patch_face(
             use_curve: None,
         });
     }
-    model.loops.push(Loop {
+    geometry.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
     });
-    model.faces.push(Face {
+    geometry.faces.push(Face {
         id: face_id.clone(),
         shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
         surface: surface_id,
@@ -586,8 +586,8 @@ fn add_cylindrical_patch_face(
 }
 
 fn model_with_body() -> cadmpeg_ir::document::Model {
-    let mut model = cadmpeg_ir::document::Model::default();
-    model.bodies = vec![Body {
+    let mut geometry = cadmpeg_ir::document::Topology::default();
+    geometry.bodies = vec![Body {
         id: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("synthetic:test:region#region").expect("identity grammar")],
@@ -596,19 +596,19 @@ fn model_with_body() -> cadmpeg_ir::document::Model {
         color: None,
         visible: None,
     }];
-    model.regions = vec![Region {
+    geometry.regions = vec![Region {
         id: RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
         body: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
         shells: vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
     }];
 
-    model
+    geometry
 }
 
-fn set_shell_faces(model: &mut cadmpeg_ir::document::Model, faces: Vec<FaceId>) {
-    model.shells = vec![Shell::new(
-        model.regions[0].shells[0].clone(),
-        model.regions[0].id.clone(),
+fn set_shell_faces(geometry: &mut cadmpeg_ir::document::Topology, faces: Vec<FaceId>) {
+    geometry.shells = vec![Shell::new(
+        geometry.regions[0].shells[0].clone(),
+        geometry.regions[0].id.clone(),
         faces,
         Vec::new(),
         Vec::new(),
@@ -944,7 +944,7 @@ fn face_key_attribute_binds_a_display_table_off_its_face_support() {
     let mut body = triangle_body();
     body.extend(face_key_attribute(10, key));
     let keyed = decode(&body, &keyed_display);
-    let face = keyed.ir().model.faces[0].id.clone();
+    let face = keyed.ir().geometry.faces[0].id.clone();
     assert!(face.as_str().ends_with("face#10"));
     assert_eq!(keyed.ir().model.tessellations[0].faces, vec![face]);
     assert!(keyed.ir().model.tessellations[0].body.is_some());
@@ -1595,11 +1595,11 @@ fn decode_reports_display_list_geometry() {
     assert_eq!(result.ir().model.tessellations[0].channels().len(), 6);
     assert_eq!(
         result.ir().model.tessellations[0].faces,
-        [result.ir().model.faces[0].id.clone()]
+        [result.ir().geometry.faces[0].id.clone()]
     );
     assert_eq!(
         result.ir().model.tessellations[0].body.as_ref(),
-        Some(&result.ir().model.bodies[0].id)
+        Some(&result.ir().geometry.bodies[0].id)
     );
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code.taxonomy() == LossTaxonomy::ReferenceGraphNotClosed

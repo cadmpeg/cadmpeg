@@ -21,9 +21,9 @@ use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeom
 use super::attributes::source_less_body_key;
 pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
-    for procedural in &target.model.procedural_surfaces {
+    for procedural in &target.geometry.procedural_surfaces {
         let mut owners =
-            target.model.surfaces.iter().filter(|surface| {
+            target.geometry.surfaces.iter().filter(|surface| {
                 surface.geometry.procedural_construction() == Some(&procedural.id)
             });
         let (Some(surface), None) = (owners.next(), owners.next()) else {
@@ -52,9 +52,9 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
     }
 
     let mut curve_owners = BTreeSet::new();
-    for procedural in &target.model.procedural_curves {
+    for procedural in &target.geometry.procedural_curves {
         let mut owners = target
-            .model
+            .geometry
             .curves
             .iter()
             .filter(|curve| curve.geometry.procedural_construction() == Some(&procedural.id));
@@ -95,7 +95,7 @@ pub(super) fn validate_source_less_topology_tolerances(
     native: &F3dNative,
 ) -> Result<(), CodecError> {
     if let Some(face) = target
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.tolerance.is_some())
@@ -120,7 +120,7 @@ pub(super) fn validate_source_less_topology_tolerances(
         .map(|parameters| parameters.coedge.as_str())
         .collect::<std::collections::HashSet<_>>();
     if let Some(coedge) = target
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.use_curve.is_some() && !tolerant.contains(coedge.id.as_str()))
@@ -141,7 +141,7 @@ pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
         )));
     }
     if let Some(surface) = target
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.source_object.is_some())
@@ -152,7 +152,7 @@ pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
         )));
     }
     if let Some(curve) = target
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.source_object.is_some())
@@ -744,7 +744,7 @@ pub(super) fn validate_source_less_design_links(
         )));
     }
     let coedges = target
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| (&coedge.id, coedge))
@@ -772,20 +772,20 @@ pub(super) fn validate_source_less_design_links(
     }
 
     let bodies = target
-        .model
+        .geometry
         .bodies
         .iter()
         .enumerate()
         .map(|(ordinal, body)| (&body.id, (ordinal, body)))
         .collect::<HashMap<_, _>>();
     let faces = target
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| (&face.id, face))
         .collect::<HashMap<_, _>>();
     let edges = target
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| (&edge.id, edge))
@@ -850,7 +850,7 @@ pub(super) fn validate_source_less_design_links(
     }
 
     let curve_by_id = target
-        .model
+        .geometry
         .curves
         .iter()
         .map(|curve| (curve.id.as_str(), curve))
@@ -926,13 +926,13 @@ pub(super) fn validate_source_less_design_links(
     }
 
     let vertices = target
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| (&vertex.id, vertex))
         .collect::<HashMap<_, _>>();
     let shells = target
-        .model
+        .geometry
         .shells
         .iter()
         .map(|shell| (&shell.id, shell))
@@ -1079,14 +1079,14 @@ pub(super) fn validate_source_less_design_links(
 }
 
 pub(super) fn validate_source_less_body_kinds(
-    model: &cadmpeg_ir::document::Model,
+    geometry: &cadmpeg_ir::document::Topology,
 ) -> Result<(), CodecError> {
-    let edges = model
+    let edges = geometry
         .edges
         .iter()
         .map(|edge| (&edge.id, edge))
         .collect::<HashMap<_, _>>();
-    let curves = model
+    let curves = geometry
         .curves
         .iter()
         .map(|curve| (&curve.id, curve))
@@ -1106,31 +1106,31 @@ pub(super) fn validate_source_less_body_kinds(
                 })
         })
     };
-    for body in &model.bodies {
-        let shell_ids = model
+    for body in &geometry.bodies {
+        let shell_ids = geometry
             .regions
             .iter()
             .filter(|region| region.body == body.id)
             .flat_map(|region| &region.shells)
             .collect::<BTreeSet<_>>();
-        let face_ids = model
+        let face_ids = geometry
             .shells
             .iter()
             .filter(|shell| shell_ids.contains(&shell.id))
             .flat_map(cadmpeg_ir::topology::Shell::faces)
             .collect::<BTreeSet<_>>();
-        let has_wires = model
+        let has_wires = geometry
             .shells
             .iter()
             .filter(|shell| shell_ids.contains(&shell.id))
             .any(|shell| !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty());
-        let loop_ids = model
+        let loop_ids = geometry
             .faces
             .iter()
             .filter(|face| face_ids.contains(&face.id))
             .flat_map(|face| &face.loops)
             .collect::<BTreeSet<_>>();
-        let coedge_ids = model
+        let coedge_ids = geometry
             .loops
             .iter()
             .filter(|loop_| loop_ids.contains(&loop_.id))
@@ -1142,7 +1142,7 @@ pub(super) fn validate_source_less_body_kinds(
             cadmpeg_ir::topology::BodyKind::General
         } else {
             cadmpeg_asm::brep::geometry::faced_body_kind(
-                model
+                geometry
                     .coedges
                     .iter()
                     .filter(|coedge| coedge_ids.contains(&coedge.id))
@@ -1163,29 +1163,29 @@ pub(super) fn validate_source_less_body_kinds(
 /// Resolved wire-ownership ordinals of one body.
 #[derive(Clone, Copy)]
 pub(super) struct WireBodyOwnership {
-    /// Ordinal of the body's first region in `model.regions`.
+    /// Ordinal of the body's first region in `geometry.regions`.
     pub(super) first_region: usize,
-    /// Ordinal of that region's first shell in `model.shells`.
+    /// Ordinal of that region's first shell in `geometry.shells`.
     pub(super) first_shell: usize,
 }
 
 /// Resolved wire-ownership ordinals of one region.
 #[derive(Clone, Copy)]
 pub(super) struct WireRegionOwnership {
-    /// Ordinal of the owning body in `model.bodies`.
+    /// Ordinal of the owning body in `geometry.bodies`.
     pub(super) body: usize,
-    /// Ordinal of the next region of the same body in `model.regions`.
+    /// Ordinal of the next region of the same body in `geometry.regions`.
     pub(super) next_region: Option<usize>,
-    /// Ordinal of the region's first shell in `model.shells`.
+    /// Ordinal of the region's first shell in `geometry.shells`.
     pub(super) first_shell: usize,
 }
 
 /// Resolved wire-ownership ordinals of one shell.
 #[derive(Clone, Copy)]
 pub(super) struct WireShellOwnership {
-    /// Ordinal of the owning region in `model.regions`.
+    /// Ordinal of the owning region in `geometry.regions`.
     pub(super) region: usize,
-    /// Ordinal of the next shell of the same region in `model.shells`.
+    /// Ordinal of the next shell of the same region in `geometry.shells`.
     pub(super) next_shell: Option<usize>,
 }
 
@@ -1200,17 +1200,17 @@ pub(in crate::writer::generate) struct WireOwnershipValidated {
 }
 
 impl WireOwnershipValidated {
-    /// Per-body ordinals in `model.bodies` order.
+    /// Per-body ordinals in `geometry.bodies` order.
     pub(super) fn bodies(&self) -> &[WireBodyOwnership] {
         &self.bodies
     }
 
-    /// Per-region ordinals in `model.regions` order.
+    /// Per-region ordinals in `geometry.regions` order.
     pub(super) fn regions(&self) -> &[WireRegionOwnership] {
         &self.regions
     }
 
-    /// Per-shell ordinals in `model.shells` order.
+    /// Per-shell ordinals in `geometry.shells` order.
     pub(super) fn shells(&self) -> &[WireShellOwnership] {
         &self.shells
     }
@@ -1219,17 +1219,17 @@ impl WireOwnershipValidated {
 pub(super) fn validate_source_less_wire_ownership(
     target: &CadIr,
 ) -> Result<WireOwnershipValidated, CodecError> {
-    let model = &target.model;
+    let geometry = &target.geometry;
     let inconsistent =
         || CodecError::Malformed("source-less F3D wire ownership is inconsistent".into());
     let region_ordinal =
-        |id: &cadmpeg_ir::ids::RegionId| model.regions.iter().position(|region| region.id == *id);
+        |id: &cadmpeg_ir::ids::RegionId| geometry.regions.iter().position(|region| region.id == *id);
     let shell_ordinal =
-        |id: &cadmpeg_ir::ids::ShellId| model.shells.iter().position(|shell| shell.id == *id);
+        |id: &cadmpeg_ir::ids::ShellId| geometry.shells.iter().position(|shell| shell.id == *id);
 
     let mut regions = Vec::new();
-    for region in &model.regions {
-        let (body, owner, position) = model
+    for region in &geometry.regions {
+        let (body, owner, position) = geometry
             .bodies
             .iter()
             .enumerate()
@@ -1254,7 +1254,7 @@ pub(super) fn validate_source_less_wire_ownership(
             .and_then(&shell_ordinal)
             .ok_or_else(inconsistent)?;
         if region.shells.iter().any(|id| {
-            !model
+            !geometry
                 .shells
                 .iter()
                 .any(|shell| shell.id == *id && shell.region == region.id)
@@ -1269,14 +1269,14 @@ pub(super) fn validate_source_less_wire_ownership(
     }
 
     let mut bodies = Vec::new();
-    for body in &model.bodies {
+    for body in &geometry.bodies {
         let first_region = body
             .regions
             .first()
             .and_then(&region_ordinal)
             .ok_or_else(inconsistent)?;
         if body.regions.iter().any(|id| {
-            !model
+            !geometry
                 .regions
                 .iter()
                 .any(|region| region.id == *id && region.body == body.id)
@@ -1290,8 +1290,8 @@ pub(super) fn validate_source_less_wire_ownership(
     }
 
     let mut shells = Vec::new();
-    for shell in &model.shells {
-        let (region, owner, position) = model
+    for shell in &geometry.shells {
+        let (region, owner, position) = geometry
             .regions
             .iter()
             .enumerate()
@@ -1333,12 +1333,12 @@ mod tests {
     #[test]
     fn tolerant_vertex_precondition_rejects_unset_with_a_neutral_tolerance() {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        target.model.vertices[0].tolerance = Some(PositiveReal::new(0.025).unwrap());
+        target.geometry.vertices[0].tolerance = Some(PositiveReal::new(0.025).unwrap());
         let native = F3dNative {
             tolerant_vertex_tails: vec![TolerantVertexTail {
                 source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
                 record_index: 0,
-                vertex: target.model.vertices[0].id.clone(),
+                vertex: target.geometry.vertices[0].id.clone(),
                 leading_tolerances: [
                     cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),
                     cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),

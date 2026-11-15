@@ -87,7 +87,7 @@ pub(super) fn check_products(
         }
     });
     let bodies = BorrowedIdentities::build(|add| {
-        for body in &ir.model.bodies {
+        for body in &ir.geometry.bodies {
             add(body.id.as_str(), ());
         }
     });

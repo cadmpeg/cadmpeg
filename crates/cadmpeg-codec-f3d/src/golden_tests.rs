@@ -509,12 +509,12 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
 
 fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
-    if result.ir().model.points.is_empty() {
+    if result.ir().geometry.points.is_empty() {
         return None;
     }
     let mut edited = result.ir().clone();
-    let moved = edited.model.points[0].position().get();
-    edited.model.points[0].set_position(
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
@@ -903,7 +903,7 @@ fn an_edit_survives_the_patch_writer() {
             &input,
             ExpectedWritePath::Patched,
             |ir| {
-                let Some(point) = ir.model.points.first_mut() else {
+                let Some(point) = ir.geometry.points.first_mut() else {
                     return false;
                 };
                 let moved = point.position().get();
@@ -922,8 +922,8 @@ fn an_edit_survives_the_patch_writer() {
                     let round_trip = decode_result(bytes).unwrap_or_else(|error| {
                         panic!("fixture `{name}`: patched output does not decode: {error}")
                     });
-                    let moved = edited.model.points[0].position().get().x;
-                    let returned = round_trip.ir().model.points[0].position().get().x;
+                    let moved = edited.geometry.points[0].position().get().x;
+                    let returned = round_trip.ir().geometry.points[0].position().get().x;
                     assert!(
                         (returned - moved).abs() <= 1.0e-9,
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \
@@ -1015,7 +1015,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
 
     let mut with_inner_count = document;
     let mut touched = 0usize;
-    for surface in with_inner_count["model"]["procedural_surfaces"]
+    for surface in with_inner_count["geometry"]["procedural_surfaces"]
         .as_array_mut()
         .expect("procedural surfaces")
     {
@@ -1092,7 +1092,7 @@ fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
 
     let mut restated = document;
     let mut touched = 0usize;
-    for surface in restated["model"]["procedural_surfaces"]
+    for surface in restated["geometry"]["procedural_surfaces"]
         .as_array_mut()
         .expect("procedural surfaces")
     {

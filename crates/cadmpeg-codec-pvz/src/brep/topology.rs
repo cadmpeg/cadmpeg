@@ -139,12 +139,12 @@ impl Topology {
     /// End slots of a coedge in stored order.
     pub(crate) fn end_slots(
         &self,
-        model: &ExactModel,
+        geometry: &ExactTopology,
         loop_index: usize,
         position: usize,
         along: bool,
     ) -> Option<EndSlots> {
-        let coedge = model.loops.get(loop_index)?.coedges.get(position)?;
+        let coedge = geometry.loops.get(loop_index)?.coedges.get(position)?;
         let (first, second) = match coedge.edge {
             Some(edge) => (edge.checked_mul(2)?, edge.checked_mul(2)?.checked_add(1)?),
             None => {
@@ -168,18 +168,18 @@ impl Topology {
 
 /// Resolves loops, regions, vertices, and face sides with the derived-search
 /// work limit `work`.
-pub(crate) fn resolve(model: &ExactModel, work: usize) -> Result<Topology, CodecError> {
+pub(crate) fn resolve(geometry: &ExactTopology, work: usize) -> Result<Topology, CodecError> {
     let budget = WorkBudget::new(work);
-    let mut faces: Vec<FaceTopology> = (0..model.faces.len())
-        .map(|face| face_topology(model, face, &budget))
+    let mut faces: Vec<FaceTopology> = (0..geometry.faces.len())
+        .map(|face| face_topology(geometry, face, &budget))
         .collect();
     let regions_exhausted = faces.iter().filter(|face| face.nesting_exhausted).count();
     let mut free_slots = std::collections::BTreeMap::new();
     let slot_overflow = || CodecError::malformed("exact stream has too many coedge ends");
-    let mut next_slot = model.edges.len().checked_mul(2).ok_or_else(slot_overflow)?;
-    for (face, record) in faces.iter().zip(&model.faces) {
+    let mut next_slot = geometry.edges.len().checked_mul(2).ok_or_else(slot_overflow)?;
+    for (face, record) in faces.iter().zip(&geometry.faces) {
         for (topology, index) in face.loops.iter().zip(&record.loops) {
-            for (position, coedge) in model.loops[*index].coedges.iter().enumerate() {
+            for (position, coedge) in geometry.loops[*index].coedges.iter().enumerate() {
                 if coedge.edge.is_none() {
                     free_slots.insert((topology.index, position), next_slot);
                     next_slot = next_slot.checked_add(2).ok_or_else(slot_overflow)?;
@@ -187,12 +187,12 @@ pub(crate) fn resolve(model: &ExactModel, work: usize) -> Result<Topology, Codec
             }
         }
     }
-    let singular_edges: BTreeSet<usize> = model
+    let singular_edges: BTreeSet<usize> = geometry
         .faces
         .iter()
         .flat_map(|face| face.singular_uses.iter().map(|singular| singular.edge))
         .filter(|edge| {
-            model
+            geometry
                 .edges
                 .get(*edge)
                 .is_some_and(|record| collapsed(&record.geometry))
@@ -210,20 +210,20 @@ pub(crate) fn resolve(model: &ExactModel, work: usize) -> Result<Topology, Codec
         work_exhausted: regions_exhausted,
         partners: std::collections::BTreeMap::new(),
     };
-    let (side_conflicts, partners) = orient(model, &mut faces, &topology.singular_edges, &budget);
+    let (side_conflicts, partners) = orient(geometry, &mut faces, &topology.singular_edges, &budget);
     topology.side_conflicts = side_conflicts;
     topology.work_exhausted += usize::from(budget.exhausted());
     topology.partners = partners;
     topology.faces = faces;
-    join_vertices(model, &mut topology, next_slot);
+    join_vertices(geometry, &mut topology, next_slot);
     Ok(topology)
 }
 
 /// Work limit of the derived searches of `model`: the larger of
 /// [`MAX_TOPOLOGY_WORK`] and [`TOPOLOGY_WORK_PER_RECORD`] per record.
-pub(crate) fn work_limit(model: &ExactModel) -> usize {
-    let coedges: usize = model.loops.iter().map(|record| record.coedges.len()).sum();
-    let records = model.faces.len() + model.loops.len() + coedges + model.edges.len();
+pub(crate) fn work_limit(geometry: &ExactTopology) -> usize {
+    let coedges: usize = geometry.loops.iter().map(|record| record.coedges.len()).sum();
+    let records = geometry.faces.len() + geometry.loops.len() + coedges + geometry.edges.len();
     records
         .checked_mul(TOPOLOGY_WORK_PER_RECORD)
         .map_or(MAX_TOPOLOGY_WORK, |work| work.max(MAX_TOPOLOGY_WORK))
@@ -245,9 +245,9 @@ fn collapsed(curve: &CurveGeometry<3>) -> bool {
     })
 }
 
-fn face_topology(model: &ExactModel, face: usize, budget: &WorkBudget) -> FaceTopology {
-    let record = &model.faces[face];
-    let slot = face_slot(model, face);
+fn face_topology(geometry: &ExactTopology, face: usize, budget: &WorkBudget) -> FaceTopology {
+    let record = &geometry.faces[face];
+    let slot = face_slot(geometry, face);
     let periods = slot.map_or([None, None], |slot| {
         domain_periods(&record.surface.geometry, slot)
     });
@@ -255,8 +255,8 @@ fn face_topology(model: &ExactModel, face: usize, budget: &WorkBudget) -> FaceTo
         .loops
         .iter()
         .map(|index| {
-            let coedges = coedge_geometry(model, *index, slot);
-            let orientations: Vec<u8> = model.loops[*index]
+            let coedges = coedge_geometry(geometry, *index, slot);
+            let orientations: Vec<u8> = geometry.loops[*index]
                 .coedges
                 .iter()
                 .map(|coedge| coedge.orientation)
@@ -264,7 +264,7 @@ fn face_topology(model: &ExactModel, face: usize, budget: &WorkBudget) -> FaceTo
             let directions = pcurve_directions(&orientations, &coedges);
             let along = edges_along(&orientations, &coedges, &directions);
             let gap = closure_gap(&coedges, &directions);
-            let polygon = loop_polygon(model, &coedges, &directions, periods);
+            let polygon = loop_polygon(geometry, &coedges, &directions, periods);
             LoopTopology {
                 index: *index,
                 coedges,
@@ -278,7 +278,7 @@ fn face_topology(model: &ExactModel, face: usize, budget: &WorkBudget) -> FaceTo
     let inner: Vec<bool> = record
         .loops
         .iter()
-        .map(|index| model.loops[*index].inner)
+        .map(|index| geometry.loops[*index].inner)
         .collect();
     let polygons: Vec<Option<LoopPolygon>> = loops
         .iter()
@@ -316,11 +316,11 @@ fn face_topology(model: &ExactModel, face: usize, budget: &WorkBudget) -> FaceTo
 }
 
 /// Coedge uses of each edge: face and edge direction along the stored order.
-fn edge_uses(model: &ExactModel, faces: &[FaceTopology]) -> Vec<Vec<(usize, bool)>> {
-    let mut uses = vec![Vec::new(); model.edges.len()];
+fn edge_uses(geometry: &ExactTopology, faces: &[FaceTopology]) -> Vec<Vec<(usize, bool)>> {
+    let mut uses = vec![Vec::new(); geometry.edges.len()];
     for (face, topology) in faces.iter().enumerate() {
         for loop_topology in &topology.loops {
-            let record = &model.loops[loop_topology.index];
+            let record = &geometry.loops[loop_topology.index];
             for (coedge, along) in record.coedges.iter().zip(&loop_topology.along) {
                 if let Some(list) = coedge.edge.and_then(|edge| uses.get_mut(edge)) {
                     list.push((face, *along));
@@ -452,14 +452,14 @@ fn neighbour_cells(cell: [i64; 3]) -> impl Iterator<Item = [i64; 3]> {
 /// Largest distance from an interior sample of either edge to the other
 /// curve, or `None` when it exceeds the endpoint tolerance.
 fn coincidence_gap(
-    model: &ExactModel,
+    geometry: &ExactTopology,
     (edge, shape): (usize, &EdgeShape),
     (other, other_shape): (usize, &EdgeShape),
 ) -> Option<f64> {
     let gaps = |points: &[Vec3], curve: usize, interval: Vec2| {
         points.iter().try_fold(0.0_f64, |worst, point| {
             let gap =
-                super::eval::nearest_distance(&model.edges[curve].geometry, interval, *point)?;
+                super::eval::nearest_distance(&geometry.edges[curve].geometry, interval, *point)?;
             (gap <= ENDPOINT_TOLERANCE).then_some(worst.max(gap))
         })
     };
@@ -481,7 +481,7 @@ fn coincidence_gap(
 /// and whether both edges run the same way. The candidate tests are charged
 /// to `budget`; the search stops when it runs out.
 fn coincident_partners(
-    model: &ExactModel,
+    geometry: &ExactTopology,
     uses: &[Vec<(usize, bool)>],
     singular: &BTreeSet<usize>,
     budget: &WorkBudget,
@@ -491,7 +491,7 @@ fn coincident_partners(
     let mut cells: std::collections::BTreeMap<[i64; 3], Vec<usize>> =
         std::collections::BTreeMap::new();
     for (edge, list) in uses.iter().enumerate() {
-        let geometry = &model.edges[edge].geometry;
+        let geometry = &geometry.edges[edge].geometry;
         if list.len() != 1
             || singular.contains(&edge)
             || matches!(geometry, CurveGeometry::Point(_))
@@ -555,7 +555,7 @@ fn coincident_partners(
                 if !budget.charge_by(PARTNER_COINCIDENCE_WORK) {
                     break 'edges;
                 }
-                let Some(gap) = coincidence_gap(model, (*edge, shape), (*other, other_shape))
+                let Some(gap) = coincidence_gap(geometry, (*edge, shape), (*other, other_shape))
                 else {
                     continue;
                 };
@@ -674,12 +674,12 @@ fn orient(
 /// Unit normal of the domain surface of `face` at `uv`, from central
 /// differences.
 pub(crate) fn domain_normal(
-    model: &ExactModel,
+    geometry: &ExactTopology,
     face: usize,
     slot: PcurveSlot,
     uv: Vec2,
 ) -> Option<Vec3> {
-    let record = model.faces.get(face)?;
+    let record = geometry.faces.get(face)?;
     let step = |value: f64| NORMAL_STEP * value.abs().max(1.0);
     let [u, v] = uv;
     let du = sub(
@@ -781,7 +781,7 @@ fn outward(model: &ExactModel, faces: &[FaceTopology], component: &[usize]) -> O
 /// vote is absent when no sample there has `|n·d|` of at least
 /// [`SIDE_DECISION`].
 fn side_votes(
-    model: &ExactModel,
+    geometry: &ExactTopology,
     faces: &[FaceTopology],
     component: &[usize],
 ) -> [Option<bool>; 6] {
@@ -791,7 +791,7 @@ fn side_votes(
         let Some(slot) = topology.slot else {
             continue;
         };
-        let record = &model.faces[*face];
+        let record = &geometry.faces[*face];
         for uv in face_samples(topology) {
             if let Some(point) = domain_point(record, slot, uv) {
                 samples.push((*face, slot, uv, point));
@@ -808,7 +808,7 @@ fn side_votes(
             if top - dot(*point, direction) > ENDPOINT_TOLERANCE {
                 continue;
             }
-            let Some(normal) = domain_normal(model, *face, *slot, *uv) else {
+            let Some(normal) = domain_normal(geometry, *face, *slot, *uv) else {
                 continue;
             };
             let topology = &faces[*face];
@@ -825,10 +825,10 @@ fn side_votes(
 }
 
 /// Joins coedge ends into vertices (§8.20).
-fn join_vertices(model: &ExactModel, topology: &mut Topology, slots: usize) {
+fn join_vertices(geometry: &ExactTopology, topology: &mut Topology, slots: usize) {
     let mut parent: Vec<usize> = (0..slots).collect();
     let mut points: Vec<Option<Vec3>> = vec![None; parent.len()];
-    for (edge, record) in model.edges.iter().enumerate() {
+    for (edge, record) in geometry.edges.iter().enumerate() {
         if let Some([start, end]) = super::eval::curve_ends(&record.geometry) {
             points[2 * edge] = Some(start);
             points[2 * edge + 1] = Some(end);
@@ -868,8 +868,8 @@ fn join_vertices(model: &ExactModel, topology: &mut Topology, slots: usize) {
             for position in 0..count {
                 let next = (position + 1) % count;
                 let (Some(here), Some(there)) = (
-                    topology.end_slots(model, loop_.index, position, loop_.along[position]),
-                    topology.end_slots(model, loop_.index, next, loop_.along[next]),
+                    topology.end_slots(geometry, loop_.index, position, loop_.along[position]),
+                    topology.end_slots(geometry, loop_.index, next, loop_.along[next]),
                 ) else {
                     continue;
                 };

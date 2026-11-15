@@ -64,11 +64,11 @@ fn owned_faces(model: &Model, generator: u32) -> Option<Vec<NamedFace<'_>>> {
     }
     let mut selected = Vec::new();
     let mut body = None;
-    for face in &model.faces {
+    for face in &geometry.faces {
         let Some((family, values)) = names.remove(face.id.as_str()) else {
             continue;
         };
-        let shell = model.shells.iter().find(|shell| shell.id == face.shell)?;
+        let shell = geometry.shells.iter().find(|shell| shell.id == face.shell)?;
         let region = model
             .regions
             .iter()
@@ -231,12 +231,12 @@ fn same_point_within(left: Point3, right: Point3, tolerance: f64) -> bool {
         <= tolerance
 }
 
-fn cap_center(model: &Model, face: &Face, radius: f64) -> Option<Point3> {
+fn cap_center(geometry: &Topology, face: &Face, radius: f64) -> Option<Point3> {
     if face.loops.len() != 1 {
         return None;
     }
     let id = face.loops.iter().next()?;
-    let ring = model
+    let ring = geometry
         .loops
         .iter()
         .find(|ring| &ring.id == id && ring.face == face.id)?;
@@ -245,15 +245,15 @@ fn cap_center(model: &Model, face: &Face, radius: f64) -> Option<Point3> {
     }
     let mut center = None;
     for id in ring.coedges() {
-        let coedge = model
+        let coedge = geometry
             .coedges
             .iter()
             .find(|coedge| &coedge.id == id && coedge.owner_loop == ring.id)?;
         if coedge.use_curve.is_some() {
             return None;
         }
-        let edge = model.edges.iter().find(|edge| edge.id == coedge.edge)?;
-        let curve = model
+        let edge = geometry.edges.iter().find(|edge| edge.id == coedge.edge)?;
+        let curve = geometry
             .curves
             .iter()
             .find(|curve| Some(&curve.id) == edge.carrier.curve())?;
@@ -406,11 +406,11 @@ fn legacy_owned_faces(model: &Model, generator: u32) -> Option<Vec<LegacyFace<'_
     }
     let mut selected = Vec::new();
     let mut body = None;
-    for face in &model.faces {
+    for face in &geometry.faces {
         let Some((cap, tail)) = names.remove(face.id.as_str()) else {
             continue;
         };
-        let shell = model.shells.iter().find(|shell| shell.id == face.shell)?;
+        let shell = geometry.shells.iter().find(|shell| shell.id == face.shell)?;
         let region = model
             .regions
             .iter()

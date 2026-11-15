@@ -36,7 +36,7 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             &DecodeOptions::default(),
         )
         .unwrap();
-        assert!(!baseline.ir().model.faces.is_empty());
+        assert!(!baseline.ir().geometry.faces.is_empty());
         let mut changed = original;
         damage_local_frame(&mut changed, name);
         let decoded = cadmpeg_test_support::EditableDecodeResult::from(
@@ -154,15 +154,15 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
         &DecodeOptions::default(),
     )
     .unwrap();
-    assert!(!baseline.ir().model.faces.is_empty());
+    assert!(!baseline.ir().geometry.faces.is_empty());
     damage_local_frame(&mut changed, "component.f3d");
     let decoded = crate::test_support::archive_session::decode(
         &mut Cursor::new(changed),
         &DecodeOptions::default(),
     )
     .unwrap();
-    assert!(decoded.ir().model.faces.is_empty());
-    assert!(decoded.ir().model.surfaces.is_empty());
+    assert!(decoded.ir().geometry.faces.is_empty());
+    assert!(decoded.ir().geometry.surfaces.is_empty());
     assert!(decoded
         .report()
         .losses

@@ -69,7 +69,7 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 #[test]
 fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -87,13 +87,13 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
         ..design_configuration("unresolved", 0, Some(0), None)
     });
 
-    assert_eq!(configuration_surface_carriers(&ir, 0), ir.model.surfaces,);
+    assert_eq!(configuration_surface_carriers(&ir, 0), ir.geometry.surfaces,);
 }
 
 #[test]
 fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -1653,7 +1653,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
@@ -1756,7 +1756,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1768,7 +1768,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
         )),
         source_object: None,
     });
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),

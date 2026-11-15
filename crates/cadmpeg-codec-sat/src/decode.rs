@@ -507,7 +507,7 @@ fn build_result(
     ) = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
 
     let geometry_transferred =
-        !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
+        !(ir.geometry.surfaces.is_empty() && ir.geometry.points.is_empty() && ir.geometry.faces.is_empty());
     losses.extend(dialect_loss(kernel));
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
@@ -582,7 +582,7 @@ fn unmapped_support_chart_losses(ir: &CadIr) -> Vec<cadmpeg_ir::report::loss::Lo
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
     let mut losses = Vec::new();
-    for curve in &ir.model.procedural_curves {
+    for curve in &ir.geometry.procedural_curves {
         let context = match curve.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => context,
             ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),

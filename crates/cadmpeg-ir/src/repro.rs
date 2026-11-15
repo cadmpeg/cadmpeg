@@ -225,7 +225,7 @@ pub fn projection_size(document: &Document, options: &CutOptions) -> Result<usiz
 }
 
 fn project(document: &Document, options: &CutOptions) -> Result<LimitedProjection, CodecError> {
-    let mut count = document.model.entity_count();
+    let mut count = document.entity_count();
     for namespace in document.native.0.values() {
         for arena in namespace.arenas().values() {
             count = count

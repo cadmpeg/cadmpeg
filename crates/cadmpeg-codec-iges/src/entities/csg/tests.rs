@@ -50,7 +50,7 @@ fn csg_boolean_tree_validation_refuses_recursion() {
 fn profile_closure_rejects_conflicting_edge_occurrences() {
     let curve_id = CurveId::mint("iges:model:curve#D1").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -62,7 +62,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
         )),
         source_object: None,
     });
-    ir.model.points.extend([
+    ir.geometry.points.extend([
         Point::new(
             PointId::mint("test:model:point#closed-point").expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
@@ -76,7 +76,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
             None,
         ),
     ]);
-    ir.model.vertices.extend([
+    ir.geometry.vertices.extend([
         Vertex {
             id: VertexId::mint("test:model:vertex#closed-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
@@ -98,7 +98,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
             tolerance: None,
         },
     ]);
-    ir.model.edges.extend([
+    ir.geometry.edges.extend([
         Edge {
             id: EdgeId::mint("test:model:edge#closed-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(

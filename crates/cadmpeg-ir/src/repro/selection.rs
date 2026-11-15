@@ -135,7 +135,7 @@ pub fn select(
     finding: &Finding,
     options: &CutOptions,
 ) -> Result<Option<Document>, CodecError> {
-    let graph = document.model.repro_graph(finding)?;
+    let graph = document.arenas().repro_graph(finding)?;
     let mut ids = graph.closure(finding);
     if ids.len() > options.max_rows {
         return Ok(None);
@@ -147,6 +147,7 @@ pub fn select(
         .as_ref()
         .map(crate::document::SourceMeta::repro_header);
     selected.tolerances = document.tolerances;
+    selected.geometry = document.geometry.repro_select(&ids);
     selected.model = document.model.repro_select(&ids);
     let mut streams: BTreeSet<String> = finding
         .entity
@@ -183,7 +184,7 @@ pub fn select(
                         .is_some_and(|tail| tail.starts_with(':'))
                 })
             }) {
-                if selected.model.entity_count()
+                if selected.entity_count()
                     + selected
                         .native
                         .0
@@ -234,10 +235,11 @@ pub fn select(
         drop(graph);
         let mut expanded = finding.clone();
         expanded.related.extend(referenced);
-        ids.extend(document.model.repro_graph(&expanded)?.closure(&expanded));
+        ids.extend(document.arenas().repro_graph(&expanded)?.closure(&expanded));
         if ids.len() > options.max_rows {
             return Ok(None);
         }
+        selected.geometry = document.geometry.repro_select(&ids);
         selected.model = document.model.repro_select(&ids);
     }
     if let Err(error) = super::projection_size(&selected, options) {

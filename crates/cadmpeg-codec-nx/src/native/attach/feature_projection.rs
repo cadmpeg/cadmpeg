@@ -112,12 +112,12 @@ pub(super) struct ProjectionArenas<'a> {
 impl<'a> ProjectionArenas<'a> {
     pub(super) fn of(ir: &'a CadIr) -> Self {
         Self {
-            bodies: &ir.model.bodies,
-            regions: &ir.model.regions,
-            shells: &ir.model.shells,
-            faces: &ir.model.faces,
-            surfaces: &ir.model.surfaces,
-            procedural_surfaces: &ir.model.procedural_surfaces,
+            bodies: &ir.geometry.bodies,
+            regions: &ir.geometry.regions,
+            shells: &ir.geometry.shells,
+            faces: &ir.geometry.faces,
+            surfaces: &ir.geometry.surfaces,
+            procedural_surfaces: &ir.geometry.procedural_surfaces,
         }
     }
 }
@@ -227,17 +227,17 @@ pub(super) struct CarrierIndex<'a> {
 impl<'a> CarrierIndex<'a> {
     pub(super) fn new(ir: &'a CadIr) -> Self {
         let mut loop_coedges = BTreeMap::<_, Vec<_>>::new();
-        for coedge in &ir.model.coedges {
+        for coedge in &ir.geometry.coedges {
             loop_coedges
                 .entry(&coedge.owner_loop)
                 .or_default()
                 .push(coedge);
         }
         Self {
-            surfaces: last_surfaces(&ir.model.surfaces),
-            edges: ir.model.edges.iter().map(|edge| (&edge.id, edge)).collect(),
+            surfaces: last_surfaces(&ir.geometry.surfaces),
+            edges: ir.geometry.edges.iter().map(|edge| (&edge.id, edge)).collect(),
             curves: ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .map(|curve| (&curve.id, curve))
@@ -2717,7 +2717,7 @@ pub(super) fn hole_operations_by_body(
 
     let solid_bodies = SolidBodyIndex::new(ir);
     let mut selected = None;
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         if solid_bodies.connected_solid_body_faces(&body.id).is_some()
             && selected.replace(body).is_some()
         {

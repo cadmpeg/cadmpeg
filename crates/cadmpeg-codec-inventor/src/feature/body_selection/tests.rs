@@ -322,8 +322,8 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
         link: link.id(),
         reference: crate::pmdc::PmDcReference::from_packed(1),
     };
-    let mut model = Model::default();
-    model.bodies.push(cadmpeg_ir::topology::Body {
+    let mut geometry = Topology::default();
+    geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: key.body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::default(),
         regions: vec![],
@@ -343,7 +343,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
                joins: &[WrapperLink],
                keys: &[BodyNativeKey],
                model: &Model| {
-        body_map(wrappers, links, joins, &carrier(), keys, model, &scope)
+        body_map(wrappers, links, joins, &carrier(), keys, geometry, &scope)
     };
     assert_eq!(
         map(
@@ -351,7 +351,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
             std::slice::from_ref(&link),
             std::slice::from_ref(&join),
             std::slice::from_ref(&key),
-            &model
+            &geometry
         )
         .get(&wrapper.id()),
         Some(&key.body)
@@ -363,7 +363,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
         std::slice::from_ref(&link),
         &[wrong_reference],
         std::slice::from_ref(&key),
-        &model
+        &geometry
     )
     .is_empty());
     let mut wrong_type = wrapper.clone();
@@ -373,7 +373,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
         std::slice::from_ref(&link),
         std::slice::from_ref(&join),
         std::slice::from_ref(&key),
-        &model
+        &geometry
     )
     .is_empty());
     let mut wrong_payloads = vec![(*link).clone(); 5];
@@ -407,7 +407,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
             &[wrong],
             &[relation],
             std::slice::from_ref(&key),
-            &model
+            &geometry
         )
         .is_empty());
     }
@@ -429,59 +429,59 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
             std::slice::from_ref(&link),
             &[relation],
             std::slice::from_ref(&key),
-            &model
+            &geometry
         )
         .is_empty());
     }
-    for (wrappers, links, joins, keys, model) in [
+    for (wrappers, links, joins, keys, geometry) in [
         (
             vec![],
             vec![link.clone()],
             vec![join.clone()],
             vec![key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone(), wrapper.clone()],
             vec![link.clone()],
             vec![join.clone()],
             vec![key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![],
             vec![join.clone()],
             vec![key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![link.clone(), link.clone()],
             vec![join.clone()],
             vec![key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![link.clone()],
             vec![join.clone(), join.clone()],
             vec![key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![link.clone()],
             vec![join.clone()],
             vec![],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![link.clone()],
             vec![join.clone()],
             vec![key.clone(), key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
@@ -491,7 +491,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
             Model::default(),
         ),
     ] {
-        assert!(map(&wrappers, &links, &joins, &keys, &model).is_empty());
+        assert!(map(&wrappers, &links, &joins, &keys, &geometry).is_empty());
     }
 }
 
@@ -730,9 +730,9 @@ fn wrapper_at(ordinal: u32) -> PmDcFeatureProperty {
 }
 
 fn model_with_bodies(names: &[(&str, Option<&str>)]) -> Model {
-    let mut model = Model::default();
+    let mut geometry = Topology::default();
     for (id, name) in names {
-        model.bodies.push(cadmpeg_ir::topology::Body {
+        geometry.bodies.push(cadmpeg_ir::topology::Body {
             id: body(id),
             kind: cadmpeg_ir::topology::BodyKind::default(),
             regions: vec![],
@@ -742,7 +742,7 @@ fn model_with_bodies(names: &[(&str, Option<&str>)]) -> Model {
             visible: None,
         });
     }
-    model
+    geometry
 }
 
 fn names(model: &Model) -> Vec<Option<&str>> {

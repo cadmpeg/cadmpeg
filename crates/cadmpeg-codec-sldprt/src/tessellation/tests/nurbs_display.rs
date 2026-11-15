@@ -68,7 +68,7 @@ fn geometric_nurbs_surface_route_assigns_the_face() {
     );
     assert_eq!(
         model.tessellations[0].faces,
-        vec![model.faces[0].id.clone()]
+        vec![geometry.faces[0].id.clone()]
     );
 }
 

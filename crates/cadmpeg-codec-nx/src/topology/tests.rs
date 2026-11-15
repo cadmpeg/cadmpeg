@@ -128,9 +128,9 @@ fn topology_retains_shell_body_identity_without_body_record() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].id.as_str(), "nx:s0:body#2");
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies[0].id.as_str(), "nx:s0:body#2");
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -165,8 +165,8 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -220,9 +220,9 @@ fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    assert_eq!(result.ir().model.curves.len(), 1);
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
 }
 
 #[test]
@@ -290,7 +290,7 @@ fn topology_closes_high_identity_procedural_surface_dependencies() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
 }
 
 #[test]
@@ -352,9 +352,9 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.regions.len(), 1);
-    assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
-    assert_eq!(result.ir().model.faces.len(), 2);
+    assert_eq!(result.ir().geometry.regions.len(), 1);
+    assert_eq!(result.ir().geometry.regions[0].id.as_str(), "nx:s0:region#12");
+    assert_eq!(result.ir().geometry.faces.len(), 2);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -375,9 +375,9 @@ fn topology_rejects_nonreciprocal_fin_ring() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.loops.is_empty());
-    assert!(result.ir().model.coedges.is_empty());
-    assert!(result.ir().model.edges.is_empty());
+    assert!(result.ir().geometry.loops.is_empty());
+    assert!(result.ir().geometry.coedges.is_empty());
+    assert!(result.ir().geometry.edges.is_empty());
 
     let mut broken_partner = topology_partition_stream();
     let fin = broken_partner
@@ -411,8 +411,8 @@ fn unresolved_fin_edge_records_face_boundary_loss() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .expect("decode");
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert!(result.ir().model.loops.is_empty());
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert!(result.ir().geometry.loops.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == NxLossCode::TopologyFaceLoopUnresolved.kind()
             && loss.message.contains("FIN 7")
@@ -433,8 +433,8 @@ fn admitted_loop_records_loss_when_its_edge_cannot_emit() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .expect("decode");
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert!(result.ir().model.loops.is_empty());
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert!(result.ir().geometry.loops.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == NxLossCode::TopologyLoopRingUnresolved.kind()
             && loss.message.contains("LOOP 5")
@@ -472,7 +472,7 @@ fn linked_fin_ring_order_is_emitted() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .expect("decode");
-    let ids = result.ir().model.loops[0]
+    let ids = result.ir().geometry.loops[0]
         .coedges()
         .iter()
         .map(cadmpeg_ir::ids::CoedgeId::as_str)
@@ -507,7 +507,7 @@ fn face_loop_chain_order_is_emitted() {
         .expect("decode");
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str().ends_with("#4"))

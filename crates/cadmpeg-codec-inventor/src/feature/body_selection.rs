@@ -188,7 +188,7 @@ pub(crate) fn body_map(
     joins: &[WrapperLink],
     carrier: &ActiveCarrierRecord,
     keys: &[BodyNativeKey],
-    model: &Model,
+    geometry: &Topology,
     scope: &Scope<'_>,
 ) -> HashMap<String, BodyId> {
     let mut bodies = HashMap::new();
@@ -208,7 +208,7 @@ pub(crate) fn body_map(
     let join_ids =
         cadmpeg_core::decode::unique_index(joins.iter().map(|join| (join.wrapper.as_str(), join)));
     let model_bodies =
-        cadmpeg_core::decode::unique_index(model.bodies.iter().map(|body| (&body.id, body)));
+        cadmpeg_core::decode::unique_index(geometry.bodies.iter().map(|body| (&body.id, body)));
     for join in joins {
         let Some(wrapper) = properties.get(&join.wrapper).and_then(Option::as_ref) else {
             continue;
@@ -670,7 +670,7 @@ pub(crate) fn project(
 /// surface-body wrapper joins it, exactly one label in the wrapper's
 /// segment names the wrapper as its owner, and the stored name is faithful and
 /// non-blank.
-fn name_bodies(model: &mut Model, bodies: &HashMap<String, BodyId>, inventory: &FeatureInventory) {
+fn name_bodies(geometry: &mut Topology, bodies: &HashMap<String, BodyId>, inventory: &FeatureInventory) {
     let properties = cadmpeg_core::decode::unique_index(
         inventory
             .properties
@@ -697,7 +697,7 @@ fn name_bodies(model: &mut Model, bodies: &HashMap<String, BodyId>, inventory: &
                 .push(label);
         }
     }
-    for body in &mut model.bodies {
+    for body in &mut geometry.bodies {
         if body.name.is_some() {
             continue;
         }

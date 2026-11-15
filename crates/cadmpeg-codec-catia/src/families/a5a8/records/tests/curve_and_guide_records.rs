@@ -337,7 +337,7 @@ fn decode_geometry_fallback_transfers_an_inline_a8_pole_grid() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("NURBS surface");
     };
@@ -386,9 +386,9 @@ fn decode_float_packed_stream_transfers_an_inline_a8_surface_with_native_topolog
             &DecodeOptions::default(),
         )
         .expect("decode inline A8 surface topology");
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("NURBS surface");
     };
@@ -396,11 +396,11 @@ fn decode_float_packed_stream_transfers_an_inline_a8_surface_with_native_topolog
         surface.poles().into_iter().nth(8).unwrap(),
         Point3::new(1.0, 1.0, 0.0)
     );
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.vertices.len(), 3);
-    assert_eq!(result.ir().model.edges.len(), 3);
-    assert_eq!(result.ir().model.pcurves.len(), 3);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.edges.len(), 3);
+    assert_eq!(result.ir().geometry.pcurves.len(), 3);
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
@@ -419,7 +419,7 @@ fn decode_object_stream_does_not_promote_unbound_a8_pcurve() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode unbound object-stream pcurve");
-    assert!(decoded.ir().model.pcurves.is_empty());
+    assert!(decoded.ir().geometry.pcurves.is_empty());
     assert!(!decoded.ir().native_unknowns("catia").unwrap().is_empty());
 }
 
@@ -440,7 +440,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("decode rolling-ball object stream"),
     );
-    let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
+    let [procedural] = decoded.ir().geometry.procedural_surfaces.as_slice() else {
         panic!("one rolling-ball construction");
     };
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) =
@@ -471,7 +471,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     assert!(tag.contains("object_id:12345678"));
     assert!(tag.contains("multiplicities:[6, 6]"));
     assert_eq!(
-        decoded.ir().model.surfaces[0]
+        decoded.ir().geometry.surfaces[0]
             .source_object
             .as_ref()
             .map(|source| (source.format.as_str(), source.object_id.as_str())),
@@ -495,11 +495,11 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
     ));
     assert_eq!(
-        result.ir().model.surfaces[0]
+        result.ir().geometry.surfaces[0]
             .source_object
             .as_ref()
             .map(|source| (source.format.as_str(), source.object_id.as_str())),
@@ -523,11 +523,11 @@ fn decode_inner_no_directory_transfers_a8_nurbs() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
     ));
     assert_eq!(
-        result.ir().model.surfaces[0]
+        result.ir().geometry.surfaces[0]
             .source_object
             .as_ref()
             .map(|source| (source.format.as_str(), source.object_id.as_str())),

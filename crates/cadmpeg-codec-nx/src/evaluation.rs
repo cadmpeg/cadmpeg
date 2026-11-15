@@ -234,7 +234,7 @@ pub fn saved_body_census_evidence(ir: &CadIr) -> BodyCensusEvaluation {
         }
     };
     let saved = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())
@@ -298,7 +298,7 @@ fn rederived_body_census(
 ) -> Result<BTreeSet<BodyId>, (FeatureBoundary, UnsupportedBodyCensusReason)> {
     let mut bodies = BTreeSet::new();
     let saved_bodies = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())

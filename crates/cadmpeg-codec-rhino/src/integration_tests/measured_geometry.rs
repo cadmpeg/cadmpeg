@@ -33,7 +33,7 @@ const TOP_PCURVE_FIT: f64 = 1.0e-4;
 /// The unit cube with no face names, which the Rhino writer refuses.
 fn unnamed_cube() -> CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    for face in &mut ir.model.faces {
+    for face in &mut ir.geometry.faces {
         face.name = None;
     }
     ir
@@ -92,32 +92,32 @@ fn bulged_cube() -> CadIr {
         NurbsSurface::from_lanes(axis(), axis(), NurbsSurfaceLanes::new(poles, None), false)
             .expect("valid bulged surface");
     let top = ir
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.surface.as_str().ends_with("#top"))
         .expect("the cube has a top face")
         .clone();
-    ir.model
+    ir.geometry
         .surfaces
         .iter_mut()
         .find(|candidate| candidate.id == top.surface)
         .expect("the top face surface")
         .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface));
     let top_loops: Vec<_> = ir
-        .model
+        .geometry
         .loops
         .iter()
         .filter(|loop_| loop_.face == top.id)
         .map(|loop_| loop_.id.clone())
         .collect();
-    for index in 0..ir.model.coedges.len() {
-        let coedge = &ir.model.coedges[index];
+    for index in 0..ir.geometry.coedges.len() {
+        let coedge = &ir.geometry.coedges[index];
         if !top_loops.contains(&coedge.owner_loop) {
             continue;
         }
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
@@ -129,8 +129,8 @@ fn bulged_cube() -> CadIr {
             (&edge.end, &edge.start)
         };
         let position = |id: &cadmpeg_ir::ids::VertexId| {
-            let vertex = ir.model.vertices.iter().find(|vertex| vertex.id == *id)?;
-            ir.model
+            let vertex = ir.geometry.vertices.iter().find(|vertex| vertex.id == *id)?;
+            ir.geometry
                 .points
                 .iter()
                 .find(|point| point.id == vertex.point)
@@ -147,7 +147,7 @@ fn bulged_cube() -> CadIr {
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#top.{index}")
             .try_into()
             .expect("valid identity");
-        ir.model.pcurves.push(Pcurve {
+        ir.geometry.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line(
                 LinePcurve::try_new(origin, direction).expect("top pcurve line"),
@@ -158,7 +158,7 @@ fn bulged_cube() -> CadIr {
                 Some(FitTolerance::try_new(TOP_PCURVE_FIT).expect("finite fit tolerance")),
             ),
         });
-        ir.model.coedges[index].pcurves = vec![PcurveUse {
+        ir.geometry.coedges[index].pcurves = vec![PcurveUse {
             pcurve: id,
             isoparametric: None,
             parameter_range: None,
@@ -172,7 +172,7 @@ fn bulged_cube() -> CadIr {
 fn planar_cube_round_trip_keeps_measured_geometry() {
     let ir = unnamed_cube();
     for (_, written) in round_trips(&ir) {
-        assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
+        assert_eq!(written.geometry.bodies.len(), ir.geometry.bodies.len());
         measures_agree("cube", &ir, &written).expect("the round trip keeps its measured geometry");
     }
 }
@@ -185,7 +185,7 @@ fn bulged_cube_round_trip_keeps_measured_geometry() {
     let ir = bulged_cube();
     let expected = CUBE_SIDE.powi(3) + BULGE_RISE * CUBE_SIDE.powi(2) / 9.0;
     for (_, written) in round_trips(&ir) {
-        assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
+        assert_eq!(written.geometry.bodies.len(), ir.geometry.bodies.len());
         let (_, before, _) = measures_agree("bulged cube", &ir, &written)
             .expect("the round trip keeps its measured geometry");
         let volume = before.bodies()[0]

@@ -57,7 +57,7 @@ fn faces_decode_nurbs_surface() {
 
     let nurbs = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
@@ -90,7 +90,7 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
         .unwrap();
 
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("compact counted NURBS surface");
     };
@@ -127,7 +127,7 @@ fn conflicting_compact_counted_surface_array_is_rejected() {
         .unwrap();
 
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
 }
@@ -169,9 +169,9 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
-    assert_eq!(result.ir().model.surfaces.len(), 3);
-    assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir().geometry.surfaces.len(), 3);
+    assert!(result.ir().geometry.procedural_surfaces.iter().any(|surface| {
         match surface.definition() {
             ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
                 (matched_payload.distance(),),
@@ -180,14 +180,14 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
             _ => false,
         }
     }));
-    assert!(result.ir().model.surfaces.iter().any(|surface| {
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| {
         matches!(
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
         ) && surface.id.as_str().contains("hidden-support-surf#100")
     }));
 
-    let face_surface = &result.ir().model.faces[0].surface;
+    let face_surface = &result.ir().geometry.faces[0].surface;
     let point = cadmpeg_ir::eval::model_surface_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &cadmpeg_ir::index::ModelIndex::build(result.ir()),
@@ -212,13 +212,13 @@ fn blend_cache_fit_tolerance(body: &[u8]) -> Option<f64> {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let cached = result.ir().model.surfaces.iter().any(|surface| {
+    let cached = result.ir().geometry.surfaces.iter().any(|surface| {
         matches!(
             surface.geometry,
             SurfaceGeometry::Procedural { cache: Some(_), .. }
         )
     });
-    let fit_tolerance = result.ir().model.procedural_surfaces[0]
+    let fit_tolerance = result.ir().geometry.procedural_surfaces[0]
         .cache_fit_tolerance()
         .map(cadmpeg_ir::geometry::FitTolerance::get);
     assert_eq!(cached, fit_tolerance.is_some());
@@ -282,10 +282,10 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
-    assert_eq!(result.ir().model.surfaces.len(), 3);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 3);
     let ProceduralSurfaceDefinition::Blend(definition_payload) =
-        result.ir().model.procedural_surfaces[0].definition()
+        result.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("rolling-ball construction");
     };
@@ -297,7 +297,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         .map(|support| {
             result
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == support.surface)
@@ -346,14 +346,14 @@ fn merged_sites_retain_procedural_surface_constructions() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 2);
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .all(|construction| {
-            result.ir().model.surfaces.iter().any(|surface| {
+            result.ir().geometry.surfaces.iter().any(|surface| {
                 matches!(
                     &surface.geometry,
                     cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
@@ -392,9 +392,9 @@ fn cyclic_offset_surface_graph_remains_unknown() {
         )
         .unwrap();
 
-    assert!(result.ir().model.procedural_surfaces.is_empty());
+    assert!(result.ir().geometry.procedural_surfaces.is_empty());
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
 }
@@ -469,7 +469,7 @@ fn faces_decode_markerless_nurbs_surface_arrays() {
 
     let nurbs = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
@@ -490,10 +490,10 @@ fn face_on_untyped_surface_keeps_topology() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     let Some(SolvedSurfaceGeometry::Unknown {
         record: Some(record),
-    }) = result.ir().model.surfaces[0].geometry.solved()
+    }) = result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("opaque surface has no replay record");
     };
@@ -505,7 +505,7 @@ fn face_on_untyped_surface_keeps_topology() {
     assert!(retained
         .links
         .iter()
-        .any(|link| link.as_str() == result.ir().model.surfaces[0].id.as_str()));
+        .any(|link| link.as_str() == result.ir().geometry.surfaces[0].id.as_str()));
     assert!(result
         .report()
         .losses
@@ -541,7 +541,7 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
     let salvaged = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage keeps the topology decode");
-    assert_eq!(salvaged.ir().model.faces.len(), 1);
+    assert_eq!(salvaged.ir().geometry.faces.len(), 1);
     let census = salvaged
         .report()
         .losses

@@ -92,12 +92,12 @@ pub(in super::super) fn feature_edge_selection(
     if unique
         && edges
             .iter()
-            .all(|edge| ir.model.edges.iter().any(|candidate| candidate.id == *edge))
+            .all(|edge| ir.geometry.edges.iter().any(|candidate| candidate.id == *edge))
     {
         Ok(Some(EdgeSelection::Resolved { edges, native }))
     } else if edges
         .iter()
-        .any(|edge| ir.model.edges.iter().any(|candidate| candidate.id == *edge))
+        .any(|edge| ir.geometry.edges.iter().any(|candidate| candidate.id == *edge))
     {
         // A typed generated selection names one result namespace. A roster
         // that mixes current B-rep edges with absent edges has no neutral

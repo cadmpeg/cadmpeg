@@ -15,9 +15,9 @@ fn context_keeps_document_accuracy_when_entity_tolerances_differ() {
         let mut ir = unit_cube().expect("cube");
         ir.tolerances.linear = cadmpeg_ir::scalar::PositiveLength::new(document_tolerance)
             .expect("document tolerance");
-        ir.model.edges[0].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.025);
-        ir.model.vertices[0].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.04);
-        ir.model.faces[0].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.06);
+        ir.geometry.edges[0].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.025);
+        ir.geometry.vertices[0].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.04);
+        ir.geometry.faces[0].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.06);
         let mut bytes = Vec::new();
         write_step(
             &ir,

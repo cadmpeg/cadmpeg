@@ -1253,7 +1253,7 @@ mod tests {
     fn repeated_exactness_field_keys_are_refused_through_the_decode_sidecar() {
         let ir = crate::examples::unit_cube().expect("valid cube");
         let ir_json = ir.to_canonical_json().expect("serialize CADIR");
-        let id = ir.model.points[0].id.as_str();
+        let id = ir.geometry.points[0].id.as_str();
         for scope in ["entity", "fields"] {
             let mut builder = AnnotationBuilder::new();
             if scope == "entity" {

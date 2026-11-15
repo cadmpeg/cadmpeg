@@ -15,6 +15,7 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
     let drawing = |name: &str| {
         model
             .drawings

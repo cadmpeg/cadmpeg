@@ -259,7 +259,7 @@ fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
         }
     }
     if counts.is_empty() {
-        counts.insert("116_point".into(), ir.model.points.len());
+        counts.insert("116_point".into(), ir.geometry.points.len());
     }
     counts
 }
@@ -453,7 +453,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let mut losses = procedural_reduction_losses(ir)?;
     losses.extend(reject_unsupported_native(ir)?);
     for body in ir
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| is_decoder_free_geometry_body(body))
@@ -476,26 +476,26 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     if has_brep_topology(ir) || has_trimmed_sheet_topology(ir) {
         let ignored = ignored_carrier_geometry(ir)?;
         let used_edges = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .map(|coedge| &coedge.edge)
             .collect::<BTreeSet<_>>();
         let owned = ir
-            .model
+            .geometry
             .edges
             .iter()
             .filter(|edge| used_edges.contains(&edge.id))
             .flat_map(|edge| [&edge.start, &edge.end])
             .chain(
-                ir.model
+                ir.geometry
                     .loops
                     .iter()
                     .flat_map(cadmpeg_ir::topology::Loop::vertices),
             )
             .collect::<BTreeSet<_>>();
         let count = ir
-            .model
+            .geometry
             .vertices
             .iter()
             .filter(|vertex| {
@@ -529,7 +529,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         // other than the decoder's free-geometry wrapper has nothing here that
         // carries it.
         if let Some(body) = ir
-            .model
+            .geometry
             .bodies
             .iter()
             .find(|body| !is_decoder_free_geometry_body(body))
@@ -543,7 +543,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();
         let mut consumed_curves = BTreeSet::<String>::new();
-        let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
+        let mut surfaces = ir.geometry.surfaces.iter().collect::<Vec<_>>();
         surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for surface in surfaces {
             append_surface_entities(
@@ -558,13 +558,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         }
         mark_native_construction_curves(
             ir,
-            ir.model
+            ir.geometry
                 .surfaces
                 .iter()
                 .filter(|surface| ownership.surface_status(surface).is_some()),
             &mut consumed_curves,
         )?;
-        let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
+        let mut edges = ir.geometry.edges.iter().collect::<Vec<_>>();
         edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for edge in edges {
             let curve_id = edge.curve().ok_or_else(|| {
@@ -574,7 +574,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 ))
             })?;
             let curve = ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|candidate| candidate.id == *curve_id)
@@ -627,7 +627,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             &mut losses,
         )?;
 
-        let mut points = ir.model.points.iter().collect::<Vec<_>>();
+        let mut points = ir.geometry.points.iter().collect::<Vec<_>>();
         points.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for point in points {
             if consumed_points.contains(&point.id) {
@@ -661,7 +661,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
 
 fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
     if !ir
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| body.kind == BodyKind::Wire)
@@ -670,7 +670,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
     }
     let mut unsupported_wire = None;
     for body in ir
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.kind == BodyKind::Wire)
@@ -686,7 +686,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         let mut vertex_owners = BTreeMap::new();
         for region_id in &body.regions {
             let region = ir
-                .model
+                .geometry
                 .regions
                 .iter()
                 .find(|region| region.id == *region_id)
@@ -710,7 +710,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
             }
             for shell_id in &region.shells {
                 let shell = ir
-                    .model
+                    .geometry
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id)
@@ -734,7 +734,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
                         )));
                     }
                     let edge = ir
-                        .model
+                        .geometry
                         .edges
                         .iter()
                         .find(|edge| edge.id == *edge_id)
@@ -746,7 +746,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
                         })?;
                     for vertex_id in [&edge.start, &edge.end] {
                         if !ir
-                            .model
+                            .geometry
                             .vertices
                             .iter()
                             .any(|vertex| vertex.id == *vertex_id)
@@ -776,22 +776,22 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         }
     }
     let edge_vertices = ir
-        .model
+        .geometry
         .edges
         .iter()
         .flat_map(|edge| [&edge.start, &edge.end])
         .collect::<BTreeSet<_>>();
     let loop_vertices = ir
-        .model
+        .geometry
         .loops
         .iter()
         .flat_map(Loop::vertices)
         .collect::<BTreeSet<_>>();
     let mut free_vertices = BTreeSet::new();
-    for shell in &ir.model.shells {
+    for shell in &ir.geometry.shells {
         for vertex_id in shell.free_vertices() {
             if !ir
-                .model
+                .geometry
                 .vertices
                 .iter()
                 .any(|vertex| vertex.id == *vertex_id)
@@ -808,7 +808,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
             }
         }
     }
-    if let Some(vertex) = ir.model.vertices.iter().find(|vertex| {
+    if let Some(vertex) = ir.geometry.vertices.iter().find(|vertex| {
         !edge_vertices.contains(&vertex.id)
             && !loop_vertices.contains(&vertex.id)
             && !free_vertices.contains(&vertex.id)
@@ -826,7 +826,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
 
 fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
     let writes_brep = has_brep_topology(ir);
-    if let Some(surface) = ir.model.surfaces.iter().find(|surface| {
+    if let Some(surface) = ir.geometry.surfaces.iter().find(|surface| {
         (matches!(
             surface.geometry,
             SurfaceGeometry::Solved(
@@ -835,7 +835,7 @@ fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
                     | SolvedSurfaceGeometry::Sphere(_)
                     | SolvedSurfaceGeometry::Torus(_)
             )
-        )) && (!writes_brep || !ir.model.faces.iter().any(|face| face.surface == surface.id))
+        )) && (!writes_brep || !ir.geometry.faces.iter().any(|face| face.surface == surface.id))
     }) {
         return Err(CodecError::NotImplemented(format!(
             "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
@@ -942,24 +942,24 @@ fn solid_shell_roles(region: &Region) -> Result<(&ShellId, &[ShellId]), CodecErr
 }
 
 fn has_trimmed_sheet_topology(ir: &CadIr) -> bool {
-    !ir.model.faces.is_empty()
-        || !ir.model.loops.is_empty()
-        || !ir.model.coedges.is_empty()
-        || !ir.model.pcurves.is_empty()
+    !ir.geometry.faces.is_empty()
+        || !ir.geometry.loops.is_empty()
+        || !ir.geometry.coedges.is_empty()
+        || !ir.geometry.pcurves.is_empty()
 }
 
 fn has_brep_topology(ir: &CadIr) -> bool {
     if ir
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| !is_decoder_free_geometry_body(body) && body.kind == BodyKind::Solid)
     {
         return true;
     }
-    if ir.model.faces.iter().any(|face| {
+    if ir.geometry.faces.iter().any(|face| {
         face.loops.iter().any(|loop_id| {
-            ir.model
+            ir.geometry
                 .loops
                 .iter()
                 .find(|loop_| loop_.id == *loop_id)
@@ -969,7 +969,7 @@ fn has_brep_topology(ir: &CadIr) -> bool {
         return true;
     }
     let mut edge_use_counts = BTreeMap::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         *edge_use_counts
             .entry(coedge.edge.as_str())
             .or_insert(0_usize) += 1;
@@ -977,12 +977,12 @@ fn has_brep_topology(ir: &CadIr) -> bool {
     if edge_use_counts.values().any(|count| *count > 1) {
         return true;
     }
-    if ir.model.bodies.iter().any(|body| {
+    if ir.geometry.bodies.iter().any(|body| {
         if is_decoder_free_geometry_body(body) || body.kind != BodyKind::Sheet {
             return false;
         }
         body.regions.iter().any(|region_id| {
-            ir.model
+            ir.geometry
                 .regions
                 .iter()
                 .find(|region| region.id == *region_id)
@@ -991,8 +991,8 @@ fn has_brep_topology(ir: &CadIr) -> bool {
     }) {
         return true;
     }
-    ir.model.faces.iter().any(|face| {
-        ir.model
+    ir.geometry.faces.iter().any(|face| {
+        ir.geometry
             .shells
             .iter()
             .find(|shell| shell.faces().iter().any(|face_id| face_id == &face.id))
@@ -1001,7 +1001,7 @@ fn has_brep_topology(ir: &CadIr) -> bool {
 }
 
 fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
-    for procedural in &ir.model.procedural_surfaces {
+    for procedural in &ir.geometry.procedural_surfaces {
         if matches!(
             procedural.definition(),
             ProceduralSurfaceDefinition::CurveBounded { .. }
@@ -1009,7 +1009,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             continue;
         }
         let owner = ir
-            .model
+            .geometry
             .procedural_surface_owner(&procedural.id)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -1018,7 +1018,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                 ))
             })?;
         let surface = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == *owner)
@@ -1052,9 +1052,9 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             )));
         }
     }
-    for procedural in &ir.model.procedural_curves {
+    for procedural in &ir.geometry.procedural_curves {
         let owner = ir
-            .model
+            .geometry
             .procedural_curve_owner(&procedural.id)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -1063,7 +1063,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                 ))
             })?;
         let curve = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *owner)
@@ -1095,7 +1095,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
         }
     }
     let surface_count = ir
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .filter(|procedural| {
@@ -1105,9 +1105,9 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             ) {
                 return false;
             }
-            let owner = ir.model.procedural_surface_owner(&procedural.id);
+            let owner = ir.geometry.procedural_surface_owner(&procedural.id);
             let Some(surface) = owner.and_then(|owner| {
-                ir.model
+                ir.geometry
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == *owner)
@@ -1121,7 +1121,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             )
         })
         .count();
-    let curve_count = ir.model.procedural_curves.len();
+    let curve_count = ir.geometry.procedural_curves.len();
     if surface_count == 0 && curve_count == 0 {
         return Ok(Vec::new());
     }
@@ -1179,28 +1179,28 @@ fn validate_brep_topology<'a>(
     version: crate::IgesVersion,
 ) -> Result<ValidatedTopology<'a>, CodecError> {
     let loops = ir
-        .model
+        .geometry
         .loops
         .iter()
         .rev()
         .map(|value| (value.id.as_str(), value))
         .collect::<BTreeMap<_, _>>();
     let coedges = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .rev()
         .map(|value| (value.id.as_str(), value))
         .collect::<BTreeMap<_, _>>();
     let pcurves = ir
-        .model
+        .geometry
         .pcurves
         .iter()
         .rev()
         .map(|value| (value.id.as_str(), value))
         .collect::<BTreeMap<_, _>>();
     let surfaces = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .rev()
@@ -1208,7 +1208,7 @@ fn validate_brep_topology<'a>(
         .collect::<BTreeMap<_, _>>();
 
     let bodies = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| !is_decoder_free_geometry_body(body))
@@ -1247,7 +1247,7 @@ fn validate_brep_topology<'a>(
         }
         let region_id = &body.regions[0];
         let region = ir
-            .model
+            .geometry
             .regions
             .iter()
             .find(|region| region.id == *region_id)
@@ -1281,7 +1281,7 @@ fn validate_brep_topology<'a>(
         }
         for shell_id in &region.shells {
             let shell = ir
-                .model
+                .geometry
                 .shells
                 .iter()
                 .find(|shell| shell.id == *shell_id)
@@ -1311,7 +1311,7 @@ fn validate_brep_topology<'a>(
             }
             for face_id in shell.faces() {
                 let face = ir
-                    .model
+                    .geometry
                     .faces
                     .iter()
                     .find(|face| face.id == *face_id)
@@ -1430,7 +1430,7 @@ fn validate_brep_topology<'a>(
                             )));
                         }
                         let edge = ir
-                            .model
+                            .geometry
                             .edges
                             .iter()
                             .find(|edge| edge.id == coedge.edge)
@@ -1465,7 +1465,7 @@ fn validate_brep_topology<'a>(
                             ))
                         })?;
                         let curve = ir
-                            .model
+                            .geometry
                             .curves
                             .iter()
                             .find(|curve| curve.id == *curve_id)
@@ -1484,7 +1484,7 @@ fn validate_brep_topology<'a>(
                         let span = edge_span(ir, edge, &geometry)?;
                         for vertex_id in [&edge.start, &edge.end] {
                             let vertex = ir
-                                .model
+                                .geometry
                                 .vertices
                                 .iter()
                                 .find(|vertex| vertex.id == *vertex_id)
@@ -1519,7 +1519,7 @@ fn validate_brep_topology<'a>(
                             )));
                         }
                         let vertex = ir
-                            .model
+                            .geometry
                             .vertices
                             .iter()
                             .find(|vertex| vertex.id == *vertex_id)
@@ -1553,29 +1553,29 @@ fn validate_brep_topology<'a>(
     let mut admitted_vertices = used_vertices.clone();
     admitted_vertices.extend(ignored_carriers.vertices.iter().cloned());
     let supported_region_count = ir
-        .model
+        .geometry
         .regions
         .iter()
         .filter(|region| supported_body_ids.contains(&region.body))
         .count();
     let supported_shell_count = ir
-        .model
+        .geometry
         .shells
         .iter()
         .filter(|shell| {
-            ir.model.regions.iter().any(|region| {
+            ir.geometry.regions.iter().any(|region| {
                 supported_body_ids.contains(&region.body) && region.shells.contains(&shell.id)
             })
         })
         .count();
     if owned_regions.len() != supported_region_count
         || owned_shells.len() != supported_shell_count
-        || owned_faces.len() != ir.model.faces.len()
-        || used_loops.len() != ir.model.loops.len()
-        || used_coedges.len() != ir.model.coedges.len()
-        || admitted_edges.len() != ir.model.edges.len()
-        || admitted_vertices.len() != ir.model.vertices.len()
-        || used_brep_pcurve_ids(ir).len() != ir.model.pcurves.len()
+        || owned_faces.len() != ir.geometry.faces.len()
+        || used_loops.len() != ir.geometry.loops.len()
+        || used_coedges.len() != ir.geometry.coedges.len()
+        || admitted_edges.len() != ir.geometry.edges.len()
+        || admitted_vertices.len() != ir.geometry.vertices.len()
+        || used_brep_pcurve_ids(ir).len() != ir.geometry.pcurves.len()
     {
         return Err(CodecError::NotImplemented(format!(
             "IGES B-rep topology ownership is incomplete: regions {}/{} shells {}/{} \
@@ -1586,17 +1586,17 @@ fn validate_brep_topology<'a>(
             owned_shells.len(),
             supported_shell_count,
             owned_faces.len(),
-            ir.model.faces.len(),
+            ir.geometry.faces.len(),
             used_loops.len(),
-            ir.model.loops.len(),
+            ir.geometry.loops.len(),
             used_coedges.len(),
-            ir.model.coedges.len(),
+            ir.geometry.coedges.len(),
             admitted_edges.len(),
-            ir.model.edges.len(),
+            ir.geometry.edges.len(),
             admitted_vertices.len(),
-            ir.model.vertices.len(),
+            ir.geometry.vertices.len(),
             used_brep_pcurve_ids(ir).len(),
-            ir.model.pcurves.len()
+            ir.geometry.pcurves.len()
         )));
     }
 
@@ -1664,7 +1664,7 @@ fn validate_brep_topology<'a>(
         }
     }
     let used_surfaces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| face.surface.as_str())
@@ -1703,13 +1703,13 @@ fn brep_entities(
     let version = topology.version;
     let ignored_carriers = ignored_carrier_geometry(ir)?;
     let mut topology_point_ids = std::collections::BTreeSet::new();
-    for coedge in &ir.model.coedges {
-        let Some(edge) = ir.model.edges.iter().find(|edge| edge.id == coedge.edge) else {
+    for coedge in &ir.geometry.coedges {
+        let Some(edge) = ir.geometry.edges.iter().find(|edge| edge.id == coedge.edge) else {
             continue;
         };
         for vertex_id in [&edge.start, &edge.end] {
             if let Some(vertex) = ir
-                .model
+                .geometry
                 .vertices
                 .iter()
                 .find(|vertex| vertex.id == *vertex_id)
@@ -1718,10 +1718,10 @@ fn brep_entities(
             }
         }
     }
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         for vertex_id in loop_.vertices() {
             if let Some(vertex) = ir
-                .model
+                .geometry
                 .vertices
                 .iter()
                 .find(|vertex| vertex.id == *vertex_id)
@@ -1731,14 +1731,14 @@ fn brep_entities(
         }
     }
     let bodies = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| !is_decoder_free_geometry_body(body))
         .collect::<Vec<_>>();
     let mut entities = Vec::new();
     let mut surface_indices = BTreeMap::new();
-    let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
+    let mut surfaces = ir.geometry.surfaces.iter().collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
         if let Some(index) =
@@ -1749,14 +1749,14 @@ fn brep_entities(
     }
 
     let mut consumed_curve_ids = ir
-        .model
+        .geometry
         .edges
         .iter()
-        .filter(|edge| ir.model.coedges.iter().any(|coedge| coedge.edge == edge.id))
+        .filter(|edge| ir.geometry.coedges.iter().any(|coedge| coedge.edge == edge.id))
         .filter_map(|edge| edge.curve().map(|curve| curve.as_str().to_owned()))
         .collect::<BTreeSet<_>>();
     let mut topology_edge_ids = std::collections::BTreeSet::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         topology_edge_ids.insert(coedge.edge.as_str().to_owned());
     }
     let mut edge_curve_indices = BTreeMap::new();
@@ -1764,7 +1764,7 @@ fn brep_entities(
     edges.sort_by(Ord::cmp);
     for edge_id in edges {
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|candidate| candidate.id.as_str() == edge_id)
@@ -1780,7 +1780,7 @@ fn brep_entities(
             ))
         })?;
         let curve = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|candidate| candidate.id == *curve_id)
@@ -1813,7 +1813,7 @@ fn brep_entities(
 
     mark_native_construction_curves(
         ir,
-        ir.model
+        ir.geometry
             .surfaces
             .iter()
             .filter(|surface| surface_indices.contains_key(surface.id.as_str())),
@@ -1835,7 +1835,7 @@ fn brep_entities(
     let mut written_pcurves = BTreeMap::new();
     for loop_ in topology.loops.values().copied() {
         let face = ir
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
@@ -1910,7 +1910,7 @@ fn brep_entities(
             .find(|body| body.id.as_str() == body_id)
             .ok_or_else(|| CodecError::malformed(format_args!("IGES body {body_id} is missing")))?;
         let region = ir
-            .model
+            .geometry
             .regions
             .iter()
             .find(|region| region.body.as_str() == body_id)
@@ -1921,7 +1921,7 @@ fn brep_entities(
             .shells
             .iter()
             .map(|shell_id| {
-                ir.model
+                ir.geometry
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id)
@@ -1941,7 +1941,7 @@ fn brep_entities(
         for shell in &shells {
             for face_id in shell.faces() {
                 let face = ir
-                    .model
+                    .geometry
                     .faces
                     .iter()
                     .find(|face| face.id == *face_id)
@@ -1977,7 +1977,7 @@ fn brep_entities(
                             })?;
                         body_edge_ids.insert(coedge.edge.as_str().to_owned());
                         let edge = ir
-                            .model
+                            .geometry
                             .edges
                             .iter()
                             .find(|edge| edge.id == coedge.edge)
@@ -2006,7 +2006,7 @@ fn brep_entities(
         let mut parameters = vertex_ids.len().to_string();
         for vertex_id in &vertex_ids {
             let vertex = ir
-                .model
+                .geometry
                 .vertices
                 .iter()
                 .find(|vertex| vertex.id.as_str() == vertex_id)
@@ -2043,7 +2043,7 @@ fn brep_entities(
             let mut parameters = edge_ids.len().to_string();
             for edge_id in &edge_ids {
                 let edge = ir
-                    .model
+                    .geometry
                     .edges
                     .iter()
                     .find(|edge| edge.id.as_str() == edge_id)
@@ -2090,7 +2090,7 @@ fn brep_entities(
                     ))
                 })?;
             let face = ir
-                .model
+                .geometry
                 .faces
                 .iter()
                 .find(|face| face.id == loop_.face)
@@ -2224,7 +2224,7 @@ fn brep_entities(
         let mut face_indices = BTreeMap::new();
         for face_id in &body_face_ids {
             let face = ir
-                .model
+                .geometry
                 .faces
                 .iter()
                 .find(|face| face.id == *face_id)
@@ -2265,7 +2265,7 @@ fn brep_entities(
             let mut parameters = shell.faces().len().to_string();
             for face_id in shell.faces() {
                 let face = ir
-                    .model
+                    .geometry
                     .faces
                     .iter()
                     .find(|face| face.id == *face_id)
@@ -2330,7 +2330,7 @@ fn brep_entities(
             body_presentations.insert(index, body_presentation(body, losses));
         }
     }
-    let mut points = ir.model.points.iter().collect::<Vec<_>>();
+    let mut points = ir.geometry.points.iter().collect::<Vec<_>>();
     points.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for point in points {
         if topology_point_ids.contains(point.id.as_str()) {
@@ -2386,14 +2386,14 @@ fn brep_sense(sense: Sense) -> i32 {
 
 fn used_brep_pcurve_ids(ir: &CadIr) -> std::collections::BTreeSet<String> {
     let mut ids = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .flat_map(|coedge| coedge.pcurves.iter())
         .map(|use_| use_.pcurve.as_str().to_owned())
         .collect::<std::collections::BTreeSet<_>>();
     ids.extend(
-        ir.model
+        ir.geometry
             .loops
             .iter()
             .flat_map(Loop::vertex_pcurves)
@@ -2429,13 +2429,13 @@ impl IgnoredCarrierGeometry {
 
 fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecError> {
     let topology_edge_ids = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| coedge.edge.as_str().to_owned())
         .collect::<std::collections::BTreeSet<_>>();
     let topology_edges = ir
-        .model
+        .geometry
         .edges
         .iter()
         .filter(|edge| topology_edge_ids.contains(edge.id.as_str()))
@@ -2446,13 +2446,13 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
         vertices: std::collections::BTreeSet::new(),
         points: std::collections::BTreeSet::new(),
     };
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         if !is_decoder_free_geometry_body(body) {
             continue;
         }
         for region_id in &body.regions {
             let Some(region) = ir
-                .model
+                .geometry
                 .regions
                 .iter()
                 .find(|region| region.id == *region_id)
@@ -2460,7 +2460,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
                 continue;
             };
             for shell_id in &region.shells {
-                let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == *shell_id) else {
+                let Some(shell) = ir.geometry.shells.iter().find(|shell| shell.id == *shell_id) else {
                     continue;
                 };
                 ignored.vertices.extend(
@@ -2472,14 +2472,14 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
             }
         }
     }
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         if topology_edge_ids.contains(edge.id.as_str()) {
             continue;
         }
         let Some(curve_id) = edge.curve() else {
             continue;
         };
-        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
+        let Some(curve) = ir.geometry.curves.iter().find(|curve| curve.id == *curve_id) else {
             continue;
         };
         let matching_topology_tolerance = topology_edges
@@ -2523,7 +2523,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
                     })
         });
         let mut is_pcurve_carrier = false;
-        for pcurve in &ir.model.pcurves {
+        for pcurve in &ir.geometry.pcurves {
             let Some(range) = pcurve.parameter_range() else {
                 continue;
             };
@@ -2576,7 +2576,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
             ignored.vertices.insert(edge.end.as_str().to_owned());
         }
     }
-    for vertex in &ir.model.vertices {
+    for vertex in &ir.geometry.vertices {
         if ignored.vertices.contains(vertex.id.as_str()) {
             ignored.points.insert(vertex.point.as_str().to_owned());
         }
@@ -2637,14 +2637,14 @@ fn topology_entities(
     let version = topology.version;
     let ignored_carriers = ignored_carrier_geometry(ir)?;
     let topology_edge_ids = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| coedge.edge.as_str().to_owned())
         .collect::<std::collections::BTreeSet<_>>();
     let mut entities = Vec::new();
     let mut surface_indices = BTreeMap::new();
-    let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
+    let mut surfaces = ir.geometry.surfaces.iter().collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
         if let Some(index) =
@@ -2654,7 +2654,7 @@ fn topology_entities(
         }
     }
 
-    let mut faces = ir.model.faces.iter().collect::<Vec<_>>();
+    let mut faces = ir.geometry.faces.iter().collect::<Vec<_>>();
     faces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     let mut boundaries = Vec::new();
     for face in &faces {
@@ -2700,7 +2700,7 @@ fn topology_entities(
     let mut edge_indices = BTreeMap::new();
     let mut consumed_curves = std::collections::BTreeSet::new();
     let mut consumed_points = std::collections::BTreeSet::new();
-    let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
+    let mut edges = ir.geometry.edges.iter().collect::<Vec<_>>();
     edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for edge in edges {
         if !topology_edge_ids.contains(edge.id.as_str()) {
@@ -2713,7 +2713,7 @@ fn topology_entities(
             ))
         })?;
         let curve = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|candidate| candidate.id == *curve_id)
@@ -2755,7 +2755,7 @@ fn topology_entities(
 
     mark_native_construction_curves(
         ir,
-        ir.model
+        ir.geometry
             .surfaces
             .iter()
             .filter(|surface| surface_indices.contains_key(surface.id.as_str())),
@@ -2880,17 +2880,17 @@ fn topology_entities(
         }
         parameters.push(';');
         let body = ir
-            .model
+            .geometry
             .shells
             .iter()
             .find(|shell| shell.id == face.shell)
             .and_then(|shell| {
-                ir.model
+                ir.geometry
                     .regions
                     .iter()
                     .find(|region| region.id == shell.region)
             })
-            .and_then(|region| ir.model.bodies.iter().find(|body| body.id == region.body))
+            .and_then(|region| ir.geometry.bodies.iter().find(|body| body.id == region.body))
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "IGES sheet face {} has no owning body",
@@ -2909,7 +2909,7 @@ fn topology_entities(
         body_presentations.insert(index, body_presentation(body, losses));
     }
 
-    let mut points = ir.model.points.iter().collect::<Vec<_>>();
+    let mut points = ir.geometry.points.iter().collect::<Vec<_>>();
     points.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for point in points {
         if consumed_points.contains(point.id.as_str()) {
@@ -2933,41 +2933,41 @@ fn validate_trimmed_sheet_topology<'a>(
     version: crate::IgesVersion,
 ) -> Result<ValidatedTopology<'a>, CodecError> {
     let loops = ir
-        .model
+        .geometry
         .loops
         .iter()
         .rev()
         .map(|value| (value.id.as_str(), value))
         .collect::<BTreeMap<_, _>>();
     let coedges = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .rev()
         .map(|value| (value.id.as_str(), value))
         .collect::<BTreeMap<_, _>>();
     let pcurves = ir
-        .model
+        .geometry
         .pcurves
         .iter()
         .rev()
         .map(|value| (value.id.as_str(), value))
         .collect::<BTreeMap<_, _>>();
     let surfaces = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .rev()
         .map(|value| (value.id.as_str(), value))
         .collect::<BTreeMap<_, _>>();
 
-    if ir.model.faces.is_empty() {
+    if ir.geometry.faces.is_empty() {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer requires at least one face for topology output".into(),
         ));
     }
     let supported_bodies = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| !is_decoder_free_geometry_body(body))
@@ -2977,28 +2977,28 @@ fn validate_trimmed_sheet_topology<'a>(
         .map(|body| body.id.clone())
         .collect::<std::collections::BTreeSet<_>>();
     let supported_region_ids = ir
-        .model
+        .geometry
         .regions
         .iter()
         .filter(|region| supported_body_ids.contains(&region.body))
         .map(|region| region.id.clone())
         .collect::<std::collections::BTreeSet<_>>();
     let supported_shell_count = ir
-        .model
+        .geometry
         .shells
         .iter()
         .filter(|shell| supported_region_ids.contains(&shell.region))
         .count();
-    if supported_bodies.len() != ir.model.faces.len()
-        || supported_region_ids.len() != ir.model.faces.len()
-        || supported_shell_count != ir.model.faces.len()
+    if supported_bodies.len() != ir.geometry.faces.len()
+        || supported_region_ids.len() != ir.geometry.faces.len()
+        || supported_shell_count != ir.geometry.faces.len()
     {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer currently encodes one trimmed sheet face per body".into(),
         ));
     }
     let mut owned_faces = std::collections::BTreeSet::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         if is_decoder_free_geometry_body(body) {
             continue;
         }
@@ -3015,7 +3015,7 @@ fn validate_trimmed_sheet_topology<'a>(
         }
         let region_id = &body.regions[0];
         let region = ir
-            .model
+            .geometry
             .regions
             .iter()
             .find(|candidate| candidate.id == *region_id)
@@ -3033,7 +3033,7 @@ fn validate_trimmed_sheet_topology<'a>(
         }
         let shell_id = &region.shells[0];
         let shell = ir
-            .model
+            .geometry
             .shells
             .iter()
             .find(|candidate| candidate.id == *shell_id)
@@ -3054,7 +3054,7 @@ fn validate_trimmed_sheet_topology<'a>(
             )));
         }
         let face = ir
-            .model
+            .geometry
             .faces
             .iter()
             .find(|candidate| candidate.id == shell.faces()[0])
@@ -3078,7 +3078,7 @@ fn validate_trimmed_sheet_topology<'a>(
             )));
         }
     }
-    if owned_faces.len() != ir.model.faces.len() {
+    if owned_faces.len() != ir.geometry.faces.len() {
         return Err(CodecError::Malformed(
             "IGES sheet body hierarchy does not own every face exactly once".into(),
         ));
@@ -3090,7 +3090,7 @@ fn validate_trimmed_sheet_topology<'a>(
     let mut used_vertices = std::collections::BTreeSet::new();
     let mut used_pcurves = std::collections::BTreeSet::new();
     let ignored_carriers = ignored_carrier_geometry(ir)?;
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         if face.sense != Sense::Forward {
             return Err(CodecError::NotImplemented(format!(
                 "IGES Type 144 output cannot encode reversed face sense {}",
@@ -3198,7 +3198,7 @@ fn validate_trimmed_sheet_topology<'a>(
                     )));
                 }
                 let edge = ir
-                    .model
+                    .geometry
                     .edges
                     .iter()
                     .find(|candidate| candidate.id == coedge.edge)
@@ -3221,7 +3221,7 @@ fn validate_trimmed_sheet_topology<'a>(
                     ))
                 })?;
                 let curve = ir
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|curve| curve.id == *curve_id)
@@ -3241,7 +3241,7 @@ fn validate_trimmed_sheet_topology<'a>(
                     })?)?,
                 )?;
                 let start_vertex = ir
-                    .model
+                    .geometry
                     .vertices
                     .iter()
                     .find(|vertex| vertex.id == edge.start)
@@ -3252,7 +3252,7 @@ fn validate_trimmed_sheet_topology<'a>(
                         ))
                     })?;
                 let end_vertex = ir
-                    .model
+                    .geometry
                     .vertices
                     .iter()
                     .find(|vertex| vertex.id == edge.end)
@@ -3263,12 +3263,12 @@ fn validate_trimmed_sheet_topology<'a>(
                         ))
                     })?;
                 if !ir
-                    .model
+                    .geometry
                     .points
                     .iter()
                     .any(|point| point.id == start_vertex.point)
                     || !ir
-                        .model
+                        .geometry
                         .points
                         .iter()
                         .any(|point| point.id == end_vertex.point)
@@ -3338,18 +3338,18 @@ fn validate_trimmed_sheet_topology<'a>(
     admitted_edges.extend(ignored_carriers.edges.iter().cloned());
     let mut admitted_vertices = used_vertices.clone();
     admitted_vertices.extend(ignored_carriers.vertices.iter().cloned());
-    if used_loops.len() != ir.model.loops.len()
-        || used_coedges.len() != ir.model.coedges.len()
-        || admitted_edges.len() != ir.model.edges.len()
-        || admitted_vertices.len() != ir.model.vertices.len()
-        || used_pcurves.len() != ir.model.pcurves.len()
+    if used_loops.len() != ir.geometry.loops.len()
+        || used_coedges.len() != ir.geometry.coedges.len()
+        || admitted_edges.len() != ir.geometry.edges.len()
+        || admitted_vertices.len() != ir.geometry.vertices.len()
+        || used_pcurves.len() != ir.geometry.pcurves.len()
     {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer requires every topology arena entry to belong to a supported sheet face".into(),
         ));
     }
     let used_surfaces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| face.surface.as_str())
@@ -3389,7 +3389,7 @@ fn face_loop_order<'a>(
     let mut loops = Vec::new();
     for loop_id in &face.loops {
         let loop_ = ir
-            .model
+            .geometry
             .loops
             .iter()
             .find(|candidate| candidate.id == *loop_id)
@@ -3454,7 +3454,7 @@ fn boundary_coedge<'ir>(
     coedge_id: &CoedgeId,
 ) -> Result<BoundaryCoedge<'ir>, CodecError> {
     let coedge = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id == *coedge_id)
@@ -3465,7 +3465,7 @@ fn boundary_coedge<'ir>(
             ))
         })?;
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id == coedge.edge)
@@ -3482,7 +3482,7 @@ fn boundary_coedge<'ir>(
         ))
     })?;
     let curve = ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
@@ -4140,7 +4140,7 @@ fn procedural_pcurve_source_map(
     surface_id: &SurfaceId,
 ) -> Result<Option<(f64, f64, f64, f64)>, CodecError> {
     let Some(construction) = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == *surface_id)
@@ -4149,7 +4149,7 @@ fn procedural_pcurve_source_map(
         return Ok(None);
     };
     let Some(procedural) = ir
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.id == *construction)
@@ -4174,7 +4174,7 @@ fn procedural_pcurve_source_map(
         _ => return Ok(None),
     };
     let source_curve = ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *directrix)
@@ -4251,13 +4251,13 @@ fn procedural_pcurve_source_map(
 
 fn pcurve_support_surfaces(ir: &CadIr, pcurve_id: &cadmpeg_ir::ids::PcurveId) -> Vec<SurfaceId> {
     let mut surfaces = BTreeSet::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         for loop_id in &face.loops {
-            let Some(loop_) = ir.model.loops.iter().find(|loop_| loop_.id == *loop_id) else {
+            let Some(loop_) = ir.geometry.loops.iter().find(|loop_| loop_.id == *loop_id) else {
                 continue;
             };
             if loop_.coedges().iter().any(|coedge_id| {
-                ir.model
+                ir.geometry
                     .coedges
                     .iter()
                     .find(|coedge| coedge.id == *coedge_id)
@@ -4468,7 +4468,7 @@ fn validate_brep_pcurve_uses(
         isoparametric_flag(pcurve_use, orientation.owner)?;
         let pcurve = orientation
             .ir
-            .model
+            .geometry
             .pcurves
             .iter()
             .find(|pcurve| pcurve.id == pcurve_use.pcurve)
@@ -4572,7 +4572,7 @@ impl<'a> PcurveOrientationContext<'a> {
         for pcurve_use in uses {
             let pcurve = self
                 .ir
-                .model
+                .geometry
                 .pcurves
                 .iter()
                 .find(|pcurve| pcurve.id == pcurve_use.pcurve)
@@ -4681,7 +4681,7 @@ impl<'a> PcurveOrientationContext<'a> {
             .map(|pcurve_use| {
                 let pcurve = self
                     .ir
-                    .model
+                    .geometry
                     .pcurves
                     .iter()
                     .find(|pcurve| pcurve.id == pcurve_use.pcurve)
@@ -4838,7 +4838,7 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
         .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
     for vertex_id in [&edge.start, &edge.end] {
         if let Some(vertex) = ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|vertex| vertex.id == *vertex_id)
@@ -4855,12 +4855,12 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
 
 fn generated_minimum_resolution(ir: &CadIr) -> Result<f64, CodecError> {
     let topology_tolerance = ir
-        .model
+        .geometry
         .edges
         .iter()
         .filter_map(|edge| edge.tolerance)
         .chain(
-            ir.model
+            ir.geometry
                 .vertices
                 .iter()
                 .filter_map(|vertex| vertex.tolerance),
@@ -4898,7 +4898,7 @@ fn effective_topology_tolerance(explicit_tolerance: f64) -> f64 {
 
 fn generated_endpoint_coordinate_scale(ir: &CadIr) -> Result<f64, CodecError> {
     let mut scale = 1.0_f64;
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         for vertex_id in [&edge.start, &edge.end] {
             if let Some(point) = vertex_position(ir, vertex_id) {
                 scale = scale.max(point_coordinate_scale(point));
@@ -4910,7 +4910,7 @@ fn generated_endpoint_coordinate_scale(ir: &CadIr) -> Result<f64, CodecError> {
         let Some(range) = edge.param_range() else {
             continue;
         };
-        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
+        let Some(curve) = ir.geometry.curves.iter().find(|curve| curve.id == *curve_id) else {
             continue;
         };
         for parameter in range {
@@ -4974,7 +4974,7 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
 
 fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
     let unsupported = [
-        ("subds", !ir.model.subds.is_empty()),
+        ("subds", !ir.geometry.subds.is_empty()),
         ("assets", !ir.model.assets.is_empty()),
         ("features", !ir.model.features.is_empty()),
         (
@@ -5040,7 +5040,7 @@ fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
             "IGES semantic writer does not encode model arena {arena}"
         )));
     }
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         if body
             .transform
             .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity())
@@ -5051,8 +5051,8 @@ fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
             )));
         }
     }
-    for vertex in &ir.model.vertices {
-        if !ir.model.points.iter().any(|point| point.id == vertex.point) {
+    for vertex in &ir.geometry.vertices {
+        if !ir.geometry.points.iter().any(|point| point.id == vertex.point) {
             return Err(CodecError::malformed(format_args!(
                 "IGES vertex {} references missing point {}",
                 vertex.id, vertex.point
@@ -5079,7 +5079,7 @@ fn represented_name_properties(
         .map(|record| (record.id(), record))
         .collect::<BTreeMap<_, _>>();
     let named_bodies = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.name.is_some())
@@ -5324,7 +5324,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             ));
         };
         let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
-        if !ir.model.curves.iter().any(|curve| {
+        if !ir.geometry.curves.iter().any(|curve| {
             curve.source_object.as_ref().is_some_and(|source| {
                 source.format == cadmpeg_ir::CodecFormat::Iges
                     && source.object_id.as_str() == object_id
@@ -5353,7 +5353,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         };
         let point_id = format!("iges:model:point#D{sequence}");
         if !ir
-            .model
+            .geometry
             .points
             .iter()
             .any(|point| point.id.as_str() == point_id)
@@ -5385,7 +5385,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             ));
         };
         let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
-        if !ir.model.surfaces.iter().any(|surface| {
+        if !ir.geometry.surfaces.iter().any(|surface| {
             surface.source_object.as_ref().is_some_and(|source| {
                 source.format == cadmpeg_ir::CodecFormat::Iges
                     && source.object_id.as_str() == object_id
@@ -5402,7 +5402,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             Some(141..=144 | 186 | 502 | 504 | 508 | 510 | 514)
         )
     });
-    if has_native_surface && ir.model.surfaces.is_empty() {
+    if has_native_surface && ir.geometry.surfaces.is_empty() {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer cannot preserve a native support surface without neutral geometry".into(),
         ));
@@ -5466,7 +5466,7 @@ fn construction_carrier_interval(
     {
         None => {
             if let Some(range) = ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == *directrix)
@@ -5478,7 +5478,7 @@ fn construction_carrier_interval(
                 geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
             ) && ir
-                .model
+                .geometry
                 .edges
                 .iter()
                 .any(|edge| edge.curve() == Some(directrix))
@@ -5642,7 +5642,7 @@ fn surface_entities_for_ir(
     if let Some(solved) = geometry.solved() {
         if let SolvedSurfaceGeometry::Nurbs(nurbs) = solved {
             let construction = geometry.procedural_construction().and_then(|id| {
-                ir.model
+                ir.geometry
                     .procedural_surfaces
                     .iter()
                     .find(|row| row.id == *id)
@@ -5661,7 +5661,7 @@ fn surface_entities_for_ir(
     match geometry {
         SurfaceGeometry::Procedural { construction, .. } => {
             let procedural = ir
-                .model
+                .geometry
                 .procedural_surfaces
                 .iter()
                 .find(|candidate| candidate.id == *construction)
@@ -5693,7 +5693,7 @@ fn extrusion_surface_entities(
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let procedural = ir
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|candidate| candidate.id == *construction)
@@ -5734,7 +5734,7 @@ fn extrusion_surface_entities(
         ));
     }
     let source_curve = ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *directrix)
@@ -5900,7 +5900,7 @@ fn revolution_surface_entities(
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let procedural = ir
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|candidate| candidate.id == *construction)
@@ -5937,7 +5937,7 @@ fn revolution_surface_entities(
     })?;
     let [start_parameter, terminate_parameter] = parameter_interval.endpoints();
     let source_curve = ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *directrix)
@@ -6425,7 +6425,7 @@ fn nurbs_surface_closed_v(
 
 fn vertex_point_id(ir: &CadIr, vertex_id: &VertexId) -> Result<PointId, CodecError> {
     let vertex = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .find(|vertex| vertex.id == *vertex_id)
@@ -6438,7 +6438,7 @@ fn vertex_point_id(ir: &CadIr, vertex_id: &VertexId) -> Result<PointId, CodecErr
 }
 
 fn point_position(ir: &CadIr, point_id: &PointId) -> Result<FinitePoint3, CodecError> {
-    ir.model
+    ir.geometry
         .points
         .iter()
         .find(|point| point.id == *point_id)
@@ -6452,13 +6452,13 @@ fn point_position(ir: &CadIr, point_id: &PointId) -> Result<FinitePoint3, CodecE
 
 fn vertex_position(ir: &CadIr, vertex_id: &VertexId) -> Option<FinitePoint3> {
     let point_id = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .find(|vertex| vertex.id == *vertex_id)?
         .point
         .clone();
-    ir.model
+    ir.geometry
         .points
         .iter()
         .find(|point| point.id == point_id)
@@ -6593,7 +6593,7 @@ impl CurveEntityEmitter<'_> {
         for segment in ordered {
             let child = self
                 .ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == segment.curve)
@@ -6673,7 +6673,7 @@ fn curve_reference_span_inner(
             let mut total = 0.0;
             for segment in segments {
                 let child = ir
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|curve| curve.id == segment.curve)
@@ -6720,7 +6720,7 @@ fn curve_reference_span_inner(
                 ))
             })?;
             let matching_edges = ir
-                .model
+                .geometry
                 .edges
                 .iter()
                 .filter(|edge| edge.curve() == Some(curve_id))
@@ -6774,7 +6774,7 @@ fn curve_reference_span_inner(
         }
         _ => {
             let matching_edges = ir
-                .model
+                .geometry
                 .edges
                 .iter()
                 .filter(|edge| edge.curve() == Some(curve_id))
@@ -6782,7 +6782,7 @@ fn curve_reference_span_inner(
             match matching_edges.split_first() {
                 None => {
                     let range = match ir
-                        .model
+                        .geometry
                         .curves
                         .iter()
                         .find(|curve| curve.id == *curve_id)
@@ -6883,7 +6883,7 @@ fn mark_native_construction_curves<'ir>(
             continue;
         };
         let Some(procedural) = ir
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.id == *construction)
@@ -6900,7 +6900,7 @@ fn mark_native_construction_curves<'ir>(
             _ => continue,
         };
         let placement = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *directrix)
@@ -6911,7 +6911,7 @@ fn mark_native_construction_curves<'ir>(
         let mut curves = vec![directrix];
         if let Some(placed) = placement {
             curves.extend(
-                ir.model
+                ir.geometry
                     .curves
                     .iter()
                     .filter(|curve| {
@@ -6967,7 +6967,7 @@ fn revolution_axis_curve<'ir>(
             )),
         }
     };
-    let mut lines = ir.model.curves.iter().filter(|curve| {
+    let mut lines = ir.geometry.curves.iter().filter(|curve| {
         is_support_curve(curve)
             && curve
                 .geometry
@@ -7013,7 +7013,7 @@ fn append_unowned_curves(
         ownership,
         ignored,
     } = request;
-    let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
+    let mut curves = ir.geometry.curves.iter().collect::<Vec<_>>();
     curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     let mut ignored_curves = 0_usize;
     let mut dependent = Vec::new();
@@ -7084,7 +7084,7 @@ fn mark_curve_descendants(
         return Ok(());
     }
     let curve = ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
@@ -7218,7 +7218,7 @@ fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
         .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
     for vertex_id in [&edge.start, &edge.end] {
         let vertex = ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|vertex| vertex.id == *vertex_id)

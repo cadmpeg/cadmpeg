@@ -319,17 +319,17 @@ struct Cap {
 
 fn caps(model: &Model, work: &WorkBudget) -> Option<Vec<Cap>> {
     let indexing_work = [
-        model.surfaces.len(),
-        model.shells.len(),
-        model.regions.len(),
-        model.bodies.len(),
-        model.faces.len(),
-        model.loops.len(),
-        model.coedges.len(),
-        model.edges.len(),
-        model.vertices.len(),
-        model.points.len(),
-        model.curves.len(),
+        geometry.surfaces.len(),
+        geometry.shells.len(),
+        geometry.regions.len(),
+        geometry.bodies.len(),
+        geometry.faces.len(),
+        geometry.loops.len(),
+        geometry.coedges.len(),
+        geometry.edges.len(),
+        geometry.vertices.len(),
+        geometry.points.len(),
+        geometry.curves.len(),
     ]
     .into_iter()
     .try_fold(0_usize, usize::checked_add)?;
@@ -341,7 +341,7 @@ fn caps(model: &Model, work: &WorkBudget) -> Option<Vec<Cap>> {
         .iter()
         .map(|s| (&s.id, &s.geometry))
         .collect();
-    let shells: HashMap<_, _> = model.shells.iter().map(|s| (&s.id, &s.region)).collect();
+    let shells: HashMap<_, _> = geometry.shells.iter().map(|s| (&s.id, &s.region)).collect();
     let regions: HashMap<_, _> = model
         .bodies
         .iter()
@@ -351,19 +351,19 @@ fn caps(model: &Model, work: &WorkBudget) -> Option<Vec<Cap>> {
                 .map(move |r| (r, b.transform.unwrap_or_else(Transform::identity)))
         })
         .collect();
-    let loops: HashMap<_, _> = model.loops.iter().map(|l| (&l.id, l)).collect();
-    let coedges: HashMap<_, _> = model.coedges.iter().map(|c| (&c.id, c)).collect();
-    let edges: HashMap<_, _> = model.edges.iter().map(|e| (&e.id, e)).collect();
-    let vertices: HashMap<_, _> = model.vertices.iter().map(|v| (&v.id, &v.point)).collect();
+    let loops: HashMap<_, _> = geometry.loops.iter().map(|l| (&l.id, l)).collect();
+    let coedges: HashMap<_, _> = geometry.coedges.iter().map(|c| (&c.id, c)).collect();
+    let edges: HashMap<_, _> = geometry.edges.iter().map(|e| (&e.id, e)).collect();
+    let vertices: HashMap<_, _> = geometry.vertices.iter().map(|v| (&v.id, &v.point)).collect();
     let points: HashMap<_, _> = model
         .points
         .iter()
         .map(|p| (&p.id, p.position().get()))
         .collect();
-    let curves: HashMap<_, _> = model.curves.iter().map(|c| (&c.id, &c.geometry)).collect();
+    let curves: HashMap<_, _> = geometry.curves.iter().map(|c| (&c.id, &c.geometry)).collect();
     let mut result = Vec::new();
     let mut indices = HashMap::new();
-    for face in &model.faces {
+    for face in &geometry.faces {
         let Some(SolvedSurfaceGeometry::Plane(plane)) =
             surfaces.get(&face.surface).and_then(|s| s.solved())
         else {

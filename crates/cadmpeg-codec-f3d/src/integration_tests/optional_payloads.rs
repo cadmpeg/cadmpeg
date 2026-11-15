@@ -123,7 +123,7 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
     ] {
         let original = f3d_with_configuration(&synthetic_geometry_smbh(), name, b"preview");
         let expected = super::decode(original.clone());
-        assert_eq!(expected.ir().model.bodies.len(), 1);
+        assert_eq!(expected.ir().geometry.bodies.len(), 1);
         for defect in [
             Defect::Crc,
             Defect::Encryption,

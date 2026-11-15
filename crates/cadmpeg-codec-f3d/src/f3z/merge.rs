@@ -2442,21 +2442,23 @@ mod tests {
         ])
         .unwrap();
         let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+        let mut geometry = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
         model.product_definitions.clear();
-        model.bodies[0].transform = Some(transform);
+        geometry.bodies[0].transform = Some(transform);
         let ctx = cadmpeg_test_support::service_decode_context();
         define_member(&ctx, &mut model, "member").unwrap();
-        assert_eq!(model.bodies[0].transform, Some(transform));
+        assert_eq!(geometry.bodies[0].transform, Some(transform));
         assert_eq!(
             model.product_definitions[0].bodies,
-            [model.bodies[0].id.clone()]
+            [geometry.bodies[0].id.clone()]
         );
     }
 
     #[test]
     fn member_without_occurrences_moves_stored_frame_bodies_into_its_definition() {
         let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-        let body = model.bodies[0].id.clone();
+        let mut geometry = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
+        let body = geometry.bodies[0].id.clone();
         model.product_definitions.clear();
         model
             .product_definitions

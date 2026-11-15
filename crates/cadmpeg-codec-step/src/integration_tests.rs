@@ -176,13 +176,13 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("STEP cube decode"),
         );
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.faces.len(), 6);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 6);
         assert_valid(&result);
 
         let mut edited = result.ir().clone();
         edited
-            .model
+            .geometry
             .points
             .first_mut()
             .expect("unit cube has a point")
@@ -225,11 +225,11 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         );
         assert_valid(&edited_result);
         assert_eq!(
-            edited_result.ir().model.bodies.len(),
+            edited_result.ir().geometry.bodies.len(),
             expected_model.bodies.len()
         );
         assert_eq!(
-            edited_result.ir().model.faces.len(),
+            edited_result.ir().geometry.faces.len(),
             expected_model.faces.len()
         );
         let expected_points = expected_model
@@ -239,7 +239,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             .collect::<Vec<_>>();
         let actual_points = edited_result
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .map(|point| point.position().get())

@@ -156,7 +156,7 @@ fn decode_model(
         transferred |= ir.model.tessellations.len() > meshes;
         for extra in exact.iter().skip(1) {
             if let Some(written) = ir
-                .model
+                .geometry
                 .bodies
                 .iter_mut()
                 .rev()

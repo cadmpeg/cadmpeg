@@ -39,7 +39,7 @@ fn stream_identity_selects_scalar_width() {
             Precision::Single
         };
         assert_eq!(model.precision, expected);
-        let SurfaceGeometry::Plane { origin, normal, .. } = model.faces[0].surface.geometry else {
+        let SurfaceGeometry::Plane { origin, normal, .. } = geometry.faces[0].surface.geometry else {
             panic!("plane");
         };
         assert_eq!(origin, [1.0, 2.0, 3.0]);
@@ -84,10 +84,10 @@ fn analytic_records_read_their_geometry_scalars_in_order() {
         stream.record(EXACT_SURFACE, &payload);
     }
     let model = parse(stream).unwrap();
-    for face in &model.faces {
+    for face in &geometry.faces {
         assert!(face.surface.embedded.is_none());
     }
-    let SurfaceGeometry::Cylinder { origin, x, y, axis } = model.faces[0].surface.geometry else {
+    let SurfaceGeometry::Cylinder { origin, x, y, axis } = geometry.faces[0].surface.geometry else {
         panic!("cylinder");
     };
     assert_eq!(
@@ -99,15 +99,15 @@ fn analytic_records_read_their_geometry_scalars_in_order() {
             [10.0, 11.0, 12.0]
         ]
     );
-    let SurfaceGeometry::Cone { a, b, axis, .. } = model.faces[1].surface.geometry else {
+    let SurfaceGeometry::Cone { a, b, axis, .. } = geometry.faces[1].surface.geometry else {
         panic!("cone");
     };
     assert_eq!((axis, a, b), ([10.0, 11.0, 12.0], 13.0, 14.0));
-    let SurfaceGeometry::Sphere { z, .. } = model.faces[2].surface.geometry else {
+    let SurfaceGeometry::Sphere { z, .. } = geometry.faces[2].surface.geometry else {
         panic!("sphere");
     };
     assert_eq!(z, [10.0, 11.0, 12.0]);
-    let SurfaceGeometry::Torus(torus) = model.faces[3].surface.geometry else {
+    let SurfaceGeometry::Torus(torus) = geometry.faces[3].surface.geometry else {
         panic!("torus");
     };
     assert_eq!(torus.axis, [10.0, 11.0, 12.0]);
@@ -138,7 +138,7 @@ fn bspline_surface_reads_body_ranges_and_periodic_bits() {
         .bytes();
     stream.record(EXACT_SURFACE, &payload);
     let model = parse(stream).unwrap();
-    let face = &model.faces[0].surface;
+    let face = &geometry.faces[0].surface;
     let SurfaceGeometry::Bspline(surface) = &face.geometry else {
         panic!("B-spline");
     };
@@ -190,7 +190,7 @@ fn analytic_record_tail_can_hold_an_embedded_bspline() {
     let payload = bilinear_body(head).bytes();
     stream.record(EXACT_SURFACE, &payload);
     let model = parse(stream).unwrap();
-    let embedded = model.faces[0].surface.embedded.as_ref().unwrap();
+    let embedded = geometry.faces[0].surface.embedded.as_ref().unwrap();
     assert_eq!(embedded.u_knots, [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(embedded.periodic, [false, false]);
 }
@@ -201,7 +201,7 @@ fn undefined_surface_type_is_kept_unread() {
     stream.record(EXACT_SURFACE, &[3, 0, 0, 7, 7, 7]);
     let model = parse(stream).unwrap();
     assert_eq!(
-        model.faces[0].surface.geometry,
+        geometry.faces[0].surface.geometry,
         SurfaceGeometry::Undefined { surface_type: 3 }
     );
 }
@@ -215,10 +215,10 @@ fn loops_mark_inner_loops_and_collect_their_coedges() {
     stream.line_edge([0.0; 3], [1.0, 0.0, 0.0]);
     stream.line_pcurve([0.0; 2], [1.0, 0.0]);
     let model = parse(stream).unwrap();
-    assert_eq!(model.faces[0].loops, [0, 1, 2]);
-    let inner: Vec<bool> = model.loops.iter().map(|record| record.inner).collect();
+    assert_eq!(geometry.faces[0].loops, [0, 1, 2]);
+    let inner: Vec<bool> = geometry.loops.iter().map(|record| record.inner).collect();
     assert_eq!(inner, [false, false, true]);
-    let coedge = model.loops[0].coedges[0];
+    let coedge = geometry.loops[0].coedges[0];
     assert_eq!(
         (
             coedge.edge,
@@ -228,7 +228,7 @@ fn loops_mark_inner_loops_and_collect_their_coedges() {
         ),
         (Some(0), 1, Some(0), None)
     );
-    assert_eq!(model.loops[1].coedges[0].secondary, Some(0));
+    assert_eq!(geometry.loops[1].coedges[0].secondary, Some(0));
 }
 
 #[test]
@@ -272,11 +272,11 @@ fn singular_use_opens_a_scope_that_holds_a_tag_0a_record() {
     stream.loop_record(-2).coedge(0, 1, NONE, NONE).terminator();
     stream.line_edge([0.0; 3], [0.0; 3]);
     let model = parse(stream).unwrap();
-    let singular = model.faces[0].singular_uses[0];
+    let singular = geometry.faces[0].singular_uses[0];
     assert_eq!(singular.edge, 0);
     assert_eq!(model.opaque.len(), 1);
     assert_eq!(model.opaque[0].tag, 0x0a);
-    assert_eq!(model.loops.len(), 1);
+    assert_eq!(geometry.loops.len(), 1);
 }
 
 #[test]
@@ -286,7 +286,7 @@ fn edge_and_pcurve_records_interleave_after_the_faces() {
     stream.line_pcurve([0.0; 2], [1.0, 0.0]);
     stream.line_edge([0.0; 3], [0.0, 1.0, 0.0]);
     let model = parse(stream).unwrap();
-    assert_eq!((model.edges.len(), model.pcurves.len()), (2, 1));
+    assert_eq!((geometry.edges.len(), geometry.pcurves.len()), (2, 1));
     let mut late = plane_stream(false);
     late.line_edge([0.0; 3], [1.0, 0.0, 0.0]);
     late.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
@@ -369,30 +369,30 @@ fn edge_curve_records_follow_their_layouts() {
         stream.record(EXACT_EDGE_CURVE, payload);
     }
     let model = parse(stream).unwrap();
-    let CurveGeometry::Circle(conic) = &model.edges[0].geometry else {
+    let CurveGeometry::Circle(conic) = &geometry.edges[0].geometry else {
         panic!("circle");
     };
     assert_eq!(conic.range, Some([0.5, 1.5]));
-    let CurveGeometry::Circle(conic) = &model.edges[1].geometry else {
+    let CurveGeometry::Circle(conic) = &geometry.edges[1].geometry else {
         panic!("circle");
     };
     assert_eq!(conic.range, None);
     assert_eq!(
-        model.edges[2].geometry,
+        geometry.edges[2].geometry,
         CurveGeometry::Point([1.0, 2.0, 3.0])
     );
     assert_eq!(
-        model.edges[3].geometry,
+        geometry.edges[3].geometry,
         CurveGeometry::Composite(vec![0, 1])
     );
-    let CurveGeometry::Bspline(curve) = &model.edges[4].geometry else {
+    let CurveGeometry::Bspline(curve) = &geometry.edges[4].geometry else {
         panic!("B-spline");
     };
     assert!(curve.rational);
     assert_eq!(curve.weighted, [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]);
     assert_eq!(curve.weights, [1.0, 2.0]);
     assert_eq!(
-        model.edges[5].geometry,
+        geometry.edges[5].geometry,
         CurveGeometry::Polyline(vec![[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])
     );
 }
@@ -447,23 +447,23 @@ fn pcurve_records_follow_their_layouts() {
         stream.record(EXACT_PCURVE, payload);
     }
     let model = parse(stream).unwrap();
-    let CurveGeometry::Ellipse(conic) = &model.pcurves[0].geometry else {
+    let CurveGeometry::Ellipse(conic) = &geometry.pcurves[0].geometry else {
         panic!("ellipse");
     };
     assert_eq!(
         (conic.center, conic.y, conic.range),
         ([1.0, 1.0], [0.0, 1.0], Some([0.0, 3.0]))
     );
-    let CurveGeometry::Bspline(curve) = &model.pcurves[1].geometry else {
+    let CurveGeometry::Bspline(curve) = &geometry.pcurves[1].geometry else {
         panic!("B-spline");
     };
     assert_eq!(curve.range, Some([0.25, 0.75]));
     assert_eq!(curve.weighted, [[0.0, 0.0], [1.0, 1.0]]);
     assert!(
-        matches!(&model.pcurves[2].geometry, CurveGeometry::Polyline(points) if points.len() == 3)
+        matches!(&geometry.pcurves[2].geometry, CurveGeometry::Polyline(points) if points.len() == 3)
     );
     assert_eq!(
-        model.pcurves[3].geometry,
+        geometry.pcurves[3].geometry,
         CurveGeometry::Undefined { curve_type: 1 }
     );
 }
@@ -476,7 +476,7 @@ fn single_precision_singular_use_is_twelve_bytes() {
     stream.record(EXACT_SINGULAR_USE, &payload).terminator();
     stream.line_edge([0.0; 3], [0.0; 3]);
     let model = parse(stream).unwrap();
-    assert_eq!(model.faces[0].singular_uses[0].edge, 0);
+    assert_eq!(geometry.faces[0].singular_uses[0].edge, 0);
 }
 
 #[test]
@@ -598,10 +598,10 @@ fn coedge_edge_index_skips_composite_members() {
     stream.record(EXACT_EDGE_CURVE, &composite);
     stream.line_edge([0.0; 3], [0.0, 0.0, 1.0]);
     let model = parse(stream).unwrap();
-    assert_eq!(model.loops[0].coedges[0].edge, Some(3));
-    assert_eq!(model.faces[0].singular_uses[0].edge, 2);
+    assert_eq!(geometry.loops[0].coedges[0].edge, Some(3));
+    assert_eq!(geometry.faces[0].singular_uses[0].edge, 2);
     assert!(
-        matches!(&model.edges[2].geometry, CurveGeometry::Composite(members) if members == &[0, 1])
+        matches!(&geometry.edges[2].geometry, CurveGeometry::Composite(members) if members == &[0, 1])
     );
 }
 

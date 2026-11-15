@@ -170,7 +170,7 @@ impl<'m> BodyNames<'m> {
             .iter()
             .map(|entry| (entry.id.as_str(), entry.face.as_str()))
             .collect::<HashMap<_, _>>();
-        for coedge in &model.coedges {
+        for coedge in &geometry.coedges {
             if let Some(face) = loop_faces.get(coedge.owner_loop.as_str()) {
                 names
                     .face_edges

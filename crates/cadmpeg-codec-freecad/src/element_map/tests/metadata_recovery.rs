@@ -19,7 +19,7 @@ fn malformed_naming_metadata_keeps_geometry_and_valid_native_state() {
     let expected = FcstdCodec
         .decode(&mut Cursor::new(&original), &DecodeOptions::default())
         .unwrap();
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     for (before, after) in [
         ("threshold=\"0\"", "threshold=\"invalid\""),
         ("saveall=\"0\"", "saveall=\"invalid\""),
@@ -147,6 +147,6 @@ fn damaged_table_framing_does_not_erase_a_readable_peer() {
     assert_eq!(tables[1].index, 1);
     assert_eq!(tables[1].entries().unwrap()[0].payload, "stable");
     assert!(tables[1].owner_property.is_some());
-    assert_eq!(recovered.ir().model.faces.len(), 48);
+    assert_eq!(recovered.ir().geometry.faces.len(), 48);
     assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
 }

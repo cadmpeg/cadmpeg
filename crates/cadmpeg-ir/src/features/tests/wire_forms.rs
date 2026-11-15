@@ -547,7 +547,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
     };
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let center = ir.model.faces[0].id.clone();
+    let center = ir.geometry.faces[0].id.clone();
     let definition = FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
         groups: crate::features::NonEmptyMembers::one(
             crate::features::edge_treatments::FullRoundFilletGroup::new(

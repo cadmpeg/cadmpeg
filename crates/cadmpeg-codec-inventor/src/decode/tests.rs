@@ -206,7 +206,7 @@ fn design_records_project_only_at_full_depth() {
         panic!("one projected parameter: {:#?}", full.ir().model.parameters)
     };
     assert_eq!(parameter.name, "ratio");
-    assert_eq!(full.ir().model.faces.len(), 1);
+    assert_eq!(full.ir().geometry.faces.len(), 1);
 
     // A geometry request stops before design projection: the same geometry,
     // no design records.
@@ -214,7 +214,7 @@ fn design_records_project_only_at_full_depth() {
     assert_eq!(geometry.ir().decode_depth(), DecodeDepth::Geometry);
     assert_eq!(geometry.ir().model.populated_design_arena(), None);
     assert!(geometry.ir().model.parameters.is_empty());
-    assert_eq!(geometry.ir().model.faces, full.ir().model.faces);
+    assert_eq!(geometry.ir().geometry.faces, full.ir().geometry.faces);
 
     assert_eq!(container.report().depth(), DecodeDepth::Container);
     assert_eq!(container.ir().decode_depth(), DecodeDepth::Container);
@@ -448,7 +448,7 @@ fn binary_kernel_metadata_recovery_preserves_geometry_and_valid_tolerance_peers(
             .expect("independent kernel geometry survives unreadable metadata")
     };
     let expected = decode(&original);
-    assert_eq!(expected.ir().model.faces.len(), 1);
+    assert_eq!(expected.ir().geometry.faces.len(), 1);
     let mut cursor = 31; // ACIS BinaryFile fixed words; docs/layouts/asm.toml.
     let mut positions = Vec::new();
     for _ in 0..3 {
@@ -550,13 +550,13 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
 
     for (label, decoded) in [("verified", &verified), ("unverified", &unverified)] {
         assert!(decoded.report().geometry_transferred(), "{label}");
-        assert_eq!(decoded.ir().model.bodies.len(), 1, "{label}");
-        assert_eq!(decoded.ir().model.faces.len(), 1, "{label}");
-        assert_eq!(decoded.ir().model.surfaces.len(), 1, "{label}");
+        assert_eq!(decoded.ir().geometry.bodies.len(), 1, "{label}");
+        assert_eq!(decoded.ir().geometry.faces.len(), 1, "{label}");
+        assert_eq!(decoded.ir().geometry.surfaces.len(), 1, "{label}");
     }
     assert_eq!(
-        unverified.ir().model.surfaces,
-        verified.ir().model.surfaces,
+        unverified.ir().geometry.surfaces,
+        verified.ir().geometry.surfaces,
         "the substituted grammar read the same carriers"
     );
 

@@ -275,7 +275,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
 
     let mut ir = CadIr::empty();
     let bound = BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar");
-    ir.model.bodies.extend([
+    ir.geometry.bodies.extend([
         Body {
             id: bound.clone(),
             kind: BodyKind::Solid,
@@ -338,7 +338,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         crate::evaluation::saved_body_census_evidence(&ir),
         crate::evaluation::BodyCensusEvaluation::mismatch(
             vec![bound],
-            ir.model.bodies.iter().map(|body| body.id.clone()).collect()
+            ir.geometry.bodies.iter().map(|body| body.id.clone()).collect()
         )
         .unwrap()
     );
@@ -354,7 +354,7 @@ fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
         .chain(["nx:s:body#0".into(), "nx:s12x:body#0".into()])
         .collect::<Vec<_>>();
     let mut ir = CadIr::empty();
-    ir.model.bodies.extend(body_ids.iter().map(|id| Body {
+    ir.geometry.bodies.extend(body_ids.iter().map(|id| Body {
         id: BodyId::mint(id.clone()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![
@@ -378,7 +378,7 @@ fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
         })
         .collect::<Vec<_>>();
 
-    let mut sorted = ir.model.bodies.clone();
+    let mut sorted = ir.geometry.bodies.clone();
     sorted.sort_by(|first, second| first.id.cmp(&second.id));
     let mut expected_outputs = Vec::new();
     let mut expected_properties = BTreeMap::new();
@@ -442,7 +442,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
             .expect("admitted retained-history input")
             .is_none()
     );
-    assert!(ir.model.bodies.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
     assert!(ir.model.features.is_empty());
 }
 

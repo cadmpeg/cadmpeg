@@ -333,7 +333,7 @@ fn a_virtual_component_held_in_the_document_owns_the_bodies_of_its_section() {
             .to_string()
     ));
     let mut decoded = decoded_without_a_model();
-    decoded.ir.model.bodies = vec![
+    decoded.ir.geometry.bodies = vec![
         body("sldprt:brep:body#3"),
         body("sldprt:brep:body#3@block@7"),
         body("sldprt:brep:body#3@block@70"),
@@ -438,6 +438,7 @@ fn placed_virtual_documents_decode_into_the_definitions_that_own_them() {
         )
         .expect("decode");
     let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
     let owned = |model_id: &str| {
         model
             .product_definitions
@@ -452,7 +453,7 @@ fn placed_virtual_documents_decode_into_the_definitions_that_own_them() {
     assert_eq!(box_bodies.len(), 1);
     assert_eq!(lid_bodies.len(), 1);
     assert_ne!(box_bodies, lid_bodies);
-    assert_eq!(model.bodies.len(), 2);
+    assert_eq!(geometry.bodies.len(), 2);
     let prototype = |id: &str| {
         model
             .occurrences

@@ -96,7 +96,7 @@ fn assert_unscoped_cadir_fallback_point(
         .expect("decode unscoped document point");
     let point = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#7")
@@ -132,7 +132,7 @@ fn one_unscoped_unit_record_can_supply_cadir_fallback_scale() {
         .expect("decode unscoped unit");
     let point = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#2")
@@ -156,10 +156,10 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode typed STEP geometry");
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let placed = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#3")
@@ -167,15 +167,15 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert_eq!(placed.position().get().x, 1.0);
     assert_eq!(placed.position().get().y, 2.0);
     assert_eq!(placed.position().get().z, 3.0);
-    assert_eq!(result.ir().model.curves.len(), 9);
-    assert!(result.ir().model.curves.iter().any(|curve| {
+    assert_eq!(result.ir().geometry.curves.len(), 9);
+    assert!(result.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#45"
             && matches!(
                 curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
             )
     }));
-    assert!(result.ir().model.curves.iter().any(
+    assert!(result.ir().geometry.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
                 if {
                     let origin = line_curve.origin().get();
@@ -195,11 +195,11 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     }));
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
-    assert!(result.ir().model.curves.iter().any(
+    assert!(result.ir().geometry.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
                     let major_radius = ellipse_curve.major_radius().get();
@@ -207,14 +207,14 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                     major_radius == 6.0 && minor_radius == 2.0
                 })
     ));
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+    assert!(result.ir().geometry.curves.iter().any(|curve| matches!(
         &curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         if nurbs.degree() == 2
             && nurbs.knots().as_slice() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
             && nurbs.pole_rows().weights() == Some(vec![1.0, 0.5, 1.0])
     )));
-    assert_eq!(result.ir().model.surfaces.len(), 10);
+    assert_eq!(result.ir().geometry.surfaces.len(), 10);
     assert!(result
         .ir()
         .model
@@ -271,14 +271,14 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             &binding.target,
             cadmpeg_ir::appearance::AppearanceTarget::Source { source_id } if source_id == "#6"
         )));
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+    assert!(result.ir().geometry.curves.iter().any(|curve| matches!(
         &curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
             if curve.id.as_str() == "step:data:curve#48"
             && nurbs.degree() == 1
             && nurbs.knots().as_slice() == [0.0, 0.0, 1.0, 2.0, 2.0]
     )));
-    assert!(result.ir().model.surfaces.iter().any(
+    assert!(result.ir().geometry.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                 if {
                     let origin = plane_surface.origin();
@@ -286,7 +286,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                     origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0 && normal.z == 1.0
                 })
     ));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
         if nurbs.u_degree() == 1
@@ -297,14 +297,14 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             && nurbs.v_knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
             && nurbs.pole_grid().weights().map(|rows| rows.concat()) == Some(vec![1.0, 1.0, 1.0, 0.75])
     )));
-    assert!(result.ir().model.surfaces.iter().any(
+    assert!(result.ir().geometry.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
         if {
             let radius = cylinder_surface.radius().get();
             radius == 5.0
         })
     ));
-    assert!(result.ir().model.surfaces.iter().any(
+    assert!(result.ir().geometry.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let radius = cone_surface.radius().get();
@@ -313,14 +313,14 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                     radius == 5.0 && ratio == 1.0 && half_angle == 0.25
                 })
     ));
-    assert!(result.ir().model.surfaces.iter().any(
+    assert!(result.ir().geometry.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
         if {
             let radius = sphere_surface.radius().get();
             radius == 5.0
         })
     ));
-    assert!(result.ir().model.surfaces.iter().any(
+    assert!(result.ir().geometry.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
                     let major_radius = torus_surface.major_radius().get();
@@ -328,7 +328,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                     major_radius == 8.0 && minor_radius == 2.0
                 })
     ));
-    assert!(result.ir().model.curves.iter().any(
+    assert!(result.ir().geometry.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
                     let center = circle_curve.center().get();
@@ -337,10 +337,10 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                 })
     ));
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.procedural_curves.len(), 3);
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 3);
     let cartesian_trim = result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:construction:trimmed_curve#29")
@@ -352,7 +352,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     });
     let (source, parameter_range) = result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
@@ -371,7 +371,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .any(|curve| match curve.definition() {
@@ -385,10 +385,10 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                 ),
             _ => false,
         }));
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 4);
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
@@ -399,7 +399,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         )));
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
@@ -409,7 +409,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         )));
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
@@ -417,7 +417,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution(definition_payload)
                 if definition_payload.axis_direction().as_raw().z == 1.0
         )));
-    assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
+    assert!(result.ir().geometry.procedural_surfaces.iter().any(|surface| {
         match surface.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset(matched_payload) => {
                 matches!(
@@ -440,7 +440,7 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode degree cone");
 
-    assert!(result.ir().model.surfaces.iter().any(
+    assert!(result.ir().geometry.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
         if {
             let radius = cone_surface.radius().get();
@@ -467,8 +467,8 @@ pub(crate) fn decode_resolves_conversion_units_and_linear_uncertainty() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode conversion-based units");
 
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().get().x, 50.8);
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert_eq!(result.ir().geometry.points[0].position().get().x, 50.8);
     assert!((result.ir().tolerances.linear.get() - 0.0254).abs() < EPS_LINEAR_UNCERTAINTY);
 }
 
@@ -670,14 +670,14 @@ fn decode_scales_geometry_by_its_representation_context() {
 
     let metric = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#7")
         .expect("metric point");
     let inch = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#8")

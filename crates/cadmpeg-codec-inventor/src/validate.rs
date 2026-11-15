@@ -2882,7 +2882,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         "ASM non-null face Design key",
     );
     let neutral_faces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| &face.id)

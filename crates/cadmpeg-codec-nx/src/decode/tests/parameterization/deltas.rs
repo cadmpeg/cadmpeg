@@ -140,10 +140,10 @@ fn unpaired_deltas_and_schema_only_streams_contribute_no_geometry() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert!(decoded.ir().model.points.is_empty());
-        assert!(decoded.ir().model.bodies.is_empty());
-        assert!(decoded.ir().model.curves.is_empty());
-        assert!(decoded.ir().model.surfaces.is_empty());
+        assert!(decoded.ir().geometry.points.is_empty());
+        assert!(decoded.ir().geometry.bodies.is_empty());
+        assert!(decoded.ir().geometry.curves.is_empty());
+        assert!(decoded.ir().geometry.surfaces.is_empty());
         let attributes = &decoded.ir().source.as_ref().unwrap().attributes;
 
         assert_eq!(

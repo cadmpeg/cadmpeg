@@ -89,9 +89,9 @@ fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
 #[test]
 fn encoder_writes_authored_with_retained_native_envelope_ir() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -130,10 +130,10 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 6);
-    assert_eq!(decoded.ir().model.edges.len(), 12);
-    assert_eq!(decoded.ir().model.vertices.len(), 8);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 6);
+    assert_eq!(decoded.ir().geometry.edges.len(), 12);
+    assert_eq!(decoded.ir().geometry.vertices.len(), 8);
 }
 
 #[test]
@@ -141,13 +141,13 @@ fn semantic_writer_emits_face_records_deterministically() {
     use cadmpeg_ir::topology::Color;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
-    for (index, face) in ir.model.faces.iter_mut().enumerate() {
+    for (index, face) in ir.geometry.faces.iter_mut().enumerate() {
         face.color = Some(
             Color::new(
                 f32::from(u16::try_from(index).expect("index fits u16")) / 10.0,
@@ -248,9 +248,9 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -737,9 +737,9 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -1258,7 +1258,7 @@ fn configuration_manager_retention_is_checked_at_the_writer_entry() {
             };
             *value += 1;
         } else if change == 5 {
-            let body = ir.model.bodies[0].id.clone();
+            let body = ir.geometry.bodies[0].id.clone();
             ir.model
                 .attributes
                 .iter_mut()

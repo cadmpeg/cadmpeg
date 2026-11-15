@@ -15,7 +15,7 @@ use crate::CadIr;
 #[test]
 fn subd_round_trip_and_directed_ring_validation() {
     let mut ir = CadIr::empty();
-    ir.model.subds.push(SubdSurface {
+    ir.geometry.subds.push(SubdSurface {
         id: SubdId::mint("synthetic:subd:surface#0").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         source_object: None,
@@ -54,7 +54,7 @@ fn subd_round_trip_and_directed_ring_validation() {
         .is_ok());
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);
-    let wire = serde_json::to_value(&ir.model.subds[0]).unwrap();
+    let wire = serde_json::to_value(&ir.geometry.subds[0]).unwrap();
     assert!(wire.get("vertices").is_none());
     assert_eq!(wire["cage"]["vertices"].as_array().unwrap().len(), 3);
     assert_eq!(wire["cage"]["edges"].as_array().unwrap().len(), 3);
@@ -66,7 +66,7 @@ fn subd_round_trip_and_directed_ring_validation() {
         serde_json::to_value(SubdEdgeTag::SmoothX).unwrap(),
         serde_json::json!("smooth_x")
     );
-    let cage = &ir.model.subds[0].cage;
+    let cage = &ir.geometry.subds[0].cage;
     let mut edges = cage.faces[0].edges.clone();
     edges[1].reversed = true;
     assert!(crate::subd::SubdCage::new(

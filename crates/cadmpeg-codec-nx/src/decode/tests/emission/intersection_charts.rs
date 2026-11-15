@@ -22,17 +22,17 @@ use cadmpeg_ir::annotations::StreamHandle;
 fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        let edge_id = ir.model.edges[0].id.clone();
+        let edge_id = ir.geometry.edges[0].id.clone();
         let expected_endpoints =
-            [&ir.model.edges[0].start, &ir.model.edges[0].end].map(|vertex_id| {
+            [&ir.geometry.edges[0].start, &ir.geometry.edges[0].end].map(|vertex_id| {
                 let point_id = &ir
-                    .model
+                    .geometry
                     .vertices
                     .iter()
                     .find(|vertex| &vertex.id == vertex_id)
                     .expect("edge vertex")
                     .point;
-                ir.model
+                ir.geometry
                     .points
                     .iter()
                     .find(|point| &point.id == point_id)
@@ -40,14 +40,14 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
                     .position()
                     .get()
             });
-        ir.model.edges[0].set_curve(None).unwrap();
-        ir.model.edges[0].set_param_range(None);
-        ir.model.edges[0].tolerance =
+        ir.geometry.edges[0].set_curve(None).unwrap();
+        ir.geometry.edges[0].set_param_range(None);
+        ir.geometry.edges[0].tolerance =
             Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
         let mut edges = std::collections::BTreeMap::new();
         edges.insert(8, edge_id.clone());
         let mut incident_coedges = ir
-            .model
+            .geometry
             .coedges
             .iter_mut()
             .filter(|coedge| coedge.edge == edge_id)
@@ -84,24 +84,24 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         );
 
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id == edge_id)
             .expect("tolerant edge");
         assert_eq!(edge.param_range(), None);
         let curve = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve())
             .expect("procedural carrier");
         assert!(matches!(curve.geometry, CurveGeometry::Procedural { .. }));
         let procedural = ir
-            .model
+            .geometry
             .procedural_curves
             .iter()
-            .find(|procedural| ir.model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
+            .find(|procedural| ir.geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id))
             .expect("intersection construction");
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
             construction: intersection,
@@ -120,9 +120,9 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         assert_eq!(tolerance, 0.01);
         assert_eq!(*parameterization, None);
 
-        let start = off_support_ir.model.edges[0].start.clone();
+        let start = off_support_ir.geometry.edges[0].start.clone();
         let point_id = off_support_ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|vertex| vertex.id == start)
@@ -130,7 +130,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .point
             .clone();
         let point = off_support_ir
-            .model
+            .geometry
             .points
             .iter_mut()
             .find(|point| point.id == point_id)
@@ -173,7 +173,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             &stream,
             &mut annotations,
         );
-        assert_eq!(off_support_ir.model.edges[0].curve(), None);
+        assert_eq!(off_support_ir.geometry.edges[0].curve(), None);
     });
 }
 
@@ -181,10 +181,10 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
 fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        let edge_id = ir.model.edges[0].id.clone();
-        ir.model.edges[0].set_curve(None).unwrap();
-        ir.model.edges[0].set_param_range(None);
-        ir.model.edges[0].tolerance =
+        let edge_id = ir.geometry.edges[0].id.clone();
+        ir.geometry.edges[0].set_curve(None).unwrap();
+        ir.geometry.edges[0].set_param_range(None);
+        ir.geometry.edges[0].tolerance =
             Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
         let edges = std::collections::BTreeMap::from([(8, edge_id.clone())]);
         let mut stream = partnered_trimmed_topology_partition_stream();
@@ -208,14 +208,14 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         );
 
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id == edge_id)
             .expect("tolerant edge");
         assert_eq!(edge.curve(), None);
         assert_eq!(edge.param_range(), None);
-        assert!(ir.model.procedural_curves.is_empty());
+        assert!(ir.geometry.procedural_curves.is_empty());
     });
 }
 
@@ -231,7 +231,7 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
         .unwrap();
 
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            ir.model.procedural_curves[0].definition()
+            ir.geometry.procedural_curves[0].definition()
         else {
             unreachable!()
         };
@@ -250,7 +250,7 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
             .get();
             let point = cadmpeg_ir::eval::decode::surface_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &ir.model.surfaces[1].geometry,
+                &ir.geometry.surfaces[1].geometry,
                 uv.u,
                 uv.v,
             )
@@ -278,7 +278,7 @@ fn opposite_intersection_chart_transfer_fails_closed_at_sample_budget() {
         .unwrap();
 
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            ir.model.procedural_curves[0].definition()
+            ir.geometry.procedural_curves[0].definition()
         else {
             unreachable!()
         };
@@ -312,7 +312,7 @@ fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget()
         )
         .unwrap();
 
-        assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
+        assert!(ir.geometry.procedural_curves[1..].iter().all(|procedural| {
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 return false;
@@ -350,7 +350,7 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
         .unwrap();
 
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            ir.model.procedural_curves[1].definition()
+            ir.geometry.procedural_curves[1].definition()
         else {
             unreachable!()
         };
@@ -410,7 +410,7 @@ fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_witho
         )
         .unwrap();
 
-        assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
+        assert!(ir.geometry.procedural_curves[1..].iter().all(|procedural| {
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 return false;
@@ -423,16 +423,16 @@ fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_witho
 #[test]
 fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
     let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
-    let mut later = ir.model.procedural_curves[0].clone();
+    let mut later = ir.geometry.procedural_curves[0].clone();
     later.id =
         cadmpeg_ir::ids::ProceduralCurveId::mint("test:model:entity#synthetic:later-intersection")
             .expect("identity grammar");
     let original_owner = ir
-        .model
-        .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+        .geometry
+        .procedural_curve_owner(&ir.geometry.procedural_curves[0].id)
         .unwrap();
     let mut carrier = ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *original_owner)
@@ -444,7 +444,7 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
     };
     *construction = later.id.clone();
     let mut edge = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.curve() == Some(original_owner))
@@ -452,9 +452,9 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
         .clone();
     edge.id = cadmpeg_ir::ids::EdgeId::mint("test:model:edge#later-intersection").unwrap();
     edge.set_curve(Some(carrier.id.clone())).unwrap();
-    ir.model.edges.push(edge);
-    ir.model.curves.push(carrier);
-    ir.model.procedural_curves.push(later);
+    ir.geometry.edges.push(edge);
+    ir.geometry.curves.push(carrier);
+    ir.geometry.procedural_curves.push(later);
 
     let transfer_budget = cadmpeg_core::decode::WorkBudget::new(
         crate::decode::pcurves::MAX_COMPLETION_TRANSFER_SAMPLES,
@@ -475,13 +475,13 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
         .unwrap();
 
         let ProceduralCurveDefinition::Intersection { context: first, .. } =
-            ir.model.procedural_curves[0].definition()
+            ir.geometry.procedural_curves[0].definition()
         else {
             unreachable!()
         };
         assert!(first.sides()[1].pcurve.is_none());
         let ProceduralCurveDefinition::Intersection { context: later, .. } =
-            ir.model.procedural_curves[1].definition()
+            ir.geometry.procedural_curves[1].definition()
         else {
             unreachable!()
         };
@@ -505,7 +505,7 @@ fn cylinder_plane_transfer_fixture(
         SurfaceId::mint("test:model:entity#synthetic:source-cylinder").expect("identity grammar");
     let target =
         SurfaceId::mint("test:model:entity#synthetic:target-plane").expect("identity grammar");
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         Surface {
             id: source.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -536,7 +536,7 @@ fn cylinder_plane_transfer_fixture(
         CurveId::mint("test:model:entity#synthetic:intersection-curve").expect("identity grammar");
     let construction = ProceduralCurveId::mint("test:model:entity#synthetic:intersection")
         .expect("identity grammar");
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
@@ -545,7 +545,7 @@ fn cylinder_plane_transfer_fixture(
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction,
         ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext::try_new(
@@ -576,7 +576,7 @@ fn cylinder_plane_transfer_fixture(
             cache: None,
         },
     ));
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:edge").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
         start: VertexId::mint("test:model:entity#synthetic:start").expect("identity grammar"),
@@ -611,7 +611,7 @@ fn blend_contact_transfer_fixture(
         .expect("identity grammar");
     let target = SurfaceId::mint("test:model:entity#synthetic:blend-contact-target")
         .expect("identity grammar");
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -663,7 +663,7 @@ fn blend_contact_transfer_fixture(
 
     let spine =
         CurveId::mint("test:model:entity#synthetic:blend-contact-spine").expect("identity grammar");
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: spine.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -690,7 +690,7 @@ fn blend_contact_transfer_fixture(
     } else {
         other_support.clone()
     };
-    let _attached = ir.model.add_procedural_curve(
+    let _attached = ir.geometry.add_procedural_curve(
         &spine,
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#synthetic:blend-contact-spine-construction")
@@ -716,7 +716,7 @@ fn blend_contact_transfer_fixture(
             },
         ),
     );
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         ProceduralSurfaceId::mint("test:model:entity#synthetic:blend-contact-construction")
             .expect("identity grammar"),
         ProceduralSurfaceDefinition::Blend(
@@ -746,7 +746,7 @@ fn blend_contact_transfer_fixture(
             "test:model:entity#synthetic:blend-contact-curve-{index}"
         ))
         .expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -785,7 +785,7 @@ fn blend_contact_transfer_fixture(
                 ),
             },
         );
-        ir.model.add_procedural_curve(&curve, procedural).unwrap();
+        ir.geometry.add_procedural_curve(&curve, procedural).unwrap();
     }
     ir
 }
@@ -813,7 +813,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         let target_construction =
             ProceduralSurfaceId::mint("test:model:entity#synthetic:target-blend-construction")
                 .expect("identity grammar");
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: source.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
@@ -842,7 +842,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         ]);
         let spine =
             CurveId::mint("test:model:entity#synthetic:target-spine").expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -854,7 +854,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             )),
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             target_construction,
             ProceduralSurfaceDefinition::Blend(
                 cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -883,7 +883,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         let construction =
             ProceduralCurveId::mint("test:model:entity#synthetic:boundary-intersection")
                 .expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -895,7 +895,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             )),
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.geometry.add_procedural_curve(
             &curve,
             ProceduralCurve::new(
                 construction,
@@ -929,7 +929,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                 },
             ),
         );
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: EdgeId::mint("test:model:entity#synthetic:boundary-edge")
                 .expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
@@ -950,7 +950,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         .unwrap();
 
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            ir.model.procedural_curves[0].definition()
+            ir.geometry.procedural_curves[0].definition()
         else {
             unreachable!()
         };
@@ -982,7 +982,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             .expect("identity grammar");
         let plane = SurfaceId::mint("test:model:entity#synthetic:boundary-plane")
             .expect("identity grammar");
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: nurbs.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -1028,7 +1028,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         let construction =
             ProceduralCurveId::mint("test:model:entity#synthetic:boundary-intersection")
                 .expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -1043,7 +1043,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             )),
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.geometry.add_procedural_curve(
             &curve,
             ProceduralCurve::new(
                 construction,
@@ -1067,7 +1067,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             VertexId::mint("test:model:entity#synthetic:v0").expect("identity grammar"),
             VertexId::mint("test:model:entity#synthetic:v1").expect("identity grammar"),
         ];
-        ir.model.points.extend([
+        ir.geometry.points.extend([
             Point::new(
                 point_ids[0].clone(),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
@@ -1081,7 +1081,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 None,
             ),
         ]);
-        ir.model.vertices.extend([
+        ir.geometry.vertices.extend([
             Vertex {
                 id: vertex_ids[0].clone(),
                 point: point_ids[0].clone(),
@@ -1099,7 +1099,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 ),
             },
         ]);
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: EdgeId::mint("test:model:entity#synthetic:boundary-edge")
                 .expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
@@ -1122,29 +1122,29 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             construction: intersection,
             parameterization: Some(parameterization),
             ..
-        } = ir.model.procedural_curves[0].definition()
+        } = ir.geometry.procedural_curves[0].definition()
         else {
             unreachable!()
         };
         let supports = intersection.supports();
 
         assert_eq!(
-            ir.model.procedural_curves[0]
+            ir.geometry.procedural_curves[0]
                 .cache_fit_tolerance()
                 .map(cadmpeg_ir::geometry::FitTolerance::get),
             Some(1.0e-8)
         );
         assert_eq!(parameterization.parameter_range().endpoints(), [0.0, 1.0]);
         assert_eq!(
-            ir.model.edges[0]
+            ir.geometry.edges[0]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 1.0])
         );
         for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
             let owner = ir
-                .model
-                .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+                .geometry
+                .procedural_curve_owner(&ir.geometry.procedural_curves[0].id)
                 .expect("tolerant intersection owner");
             let evaluated = cadmpeg_ir::eval::model_curve_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -1172,7 +1172,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 .unwrap()
                 .get();
                 let surface = ir
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == supports[side])
@@ -1213,7 +1213,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             .expect("identity grammar");
         let second_support = SurfaceId::mint("test:model:entity#nx:test:boundary-plane-b")
             .expect("identity grammar");
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: first_support.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -1241,7 +1241,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         ]);
         let curve =
             CurveId::mint("test:model:entity#nx:test:boundary-line").expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -1268,7 +1268,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 Point3::new(10.0, 0.0, 0.0),
             ),
         ];
-        ir.model.points.extend(points.iter().map(|(id, position)| {
+        ir.geometry.points.extend(points.iter().map(|(id, position)| {
             Point::new(
                 id.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(*position)
@@ -1282,7 +1282,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             VertexId::mint("test:model:entity#nx:test:boundary-vertex-1")
                 .expect("identity grammar"),
         ];
-        ir.model.vertices.extend([
+        ir.geometry.vertices.extend([
             Vertex {
                 id: vertices[0].clone(),
                 point: points[0].0.clone(),
@@ -1294,7 +1294,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 tolerance: None,
             },
         ]);
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: EdgeId::mint("test:model:entity#nx:test:boundary-edge").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve.clone())),
             start: vertices[0].clone(),
@@ -1329,7 +1329,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 ),
             },
         );
-        ir.model.add_procedural_curve(&curve, procedural).unwrap();
+        ir.geometry.add_procedural_curve(&curve, procedural).unwrap();
 
         crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
             geometry_ctx,
@@ -1338,7 +1338,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         );
 
         let procedural = ir
-            .model
+            .geometry
             .procedural_curves
             .last()
             .expect("boundary construction");

@@ -53,7 +53,7 @@ fn brep_surface_endpoint_keeps_evaluator_resource_refusal() {
 fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -65,7 +65,7 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
         )),
         source_object: None,
     });
-    ir.model.edges.extend([
+    ir.geometry.edges.extend([
         Edge {
             id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
@@ -95,7 +95,7 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
             ctx,
             &ir,
             &[0, 1],
-            &ir.model.curves[0].geometry,
+            &ir.geometry.curves[0].geometry,
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
             EPS_EDGE_ENDPOINT_MATCH,
@@ -112,7 +112,7 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
 fn source_edge_selection_rejects_multiple_matching_occurrences() {
     let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -126,7 +126,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
         )),
         source_object: None,
     });
-    ir.model.edges.extend([
+    ir.geometry.edges.extend([
         Edge {
             id: EdgeId::mint("test:model:edge#first-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
@@ -156,7 +156,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
             ctx,
             &ir,
             &[0, 1],
-            &ir.model.curves[0].geometry,
+            &ir.geometry.curves[0].geometry,
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             EPS_EDGE_ENDPOINT_MATCH,
@@ -181,7 +181,7 @@ fn decode_brackets_explicit_edge_vertex_agreement_at_the_global_resolution() {
         assert_eq!(
             result
                 .ir()
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .any(|body| body.id.as_str() == "iges:model:body#D27"),
@@ -211,14 +211,14 @@ fn decode_builds_a_vertex_only_pole_loop() {
         .unwrap();
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| loop_.id.as_str() == "iges:model:loop#D11:D7")
         .unwrap_or_else(|| {
             panic!(
                 "loops={:#?} losses={:#?}",
-                result.ir().model.loops,
+                result.ir().geometry.loops,
                 result.report().losses
             )
         });
@@ -229,7 +229,7 @@ fn decode_builds_a_vertex_only_pole_loop() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
@@ -257,7 +257,7 @@ fn decode_preserves_a_face_with_no_explicit_outer_loop() {
         .unwrap();
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| loop_.id.as_str() == "iges:model:loop#D11:D7")
@@ -265,7 +265,7 @@ fn decode_preserves_a_face_with_no_explicit_outer_loop() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
@@ -288,7 +288,7 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         .unwrap();
     let body = result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| body.id.as_str() == format!("iges:model:body#D{solid_sequence}"))
@@ -296,7 +296,7 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
     assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid);
     let region = result
         .ir()
-        .model
+        .geometry
         .regions
         .iter()
         .find(|region| region.id == body.regions[0])
@@ -312,7 +312,7 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
     );
     let void_shell = result
         .ir()
-        .model
+        .geometry
         .shells
         .iter()
         .find(|shell| shell.id == region.shells[1])
@@ -320,7 +320,7 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
     for face_id in void_shell.faces() {
         let face = result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == *face_id)
@@ -348,7 +348,7 @@ fn decode_rejects_closed_shell_with_inconsistent_radial_sense() {
 
     assert!(result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .all(|body| body.id.as_str() != "iges:model:body#D55"));
@@ -373,7 +373,7 @@ fn decode_applies_manifold_solid_placement_at_body_scope_once() {
 
     let body = result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| body.id.as_str() == "iges:model:body#D55")
@@ -389,7 +389,7 @@ fn decode_applies_manifold_solid_placement_at_body_scope_once() {
     );
     let points = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .filter(|point| point.id.as_str().starts_with("iges:model:point#D55:"))
@@ -415,7 +415,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
 
     let body = result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| body.id.as_str() == "iges:model:body#D55")
@@ -423,7 +423,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
     assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid);
     let region = result
         .ir()
-        .model
+        .geometry
         .regions
         .iter()
         .find(|region| region.id == body.regions[0])
@@ -431,7 +431,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
     assert_eq!(region.shells.len(), 1);
     let shell = result
         .ir()
-        .model
+        .geometry
         .shells
         .iter()
         .find(|shell| shell.id == region.shells[0])
@@ -439,7 +439,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
     assert_eq!(shell.faces().len(), 4);
     let solid_edges = result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .filter(|edge| edge.id.as_str().starts_with("iges:model:edge#D55:"))
@@ -448,7 +448,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
     for edge in solid_edges {
         let uses = result
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| coedge.edge == edge.id)
@@ -479,7 +479,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
 
     let body = result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| body.id.as_str() == "iges:model:body#D23")
@@ -487,7 +487,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
     assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Sheet);
     let shell = result
         .ir()
-        .model
+        .geometry
         .shells
         .iter()
         .find(|shell| shell.id.as_str() == "iges:model:shell#D23")
@@ -495,14 +495,14 @@ fn decode_builds_shared_explicit_open_shell_topology() {
     assert_eq!(shell.faces().len(), 1);
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id == shell.faces()[0])
         .unwrap();
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
@@ -510,7 +510,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
@@ -521,7 +521,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
     assert_eq!(loop_.coedges().len(), 4);
     let explicit_edges = result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .filter(|edge| edge.id.as_str().starts_with("iges:model:edge#D23:"))
@@ -555,14 +555,14 @@ fn decode_preserves_a_three_use_non_manifold_radial_ring() {
         .unwrap();
     let edge = result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id.as_str() == "iges:model:edge#D37:D23:1")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     let uses = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|coedge| coedge.edge == edge.id)
@@ -617,7 +617,7 @@ fn brep_projected_pcurve_use_adds_one_model_pcurve() {
     )
     .unwrap();
     assert_eq!(projected.len(), 1);
-    assert_eq!(candidate.model().pcurves.len(), 1);
+    assert_eq!(candidate.geometry().pcurves.len(), 1);
 }
 
 /// An open shell whose loop repeats one edge `uses` times, each use naming
@@ -719,7 +719,7 @@ fn decode_resolves_a_pcurve_shared_by_many_edge_uses_like_a_single_reference() {
     );
     assert!(shared
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| body.id.as_str() == "iges:model:body#D23"));
@@ -811,19 +811,19 @@ fn coedge_index_lookups_match_the_unindexed_scan() {
 /// counterclockwise about `normal`.
 fn polygon_loop_area_about(ir: &CadIr, loop_id: &LoopId, normal: Vector3) -> f64 {
     let loop_ = ir
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| loop_.id == *loop_id)
         .unwrap();
     let position = |vertex_id: &VertexId| {
         let vertex = ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|vertex| vertex.id == *vertex_id)
             .unwrap();
-        ir.model
+        ir.geometry
             .points
             .iter()
             .find(|point| point.id == vertex.point)
@@ -836,13 +836,13 @@ fn polygon_loop_area_about(ir: &CadIr, loop_id: &LoopId, normal: Vector3) -> f64
         .iter()
         .map(|coedge_id| {
             let coedge = ir
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *coedge_id)
                 .unwrap();
             let edge = ir
-                .model
+                .geometry
                 .edges
                 .iter()
                 .find(|edge| edge.id == coedge.edge)
@@ -869,10 +869,10 @@ fn polygon_loop_area_about(ir: &CadIr, loop_id: &LoopId, normal: Vector3) -> f64
 /// about its oriented normal: the plane normal, reversed for the sense
 /// `reversed`.
 fn assert_outer_loops_counterclockwise_about_oriented_normal(ir: &CadIr) {
-    assert!(!ir.model.faces.is_empty());
-    for face in &ir.model.faces {
+    assert!(!ir.geometry.faces.is_empty());
+    for face in &ir.geometry.faces {
         let surface = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
@@ -904,7 +904,7 @@ fn decode_runs_the_loops_of_reversed_void_faces_backward() {
         .unwrap();
     let ir = result.ir();
     let void_faces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter(|face| face.shell.as_str().ends_with(&format!(":D{void_sequence}")))
@@ -927,7 +927,7 @@ fn decode_keeps_the_loops_of_forward_faces() {
         .unwrap();
     assert!(result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .all(|face| face.sense == Sense::Forward));
@@ -970,18 +970,18 @@ fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
         )
         .unwrap();
     let ir = result.ir();
-    let [face] = ir.model.faces.as_slice() else {
+    let [face] = ir.geometry.faces.as_slice() else {
         panic!("one face");
     };
     assert_eq!(face.sense, Sense::Reversed);
     let surface = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == face.surface)
         .unwrap();
     let [coedge] = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|coedge| coedge.pcurves.len() == 2)
@@ -991,19 +991,19 @@ fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
     };
     assert_eq!(coedge.sense, Sense::Reversed);
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id == coedge.edge)
         .unwrap();
     let position = |vertex_id: &VertexId| {
         let vertex = ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|vertex| vertex.id == *vertex_id)
             .unwrap();
-        ir.model
+        ir.geometry
             .points
             .iter()
             .find(|point| point.id == vertex.point)
@@ -1014,7 +1014,7 @@ fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
     let mut previous = position(&edge.end);
     for pcurve_use in &coedge.pcurves {
         let pcurve = ir
-            .model
+            .geometry
             .pcurves
             .iter()
             .find(|pcurve| pcurve.id == pcurve_use.pcurve)

@@ -234,8 +234,9 @@ impl Fixture {
     /// A model that holds the two current bodies and the native feature.
     pub(crate) fn model(&self, ctx: &DecodeContext<'_>) -> cadmpeg_ir::document::Model {
         let mut model = cadmpeg_ir::document::Model::default();
+        let mut geometry = cadmpeg_ir::document::Topology::default();
         for id in &self.bodies {
-            model.bodies.push(cadmpeg_ir::topology::Body {
+            geometry.bodies.push(cadmpeg_ir::topology::Body {
                 id: id.clone(),
                 kind: cadmpeg_ir::topology::BodyKind::default(),
                 regions: vec![],

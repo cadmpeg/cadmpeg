@@ -1661,7 +1661,7 @@ mod tests {
 
         let mut edge = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model
+            .geometry
             .edges
             .remove(0);
         let curve = edge.curve().cloned().expect("the cube edges have carriers");
@@ -1696,7 +1696,7 @@ mod tests {
 
         let mut edge = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model
+            .geometry
             .edges
             .remove(0);
         let interval = ParameterInterval::new([-1.5, 2.0]).expect("ordered");
@@ -1730,7 +1730,7 @@ mod tests {
     fn edge_parameter_edits_commit_only_valid_pairs() {
         let mut edge = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model
+            .geometry
             .edges
             .remove(0);
         let original = edge.clone();
@@ -2060,10 +2060,10 @@ mod tests {
 
     #[test]
     fn a_coedge_states_no_ring_neighbor_and_its_loop_order_survives_a_round_trip() {
-        let model = crate::examples::unit_cube()
+        let geometry = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model;
-        let coedge = &model.coedges[0];
+            .geometry;
+        let coedge = &geometry.coedges[0];
         let wire = serde_json::to_value(coedge).unwrap();
         assert!(wire.get("next").is_none(), "{wire}");
         assert!(wire.get("previous").is_none(), "{wire}");
@@ -2076,9 +2076,9 @@ mod tests {
         assert!(error.contains("next"), "{error}");
         assert_eq!(&serde_json::from_value::<Coedge>(wire).unwrap(), coedge);
 
-        let before = coedge_ring_neighbors(&model.loops, coedge).expect("a ring neighbor pair");
-        let round_tripped: crate::document::Model =
-            serde_json::from_value(serde_json::to_value(&model).unwrap()).unwrap();
+        let before = coedge_ring_neighbors(&geometry.loops, coedge).expect("a ring neighbor pair");
+        let round_tripped: crate::document::Topology =
+            serde_json::from_value(serde_json::to_value(&geometry).unwrap()).unwrap();
         let after = coedge_ring_neighbors(&round_tripped.loops, &round_tripped.coedges[0])
             .expect("a ring neighbor pair");
         assert_eq!(before, after);
@@ -2200,10 +2200,10 @@ mod tests {
 
     #[test]
     fn a_classified_face_states_its_outer_loop_once() {
-        let mut model = crate::examples::unit_cube()
+        let mut geometry = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model;
-        let face = &mut model.faces[0];
+            .geometry;
+        let face = &mut geometry.faces[0];
         let mut members = face.loops.iter().cloned();
         let outer = members.next().expect("a cube face states a loop");
         let inner = members.collect();
@@ -2232,10 +2232,10 @@ mod tests {
 
     #[test]
     fn an_unclassified_face_states_its_loops_in_source_order() {
-        let model = crate::examples::unit_cube()
+        let geometry = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model;
-        let face = &model.faces[0];
+            .geometry;
+        let face = &geometry.faces[0];
         assert!(matches!(face.loops, FaceLoops::Unspecified { .. }));
         let wire = serde_json::to_value(face).unwrap();
         assert_eq!(

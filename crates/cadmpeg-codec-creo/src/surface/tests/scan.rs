@@ -117,7 +117,7 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
             .as_deref(),
         Some("tabulated_cylinder_curve_replay")
     );
-    assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
+    assert_unknown_visible_surface(&result.ir().geometry.surfaces, 7);
 }
 
 #[test]

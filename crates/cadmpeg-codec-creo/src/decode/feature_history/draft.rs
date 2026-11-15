@@ -118,7 +118,7 @@ pub(super) fn thicken_feature_definition(
         }
         if faces
             .iter()
-            .all(|face| ir.model.faces.iter().any(|candidate| candidate.id == *face))
+            .all(|face| ir.geometry.faces.iter().any(|candidate| candidate.id == *face))
         {
             FaceSelection::Resolved { faces, native }
         } else if let Some(faces) = generated_surface_face_refs(
@@ -158,7 +158,7 @@ fn hole_face_selection(
     let native = format!("creo:visibgeom:surface#{surface_id}");
     let candidate_id = format!("creo:visibgeom:face#{surface_id}");
     let resolved = ir
-        .model
+        .geometry
         .faces
         .iter()
         .any(|candidate| candidate.id.as_str() == candidate_id);
@@ -353,7 +353,7 @@ pub(in super::super) fn schema_feature_definition(
         });
         let placed_drilled_recipe = drilled_recipe.filter(|recipe| {
             recipe.table.surface_ids_iter().all(|surface_id| {
-                let Some(face) = exactly_one(ir.model.faces.iter().filter(|face| {
+                let Some(face) = exactly_one(ir.geometry.faces.iter().filter(|face| {
                     crate::identity::matches_numbered_identity(
                         face.id.as_str(),
                         "creo:visibgeom:face#",
@@ -363,7 +363,7 @@ pub(in super::super) fn schema_feature_definition(
                     return false;
                 };
                 let Some(surface) = exactly_one(
-                    ir.model
+                    ir.geometry
                         .surfaces
                         .iter()
                         .filter(|surface| surface.id == face.surface),
@@ -1015,7 +1015,7 @@ fn reconciled_datum_plane_definition(
         .get(&surface_id)
         .map(|surface| Vector3::from(surface.u_axis))
         .or_else(|| {
-            let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| {
+            let surface = exactly_one(ir.geometry.surfaces.iter().filter(|surface| {
                 crate::identity::matches_numbered_identity(
                     surface.id.as_str(),
                     "creo:visibgeom:surface#",

@@ -511,6 +511,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(namespace.arenas()["half_edges"].len(), 12);
     assert_eq!(namespace.arenas()["loops"].len(), 4);
@@ -526,13 +527,13 @@ fn decode_transfers_closed_plane_intersection_brep() {
         0
     );
 
-    assert_eq!(model.points.len(), 4);
-    assert_eq!(model.vertices.len(), 4);
-    assert_eq!(model.edges.len(), 6);
-    assert_eq!(model.curves.len(), 6);
-    assert!(model.edges.iter().all(|edge| edge.curve().is_some()));
-    assert!(model.edges.iter().all(|edge| edge.param_range().is_some()));
-    for edge in &model.edges {
+    assert_eq!(geometry.points.len(), 4);
+    assert_eq!(geometry.vertices.len(), 4);
+    assert_eq!(geometry.edges.len(), 6);
+    assert_eq!(geometry.curves.len(), 6);
+    assert!(geometry.edges.iter().all(|edge| edge.curve().is_some()));
+    assert!(geometry.edges.iter().all(|edge| edge.param_range().is_some()));
+    for edge in &geometry.edges {
         let [start_parameter, end_parameter] = edge.param_range().expect("line edge range").get();
         assert_eq!(start_parameter, 0.0);
         assert!(end_parameter > 0.0);
@@ -550,7 +551,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .vertices
             .iter()
             .find(|vertex| vertex.id == edge.start)
-            .and_then(|vertex| model.points.iter().find(|point| point.id == vertex.point))
+            .and_then(|vertex| geometry.points.iter().find(|point| point.id == vertex.point))
             .expect("edge start point")
             .position()
             .get();
@@ -558,7 +559,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .vertices
             .iter()
             .find(|vertex| vertex.id == edge.end)
-            .and_then(|vertex| model.points.iter().find(|point| point.id == vertex.point))
+            .and_then(|vertex| geometry.points.iter().find(|point| point.id == vertex.point))
             .expect("edge end point")
             .position()
             .get();
@@ -573,7 +574,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .zip([end.x, end.y, end.z])
             .all(|(evaluated, expected)| (evaluated - expected).abs() < 1.0e-10));
     }
-    assert_eq!(model.faces.len(), 4);
+    assert_eq!(geometry.faces.len(), 4);
     assert_eq!(
         model
             .faces
@@ -592,8 +593,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .sense,
         cadmpeg_ir::topology::Sense::Forward
     );
-    assert_eq!(model.loops.len(), 4);
-    assert!(model.loops.iter().all(|lp| {
+    assert_eq!(geometry.loops.len(), 4);
+    assert!(geometry.loops.iter().all(|lp| {
         model
             .faces
             .iter()
@@ -602,10 +603,10 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .unwrap_or_default()
             == cadmpeg_ir::topology::LoopBoundaryRole::Outer
     }));
-    assert_eq!(model.coedges.len(), 12);
-    assert_eq!(model.pcurves.len(), 12);
-    assert!(model.coedges.iter().all(|coedge| coedge.pcurves.len() == 1));
-    for coedge in &model.coedges {
+    assert_eq!(geometry.coedges.len(), 12);
+    assert_eq!(geometry.pcurves.len(), 12);
+    assert!(geometry.coedges.iter().all(|coedge| coedge.pcurves.len() == 1));
+    for coedge in &geometry.coedges {
         let pcurve = model
             .pcurves
             .iter()
@@ -622,10 +623,10 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .expect("pcurve edge");
         assert_eq!(pcurve.parameter_range(), edge.param_range());
     }
-    assert_eq!(model.shells.len(), 1);
-    assert_eq!(model.regions.len(), 1);
-    assert_eq!(model.bodies.len(), 1);
-    assert_eq!(model.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Solid);
+    assert_eq!(geometry.shells.len(), 1);
+    assert_eq!(geometry.regions.len(), 1);
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Solid);
     let feature = model
         .features
         .iter()
@@ -633,7 +634,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
         .expect("feature 4");
     assert_eq!(
         *feature.evaluation.outputs(),
-        vec![model.bodies[0].id.clone()]
+        vec![geometry.bodies[0].id.clone()]
     );
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Fillet { groups },
@@ -673,16 +674,16 @@ fn decode_withholds_native_brep_when_declared_body_count_disagrees() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let model = &result.ir().model;
-    assert_eq!(model.points.len(), 4);
-    assert!(model.vertices.is_empty());
-    assert!(model.edges.is_empty());
-    assert!(model.faces.is_empty());
-    assert!(model.loops.is_empty());
-    assert!(model.coedges.is_empty());
-    assert!(model.shells.is_empty());
-    assert!(model.regions.is_empty());
-    assert!(model.bodies.is_empty());
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.points.len(), 4);
+    assert!(geometry.vertices.is_empty());
+    assert!(geometry.edges.is_empty());
+    assert!(geometry.faces.is_empty());
+    assert!(geometry.loops.is_empty());
+    assert!(geometry.coedges.is_empty());
+    assert!(geometry.shells.is_empty());
+    assert!(geometry.regions.is_empty());
+    assert!(geometry.bodies.is_empty());
 }
 
 #[test]

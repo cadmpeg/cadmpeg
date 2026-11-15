@@ -25,7 +25,7 @@ fn definition(ir: &CadIr) -> ProductDefinition {
         description: None,
         part_number: None,
         bom_properties: BTreeMap::new(),
-        bodies: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+        bodies: ir.geometry.bodies.iter().map(|body| body.id.clone()).collect(),
         native_ref: None,
     }
 }

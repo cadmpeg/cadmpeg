@@ -58,7 +58,7 @@ fn standard_surface_entity_limit_refuses_before_first_surface_append() {
 #[test]
 fn standard_free_vertex_owner_limit_refuses_before_shell_creation() {
     let mut ir = CadIr::empty();
-    ir.model.vertices.push(Vertex {
+    ir.geometry.vertices.push(Vertex {
         id: VertexId::mint("catia:test:vertex#v").expect("identity grammar"),
         point: PointId::mint("catia:test:point#p").expect("identity grammar"),
         tolerance: None,
@@ -77,15 +77,15 @@ fn standard_free_vertex_owner_limit_refuses_before_shell_creation() {
         );
         assert_eq!(limit.operation, "admit CATIA family model entity");
     });
-    assert!(ir.model.bodies.is_empty());
-    assert!(ir.model.regions.is_empty());
-    assert!(ir.model.shells.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
+    assert!(ir.geometry.regions.is_empty());
+    assert!(ir.geometry.shells.is_empty());
 }
 
 #[test]
 fn standard_unbound_vertices_receive_one_free_vertex_owner() {
     let mut ir = CadIr::empty();
-    ir.model.vertices.push(Vertex {
+    ir.geometry.vertices.push(Vertex {
         id: VertexId::mint("catia:test:vertex#v".to_string()).expect("identity grammar"),
         point: PointId::mint("catia:test:point#p".to_string()).expect("identity grammar"),
         tolerance: None,
@@ -96,11 +96,11 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
         attach_free_vertices(&mut ir, &mut annotations, &mut admission)
     })
     .expect("attach free vertices");
-    assert_eq!(ir.model.bodies.len(), 1);
-    assert_eq!(ir.model.regions.len(), 1);
-    assert_eq!(ir.model.shells.len(), 1);
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.regions.len(), 1);
+    assert_eq!(ir.geometry.shells.len(), 1);
     assert_eq!(
-        ir.model.shells[0].free_vertices(),
+        ir.geometry.shells[0].free_vertices(),
         [VertexId::mint("catia:test:vertex#v".to_string()).expect("identity grammar")]
     );
 }
@@ -109,7 +109,7 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
 fn standard_spline_retains_complete_surface_incidence_pair_domain() {
     let mut ir = CadIr::empty();
     for index in 0..138 {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(index), 0.0, 0.0))
                 .expect("a finite position is a point"),
@@ -117,7 +117,7 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
         ));
     }
     for index in 0..2 {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -227,7 +227,7 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
     .into_iter()
     .enumerate()
     {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
@@ -238,7 +238,7 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
         .into_iter()
         .enumerate()
     {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -306,7 +306,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
         .into_iter()
         .enumerate()
     {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
@@ -314,7 +314,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
         ));
     }
     for index in 0..2 {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -387,7 +387,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
     .into_iter()
     .enumerate()
     {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
@@ -395,7 +395,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
         ));
     }
     for index in 0..2 {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -599,7 +599,7 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
 #[test]
 fn free_vertices_attach_to_a_shell() {
     let mut ir = CadIr::empty();
-    ir.model.vertices.push(Vertex {
+    ir.geometry.vertices.push(Vertex {
         id: VertexId::mint("catia:test:vertex#limit").expect("identity grammar"),
         point: PointId::mint("catia:test:point#limit").expect("identity grammar"),
         tolerance: None,
@@ -609,7 +609,7 @@ fn free_vertices_attach_to_a_shell() {
         attach_free_vertices(&mut ir, &mut AnnotationBuilder::new(), &mut admission)
     })
     .expect("attach free vertices");
-    assert_eq!(ir.model.shells[0].free_vertices().len(), 1);
+    assert_eq!(ir.geometry.shells[0].free_vertices().len(), 1);
 }
 
 #[test]
@@ -680,11 +680,11 @@ fn standard_face_attachment_mints_face_body_region_and_shell_ids() {
         )
     })
     .expect("attach standard faces");
-    assert_eq!(ir.model.faces[0].id.as_str(), "catia:standard:face#0");
-    assert_eq!(ir.model.bodies[0].id.as_str(), "catia:standard:body#0");
-    assert_eq!(ir.model.regions[0].id.as_str(), "catia:standard:region#0-0");
-    assert_eq!(ir.model.shells[0].id.as_str(), "catia:standard:shell#0-0");
-    assert_eq!(ir.model.shells[0].faces().len(), 1);
+    assert_eq!(ir.geometry.faces[0].id.as_str(), "catia:standard:face#0");
+    assert_eq!(ir.geometry.bodies[0].id.as_str(), "catia:standard:body#0");
+    assert_eq!(ir.geometry.regions[0].id.as_str(), "catia:standard:region#0-0");
+    assert_eq!(ir.geometry.shells[0].id.as_str(), "catia:standard:shell#0-0");
+    assert_eq!(ir.geometry.shells[0].faces().len(), 1);
 }
 
 #[test]
@@ -709,7 +709,7 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
         )
     })
     .expect("attach standard faces");
-    let mut second = base_ir.model.faces[0].clone();
+    let mut second = base_ir.geometry.faces[0].clone();
     second.id = cadmpeg_ir::ids::FaceId::mint("catia:standard:face#1").expect("identity grammar");
     crate::assemble::annotate(
         &mut base_annotations,
@@ -720,7 +720,7 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
         cadmpeg_ir::Exactness::ByteExact,
     )
     .expect("annotate the entity");
-    base_ir.model.faces.push(second);
+    base_ir.geometry.faces.push(second);
     let components = [vec![0], vec![1]];
     let result = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
@@ -733,17 +733,17 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
     })
     .expect("partition standard face components");
     assert!(result);
-    assert_eq!(base_ir.model.regions.len(), 2);
+    assert_eq!(base_ir.geometry.regions.len(), 2);
     assert_eq!(
-        base_ir.model.regions[1].id.as_str(),
+        base_ir.geometry.regions[1].id.as_str(),
         "catia:standard:region#0-1"
     );
     assert_eq!(
-        base_ir.model.shells[1].id.as_str(),
+        base_ir.geometry.shells[1].id.as_str(),
         "catia:standard:shell#0-1"
     );
     assert_eq!(
-        base_ir.model.shells[1].faces()[0].as_str(),
+        base_ir.geometry.shells[1].faces()[0].as_str(),
         "catia:standard:face#1"
     );
 }

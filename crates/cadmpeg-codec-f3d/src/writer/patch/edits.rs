@@ -235,7 +235,7 @@ pub(super) fn validate_edge_ownership_edits(
         }
         let owner = if let Some(owner) = &after.owner_coedge {
             let coedge = target
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *owner)
@@ -305,7 +305,7 @@ pub(super) fn validate_vertex_ownership_edits(
             continue;
         }
         let edge = target
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id == after.owning_edge)
@@ -398,13 +398,13 @@ pub(super) fn validate_tolerant_vertex_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<usize, (f64, [f64; 2])>, CodecError> {
     let baseline_vertices = baseline
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| (vertex.id.as_str(), vertex))
         .collect::<BTreeMap<_, _>>();
     let target_vertices = target
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| (vertex.id.as_str(), vertex))
@@ -540,13 +540,13 @@ pub(super) fn validate_tolerant_edge_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<usize, f64>, CodecError> {
     let baseline_edges = baseline
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<BTreeMap<_, _>>();
     let target_edges = target
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
@@ -612,13 +612,13 @@ pub(super) fn validate_tolerant_coedge_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<usize, [f64; 2]>, CodecError> {
     let baseline_coedges = baseline
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| (coedge.id.as_str(), coedge))
         .collect::<BTreeMap<_, _>>();
     let target_coedges = target
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| (coedge.id.as_str(), coedge))
@@ -1854,13 +1854,13 @@ pub(super) fn validate_body_visibility_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<(u64, bool)>>, CodecError> {
     let baseline_bodies = baseline
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| (&body.id, body))
         .collect::<BTreeMap<_, _>>();
     let target_bodies = target
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| (&body.id, body))
@@ -2890,8 +2890,8 @@ pub(super) fn validate_face_sense_edits(
     baseline_ir: &CadIr,
     target_ir: &CadIr,
 ) -> Result<BTreeMap<String, Sense>, CodecError> {
-    let baseline = &baseline_ir.model.faces;
-    let target = &target_ir.model.faces;
+    let baseline = &baseline_ir.geometry.faces;
+    let target = &target_ir.geometry.faces;
     let native_senses = native
         .baseline
         .map(|native| {
@@ -3367,13 +3367,13 @@ pub(super) fn validate_procedural_surface_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<String, ProceduralSurfaceEdit>, CodecError> {
     let baseline = baseline
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .map(|surface| (surface.id.as_str(), surface))
         .collect::<BTreeMap<_, _>>();
     let target = target
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .map(|surface| (surface.id.as_str(), surface))
@@ -3477,13 +3477,13 @@ pub(super) fn validate_procedural_surface_fit_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<String, f64>, CodecError> {
     let baseline = baseline
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .map(|surface| (surface.id.as_str(), surface))
         .collect::<BTreeMap<_, _>>();
     let target = target
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .map(|surface| (surface.id.as_str(), surface))

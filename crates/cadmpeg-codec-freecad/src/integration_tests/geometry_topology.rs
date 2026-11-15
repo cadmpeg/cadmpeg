@@ -23,6 +23,7 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
         .unwrap();
     let ir = decoded.ir();
     let model = &ir.model;
+    let geometry = &ir.geometry;
     let mut features = model.features.iter().collect::<Vec<_>>();
     features.sort_by_key(|feature| feature.ordinal);
     let source_shapes = [
@@ -40,7 +41,7 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
         ("Swept", BodyKind::Solid, 1, 1, 3, 3, 2),
     ];
     assert_eq!(features.len(), source_shapes.len());
-    assert_eq!(model.bodies.len(), source_shapes.len());
+    assert_eq!(geometry.bodies.len(), source_shapes.len());
 
     let native_objects = ir
         .native
@@ -161,7 +162,7 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
                 .find(|shell| &shell.id == shell_id)
                 .unwrap();
             for edge_id in shell.wire_edges() {
-                let edge = model.edges.iter().find(|edge| &edge.id == edge_id).unwrap();
+                let edge = geometry.edges.iter().find(|edge| &edge.id == edge_id).unwrap();
                 let curve_id = edge.curve().expect("CurveCarriers edge has a curve");
                 let curve = model
                     .curves
@@ -297,7 +298,7 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
     let [face_id] = shell.faces() else {
         panic!("FreeformSurface: expected one face")
     };
-    let face = model.faces.iter().find(|face| &face.id == face_id).unwrap();
+    let face = geometry.faces.iter().find(|face| &face.id == face_id).unwrap();
     let surface = model
         .surfaces
         .iter()
@@ -322,13 +323,13 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
 
-    let void_body = body_for_feature(model, "Void");
+    let void_body = body_for_feature(geometry, "Void");
     let [void_region_id] = void_body.regions.as_slice() else {
         panic!("Void: one connected solid region")
     };
-    let void_region = model
+    let void_region = geometry
         .regions
         .iter()
         .find(|region| &region.id == void_region_id)
@@ -337,16 +338,16 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
         panic!("Void: one exterior shell and one cavity shell")
     };
     for shell_id in [outer_shell_id, cavity_shell_id] {
-        let shell = shell_for_id(model, shell_id.as_str());
+        let shell = shell_for_id(geometry, shell_id.as_str());
         assert_eq!(shell.region, void_region.id, "Void: shell region owner");
-        assert_closed_shell(model, shell, 6);
+        assert_closed_shell(geometry, shell, 6);
     }
 
-    let seam_body = body_for_feature(model, "Seam");
+    let seam_body = body_for_feature(geometry, "Seam");
     let [seam_region_id] = seam_body.regions.as_slice() else {
         panic!("Seam: one connected solid region")
     };
-    let seam_region = model
+    let seam_region = geometry
         .regions
         .iter()
         .find(|region| &region.id == seam_region_id)
@@ -354,15 +355,15 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
     let [seam_shell_id] = seam_region.shells.as_slice() else {
         panic!("Seam: one closed shell")
     };
-    let seam_shell = shell_for_id(model, seam_shell_id.as_str());
-    assert_closed_shell(model, seam_shell, 3);
+    let seam_shell = shell_for_id(geometry, seam_shell_id.as_str());
+    assert_closed_shell(geometry, seam_shell, 3);
 
     let cylindrical_faces = seam_shell
         .faces()
         .iter()
-        .map(|face_id| model.faces.iter().find(|face| &face.id == face_id).unwrap())
+        .map(|face_id| geometry.faces.iter().find(|face| &face.id == face_id).unwrap())
         .filter(|face| {
-            model
+            geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == face.surface)
@@ -381,7 +382,7 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
     let [cylindrical_loop_id] = cylindrical_loop_ids.as_slice() else {
         panic!("Seam: one lateral boundary loop")
     };
-    let cylindrical_loop = model
+    let cylindrical_loop = geometry
         .loops
         .iter()
         .find(|loop_| &loop_.id == *cylindrical_loop_id)
@@ -398,7 +399,7 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
         .coedges()
         .iter()
         .map(|coedge_id| {
-            model
+            geometry
                 .coedges
                 .iter()
                 .find(|coedge| &coedge.id == coedge_id)
@@ -435,10 +436,10 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
         "Seam: opposite traversal"
     );
 
-    let multi_shell_body = body_for_feature(model, "MultiShell");
+    let multi_shell_body = body_for_feature(geometry, "MultiShell");
     let mut multi_shell_ids = Vec::new();
     for region_id in &multi_shell_body.regions {
-        let region = model
+        let region = geometry
             .regions
             .iter()
             .find(|region| &region.id == region_id)
@@ -446,9 +447,9 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
         let [shell_id] = region.shells.as_slice() else {
             panic!("MultiShell: one shell per disconnected box")
         };
-        let shell = shell_for_id(model, shell_id.as_str());
+        let shell = shell_for_id(geometry, shell_id.as_str());
         assert_eq!(shell.region, region.id, "MultiShell: shell region owner");
-        assert_closed_shell(model, shell, 6);
+        assert_closed_shell(geometry, shell, 6);
         multi_shell_ids.push(shell_id);
     }
     assert_eq!(
@@ -578,14 +579,14 @@ fn shell_for_id<'a>(model: &'a Model, shell_id: &str) -> &'a Shell {
         .unwrap_or_else(|| panic!("missing shell {shell_id}"))
 }
 
-fn assert_closed_shell(model: &Model, shell: &Shell, expected_faces: usize) {
+fn assert_closed_shell(geometry: &Topology, shell: &Shell, expected_faces: usize) {
     assert_eq!(shell.faces().len(), expected_faces, "shell face count");
     let mut uses = Vec::new();
     for face_id in shell.faces() {
-        let face = model.faces.iter().find(|face| &face.id == face_id).unwrap();
+        let face = geometry.faces.iter().find(|face| &face.id == face_id).unwrap();
         assert_eq!(face.shell, shell.id, "face shell owner");
         for loop_id in &face.loops {
-            let loop_ = model
+            let loop_ = geometry
                 .loops
                 .iter()
                 .find(|loop_| &loop_.id == loop_id)
@@ -594,7 +595,7 @@ fn assert_closed_shell(model: &Model, shell: &Shell, expected_faces: usize) {
                 panic!("closed box and cylinder faces have coedge rings")
             };
             for coedge_id in ring.coedges() {
-                let coedge = model
+                let coedge = geometry
                     .coedges
                     .iter()
                     .find(|coedge| &coedge.id == coedge_id)

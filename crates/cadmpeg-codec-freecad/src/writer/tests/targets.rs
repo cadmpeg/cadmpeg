@@ -567,7 +567,7 @@ fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
 
     let mut edited = decoded.ir().clone();
     let body = edited
-        .model
+        .geometry
         .bodies
         .first_mut()
         .expect("the fixture decodes a body");

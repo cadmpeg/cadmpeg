@@ -163,7 +163,7 @@ impl StreamBuilder {
                 self.require_face_section(tag, offset)?;
                 let surface = read_surface(ctx, self.precision(), body)?;
                 ctx.charge_entities(1, "pvz exact face")?;
-                self.model.faces.push(Face {
+                self.geometry.faces.push(Face {
                     surface,
                     loops: Vec::new(),
                     singular_uses: Vec::new(),
@@ -182,13 +182,13 @@ impl StreamBuilder {
                 self.enter(Section::Curves, tag, offset)?;
                 let geometry = read_curve::<3>(ctx, self.precision(), body)?;
                 ctx.charge_entities(1, "pvz exact edge curve")?;
-                self.model.edges.push(EdgeCurve { geometry, offset });
+                self.geometry.edges.push(EdgeCurve { geometry, offset });
             }
             tag if tag == u32::from(EXACT_PCURVE) => {
                 self.enter(Section::Curves, tag, offset)?;
                 let geometry = read_curve::<2>(ctx, self.precision(), body)?;
                 ctx.charge_entities(1, "pvz exact pcurve")?;
-                self.model.pcurves.push(Pcurve { geometry, offset });
+                self.geometry.pcurves.push(Pcurve { geometry, offset });
             }
             _ => {
                 if matches!(self.open, Some(Scope::Loop(_))) {
@@ -224,7 +224,7 @@ impl StreamBuilder {
     }
 
     fn current_face(&self, tag: u32, offset: usize) -> Result<usize, CodecError> {
-        self.model.faces.len().checked_sub(1).ok_or_else(|| {
+        self.geometry.faces.len().checked_sub(1).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "exact-stream record {tag:#x} at offset {offset} precedes every surface record"
             ))
@@ -239,11 +239,11 @@ impl StreamBuilder {
             return Err(record_length(EXACT_LOOP, offset));
         }
         let marker = body.req_i32_le()?;
-        let index = self.model.loops.len();
+        let index = self.geometry.loops.len();
         let inner = marker != LOOP_OUTER;
         if inner {
             let first = self
-                .model
+                .geometry
                 .faces
                 .get(face)
                 .and_then(|record| record.loops.first().copied());
@@ -255,13 +255,13 @@ impl StreamBuilder {
             }
         }
         ctx.charge_entities(1, "pvz exact loop")?;
-        self.model.loops.push(Loop {
+        self.geometry.loops.push(Loop {
             face,
             inner,
             coedges: Vec::new(),
             offset,
         });
-        if let Some(record) = self.model.faces.get_mut(face) {
+        if let Some(record) = self.geometry.faces.get_mut(face) {
             record.loops.push(index);
         }
         self.open = Some(Scope::Loop(index));
@@ -283,7 +283,7 @@ impl StreamBuilder {
         let pcurve = optional_index(body.req_u32_le()?);
         let secondary = optional_index(body.req_u32_le()?);
         ctx.charge_entities(1, "pvz exact coedge")?;
-        if let Some(record) = self.model.loops.get_mut(open) {
+        if let Some(record) = self.geometry.loops.get_mut(open) {
             record.coedges.push(Coedge {
                 edge,
                 orientation,
@@ -304,7 +304,7 @@ impl StreamBuilder {
         fields.pair()?;
         fields.finish_bare(EXACT_SINGULAR_USE, offset)?;
         ctx.charge_entities(1, "pvz exact singular use")?;
-        if let Some(record) = self.model.faces.get_mut(face) {
+        if let Some(record) = self.geometry.faces.get_mut(face) {
             record.singular_uses.push(SingularUse { edge, offset });
         }
         self.open = Some(Scope::SingularUse);
@@ -347,7 +347,7 @@ fn resolve_edge_indexes(model: &mut ExactModel) -> Result<(), CodecError> {
         })
         .flatten()
         .collect();
-    let listed: Vec<usize> = (0..model.edges.len())
+    let listed: Vec<usize> = (0..geometry.edges.len())
         .filter(|index| !members.contains(index))
         .collect();
     let resolve = |what: &str, index: usize, offset: usize| {
@@ -359,7 +359,7 @@ fn resolve_edge_indexes(model: &mut ExactModel) -> Result<(), CodecError> {
             ))
         })
     };
-    for record in &mut model.loops {
+    for record in &mut geometry.loops {
         for coedge in &mut record.coedges {
             if let Some(edge) = coedge.edge {
                 coedge.edge = Some(resolve("coedge edge", edge, coedge.offset)?);
@@ -368,7 +368,7 @@ fn resolve_edge_indexes(model: &mut ExactModel) -> Result<(), CodecError> {
     }
     // PVZ-40: a singular use names an edge that a coedge of its face also
     // names, so its index is read in the coedge space.
-    for face in &mut model.faces {
+    for face in &mut geometry.faces {
         for singular in &mut face.singular_uses {
             singular.edge = resolve("singular-use edge", singular.edge, singular.offset)?;
         }
@@ -378,15 +378,15 @@ fn resolve_edge_indexes(model: &mut ExactModel) -> Result<(), CodecError> {
 
 /// Checks every pcurve index and composite member index against the target
 /// section count.
-fn check_indexes(model: &ExactModel) -> Result<(), CodecError> {
-    let edges = model.edges.len();
-    let pcurves = model.pcurves.len();
+fn check_indexes(geometry: &ExactTopology) -> Result<(), CodecError> {
+    let edges = geometry.edges.len();
+    let pcurves = geometry.pcurves.len();
     let out_of_range = |what: &str, index: usize, offset: usize| {
         CodecError::malformed(format_args!(
             "{what} index {index} at offset {offset} is outside its section"
         ))
     };
-    for record in &model.loops {
+    for record in &geometry.loops {
         for coedge in &record.coedges {
             for pcurve in [coedge.pcurve, coedge.secondary].into_iter().flatten() {
                 if pcurve >= pcurves {
@@ -395,14 +395,14 @@ fn check_indexes(model: &ExactModel) -> Result<(), CodecError> {
             }
         }
     }
-    for curve in &model.edges {
+    for curve in &geometry.edges {
         if let CurveGeometry::Composite(members) = &curve.geometry {
             if let Some(member) = members.iter().find(|member| **member >= edges) {
                 return Err(out_of_range("composite edge member", *member, curve.offset));
             }
         }
     }
-    for curve in &model.pcurves {
+    for curve in &geometry.pcurves {
         if let CurveGeometry::Composite(members) = &curve.geometry {
             if let Some(member) = members.iter().find(|member| **member >= pcurves) {
                 return Err(out_of_range(

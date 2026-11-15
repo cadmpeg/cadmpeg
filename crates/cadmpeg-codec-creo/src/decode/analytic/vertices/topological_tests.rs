@@ -65,7 +65,7 @@ fn pcurve_vertex_case() -> (
     }
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for face_id in [10, 11] {
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
@@ -128,8 +128,8 @@ fn cap_ruling_zero_station_places_only_its_owned_vertex() {
                 samples: vec![[[0.0, 0.0], [0.0, 0.0]], [[1.0, 1.0], [0.0, 99.0]]],
                 offset: 0,
             });
-        ir.model.surfaces.remove(0);
-        ir.model.surfaces[0].geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        ir.geometry.surfaces.remove(0);
+        ir.geometry.surfaces[0].geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
             cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
@@ -165,7 +165,7 @@ fn analytic_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecErr
         geometry: line([0.0, 0.0, 0.0], direction),
         source_object: None,
     };
-    ir.model.curves.push(make_curve(7, [1.0, 0.0, 0.0]));
+    ir.geometry.curves.push(make_curve(7, [1.0, 0.0, 0.0]));
     let id = crate::topology::HalfEdgeId {
         curve_id: 8,
         side: crate::topology::Side::Zero,
@@ -193,7 +193,7 @@ fn analytic_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecErr
             next_edges: [8, 0],
             offset: 0,
         });
-    ir.model.curves.push(make_curve(8, [0.0, 1.0, 0.0]));
+    ir.geometry.curves.push(make_curve(8, [0.0, 1.0, 0.0]));
     crate::decode::with_service_context(|ctx| {
         solve_topological_vertices(
             ctx,

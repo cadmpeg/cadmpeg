@@ -1161,7 +1161,7 @@ pub(crate) fn malformed_bounded_object_is_retained_and_later_point_decodes() {
                 .len(),
             2
         );
-        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.ir().geometry.points.len(), 1);
         assert!(result
             .report()
             .losses

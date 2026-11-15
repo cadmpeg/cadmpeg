@@ -198,12 +198,12 @@ fn prepare_component(
             "sketch_endpoint_identity",
             &["point"],
         )?;
-        prepared.model.points.push(Point::new(
+        prepared.geometry.points.push(Point::new(
             point.clone(),
             if line.forward { start_point } else { end_point },
             None,
         ));
-        prepared.model.vertices.push(Vertex {
+        prepared.geometry.vertices.push(Vertex {
             id: vertex,
             point,
             tolerance: None,
@@ -237,13 +237,13 @@ fn prepare_component(
             "directed_sketch_boundary",
             &["owner_loop", "edge", "radial_next", "sense"],
         )?;
-        prepared.model.curves.push(Curve {
+        prepared.geometry.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(geometry)),
             parameter_range: Some(interval),
             source_object: None,
         });
-        prepared.model.edges.push(Edge {
+        prepared.geometry.edges.push(Edge {
             id: edge.clone(),
             carrier: EdgeCarrier::new(Some(curve), Some(line.interval))
                 .map_err(CodecError::malformed)?,
@@ -259,7 +259,7 @@ fn prepare_component(
             )?,
             tolerance: None,
         });
-        prepared.model.coedges.push(Coedge {
+        prepared.geometry.coedges.push(Coedge {
             id: coedge.clone(),
             owner_loop: loop_id.clone(),
             edge,
@@ -307,7 +307,7 @@ fn prepare_component(
     ] {
         annotation(prepared, existing, id, plan.source_offset, tag, fields)?;
     }
-    prepared.model.bodies.push(Body {
+    prepared.geometry.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Sheet,
         regions: vec![region.clone()],
@@ -316,21 +316,21 @@ fn prepare_component(
         color: None,
         visible: None,
     });
-    prepared.model.regions.push(Region {
+    prepared.geometry.regions.push(Region {
         id: region.clone(),
         body,
         shells: vec![shell.clone()],
     });
     prepared
-        .model
+        .geometry
         .shells
         .push(Shell::with_face(shell.clone(), region, face.clone()));
-    prepared.model.surfaces.push(Surface {
+    prepared.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(carrier)),
         source_object: None,
     });
-    prepared.model.faces.push(Face {
+    prepared.geometry.faces.push(Face {
         id: face.clone(),
         shell,
         surface,
@@ -344,7 +344,7 @@ fn prepare_component(
         color: None,
         tolerance: None,
     });
-    prepared.model.loops.push(Loop {
+    prepared.geometry.loops.push(Loop {
         id: loop_id,
         face,
         boundary: LoopBoundary::Ring(
@@ -417,11 +417,11 @@ pub(super) fn emit(
             }
         }
     }
-    let bodies = prepared.model.bodies.len();
+    let bodies = prepared.geometry.bodies.len();
     if bodies == 0 {
         return Ok(0);
     }
-    ctx.charge_entities(u64_from_index(prepared.model.entity_count()), ADMIT)?;
+    ctx.charge_entities(u64_from_index(prepared.entity_count()), ADMIT)?;
     for note in prepared.annotations {
         crate::assemble::annotate(
             annotations,

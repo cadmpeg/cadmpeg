@@ -219,12 +219,12 @@ impl Fixture {
             }],
             ..CatiaNative::default()
         };
-        let mut model = Model::default();
+        let mut geometry = Topology::default();
         for i in 0..2 {
-            model.surfaces.push(serde_json::from_value(serde_json::json!({"id":format!("synthetic:test:surface#{i}"),"geometry":{"kind":"cylinder","origin":{"x":2.,"y":3.,"z":-100.},"axis":{"x":0.,"y":0.,"z":1.},"ref_direction":{"x":1.,"y":0.,"z":0.},"radius":3.}})).expect("valid fixture"));
-            model.faces.push(serde_json::from_value(serde_json::json!({"id":format!("synthetic:test:face#{i}"),"shell":"synthetic:test:shell#0","surface":format!("synthetic:test:surface#{i}"),"sense":"forward","loops":{"classification":"unspecified","loops":[]}})).expect("valid fixture"));
+            geometry.surfaces.push(serde_json::from_value(serde_json::json!({"id":format!("synthetic:test:surface#{i}"),"geometry":{"kind":"cylinder","origin":{"x":2.,"y":3.,"z":-100.},"axis":{"x":0.,"y":0.,"z":1.},"ref_direction":{"x":1.,"y":0.,"z":0.},"radius":3.}})).expect("valid fixture"));
+            geometry.faces.push(serde_json::from_value(serde_json::json!({"id":format!("synthetic:test:face#{i}"),"shell":"synthetic:test:shell#0","surface":format!("synthetic:test:surface#{i}"),"sense":"forward","loops":{"classification":"unspecified","loops":[]}})).expect("valid fixture"));
         }
-        Self { native, model }
+        Self { native, geometry }
     }
     fn bind(&mut self) {
         with_service_context(|ctx| {
@@ -388,22 +388,22 @@ fn geometry_requires_one_axis_two_carriers_and_one_face_per_carrier() {
         let mut f = Fixture::new(false);
         match mutation {
             0 => {
-                f.model.surfaces.pop();
+                f.geometry.surfaces.pop();
             }
             1 => {
-                let mut s = f.model.surfaces[0].clone();
+                let mut s = f.geometry.surfaces[0].clone();
                 s.id = cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:surface#extra")
                     .expect("valid fixture");
-                f.model.surfaces.push(s);
+                f.geometry.surfaces.push(s);
             }
             2 => {
-                f.model.faces[1].surface = f.model.faces[0].surface.clone();
+                f.geometry.faces[1].surface = f.geometry.faces[0].surface.clone();
             }
             3 => {
-                f.model.faces.pop();
+                f.geometry.faces.pop();
             }
             4 => {
-                f.model.faces[1].id = f.model.faces[0].id.clone();
+                f.geometry.faces[1].id = f.geometry.faces[0].id.clone();
             }
             _ => unreachable!(),
         }
@@ -440,7 +440,7 @@ fn wrong_radius_displaced_axis_and_intersecting_axes_do_not_bind() {
             ),
             _ => unreachable!(),
         };
-        f.model.surfaces[1].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        f.geometry.surfaces[1].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             CylinderSurface::try_new(point, axis, reference, radius).expect("valid fixture"),
         ));
         f.bind();
@@ -493,7 +493,7 @@ fn two_nearby_parallel_axes_are_not_one_target_axis() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
     let mut f = Fixture::new(false);
-    for (surface, x) in f.model.surfaces.iter_mut().zip([2.00009, 1.99991]) {
+    for (surface, x) in f.geometry.surfaces.iter_mut().zip([2.00009, 1.99991]) {
         surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             CylinderSurface::try_new(
                 Point3::new(x, 3., 4.),

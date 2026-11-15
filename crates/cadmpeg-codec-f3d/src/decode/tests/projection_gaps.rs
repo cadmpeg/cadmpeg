@@ -1016,12 +1016,12 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     use cadmpeg_ir::topology::Color;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
-    let first_face = ir.model.faces[0].id.clone();
-    let second_face = ir.model.faces[1].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
+    let first_face = ir.geometry.faces[0].id.clone();
+    let second_face = ir.geometry.faces[1].id.clone();
     let direct = Color::new(0.9, 0.8, 0.7, 1.0).expect("valid color");
     let material = Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color");
-    ir.model.bodies[0].color = Some(direct);
+    ir.geometry.bodies[0].color = Some(direct);
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
         name: None,
@@ -1054,9 +1054,9 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     ];
 
     apply_appearance_base_colors(&mut ir);
-    assert_eq!(ir.model.bodies[0].color, Some(direct));
-    assert_eq!(ir.model.faces[0].color, Some(material));
-    assert_eq!(ir.model.faces[1].color, None);
+    assert_eq!(ir.geometry.bodies[0].color, Some(direct));
+    assert_eq!(ir.geometry.faces[0].color, Some(material));
+    assert_eq!(ir.geometry.faces[1].color, None);
 }
 
 #[test]

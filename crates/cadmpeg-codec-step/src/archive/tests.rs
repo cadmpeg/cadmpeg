@@ -520,13 +520,13 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#4"));
     assert!(!result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#12"));
@@ -538,7 +538,7 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         .expect("decode subsidiary independently");
     assert!(target_result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#12"));

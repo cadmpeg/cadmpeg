@@ -48,9 +48,9 @@ pub(super) fn encode_smbh(
     attributes: &AttributeIndex<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     let topology = NativeGenerationIndex::new(native);
-    if target.model.faces.is_empty() {
+    if target.geometry.faces.is_empty() {
         if !target
-            .model
+            .geometry
             .shells
             .iter()
             .any(|shell| !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty())
@@ -96,19 +96,19 @@ struct NativeRecordPlan<'a> {
 impl<'a> NativeRecordPlan<'a> {
     fn for_model(model: &'a cadmpeg_ir::document::Model) -> Result<Self, CodecError> {
         let body_start = 1;
-        let region_start = native_record_index(body_start, model.bodies.len())?;
-        let shell_start = native_record_index(region_start, model.regions.len())?;
-        let wire_count = model.shells.iter().map(source_less_wire_count).sum();
-        let wire_start = native_record_index(shell_start, model.shells.len())?;
+        let region_start = native_record_index(body_start, geometry.bodies.len())?;
+        let shell_start = native_record_index(region_start, geometry.regions.len())?;
+        let wire_count = geometry.shells.iter().map(source_less_wire_count).sum();
+        let wire_start = native_record_index(shell_start, geometry.shells.len())?;
         let face_start = native_record_index(wire_start, wire_count)?;
-        let loop_start = native_record_index(face_start, model.faces.len())?;
-        let surface_start = native_record_index(loop_start, model.loops.len())?;
-        let curve_start = native_record_index(surface_start, model.surfaces.len())?;
-        let pcurve_start = native_record_index(curve_start, model.curves.len())?;
-        let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
+        let loop_start = native_record_index(face_start, geometry.faces.len())?;
+        let surface_start = native_record_index(loop_start, geometry.loops.len())?;
+        let curve_start = native_record_index(surface_start, geometry.surfaces.len())?;
+        let pcurve_start = native_record_index(curve_start, geometry.curves.len())?;
+        let ref_pcurve_start = native_record_index(pcurve_start, geometry.pcurves.len())?;
         let mut ref_pcurve_count = 0usize;
         let mut pcurves = Vec::new();
-        for pcurve in &model.pcurves {
+        for pcurve in &geometry.pcurves {
             let form = match &pcurve.metadata {
                 PcurveMetadata::AsmInline { form } => NativePcurveForm::Inline(Cow::Borrowed(form)),
                 PcurveMetadata::General { form }
@@ -151,16 +151,16 @@ impl<'a> NativeRecordPlan<'a> {
                 CodecError::NotImplemented("pcurve record count overflows usize".into())
             })?;
         let coedge_start = native_record_index(pcurve_start, pcurve_record_count)?;
-        let wire_coedge_start = native_record_index(coedge_start, model.coedges.len())?;
+        let wire_coedge_start = native_record_index(coedge_start, geometry.coedges.len())?;
         let wire_edge_count = model
             .shells
             .iter()
             .map(|shell| shell.wire_edges().len())
             .sum::<usize>();
         let edge_start = native_record_index(wire_coedge_start, wire_edge_count)?;
-        let vertex_start = native_record_index(edge_start, model.edges.len())?;
-        let point_start = native_record_index(vertex_start, model.vertices.len())?;
-        let transform_start = native_record_index(point_start, model.points.len())?;
+        let vertex_start = native_record_index(edge_start, geometry.edges.len())?;
+        let point_start = native_record_index(vertex_start, geometry.vertices.len())?;
+        let transform_start = native_record_index(point_start, geometry.points.len())?;
         let transform_count = model
             .bodies
             .iter()
@@ -194,11 +194,11 @@ fn source_less_wire_count(shell: &cadmpeg_ir::topology::Shell) -> usize {
 }
 
 fn source_less_wire_record_for_shell(
-    model: &cadmpeg_ir::document::Model,
+    geometry: &cadmpeg_ir::document::Topology,
     wire_start: i64,
     shell_ordinal: usize,
 ) -> Result<i64, CodecError> {
-    let wire_ordinal = model.shells[..shell_ordinal]
+    let wire_ordinal = geometry.shells[..shell_ordinal]
         .iter()
         .map(source_less_wire_count)
         .sum();
@@ -214,14 +214,14 @@ fn encode_source_less_wires(
     shell_start: i64,
     vertex_start: i64,
 ) -> Result<BTreeMap<VertexId, i64>, CodecError> {
-    let model = &target.model;
-    let vertex_ordinals = model
+    let geometry = &target.geometry;
+    let vertex_ordinals = geometry
         .vertices
         .iter()
         .enumerate()
         .map(|(ordinal, vertex)| (&vertex.id, ordinal))
         .collect::<HashMap<_, _>>();
-    let edge_vertex_ids = model
+    let edge_vertex_ids = geometry
         .edges
         .iter()
         .flat_map(|edge| [&edge.start, &edge.end])
@@ -229,7 +229,7 @@ fn encode_source_less_wires(
     let mut free_vertex_owners = BTreeMap::new();
     let mut edge_base = 0usize;
     let mut wire_ordinal = 0usize;
-    for (shell_ordinal, shell) in model.shells.iter().enumerate() {
+    for (shell_ordinal, shell) in geometry.shells.iter().enumerate() {
         let shell_wire_count = source_less_wire_count(shell);
         if !shell.wire_edges().is_empty() {
             native_ident(records, "wire")?;
@@ -315,32 +315,32 @@ fn encode_wire_body_smbh(
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    let model = &target.model;
-    if model.bodies.is_empty()
-        || model.regions.is_empty()
-        || model.shells.is_empty()
-        || !model.faces.is_empty()
-        || !model.loops.is_empty()
-        || !model.coedges.is_empty()
-        || !model.surfaces.is_empty()
-        || !model.pcurves.is_empty()
-        || model
+    let geometry = &target.geometry;
+    if geometry.bodies.is_empty()
+        || geometry.regions.is_empty()
+        || geometry.shells.is_empty()
+        || !geometry.faces.is_empty()
+        || !geometry.loops.is_empty()
+        || !geometry.coedges.is_empty()
+        || !geometry.surfaces.is_empty()
+        || !geometry.pcurves.is_empty()
+        || geometry
             .shells
             .iter()
             .any(|shell| shell.wire_edges().is_empty() && shell.free_vertices().is_empty())
-        || model
+        || geometry
             .shells
             .iter()
             .flat_map(cadmpeg_ir::topology::Shell::wire_edges)
-            .zip(&model.edges)
+            .zip(&geometry.edges)
             .any(|(id, edge)| *id != edge.id)
-        || model
+        || geometry
             .shells
             .iter()
             .map(|shell| shell.wire_edges().len())
             .sum::<usize>()
-            != model.edges.len()
-        || model
+            != geometry.edges.len()
+        || geometry
             .bodies
             .iter()
             .any(|body| body.kind != cadmpeg_ir::topology::BodyKind::Wire)
@@ -352,17 +352,17 @@ fn encode_wire_body_smbh(
     }
     let ownership = validate_source_less_wire_ownership(target)?;
     let body_start = 1i64;
-    let region_start = native_record_index(body_start, model.bodies.len())?;
-    let shell_start = native_record_index(region_start, model.regions.len())?;
-    let wire_start = native_record_index(shell_start, model.shells.len())?;
-    let wire_count = model.shells.iter().map(source_less_wire_count).sum();
+    let region_start = native_record_index(body_start, geometry.bodies.len())?;
+    let shell_start = native_record_index(region_start, geometry.regions.len())?;
+    let wire_start = native_record_index(shell_start, geometry.shells.len())?;
+    let wire_count = geometry.shells.iter().map(source_less_wire_count).sum();
     let wire_coedge_start = native_record_index(wire_start, wire_count)?;
-    let curve_start = native_record_index(wire_coedge_start, model.edges.len())?;
-    let edge_start = native_record_index(curve_start, model.curves.len())?;
-    let vertex_start = native_record_index(edge_start, model.edges.len())?;
-    let point_start = native_record_index(vertex_start, model.vertices.len())?;
-    let transform_start = native_record_index(point_start, model.points.len())?;
-    let transform_count = model
+    let curve_start = native_record_index(wire_coedge_start, geometry.edges.len())?;
+    let edge_start = native_record_index(curve_start, geometry.curves.len())?;
+    let vertex_start = native_record_index(edge_start, geometry.edges.len())?;
+    let point_start = native_record_index(vertex_start, geometry.vertices.len())?;
+    let transform_start = native_record_index(point_start, geometry.points.len())?;
+    let transform_count = geometry
         .bodies
         .iter()
         .filter(|body| body.transform.is_some())
@@ -373,10 +373,10 @@ fn encode_wire_body_smbh(
     native_ident(&mut records, "asmheader")?;
     native_string(&mut records, "231.6.3.65535")?;
     records.push(0x11);
-    for ((ordinal, body), owned) in model.bodies.iter().enumerate().zip(ownership.bodies()) {
+    for ((ordinal, body), owned) in geometry.bodies.iter().enumerate().zip(ownership.bodies()) {
         let region_ordinal = owned.first_region;
         let shell_ordinal = owned.first_shell;
-        let transform_ordinal = model.bodies[..ordinal]
+        let transform_ordinal = geometry.bodies[..ordinal]
             .iter()
             .filter(|candidate| candidate.transform.is_some())
             .count();
@@ -402,7 +402,7 @@ fn encode_wire_body_smbh(
         );
         native_ref(
             &mut records,
-            source_less_wire_record_for_shell(model, wire_start, shell_ordinal)?,
+            source_less_wire_record_for_shell(geometry, wire_start, shell_ordinal)?,
         );
         native_ref(
             &mut records,
@@ -449,7 +449,7 @@ fn encode_wire_body_smbh(
             next,
             -1,
             -1,
-            source_less_wire_record_for_shell(model, wire_start, ordinal)?,
+            source_less_wire_record_for_shell(geometry, wire_start, ordinal)?,
             native_record_index(region_start, region_ordinal)?,
         ] {
             native_ref(&mut records, reference);
@@ -466,7 +466,7 @@ fn encode_wire_body_smbh(
         vertex_start,
     )?;
     let mut edge_base = 0usize;
-    for (shell_ordinal, shell) in model.shells.iter().enumerate() {
+    for (shell_ordinal, shell) in geometry.shells.iter().enumerate() {
         for ordinal in 0..shell.wire_edges().len() {
             let edge_ordinal = edge_base + ordinal;
             let next = edge_base + (ordinal + 1) % shell.wire_edges().len();
@@ -486,7 +486,7 @@ fn encode_wire_body_smbh(
             records.push(0x0b);
             native_ref(
                 &mut records,
-                source_less_wire_record_for_shell(model, wire_start, shell_ordinal)?,
+                source_less_wire_record_for_shell(geometry, wire_start, shell_ordinal)?,
             );
             native_i64(&mut records, 0);
             native_ref(&mut records, -1);
@@ -495,7 +495,7 @@ fn encode_wire_body_smbh(
         edge_base += shell.wire_edges().len();
     }
     encode_source_less_curves(&mut records, target)?;
-    let mut wire_edge_owners = model
+    let mut wire_edge_owners = geometry
         .edges
         .iter()
         .enumerate()
@@ -519,7 +519,7 @@ fn encode_wire_body_smbh(
         &wire_edge_owners,
         &free_vertex_owners,
     )?;
-    for body in &model.bodies {
+    for body in &geometry.bodies {
         if let Some(transform) = body.transform {
             native_transform(&mut records, topology, body, transform)?;
             records.push(0x11);
@@ -544,8 +544,8 @@ fn encode_wire_body_smbh(
 }
 
 fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
-    let model = &target.model;
-    for carrier in &model.curves {
+    let geometry = &target.geometry;
+    for carrier in &geometry.curves {
         match carrier.geometry.solved() {
             Some(SolvedCurveGeometry::Line(line_curve)) => {
                 let origin = line_curve.origin().get();
@@ -658,56 +658,56 @@ fn encode_face_topology_smbh(
 ) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
-    let model = &target.model;
-    let region_ordinals: HashMap<_, _> = model
+    let geometry = &target.geometry;
+    let region_ordinals: HashMap<_, _> = geometry
         .regions
         .iter()
         .enumerate()
         .map(|(ordinal, region)| (&region.id, ordinal))
         .collect();
-    let shell_ordinals: HashMap<_, _> = model
+    let shell_ordinals: HashMap<_, _> = geometry
         .shells
         .iter()
         .enumerate()
         .map(|(ordinal, shell)| (&shell.id, ordinal))
         .collect();
-    let coedge_ordinals: HashMap<_, _> = model
+    let coedge_ordinals: HashMap<_, _> = geometry
         .coedges
         .iter()
         .enumerate()
         .map(|(ordinal, coedge)| (&coedge.id, ordinal))
         .collect();
-    let edge_ordinals: HashMap<_, _> = model
+    let edge_ordinals: HashMap<_, _> = geometry
         .edges
         .iter()
         .enumerate()
         .map(|(ordinal, edge)| (&edge.id, ordinal))
         .collect();
-    let loop_ordinals: HashMap<_, _> = model
+    let loop_ordinals: HashMap<_, _> = geometry
         .loops
         .iter()
         .enumerate()
         .map(|(ordinal, lp)| (&lp.id, ordinal))
         .collect();
-    let pcurve_ordinals: HashMap<_, _> = model
+    let pcurve_ordinals: HashMap<_, _> = geometry
         .pcurves
         .iter()
         .enumerate()
         .map(|(ordinal, pcurve)| (&pcurve.id, ordinal))
         .collect();
-    if model.bodies.is_empty()
-        || model.regions.is_empty()
-        || model.shells.is_empty()
-        || model.faces.is_empty()
-        || model.loops.len() < model.faces.len()
+    if geometry.bodies.is_empty()
+        || geometry.regions.is_empty()
+        || geometry.shells.is_empty()
+        || geometry.faces.is_empty()
+        || geometry.loops.len() < geometry.faces.len()
     {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation requires owned face topology".into(),
         ));
     }
-    validate_source_less_body_kinds(model)?;
+    validate_source_less_body_kinds(geometry)?;
 
-    let plan = NativeRecordPlan::for_model(model)?;
+    let plan = NativeRecordPlan::for_model(geometry)?;
     let NativeRecordPlan {
         body: body_start,
         region: region_start,
@@ -732,7 +732,7 @@ fn encode_face_topology_smbh(
     native_ident(&mut records, "asmheader")?;
     native_string(&mut records, "231.6.3.65535")?;
     records.push(0x11);
-    for (body_ordinal, body) in model.bodies.iter().enumerate() {
+    for (body_ordinal, body) in geometry.bodies.iter().enumerate() {
         let first_region = body
             .regions
             .first()
@@ -742,7 +742,7 @@ fn encode_face_topology_smbh(
                 "body references missing region {first_region}"
             ))
         })?;
-        let transform_ordinal = model.bodies[..body_ordinal]
+        let transform_ordinal = geometry.bodies[..body_ordinal]
             .iter()
             .filter(|candidate| candidate.transform.is_some())
             .count();
@@ -752,17 +752,17 @@ fn encode_face_topology_smbh(
             .filter_map(|region_id| {
                 region_ordinals
                     .get(region_id)
-                    .map(|ordinal| &model.regions[*ordinal])
+                    .map(|ordinal| &geometry.regions[*ordinal])
             })
             .flat_map(|region| &region.shells)
             .find_map(|shell_id| {
                 shell_ordinals
                     .get(shell_id)
                     .copied()
-                    .filter(|ordinal| source_less_wire_count(&model.shells[*ordinal]) != 0)
+                    .filter(|ordinal| source_less_wire_count(&geometry.shells[*ordinal]) != 0)
             })
             .map(|shell_ordinal| {
-                source_less_wire_record_for_shell(model, wire_start, shell_ordinal)
+                source_less_wire_record_for_shell(geometry, wire_start, shell_ordinal)
             })
             .transpose()?
             .unwrap_or(-1);
@@ -797,15 +797,15 @@ fn encode_face_topology_smbh(
         );
         records.push(0x11);
     }
-    for region in &model.regions {
-        let body_ordinal = model
+    for region in &geometry.regions {
+        let body_ordinal = geometry
             .bodies
             .iter()
             .position(|body| body.id == region.body)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("region {} has no body", region.id))
             })?;
-        let body = &model.bodies[body_ordinal];
+        let body = &geometry.bodies[body_ordinal];
         let ordinal = body
             .regions
             .iter()
@@ -816,7 +816,7 @@ fn encode_face_topology_smbh(
         let first_shell = region.shells.first().ok_or_else(|| {
             CodecError::malformed(format_args!("region {} has no shell", region.id))
         })?;
-        let shell_ordinal = model
+        let shell_ordinal = geometry
             .shells
             .iter()
             .position(|shell| shell.id == *first_shell)
@@ -829,7 +829,7 @@ fn encode_face_topology_smbh(
             -1
         } else {
             let id = &body.regions[ordinal + 1];
-            let position = model
+            let position = geometry
                 .regions
                 .iter()
                 .position(|item| item.id == *id)
@@ -850,15 +850,15 @@ fn encode_face_topology_smbh(
         native_ref(&mut records, native_record_index(body_start, body_ordinal)?);
         records.push(0x11);
     }
-    for (shell_ordinal, shell) in model.shells.iter().enumerate() {
-        let region_ordinal = model
+    for (shell_ordinal, shell) in geometry.shells.iter().enumerate() {
+        let region_ordinal = geometry
             .regions
             .iter()
             .position(|region| region.id == shell.region)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("shell {} has no region", shell.id))
             })?;
-        let region = &model.regions[region_ordinal];
+        let region = &geometry.regions[region_ordinal];
         let ordinal = region
             .shells
             .iter()
@@ -870,7 +870,7 @@ fn encode_face_topology_smbh(
             .faces()
             .first()
             .map(|first_face| {
-                model
+                geometry
                     .faces
                     .iter()
                     .position(|face| face.id == *first_face)
@@ -887,7 +887,7 @@ fn encode_face_topology_smbh(
             -1
         } else {
             let id = &region.shells[ordinal + 1];
-            let position = model
+            let position = geometry
                 .shells
                 .iter()
                 .position(|item| item.id == *id)
@@ -908,7 +908,7 @@ fn encode_face_topology_smbh(
             if source_less_wire_count(shell) == 0 {
                 -1
             } else {
-                source_less_wire_record_for_shell(model, wire_start, shell_ordinal)?
+                source_less_wire_record_for_shell(geometry, wire_start, shell_ordinal)?
             },
         );
         native_ref(
@@ -928,13 +928,13 @@ fn encode_face_topology_smbh(
         vertex_start,
     )?;
 
-    for (face_ordinal_global, face) in model.faces.iter().enumerate() {
-        let shell_ordinal = model
+    for (face_ordinal_global, face) in geometry.faces.iter().enumerate() {
+        let shell_ordinal = geometry
             .shells
             .iter()
             .position(|shell| shell.id == face.shell)
             .ok_or_else(|| CodecError::malformed(format_args!("face {} has no shell", face.id)))?;
-        let shell = &model.shells[shell_ordinal];
+        let shell = &geometry.shells[shell_ordinal];
         let ordinal = shell
             .faces()
             .iter()
@@ -947,14 +947,14 @@ fn encode_face_topology_smbh(
                 "source-less F3D face generation requires every face to own a loop".into(),
             )
         })?;
-        let loop_position = model
+        let loop_position = geometry
             .loops
             .iter()
             .position(|loop_| &loop_.id == first_loop)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("face references missing loop {first_loop}"))
             })?;
-        let surface_position = model
+        let surface_position = geometry
             .surfaces
             .iter()
             .position(|surface| surface.id == face.surface)
@@ -983,7 +983,7 @@ fn encode_face_topology_smbh(
                 -1
             } else {
                 let id = &shell.faces()[ordinal + 1];
-                let position = model
+                let position = geometry
                     .faces
                     .iter()
                     .position(|item| item.id == *id)
@@ -1007,14 +1007,14 @@ fn encode_face_topology_smbh(
             native_record_index(surface_start, surface_position)?,
         );
         records.push(native_bool(
-            native_face_sense(model, topology, face) == Sense::Reversed,
+            native_face_sense(geometry, topology, face) == Sense::Reversed,
         ));
         native_face_sidedness(&mut records, topology, face);
         records.push(0x11);
     }
 
-    for loop_ in &model.loops {
-        let face_position = model
+    for loop_ in &geometry.loops {
+        let face_position = geometry
             .faces
             .iter()
             .position(|face| face.id == loop_.face)
@@ -1024,7 +1024,7 @@ fn encode_face_topology_smbh(
         let first = loop_.coedges().first().ok_or_else(|| {
             CodecError::malformed(format_args!("loop {} has no coedges", loop_.id))
         })?;
-        let coedge_position = model
+        let coedge_position = geometry
             .coedges
             .iter()
             .position(|coedge| coedge.id == *first)
@@ -1035,7 +1035,7 @@ fn encode_face_topology_smbh(
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
-        let face = &model.faces[face_position];
+        let face = &geometry.faces[face_position];
         let ordinal = face
             .loops
             .iter()
@@ -1047,7 +1047,7 @@ fn encode_face_topology_smbh(
                 ))
             })?;
         let next_loop = if let Some(next_id) = face.loops.iter().nth(ordinal + 1) {
-            let position = model
+            let position = geometry
                 .loops
                 .iter()
                 .position(|candidate| candidate.id == *next_id)
@@ -1070,7 +1070,7 @@ fn encode_face_topology_smbh(
         records.push(0x11);
     }
 
-    for surface in &model.surfaces {
+    for surface in &geometry.surfaces {
         match surface.geometry.solved() {
             Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin().get();
@@ -1240,7 +1240,7 @@ fn encode_face_topology_smbh(
         }
     }
 
-    for (coedge_ordinal, coedge) in model.coedges.iter().enumerate() {
+    for (coedge_ordinal, coedge) in geometry.coedges.iter().enumerate() {
         if coedge.pcurves.len() > 1 {
             return Err(CodecError::NotImplemented(format!(
                 "coedge {} has an ordered pcurve collection",
@@ -1248,7 +1248,7 @@ fn encode_face_topology_smbh(
             )));
         }
         let Some((next_id, previous_id)) =
-            cadmpeg_ir::topology::coedge_ring_neighbors(&model.loops, coedge)
+            cadmpeg_ir::topology::coedge_ring_neighbors(&geometry.loops, coedge)
         else {
             return Err(CodecError::malformed(format_args!(
                 "coedge {} is absent from its owning loop ring",
@@ -1325,11 +1325,11 @@ fn encode_face_topology_smbh(
 
     let mut wire_edge_owners = BTreeMap::new();
     let mut wire_edge_base = 0usize;
-    for (shell_ordinal, shell) in model.shells.iter().enumerate() {
+    for (shell_ordinal, shell) in geometry.shells.iter().enumerate() {
         if shell.wire_edges().is_empty() {
             continue;
         }
-        let wire_ref = source_less_wire_record_for_shell(model, wire_start, shell_ordinal)?;
+        let wire_ref = source_less_wire_record_for_shell(geometry, wire_start, shell_ordinal)?;
         for (ordinal, edge_id) in shell.wire_edges().iter().enumerate() {
             let edge_ordinal = edge_ordinals.get(edge_id).copied().ok_or_else(|| {
                 CodecError::malformed(format_args!("wire references missing edge {edge_id}"))
@@ -1380,7 +1380,7 @@ fn encode_face_topology_smbh(
         &wire_edge_owners,
         &free_vertex_owners,
     )?;
-    for body in &model.bodies {
+    for body in &geometry.bodies {
         if let Some(transform) = body.transform {
             native_transform(&mut records, topology, body, transform)?;
             records.push(0x11);
@@ -1490,26 +1490,26 @@ fn encode_source_less_edges_vertices_points(
         point: point_start,
         attribute: attribute_start,
     } = starts;
-    let model = &target.model;
-    let vertex_ordinals: HashMap<_, _> = model
+    let geometry = &target.geometry;
+    let vertex_ordinals: HashMap<_, _> = geometry
         .vertices
         .iter()
         .enumerate()
         .map(|(ordinal, vertex)| (&vertex.id, ordinal))
         .collect();
-    let curve_ordinals: HashMap<_, _> = model
+    let curve_ordinals: HashMap<_, _> = geometry
         .curves
         .iter()
         .enumerate()
         .map(|(ordinal, curve)| (&curve.id, ordinal))
         .collect();
-    let point_ordinals: HashMap<_, _> = model
+    let point_ordinals: HashMap<_, _> = geometry
         .points
         .iter()
         .enumerate()
         .map(|(ordinal, point)| (&point.id, ordinal))
         .collect();
-    for (edge_ordinal, edge) in model.edges.iter().enumerate() {
+    for (edge_ordinal, edge) in geometry.edges.iter().enumerate() {
         let start = vertex_ordinals.get(&edge.start).copied();
         let end = vertex_ordinals.get(&edge.end).copied();
         let (Some(start), Some(end)) = (start, end) else {
@@ -1536,10 +1536,10 @@ fn encode_source_less_edges_vertices_points(
         let mut range = match edge.param_range() {
             Some(range) => range.get(),
             None if edge.start == edge.end => {
-                let vertex = &model.vertices[start];
+                let vertex = &geometry.vertices[start];
                 let position = point_ordinals
                     .get(&vertex.point)
-                    .map(|ordinal| model.points[*ordinal].position().get())
+                    .map(|ordinal| geometry.points[*ordinal].position().get())
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "vertex {} has an unresolved carrier",
@@ -1556,7 +1556,7 @@ fn encode_source_less_edges_vertices_points(
                     .map(|ordinal| {
                         closed_edge_traversal(
                             edge,
-                            &model.curves[*ordinal].geometry,
+                            &geometry.curves[*ordinal].geometry,
                             position,
                             tolerance,
                         )
@@ -1572,7 +1572,7 @@ fn encode_source_less_edges_vertices_points(
         if edge.curve().is_some_and(|curve_id| {
             curve_ordinals.get(curve_id).is_some_and(|ordinal| {
                 matches!(
-                    model.curves[*ordinal].geometry,
+                    geometry.curves[*ordinal].geometry,
                     CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
                 )
             })
@@ -1618,7 +1618,7 @@ fn encode_source_less_edges_vertices_points(
         native_tolerant_edge_tail(records, topology, edge);
         records.push(0x11);
     }
-    for vertex in &model.vertices {
+    for vertex in &geometry.vertices {
         let point = point_ordinals.get(&vertex.point).copied();
         let Some(point) = point else {
             return Err(CodecError::malformed(format_args!(
@@ -1661,7 +1661,7 @@ fn encode_source_less_edges_vertices_points(
         native_tolerant_vertex_tail(records, topology, vertex);
         records.push(0x11);
     }
-    for point in &model.points {
+    for point in &geometry.points {
         native_ident(records, "point")?;
         native_ref(records, -1);
         native_i64(records, -1);
@@ -1684,9 +1684,9 @@ fn vertex_ownership(
     topology: &NativeGenerationIndex<'_>,
     vertex: &cadmpeg_ir::topology::Vertex,
 ) -> Result<(usize, EndpointSlot), CodecError> {
-    let model = &target.model;
+    let geometry = &target.geometry;
     if let Some(metadata) = topology.vertex_ownerships.get(vertex.id.as_str()) {
-        let ordinal = model
+        let ordinal = geometry
             .edges
             .iter()
             .position(|edge| edge.id == metadata.owning_edge)
@@ -1696,7 +1696,7 @@ fn vertex_ownership(
                     vertex.id, metadata.owning_edge
                 ))
             })?;
-        let edge = &model.edges[ordinal];
+        let edge = &geometry.edges[ordinal];
         let valid = match metadata.endpoint_index {
             EndpointSlot::Start => edge.start == vertex.id,
             EndpointSlot::End => edge.end == vertex.id,
@@ -1711,7 +1711,7 @@ fn vertex_ownership(
         }
         return Ok((ordinal, metadata.endpoint_index));
     }
-    model
+    geometry
         .edges
         .iter()
         .enumerate()
@@ -1899,7 +1899,7 @@ fn apply_native_edge_owners(
 ) -> Result<(), CodecError> {
     for ownership in topology.edge_ownerships {
         if !target
-            .model
+            .geometry
             .edges
             .iter()
             .any(|edge| edge.id == ownership.edge)
@@ -1914,7 +1914,7 @@ fn apply_native_edge_owners(
             None => -1,
             Some(owner) => {
                 if let Some((ordinal, coedge)) = target
-                    .model
+                    .geometry
                     .coedges
                     .iter()
                     .enumerate()
@@ -1968,12 +1968,12 @@ mod tests {
 
         let native = crate::native::F3dNative::default();
         let index = NativeGenerationIndex::new(&native);
-        let mut model = cadmpeg_ir::examples::unit_cube()
+        let mut geometry = cadmpeg_ir::examples::unit_cube()
             .expect("unit cube fixture is admitted")
-            .model;
-        let surface = model.faces[0].surface.clone();
+            .geometry;
+        let surface = geometry.faces[0].surface.clone();
         for (minor, expected) in [(-2.0, Sense::Forward), (2.0, Sense::Reversed)] {
-            model
+            geometry
                 .surfaces
                 .iter_mut()
                 .find(|candidate| candidate.id == surface)
@@ -1988,9 +1988,9 @@ mod tests {
                 )
                 .expect("torus"),
             ));
-            let mut face = model.faces[0].clone();
+            let mut face = geometry.faces[0].clone();
             face.sense = Sense::Reversed;
-            assert_eq!(native_face_sense(&model, &index, &face), expected);
+            assert_eq!(native_face_sense(&geometry, &index, &face), expected);
         }
     }
 
@@ -2015,19 +2015,19 @@ mod tests {
         assert!(!valid_output.is_empty());
 
         let mut missing = target.clone();
-        missing.model.vertices.clear();
+        missing.geometry.vertices.clear();
 
         let mut unowned = target.clone();
-        let mut extra_vertex = unowned.model.vertices[0].clone();
+        let mut extra_vertex = unowned.geometry.vertices[0].clone();
         extra_vertex.id = cadmpeg_ir::ids::VertexId::mint("test:wire:vertex#unowned")
             .expect("test identity is admitted");
-        unowned.model.vertices.push(extra_vertex);
+        unowned.geometry.vertices.push(extra_vertex);
 
         let mut duplicated = target;
-        duplicated.model.shells[0].add_free_vertex(duplicated.model.vertices[0].id.clone());
+        duplicated.geometry.shells[0].add_free_vertex(duplicated.geometry.vertices[0].id.clone());
 
         let mut endpoint = decoded_wire(&synthetic_wire_body_smbh());
-        endpoint.model.shells[0].add_free_vertex(endpoint.model.edges[0].start.clone());
+        endpoint.geometry.shells[0].add_free_vertex(endpoint.geometry.edges[0].start.clone());
 
         for (target, reason) in [
             (missing, "wire references missing free vertex"),

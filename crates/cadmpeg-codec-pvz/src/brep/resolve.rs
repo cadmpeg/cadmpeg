@@ -59,13 +59,13 @@ pub(crate) struct CoedgeGeometry {
 /// Pcurve domain used for every coedge of a face: the native domain when
 /// each coedge has a native pcurve, otherwise the embedded B-spline domain
 /// when each coedge has a secondary pcurve.
-pub(crate) fn face_slot(model: &ExactModel, face: usize) -> Option<PcurveSlot> {
-    let record = model.faces.get(face)?;
+pub(crate) fn face_slot(geometry: &ExactTopology, face: usize) -> Option<PcurveSlot> {
+    let record = geometry.faces.get(face)?;
     let coedges = || {
         record
             .loops
             .iter()
-            .filter_map(|index| model.loops.get(*index))
+            .filter_map(|index| geometry.loops.get(*index))
             .flat_map(|record| record.coedges.iter())
     };
     let native = !matches!(record.surface.geometry, SurfaceGeometry::Undefined { .. })
@@ -96,14 +96,14 @@ pub(crate) fn domain_point(face: &Face, slot: PcurveSlot, uv: Vec2) -> Option<Ve
 /// Resolves the pcurve, ends, and sense of every coedge of `loop_index` in
 /// the pcurve domain `slot`.
 pub(crate) fn coedge_geometry(
-    model: &ExactModel,
+    geometry: &ExactTopology,
     loop_index: usize,
     slot: Option<PcurveSlot>,
 ) -> Vec<CoedgeGeometry> {
-    let Some(record) = model.loops.get(loop_index) else {
+    let Some(record) = geometry.loops.get(loop_index) else {
         return Vec::new();
     };
-    let Some(face) = model.faces.get(record.face) else {
+    let Some(face) = geometry.faces.get(record.face) else {
         return Vec::new();
     };
     record
@@ -118,12 +118,12 @@ pub(crate) fn coedge_geometry(
                 Some((index, slot))
             });
             let surface_at = |uv: Vec2| domain_point(face, choice?.1, uv);
-            let pcurve = choice.and_then(|(index, _)| model.pcurves.get(index));
+            let pcurve = choice.and_then(|(index, _)| geometry.pcurves.get(index));
             let interval = pcurve.and_then(|pcurve| curve_interval(&pcurve.geometry));
             let uv_ends = pcurve.and_then(|pcurve| curve_ends(&pcurve.geometry));
             let ends =
                 uv_ends.and_then(|[start, end]| Some([surface_at(start)?, surface_at(end)?]));
-            let edge = coedge.edge.and_then(|edge| model.edges.get(edge));
+            let edge = coedge.edge.and_then(|edge| geometry.edges.get(edge));
             let edge_ends = edge.and_then(|edge| curve_ends(&edge.geometry));
             let (sense, residual) = match (ends, edge_ends, edge) {
                 (Some(ends), Some(edge_ends), Some(edge)) => {
@@ -340,7 +340,7 @@ impl LoopPolygon {
 
 /// Samples a loop in stored order from its pcurves.
 pub(crate) fn loop_polygon(
-    model: &ExactModel,
+    geometry: &ExactTopology,
     coedges: &[CoedgeGeometry],
     directions: &[bool],
     periods: [Option<f64>; 2],
@@ -349,7 +349,7 @@ pub(crate) fn loop_polygon(
     let mut last = None;
     for (coedge, forward) in coedges.iter().zip(directions) {
         let (index, _) = coedge.pcurve?;
-        let pcurve = &model.pcurves.get(index)?.geometry;
+        let pcurve = &geometry.pcurves.get(index)?.geometry;
         let [low, high] = coedge.interval?;
         let [start, end] = if *forward { [low, high] } else { [high, low] };
         let first = curve_point(pcurve, start)?;

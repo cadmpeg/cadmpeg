@@ -79,7 +79,7 @@ fn sweep_requires_its_own_caps_complete_spans_and_unchanged_radius() {
 
 fn cylinder_model(radius: f64) -> Model {
     let mut model = model();
-    model.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    geometry.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -104,7 +104,7 @@ fn torus_model(center: Point3) -> Model {
 
 fn torus_model_with_minor(center: Point3, minor: f64) -> Model {
     let mut model = model();
-    model.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+    geometry.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             center,
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -251,12 +251,12 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
     let id = cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:model:procedural-surface#loft")
         .expect("id");
     let payload = serde_json::from_value(loft_payload()).expect("payload");
-    model.procedural_surfaces.push(ProceduralSurface::new(
+    geometry.procedural_surfaces.push(ProceduralSurface::new(
         id.clone(),
         ProceduralSurfaceDefinition::Loft(payload),
         None,
     ));
-    model.surfaces[2].geometry = SurfaceGeometry::Procedural {
+    geometry.surfaces[2].geometry = SurfaceGeometry::Procedural {
         construction: id,
         cache: Some(SolvedSurfaceGeometry::Nurbs(nurbs)),
     };
@@ -335,14 +335,14 @@ const SIDE_CLASS: &str =
 /// by a later generator 99.
 fn legacy_model() -> Model {
     let mut model = model();
-    model.surfaces[2].geometry = serde_json::from_value(json!({
+    geometry.surfaces[2].geometry = serde_json::from_value(json!({
         "kind":"plane","origin":{"x":0.0,"y":0.0,"z":0.0},
         "normal":{"x":1.0,"y":0.0,"z":0.0},"u_axis":{"x":0.0,"y":1.0,"z":0.0}
     }))
     .expect("plane");
-    let mut later = model.faces[2].clone();
+    let mut later = geometry.faces[2].clone();
     later.id = serde_json::from_value(json!("test:model:face#f3")).expect("id");
-    model.faces.push(later);
+    geometry.faces.push(later);
     model.attributes.push(model.attributes[2].clone());
     let face = |i: usize| {
         AttributeTarget::Face(

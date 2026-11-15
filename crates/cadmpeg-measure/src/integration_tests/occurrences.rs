@@ -100,14 +100,14 @@ const TURN_AND_MOVE_Y: [[f64; 4]; 3] = [
 /// and +x onto −z and moving by (0, 50, 0).
 fn placed_block() -> CadIr {
     let mut ir = cuboid([0.0; 3], [2.0, 3.0, 4.0]);
-    ir.model.bodies[0].transform = Transform::affine([
+    ir.geometry.bodies[0].transform = Transform::affine([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 5.0],
     ]);
     ir.model.product_definitions.push(definition(
         definition_id(),
-        vec![ir.model.bodies[0].id.clone()],
+        vec![ir.geometry.bodies[0].id.clone()],
     ));
     ir.model
         .product_definitions
@@ -175,7 +175,7 @@ fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
     let ir = placed_block();
     let model = measure_in(&ir, &Selection::default()).expect("measured");
     assert!(model.occurrence().is_none());
-    let [body] = model.bodies().as_slice() else {
+    let [body] = geometry.bodies().as_slice() else {
         panic!("one body row");
     };
     assert_eq!(*body.placement(), RowPlacement::Model {});
@@ -235,7 +235,7 @@ fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
         }
         let block = report.occurrence().as_ref().expect("occurrence block");
         assert!(block.unavailable().is_none());
-        assert_eq!(block.bodies(), &[ir.model.bodies[0].id.as_str().to_owned()]);
+        assert_eq!(block.bodies(), &[ir.geometry.bodies[0].id.as_str().to_owned()]);
         assert_eq!(block.prototype().as_deref(), Some(prototype.as_str()));
     }
     let top = in_occurrence(&ir, "top");
@@ -252,7 +252,7 @@ fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
     assert_eq!(descendant.parent(), occurrence_id("top").as_str());
     assert_eq!(
         descendant.bodies(),
-        &[ir.model.bodies[0].id.as_str().to_owned()]
+        &[ir.geometry.bodies[0].id.as_str().to_owned()]
     );
     let expected = [
         [0.0, 0.0, 1.0, 100.0],
@@ -388,7 +388,7 @@ fn a_body_placed_twice_in_the_subtree_gives_no_rows() {
     assert_no_rows(
         &report,
         UnavailableReason::PlacementOccurrenceBodyRepeated,
-        ir.model.bodies[0].id.as_str(),
+        ir.geometry.bodies[0].id.as_str(),
     );
 }
 
@@ -432,7 +432,7 @@ fn a_chain_with_a_missing_parent_gives_no_rows() {
 #[test]
 fn selectors_outside_the_prototype_and_unknown_occurrences_are_refused() {
     let mut ir = cuboid([10.0; 3], [11.0; 3]);
-    let other_body = ir.model.bodies[0].id.clone();
+    let other_body = ir.geometry.bodies[0].id.clone();
     let block = placed_block();
     let unknown = measure_in(
         &block,

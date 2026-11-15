@@ -34,13 +34,13 @@ pub(super) fn transfer(
         .map(|drawing| (drawing.object.as_str(), drawing))
         .collect::<BTreeMap<_, _>>();
     let sources = super::reference::Sources::new(
-        &model.curves,
-        &model.edges,
-        &model.vertices,
-        &model.points,
-        &model.surfaces,
-        &model.faces,
-        model.bodies.iter().all(|body| body.transform.is_none()),
+        &geometry.curves,
+        &geometry.edges,
+        &geometry.vertices,
+        &geometry.points,
+        &geometry.surfaces,
+        &geometry.faces,
+        geometry.bodies.iter().all(|body| body.transform.is_none()),
     );
     for annotation in &mut model.semantic_annotations {
         if annotation.kind != cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension {

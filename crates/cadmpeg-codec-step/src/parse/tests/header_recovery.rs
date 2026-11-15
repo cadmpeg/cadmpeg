@@ -95,7 +95,7 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
     let expected = codec
         .decode(&mut Cursor::new(original), &DecodeOptions::default())
         .unwrap();
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     let name_start = original.find("FILE_NAME").unwrap();
     let name_end = name_start + original[name_start..].find('\n').unwrap();
     for literal in [
@@ -221,7 +221,7 @@ fn missing_file_name_keeps_geometry_and_retains_header_bytes() {
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .unwrap(),
     );
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     assert_eq!(recovered.ir().model, expected.ir().model);
     assert!(recovered
         .report()

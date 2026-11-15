@@ -429,7 +429,7 @@ fn reach<'a>(
     let mut table = HashMap::<&str, Record<'_>>::new();
     macro_rules! index {
         ($arena:ident, $variant:ident) => {
-            for record in &model.$arena {
+            for record in &geometry.$arena {
                 table.insert(record.identity(), Record::$variant(record));
             }
         };
@@ -442,10 +442,10 @@ fn reach<'a>(
     index!(coedges, Coedge);
     index!(edges, Edge);
     index!(vertices, Vertex);
-    for record in &model.surfaces {
+    for record in &geometry.surfaces {
         table.insert(record.identity(), Record::Surface);
     }
-    for record in &model.curves {
+    for record in &geometry.curves {
         table.insert(record.identity(), Record::Curve);
     }
     index!(pcurves, Pcurve);
@@ -548,11 +548,11 @@ fn solve(topology: &mut BodyTopology) -> bool {
 
 /// Whether a record of the nest refers to an identity outside the nest.
 fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, CodecError> {
-    let model = topology.to_model();
+    let geometry = topology.to_topology();
     let mut inside = HashSet::<&str>::new();
     macro_rules! collect {
         ($($arena:ident),*) => {$(
-            for record in &model.$arena {
+            for record in &geometry.$arena {
                 inside.insert(record.identity());
             }
         )*};
@@ -564,7 +564,7 @@ fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, Cod
     let mut escaped = false;
     macro_rules! visit {
         ($($arena:ident),*) => {$(
-            for record in &model.$arena {
+            for record in &geometry.$arena {
                 record.visit_references(ctx, &mut |target| {
                     escaped |= !inside.contains(target);
                     Ok(())
@@ -580,9 +580,9 @@ fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, Cod
 }
 
 /// Copy the records of one body of a decoded state into a nest.
-fn extract(ctx: &DecodeContext<'_>, model: &Model, body: &str) -> Result<Extract, CodecError> {
-    let (reached, missing) = reach(ctx, model, body)?;
-    let Some(root) = model
+fn extract(ctx: &DecodeContext<'_>, geometry: &Topology, body: &str) -> Result<Extract, CodecError> {
+    let (reached, missing) = reach(ctx, geometry, body)?;
+    let Some(root) = geometry
         .bodies
         .iter()
         .find(|candidate| candidate.id.as_str() == body)
@@ -590,17 +590,17 @@ fn extract(ctx: &DecodeContext<'_>, model: &Model, body: &str) -> Result<Extract
         return Ok(Extract::Absent);
     };
     let mut topology = BodyTopology::new(root.clone());
-    topology.regions = retain(&model.regions, &reached);
-    topology.shells = retain(&model.shells, &reached);
-    topology.faces = retain(&model.faces, &reached);
-    topology.loops = retain(&model.loops, &reached);
-    topology.coedges = retain(&model.coedges, &reached);
-    topology.edges = retain(&model.edges, &reached);
-    topology.vertices = retain(&model.vertices, &reached);
-    topology.surfaces = retain(&model.surfaces, &reached);
-    topology.curves = retain(&model.curves, &reached);
-    topology.pcurves = retain(&model.pcurves, &reached);
-    topology.points = retain(&model.points, &reached);
+    topology.regions = retain(&geometry.regions, &reached);
+    topology.shells = retain(&geometry.shells, &reached);
+    topology.faces = retain(&geometry.faces, &reached);
+    topology.loops = retain(&geometry.loops, &reached);
+    topology.coedges = retain(&geometry.coedges, &reached);
+    topology.edges = retain(&geometry.edges, &reached);
+    topology.vertices = retain(&geometry.vertices, &reached);
+    topology.surfaces = retain(&geometry.surfaces, &reached);
+    topology.curves = retain(&geometry.curves, &reached);
+    topology.pcurves = retain(&geometry.pcurves, &reached);
+    topology.points = retain(&geometry.points, &reached);
     if !solve(&mut topology) {
         return Ok(Extract::Absent);
     }

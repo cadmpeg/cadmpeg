@@ -68,15 +68,15 @@ pub fn cylinder_with_curve_sources(
 
     for (key, z) in [("bottom", 0.0), ("top", h)] {
         let position = FinitePoint3::new(Point3::new(r, 0.0, z)).expect("finite position");
-        ir.model
+        ir.geometry
             .points
             .push(Point::new(id(PointId::mint, "point", key), position, None));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: id(VertexId::mint, "vertex", key),
             point: id(PointId::mint, "point", key),
             tolerance: None,
         });
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: id(CurveId::mint, "curve", key),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -84,8 +84,8 @@ pub fn cylinder_with_curve_sources(
             )),
             source_object: curve_source(key),
         });
-        ir.model.edges.push(closed_edge(key, key, key));
-        ir.model.surfaces.push(Surface {
+        ir.geometry.edges.push(closed_edge(key, key, key));
+        ir.geometry.surfaces.push(Surface {
             id: id(SurfaceId::mint, "surface", key),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 PlaneSurface::try_new(Point3::new(0.0, 0.0, z), axis, reference).expect("plane"),
@@ -93,7 +93,7 @@ pub fn cylinder_with_curve_sources(
             source_object: None,
         });
     }
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: id(CurveId::mint, "curve", "seam"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -101,7 +101,7 @@ pub fn cylinder_with_curve_sources(
         )),
         source_object: curve_source("seam"),
     });
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: id(EdgeId::mint, "edge", "seam"),
         carrier: EdgeCarrier::new(Some(id(CurveId::mint, "curve", "seam")), Some([0.0, h]))
             .expect("bounded seam"),
@@ -109,7 +109,7 @@ pub fn cylinder_with_curve_sources(
         end: id(VertexId::mint, "vertex", "top"),
         tolerance: None,
     });
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: id(SurfaceId::mint, "surface", "side"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             CylinderSurface::try_new(Point3::new(0.0, 0.0, 0.0), axis, reference, r)
@@ -142,7 +142,7 @@ pub fn cylinder_with_curve_sources(
         ("top", "top", "top", Sense::Forward, "side-top"),
     ];
     for (coedge, owner, edge, sense, partner) in coedges {
-        ir.model.coedges.push(Coedge {
+        ir.geometry.coedges.push(Coedge {
             id: id(CoedgeId::mint, "coedge", coedge),
             owner_loop: id(LoopId::mint, "loop", owner),
             edge: id(EdgeId::mint, "edge", edge),
@@ -163,7 +163,7 @@ pub fn cylinder_with_curve_sources(
         ("top", Sense::Forward, &["top"][..]),
     ];
     for (face, sense, ring) in faces {
-        ir.model.loops.push(Loop {
+        ir.geometry.loops.push(Loop {
             id: id(LoopId::mint, "loop", face),
             face: id(FaceId::mint, "face", face),
             boundary: LoopBoundary::Ring(
@@ -176,7 +176,7 @@ pub fn cylinder_with_curve_sources(
                 .expect("non-empty ring"),
             ),
         });
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: id(FaceId::mint, "face", face),
             shell: id(ShellId::mint, "shell", "cylinder"),
             surface: id(SurfaceId::mint, "surface", face),
@@ -188,7 +188,7 @@ pub fn cylinder_with_curve_sources(
         });
     }
 
-    ir.model.shells.push(
+    ir.geometry.shells.push(
         Shell::new(
             id(ShellId::mint, "shell", "cylinder"),
             id(RegionId::mint, "region", "cylinder"),
@@ -201,12 +201,12 @@ pub fn cylinder_with_curve_sources(
         )
         .expect("shell with faces"),
     );
-    ir.model.regions.push(Region {
+    ir.geometry.regions.push(Region {
         id: id(RegionId::mint, "region", "cylinder"),
         body: id(BodyId::mint, "body", "cylinder"),
         shells: vec![id(ShellId::mint, "shell", "cylinder")],
     });
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: id(BodyId::mint, "body", "cylinder"),
         kind: BodyKind::Solid,
         regions: vec![id(RegionId::mint, "region", "cylinder")],

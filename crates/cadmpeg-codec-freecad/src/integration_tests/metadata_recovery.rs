@@ -66,7 +66,7 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
     let baseline = FcstdCodec
         .decode(&mut Cursor::new(original), &DecodeOptions::default())
         .unwrap();
-    assert!(!baseline.ir().model.faces.is_empty());
+    assert!(!baseline.ir().geometry.faces.is_empty());
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
         .unwrap();

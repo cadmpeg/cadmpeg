@@ -25,7 +25,7 @@
 //!     &mut Cursor::new(bytes),
 //!     &DecodeOptions::default(),
 //! )?;
-//! println!("{} faces", decoded.ir().model.faces.len());
+//! println!("{} faces", decoded.ir().geometry.faces.len());
 //! for loss in &decoded.report().losses {
 //!     eprintln!("{:?}: {}", loss.severity, loss.message);
 //! }

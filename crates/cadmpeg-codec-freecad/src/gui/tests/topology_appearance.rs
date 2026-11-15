@@ -31,14 +31,15 @@ fn face_materials_follow_shape_indices_without_complete_persistent_names() {
             decoded.report().losses
         );
         let model = &decoded.ir().model;
-        assert_eq!(model.faces.len(), 8);
+        let geometry = &decoded.ir().geometry;
+        assert_eq!(geometry.faces.len(), 8);
         let face_bindings = model
             .appearance_bindings
             .iter()
             .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
             .collect::<Vec<_>>();
         assert_eq!(face_bindings.len(), 8);
-        for face in &model.faces {
+        for face in &geometry.faces {
             assert_eq!(
                 face_bindings
                     .iter()

@@ -9485,7 +9485,7 @@ fn validate_body_links(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let ir = ctx.ir;
     let body_ids = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| &body.id)
@@ -9529,13 +9529,13 @@ fn validate_subentity_tags(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let ir = ctx.ir;
     let face_ids = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| &face.id)
         .collect::<std::collections::HashSet<_>>();
     let edge_ids = ir
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| &edge.id)

@@ -37,40 +37,40 @@ pub(super) fn decode(
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
-    let face_indices = collect_identity_indices(ir.model.faces.iter().map(|face| face.id.as_str()));
+    let face_indices = collect_identity_indices(ir.geometry.faces.iter().map(|face| face.id.as_str()));
     let body_indices =
-        collect_identity_indices(ir.model.bodies.iter().map(|body| body.id.as_str()));
+        collect_identity_indices(ir.geometry.bodies.iter().map(|body| body.id.as_str()));
     let indices = PresentationIndices {
         faces: &face_indices,
         bodies: &body_indices,
     };
     let entity_ids = EntityIds {
         edges: ir
-            .model
+            .geometry
             .edges
             .iter()
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
         vertices: ir
-            .model
+            .geometry
             .vertices
             .iter()
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
         points: ir
-            .model
+            .geometry
             .points
             .iter()
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
         curves: ir
-            .model
+            .geometry
             .curves
             .iter()
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
         surfaces: ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .map(|item| item.id.as_str())
@@ -151,7 +151,7 @@ pub(super) fn decode(
             let mut hidden = false;
             for body_id in body_ids {
                 if let Some(index) = body_indices.get(body_id.as_str()) {
-                    ir.model.bodies[*index].visible = Some(false);
+                    ir.geometry.bodies[*index].visible = Some(false);
                     hidden = true;
                 }
             }
@@ -498,10 +498,10 @@ pub(super) fn decode(
             let slot = match &target {
                 AppearanceTarget::Face(face) => face_indices
                     .get(face.as_str())
-                    .map(|&index| &mut ir.model.faces[index].color),
+                    .map(|&index| &mut ir.geometry.faces[index].color),
                 AppearanceTarget::Body(body) => body_indices
                     .get(body.as_str())
-                    .map(|&index| &mut ir.model.bodies[index].color),
+                    .map(|&index| &mut ir.geometry.bodies[index].color),
                 _ => None,
             };
             if let Some(slot) = slot {

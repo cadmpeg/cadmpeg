@@ -16,11 +16,11 @@ fn zero_length_edge_parameter_range_is_a_writer_limit() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    let curve = ir.model.edges[0]
+    let curve = ir.geometry.edges[0]
         .curve()
         .expect("polygon edge has a curve")
         .clone();
-    ir.model.edges[0].carrier =
+    ir.geometry.edges[0].carrier =
         EdgeCarrier::new(Some(curve), Some([0.0, 0.0])).expect("equal endpoints are admitted");
 
     let error = WritableModel::try_new(&ir)
@@ -36,7 +36,7 @@ fn admitted_unit_direction_outside_rhino_bound_is_a_writer_limit() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0 + 5.0e-10, 0.0, 0.0),
@@ -57,7 +57,7 @@ fn admitted_frame_outside_rhino_bound_is_a_writer_limit() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0 + 5.0e-10),
@@ -85,9 +85,9 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
         crate::RhinoArchiveVersion::V8,
     )
     .expect("triangle payload");
-    ir.model.vertices.reverse();
-    ir.model.edges.reverse();
-    ir.model.coedges.reverse();
+    ir.geometry.vertices.reverse();
+    ir.geometry.edges.reverse();
+    ir.geometry.coedges.reverse();
     let model =
         WritableModel::try_new(&ir).expect("references resolve independently of arena order");
     let actual = super::super::brep_payload(
@@ -98,8 +98,8 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
     .expect("permuted triangle payload");
     assert_eq!(actual.body, expected.body);
     assert_eq!(actual.direct, expected.direct);
-    assert_eq!(model.loops[0].coedges, vec![0, 1, 2]);
-    for (position, edge) in model.edges.iter().enumerate() {
+    assert_eq!(geometry.loops[0].coedges, vec![0, 1, 2]);
+    for (position, edge) in geometry.edges.iter().enumerate() {
         assert_eq!(edge.start, position);
         assert_eq!(edge.end, (position + 1) % 3);
         assert_eq!(edge.uses, vec![position]);
@@ -110,21 +110,21 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
 fn multi_face_resolves_domains_and_incidence_in_arena_order() {
     let ir = adjacent_quad_sheet();
     let model = WritableModel::try_new(&ir).expect("writable adjacent faces");
-    for (position, edge) in model.edges.iter().enumerate() {
-        assert_eq!(edge.source.id, ir.model.edges[position].id);
+    for (position, edge) in geometry.edges.iter().enumerate() {
+        assert_eq!(edge.source.id, ir.geometry.edges[position].id);
         assert_eq!(
             Some(edge.domain),
-            ir.model.edges[position]
+            ir.geometry.edges[position]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::finite_components)
         );
         for coedge in &edge.uses {
-            assert_eq!(model.coedges[*coedge].edge, position);
+            assert_eq!(geometry.coedges[*coedge].edge, position);
         }
     }
-    for face in &model.faces {
+    for face in &geometry.faces {
         assert!(matches!(
-            model.surfaces[face.surface],
+            geometry.surfaces[face.surface],
             WritableFaceSurface::Plane { .. }
         ));
     }
@@ -133,14 +133,14 @@ fn multi_face_resolves_domains_and_incidence_in_arena_order() {
 #[test]
 fn shell_face_listing_order_is_not_the_arena_order() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    for face in &mut ir.model.faces {
+    for face in &mut ir.geometry.faces {
         face.name = None;
     }
-    let arena: Vec<_> = ir.model.faces.iter().map(|face| face.id.clone()).collect();
-    assert_ne!(ir.model.shells[0].faces(), arena.as_slice());
+    let arena: Vec<_> = ir.geometry.faces.iter().map(|face| face.id.clone()).collect();
+    assert_ne!(ir.geometry.shells[0].faces(), arena.as_slice());
     assert!(WritableModel::try_new(&ir).is_ok());
-    let shell = &ir.model.shells[0];
-    ir.model.shells[0] = cadmpeg_ir::topology::Shell::new(
+    let shell = &ir.geometry.shells[0];
+    ir.geometry.shells[0] = cadmpeg_ir::topology::Shell::new(
         shell.id.clone(),
         shell.region.clone(),
         shell.faces()[1..].to_vec(),

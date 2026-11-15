@@ -52,9 +52,9 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
         .0;
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
-    ir.model.bodies.iter_mut().for_each(|body| body.name = None);
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    let body = ir.model.bodies[0].id.clone();
+    ir.geometry.bodies.iter_mut().for_each(|body| body.name = None);
+    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.configurations = (0..2)
         .map(|index| DesignConfiguration {
             id: ConfigurationId::mint(format!("synthetic:probe:configuration#{index}")).unwrap(),
@@ -84,8 +84,8 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let point = decoded.ir().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let point = decoded.ir().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             point.x,
             point.y,
@@ -154,9 +154,9 @@ fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -227,9 +227,9 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -243,7 +243,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
         material: Some("Steel".into()),
         properties: BTreeMap::from([(cadmpeg_core::nonblank_literal!("Finish"), "Ground".into())]),
         bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.model.bodies[0].id.clone()])
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.geometry.bodies[0].id.clone()])
                 .unwrap(),
         ),
         parameter_values: BTreeMap::new(),
@@ -333,7 +333,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
         Some(
             decoded
                 .ir()
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .map(|body| body.id.clone())
@@ -422,15 +422,15 @@ fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configura
         .0;
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
-    ir.model.bodies.iter_mut().for_each(|body| body.name = None);
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry.bodies.iter_mut().for_each(|body| body.name = None);
+    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
     let body_ids = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
-    for (index, body) in ir.model.bodies.iter_mut().enumerate() {
+    for (index, body) in ir.geometry.bodies.iter_mut().enumerate() {
         body.transform = Some(
             Transform::affine([
                 [
@@ -520,7 +520,7 @@ fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configura
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir().model.bodies.len(), 2);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 2);
     assert_eq!(
         decoded.ir().model.configurations[0]
             .bodies
@@ -782,9 +782,9 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -862,15 +862,15 @@ fn encoder_bakes_rigid_body_transform() {
     use cadmpeg_ir::transform::Transform;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
-    let original_point = ir.model.points[0].position().get();
+    let original_point = ir.geometry.points[0].position().get();
     let original_normal = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find_map(|surface| match surface.geometry {
@@ -886,7 +886,7 @@ fn encoder_bakes_rigid_body_transform() {
             _ => None,
         })
         .unwrap();
-    ir.model.bodies[0].transform = Some(
+    ir.geometry.bodies[0].transform = Some(
         Transform::affine([
             [0.0, -1.0, 0.0, 10.0],
             [1.0, 0.0, 0.0, 20.0],
@@ -912,12 +912,12 @@ fn encoder_bakes_rigid_body_transform() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.ir().model.points.iter().any(|point| {
+    assert!(decoded.ir().geometry.points.iter().any(|point| {
         (point.position().get().x - expected_point.x).abs() < 1.0e-9
             && (point.position().get().y - expected_point.y).abs() < 1.0e-9
             && (point.position().get().z - expected_point.z).abs() < 1.0e-9
     }));
-    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
         if {
             let normal = plane_surface.frame().axis().as_raw();
@@ -926,7 +926,7 @@ fn encoder_bakes_rigid_body_transform() {
     }));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .all(|body| body.transform.is_none()));
@@ -940,8 +940,8 @@ fn semantic_writer_regenerates_modified_planar_brep() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     let mut result = EditableDecodeResult::from(result);
-    let moved = result.ir_mut().model.points[0].position().get();
-    result.ir_mut().model.points[0].set_position(
+    let moved = result.ir_mut().geometry.points[0].position().get();
+    result.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
@@ -962,7 +962,7 @@ fn semantic_writer_regenerates_modified_planar_brep() {
         .unwrap();
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.position().get().x == 1.0));
@@ -977,8 +977,8 @@ fn semantic_writer_uses_schema_specific_face_families() {
         )
         .unwrap();
     let mut solid = EditableDecodeResult::from(solid);
-    let moved = solid.ir_mut().model.points[0].position().get();
-    solid.ir_mut().model.points[0].set_position(
+    let moved = solid.ir_mut().geometry.points[0].position().get();
+    solid.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -1006,8 +1006,8 @@ fn semantic_writer_uses_schema_specific_face_families() {
         )
         .unwrap();
     let mut sheet = EditableDecodeResult::from(sheet);
-    let moved = sheet.ir_mut().model.points[0].position().get();
-    sheet.ir_mut().model.points[0].set_position(
+    let moved = sheet.ir_mut().geometry.points[0].position().get();
+    sheet.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -1037,8 +1037,8 @@ fn semantic_writer_preserves_outer_header() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -1084,24 +1084,24 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
             .unwrap();
 
         assert_eq!(
-            decoded.ir().model.faces.len(),
-            result.ir().model.faces.len()
+            decoded.ir().geometry.faces.len(),
+            result.ir().geometry.faces.len()
         );
         assert_eq!(
-            decoded.ir().model.curves.len(),
-            result.ir().model.curves.len()
+            decoded.ir().geometry.curves.len(),
+            result.ir().geometry.curves.len()
         );
         assert_eq!(
             decoded
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .map(|surface| &surface.geometry)
                 .collect::<Vec<_>>(),
             result
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .map(|surface| &surface.geometry)
@@ -1120,8 +1120,8 @@ fn semantic_writer_preserves_sheet_body_classification() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -1144,12 +1144,12 @@ fn semantic_writer_preserves_sheet_body_classification() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir().model.bodies.len(), 1);
+    assert_eq!(regenerated.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        regenerated.ir().model.bodies[0].kind,
+        regenerated.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
     );
-    assert_eq!(regenerated.ir().model.faces.len(), 1);
+    assert_eq!(regenerated.ir().geometry.faces.len(), 1);
     assert_eq!(
         regenerated
             .ir()
@@ -1170,7 +1170,7 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.faces[0].surface =
+    decoded.ir_mut().geometry.faces[0].surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#missing").expect("identity grammar");
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -1192,7 +1192,7 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
     let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
-        let edge = &mut ir.model.edges[0];
+        let edge = &mut ir.geometry.edges[0];
         edge.carrier =
             cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([0.0, 1.0]))
                 .unwrap();
@@ -1215,7 +1215,7 @@ pub(crate) fn semantic_writer_rejects_subds() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.subds.push(cadmpeg_ir::SubdSurface {
+    decoded.ir_mut().geometry.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         source_object: None,
@@ -1331,8 +1331,8 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
 
     for (geometry, expected) in cases {
         let mut ir = decoded.ir().clone();
-        let surface_id = ir.model.surfaces[0].id.as_str().to_owned();
-        ir.model.surfaces[0].geometry = geometry;
+        let surface_id = ir.geometry.surfaces[0].id.as_str().to_owned();
+        ir.geometry.surfaces[0].geometry = geometry;
 
         let error = crate::test_support::plan_inherited_write(
             &ir,
@@ -1358,8 +1358,8 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             50.8, moved.y, moved.z,
         ))
@@ -1379,7 +1379,7 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
 
     assert!(regenerated
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| (point.position().get().x - 50.8).abs() < 1e-5));
@@ -1399,8 +1399,8 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -1422,22 +1422,22 @@ fn semantic_writer_preserves_multiple_body_ownership() {
             .unwrap(),
     );
 
-    assert_eq!(regenerated.ir().model.bodies.len(), 2);
-    assert_eq!(regenerated.ir().model.regions.len(), 2);
-    assert_eq!(regenerated.ir().model.shells.len(), 2);
+    assert_eq!(regenerated.ir().geometry.bodies.len(), 2);
+    assert_eq!(regenerated.ir().geometry.regions.len(), 2);
+    assert_eq!(regenerated.ir().geometry.shells.len(), 2);
     assert!(regenerated
         .ir()
-        .model
+        .geometry
         .shells
         .iter()
         .all(|shell| shell.faces().len() == 1));
-    assert!(regenerated.ir().model.regions.iter().all(|region| {
+    assert!(regenerated.ir().geometry.regions.iter().all(|region| {
         regenerated.source_fidelity().annotations.provenance[region.id.as_str()]
             .tag
             .as_deref()
             == Some("00_51_region")
     }));
-    assert!(regenerated.ir().model.shells.iter().all(|shell| {
+    assert!(regenerated.ir().geometry.shells.iter().all(|shell| {
         regenerated.source_fidelity().annotations.provenance[shell.id.as_str()]
             .tag
             .as_deref()
@@ -1462,7 +1462,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
     let (expected_curve, expected_surface) = {
         let mut ir_edit = decoded.ir_mut();
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) =
-            &mut ir_edit.model.curves[0].geometry
+            &mut ir_edit.geometry.curves[0].geometry
         else {
             panic!("expected NURBS curve");
         };
@@ -1481,7 +1481,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
             .unwrap();
         let expected_curve = curve.clone();
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
-            &mut ir_edit.model.surfaces[0].geometry
+            &mut ir_edit.geometry.surfaces[0].geometry
         else {
             panic!("expected NURBS surface");
         };
@@ -1514,10 +1514,10 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir().model.curves.iter().any(
+    assert!(regenerated.ir().geometry.curves.iter().any(
         |curve| matches!(&curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(value)) if value == &expected_curve)
-    ), "curves: {:?}; expected: {expected_curve:?}; losses: {:?}", regenerated.ir().model.curves, regenerated.report().losses);
-    assert!(regenerated.ir().model.surfaces.iter().any(
+    ), "curves: {:?}; expected: {expected_curve:?}; losses: {:?}", regenerated.ir().geometry.curves, regenerated.report().losses);
+    assert!(regenerated.ir().geometry.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(value)) if value == &expected_surface)
     ));
 }
@@ -1535,8 +1535,8 @@ fn semantic_writer_preserves_unbound_material_definition() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -1559,8 +1559,8 @@ fn semantic_writer_preserves_unbound_material_definition() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir().model.bodies[0].name.is_none());
-    assert!(regenerated.ir().model.bodies[0].color.is_none());
+    assert!(regenerated.ir().geometry.bodies[0].name.is_none());
+    assert!(regenerated.ir().geometry.bodies[0].color.is_none());
     let appearance = regenerated
         .ir()
         .model
@@ -1588,8 +1588,8 @@ fn semantic_writer_rejects_overlong_material_names() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.appearances[0].name = Some("M".repeat(256));
-    decoded.ir_mut().model.bodies[0].name = Some("M".repeat(256));
-    decoded.ir_mut().model.bodies[0].color = Some(
+    decoded.ir_mut().geometry.bodies[0].name = Some("M".repeat(256));
+    decoded.ir_mut().geometry.bodies[0].color = Some(
         cadmpeg_ir::topology::Color::new(32.0 / 255.0, 64.0 / 255.0, 128.0 / 255.0, 1.0)
             .expect("valid color"),
     );
@@ -1625,8 +1625,8 @@ fn semantic_writer_preserves_face_appearance() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,

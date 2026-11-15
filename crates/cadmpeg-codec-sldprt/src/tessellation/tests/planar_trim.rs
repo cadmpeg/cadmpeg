@@ -157,13 +157,13 @@ fn polygon_triangle_check_accepts_edges_on_the_outer_boundary() {
 fn single_planar_polygon_yields_a_planar_trim() {
     let mut model = super::model_with_body();
     let face_id = super::add_square_face(&mut model, "budget", 0.);
-    let loops = model.loops.iter().map(|entry| (&entry.id, entry)).collect();
+    let loops = geometry.loops.iter().map(|entry| (&entry.id, entry)).collect();
     let coedges = model
         .coedges
         .iter()
         .map(|entry| (&entry.id, entry))
         .collect();
-    let edges = model.edges.iter().map(|entry| (&entry.id, entry)).collect();
+    let edges = geometry.edges.iter().map(|entry| (&entry.id, entry)).collect();
     let vertices = model
         .vertices
         .iter()
@@ -188,7 +188,7 @@ fn single_planar_polygon_yields_a_planar_trim() {
         curves: &curves,
         coordinate_scale: super::super::trim_coordinate_scale(&points),
     };
-    let face = model.faces.iter().find(|face| face.id == face_id).unwrap();
+    let face = geometry.faces.iter().find(|face| face.id == face_id).unwrap();
     let surface = &model
         .surfaces
         .iter()

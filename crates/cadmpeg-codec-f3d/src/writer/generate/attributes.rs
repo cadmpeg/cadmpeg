@@ -160,13 +160,13 @@ impl<'a> AttributeIndex<'a> {
                 }
             };
         }
-        split_timestamp_ordinals!(&target.model.bodies, body_timestamps);
-        split_timestamp_ordinals!(&target.model.faces, face_timestamps);
-        split_timestamp_ordinals!(&target.model.edges, edge_timestamps);
-        split_timestamp_ordinals!(&target.model.coedges, coedge_timestamps);
-        split_timestamp_ordinals!(&target.model.vertices, vertex_timestamps);
+        split_timestamp_ordinals!(&target.geometry.bodies, body_timestamps);
+        split_timestamp_ordinals!(&target.geometry.faces, face_timestamps);
+        split_timestamp_ordinals!(&target.geometry.edges, edge_timestamps);
+        split_timestamp_ordinals!(&target.geometry.coedges, coedge_timestamps);
+        split_timestamp_ordinals!(&target.geometry.vertices, vertex_timestamps);
         let body_group_ordinals = target
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| body_links.contains_key(body.id.as_str()))
@@ -174,7 +174,7 @@ impl<'a> AttributeIndex<'a> {
             .map(|(ordinal, body)| (body.id.as_str().to_owned(), ordinal))
             .collect();
         let face_group_ordinals = target
-            .model
+            .geometry
             .faces
             .iter()
             .filter(|face| face_tags.contains_key(face.id.as_str()))
@@ -182,7 +182,7 @@ impl<'a> AttributeIndex<'a> {
             .map(|(ordinal, face)| (face.id.as_str().to_owned(), ordinal))
             .collect();
         let edge_group_ordinals = target
-            .model
+            .geometry
             .edges
             .iter()
             .filter(|edge| edge_tags.contains_key(edge.id.as_str()))
@@ -190,7 +190,7 @@ impl<'a> AttributeIndex<'a> {
             .map(|(ordinal, edge)| (edge.id.as_str().to_owned(), ordinal))
             .collect();
         let sketch_ordinals = target
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| coedge_sketch_links.contains_key(coedge.id.as_str()))
@@ -279,23 +279,23 @@ enum ColorOwner {
 }
 
 fn color_attribute_ref(
-    model: &cadmpeg_ir::document::Model,
+    geometry: &cadmpeg_ir::document::Topology,
     ordinal: usize,
     owner: ColorOwner,
     attribute_start: i64,
 ) -> Result<i64, CodecError> {
     let preceding = match owner {
-        ColorOwner::Body => model.bodies[..ordinal]
+        ColorOwner::Body => geometry.bodies[..ordinal]
             .iter()
             .filter(|body| body.color.is_some())
             .count(),
         ColorOwner::Face => {
-            model
+            geometry
                 .bodies
                 .iter()
                 .filter(|body| body.color.is_some())
                 .count()
-                + model.faces[..ordinal]
+                + geometry.faces[..ordinal]
                     .iter()
                     .filter(|face| face.color.is_some())
                     .count()
@@ -426,7 +426,7 @@ fn body_name_attribute_ref(
         return Ok(None);
     }
     let ordinal = target
-        .model
+        .geometry
         .bodies
         .iter()
         .take_while(|candidate| candidate.id != body.id)
@@ -510,14 +510,14 @@ fn face_name_attribute_ref(
         return Ok(None);
     }
     let ordinal = target
-        .model
+        .geometry
         .faces
         .iter()
         .take_while(|candidate| candidate.id != face.id)
         .filter(|candidate| candidate.name.is_some())
         .count();
     let body_name_count = target
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.name.is_some())
@@ -553,13 +553,13 @@ pub(super) fn edge_persistent_attribute_ref(
 
 fn source_less_color_count(target: &CadIr) -> usize {
     target
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.color.is_some())
         .count()
         + target
-            .model
+            .geometry
             .faces
             .iter()
             .filter(|face| face.color.is_some())
@@ -568,13 +568,13 @@ fn source_less_color_count(target: &CadIr) -> usize {
 
 fn source_less_name_count(target: &CadIr) -> usize {
     target
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.name.is_some())
         .count()
         + target
-            .model
+            .geometry
             .faces
             .iter()
             .filter(|face| face.name.is_some())
@@ -636,7 +636,7 @@ fn attribute_before_timestamp(
     match entity {
         AttributeTarget::Body(id) => {
             let body = target
-                .model
+                .geometry
                 .bodies
                 .get(owner_ordinal)
                 .filter(|body| body.id == *id)
@@ -662,7 +662,7 @@ fn attribute_before_timestamp(
         }
         AttributeTarget::Face(id) => {
             let face = target
-                .model
+                .geometry
                 .faces
                 .get(owner_ordinal)
                 .filter(|face| face.id == *id)
@@ -688,7 +688,7 @@ fn attribute_before_timestamp(
         }
         AttributeTarget::Edge(id) => {
             let edge = target
-                .model
+                .geometry
                 .edges
                 .get(owner_ordinal)
                 .filter(|edge| edge.id == *id)
@@ -700,7 +700,7 @@ fn attribute_before_timestamp(
         }
         AttributeTarget::Coedge(id) => {
             let coedge = target
-                .model
+                .geometry
                 .coedges
                 .get(owner_ordinal)
                 .filter(|coedge| coedge.id == *id)
@@ -709,7 +709,7 @@ fn attribute_before_timestamp(
         }
         AttributeTarget::Vertex(id) => {
             if target
-                .model
+                .geometry
                 .vertices
                 .get(owner_ordinal)
                 .is_some_and(|vertex| vertex.id == *id)
@@ -838,16 +838,16 @@ pub(super) fn encode_source_less_attributes(
     attribute_start: i64,
     owners: AttributeOwnerStarts,
 ) -> Result<(), CodecError> {
-    let model = &target.model;
+    let geometry = &target.geometry;
     let (faces, coedges) = match owners.surface {
         Some(surface) => (
-            model
+            geometry
                 .faces
                 .iter()
                 .enumerate()
                 .map(|(ordinal, face)| (ordinal, face, surface.face))
                 .collect::<Vec<_>>(),
-            model
+            geometry
                 .coedges
                 .iter()
                 .enumerate()
@@ -855,12 +855,12 @@ pub(super) fn encode_source_less_attributes(
                 .collect::<Vec<_>>(),
         ),
         None => {
-            if model.faces.iter().any(|face| {
+            if geometry.faces.iter().any(|face| {
                 face.color.is_some()
                     || face.name.is_some()
                     || !face_persistent_tags(index, face).is_empty()
                     || creation_timestamp(index, &AttributeTarget::Face(face.id.clone())).is_some()
-            }) || model.coedges.iter().any(|coedge| {
+            }) || geometry.coedges.iter().any(|coedge| {
                 sketch_link(index, coedge).is_some()
                     || creation_timestamp(index, &AttributeTarget::Coedge(coedge.id.clone()))
                         .is_some()
@@ -889,7 +889,7 @@ pub(super) fn encode_source_less_attributes(
             )));
         }
     }
-    for (body_ordinal, body, color) in model
+    for (body_ordinal, body, color) in geometry
         .bodies
         .iter()
         .enumerate()
@@ -938,7 +938,7 @@ pub(super) fn encode_source_less_attributes(
         )?;
         records.push(0x11);
     }
-    for (body_ordinal, body, name) in model
+    for (body_ordinal, body, name) in geometry
         .bodies
         .iter()
         .enumerate()
@@ -1003,7 +1003,7 @@ pub(super) fn encode_source_less_attributes(
         )?;
         records.push(0x11);
     }
-    for (body_ordinal, body) in model.bodies.iter().enumerate() {
+    for (body_ordinal, body) in geometry.bodies.iter().enumerate() {
         let links = body_persistent_links(index, body);
         if links.is_empty() {
             continue;
@@ -1072,7 +1072,7 @@ pub(super) fn encode_source_less_attributes(
         )?;
         records.push(0x11);
     }
-    for (edge_ordinal, edge) in model.edges.iter().enumerate() {
+    for (edge_ordinal, edge) in geometry.edges.iter().enumerate() {
         let tags = edge_persistent_tags(index, edge);
         if tags.is_empty() {
             continue;
@@ -1113,7 +1113,7 @@ pub(super) fn encode_source_less_attributes(
         records.push(0x11);
     }
     for (entity, owner_start, owner_ordinal) in
-        model
+        geometry
             .bodies
             .iter()
             .enumerate()
@@ -1121,7 +1121,7 @@ pub(super) fn encode_source_less_attributes(
             .chain(faces.iter().copied().map(|(ordinal, item, face_start)| {
                 (AttributeTarget::Face(item.id.clone()), face_start, ordinal)
             }))
-            .chain(model.edges.iter().enumerate().map(|(ordinal, item)| {
+            .chain(geometry.edges.iter().enumerate().map(|(ordinal, item)| {
                 (AttributeTarget::Edge(item.id.clone()), owners.edge, ordinal)
             }))
             .chain(
@@ -1136,7 +1136,7 @@ pub(super) fn encode_source_less_attributes(
                         )
                     }),
             )
-            .chain(model.vertices.iter().enumerate().map(|(ordinal, item)| {
+            .chain(geometry.vertices.iter().enumerate().map(|(ordinal, item)| {
                 (
                     AttributeTarget::Vertex(item.id.clone()),
                     owners.vertex,

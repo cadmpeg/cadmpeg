@@ -235,7 +235,7 @@ fn finish_decode(
         report.losses.push(note);
     }
     ctx.admit_entities(
-        u64_from_index(ir.model.entity_count()),
+        u64_from_index(ir.entity_count()),
         &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
@@ -1886,7 +1886,7 @@ fn finish_decode(
         .map(|block| block.schema_selections.len())
         .sum();
     let transferred_line_profile_count = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -2003,7 +2003,7 @@ fn finish_decode(
         ),
         (
             crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT,
-            ir.model
+            ir.geometry
                 .procedural_surfaces
                 .iter()
                 .filter(|surface| {
