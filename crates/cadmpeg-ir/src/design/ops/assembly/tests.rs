@@ -14,14 +14,16 @@ use serde_json::json;
 
 use super::*;
 use crate::design::construction::{
-    AxisValue, ConstructionInput, ConstructionKind, FrameValue, InputReference, InputRole,
-    PlaneValue, Relation, ScalarDimension, Subject,
+    AxisValue, ConstructionInput, ConstructionKind, FrameAxis, FrameValue, InputReference,
+    InputRole, PlaneValue, Relation, ScalarDimension, Subject,
 };
+use crate::design::dimension::Dimension;
 use crate::design::names::{NameKind, TopoName};
 use crate::design::ops::shared::{
-    ChainLayout, ChainLink, ChainLinks, DimensionRun, DimensionTable, Increment,
-    InstanceOrientation, LinearRun, Locus, PathReference, PatternRun, RunSides, Spacing, TableRow,
-    UpToFill,
+    AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, Coupling, DimensionRun, DimensionTable,
+    DriveAxis, DriveMode, Increment, InstanceOrientation, JointDrive, JointMotion, JointOffset,
+    LinearRun, Locus, PairElement, PathAxisControl, PathPosition, PathReference, PathRollControl,
+    PatternRun, RunSides, SlotPosition, Spacing, TableRow, TangentContact, UpToFill, WidthMode,
 };
 use crate::design::options::{NativeOption, SymmetricMeasure};
 use crate::design::read;
@@ -30,6 +32,9 @@ use crate::design::selection::{
 };
 use crate::features::{FinitePoint3, ParameterId};
 use crate::math::Point3;
+use crate::scalar::{
+    Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, PositiveReal,
+};
 use crate::units::UnitVector3;
 
 fn id<T>(kind: &str, key: u32) -> T
