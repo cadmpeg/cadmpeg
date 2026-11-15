@@ -795,7 +795,14 @@ pub(crate) fn bind_fillet_blend_edges(
         .iter()
         .map(|feature| {
             is_fillet(feature)
-                .then(|| super::face_selection_state(feature, scopes, scope_histories, histories))
+                .then(|| {
+                    super::selection_state::face_selection_state(
+                        feature,
+                        scopes,
+                        scope_histories,
+                        histories,
+                    )
+                })
                 .flatten()
         })
         .collect::<Vec<_>>();

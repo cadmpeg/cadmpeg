@@ -42,14 +42,14 @@ pub(crate) fn bind(
         ) {
             continue;
         }
-        let (state, spanning) = match super::face_selection_state(
+        let (state, spanning) = match super::selection_state::face_selection_state(
             feature,
             input.scopes,
             input.scope_histories,
             input.histories,
         ) {
             Some(state) => (state, false),
-            None => match super::face_selection_state_spanning(
+            None => match super::selection_state::face_selection_state_spanning(
                 feature,
                 input.scopes,
                 input.scope_histories,
