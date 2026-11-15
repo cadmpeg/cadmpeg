@@ -1792,8 +1792,7 @@ pub(crate) fn bind_sketch_profiles(
             };
             profiles.push(profile);
         }
-        let is_extrude =
-            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude);
+        let is_extrude = design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude);
         if profiles.iter().any(|profile| profile.sketch_absent) {
             if is_extrude {
                 let scope_record_index = scope.record_index;
@@ -5551,7 +5550,10 @@ pub(in crate::design) fn parse_sketch_profile(
             || bytes.get(tail + 8..tail + 16)? != [0; 8]
             || View::u32_le_at(bytes, tail + 16)? != 0x41
             || marked_record_reference(bytes, tail + 46) != header.record_index.checked_add(2)
-            || !bytes.get(tail + 57..tail + 59)?.iter().all(|&flag| flag <= 1)
+            || !bytes
+                .get(tail + 57..tail + 59)?
+                .iter()
+                .all(|&flag| flag <= 1)
             || marked_record_reference(bytes, tail + 59) != header.record_index.checked_add(1)
             || bytes.get(tail + 70) != Some(&0)
             || marked_record_reference(bytes, tail + 71).is_none()
@@ -5609,7 +5611,13 @@ pub(in crate::design) fn parse_sketch_profile(
                 .iter()
                 .filter(|entity| native_stream(&entity.id) == Some(stream))
                 .filter(|entity| entity.in_sketch_module())
-                .map(|entity| entity.entity_id.as_str().rsplit_once('_').map(|(prefix, _)| prefix));
+                .map(|entity| {
+                    entity
+                        .entity_id
+                        .as_str()
+                        .rsplit_once('_')
+                        .map(|(prefix, _)| prefix)
+                });
             let prefix = prefixes.next()??;
             if prefixes.any(|other| other != Some(prefix)) {
                 return None;
