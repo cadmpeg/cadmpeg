@@ -10,7 +10,7 @@ use cadmpeg_core::text::NonBlankString;
 use crate::design::construction::{
     kinds, AxisValue, Construction, ConstructionKind, FrameAxis, FrameValue,
 };
-use crate::design::dimension::{Dimension, ParamRef, ParameterRef, ProcessDimension, RefTarget};
+use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::expr::{
     BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node,
 };
@@ -19,7 +19,8 @@ use crate::design::ids::{
     ProgramId, SetupId, ToolId,
 };
 use crate::design::names::{CodecId, NameKind, NativeName, NativeNameValue, TopoName};
-use crate::design::options::{Hand, RadialDimension};
+use crate::design::ops::shared::RadialDimension;
+use crate::design::options::Hand;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
 };
@@ -61,7 +62,7 @@ use crate::process::tool::{
     ToolCatalog, ToolClass, ToolPocket, TurningInsert, Uuid,
 };
 use crate::process::toolpath::{Heater, Motion, MotionClass, MotionValue, MovementClass};
-use crate::process::{Choice, ProcessConstruction, WorkpieceSelection};
+use crate::process::{Choice, ProcessConstruction, ProcessDimension, WorkpieceSelection};
 use crate::scalar::{Angle, FiniteReal, Fraction, Length};
 use crate::transform::Transform;
 use crate::units::UnitVector3;

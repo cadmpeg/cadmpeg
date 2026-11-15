@@ -13,10 +13,11 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{wire, Choice, ProcessConstruction};
+use super::{wire, Choice, ProcessConstruction, ProcessDimension};
 use crate::design::construction::kinds;
-use crate::design::dimension::{ParamRef, ProcessDimension};
-use crate::design::options::{Hand, RadialDimension};
+use crate::design::dimension::ParamRef;
+use crate::design::ops::shared::RadialDimension;
+use crate::design::options::Hand;
 use crate::design::units::{AngularSpeed, Feed};
 use crate::scalar::{Angle, Length};
 

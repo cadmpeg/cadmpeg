@@ -18,7 +18,19 @@ pub(super) struct Distinct<T>(pub(super) BTreeSet<T>);
 
 impl<'de, T: Deserialize<'de> + Ord> Deserialize<'de> for Distinct<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        set::deserialize(deserializer).map(Distinct)
+        let members = Vec::<T>::deserialize(deserializer)?;
+        let stated = members.len();
+        let set = BTreeSet::from_iter(members);
+        if set.len() != stated {
+            return Err(de::Error::custom("a set states a member twice"));
+        }
+        Ok(Distinct(set))
+    }
+}
+
+impl<T> From<Distinct<T>> for BTreeSet<T> {
+    fn from(set: Distinct<T>) -> Self {
+        set.0
     }
 }
 

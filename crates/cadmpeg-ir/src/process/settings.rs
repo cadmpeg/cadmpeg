@@ -8,8 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::cycle::CycleKind;
 use super::tool::{PAngle, PLength};
-use super::Choice;
-use crate::design::dimension::ProcessDimension;
+use super::{Choice, ProcessDimension};
 use crate::design::units::Duration;
 use crate::scalar::{Angle, Length};
 

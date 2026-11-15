@@ -12,9 +12,9 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::Choice;
-use crate::design::dimension::{ParamRef, ProcessDimension};
-use crate::design::options::RadialDimension;
+use super::{Choice, ProcessDimension};
+use crate::design::dimension::ParamRef;
+use crate::design::ops::shared::RadialDimension;
 use crate::scalar::Length;
 
 /// The role of an operation's height.

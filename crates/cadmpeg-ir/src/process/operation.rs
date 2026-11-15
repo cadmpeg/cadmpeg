@@ -17,9 +17,8 @@ use super::limits::{AxialLimit, AxialRole, Height, HeightRole, RadialLimit, Radi
 use super::settings::{CycleSettings, Leads, Linking, PlungeStrategy};
 use super::stock::Wcs;
 use super::technology::Technology;
-use super::{wire, Choice, ProcessConstruction, WorkpieceSelection};
+use super::{wire, Choice, ProcessConstruction, ProcessDimension, WorkpieceSelection};
 use crate::design::construction::{kinds, Construction};
-use crate::design::dimension::ProcessDimension;
 use crate::design::ids::{MachiningFeatureId, OperationId, PresetId, ProcessGroupId, ToolId};
 use crate::design::names::NativeName;
 use crate::design::selection::OrderedSelection;

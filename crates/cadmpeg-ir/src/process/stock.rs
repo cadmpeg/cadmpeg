@@ -10,9 +10,8 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{Choice, ProcessConstruction};
+use super::{Choice, ProcessConstruction, ProcessDimension};
 use crate::design::construction::{kinds, FrameAxis};
-use crate::design::dimension::ProcessDimension;
 use crate::design::ids::SetupId;
 use crate::design::selection::SetSelection;
 use crate::scalar::Length;

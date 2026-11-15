@@ -37,8 +37,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::design::construction::{Construction, ConstructionKind};
+use crate::design::dimension::{Dimension, ParamRef};
 use crate::design::ids::ProcessParameterId;
 use crate::design::selection::OrderedSelection;
+
+/// A dimension of a process value, which can bind a process or a design
+/// parameter.
+pub type ProcessDimension<T> = Dimension<T, ParamRef>;
 
 /// A selection among variants: a stock rule, a WCS mode, a height reference,
 /// a coolant mode.
@@ -102,7 +107,7 @@ pub struct WorkpieceSelection {
     feature = "schema",
     schemars(bound = "K: JsonSchema, K::Value: JsonSchema")
 )]
-#[serde(deny_unknown_fields, bound = "")]
+#[serde(deny_unknown_fields, bound(serialize = "K: Clone", deserialize = ""))]
 pub struct ProcessConstruction<K: ConstructionKind> {
     /// An index into the `workpieces` of the operation's setup. `None` reads
     /// design entities in the definition's frame.

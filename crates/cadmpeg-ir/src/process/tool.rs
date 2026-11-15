@@ -17,9 +17,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::setup::JobKind;
 use super::technology::Technology;
-use super::wire;
+use super::{wire, ProcessDimension};
 use crate::design::construction::FrameAxis;
-use crate::design::dimension::ProcessDimension;
 use crate::design::ids::{MachineId, PresetId, ToolId};
 use crate::design::names::NativeName;
 use crate::design::options::Hand;
@@ -685,6 +684,11 @@ cadmpeg_core::named_optional_field!(
     "length_offset"
 );
 cadmpeg_core::named_optional_field!(deserialize_library, LibraryRef, "library");
+cadmpeg_core::named_optional_field!(
+    deserialize_linear_axes,
+    wire::Distinct<FrameAxis> as BTreeSet<FrameAxis>,
+    "linear_axes"
+);
 cadmpeg_core::named_optional_field!(deserialize_link, NonBlankString, "link");
 cadmpeg_core::named_optional_field!(deserialize_material, NonBlankString, "material");
 cadmpeg_core::named_optional_field!(deserialize_model, NonBlankString, "model");
@@ -732,13 +736,3 @@ cadmpeg_core::named_optional_field!(deserialize_turret, ProcessDimension<u32>, "
 cadmpeg_core::named_optional_field!(deserialize_unit, UnitSymbol, "unit");
 cadmpeg_core::named_optional_field!(deserialize_vendor, NonBlankString, "vendor");
 cadmpeg_core::named_optional_field!(deserialize_width, ProcessDimension<Length>, "width");
-
-fn deserialize_linear_axes<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<BTreeSet<FrameAxis>>, D::Error> {
-    cadmpeg_core::absent_key::named_present::<_, wire::Distinct<FrameAxis>>(
-        deserializer,
-        "linear_axes",
-    )
-    .map(|axes| axes.map(|axes| axes.0))
-}

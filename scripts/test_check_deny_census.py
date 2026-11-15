@@ -740,6 +740,54 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         self.assertEqual(status, 1, output)
         self.assertIn("Reader::A", output)
 
+    NAMED_OPTIONAL_FIELD = '''
+        macro_rules! named_optional_field {
+            ($name:ident, $wire:ty as $value:ty, $field:literal) => {
+                fn $name<'de, D: serde::Deserializer<'de>>(d: D)
+                    -> Result<Option<$value>, D::Error> {
+                    $crate::absent_key::named_present::<D, $wire>(d, $field)
+                        .map(|value| value.map(Into::into))
+                }
+            };
+        }
+    '''
+
+    def test_a_converting_shim_is_proved_through_the_wire_it_reads(self) -> None:
+        status, output = self.run_census({"lib.rs": self.NAMED_OPTIONAL_FIELD + '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            struct Value;
+            impl From<Closed> for Value { fn from(_: Closed) -> Self { Self } }
+            named_optional_field!(read_closed, Closed as Value, "closed");
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A(#[serde(deserialize_with = "read_closed")] Option<Value>),
+            }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_a_converting_shim_over_an_open_wire_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.NAMED_OPTIONAL_FIELD + '''
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            impl From<Open> for Closed { fn from(_: Open) -> Self { Self { value: 0 } } }
+            named_optional_field!(read_open, Open as Closed, "open");
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A(#[serde(deserialize_with = "read_open")] Option<Closed>),
+            }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+        self.assertIn("payload reader Open lacks checked unknown-key refusal", output)
+
     def test_unproved_deserializer_macro_body_cannot_certify_a_payload(self) -> None:
         status, output = self.run_census({"lib.rs": '''
             macro_rules! selection_field_deserializer {
@@ -1877,6 +1925,19 @@ class AbsentKeyCensusTests(unittest.TestCase):
             self.run_absent_key_census({"wire.rs": declared + shim}), []
         )
 
+    def test_a_converting_shim_states_the_spelling(self) -> None:
+        declared = self.OMITTED % ',\n        deserialize_with = "read_key"'
+        shim = (
+            'cadmpeg_core::named_optional_field!(\n'
+            '    read_key,\n'
+            '    wire::Distinct<u32> as BTreeSet<u32>,\n'
+            '    "key"\n'
+            ');\n'
+        )
+        self.assertEqual(
+            self.run_absent_key_census({"wire.rs": declared + shim}), []
+        )
+
     def test_the_unnamed_refusal_is_not_a_declaration(self) -> None:
         declared = self.OMITTED % (
             ',\n        deserialize_with = "cadmpeg_core::absent_key::present"'
@@ -2336,6 +2397,42 @@ class GenericParameterProofTests(unittest.TestCase):
             pub type Sheet = Reader<Never>;
         '''})
         self.assertEqual(status, 0, output)
+
+    GENERIC_ALIAS = CLOSED + '''
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", content = "value", deny_unknown_fields,
+                bound(deserialize = "T: Deserialize<'de>, P: Deserialize<'de>"))]
+        enum Dimension<T, P = Closed> { Literal(T), Parameter(P) }
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct Ref { id: u8 }
+        pub type RefDimension<T> = Dimension<T, Ref>;
+    '''
+
+    def test_a_generic_alias_is_proved_through_its_instantiations(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_ALIAS + '''
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Feed { PerTooth(RefDimension<Closed>) }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_an_open_instantiation_of_a_generic_alias_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_ALIAS + self.OPEN + '''
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Feed { PerTooth(RefDimension<Open>) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Feed::PerTooth: payload RefDimension<Open>", output)
+        self.assertIn("generic parameter T of RefDimension", output)
+        self.assertIn("instantiated as Open", output)
+
+    def test_a_generic_alias_with_a_where_clause_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_ALIAS + '''
+            pub type Bounded<T> where T: Copy = Dimension<T, Ref>;
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Feed { PerTooth(Bounded<Closed>) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("payload reader Bounded lacks checked unknown-key refusal", output)
 
     def test_generic_parameters_reads_names_bounds_and_defaults(self) -> None:
         item = census.Item(
