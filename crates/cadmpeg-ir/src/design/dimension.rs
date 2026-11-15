@@ -53,7 +53,7 @@ pub struct ParameterRef {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_through"
     )]
     pub through: Option<OccurrencePath>,
 }
@@ -96,3 +96,5 @@ pub enum ParamRef {
     /// A design parameter.
     Design(ParameterRef),
 }
+
+cadmpeg_core::named_optional_field!(deserialize_through, OccurrencePath, "through");

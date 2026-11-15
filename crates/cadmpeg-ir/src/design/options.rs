@@ -113,7 +113,7 @@ pub struct SolidOutput {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_body"
     )]
     pub body: Option<BodyForm>,
     /// How the result combines with existing bodies. `None` means the
@@ -121,7 +121,7 @@ pub struct SolidOutput {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_boolean"
     )]
     pub boolean: Option<Boolean>,
 }
@@ -132,11 +132,11 @@ pub struct SolidOutput {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BodyForm {
     /// A solid.
-    Solid,
+    Solid {},
     /// A solid wall about the profile curves.
     Thin(ThinWall),
     /// A surface result.
-    Sheet,
+    Sheet {},
 }
 
 /// A solid wall about the profile curves.
@@ -150,14 +150,14 @@ pub struct ThinWall {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_ends"
     )]
     pub ends: Option<ThinEnds>,
     /// The wall's corners.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_corner_round"
     )]
     pub corner_round: Option<CornerRound>,
 }
@@ -196,7 +196,7 @@ pub enum Thickness {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_side"
         )]
         side: Option<WallSide>,
     },
@@ -261,7 +261,7 @@ pub enum ThinEnds {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Boolean {
     /// A body with no combination.
-    NewBody,
+    NewBody {},
     /// The result combines with existing bodies.
     Apply {
         /// The combination.
@@ -271,7 +271,7 @@ pub enum Boolean {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_targets"
         )]
         targets: Option<Targets>,
     },
@@ -300,7 +300,9 @@ pub enum BooleanOp {
     Sew,
     /// Joins with no material interaction. It occurs only in `Combine`.
     Compound,
-    /// A union that trims.
+    /// Joins the target and the tool, then removes each piece of one operand
+    /// that lies outside the other operand's material and that the other
+    /// operand encloses in some plane.
     UnionTrim,
     /// A source combination whose meaning is not established.
     Native(NonBlankString),
@@ -312,7 +314,7 @@ pub enum BooleanOp {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Targets {
     /// Every body.
-    All,
+    All {},
     /// The selected bodies.
     Selected(SetSelection),
 }
@@ -327,14 +329,14 @@ pub struct SheetOutput {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_solid"
     )]
     pub solid: Option<Solidify>,
     /// How the result combines with existing bodies.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_boolean"
     )]
     pub boolean: Option<Boolean>,
 }
@@ -379,7 +381,7 @@ pub enum Span<Q> {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_measure"
         )]
         measure: Option<SymmetricMeasure>,
     },
@@ -425,14 +427,14 @@ pub enum Limit<Q> {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_offset"
         )]
         offset: Option<LimitOffset>,
         /// Whether the target faces extend until the profile meets them.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_extend"
         )]
         extend: Option<Dimension<bool>>,
         /// Where `target` picks bodies, whether the limit is the far side of
@@ -440,7 +442,7 @@ pub enum Limit<Q> {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_far"
         )]
         far: Option<Dimension<bool>>,
     },
@@ -516,7 +518,7 @@ pub enum SectionCondition {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_support"
         )]
         support: Option<Support>,
     },
@@ -530,14 +532,14 @@ pub enum SectionCondition {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<Dimension<Angle>>,
         /// The source's tangent magnitude.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_weight"
         )]
         weight: Option<Dimension<PositiveReal>>,
     },
@@ -547,14 +549,14 @@ pub enum SectionCondition {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<Dimension<Angle>>,
         /// The source's tangent magnitude.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_weight"
         )]
         weight: Option<Dimension<PositiveReal>>,
     },
@@ -564,21 +566,21 @@ pub enum SectionCondition {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_support"
         )]
         support: Option<Support>,
         /// The source's tangent magnitude.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_weight"
         )]
         weight: Option<Dimension<PositiveReal>>,
         /// Whether the tangent side is reversed.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_flip"
         )]
         flip: Option<Dimension<bool>>,
     },
@@ -588,21 +590,21 @@ pub enum SectionCondition {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_support"
         )]
         support: Option<Support>,
         /// The source's tangent magnitude.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_weight"
         )]
         weight: Option<Dimension<PositiveReal>>,
         /// Whether the tangent side is reversed.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "super::wire::present"
+            deserialize_with = "deserialize_flip"
         )]
         flip: Option<Dimension<bool>>,
     },
@@ -618,7 +620,7 @@ pub enum Support {
     /// The selected faces.
     Faces(SetSelection),
     /// An automatically computed support.
-    Computed,
+    Computed {},
 }
 
 /// How a curve reaches a face.
@@ -640,3 +642,19 @@ pub enum ProjectionDirection {
     /// A source direction whose meaning is not established.
     Native(NonBlankString),
 }
+
+cadmpeg_core::named_optional_field!(deserialize_angle, Dimension<Angle>, "angle");
+cadmpeg_core::named_optional_field!(deserialize_body, BodyForm, "body");
+cadmpeg_core::named_optional_field!(deserialize_boolean, Boolean, "boolean");
+cadmpeg_core::named_optional_field!(deserialize_corner_round, CornerRound, "corner_round");
+cadmpeg_core::named_optional_field!(deserialize_ends, ThinEnds, "ends");
+cadmpeg_core::named_optional_field!(deserialize_extend, Dimension<bool>, "extend");
+cadmpeg_core::named_optional_field!(deserialize_far, Dimension<bool>, "far");
+cadmpeg_core::named_optional_field!(deserialize_flip, Dimension<bool>, "flip");
+cadmpeg_core::named_optional_field!(deserialize_measure, SymmetricMeasure, "measure");
+cadmpeg_core::named_optional_field!(deserialize_offset, LimitOffset, "offset");
+cadmpeg_core::named_optional_field!(deserialize_side, WallSide, "side");
+cadmpeg_core::named_optional_field!(deserialize_solid, Solidify, "solid");
+cadmpeg_core::named_optional_field!(deserialize_support, Support, "support");
+cadmpeg_core::named_optional_field!(deserialize_targets, Targets, "targets");
+cadmpeg_core::named_optional_field!(deserialize_weight, Dimension<PositiveReal>, "weight");

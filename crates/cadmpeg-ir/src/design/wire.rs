@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Readers and writers for the §2.5 forms that a derive cannot state alone.
 //!
-//! An optional field is left out for `None` and refuses `null`. A map whose
-//! key is not a JSON string is an array of `[key, value]` pairs sorted by key.
+//! A map whose key is not a JSON string is an array of `[key, value]` pairs sorted by key.
 //! A set is an array sorted by value. Each reader refuses a repeated key or
 //! member. A string-keyed map reads through
 //! [`cadmpeg_core::distinct_keys::btree_map`].
@@ -13,42 +12,6 @@ use std::marker::PhantomData;
 
 use serde::de::{self, Deserialize, Deserializer, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeSeq, Serializer};
-
-/// Reads an optional field that is left out for `None` and refuses `null`.
-pub(super) fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    struct Present<T>(PhantomData<T>);
-
-    impl<'de, T: Deserialize<'de>> Visitor<'de> for Present<T> {
-        type Value = Option<T>;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            formatter.write_str("a stated value, or the key left out")
-        }
-
-        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
-            Err(E::custom(
-                "this key states a value or is left out; it does not state null",
-            ))
-        }
-
-        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-            self.visit_none()
-        }
-
-        fn visit_some<D: Deserializer<'de>>(
-            self,
-            deserializer: D,
-        ) -> Result<Self::Value, D::Error> {
-            T::deserialize(deserializer).map(Some)
-        }
-    }
-
-    deserializer.deserialize_option(Present(PhantomData))
-}
 
 /// A map with a key that is not a JSON string, as `[key, value]` pairs.
 pub(super) mod pairs {

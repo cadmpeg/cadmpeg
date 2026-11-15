@@ -13,12 +13,12 @@ use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use super::dimension::Dimension;
 use super::names::{CodecId, NativeNameValue};
 use super::options::NativeOptions;
-use super::read::{enter_de, Ceiling};
+use super::read::{self, Ceiling};
 use super::selection::OrderedSelection;
 use crate::features::{ConfigurationId, FinitePoint3};
 use crate::scalar::{Angle, FiniteReal, Length, PositiveLength};
@@ -74,13 +74,17 @@ pub mod kinds {
 /// How an element is built from references. A construction inside an
 /// operand has no identity, and its references anchor where the operand's
 /// do.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
     schemars(bound = "K: JsonSchema, K::Value: JsonSchema")
 )]
-#[serde(deny_unknown_fields, bound = "")]
+#[serde(
+    bound(serialize = "K: Clone", deserialize = ""),
+    try_from = "ConstructionWire<K>",
+    into = "ConstructionWire<K>"
+)]
 pub struct Construction<K: ConstructionKind> {
     /// The constraints the source stores, in the source's priority order.
     pub inputs: Vec<ConstructionInput>,
@@ -89,55 +93,69 @@ pub struct Construction<K: ConstructionKind> {
     pub after: Vec<PostStep>,
     /// The selector the source stores for its choice among the solutions
     /// that the inputs admit.
+    pub solution: Option<u32>,
+    /// The source's name for its construction method, with the method
+    /// options the source stores beside it.
+    pub mode: Option<SourceMode>,
+    /// The construction's value in its anchored state, for the active
+    /// configuration, after the steps of `after`.
+    pub resolved: Option<K::Value>,
+    /// The construction's value in each other configuration for which the
+    /// source stores one.
+    pub resolved_in: BTreeMap<ConfigurationId, K::Value>,
+}
+
+/// The wire form of [`Construction`]. Each construction nested in its
+/// inputs has passed the construction ceiling; reading admits this one
+/// level above the deepest of them.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(bound = "K: JsonSchema, K::Value: JsonSchema")
+)]
+#[serde(deny_unknown_fields, bound = "")]
+struct ConstructionWire<K: ConstructionKind> {
+    /// The constraints the source stores, in the source's priority order.
+    inputs: Vec<ConstructionInput>,
+    /// The source's own steps on the result after the inputs, in the
+    /// source's order.
+    after: Vec<PostStep>,
+    /// The selector the source stores for its choice among the solutions
+    /// that the inputs admit.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_solution"
     )]
-    pub solution: Option<u32>,
+    solution: Option<u32>,
     /// The source's name for its construction method, with the method
     /// options the source stores beside it.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_mode"
     )]
-    pub mode: Option<SourceMode>,
+    mode: Option<SourceMode>,
     /// The construction's value in its anchored state, for the active
     /// configuration, after the steps of `after`.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_resolved"
     )]
-    pub resolved: Option<K::Value>,
+    resolved: Option<K::Value>,
     /// The construction's value in each other configuration for which the
     /// source stores one.
-    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub resolved_in: BTreeMap<ConfigurationId, K::Value>,
-}
-
-/// The reading form of [`Construction`]. A nested construction reads through
-/// [`Construction`]'s reader, which holds one level of the construction
-/// ceiling.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, bound = "")]
-struct ConstructionWire<K: ConstructionKind> {
-    inputs: Vec<ConstructionInput>,
-    after: Vec<PostStep>,
-    #[serde(default, deserialize_with = "super::wire::present")]
-    solution: Option<u32>,
-    #[serde(default, deserialize_with = "super::wire::present")]
-    mode: Option<SourceMode>,
-    #[serde(default, deserialize_with = "super::wire::present")]
-    resolved: Option<K::Value>,
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     resolved_in: BTreeMap<ConfigurationId, K::Value>,
 }
 
-impl<'de, K: ConstructionKind> Deserialize<'de> for Construction<K> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let _level = enter_de::<D::Error>(Ceiling::Construction)?;
+impl<K: ConstructionKind> TryFrom<ConstructionWire<K>> for Construction<K> {
+    type Error = String;
+
+    /// Admits a construction nested no deeper than the construction ceiling.
+    fn try_from(wire: ConstructionWire<K>) -> Result<Self, Self::Error> {
         let ConstructionWire {
             inputs,
             after,
@@ -145,15 +163,55 @@ impl<'de, K: ConstructionKind> Deserialize<'de> for Construction<K> {
             mode,
             resolved,
             resolved_in,
-        } = ConstructionWire::<K>::deserialize(deserializer)?;
-        Ok(Self {
+        } = wire;
+        let construction = Self {
             inputs,
             after,
             solution,
             mode,
             resolved,
             resolved_in,
-        })
+        };
+        read::within(Ceiling::Construction, construction.depth())?;
+        Ok(construction)
+    }
+}
+
+impl<K: ConstructionKind> From<Construction<K>> for ConstructionWire<K> {
+    fn from(construction: Construction<K>) -> Self {
+        let Construction {
+            inputs,
+            after,
+            solution,
+            mode,
+            resolved,
+            resolved_in,
+        } = construction;
+        Self {
+            inputs,
+            after,
+            solution,
+            mode,
+            resolved,
+            resolved_in,
+        }
+    }
+}
+
+impl<K: ConstructionKind> Construction<K> {
+    /// The levels of this construction and the constructions nested in its
+    /// inputs.
+    fn depth(&self) -> u64 {
+        let below = self
+            .inputs
+            .iter()
+            .filter_map(|input| match &input.reference {
+                Some(InputReference::Built(nested)) => Some(nested.depth()),
+                Some(InputReference::Picks(_)) | None => None,
+            })
+            .max()
+            .unwrap_or(0);
+        below + 1
     }
 }
 
@@ -167,21 +225,21 @@ pub struct ConstructionInput {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_role"
     )]
     pub role: Option<InputRole>,
     /// The reference.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_reference"
     )]
     pub reference: Option<InputReference>,
     /// The value.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_value"
     )]
     pub value: Option<ScalarDimension>,
     /// Whether the subject points opposite to the reference's direction, or
@@ -189,7 +247,7 @@ pub struct ConstructionInput {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::wire::present"
+        deserialize_with = "deserialize_reversed"
     )]
     pub reversed: Option<bool>,
 }
@@ -228,6 +286,19 @@ pub enum AnyConstruction {
     Frame(Construction<kinds::Frame>),
     /// A curve construction.
     Curve(Construction<kinds::Curve>),
+}
+
+impl AnyConstruction {
+    fn depth(&self) -> u64 {
+        match self {
+            Self::Point(construction) => construction.depth(),
+            Self::Direction(construction) => construction.depth(),
+            Self::Axis(construction) => construction.depth(),
+            Self::Plane(construction) => construction.depth(),
+            Self::Frame(construction) => construction.depth(),
+            Self::Curve(construction) => construction.depth(),
+        }
+    }
 }
 
 /// The subject and the relation of a construction input.
@@ -515,3 +586,11 @@ pub enum CurveValue {
         radius: PositiveLength,
     },
 }
+
+cadmpeg_core::named_optional_field!(deserialize_mode, SourceMode, "mode");
+cadmpeg_core::named_optional_field!(deserialize_reference, InputReference, "reference");
+cadmpeg_core::named_optional_field!(deserialize_resolved<V>, V, "resolved");
+cadmpeg_core::named_optional_field!(deserialize_reversed, bool, "reversed");
+cadmpeg_core::named_optional_field!(deserialize_role, InputRole, "role");
+cadmpeg_core::named_optional_field!(deserialize_solution, u32, "solution");
+cadmpeg_core::named_optional_field!(deserialize_value, ScalarDimension, "value");

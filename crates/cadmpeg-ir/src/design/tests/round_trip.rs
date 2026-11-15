@@ -81,7 +81,7 @@ fn thin_walls() -> Vec<ThinWall> {
 
 fn booleans() -> Vec<Boolean> {
     vec![
-        Boolean::NewBody,
+        Boolean::NewBody {},
         Boolean::Apply {
             op: BooleanOp::Cut,
             targets: Some(Targets::Selected(selections().remove(0))),
@@ -145,7 +145,7 @@ fn laws<Q: Clone>(start: Q, end: Q) -> Vec<Law<Q>> {
 fn section_conditions() -> Vec<SectionCondition> {
     vec![
         SectionCondition::Free {
-            support: Some(Support::Computed),
+            support: Some(Support::Computed {}),
         },
         SectionCondition::Default,
         SectionCondition::Direction {
@@ -198,7 +198,7 @@ fn measures() -> Vec<Measure> {
         .into_iter()
         .map(|kind| Measure {
             kind,
-            of: MeasureTarget::Model,
+            of: MeasureTarget::Model {},
             cached: None,
         })
         .collect::<Vec<_>>();
@@ -419,7 +419,7 @@ fn every_design_type_round_trips() {
     );
     report.check(
         "MeasureTarget",
-        vec![MeasureTarget::Model, fixtures::measure().of],
+        vec![MeasureTarget::Model {}, fixtures::measure().of],
     );
     report.check(
         "Dimension<Length>",
@@ -496,7 +496,7 @@ fn every_design_type_round_trips() {
         vec![
             SolidOutput {
                 body: Some(BodyForm::Thin(thin_walls().remove(0))),
-                boolean: Some(Boolean::NewBody),
+                boolean: Some(Boolean::NewBody {}),
             },
             SolidOutput {
                 body: None,
@@ -504,7 +504,7 @@ fn every_design_type_round_trips() {
             },
         ],
     );
-    let mut forms = vec![BodyForm::Solid, BodyForm::Sheet];
+    let mut forms = vec![BodyForm::Solid {}, BodyForm::Sheet {}];
     forms.extend(thin_walls().into_iter().map(BodyForm::Thin));
     report.check("BodyForm", forms);
     report.check("ThinWall", thin_walls());
@@ -563,7 +563,7 @@ fn every_design_type_round_trips() {
     );
     report.check(
         "Targets",
-        vec![Targets::All, Targets::Selected(selections().remove(0))],
+        vec![Targets::All {}, Targets::Selected(selections().remove(0))],
     );
     report.check(
         "SheetOutput",
@@ -608,7 +608,7 @@ fn every_design_type_round_trips() {
     report.check("SectionCondition", section_conditions());
     report.check(
         "Support",
-        vec![Support::Faces(selections().remove(0)), Support::Computed],
+        vec![Support::Faces(selections().remove(0)), Support::Computed {}],
     );
     report.check(
         "ProjectionDirection",
