@@ -3771,6 +3771,27 @@ fn face_selection_state<'a>(
     scope_histories: &HashMap<String, String>,
     histories: &[AsmHistory],
 ) -> Option<FaceSelectionState<'a>> {
+    face_selection_state_with(feature, scopes, scope_histories, histories, false)
+}
+
+/// The state pair of a feature whose result state may follow its preceding
+/// state through several transitions.
+fn face_selection_state_spanning<'a>(
+    feature: &cadmpeg_ir::features::Feature,
+    scopes: &'a [crate::records::feature::scope::DesignParameterScope],
+    scope_histories: &HashMap<String, String>,
+    histories: &[AsmHistory],
+) -> Option<FaceSelectionState<'a>> {
+    face_selection_state_with(feature, scopes, scope_histories, histories, true)
+}
+
+fn face_selection_state_with<'a>(
+    feature: &cadmpeg_ir::features::Feature,
+    scopes: &'a [crate::records::feature::scope::DesignParameterScope],
+    scope_histories: &HashMap<String, String>,
+    histories: &[AsmHistory],
+    spanning: bool,
+) -> Option<FaceSelectionState<'a>> {
     let native_ref = feature.native_ref.as_deref()?;
     let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
     let scope = matching_scopes.next()?;
@@ -3792,7 +3813,7 @@ fn face_selection_state<'a>(
     } else {
         unique_history_state_pair(histories, state_id, previous_state_id)
     }?;
-    let spans_transitions = matches!(
+    let spans_transitions = spanning || matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::MoveFace { .. }

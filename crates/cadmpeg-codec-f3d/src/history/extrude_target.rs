@@ -42,13 +42,22 @@ pub(crate) fn bind(
         ) {
             continue;
         }
-        let Some(state) = super::face_selection_state(
+        let (state, spanning) = match super::face_selection_state(
             feature,
             input.scopes,
             input.scope_histories,
             input.histories,
-        ) else {
-            continue;
+        ) {
+            Some(state) => (state, false),
+            None => match super::face_selection_state_spanning(
+                feature,
+                input.scopes,
+                input.scope_histories,
+                input.histories,
+            ) {
+                Some(state) => (state, true),
+                None => continue,
+            },
         };
         let history = &input.histories[state.history];
         let current = &history.states()[state.state];
@@ -97,6 +106,19 @@ pub(crate) fn bind(
                 .flat_map(super::effective_faces)
                 .filter_map(|face| super::stable_ref(face.as_str()))
                 .collect();
+            if spanning {
+                // The result state follows several transitions, so the stored
+                // caps do not apply; only the side of the face is checked.
+                if behind_start {
+                    *face = FaceSelection::Native(native);
+                    operand.resolved_face_slots.clear();
+                    operand.resolved_active_face = None;
+                    losses.push(crate::loss::F3dLossCode::FeatureExtrudeTargetDisputed.note(format!(
+                        "Extrude termination {} retains its native recipe because its selected face lies behind the start of the sweep.", operand.id
+                    )));
+                }
+                return;
+            }
             if referenced.is_empty() && !behind_start {
                 return;
             }

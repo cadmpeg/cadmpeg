@@ -180,7 +180,26 @@ fn run_configured(
     terminal_cap: Option<f64>,
     configure: impl FnOnce(&mut Feature, &mut DesignFaceOperand, &mut AsmHistoricalTopology),
 ) -> (FaceSelection, Vec<i64>, Vec<LossNote>) {
-    let (mut feature, sketch, scope, group, mut operand) = fixture();
+    run_spanning(ambiguous, cap, terminal_cap, false, configure)
+}
+
+/// With `spanning`, the result state follows the preceding state through one
+/// intermediate state, so no transition joins the pair.
+fn run_spanning(
+    ambiguous: bool,
+    cap: f64,
+    terminal_cap: Option<f64>,
+    spanning: bool,
+    configure: impl FnOnce(&mut Feature, &mut DesignFaceOperand, &mut AsmHistoricalTopology),
+) -> (FaceSelection, Vec<i64>, Vec<LossNote>) {
+    let (mut feature, sketch, mut scope, group, mut operand) = fixture();
+    if spanning {
+        scope
+            .try_edit(|draft| {
+                draft.previous_history_state_id = Some(6);
+            })
+            .unwrap();
+    }
     feature.evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided { side },
@@ -217,7 +236,11 @@ fn run_configured(
         0,
         None,
         false,
-        vec![state(22, after), state(6, before)],
+        if spanning {
+            vec![state(22, after), state(10, before.clone()), state(6, before)]
+        } else {
+            vec![state(22, after), state(6, before)]
+        },
     );
     let losses = bind(
         std::slice::from_mut(&mut feature),
@@ -366,7 +389,7 @@ fn stored_caps_preserve_prior_targets_outside_recipe_references() {
 
 #[test]
 fn a_cap_proven_selection_survives_a_second_cap_proven_predecessor() {
-    let (face, slots, losses) = run_configured(false, -1.5, None, |feature, operand, before| {
+    let (face, slots, losses) = run_configured(false, 0.0, None, |feature, operand, before| {
         feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 start,
@@ -442,7 +465,7 @@ fn a_start_cap_does_not_prove_a_target_when_a_separate_terminal_cap_exists() {
 
 #[test]
 fn a_lateral_plane_with_its_origin_on_a_cap_is_not_a_cap_match() {
-    let (face, slots, losses) = run_configured(false, -1.5, None, |feature, _, before| {
+    let (face, slots, losses) = run_configured(false, 0.0, None, |feature, _, before| {
         feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 start,
@@ -580,4 +603,40 @@ fn a_retained_selection_behind_the_start_does_not_pass_the_stored_cap_fallback()
     });
     assert!(matches!(face, FaceSelection::Native(_)));
     assert!(slots.is_empty());
+}
+
+#[test]
+fn a_spanning_selection_behind_the_start_stays_native() {
+    let (face, slots, losses) = run_spanning(false, -1.5, None, true, |_, operand, _| {
+        operand.recipe_references[0].candidate_faces = vec![crate::ids::brep_face_id(3484)];
+    });
+    assert!(matches!(face, FaceSelection::Native(_)));
+    assert!(slots.is_empty());
+    assert_eq!(losses.len(), 1);
+}
+
+#[test]
+fn a_spanning_selection_ahead_of_the_start_is_kept() {
+    let (face, slots, losses) = run_spanning(false, 18.5, None, true, |feature, operand, _| {
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                extent: ExtrudeExtent::OneSided { side },
+                ..
+            }) = definition
+            else {
+                panic!("Extrude")
+            };
+            let LinearTermination::ToFace { face, .. } = &mut side.termination else {
+                panic!("face termination")
+            };
+            *face = FaceSelection::Resolved {
+                faces: vec![crate::ids::brep_face_id(3484)],
+                native: "f3d:test:group#1448".into(),
+            };
+        });
+        operand.recipe_references[0].candidate_faces = vec![crate::ids::brep_face_id(3484)];
+    });
+    assert_eq!(selection_slots(&face), Some(vec![3484]));
+    assert_eq!(slots, Vec::<i64>::new());
+    assert!(losses.is_empty());
 }
