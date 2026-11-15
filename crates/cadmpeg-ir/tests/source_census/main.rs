@@ -886,85 +886,113 @@ const WRITING_DECLARATIONS: &[(&str, &str)] = &[
 const HAND_WRITTEN_KEYS: &[(&str, &str, WriteSpelling)] =
     &[("WireMembersWire", "free_vertex", WriteSpelling::Omitted)];
 
+/// A declaration: the file that declares it and its type name.
+type Site = (String, String);
+
 /// Every declaration of the three wire crates, indexed for writer resolution.
 #[derive(Default)]
 struct WireIndex {
-    /// Per type name that derives `Serialize`, the `None` spelling of each
-    /// named field. A key one type writes two ways is absent here and present
-    /// in `split_keys`.
-    written_keys: BTreeMap<String, BTreeMap<String, WriteSpelling>>,
-    /// The `(type, key)` pairs one declaration writes two ways.
-    split_keys: BTreeSet<(String, String)>,
-    /// Type names whose declaration derives `Serialize`.
-    writes_own_keys: BTreeSet<String>,
-    /// Type name -> the type its container `into` names.
-    writes_through: BTreeMap<String, String>,
-    /// Wire type name -> every type whose container `try_from` or `from`
-    /// routes a read through it.
-    read_routers: BTreeMap<String, BTreeSet<String>>,
-    /// Type names declared twice in the three crates, which makes a name no
-    /// address.
-    twice_declared: BTreeSet<String>,
+    /// Per type name, the file of each declaration that derives `Serialize`
+    /// or `Deserialize`, once per declaration.
+    declared_in: BTreeMap<String, Vec<String>>,
+    /// Per declaration that derives `Serialize`, the `None` spelling of each
+    /// named field. A key one declaration writes two ways is absent here and
+    /// present in `split_keys`.
+    written_keys: BTreeMap<Site, BTreeMap<String, WriteSpelling>>,
+    /// The `(declaration, key)` pairs one declaration writes two ways.
+    split_keys: BTreeSet<(Site, String)>,
+    /// Declarations that derive `Serialize`.
+    writes_own_keys: BTreeSet<Site>,
+    /// Declaration -> the type name its container `into` names.
+    writes_through: BTreeMap<Site, String>,
+    /// Wire type name -> every declaration whose container `try_from` or
+    /// `from` names it.
+    read_routers: BTreeMap<String, BTreeSet<Site>>,
 }
 
 impl WireIndex {
-    /// The writing declaration for the type `reader`, or why there is none.
-    fn writing_declaration(&self, reader: &str) -> Result<String, String> {
-        if self.twice_declared.contains(reader) {
-            return Err(format!(
-                "{reader} is declared twice in the wire crates, so the name addresses no declaration"
-            ));
+    /// The declaration that `name` addresses where `relative` names it: the
+    /// one declaration of that name in the three crates, or else the one in
+    /// `relative`.
+    ///
+    /// A container attribute names a type in scope, and the v10 and v11
+    /// vocabularies share some type names in separate modules, so a name
+    /// declared in several files is read in the file that states it.
+    fn resolve(&self, relative: &str, name: &str) -> Result<Site, String> {
+        let files = self.declared_in.get(name).map_or(&[][..], Vec::as_slice);
+        if let [file] = files {
+            return Ok((file.clone(), name.to_owned()));
         }
-        if let Some((_, writer)) = WRITING_DECLARATIONS
-            .iter()
-            .find(|(named, _)| *named == reader)
-        {
-            return Ok((*writer).to_owned());
+        match files.iter().filter(|file| *file == relative).count() {
+            0 if files.is_empty() => Ok((relative.to_owned(), name.to_owned())),
+            0 => Err(format!(
+                "{name} is declared in {} files of the wire crates and not in {relative}, so the name addresses no declaration",
+                files.len()
+            )),
+            1 => Ok((relative.to_owned(), name.to_owned())),
+            _ => Err(format!(
+                "{name} is declared twice in {relative}, so the name addresses no declaration"
+            )),
         }
-        if let Some(target) = self.writes_through.get(reader) {
-            return Ok(target.clone());
+    }
+
+    /// The writing declaration for the declaration `reader`, or why there is
+    /// none.
+    fn writing_declaration(&self, reader: &Site) -> Result<Site, String> {
+        let (relative, name) = reader;
+        self.resolve(relative, name)?;
+        if let Some(writer) = self.stated_writer(reader)? {
+            return Ok(writer);
         }
-        if self.writes_own_keys.contains(reader) {
-            return Ok(reader.to_owned());
-        }
-        let mut owners = self.read_routers.get(reader).into_iter().flatten();
+        let mut owners = self
+            .read_routers
+            .get(name)
+            .into_iter()
+            .flatten()
+            .filter(|owner| self.resolve(&owner.0, name).as_ref() == Ok(reader));
         let (Some(owner), None) = (owners.next(), owners.next()) else {
             return Err(format!(
-                "{reader} writes no keys of its own and no single container attribute routes a read through it"
+                "{name} writes no keys of its own and no single container attribute routes a read through it"
             ));
         };
-        if let Some((_, writer)) = WRITING_DECLARATIONS
-            .iter()
-            .find(|(named, _)| named == owner)
-        {
-            return Ok((*writer).to_owned());
+        self.stated_writer(owner)?.ok_or_else(|| {
+            format!(
+                "{name} is read for {}, which derives no Serialize and names no writing declaration",
+                owner.1
+            )
+        })
+    }
+
+    /// The writing declaration `declaration` states for itself: a pair in
+    /// [`WRITING_DECLARATIONS`], its container `into` or `remote` target, or
+    /// itself when it derives `Serialize`.
+    fn stated_writer(&self, declaration: &Site) -> Result<Option<Site>, String> {
+        let (relative, name) = declaration;
+        if let Some((_, writer)) = WRITING_DECLARATIONS.iter().find(|(named, _)| named == name) {
+            return self.resolve(relative, writer).map(Some);
         }
-        if let Some(target) = self.writes_through.get(owner) {
-            return Ok(target.clone());
+        if let Some(target) = self.writes_through.get(declaration) {
+            return self.resolve(relative, target).map(Some);
         }
-        if self.writes_own_keys.contains(owner) {
-            return Ok(owner.clone());
-        }
-        Err(format!(
-            "{reader} is read for {owner}, which derives no Serialize and names no writing declaration"
-        ))
+        Ok(self
+            .writes_own_keys
+            .contains(declaration)
+            .then(|| declaration.clone()))
     }
 
     /// How the writing declaration `writer` spells `None` at `key`.
-    fn spelling(&self, writer: &str, key: &str) -> Result<WriteSpelling, String> {
-        if self
-            .split_keys
-            .contains(&(writer.to_owned(), key.to_owned()))
-        {
+    fn spelling(&self, writer: &Site, key: &str) -> Result<WriteSpelling, String> {
+        let name = &writer.1;
+        if self.split_keys.contains(&(writer.clone(), key.to_owned())) {
             return Err(format!(
-                "the writing declaration {writer} states {key} twice with different skips"
+                "the writing declaration {name} states {key} twice with different skips"
             ));
         }
         self.written_keys
             .get(writer)
             .and_then(|keys| keys.get(key))
             .copied()
-            .ok_or_else(|| format!("the writing declaration {writer} states no key {key}"))
+            .ok_or_else(|| format!("the writing declaration {name} states no key {key}"))
     }
 }
 
@@ -976,7 +1004,6 @@ fn wire_index() -> WireIndex {
         .expect("the repository root sits two levels above the crate manifest")
         .to_path_buf();
     let mut index = WireIndex::default();
-    let mut seen = BTreeSet::new();
     for source in [
         "crates/cadmpeg-ir/src",
         "crates/cadmpeg-core/src",
@@ -999,14 +1026,14 @@ fn wire_index() -> WireIndex {
             let parsed = syn::parse_file(&text)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
-            index_declarations(&parsed.items, &mut seen, &mut index);
+            index_declarations(&parsed.items, &relative, &mut index);
         }
     }
     index
 }
 
 /// Records every struct and enum among `items`, recursing into inline modules.
-fn index_declarations(items: &[syn::Item], seen: &mut BTreeSet<String>, index: &mut WireIndex) {
+fn index_declarations(items: &[syn::Item], relative: &str, index: &mut WireIndex) {
     for item in items {
         let (name, attrs, fields) = match item {
             syn::Item::Struct(declaration) => (
@@ -1028,7 +1055,7 @@ fn index_declarations(items: &[syn::Item], seen: &mut BTreeSet<String>, index: &
                     continue;
                 }
                 if let Some((_, nested)) = &module.content {
-                    index_declarations(nested, seen, index);
+                    index_declarations(nested, relative, index);
                 }
                 continue;
             }
@@ -1038,12 +1065,15 @@ fn index_declarations(items: &[syn::Item], seen: &mut BTreeSet<String>, index: &
         if !writes && !attrs.iter().any(derive_list_names_deserialize) {
             continue;
         }
-        if !seen.insert(name.clone()) {
-            index.twice_declared.insert(name.clone());
-        }
+        index
+            .declared_in
+            .entry(name.clone())
+            .or_default()
+            .push(relative.to_owned());
+        let site = (relative.to_owned(), name);
         for key in ["into", "remote"] {
             if let Some(target) = container_conversion(attrs, key) {
-                index.writes_through.insert(name.clone(), target);
+                index.writes_through.insert(site.clone(), target);
             }
         }
         for attribute in attrs {
@@ -1053,24 +1083,24 @@ fn index_declarations(items: &[syn::Item], seen: &mut BTreeSet<String>, index: &
                         .read_routers
                         .entry(wire)
                         .or_default()
-                        .insert(name.clone());
+                        .insert(site.clone());
                 }
             }
         }
         if !writes {
             continue;
         }
-        index.writes_own_keys.insert(name.clone());
+        index.writes_own_keys.insert(site.clone());
         for group in fields {
             for field in group {
                 let Some(key) = field.ident.as_ref().map(syn::Ident::to_string) else {
                     continue;
                 };
                 let spelling = write_spelling(field);
-                let keys = index.written_keys.entry(name.clone()).or_default();
+                let keys = index.written_keys.entry(site.clone()).or_default();
                 match keys.insert(key.clone(), spelling) {
                     Some(earlier) if earlier != spelling => {
-                        index.split_keys.insert((name.clone(), key));
+                        index.split_keys.insert((site.clone(), key));
                     }
                     Some(_) | None => {}
                 }
@@ -1361,14 +1391,15 @@ fn record_unguarded_fields(
             record_spelling_match(&at, read, *written, "the hand-written writer", offenders);
             continue;
         }
-        let writer = match index.writing_declaration(reader) {
+        let site = (relative.to_owned(), reader.to_owned());
+        let writer = match index.writing_declaration(&site) {
             Ok(writer) => writer,
             Err(reason) => {
                 offenders.push(format!("{at} {reason}"));
                 continue;
             }
         };
-        let written = if writer == reader {
+        let written = if writer == site {
             // The reading and writing declarations are one declaration, so the
             // field states both halves and no key lookup is needed. A field
             // with no name states no key at all, and is only reachable here.
@@ -1382,7 +1413,7 @@ fn record_unguarded_fields(
                 }
             }
         };
-        record_spelling_match(&at, read, written, &writer, offenders);
+        record_spelling_match(&at, read, written, &writer.1, offenders);
     }
 }
 
