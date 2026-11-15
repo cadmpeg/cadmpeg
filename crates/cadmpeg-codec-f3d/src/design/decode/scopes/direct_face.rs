@@ -102,16 +102,23 @@ fn offset_faces_distance_record(
         .then_some(distance)
 }
 
-/// Whether the distance record of an `OffsetFaces` scope is the last or the
-/// first of at least three ordered references.
+/// Whether the distance record of an `OffsetFaces` scope is the last of at
+/// least three ordered references, or the first with the selected-face group
+/// second.
 pub(crate) fn offset_faces_distance_reference_matches(
     scope: &DesignParameterScope,
     distance_record_index: u32,
+    is_face_group: impl Fn(u32) -> bool,
 ) -> bool {
     let members = scope.reference_members();
-    members.len() >= 3
-        && (members.values().next_back() == Some(&distance_record_index)
-            || members.values().next() == Some(&distance_record_index))
+    let mut ordered = members.values().copied();
+    match (ordered.next(), ordered.next(), ordered.next_back()) {
+        (Some(first), Some(second), Some(last)) => {
+            last == distance_record_index
+                || (first == distance_record_index && is_face_group(second))
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn exact_direct_face_operation(

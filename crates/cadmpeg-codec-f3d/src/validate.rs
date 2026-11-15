@@ -2259,6 +2259,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 design::decode::scopes::direct_face::offset_faces_distance_reference_matches(
                     scope,
                     operation.distance_record_index,
+                    |record_index| {
+                        native
+                            .design_construction_operand_groups
+                            .iter()
+                            .any(|group| {
+                                design_stream(&group.id) == native_stream
+                                    && group.scope_record_index == scope.record_index
+                                    && group.record_index == record_index
+                                    && group.role() == DesignOperandRole::ROLE_0X10
+                            })
+                    },
                 )
             }
             _ => true,
