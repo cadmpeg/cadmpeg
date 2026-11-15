@@ -2160,8 +2160,8 @@ fn project_solid_primitive(
                                 placement,
                             );
                         let flags_assumed = checked.is_none()
-                            || placement.fields.inferred_x_axis.value == 1
-                            || placement.fields.inferred_z_axis.value == 1;
+                            || placement.fields.inferred_x_axis.value != 0
+                            || placement.fields.inferred_z_axis.value != 0;
                         let frame = checked
                             .map(|frame| frame.value)
                             .or_else(|| placement.fields.matrix.as_ref().map(|matrix| matrix.value))
