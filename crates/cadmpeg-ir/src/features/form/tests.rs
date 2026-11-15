@@ -273,11 +273,6 @@ fn form_clone_and_identity_rewrite_visit_candidates_and_absent_targets() {
 #[cfg(feature = "schema")]
 #[test]
 fn form_schema_covers_legacy_arrays_and_retained_construction() {
-    let schema = serde_json::to_value(schemars::schema_for!(FormConstruction)).unwrap();
-    let text = schema.to_string();
-    assert!(text.contains("FormCagesWire"));
-    assert!(text.contains("FormCageObservation"));
-    assert!(text.contains("cage_inputs"));
     fn has_null_type(value: &serde_json::Value) -> bool {
         match value {
             serde_json::Value::Object(fields) => {
@@ -292,6 +287,11 @@ fn form_schema_covers_legacy_arrays_and_retained_construction() {
             _ => false,
         }
     }
+    let schema = serde_json::to_value(schemars::schema_for!(FormConstruction)).unwrap();
+    let text = schema.to_string();
+    assert!(text.contains("FormCagesWire"));
+    assert!(text.contains("FormCageObservation"));
+    assert!(text.contains("cage_inputs"));
     assert!(!has_null_type(&schema));
     assert!(!schema["required"]
         .as_array()
