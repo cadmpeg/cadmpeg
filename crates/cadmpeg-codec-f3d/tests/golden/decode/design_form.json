@@ -382,8 +382,20 @@
           },
           "source_tag": "Form",
           "definition": {
-            "definition": "native",
-            "kind": "Form"
+            "definition": "form",
+            "cages": {
+              "observations": [],
+              "membership": {
+                "state": "partial",
+                "order": "unknown",
+                "members": []
+              }
+            },
+            "inputs": {
+              "references": [
+                "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record#1500"
+              ]
+            }
           },
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026"
         }
@@ -1565,6 +1577,16 @@
       "geometry_transferred": true
     },
     "losses": [
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "feature.form-membership-unresolved",
+          "kind": "feature_history_retained"
+        },
+        "severity": "warning",
+        "message": "Form f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026: cage membership or identity joins remain incomplete."
+      },
       {
         "code": {
           "scope": "namespaced",
