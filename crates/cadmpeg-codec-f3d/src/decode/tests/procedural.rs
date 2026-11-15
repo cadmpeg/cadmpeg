@@ -293,20 +293,23 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         source_less
             .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
             .unwrap();
-        source_less.geometry.curves.push(cadmpeg_ir::geometry::Curve {
-            parameter_range: None,
-            id: line_curve.clone(),
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
-                    cadmpeg_ir::math::Vector3::new(4.0, -2.0, 1.0)
-                        .unit()
-                        .unwrap(),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        });
+        source_less
+            .geometry
+            .curves
+            .push(cadmpeg_ir::geometry::Curve {
+                parameter_range: None,
+                id: line_curve.clone(),
+                geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
+                        cadmpeg_ir::math::Vector3::new(4.0, -2.0, 1.0)
+                            .unit()
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            });
         source_less.geometry.procedural_surfaces[0].edit_definition(|definition| {
             let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) = definition else {
                 unreachable!()
@@ -847,7 +850,11 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
                 .surfaces
                 .iter()
                 .find(|surface| {
-                    decoded.ir().geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+                    decoded
+                        .ir()
+                        .geometry
+                        .procedural_surface_owner(&procedural.id)
+                        == Some(&surface.id)
                 })
                 .map(|surface| &surface.geometry),
             Some(SurfaceGeometry::Procedural { .. })

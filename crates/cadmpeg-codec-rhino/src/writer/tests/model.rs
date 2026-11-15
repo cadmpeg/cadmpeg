@@ -98,8 +98,8 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
     .expect("permuted triangle payload");
     assert_eq!(actual.body, expected.body);
     assert_eq!(actual.direct, expected.direct);
-    assert_eq!(geometry.loops[0].coedges, vec![0, 1, 2]);
-    for (position, edge) in geometry.edges.iter().enumerate() {
+    assert_eq!(model.loops[0].coedges, vec![0, 1, 2]);
+    for (position, edge) in model.edges.iter().enumerate() {
         assert_eq!(edge.start, position);
         assert_eq!(edge.end, (position + 1) % 3);
         assert_eq!(edge.uses, vec![position]);
@@ -110,7 +110,7 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
 fn multi_face_resolves_domains_and_incidence_in_arena_order() {
     let ir = adjacent_quad_sheet();
     let model = WritableModel::try_new(&ir).expect("writable adjacent faces");
-    for (position, edge) in geometry.edges.iter().enumerate() {
+    for (position, edge) in model.edges.iter().enumerate() {
         assert_eq!(edge.source.id, ir.geometry.edges[position].id);
         assert_eq!(
             Some(edge.domain),
@@ -119,12 +119,12 @@ fn multi_face_resolves_domains_and_incidence_in_arena_order() {
                 .map(cadmpeg_ir::units::FiniteVector::finite_components)
         );
         for coedge in &edge.uses {
-            assert_eq!(geometry.coedges[*coedge].edge, position);
+            assert_eq!(model.coedges[*coedge].edge, position);
         }
     }
-    for face in &geometry.faces {
+    for face in &model.faces {
         assert!(matches!(
-            geometry.surfaces[face.surface],
+            model.surfaces[face.surface],
             WritableFaceSurface::Plane { .. }
         ));
     }
@@ -136,7 +136,12 @@ fn shell_face_listing_order_is_not_the_arena_order() {
     for face in &mut ir.geometry.faces {
         face.name = None;
     }
-    let arena: Vec<_> = ir.geometry.faces.iter().map(|face| face.id.clone()).collect();
+    let arena: Vec<_> = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|face| face.id.clone())
+        .collect();
     assert_ne!(ir.geometry.shells[0].faces(), arena.as_slice());
     assert!(WritableModel::try_new(&ir).is_ok());
     let shell = &ir.geometry.shells[0];

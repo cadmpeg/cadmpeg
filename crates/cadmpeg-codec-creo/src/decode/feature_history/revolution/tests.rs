@@ -195,7 +195,8 @@ fn saved_spline_revolution_uses_source_directrix_after_mm_admission() {
     let scale = cadmpeg_ir::scalar::PositiveReal::new(25.4).expect("inch scale");
     let (transferred, ir) = transfer_with_curve_count_and_scale(1, Some(scale));
     assert_eq!(transferred, 1);
-    let Some(SolvedCurveGeometry::Nurbs(directrix)) = ir.geometry.curves[0].geometry.solved() else {
+    let Some(SolvedCurveGeometry::Nurbs(directrix)) = ir.geometry.curves[0].geometry.solved()
+    else {
         panic!("saved directrix changed family");
     };
     assert_eq!(

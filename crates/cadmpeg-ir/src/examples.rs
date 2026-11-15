@@ -429,9 +429,11 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
     sum_definition.set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(
         EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9,
     )?))?;
-    ir.geometry
-        .procedural_surfaces
-        .push(ProceduralSurface::new(construction, sum_definition, None));
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        sum_definition,
+        None,
+    ));
     ir.geometry.subds.push(SubdSurface {
         id: v2_id!(SubdId, "subd", crate::identity_key!("directed")),
         scheme: SubdScheme::CatmullClark,

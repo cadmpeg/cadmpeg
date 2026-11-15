@@ -50,12 +50,12 @@ fn top_level_objects_do_not_count_toward_the_instance_entity_limit() {
                 .any(|message| message
                     .contains("document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)")));
             assert_eq!(context.expansion_budget.entities, 0);
-            context.session.document().model.clone()
+            context.session.document().clone()
         })
     };
-    let model = decode([16, 16, 0]);
-    assert_eq!(geometry.bodies.len(), 2);
-    assert_eq!(model, decode([1 << 20; 3]));
+    let ir = decode([16, 16, 0]);
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    assert_eq!(ir, decode([1 << 20; 3]));
 }
 
 #[test]

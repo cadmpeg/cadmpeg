@@ -617,7 +617,10 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         Some(cadmpeg_asm::brep::records::FaceContainment::In)
     );
     assert_eq!(round_trip.ir().geometry.points, source_less.geometry.points);
-    assert_eq!(round_trip.ir().geometry.surfaces, source_less.geometry.surfaces);
+    assert_eq!(
+        round_trip.ir().geometry.surfaces,
+        source_less.geometry.surfaces
+    );
 
     let (mut edited, _, fidelity) = round_trip.into_parts();
     edited.geometry.bodies[0].visible = Some(true);
@@ -1192,20 +1195,23 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         .contains("source-object association on surface"));
 
     source_less.geometry.surfaces[0].source_object = None;
-    source_less.geometry.curves.push(cadmpeg_ir::geometry::Curve {
-        parameter_range: None,
-        id: "generated:test:associated-curve#0"
-            .try_into()
-            .expect("valid identity"),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: Some(association),
-    });
+    source_less
+        .geometry
+        .curves
+        .push(cadmpeg_ir::geometry::Curve {
+            parameter_range: None,
+            id: "generated:test:associated-curve#0"
+                .try_into()
+                .expect("valid identity"),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: Some(association),
+        });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -1323,7 +1329,9 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         });
     let mut coedges = source_less.geometry.loops[0].coedges().to_vec();
     coedges.push(coedge_id);
-    let vertex_uses = source_less.geometry.loops[0].anchored_vertex_uses().to_vec();
+    let vertex_uses = source_less.geometry.loops[0]
+        .anchored_vertex_uses()
+        .to_vec();
     source_less.geometry.loops[0]
         .replace_ring(coedges, vertex_uses)
         .expect("source-less fixture loop remains a valid ring");
@@ -1419,7 +1427,9 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
             )),
             source_object: None,
         });
-        source_less.geometry.edges[index].set_curve(Some(id)).unwrap();
+        source_less.geometry.edges[index]
+            .set_curve(Some(id))
+            .unwrap();
         source_less.geometry.edges[index].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
             source_less.geometry.edges[index].curve().cloned(),
             Some([0.0, length]),
@@ -1920,17 +1930,18 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     source_less
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
-    source_less.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-            cadmpeg_ir::math::Point3::new(1.0, 3.0, -5.0),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            9.0,
-            0.6,
-            0.5,
-        )
-        .unwrap(),
-    ));
+    source_less.geometry.surfaces[0].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                cadmpeg_ir::math::Point3::new(1.0, 3.0, -5.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                9.0,
+                0.6,
+                0.5,
+            )
+            .unwrap(),
+        ));
 
     let mut initial = Vec::new();
     F3dCodec

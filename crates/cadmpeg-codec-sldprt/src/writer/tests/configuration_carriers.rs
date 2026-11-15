@@ -52,8 +52,14 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
         .0;
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
-    ir.geometry.bodies.iter_mut().for_each(|body| body.name = None);
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .bodies
+        .iter_mut()
+        .for_each(|body| body.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     let body = ir.geometry.bodies[0].id.clone();
     ir.model.configurations = (0..2)
         .map(|index| DesignConfiguration {
@@ -155,7 +161,10 @@ fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()
@@ -228,7 +237,10 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()
@@ -422,8 +434,14 @@ fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configura
         .0;
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
-    ir.geometry.bodies.iter_mut().for_each(|body| body.name = None);
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .bodies
+        .iter_mut()
+        .for_each(|body| body.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     let body_ids = ir
         .geometry
         .bodies
@@ -783,7 +801,10 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()
@@ -863,7 +884,10 @@ fn encoder_bakes_rigid_body_transform() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()
@@ -1215,12 +1239,16 @@ pub(crate) fn semantic_writer_rejects_subds() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded.ir_mut().geometry.subds.push(cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
-    });
+    decoded
+        .ir_mut()
+        .geometry
+        .subds
+        .push(cadmpeg_ir::SubdSurface {
+            id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
+            scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+            source_object: None,
+            cage: cadmpeg_ir::subd::SubdCage::default(),
+        });
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),

@@ -129,7 +129,11 @@ fn bulged_cube() -> CadIr {
             (&edge.end, &edge.start)
         };
         let position = |id: &cadmpeg_ir::ids::VertexId| {
-            let vertex = ir.geometry.vertices.iter().find(|vertex| vertex.id == *id)?;
+            let vertex = ir
+                .geometry
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id == *id)?;
             ir.geometry
                 .points
                 .iter()

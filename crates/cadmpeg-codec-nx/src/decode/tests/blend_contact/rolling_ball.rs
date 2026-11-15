@@ -206,7 +206,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 ),
             },
         );
-        ir.geometry.add_procedural_curve(&spine, procedural).unwrap();
+        ir.geometry
+            .add_procedural_curve(&spine, procedural)
+            .unwrap();
         assert_eq!(
             crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
             1.0

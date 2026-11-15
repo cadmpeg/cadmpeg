@@ -235,7 +235,12 @@ impl<'a> CarrierIndex<'a> {
         }
         Self {
             surfaces: last_surfaces(&ir.geometry.surfaces),
-            edges: ir.geometry.edges.iter().map(|edge| (&edge.id, edge)).collect(),
+            edges: ir
+                .geometry
+                .edges
+                .iter()
+                .map(|edge| (&edge.id, edge))
+                .collect(),
             curves: ir
                 .geometry
                 .curves

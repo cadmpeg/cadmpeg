@@ -417,20 +417,27 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution(definition_payload)
                 if definition_payload.axis_direction().as_raw().z == 1.0
         )));
-    assert!(result.ir().geometry.procedural_surfaces.iter().any(|surface| {
-        match surface.definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset(matched_payload) => {
-                matches!(
-                    (
-                        matched_payload.distance().get(),
-                        matched_payload.self_intersect(),
-                    ),
-                    (0.5, Some(false),)
-                )
+    assert!(result
+        .ir()
+        .geometry
+        .procedural_surfaces
+        .iter()
+        .any(|surface| {
+            match surface.definition() {
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset(
+                    matched_payload,
+                ) => {
+                    matches!(
+                        (
+                            matched_payload.distance().get(),
+                            matched_payload.self_intersect(),
+                        ),
+                        (0.5, Some(false),)
+                    )
+                }
+                _ => false,
             }
-            _ => false,
-        }
-    }));
+        }));
 }
 
 #[test]

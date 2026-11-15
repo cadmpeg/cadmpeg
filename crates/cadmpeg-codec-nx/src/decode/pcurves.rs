@@ -230,7 +230,8 @@ impl IntersectionIncidenceIndex {
                 continue;
             };
             for &procedural_index in procedural_indices {
-                let Some(procedural) = ir.geometry.procedural_curves.get_mut(procedural_index) else {
+                let Some(procedural) = ir.geometry.procedural_curves.get_mut(procedural_index)
+                else {
                     continue;
                 };
                 let Some(context) = procedural.intersection_context_mut() else {
@@ -269,7 +270,8 @@ impl IntersectionIncidenceIndex {
                 continue;
             };
             for &procedural_index in procedural_indices {
-                let Some(procedural) = ir.geometry.procedural_curves.get_mut(procedural_index) else {
+                let Some(procedural) = ir.geometry.procedural_curves.get_mut(procedural_index)
+                else {
                     continue;
                 };
                 let Some(context) = procedural.intersection_context_mut() else {
@@ -4094,7 +4096,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
 ) -> Result<(), cadmpeg_core::CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let candidates = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
@@ -4328,7 +4330,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             source_object: None,
         });
 
-        let _attached = procedural_admission.add_curve(&mut ir.model, &curve_id, procedural)?;
+        let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve_id, procedural)?;
     }
     Ok(())
 }

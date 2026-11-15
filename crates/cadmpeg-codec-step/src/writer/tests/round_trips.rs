@@ -755,7 +755,9 @@ pub(super) fn wire_body_ir(alpha: f32) -> CadIr {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let edge = ir.geometry.edges[0].clone();
     let curve = edge.curve().cloned().expect("cube edge curve");
-    ir.geometry.edges.retain(|candidate| candidate.id == edge.id);
+    ir.geometry
+        .edges
+        .retain(|candidate| candidate.id == edge.id);
     ir.geometry.curves.retain(|candidate| candidate.id == curve);
     ir.geometry
         .vertices
@@ -1636,7 +1638,10 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode reordered edge loops");
-    assert_eq!(decoded.ir().geometry.faces.len(), source.geometry.faces.len());
+    assert_eq!(
+        decoded.ir().geometry.faces.len(),
+        source.geometry.faces.len()
+    );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

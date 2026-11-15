@@ -175,7 +175,7 @@ fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
     let ir = placed_block();
     let model = measure_in(&ir, &Selection::default()).expect("measured");
     assert!(model.occurrence().is_none());
-    let [body] = geometry.bodies().as_slice() else {
+    let [body] = model.bodies().as_slice() else {
         panic!("one body row");
     };
     assert_eq!(*body.placement(), RowPlacement::Model {});
@@ -235,7 +235,10 @@ fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
         }
         let block = report.occurrence().as_ref().expect("occurrence block");
         assert!(block.unavailable().is_none());
-        assert_eq!(block.bodies(), &[ir.geometry.bodies[0].id.as_str().to_owned()]);
+        assert_eq!(
+            block.bodies(),
+            &[ir.geometry.bodies[0].id.as_str().to_owned()]
+        );
         assert_eq!(block.prototype().as_deref(), Some(prototype.as_str()));
     }
     let top = in_occurrence(&ir, "top");

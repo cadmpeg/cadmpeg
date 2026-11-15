@@ -82,7 +82,10 @@ fn rejected_append_restores_neutral_native_and_parent_state() {
     let before = ir.clone();
     let staged = staged_document();
     let result = ir.try_append(staged.geometry, staged.model, staged.native, |combined| {
-        assert_eq!(combined.geometry.points.len(), before.geometry.points.len() + 1);
+        assert_eq!(
+            combined.geometry.points.len(),
+            before.geometry.points.len() + 1
+        );
         assert_eq!(combined.model.assets.len(), 1);
         assert!(combined
             .model
@@ -103,9 +106,12 @@ fn rejected_append_restores_neutral_native_and_parent_state() {
 fn accepted_append_preserves_all_staged_records_and_parent_relations() {
     let mut ir = CadIr::empty();
     let staged = staged_document();
-    ir.try_append(staged.geometry.clone(), staged.model.clone(), staged.native.clone(), |_| {
-        Ok(Ok::<_, ()>(()))
-    })
+    ir.try_append(
+        staged.geometry.clone(),
+        staged.model.clone(),
+        staged.native.clone(),
+        |_| Ok(Ok::<_, ()>(())),
+    )
     .unwrap()
     .unwrap();
     assert_eq!(ir.geometry, staged.geometry);

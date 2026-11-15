@@ -108,8 +108,8 @@ fn requests_over_the_cap_are_counted_as_bounded() {
 
 // Extraction of one body from a decoded state.
 
-fn cube() -> cadmpeg_ir::document::Model {
-    cadmpeg_ir::examples::unit_cube().expect("cube").model
+fn cube() -> cadmpeg_ir::document::Topology {
+    cadmpeg_ir::examples::unit_cube().expect("cube").geometry
 }
 
 fn extract_cube(geometry: &cadmpeg_ir::document::Topology) -> Extract {
@@ -120,8 +120,8 @@ fn extract_cube(geometry: &cadmpeg_ir::document::Topology) -> Extract {
 
 #[test]
 fn a_closed_solid_extracts_with_every_record_it_reaches() {
-    let model = cube();
-    let Extract::Nest(nest) = extract_cube(&model) else {
+    let geometry = cube();
+    let Extract::Nest(nest) = extract_cube(&geometry) else {
         panic!("a closed cube must extract");
     };
     assert_eq!(nest.body.id, geometry.bodies[0].id);
@@ -135,44 +135,44 @@ fn a_closed_solid_extracts_with_every_record_it_reaches() {
 
 #[test]
 fn a_reference_that_names_no_record_is_not_closed() {
-    let mut model = cube();
+    let mut geometry = cube();
     geometry.surfaces.remove(0);
     assert!(matches!(
-        extract_cube(&model),
+        extract_cube(&geometry),
         Extract::NotClosed(Open::Reference)
     ));
 }
 
 #[test]
 fn a_sheet_is_not_closed() {
-    let mut model = cube();
+    let mut geometry = cube();
     geometry.bodies[0].kind = BodyKind::Sheet;
     assert!(matches!(
-        extract_cube(&model),
+        extract_cube(&geometry),
         Extract::NotClosed(Open::Kind)
     ));
 }
 
 #[test]
 fn an_edge_that_joins_one_coedge_is_not_closed() {
-    let mut model = cube();
+    let mut geometry = cube();
     let other = geometry.coedges[1].edge.clone();
     assert_ne!(geometry.coedges[0].edge, other);
     geometry.coedges[0].edge = other;
     assert!(matches!(
-        extract_cube(&model),
+        extract_cube(&geometry),
         Extract::NotClosed(Open::Edge)
     ));
 }
 
 #[test]
 fn records_of_other_bodies_stay_out_of_the_nest() {
-    let mut model = cube();
+    let mut geometry = cube();
     let mut other = geometry.bodies[0].clone();
     other.id = "inventor:brep:entity#other".try_into().expect("identity");
     other.regions.clear();
     geometry.bodies.push(other);
-    let Extract::Nest(nest) = extract_cube(&model) else {
+    let Extract::Nest(nest) = extract_cube(&geometry) else {
         panic!("a closed cube must extract");
     };
     assert_eq!(nest.regions.len(), geometry.regions.len());
@@ -180,7 +180,7 @@ fn records_of_other_bodies_stay_out_of_the_nest() {
 
 #[test]
 fn a_procedural_carrier_keeps_its_solved_cache() {
-    let mut model = cube();
+    let mut geometry = cube();
     let solved = geometry.surfaces[0].geometry.clone();
     let SurfaceGeometry::Solved(cache) = solved else {
         panic!("the cube states solved surfaces");
@@ -191,7 +191,7 @@ fn a_procedural_carrier_keeps_its_solved_cache() {
             .expect("identity"),
         cache: Some(cache.clone()),
     };
-    let Extract::Nest(nest) = extract_cube(&model) else {
+    let Extract::Nest(nest) = extract_cube(&geometry) else {
         panic!("a procedural carrier with a cache must extract");
     };
     assert!(matches!(
@@ -202,38 +202,38 @@ fn a_procedural_carrier_keeps_its_solved_cache() {
 
 #[test]
 fn a_procedural_carrier_without_a_cache_is_absent() {
-    let mut model = cube();
+    let mut geometry = cube();
     geometry.surfaces[0].geometry = SurfaceGeometry::Procedural {
         construction: "inventor:brep:procedural-surface#1"
             .try_into()
             .expect("identity"),
         cache: None,
     };
-    assert!(matches!(extract_cube(&model), Extract::Absent));
+    assert!(matches!(extract_cube(&geometry), Extract::Absent));
 }
 
 #[test]
 fn a_carrier_of_unknown_shape_is_absent() {
-    let mut model = cube();
+    let mut geometry = cube();
     geometry.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-    assert!(matches!(extract_cube(&model), Extract::Absent));
+    assert!(matches!(extract_cube(&geometry), Extract::Absent));
 }
 
 #[test]
 fn a_body_that_the_state_lacks_is_absent() {
-    let model = cube();
+    let geometry = cube();
     let ctx = cadmpeg_test_support::service_decode_context();
     assert!(matches!(
-        extract(&ctx, &model, "inventor:brep:entity#missing").expect("extraction runs"),
+        extract(&ctx, &geometry, "inventor:brep:entity#missing").expect("extraction runs"),
         Extract::Absent
     ));
 }
 
 #[test]
 fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
-    let model = cube();
-    let Extract::Nest(topology) = extract_cube(&model) else {
+    let geometry = cube();
+    let Extract::Nest(topology) = extract_cube(&geometry) else {
         panic!("a closed cube must extract");
     };
     let ctx = cadmpeg_test_support::service_decode_context();

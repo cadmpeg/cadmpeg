@@ -1059,7 +1059,11 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         .procedural_surfaces
         .iter()
         .find(|procedural| {
-            result.ir().geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            result
+                .ir()
+                .geometry
+                .procedural_surface_owner(&procedural.id)
+                == Some(&surface.id)
         })
         .expect("trimmed revolution construction");
     assert_eq!(

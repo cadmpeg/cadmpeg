@@ -65,9 +65,11 @@ fn curve_surface_model(
         geometry: geometry.clone(),
         source_object: None,
     });
-    ir.geometry
-        .procedural_surfaces
-        .push(ProceduralSurface::new(construction, definition(&ids), None));
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        definition(&ids),
+        None,
+    ));
     (ir, surface_id, geometry)
 }
 

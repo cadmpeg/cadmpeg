@@ -827,6 +827,7 @@ fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
     let reconstructed = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
+    assert_eq!(reconstructed.ir().geometry, expected.ir().geometry);
     assert_eq!(reconstructed.ir().model, expected.ir().model);
     assert_eq!(reconstructed.ir().geometry.surfaces.len(), 1);
 }

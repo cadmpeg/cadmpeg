@@ -62,7 +62,12 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         .map(|(index, loop_)| (index, loop_.coedges().to_vec()))
         .expect("unit cube has an edge loop");
     let ends = |id: &CoedgeId| {
-        let coedge = source.geometry.coedges.iter().find(|c| c.id == *id).unwrap();
+        let coedge = source
+            .geometry
+            .coedges
+            .iter()
+            .find(|c| c.id == *id)
+            .unwrap();
         let edge = source
             .geometry
             .edges
@@ -435,7 +440,12 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
         .expect("unit cube has an edge loop");
     let first = source.geometry.loops[loop_index].coedges()[0].clone();
     let line = {
-        let coedge = source.geometry.coedges.iter().find(|c| c.id == first).unwrap();
+        let coedge = source
+            .geometry
+            .coedges
+            .iter()
+            .find(|c| c.id == first)
+            .unwrap();
         source
             .geometry
             .edges

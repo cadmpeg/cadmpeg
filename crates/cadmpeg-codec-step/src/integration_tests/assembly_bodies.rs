@@ -478,8 +478,12 @@ fn mixed_solid_and_sheet_geometry_uses_linked_representations() {
             let mut ir = assembly(false);
             ir.geometry.bodies[1].kind = BodyKind::Sheet;
             if graph {
-                ir.model.product_definitions[0].bodies =
-                    ir.geometry.bodies.iter().map(|body| body.id.clone()).collect();
+                ir.model.product_definitions[0].bodies = ir
+                    .geometry
+                    .bodies
+                    .iter()
+                    .map(|body| body.id.clone())
+                    .collect();
             } else {
                 ir.model.product_definitions.clear();
                 ir.model.occurrences.clear();

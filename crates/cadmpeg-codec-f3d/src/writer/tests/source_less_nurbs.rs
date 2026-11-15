@@ -276,7 +276,10 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less inline pcurve round trip");
     assert_eq!(round_trip.ir().geometry.pcurves.len(), 1);
-    assert_eq!(round_trip.ir().geometry.pcurves[0].geometry, expected.geometry);
+    assert_eq!(
+        round_trip.ir().geometry.pcurves[0].geometry,
+        expected.geometry
+    );
     assert_eq!(
         round_trip.ir().geometry.pcurves[0].wrapper_reversed(),
         expected.wrapper_reversed()
@@ -732,7 +735,10 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
             .expect("solved carrier"),
         &expected_curve
     );
-    assert_eq!(round_trip.ir().geometry.pcurves[0].geometry, expected_pcurve);
+    assert_eq!(
+        round_trip.ir().geometry.pcurves[0].geometry,
+        expected_pcurve
+    );
     assert_eq!(
         round_trip
             .ir()
@@ -1306,7 +1312,11 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         .surfaces
         .iter()
         .find(|surface| {
-            decoded.ir().geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            decoded
+                .ir()
+                .geometry
+                .procedural_surface_owner(&procedural.id)
+                == Some(&surface.id)
         })
         .map(|surface| &surface.geometry)
         .expect("extrusion surface carrier");

@@ -59,7 +59,10 @@ mod tests {
 
     #[test]
     fn components_follow_topological_vertices_including_bridges_branches_and_cycles() {
-        let carrier = cadmpeg_ir::examples::unit_cube().expect("cube").geometry.edges[0]
+        let carrier = cadmpeg_ir::examples::unit_cube()
+            .expect("cube")
+            .geometry
+            .edges[0]
             .carrier
             .clone();
         let edge = |id: usize, start: usize, end: usize| Edge {

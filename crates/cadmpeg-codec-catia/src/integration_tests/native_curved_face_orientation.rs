@@ -30,7 +30,10 @@ fn native_cylinder_faces_follow_outer_control_in_the_preserved_chart() {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
         ));
     }
-    assert_eq!(positive.ir().geometry.surfaces, negative.ir().geometry.surfaces);
+    assert_eq!(
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
 }
 
 #[test]
@@ -62,7 +65,10 @@ fn native_nurbs_faces_follow_outer_control_without_transposing_the_carrier() {
         assert_eq!(surface.u_degree(), 2);
         assert_eq!(surface.v_degree(), 2);
     }
-    assert_eq!(positive.ir().geometry.surfaces, negative.ir().geometry.surfaces);
+    assert_eq!(
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
 }
 
 #[test]
@@ -106,7 +112,10 @@ fn native_revolution_line_faces_follow_outer_control_in_profile_angle_order() {
         assert_eq!(surface.v_degree(), 2);
         assert!(!surface.normal_reversed());
     }
-    assert_eq!(positive.ir().geometry.surfaces, negative.ir().geometry.surfaces);
+    assert_eq!(
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
     assert_eq!(
         positive.ir().geometry.procedural_surfaces,
         negative.ir().geometry.procedural_surfaces
@@ -182,7 +191,10 @@ fn native_negative_torus_face_keeps_carrier_and_reverses_sense() {
     assert_valid(&negative);
     assert_eq!(negative.ir().geometry.faces.len(), 1);
     assert_eq!(negative.ir().geometry.faces[0].sense, Sense::Reversed);
-    assert_eq!(positive.ir().geometry.surfaces, negative.ir().geometry.surfaces);
+    assert_eq!(
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
     assert_eq!(
         positive.ir().geometry.faces[0].surface,
         negative.ir().geometry.faces[0].surface
@@ -214,7 +226,10 @@ fn native_cone_source_controls_preserve_positive_chart_sense() {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
         ));
     }
-    assert_eq!(positive.ir().geometry.surfaces, negative.ir().geometry.surfaces);
+    assert_eq!(
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
 }
 
 #[test]
@@ -242,5 +257,8 @@ fn native_cone_source_controls_reverse_negative_chart_sense() {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
         ));
     }
-    assert_eq!(positive.ir().geometry.surfaces, negative.ir().geometry.surfaces);
+    assert_eq!(
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
 }

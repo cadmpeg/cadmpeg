@@ -327,7 +327,10 @@ fn positional_cone_identity_preserves_service_geometry() {
     })
     .expect("positional cone admitted");
     assert_eq!(count, 1);
-    assert_eq!(ir.geometry.surfaces[0].id.as_str(), "creo:visibgeom:surface#7");
+    assert_eq!(
+        ir.geometry.surfaces[0].id.as_str(),
+        "creo:visibgeom:surface#7"
+    );
     assert_eq!(
         ir.geometry.surfaces[0]
             .source_object

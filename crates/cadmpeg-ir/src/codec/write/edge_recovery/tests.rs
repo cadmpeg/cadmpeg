@@ -258,7 +258,10 @@ fn recovers_a_deeply_placed_pcurve_on_the_normal_test_stack() {
     pcurve.geometry = geometry;
     ir.geometry.edges[0].carrier = EdgeCarrier::Free;
     let recovered = recover_edge_curves(&ir).unwrap();
-    assert_eq!(recovered.sampled_fits, vec![ir.geometry.edges[0].id.clone()]);
+    assert_eq!(
+        recovered.sampled_fits,
+        vec![ir.geometry.edges[0].id.clone()]
+    );
     assert!(recovered.document.geometry.edges[0].curve().is_some());
 }
 
@@ -335,7 +338,10 @@ fn a_nonplanar_pcurve_is_fitted_with_reported_sampled_residual() {
             .geometry,
         CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Nurbs(_))
     ));
-    assert_eq!(recovered.sampled_fits, vec![ir.geometry.edges[0].id.clone()]);
+    assert_eq!(
+        recovered.sampled_fits,
+        vec![ir.geometry.edges[0].id.clone()]
+    );
     let midpoint =
         crate::eval::model_curve_point_by_id(EvaluationAdmission::Standard, &index, curve, 0.5)
             .unwrap()

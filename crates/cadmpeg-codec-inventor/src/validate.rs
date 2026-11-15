@@ -1713,7 +1713,7 @@ fn validate_features(
         &data.body_wrapper_links,
         &data.active_carrier,
         &data.body_native_keys,
-        &ir.model,
+        &ir.geometry,
         &crate::feature::body_selection::Scope {
             metadata: &data.metadata,
             roots: &data.pm_dc_model_roots,
@@ -1862,7 +1862,7 @@ fn validate_features(
         })
         .then(|| {
             crate::feature::loft_sweep::validation::ValidationIndex::new(
-                &ir.model,
+                ir,
                 &data.pm_dc_sketches,
                 &data.pm_dc_kernel_entity_links,
                 &data.pm_dc_entity_style_links,

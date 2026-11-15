@@ -10,7 +10,7 @@ use crate::native::{
 };
 use crate::object_graph::{ObjectPayload, PayloadField};
 use crate::test_support::with_service_context;
-use cadmpeg_ir::document::Model;
+use cadmpeg_ir::document::Topology;
 
 const PROGRAM: [u8; 19] = [
     0xfe, 0x9a, 0xdc, 0x72, 0xe8, 0xd4, 0x08, 0x37, 0x82, 0xfe, 0x94, 0xe2, 0xe5, 0xe8, 0xc0, 0x1c,
@@ -125,7 +125,7 @@ fn set_suffix(entity: &mut CatiaEntityRecord, bytes: Vec<u8>) {
 
 struct Fixture {
     native: CatiaNative,
-    model: Model,
+    geometry: Topology,
 }
 impl Fixture {
     fn new(modern: bool) -> Self {
@@ -231,7 +231,7 @@ impl Fixture {
             bind(
                 ctx,
                 &mut self.native,
-                &self.model,
+                &self.geometry,
                 &ModelingGraphScope::Unscoped,
             )
         })
@@ -515,7 +515,7 @@ fn unresolved_and_other_graph_scopes_leave_the_range_native() {
         ModelingGraphScope::Scoped("other".into()),
     ] {
         let mut f = Fixture::new(false);
-        with_service_context(|ctx| bind(ctx, &mut f.native, &f.model, &scope))
+        with_service_context(|ctx| bind(ctx, &mut f.native, &f.geometry, &scope))
             .expect("valid fixture");
         assert!(f.target().is_none());
     }

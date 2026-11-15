@@ -110,7 +110,10 @@ pub(in super::super) fn transfer_active_datum_cylinders(
     let mut transferred = 0;
     let namespaces = super::NativeSurfaceNamespaces::new(scan);
     let mut surface_ids = crate::decode::uniqueness::ExactIdPositions::new(
-        ir.geometry.surfaces.iter().map(|surface| surface.id.as_str()),
+        ir.geometry
+            .surfaces
+            .iter()
+            .map(|surface| surface.id.as_str()),
     );
     for datum in &scan.planes.datum_cylinders {
         let id = namespaces.surface_id(datum.id)?;

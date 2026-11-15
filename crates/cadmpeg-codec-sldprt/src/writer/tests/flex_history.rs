@@ -38,7 +38,10 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()
@@ -903,7 +906,10 @@ fn encoder_binds_multiple_authored_with_retained_native_envelope_sketches_by_obj
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()
@@ -1014,7 +1020,10 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()
@@ -1099,10 +1108,11 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.geometry.bodies
-                        [0]
-                    .id
-                    .clone()])
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![ir
+                        .geometry
+                        .bodies[0]
+                        .id
+                        .clone()])
                     .expect("distinct bodies"),
                     native: "body-a".into(),
                 },

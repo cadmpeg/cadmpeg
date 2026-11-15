@@ -57,7 +57,10 @@ fn convert_native_owned_sheet_preserves_shared_edge_in_step() {
     let geometry = &step.ir().geometry;
     assert_eq!(geometry.faces.len(), 2);
     assert_eq!(geometry.edges.len(), 7);
-    assert!(geometry.faces.iter().all(|face| face.sense == Sense::Forward));
+    assert!(geometry
+        .faces
+        .iter()
+        .all(|face| face.sense == Sense::Forward));
     let shared: Vec<_> = geometry
         .coedges
         .iter()
@@ -648,8 +651,9 @@ fn rhino_output_version_is_selected_explicitly() {
 fn check_blocks_conversion_unless_overridden() {
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube().expect("unit cube fixture is admitted");
-    invalid.geometry.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
-        .expect("valid identity for an absent surface");
+    invalid.geometry.faces[0].surface =
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
+            .expect("valid identity for an absent surface");
     let input = fixture(dir.path(), "invalid.json", &invalid);
     let output = dir.path().join("blocked.step");
     Command::cargo_bin("cadmpeg")
@@ -1075,12 +1079,15 @@ fn convert_refuses_binary_output_to_stdout() {
     // With -o the write succeeds (Rhino is the binary writer that accepts a
     // source-less IR; the guard question is the destination, not the codec).
     let mut point_ir = cadmpeg_ir::CadIr::empty();
-    point_ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
-        cadmpeg_ir::ids::PointId::mint("cadir:model:point#guard").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
-            .expect("a finite position is a point"),
-        None,
-    ));
+    point_ir
+        .geometry
+        .points
+        .push(cadmpeg_ir::topology::Point::new(
+            cadmpeg_ir::ids::PointId::mint("cadir:model:point#guard").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+                .expect("a finite position is a point"),
+            None,
+        ));
     let point = fixture(dir.path(), "point.cadir.json", &point_ir);
     let out = dir.path().join("point.3dm");
     Command::cargo_bin("cadmpeg")

@@ -252,7 +252,7 @@ fn finish_decode(
     }
     let modeling_graph_scope =
         modeling_graph_scope(scan.has_outer_container_declarations, &native.object_graphs);
-    crate::native::project_range::bind(ctx, &mut native, &ir.model, &modeling_graph_scope)?;
+    crate::native::project_range::bind(ctx, &mut native, &ir.geometry, &modeling_graph_scope)?;
     let modeling_object_records = (native
         .object_graphs
         .iter()

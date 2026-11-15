@@ -1193,7 +1193,12 @@ fn transfer_e5_topology(
         );
     }
     let mut point_for_ref = HashMap::new();
-    for (reference, point) in topology.vertex_refs.iter().copied().zip(&ir.geometry.points) {
+    for (reference, point) in topology
+        .vertex_refs
+        .iter()
+        .copied()
+        .zip(&ir.geometry.points)
+    {
         point_for_ref.insert(reference, point.position().get());
     }
 

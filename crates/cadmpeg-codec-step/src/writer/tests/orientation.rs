@@ -21,7 +21,11 @@ fn planar_solid_volume_and_ccw_loops(ir: &CadIr) -> (f64, bool) {
     let geometry = &ir.geometry;
     let position = |vertex: &cadmpeg_ir::ids::VertexId| {
         let vertex = geometry.vertices.iter().find(|v| &v.id == vertex).unwrap();
-        let point = geometry.points.iter().find(|p| p.id == vertex.point).unwrap();
+        let point = geometry
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap();
         point.position().get()
     };
     let origin = Point3::new(0.0, 0.0, 0.0);

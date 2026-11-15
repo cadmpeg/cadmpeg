@@ -619,8 +619,12 @@ fn sort_arenas(ir: &mut CadIr) {
     ir.geometry.curves.sort_by(|a, b| a.id.cmp(&b.id));
     ir.geometry.subds.sort_by(|a, b| a.id.cmp(&b.id));
     ir.geometry.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.geometry.procedural_surfaces.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.geometry.procedural_curves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry
+        .procedural_surfaces
+        .sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry
+        .procedural_curves
+        .sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.tessellations.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.appearances.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1006,14 +1010,20 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .iter()
         .flat_map(|shell| shell.faces().iter().cloned())
         .collect::<HashSet<_>>();
-    subset.geometry.faces.retain(|face| faces.contains(&face.id));
+    subset
+        .geometry
+        .faces
+        .retain(|face| faces.contains(&face.id));
     let loops = subset
         .geometry
         .faces
         .iter()
         .flat_map(|face| face.loops.iter().cloned())
         .collect::<HashSet<_>>();
-    subset.geometry.loops.retain(|loop_| loops.contains(&loop_.id));
+    subset
+        .geometry
+        .loops
+        .retain(|loop_| loops.contains(&loop_.id));
     let coedges = subset
         .geometry
         .loops
@@ -1033,7 +1043,10 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     for shell in &subset.geometry.shells {
         edges.extend(shell.wire_edges().iter().cloned());
     }
-    subset.geometry.edges.retain(|edge| edges.contains(&edge.id));
+    subset
+        .geometry
+        .edges
+        .retain(|edge| edges.contains(&edge.id));
     let mut vertices = subset
         .geometry
         .edges
@@ -3204,13 +3217,15 @@ pub(crate) fn brep_body(
         } else {
             &edge.start
         };
-        let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.geometry.loops, coedge)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "coedge {} is absent from its owning loop ring",
-                    coedge.id
-                ))
-            })?;
+        let (next, previous) =
+            cadmpeg_ir::topology::coedge_ring_neighbors(&ir.geometry.loops, coedge).ok_or_else(
+                || {
+                    CodecError::malformed(format_args!(
+                        "coedge {} is absent from its owning loop ring",
+                        coedge.id
+                    ))
+                },
+            )?;
         for value in [
             0,
             loops[&coedge.owner_loop],

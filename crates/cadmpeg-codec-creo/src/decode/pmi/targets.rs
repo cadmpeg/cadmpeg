@@ -309,7 +309,12 @@ fn surface_faces(ir: &CadIr, id: u32) -> SurfaceFaces {
     };
     let faces = faces_on(&|surface| *surface == visible);
     if !faces.is_empty() {
-        if ir.geometry.surfaces.iter().any(|surface| surface.id == datum) {
+        if ir
+            .geometry
+            .surfaces
+            .iter()
+            .any(|surface| surface.id == datum)
+        {
             return SurfaceFaces::Ambiguous(faces);
         }
         return SurfaceFaces::Faces(faces);

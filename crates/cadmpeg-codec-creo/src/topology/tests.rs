@@ -532,12 +532,15 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(geometry.edges.len(), 6);
     assert_eq!(geometry.curves.len(), 6);
     assert!(geometry.edges.iter().all(|edge| edge.curve().is_some()));
-    assert!(geometry.edges.iter().all(|edge| edge.param_range().is_some()));
+    assert!(geometry
+        .edges
+        .iter()
+        .all(|edge| edge.param_range().is_some()));
     for edge in &geometry.edges {
         let [start_parameter, end_parameter] = edge.param_range().expect("line edge range").get();
         assert_eq!(start_parameter, 0.0);
         assert!(end_parameter > 0.0);
-        let curve = model
+        let curve = geometry
             .curves
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve())
@@ -547,19 +550,29 @@ fn decode_transfers_closed_plane_intersection_brep() {
         };
         let origin = line_curve.origin().get();
         let direction = *line_curve.direction().as_raw();
-        let start = model
+        let start = geometry
             .vertices
             .iter()
             .find(|vertex| vertex.id == edge.start)
-            .and_then(|vertex| geometry.points.iter().find(|point| point.id == vertex.point))
+            .and_then(|vertex| {
+                geometry
+                    .points
+                    .iter()
+                    .find(|point| point.id == vertex.point)
+            })
             .expect("edge start point")
             .position()
             .get();
-        let end = model
+        let end = geometry
             .vertices
             .iter()
             .find(|vertex| vertex.id == edge.end)
-            .and_then(|vertex| geometry.points.iter().find(|point| point.id == vertex.point))
+            .and_then(|vertex| {
+                geometry
+                    .points
+                    .iter()
+                    .find(|point| point.id == vertex.point)
+            })
             .expect("edge end point")
             .position()
             .get();
@@ -576,7 +589,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
     }
     assert_eq!(geometry.faces.len(), 4);
     assert_eq!(
-        model
+        geometry
             .faces
             .iter()
             .find(|face| face.id.as_str() == "creo:visibgeom:face#1")
@@ -585,7 +598,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert_eq!(
-        model
+        geometry
             .faces
             .iter()
             .find(|face| face.id.as_str() == "creo:visibgeom:face#2")
@@ -595,7 +608,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
     );
     assert_eq!(geometry.loops.len(), 4);
     assert!(geometry.loops.iter().all(|lp| {
-        model
+        geometry
             .faces
             .iter()
             .find(|face| face.id == lp.face)
@@ -605,9 +618,12 @@ fn decode_transfers_closed_plane_intersection_brep() {
     }));
     assert_eq!(geometry.coedges.len(), 12);
     assert_eq!(geometry.pcurves.len(), 12);
-    assert!(geometry.coedges.iter().all(|coedge| coedge.pcurves.len() == 1));
+    assert!(geometry
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.len() == 1));
     for coedge in &geometry.coedges {
-        let pcurve = model
+        let pcurve = geometry
             .pcurves
             .iter()
             .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
@@ -616,7 +632,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
             pcurve.geometry,
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(_)
         ));
-        let edge = model
+        let edge = geometry
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
@@ -626,7 +642,10 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(geometry.shells.len(), 1);
     assert_eq!(geometry.regions.len(), 1);
     assert_eq!(geometry.bodies.len(), 1);
-    assert_eq!(geometry.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Solid);
+    assert_eq!(
+        geometry.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Solid
+    );
     let feature = model
         .features
         .iter()

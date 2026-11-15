@@ -109,7 +109,8 @@ fn spline_surface_patch_projects_a_bicubic_nurbs_carrier() {
     .unwrap();
     assert!(result.decoded.contains(&1));
     assert_eq!(ir.geometry.surfaces.len(), 1);
-    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = ir.geometry.surfaces[0].geometry.solved() else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = ir.geometry.surfaces[0].geometry.solved()
+    else {
         panic!("expected a bicubic NURBS carrier");
     };
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
@@ -502,7 +503,8 @@ fn coefficient_curve_survives_missing_terminal_and_invalid_claims() {
             )
             .unwrap();
         assert_eq!(result.ir().geometry.curves.len(), 1, "{header}");
-        let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().geometry.curves[0].geometry.solved()
+        let Some(SolvedCurveGeometry::Nurbs(curve)) =
+            result.ir().geometry.curves[0].geometry.solved()
         else {
             panic!("exact carrier")
         };
@@ -590,7 +592,10 @@ fn coefficient_surface_requires_actual_patches_at_their_declared_grid_positions(
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(result.ir().geometry.surfaces.len(), usize::from(recoverable));
+        assert_eq!(
+            result.ir().geometry.surfaces.len(),
+            usize::from(recoverable)
+        );
         if recoverable {
             let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
                 result.ir().geometry.surfaces[0].geometry.solved()

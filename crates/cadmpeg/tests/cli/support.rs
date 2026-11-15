@@ -225,7 +225,10 @@ fn minimal_rhino_archive_with_comment(
 pub(crate) fn sldprt_cube() -> cadmpeg_ir::CadIr {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()

@@ -1569,7 +1569,7 @@ fn append_legacy_brep(
     suffix: &str,
 ) -> Result<(), CodecError> {
     let mut draft = cadmpeg_ir::draft::ModelDraft::new();
-    let model = draft.model_mut();
+    let geometry = draft.geometry_mut();
     let suffix_key = legacy_identity_key(suffix.to_owned())?;
     let body_id = {
         Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::BodyId::compose(
@@ -1850,7 +1850,7 @@ fn append_legacy_brep(
         let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        model
+        geometry
             .points
             .push(Point::new(point_id.clone(), finite_position, None));
         geometry.vertices.push(Vertex {
@@ -4141,7 +4141,12 @@ mod tests {
             decode_v1(&legacy_shell_archive()).expect("valid V1 shell archive"),
             false,
         );
-        assert_eq!(result.ir().geometry.bodies.len(), 1, "{:?}", result.report());
+        assert_eq!(
+            result.ir().geometry.bodies.len(),
+            1,
+            "{:?}",
+            result.report()
+        );
         assert_eq!(result.ir().geometry.faces.len(), 1);
         assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())

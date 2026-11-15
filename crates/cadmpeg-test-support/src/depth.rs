@@ -28,11 +28,11 @@
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::compare::is_local_digest_attribute;
 use cadmpeg_ir::validate::validate_neutral;
-use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_ir::{ArenaName, CadIr};
 use serde_json::Value;
 

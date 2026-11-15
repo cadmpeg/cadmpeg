@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::{
     BodySelection, DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
     FeatureOperation,
@@ -310,7 +310,7 @@ fn build(
     };
     let mut scratch = CadIr::empty();
     cadmpeg_asm::brep::transfer::transfer_into_ir(ctx, &mut scratch, "f3d", brep)?;
-    let Extract::Nest(topology) = extract(ctx, &scratch.model, body.as_str())? else {
+    let Extract::Nest(topology) = extract(ctx, &scratch.geometry, body.as_str())? else {
         return Ok(None);
     };
     let mut map = IdentityMap::new(|id: &str| {
@@ -452,7 +452,7 @@ impl Record<'_> {
 
 fn reach<'a>(
     ctx: &DecodeContext<'_>,
-    model: &'a Model,
+    geometry: &'a Topology,
     body: &str,
 ) -> Result<(HashSet<&'a str>, usize), CodecError> {
     let mut table = HashMap::<&str, Record<'_>>::new();
@@ -582,7 +582,11 @@ fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, Cod
     Ok(escaped)
 }
 
-fn extract(ctx: &DecodeContext<'_>, geometry: &Topology, body: &str) -> Result<Extract, CodecError> {
+fn extract(
+    ctx: &DecodeContext<'_>,
+    geometry: &Topology,
+    body: &str,
+) -> Result<Extract, CodecError> {
     let (reached, missing) = reach(ctx, geometry, body)?;
     let Some(root) = geometry
         .bodies

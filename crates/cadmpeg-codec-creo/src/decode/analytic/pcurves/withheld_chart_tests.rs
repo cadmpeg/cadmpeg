@@ -56,7 +56,8 @@ fn cap_ruling_restores_infinite_line_without_nonzero_axial_endpoints() {
         assert_eq!(ir.geometry.curves.len(), 1);
         assert!(ir.geometry.curves[0].parameter_range.is_none());
         assert!(ir.geometry.points.is_empty());
-        let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &ir.geometry.curves[0].geometry
+        let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) =
+            &ir.geometry.curves[0].geometry
         else {
             panic!("infinite line")
         };

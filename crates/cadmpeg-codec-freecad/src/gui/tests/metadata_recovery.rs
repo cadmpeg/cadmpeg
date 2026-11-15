@@ -36,7 +36,10 @@ fn malformed_gui_metadata_keeps_geometry_and_valid_native_state() {
             without_style(&recovered.ir().geometry.bodies),
             without_style(&expected.ir().geometry.bodies)
         );
-        assert_eq!(recovered.ir().geometry.surfaces, expected.ir().geometry.surfaces);
+        assert_eq!(
+            recovered.ir().geometry.surfaces,
+            expected.ir().geometry.surfaces
+        );
         assert_valid_document(recovered.ir());
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
         let documents = recovered

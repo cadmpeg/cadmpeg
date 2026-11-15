@@ -1572,7 +1572,9 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
         ),
         None,
     );
-    ir.geometry.add_procedural_surface(&cache, procedural).unwrap();
+    ir.geometry
+        .add_procedural_surface(&cache, procedural)
+        .unwrap();
 
     assert_eq!(surface_offset_lineage(&ir, &cache, 0), Some((support, 4.0)));
 }

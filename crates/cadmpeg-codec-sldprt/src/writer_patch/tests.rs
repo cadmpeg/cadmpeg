@@ -352,7 +352,10 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
             .unwrap(),
     );
 
-    assert_eq!(regenerated.ir().geometry.points[1].position().get().x, 1_250.0);
+    assert_eq!(
+        regenerated.ir().geometry.points[1].position().get().x,
+        1_250.0
+    );
     assert!(matches!(
         regenerated.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
@@ -757,11 +760,19 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir().geometry.points[1].position().get().x, 1_500.0);
-    assert!(regenerated.ir().geometry.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-    )));
+    assert_eq!(
+        regenerated.ir().geometry.points[1].position().get().x,
+        1_500.0
+    );
+    assert!(regenerated
+        .ir()
+        .geometry
+        .curves
+        .iter()
+        .any(|curve| matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        )));
 }
 
 /// A Parasolid stream whose header states a body offset past the bytes the
@@ -915,7 +926,8 @@ fn partition_graph_comparison_includes_pcurve_geometry_and_face_colours() {
     );
     assert!(!super::same_graph(&ir, &native));
     ir = baseline;
-    ir.geometry.faces[0].color = Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
+    ir.geometry.faces[0].color =
+        Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
     assert!(!super::same_graph(&ir, &native));
 }
 

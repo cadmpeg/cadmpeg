@@ -1952,7 +1952,9 @@ fn procedural_construction_reduction_is_reported() {
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.01).expect("fit tolerance")),
         },
     );
-    ir.geometry.add_procedural_curve(&owner, procedural).unwrap();
+    ir.geometry
+        .add_procedural_curve(&owner, procedural)
+        .unwrap();
 
     let mut buf = Vec::new();
     let report = write_step(

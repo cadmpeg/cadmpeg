@@ -369,7 +369,7 @@ fn geometry_depth_cuts_only_documents_that_agree_without_design_intent() {
                 },
             )
             .expect("geometry-depth decode");
-            (*name, result.ir().decode_depth())
+            (*name, result.ir().scope().depth())
         })
         .collect::<Vec<_>>();
     assert_eq!(

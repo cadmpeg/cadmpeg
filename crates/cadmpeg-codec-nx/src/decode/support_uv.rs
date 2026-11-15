@@ -2157,7 +2157,8 @@ pub(super) fn complete_parameterization_equivalent_support_uv(
         replacements
     };
     for (procedural_index, side, source) in replacements {
-        let Some(context) = ir.geometry.procedural_curves[procedural_index].intersection_context_mut()
+        let Some(context) =
+            ir.geometry.procedural_curves[procedural_index].intersection_context_mut()
         else {
             continue;
         };
@@ -2647,7 +2648,12 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             &cadmpeg_ir::identity_component!("intersection-pcurve-completed"),
             fin_xmt,
         )?;
-        if ir.geometry.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
+        if ir
+            .geometry
+            .pcurves
+            .iter()
+            .any(|pcurve| pcurve.id == pcurve_id)
+        {
             continue;
         }
         if let Some(fin) = source.graph.get(NodeKind::Fin, fin_xmt) {

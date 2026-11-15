@@ -43,14 +43,16 @@ fn support_curve_with_heights([ends, middle]: [f64; 2], fit: Option<f64>) -> Cad
     )
     .unwrap();
     surface.set_cache_fit_tolerance(fit.map(|value| FitTolerance::try_new(value).unwrap()));
-    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface));
+    ir.geometry.surfaces[0].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface));
     ir
 }
 
 fn using_edge(ir: &mut CadIr, range: [f64; 2]) {
     let mut cube = unit_cube().unwrap();
     let mut edge = cube.geometry.edges.remove(0);
-    edge.set_curve(Some(ir.geometry.curves[0].id.clone())).unwrap();
+    edge.set_curve(Some(ir.geometry.curves[0].id.clone()))
+        .unwrap();
     edge.set_param_range(Some(ParameterInterval::new(range).unwrap()));
     ir.geometry.edges.push(edge);
 }

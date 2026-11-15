@@ -1714,7 +1714,10 @@ mod tests {
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 1.0])
         );
-        assert_eq!(ir.geometry.edges[0].curve().cloned(), Some(curve_id.clone()));
+        assert_eq!(
+            ir.geometry.edges[0].curve().cloned(),
+            Some(curve_id.clone())
+        );
         let derived_curve_id = CurveId::mint("catia:zero-entity:wire-curve#1-2-3-1".to_string())
             .expect("identity grammar");
         assert_eq!(

@@ -375,7 +375,9 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
             .geometry
             .edges
             .iter()
-            .find(|edge| edge.curve() == result.ir().geometry.procedural_curve_owner(&procedural.id))
+            .find(|edge| {
+                edge.curve() == result.ir().geometry.procedural_curve_owner(&procedural.id)
+            })
             .expect("carrying edge");
         assert_eq!(edge.param_range(), None);
         assert!(

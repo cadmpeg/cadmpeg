@@ -90,7 +90,10 @@ fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
 fn encoder_writes_authored_with_retained_native_envelope_ir() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()
@@ -142,7 +145,10 @@ fn semantic_writer_emits_face_records_deterministically() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()
@@ -249,7 +255,10 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()
@@ -738,7 +747,10 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()

@@ -98,7 +98,11 @@ fn disconnected_cycles_become_separate_open_sheet_bodies() {
         .bodies
         .iter()
         .all(|body| body.kind == BodyKind::Sheet && body.regions.len() == 1));
-    assert!(ir.geometry.shells.iter().all(|shell| shell.faces().len() == 1));
+    assert!(ir
+        .geometry
+        .shells
+        .iter()
+        .all(|shell| shell.faces().len() == 1));
     assert!(ir
         .geometry
         .coedges
@@ -131,7 +135,8 @@ fn reversed_use_preserves_native_line_and_endpoint_parameterization() {
     let mut annotations = AnnotationBuilder::new();
     with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &[plan(vec![lines])]))
         .expect("emit reversed use");
-    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = ir.geometry.curves[0].geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = ir.geometry.curves[0].geometry
+    else {
         panic!("native line carrier")
     };
     assert_eq!(line.origin().get(), Point3::new(6.0, 0.0, 0.0));
@@ -228,7 +233,7 @@ fn invalid_later_component_leaves_prior_model_and_annotations_intact() {
     let first = plan(vec![triangle(500, 0.0, 10)]);
     with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &[first]))
         .expect("existing sheet");
-    let before_model = ir.model.clone();
+    let before_geometry = ir.geometry.clone();
     let before_annotations = annotations.annotations().clone();
     let mut second = plan(vec![triangle(600, 10.0, 20), triangle(700, 20.0, 30)]);
     second.source_offset = 800;
@@ -238,7 +243,7 @@ fn invalid_later_component_leaves_prior_model_and_annotations_intact() {
             .expect("withhold the incomplete candidate"),
         0
     );
-    assert_eq!(ir.model, before_model);
+    assert_eq!(ir.geometry, before_geometry);
     assert_eq!(*annotations.annotations(), before_annotations);
 }
 
@@ -252,7 +257,7 @@ fn source_scopes_and_existing_sheets_keep_distinct_entity_identities() {
     second.origin = Point3::new(0.0, 0.0, 5.0);
     with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &[first]))
         .expect("first sheet");
-    let original = ir.model.clone();
+    let original = ir.geometry.clone();
     with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &[second]))
         .expect("second sheet");
     assert_eq!(&ir.geometry.points[..3], original.points.as_slice());
@@ -269,14 +274,14 @@ fn source_scopes_and_existing_sheets_keep_distinct_entity_identities() {
 
 #[test]
 fn every_emitted_arena_refuses_an_existing_identity_before_mutation() {
-    use cadmpeg_ir::document::Model;
+    use cadmpeg_ir::document::Topology;
 
     let plans = [plan(vec![triangle(500, 0.0, 10)])];
     let mut prototype = CadIr::empty();
     with_service_context(|ctx| emit(ctx, &mut prototype, &mut AnnotationBuilder::new(), &plans))
         .expect("authored sheet prototype");
     let geometry = prototype.geometry;
-    let mut collisions: [Model; 11] = std::array::from_fn(|_| Model::default());
+    let mut collisions: [Topology; 11] = std::array::from_fn(|_| Topology::default());
     collisions[0].points = geometry.points;
     collisions[1].vertices = geometry.vertices;
     collisions[2].curves = geometry.curves;
@@ -290,13 +295,13 @@ fn every_emitted_arena_refuses_an_existing_identity_before_mutation() {
     collisions[10].bodies = geometry.bodies;
     for existing in collisions {
         let mut ir = CadIr::empty();
-        ir.model = existing;
-        let before = ir.model.clone();
+        ir.geometry = existing;
+        let before = ir.geometry.clone();
         let mut annotations = AnnotationBuilder::new();
         let error = with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &plans))
             .expect_err("existing arena identity must be preserved");
         assert!(matches!(error, CodecError::Malformed(_)));
-        assert_eq!(ir.model, before);
+        assert_eq!(ir.geometry, before);
         assert!(annotations.annotations().provenance.is_empty());
     }
 }

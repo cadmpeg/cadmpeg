@@ -372,7 +372,9 @@ fn unreadable_global_metadata_suffix_keeps_geometry_and_exact_source() {
         let expected = IgesCodec
             .decode(&mut Cursor::new(&original), &DecodeOptions::default())
             .unwrap();
-        assert!(!expected.ir().geometry.points.is_empty() || !expected.ir().geometry.faces.is_empty());
+        assert!(
+            !expected.ir().geometry.points.is_empty() || !expected.ir().geometry.faces.is_empty()
+        );
         for field in 23..=26 {
             for value in ["999999999999999999999999999999999999H", "70Hx"] {
                 let mut fields = valid_global_fields();

@@ -338,7 +338,11 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         crate::evaluation::saved_body_census_evidence(&ir),
         crate::evaluation::BodyCensusEvaluation::mismatch(
             vec![bound],
-            ir.geometry.bodies.iter().map(|body| body.id.clone()).collect()
+            ir.geometry
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect()
         )
         .unwrap()
     );

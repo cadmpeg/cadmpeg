@@ -13,7 +13,7 @@ use crate::records::{
     sketch_geometry::SketchCurveGeometry,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::{PcurveGeometry, PcurveNurbs},
@@ -3112,15 +3112,15 @@ pub(super) fn validate_curve_edits(
 }
 
 pub(super) fn validate_pcurve_edits(
-    baseline_model: &Model,
-    target_model: &Model,
+    baseline_geometry: &Topology,
+    target_geometry: &Topology,
 ) -> Result<BTreeMap<String, PcurveEdit>, CodecError> {
-    let baseline = baseline_model
+    let baseline = baseline_geometry
         .pcurves
         .iter()
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
         .collect::<BTreeMap<_, _>>();
-    let target = target_model
+    let target = target_geometry
         .pcurves
         .iter()
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
@@ -3134,11 +3134,11 @@ pub(super) fn validate_pcurve_edits(
     for (id, before) in baseline {
         let after = target[id];
         let before_native = native_support_pcurve(
-            pcurve_support_geometry(baseline_model, &before.id)?,
+            pcurve_support_geometry(baseline_geometry, &before.id)?,
             &before.geometry,
         )?;
         let after_native = native_support_pcurve(
-            pcurve_support_geometry(target_model, &after.id)?,
+            pcurve_support_geometry(target_geometry, &after.id)?,
             &after.geometry,
         )?;
         if before == after && before_native == after_native {
@@ -3181,7 +3181,7 @@ pub(super) fn validate_pcurve_edits(
         let uv_offset = (before.uv_offset() != after.uv_offset())
             .then_some(after.uv_offset())
             .flatten();
-        let support = pcurve_support_surface(target_model, &after.id)?
+        let support = pcurve_support_surface(target_geometry, &after.id)?
             .as_str()
             .to_owned();
         let edit = match &before.metadata {

@@ -48,6 +48,7 @@ fn damaged_first_optional_frame_keeps_detection_and_required_brep_admission() {
         cadmpeg_ir::Confidence::Medium
     );
     let decoded = super::decode(changed);
+    assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
     assert_eq!(decoded.ir().model, baseline.ir().model);
     super::assert_valid(&decoded);
     assert!(!decoded.report().losses.is_empty());
@@ -133,6 +134,7 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
             let mut changed = original.clone();
             damage_entry(&mut changed, name, defect);
             let decoded = super::decode(changed.clone());
+            assert_eq!(decoded.ir().geometry, expected.ir().geometry);
             assert_eq!(decoded.ir().model, expected.ir().model);
             super::assert_valid(&decoded);
             assert!(<F3dCodec as CodecBackend>::validate_native(

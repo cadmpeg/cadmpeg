@@ -54,7 +54,10 @@ pub struct ModelCheckpoint {
 impl ModelCheckpoint {
     /// Capture a decoded document's arena lengths and feature-parent table.
     pub fn capture(document: &CadIr) -> Self {
-        Self::with_parents(document, document.model.feature_regeneration_parents.clone())
+        Self::with_parents(
+            document,
+            document.model.feature_regeneration_parents.clone(),
+        )
     }
 
     fn with_parents(
@@ -353,6 +356,16 @@ impl<A> ModelDraft<A> {
         &mut self.staged.model
     }
 
+    /// Returns the staged geometry and model together, for construction that
+    /// writes both homes at once.
+    ///
+    /// Commit still checks all identities and references, including entities inserted
+    /// through this lower-level surface.
+    pub fn homes_mut(&mut self) -> (&mut Topology, &mut Model) {
+        self.insertion_index = None;
+        (&mut self.staged.geometry, &mut self.staged.model)
+    }
+
     /// Number of staged entities.
     pub fn entity_count(&self) -> usize {
         self.staged.entity_count()
@@ -402,8 +415,12 @@ impl<A> ModelDraft<A> {
             };
         }
         crate::document::arena_registry!(validate_arenas);
-        if !self.staged.model.features.is_empty() || self.staged.model.has_feature_regeneration_parents() {
-            if let Err(error) = crate::document::feature_parents::validate(&[base, &self.staged.model]) {
+        if !self.staged.model.features.is_empty()
+            || self.staged.model.has_feature_regeneration_parents()
+        {
+            if let Err(error) =
+                crate::document::feature_parents::validate(&[base, &self.staged.model])
+            {
                 return Ok(Err(DraftError::FeatureParents {
                     owner: error.owner().clone(),
                     message: format!("{error}"),
@@ -744,11 +761,13 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             self.state.unknown_namespace,
         );
         let unknowns = &self.state.unknowns;
-        let result = self
-            .state
-            .base
-            .borrow_mut()
-            .try_append(geometry, model, native, |combined| admit(combined, unknowns))?;
+        let result =
+            self.state
+                .base
+                .borrow_mut()
+                .try_append(geometry, model, native, |combined| {
+                    admit(combined, unknowns)
+                })?;
         if result.is_ok() {
             for (hash, group) in staged {
                 index.entry(hash).or_default().extend(group);
@@ -835,31 +854,36 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 .is_ok_and(crate::report::check::ValidationReport::is_ok)
         });
         let is_local = local.is_some();
-        let result = self.try_append(candidate.geometry, candidate.model, candidate.native, |combined, unknowns| {
-            let report = match local {
-                Some(report) => report,
-                None => crate::validate::admit::admit_annotation_delta(
-                    ctx,
-                    combined,
-                    (format, unknowns),
-                    &changes,
-                    allowed,
-                )?,
-            };
-            let accepted = accept(report.as_ref(), changes)?;
-            if accepted.is_ok()
-                && reuse
-                && report
-                    .as_ref()
-                    .is_ok_and(crate::report::check::ValidationReport::is_ok)
-            {
-                match &mut state {
-                    Some(admitted) if is_local => admitted.accept(combined)?,
-                    _ => state = Some(AdmittedState::build(combined, format, unknowns)),
+        let result = self.try_append(
+            candidate.geometry,
+            candidate.model,
+            candidate.native,
+            |combined, unknowns| {
+                let report = match local {
+                    Some(report) => report,
+                    None => crate::validate::admit::admit_annotation_delta(
+                        ctx,
+                        combined,
+                        (format, unknowns),
+                        &changes,
+                        allowed,
+                    )?,
+                };
+                let accepted = accept(report.as_ref(), changes)?;
+                if accepted.is_ok()
+                    && reuse
+                    && report
+                        .as_ref()
+                        .is_ok_and(crate::report::check::ValidationReport::is_ok)
+                {
+                    match &mut state {
+                        Some(admitted) if is_local => admitted.accept(combined)?,
+                        _ => state = Some(AdmittedState::build(combined, format, unknowns)),
+                    }
                 }
-            }
-            Ok(accepted)
-        });
+                Ok(accepted)
+            },
+        );
         // A rejected candidate rolls back to the model these facts describe.
         match &result {
             Ok(Ok(_)) => self.state.admission = state,
@@ -1303,7 +1327,9 @@ mod tests {
         use crate::features::{Feature, FeatureDefinition, FeatureOperation};
 
         let mut ir = CadIr::empty();
-        ir.geometry.points.push(point("test:checkpoint:point#existing"));
+        ir.geometry
+            .points
+            .push(point("test:checkpoint:point#existing"));
         let original = ir.clone();
         let checkpoint = ModelCheckpoint::capture(&ir);
         ir.model.assets.push(Asset {

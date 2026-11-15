@@ -114,8 +114,10 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     use cadmpeg_ir::topology::Color;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    source_less.geometry.bodies[0].color = Some(Color::new(0.2, 0.4, 0.6, 1.0).expect("valid color"));
-    source_less.geometry.faces[0].color = Some(Color::new(0.7, 0.3, 0.1, 1.0).expect("valid color"));
+    source_less.geometry.bodies[0].color =
+        Some(Color::new(0.2, 0.4, 0.6, 1.0).expect("valid color"));
+    source_less.geometry.faces[0].color =
+        Some(Color::new(0.7, 0.3, 0.1, 1.0).expect("valid color"));
     let body_id = source_less.geometry.bodies[0].id.clone();
     let face_id = source_less.geometry.faces[0].id.clone();
     let edge_id = source_less.geometry.edges[0].id.clone();
@@ -474,23 +476,50 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
         ])
         .expect("affine transform"),
     );
-    source_less.geometry.bodies.append(&mut second.geometry.bodies);
-    source_less.geometry.regions.append(&mut second.geometry.regions);
-    source_less.geometry.shells.append(&mut second.geometry.shells);
-    source_less.geometry.faces.append(&mut second.geometry.faces);
-    source_less.geometry.loops.append(&mut second.geometry.loops);
-    source_less.geometry.coedges.append(&mut second.geometry.coedges);
-    source_less.geometry.edges.append(&mut second.geometry.edges);
+    source_less
+        .geometry
+        .bodies
+        .append(&mut second.geometry.bodies);
+    source_less
+        .geometry
+        .regions
+        .append(&mut second.geometry.regions);
+    source_less
+        .geometry
+        .shells
+        .append(&mut second.geometry.shells);
+    source_less
+        .geometry
+        .faces
+        .append(&mut second.geometry.faces);
+    source_less
+        .geometry
+        .loops
+        .append(&mut second.geometry.loops);
+    source_less
+        .geometry
+        .coedges
+        .append(&mut second.geometry.coedges);
+    source_less
+        .geometry
+        .edges
+        .append(&mut second.geometry.edges);
     source_less
         .geometry
         .vertices
         .append(&mut second.geometry.vertices);
-    source_less.geometry.points.append(&mut second.geometry.points);
+    source_less
+        .geometry
+        .points
+        .append(&mut second.geometry.points);
     source_less
         .geometry
         .surfaces
         .append(&mut second.geometry.surfaces);
-    source_less.geometry.curves.append(&mut second.geometry.curves);
+    source_less
+        .geometry
+        .curves
+        .append(&mut second.geometry.curves);
 
     let mut encoded = Vec::new();
     F3dCodec

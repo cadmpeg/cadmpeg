@@ -101,7 +101,9 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .geometry
             .procedural_curves
             .iter()
-            .find(|procedural| ir.geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id))
+            .find(|procedural| {
+                ir.geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id)
+            })
             .expect("intersection construction");
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
             construction: intersection,
@@ -785,7 +787,9 @@ fn blend_contact_transfer_fixture(
                 ),
             },
         );
-        ir.geometry.add_procedural_curve(&curve, procedural).unwrap();
+        ir.geometry
+            .add_procedural_curve(&curve, procedural)
+            .unwrap();
     }
     ir
 }
@@ -1268,14 +1272,16 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 Point3::new(10.0, 0.0, 0.0),
             ),
         ];
-        ir.geometry.points.extend(points.iter().map(|(id, position)| {
-            Point::new(
-                id.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(*position)
-                    .expect("a finite position is a point"),
-                None,
-            )
-        }));
+        ir.geometry
+            .points
+            .extend(points.iter().map(|(id, position)| {
+                Point::new(
+                    id.clone(),
+                    cadmpeg_ir::features::FinitePoint3::new(*position)
+                        .expect("a finite position is a point"),
+                    None,
+                )
+            }));
         let vertices = [
             VertexId::mint("test:model:entity#nx:test:boundary-vertex-0")
                 .expect("identity grammar"),
@@ -1329,7 +1335,9 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 ),
             },
         );
-        ir.geometry.add_procedural_curve(&curve, procedural).unwrap();
+        ir.geometry
+            .add_procedural_curve(&curve, procedural)
+            .unwrap();
 
         crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
             geometry_ctx,

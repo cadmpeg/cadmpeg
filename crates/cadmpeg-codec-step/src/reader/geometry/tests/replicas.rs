@@ -361,13 +361,18 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
     let round_trip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode trimmed replica");
-    assert!(round_trip.ir().geometry.procedural_curves.iter().any(|curve| {
-        matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
-                if source.as_str().starts_with("step:data:curve#")
-        )
-    }));
+    assert!(round_trip
+        .ir()
+        .geometry
+        .procedural_curves
+        .iter()
+        .any(|curve| {
+            matches!(
+                curve.definition(),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+                    if source.as_str().starts_with("step:data:curve#")
+            )
+        }));
 }
 
 #[test]

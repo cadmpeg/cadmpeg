@@ -58,7 +58,12 @@ fn open_nurbs_object_record_short_typecodes_decode() {
 
     let result = decode(&archive(&[record]));
 
-    assert_eq!(result.ir().geometry.points.len(), 1, "{:?}", result.report());
+    assert_eq!(
+        result.ir().geometry.points.len(),
+        1,
+        "{:?}",
+        result.report()
+    );
     assert!(result.report().geometry_transferred());
 }
 
@@ -72,7 +77,12 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
     );
     let result = decode(&archive(&[point, line]));
 
-    assert_eq!(result.ir().geometry.points.len(), 1, "{:?}", result.report());
+    assert_eq!(
+        result.ir().geometry.points.len(),
+        1,
+        "{:?}",
+        result.report()
+    );
     assert_eq!(
         result.ir().geometry.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)
@@ -130,7 +140,12 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
         let valid = object_record(1, POINT_CLASS, &point_payload([4.0, 5.0, 6.0]));
         let result = decode(&archive(&[malformed, valid]));
 
-        assert_eq!(result.ir().geometry.points.len(), 1, "{:?}", result.report());
+        assert_eq!(
+            result.ir().geometry.points.len(),
+            1,
+            "{:?}",
+            result.report()
+        );
         assert_eq!(
             result.ir().geometry.points[0].position().get(),
             cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
@@ -290,8 +305,10 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
         assert_eq!(result.ir().geometry.subds.len(), 1, "archive {version}");
         assert_eq!(
             wire::field::<Vec<subd::SubdEdgeUse>>(
-                &(wire::field::<Vec<subd::SubdFace>>(&(result.ir().geometry.subds[0].cage), "faces")
-                    [0]),
+                &(wire::field::<Vec<subd::SubdFace>>(
+                    &(result.ir().geometry.subds[0].cage),
+                    "faces"
+                )[0]),
                 "edges"
             )
             .len(),
@@ -815,8 +832,11 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     assert_eq!(face.shell, shell.id);
     assert_eq!(face.loops, vec![loop_record.id.clone()]);
     assert_eq!(loop_record.face, face.id);
-    assert!(geometry.coedges.iter().all(|coedge| !coedge.pcurves.is_empty()
-        && geometry.edges.iter().any(|edge| edge.id == coedge.edge)));
+    assert!(geometry
+        .coedges
+        .iter()
+        .all(|coedge| !coedge.pcurves.is_empty()
+            && geometry.edges.iter().any(|edge| edge.id == coedge.edge)));
     assert!(geometry.edges.iter().all(|edge| edge.curve().is_some()
         && edge
             .tolerance
@@ -966,7 +986,12 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
     for failure in failures {
         let point = object_record(1, POINT_CLASS, &point_payload([6.0, 7.0, 8.0]));
         let result = EditableDecodeResult::from(decode(&archive(&[failure.clone(), point])));
-        assert_eq!(result.ir().geometry.points.len(), 1, "{:?}", result.report());
+        assert_eq!(
+            result.ir().geometry.points.len(),
+            1,
+            "{:?}",
+            result.report()
+        );
         assert_eq!(
             result
                 .ir()

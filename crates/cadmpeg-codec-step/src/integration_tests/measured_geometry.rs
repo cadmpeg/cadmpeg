@@ -194,7 +194,10 @@ fn reversed_shell_exchanges_have_no_orientation_findings() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode reversed-shell exchange");
-        assert!(!decoded.ir().geometry.faces.is_empty(), "{name} decodes faces");
+        assert!(
+            !decoded.ir().geometry.faces.is_empty(),
+            "{name} decodes faces"
+        );
         let findings = orientation_findings(decoded.ir());
         assert!(findings.is_empty(), "{name}: {findings:#?}");
     }

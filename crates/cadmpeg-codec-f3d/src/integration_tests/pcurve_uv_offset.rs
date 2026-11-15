@@ -104,7 +104,8 @@ fn pcurve_uv_offset_one_native_period_keeps_cylinder_points() {
     };
     let zero = decode([0.0, 0.0]);
     let shifted = decode([0.0, std::f64::consts::TAU]);
-    let PcurveGeometry::Nurbs { nurbs: zero_curve } = &zero.ir().geometry.pcurves[0].geometry else {
+    let PcurveGeometry::Nurbs { nurbs: zero_curve } = &zero.ir().geometry.pcurves[0].geometry
+    else {
         panic!("zero NURBS")
     };
     let PcurveGeometry::Nurbs {

@@ -63,7 +63,7 @@ fn exact_curve(offset: f64) -> CadIr {
             parameter_range: None,
             source_object: None,
         });
-        ir.model
+        ir.geometry
             .add_procedural_curves(vec![(
                 curve.clone(),
                 ProceduralCurve::new(
@@ -105,7 +105,11 @@ fn exact_curve(offset: f64) -> CadIr {
             shell,
             region,
             Vec::new(),
-            ir.geometry.edges.iter().map(|edge| edge.id.clone()).collect(),
+            ir.geometry
+                .edges
+                .iter()
+                .map(|edge| edge.id.clone())
+                .collect(),
             Vec::new(),
         )
         .unwrap(),
@@ -234,7 +238,8 @@ fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
         admit(ctx, &mut ir, &mut losses, &mut []).unwrap();
         assert_eq!(ir.geometry.curves, curves);
         assert_eq!(ir.geometry.surfaces, surfaces);
-        let ProceduralCurveDefinition::Spring(spring) = ir.geometry.procedural_curves[0].definition()
+        let ProceduralCurveDefinition::Spring(spring) =
+            ir.geometry.procedural_curves[0].definition()
         else {
             panic!("spring construction");
         };

@@ -516,20 +516,20 @@ fn cube_with_sheet(
 /// second use names a new record with the same curve, reversed when
 /// `reverse`. Returns the new record of each shared edge.
 pub(crate) fn split_shared_edges(
-    geometry: &mut crate::brep::model::ExactTopology,
+    model: &mut crate::brep::model::ExactModel,
     reverse: bool,
 ) -> std::collections::BTreeMap<usize, usize> {
     let mut seen = std::collections::BTreeSet::new();
     let mut copies = std::collections::BTreeMap::new();
-    for loop_index in 0..geometry.loops.len() {
-        for position in 0..geometry.loops[loop_index].coedges.len() {
-            let Some(edge) = geometry.loops[loop_index].coedges[position].edge else {
+    for loop_index in 0..model.loops.len() {
+        for position in 0..model.loops[loop_index].coedges.len() {
+            let Some(edge) = model.loops[loop_index].coedges[position].edge else {
                 continue;
             };
             if seen.insert(edge) {
                 continue;
             }
-            let mut copy = geometry.edges[edge].clone();
+            let mut copy = model.edges[edge].clone();
             if let (true, crate::brep::model::CurveGeometry::Line { origin, direction }) =
                 (reverse, &copy.geometry)
             {
@@ -542,9 +542,9 @@ pub(crate) fn split_shared_edges(
                     direction: direction.map(|value| -value),
                 };
             }
-            copies.insert(edge, geometry.edges.len());
-            geometry.loops[loop_index].coedges[position].edge = Some(geometry.edges.len());
-            geometry.edges.push(copy);
+            copies.insert(edge, model.edges.len());
+            model.loops[loop_index].coedges[position].edge = Some(model.edges.len());
+            model.edges.push(copy);
         }
     }
     copies

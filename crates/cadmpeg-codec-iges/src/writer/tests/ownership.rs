@@ -426,7 +426,9 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
             .unwrap();
         } else {
             ir.geometry.bodies.extend(free.ir().geometry.bodies.clone());
-            ir.geometry.regions.extend(free.ir().geometry.regions.clone());
+            ir.geometry
+                .regions
+                .extend(free.ir().geometry.regions.clone());
             let shell = &free.ir().geometry.shells[0];
             ir.geometry.shells.push(
                 cadmpeg_ir::topology::Shell::new(

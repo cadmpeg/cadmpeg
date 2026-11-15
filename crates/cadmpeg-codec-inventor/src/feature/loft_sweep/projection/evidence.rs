@@ -4,13 +4,14 @@
 use crate::feature::profile::selection::PathCurve;
 use cadmpeg_ir::{
     attributes::{AttributeTarget, AttributeValue},
-    document::Model,
+    document::Topology,
     geometry::{
         CurveGeometry, LoftMemberForm, ProceduralSurfaceDefinition, SolvedCurveGeometry,
         SolvedSurfaceGeometry, SurfaceGeometry,
     },
     math::Point3,
     topology::{BodyKind, Face},
+    CadIr,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -28,9 +29,9 @@ struct NamedFace<'a> {
     values: Vec<i64>,
 }
 
-fn owned_faces(model: &Model, generator: u32) -> Option<Vec<NamedFace<'_>>> {
+fn owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<NamedFace<'_>>> {
     let mut names = HashMap::new();
-    for attribute in &model.attributes {
+    for attribute in &ir.model.attributes {
         let AttributeTarget::Face(face) = &attribute.target else {
             continue;
         };
@@ -64,12 +65,17 @@ fn owned_faces(model: &Model, generator: u32) -> Option<Vec<NamedFace<'_>>> {
     }
     let mut selected = Vec::new();
     let mut body = None;
-    for face in &geometry.faces {
+    for face in &ir.geometry.faces {
         let Some((family, values)) = names.remove(face.id.as_str()) else {
             continue;
         };
-        let shell = geometry.shells.iter().find(|shell| shell.id == face.shell)?;
-        let region = model
+        let shell = ir
+            .geometry
+            .shells
+            .iter()
+            .find(|shell| shell.id == face.shell)?;
+        let region = ir
+            .geometry
             .regions
             .iter()
             .find(|region| region.id == shell.region)?;
@@ -85,7 +91,8 @@ fn owned_faces(model: &Model, generator: u32) -> Option<Vec<NamedFace<'_>>> {
     }
     let body = body?;
     if !names.is_empty()
-        || model
+        || ir
+            .geometry
             .bodies
             .iter()
             .find(|candidate| &candidate.id == body)?
@@ -94,18 +101,20 @@ fn owned_faces(model: &Model, generator: u32) -> Option<Vec<NamedFace<'_>>> {
     {
         return None;
     }
-    let shells = model
+    let shells = ir
+        .geometry
         .shells
         .iter()
         .filter(|shell| {
-            model
+            ir.geometry
                 .regions
                 .iter()
                 .any(|region| region.id == shell.region && &region.body == body)
         })
         .map(|shell| &shell.id)
         .collect::<HashSet<_>>();
-    if model
+    if ir
+        .geometry
         .faces
         .iter()
         .filter(|face| shells.contains(&face.shell))
@@ -118,14 +127,15 @@ fn owned_faces(model: &Model, generator: u32) -> Option<Vec<NamedFace<'_>>> {
 }
 
 pub(in crate::feature::loft_sweep) fn sweep(
-    model: &Model,
+    ir: &CadIr,
     generator: u32,
     radius: f64,
     profile: i64,
     path: &[(i64, Option<PathCurve>)],
     endpoints: [Point3; 2],
 ) -> Option<()> {
-    let faces = owned_faces(model, generator)?;
+    let geometry = &ir.geometry;
+    let faces = owned_faces(ir, generator)?;
     let joined = |span: i64| path.iter().find(|(name, _)| *name == span)?.1;
     let mut caps = HashMap::new();
     let mut spans = HashSet::new();
@@ -139,7 +149,7 @@ pub(in crate::feature::loft_sweep) fn sweep(
         if tail != [0; 7] {
             return None;
         }
-        let surface = model
+        let surface = geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == named.face.surface)?;
@@ -149,7 +159,7 @@ pub(in crate::feature::loft_sweep) fn sweep(
         match (section, span, role, geometry) {
             (0, 0, 4 | 12, SolvedSurfaceGeometry::Plane(_)) => {
                 if caps
-                    .insert(*role, cap_center(model, named.face, radius)?)
+                    .insert(*role, cap_center(&ir.geometry, named.face, radius)?)
                     .is_some()
                 {
                     return None;
@@ -273,16 +283,17 @@ fn cap_center(geometry: &Topology, face: &Face, radius: f64) -> Option<Point3> {
 }
 
 pub(in crate::feature::loft_sweep) fn loft(
-    model: &Model,
+    ir: &CadIr,
     generator: u32,
     sections: [u32; 2],
     curve_member: impl Fn(usize, i64) -> bool,
 ) -> Option<()> {
-    let faces = owned_faces(model, generator)?;
+    let geometry = &ir.geometry;
+    let faces = owned_faces(ir, generator)?;
     let mut caps = HashSet::new();
     let mut sides = HashSet::new();
     for named in faces {
-        let surface = model
+        let surface = geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == named.face.surface)?;
@@ -309,7 +320,7 @@ pub(in crate::feature::loft_sweep) fn loft(
             {
                 let member = side_tag(values)?.member;
                 let construction = surface.geometry.procedural_construction()?;
-                let procedural = model
+                let procedural = geometry
                     .procedural_surfaces
                     .iter()
                     .find(|procedural| &procedural.id == construction)?;
@@ -338,15 +349,15 @@ pub(in crate::feature::loft_sweep) fn loft(
 /// Loft result check for either attribute carrier. `section_curves` lists the
 /// associative curve names of a section boundary.
 pub(in crate::feature::loft_sweep) fn loft_result(
-    model: &Model,
+    ir: &CadIr,
     generator: u32,
     sections: [u32; 2],
     section_curves: impl Fn(usize) -> Vec<i64>,
 ) -> Option<()> {
-    loft(model, generator, sections, |section, name| {
+    loft(ir, generator, sections, |section, name| {
         section_curves(section).contains(&name)
     })
-    .or_else(|| legacy_loft(model, generator, sections, &section_curves))
+    .or_else(|| legacy_loft(ir, generator, sections, &section_curves))
 }
 
 const LEGACY_CAP_CLASS: &str =
@@ -363,9 +374,9 @@ struct LegacyFace<'a> {
 
 /// Faces named by `generator` in a legacy carrier, in model order. The faces
 /// belong to one solid body. Other faces of the body can belong to later features.
-fn legacy_owned_faces(model: &Model, generator: u32) -> Option<Vec<LegacyFace<'_>>> {
+fn legacy_owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<LegacyFace<'_>>> {
     let mut names = HashMap::new();
-    for attribute in &model.attributes {
+    for attribute in &ir.model.attributes {
         let AttributeTarget::Face(face) = &attribute.target else {
             continue;
         };
@@ -406,12 +417,17 @@ fn legacy_owned_faces(model: &Model, generator: u32) -> Option<Vec<LegacyFace<'_
     }
     let mut selected = Vec::new();
     let mut body = None;
-    for face in &geometry.faces {
+    for face in &ir.geometry.faces {
         let Some((cap, tail)) = names.remove(face.id.as_str()) else {
             continue;
         };
-        let shell = geometry.shells.iter().find(|shell| shell.id == face.shell)?;
-        let region = model
+        let shell = ir
+            .geometry
+            .shells
+            .iter()
+            .find(|shell| shell.id == face.shell)?;
+        let region = ir
+            .geometry
             .regions
             .iter()
             .find(|region| region.id == shell.region)?;
@@ -423,7 +439,8 @@ fn legacy_owned_faces(model: &Model, generator: u32) -> Option<Vec<LegacyFace<'_
     }
     let body = body?;
     (names.is_empty()
-        && model
+        && ir
+            .geometry
             .bodies
             .iter()
             .find(|candidate| &candidate.id == body)?
@@ -436,19 +453,20 @@ fn legacy_owned_faces(model: &Model, generator: u32) -> Option<Vec<LegacyFace<'_
 /// one planar side face for each curve of both section boundaries. Later
 /// features can add faces to the body.
 pub(in crate::feature::loft_sweep) fn legacy_loft(
-    model: &Model,
+    ir: &CadIr,
     generator: u32,
     sections: [u32; 2],
     section_curves: impl Fn(usize) -> Vec<i64>,
 ) -> Option<()> {
+    let geometry = &ir.geometry;
     if sections[0] == sections[1] {
         return None;
     }
     let mut caps = HashSet::new();
     let mut first_curves = HashSet::new();
     let mut last_curves = HashSet::new();
-    for named in legacy_owned_faces(model, generator)? {
-        let surface = model
+    for named in legacy_owned_faces(ir, generator)? {
+        let surface = geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == named.face.surface)?;

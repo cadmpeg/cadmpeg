@@ -284,7 +284,11 @@ fn unique_surface_face(ir: &CadIr, id: u32) -> Option<PmiTarget> {
     let surface =
         crate::identity::compose_checked::<SurfaceId>(&crate::identity::VISIBGEOM_SURFACE, id)
             .ok()?;
-    let mut faces = ir.geometry.faces.iter().filter(|face| face.surface == surface);
+    let mut faces = ir
+        .geometry
+        .faces
+        .iter()
+        .filter(|face| face.surface == surface);
     let (Some(face), None) = (faces.next(), faces.next()) else {
         return None;
     };

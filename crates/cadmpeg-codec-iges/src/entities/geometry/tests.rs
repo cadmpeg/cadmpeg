@@ -996,7 +996,8 @@ fn decode_preserves_actual_weights_when_polynomial_claim_disagrees() {
             .unwrap();
         assert_eq!(result.ir().geometry.curves.len(), 1, "{weights}");
         assert_eq!(result.report().losses.is_empty(), claim_usable, "{weights}");
-        let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().geometry.curves[0].geometry.solved()
+        let Some(SolvedCurveGeometry::Nurbs(nurbs)) =
+            result.ir().geometry.curves[0].geometry.solved()
         else {
             panic!("expected NURBS");
         };
@@ -1243,7 +1244,8 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
     assert_eq!(result.ir().geometry.curves.len(), 1);
     assert_eq!(result.ir().geometry.edges.len(), 1);
     assert_eq!(result.ir().geometry.points.len(), 2);
-    let Some(SolvedCurveGeometry::Line(line_curve)) = result.ir().geometry.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Line(line_curve)) =
+        result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a line carrier");
     };

@@ -588,6 +588,7 @@ fn invalid_file_version_preserves_independent_brep_geometry_and_declaration() {
         let recovered = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert!(recovered.report().losses.iter().any(|loss| loss.code
             == crate::loss::FreecadLossCode::FileVersionUnverified
@@ -645,6 +646,7 @@ fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() 
         let recovered = FcstdCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .unwrap();
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_valid_document(recovered.ir());
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());

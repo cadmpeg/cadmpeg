@@ -495,7 +495,20 @@ fn attach(
     model: &mut Model,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    super::attach_with_implicit_roots(native, model, losses, &BTreeSet::new())
+    attach_with_implicit_roots(native, model, losses, &BTreeSet::new())
+}
+
+fn attach_with_implicit_roots(
+    native: &F3dNative,
+    model: &mut Model,
+    losses: &mut Vec<LossNote>,
+    implicit_roots: &BTreeSet<ProductDefinitionId>,
+) -> Result<(), CodecError> {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model = std::mem::take(model);
+    let attached = super::attach_with_implicit_roots(native, &mut ir, losses, implicit_roots);
+    *model = ir.model;
+    attached
 }
 
 #[test]
@@ -505,8 +518,7 @@ fn product_history_implicit_root_uses_archive_owner_until_release() {
     let mut model = model(&native);
     let root = model.product_definitions.remove(0).id;
     let mut losses = Vec::new();
-    super::attach_with_implicit_roots(&native, &mut model, &mut losses, &BTreeSet::from([root]))
-        .unwrap();
+    attach_with_implicit_roots(&native, &mut model, &mut losses, &BTreeSet::from([root])).unwrap();
     assert!(losses.is_empty());
     assert!(model
         .features

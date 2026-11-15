@@ -177,29 +177,32 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         if reversed {
             control_points.reverse();
         }
-        ir.geometry.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
-            id: id.clone(),
-            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                    2,
-                    vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-                    control_points,
-                    Some(vec![1.0, 0.75, 1.0]),
-                    false,
-                )
-                .expect("valid explicit pcurve"),
-            },
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-                Some(false),
-                Some(
-                    cadmpeg_ir::units::FiniteVector::new([2.0, 5.0]).expect("finite fixture range"),
+        ir.geometry
+            .pcurves
+            .push(cadmpeg_ir::geometry::pcurve::Pcurve {
+                id: id.clone(),
+                geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+                    nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                        2,
+                        vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+                        control_points,
+                        Some(vec![1.0, 0.75, 1.0]),
+                        false,
+                    )
+                    .expect("valid explicit pcurve"),
+                },
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                    Some(false),
+                    Some(
+                        cadmpeg_ir::units::FiniteVector::new([2.0, 5.0])
+                            .expect("finite fixture range"),
+                    ),
+                    Some(
+                        cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                            .expect("finite non-negative fixture tolerance"),
+                    ),
                 ),
-                Some(
-                    cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
-                        .expect("finite non-negative fixture tolerance"),
-                ),
-            ),
-        });
+            });
         ir.geometry.coedges[coedge].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
             isoparametric: None,
@@ -263,21 +266,23 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
     let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#mismatch"
         .try_into()
         .expect("valid identity");
-    ir.geometry.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
-        id: id.clone(),
-        geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
-            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                cadmpeg_ir::math::Point2::new(0.0, 1.0),
-                cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            )
-            .unwrap(),
-        ),
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-            None,
-            ir.geometry.edges[0].param_range(),
-            None,
-        ),
-    });
+    ir.geometry
+        .pcurves
+        .push(cadmpeg_ir::geometry::pcurve::Pcurve {
+            id: id.clone(),
+            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                )
+                .unwrap(),
+            ),
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                None,
+                ir.geometry.edges[0].param_range(),
+                None,
+            ),
+        });
     ir.geometry.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
         isoparametric: None,
@@ -312,23 +317,26 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
         (first.clone(), cadmpeg_ir::math::Point2::new(0.0, 0.0)),
         (second.clone(), cadmpeg_ir::math::Point2::new(0.0, 1.0)),
     ] {
-        ir.geometry.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
-            id,
-            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
-                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                    origin,
-                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                )
-                .unwrap(),
-            ),
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-                None,
-                Some(
-                    cadmpeg_ir::units::FiniteVector::new([0.0, 2.0]).expect("finite fixture range"),
+        ir.geometry
+            .pcurves
+            .push(cadmpeg_ir::geometry::pcurve::Pcurve {
+                id,
+                geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                        origin,
+                        cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    )
+                    .unwrap(),
                 ),
-                None,
-            ),
-        });
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                    None,
+                    Some(
+                        cadmpeg_ir::units::FiniteVector::new([0.0, 2.0])
+                            .expect("finite fixture range"),
+                    ),
+                    None,
+                ),
+            });
     }
     ir.geometry.coedges[0].pcurves = vec![
         cadmpeg_ir::topology::PcurveUse {
@@ -365,24 +373,28 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
     let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#line"
         .try_into()
         .expect("valid identity");
-    ir.geometry.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
-        id: id.clone(),
-        geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
-            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            )
-            .unwrap(),
-        ),
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-            None,
-            Some(cadmpeg_ir::units::FiniteVector::new([0.0, 2.0]).expect("finite fixture range")),
-            Some(
-                cadmpeg_ir::geometry::FitTolerance::try_new(0.002)
-                    .expect("finite non-negative fixture tolerance"),
+    ir.geometry
+        .pcurves
+        .push(cadmpeg_ir::geometry::pcurve::Pcurve {
+            id: id.clone(),
+            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                )
+                .unwrap(),
             ),
-        ),
-    });
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                None,
+                Some(
+                    cadmpeg_ir::units::FiniteVector::new([0.0, 2.0]).expect("finite fixture range"),
+                ),
+                Some(
+                    cadmpeg_ir::geometry::FitTolerance::try_new(0.002)
+                        .expect("finite non-negative fixture tolerance"),
+                ),
+            ),
+        });
     ir.geometry.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
         isoparametric: None,

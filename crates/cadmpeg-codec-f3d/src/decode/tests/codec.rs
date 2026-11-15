@@ -200,7 +200,10 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 decode");
-    assert_eq!(round_trip.ir().geometry.points[0].position().get(), expected);
+    assert_eq!(
+        round_trip.ir().geometry.points[0].position().get(),
+        expected
+    );
     assert_eq!(
         round_trip
             .ir()

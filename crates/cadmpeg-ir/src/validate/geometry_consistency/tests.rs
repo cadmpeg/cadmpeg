@@ -212,7 +212,9 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
        },
        cache_fit_tolerance: None,
     };
-    ir.geometry.add_procedural_curve(&curve, construction).unwrap();
+    ir.geometry
+        .add_procedural_curve(&curve, construction)
+        .unwrap();
     ir
 }
 
@@ -1065,7 +1067,10 @@ fn edge_endpoint_mismatch_is_flagged() {
         report.findings
     );
 
-    let curve = ir.geometry.edges[0].curve().cloned().expect("cube edge curve");
+    let curve = ir.geometry.edges[0]
+        .curve()
+        .cloned()
+        .expect("cube edge curve");
     let procedural = procedural_curve! {
         id: ProceduralCurveId::mint("synthetic:cube:curve-cache#0").expect("valid identity"),
         definition: ProceduralCurveDefinition::Intersection {
@@ -1078,7 +1083,9 @@ fn edge_endpoint_mismatch_is_flagged() {
         },
         cache_fit_tolerance: Some(0.99),
     };
-    ir.geometry.add_procedural_curve(&curve, procedural).unwrap();
+    ir.geometry
+        .add_procedural_curve(&curve, procedural)
+        .unwrap();
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report

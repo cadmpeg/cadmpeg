@@ -411,7 +411,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ..DesignNative::default()
     };
     let mut model = DesignModel::default();
-    let mut geometry = DesignTopology::default();
     let mut losses = Vec::new();
     let mut remaining_retained_bytes = prereqs.history_retained_allowance;
     let mut remaining_binding_work = MAX_HISTORY_BINDING_WORK;

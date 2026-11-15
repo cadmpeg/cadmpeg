@@ -40,7 +40,9 @@ fn insert_test_procedural_surface(
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
-    ir.geometry.add_procedural_surface(owner, procedural).unwrap();
+    ir.geometry
+        .add_procedural_surface(owner, procedural)
+        .unwrap();
 }
 
 fn attach_test_body_procedural_surface(
@@ -60,7 +62,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     use crate::native::features::holes::SimpleHoleExtent;
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
-    use cadmpeg_ir::document::{CadIr, Model};
+    use cadmpeg_ir::document::{CadIr, Topology};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
@@ -233,7 +235,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         .unwrap(),
     );
     let mut ir = CadIr::empty();
-    ir.model = geometry;
+    ir.geometry = geometry;
 
     ({
         let operation_positions = BTreeMap::from([("blind", 0usize)]);
@@ -378,7 +380,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     use crate::native::features::holes::SimpleHoleExtent;
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
-    use cadmpeg_ir::document::{CadIr, Model};
+    use cadmpeg_ir::document::{CadIr, Topology};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
@@ -603,7 +605,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             .unwrap(),
         );
         let mut ir = CadIr::empty();
-        ir.model = geometry;
+        ir.geometry = geometry;
         let operations = vec![operation.clone()];
         let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
         let body_faces = SolidBodyIndex::new(&ir)
@@ -1372,7 +1374,7 @@ fn carrier_index_matches_the_last_carrier_scans_over_many_copies() {
     use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, LoopId, SurfaceId};
 
     let cube = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let template = &cube.model;
+    let template = &cube.geometry;
     let position = |ids: Vec<&str>, id: &str| ids.iter().position(|candidate| *candidate == id);
     let curve_ids = || {
         template

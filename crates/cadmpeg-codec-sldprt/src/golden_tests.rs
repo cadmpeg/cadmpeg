@@ -591,7 +591,11 @@ fn a_planar_face_loop_runs_counter_clockwise_about_its_normal() {
     let geometry = &result.ir().geometry;
     let position = |vertex: &cadmpeg_ir::ids::VertexId| {
         let vertex = geometry.vertices.iter().find(|v| &v.id == vertex).unwrap();
-        let point = geometry.points.iter().find(|p| p.id == vertex.point).unwrap();
+        let point = geometry
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap();
         point.position().get()
     };
     // The face is forward on the plane z = 0 with normal +z.
@@ -660,22 +664,24 @@ fn normalize_identifier(id: &str, sections: &BTreeMap<u64, String>) -> Option<St
 
 /// Arena storage order is not a semantic nested-list order.
 fn canonicalize_model_arena_order(document: &mut serde_json::Value) {
-    let Some(model) = document
-        .get_mut("model")
-        .and_then(serde_json::Value::as_object_mut)
-    else {
-        return;
-    };
-    for arena in model.values_mut() {
-        let Some(rows) = arena.as_array_mut() else {
+    for home in ["geometry", "model"] {
+        let Some(arenas) = document
+            .get_mut(home)
+            .and_then(serde_json::Value::as_object_mut)
+        else {
             continue;
         };
-        let ids = rows
-            .iter()
-            .map(|row| row.get("id").and_then(serde_json::Value::as_str))
-            .collect::<Option<BTreeSet<_>>>();
-        if ids.is_some_and(|ids| ids.len() == rows.len()) {
-            rows.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+        for arena in arenas.values_mut() {
+            let Some(rows) = arena.as_array_mut() else {
+                continue;
+            };
+            let ids = rows
+                .iter()
+                .map(|row| row.get("id").and_then(serde_json::Value::as_str))
+                .collect::<Option<BTreeSet<_>>>();
+            if ids.is_some_and(|ids| ids.len() == rows.len()) {
+                rows.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+            }
         }
     }
 }
@@ -685,29 +691,40 @@ fn normalized_document(
     sections: &BTreeMap<u64, String>,
 ) -> serde_json::Value {
     let ctx = cadmpeg_test_support::service_decode_context();
+    let original_geometry =
+        serde_json::to_value(&ir.geometry).expect("serialize original geometry");
     let original_model = serde_json::to_value(&ir.model).expect("serialize original model");
     let mut opaque_references = BTreeMap::new();
     let mut declared_replacements = BTreeMap::new();
+    let mut geometry = cadmpeg_ir::document::Topology::default();
     let mut model = cadmpeg_ir::document::Model::default();
-    model
-        .extend_rewritten(
-            ir.model.clone(),
-            &mut DeclaredSectionIdentityRewrite {
-                ctx: &ctx,
-                sections,
-                opaque_references: &mut opaque_references,
-                declared_replacements: &mut declared_replacements,
-            },
-        )
+    let mut rewrite = DeclaredSectionIdentityRewrite {
+        ctx: &ctx,
+        sections,
+        opaque_references: &mut opaque_references,
+        declared_replacements: &mut declared_replacements,
+    };
+    geometry
+        .extend_rewritten(ir.geometry.clone(), &mut rewrite)
         .expect("rewrite only schema-declared source identities");
+    model
+        .extend_rewritten(ir.model.clone(), &mut rewrite)
+        .expect("rewrite only schema-declared source identities");
+    let mut normalized_geometry = serde_json::to_value(&geometry).expect("serialize geometry");
     let mut normalized_model = serde_json::to_value(&model).expect("serialize model");
-    restore_typed_opaque_references(
-        &original_model,
-        &mut normalized_model,
-        &opaque_references,
-        &declared_replacements,
-    );
+    for (original, normalized) in [
+        (&original_geometry, &mut normalized_geometry),
+        (&original_model, &mut normalized_model),
+    ] {
+        restore_typed_opaque_references(
+            original,
+            normalized,
+            &opaque_references,
+            &declared_replacements,
+        );
+    }
     let mut document = serde_json::json!({
+        "geometry": normalized_geometry,
         "model": normalized_model,
         "units": { "length": "millimeter" },
         "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),

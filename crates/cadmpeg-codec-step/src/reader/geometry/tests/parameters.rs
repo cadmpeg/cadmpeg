@@ -118,7 +118,9 @@ fn streamed_parameter_inference_finds_the_stored_line_endpoints() {
             .expect("line interval");
     });
     assert_eq!(
-        ir.geometry.edges[0].param_range().expect("inferred interval"),
+        ir.geometry.edges[0]
+            .param_range()
+            .expect("inferred interval"),
         [0.0, 1.0]
     );
 }

@@ -129,10 +129,10 @@ pub fn transfer_into_ir<'ir>(
     ir.geometry.surfaces.extend(surfaces);
     ir.geometry.curves.extend(curves);
     ir.geometry.pcurves.extend(pcurves);
-    ir.model
+    ir.geometry
         .add_procedural_surfaces(procedural_surfaces)?
         .map_err(CodecError::malformed)?;
-    ir.model
+    ir.geometry
         .add_procedural_curves(procedural_curves)?
         .map_err(CodecError::malformed)?;
     ir.model.attributes.extend(attributes);

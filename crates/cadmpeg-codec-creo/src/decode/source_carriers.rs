@@ -361,7 +361,11 @@ impl SourceUnitCarriers {
         if let (Some(scale), EdgeCarrier::Bounded(curve_id, interval)) =
             (self.length_scale_mm, &mut edge.carrier)
         {
-            let curve = ir.geometry.curves.iter().find(|curve| curve.id == *curve_id);
+            let curve = ir
+                .geometry
+                .curves
+                .iter()
+                .find(|curve| curve.id == *curve_id);
             let parameter_scale = curve
                 .and_then(|curve| self.curve_geometry(curve).solved())
                 .map(|geometry| {
@@ -442,7 +446,10 @@ impl SourceUnitCarriers {
             pcurve,
             surface_id,
             &crate::decode::uniqueness::ExactIdPositions::new(
-                ir.geometry.surfaces.iter().map(|surface| surface.id.as_str()),
+                ir.geometry
+                    .surfaces
+                    .iter()
+                    .map(|surface| surface.id.as_str()),
             ),
         )
     }
@@ -526,7 +533,7 @@ impl SourceUnitCarriers {
         }
 
         self.procedural_index
-            .add_surface(&mut ir.model, owner, procedural)?
+            .add_surface(&mut ir.geometry, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -541,7 +548,7 @@ impl SourceUnitCarriers {
         }
 
         self.procedural_index
-            .add_curve(&mut ir.model, owner, procedural)?
+            .add_curve(&mut ir.geometry, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -814,7 +821,10 @@ mod tests {
             carriers.admit_surface(ctx, &mut ir, surface.clone())
         })
         .expect("valid test setup or admitted service result");
-        assert_eq!(carriers.surface_geometry(&ir.geometry.surfaces[0]), &geometry);
+        assert_eq!(
+            carriers.surface_geometry(&ir.geometry.surfaces[0]),
+            &geometry
+        );
     }
 
     fn admission_pcurve() -> cadmpeg_ir::geometry::pcurve::Pcurve {

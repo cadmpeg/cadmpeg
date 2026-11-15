@@ -256,7 +256,7 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
         .expect("test context");
     let _ = crate::tessellation::assign_unique_surface_owners(
         &ctx,
-        &mut decoded.ir_mut().model,
+        &mut decoded.ir_mut(),
         &mut Vec::new(),
     )
     .unwrap();

@@ -276,12 +276,11 @@ impl DecodeResult {
             CodecError::malformed(format_args!("codec {format:?} decoded {error}"))
         })?;
         for class in scope.missing_from(requested.scope()) {
-            body.losses.push(
-                DecodeLossCode::DepthNotDelivered { class }.note(format!(
+            body.losses
+                .push(DecodeLossCode::DepthNotDelivered { class }.note(format!(
                     "requested {requested} depth but the {format} decoder did not deliver \
                      the {class} class, so its records are absent"
-                )),
-            );
+                )));
         }
         let classification = match ir.source.as_ref() {
             Some(source) => match source.classification() {
@@ -583,16 +582,19 @@ mod tests;
 /// The scope a decode records: the delivered scope, less each class the
 /// request excludes whose arenas the document leaves empty.
 fn recorded_scope(ir: &CadIr, delivered: ContentScope, requested: ContentScope) -> ContentScope {
-    ArenaClass::ALL.into_iter().rev().fold(delivered, |scope, class| {
-        let withdrawn = scope.with(class, false);
-        if scope.holds(class)
-            && !requested.holds(class)
-            && ir.populated_arena(class).is_none()
-            && withdrawn.unmet_requirement().is_none()
-        {
-            withdrawn
-        } else {
-            scope
-        }
-    })
+    ArenaClass::ALL
+        .into_iter()
+        .rev()
+        .fold(delivered, |scope, class| {
+            let withdrawn = scope.with(class, false);
+            if scope.holds(class)
+                && !requested.holds(class)
+                && ir.populated_arena(class).is_none()
+                && withdrawn.unmet_requirement().is_none()
+            {
+                withdrawn
+            } else {
+                scope
+            }
+        })
 }

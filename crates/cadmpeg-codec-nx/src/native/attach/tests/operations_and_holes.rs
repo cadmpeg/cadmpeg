@@ -1352,7 +1352,11 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         );
 
         let mut missing_surface = ir.clone();
-        let removed = missing_surface.geometry.surfaces.pop().expect("cube surface");
+        let removed = missing_surface
+            .geometry
+            .surfaces
+            .pop()
+            .expect("cube surface");
         assert!(missing_surface
             .geometry
             .faces

@@ -828,7 +828,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 &crate::identity::VISIBGEOM_SURFACE,
                 native_surface_id,
             )?;
-            if ir.geometry.surfaces.iter().any(|item| item.id == surface_id) {
+            if ir
+                .geometry
+                .surfaces
+                .iter()
+                .any(|item| item.id == surface_id)
+            {
                 continue;
             }
             let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(

@@ -1019,7 +1019,11 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
         .surfaces
         .iter()
         .find(|surface| {
-            decoded.ir().geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            decoded
+                .ir()
+                .geometry
+                .procedural_surface_owner(&procedural.id)
+                == Some(&surface.id)
         })
         .expect("rolling-ball surface");
     assert!(matches!(

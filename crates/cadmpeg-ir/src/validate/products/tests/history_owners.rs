@@ -30,7 +30,8 @@ fn model() -> CadIr {
             parameters: std::collections::BTreeMap::default(),
         },
     ));
-    evaluation.set_outputs(DistinctMembers::try_from(vec![ir.geometry.bodies[0].id.clone()]).unwrap());
+    evaluation
+        .set_outputs(DistinctMembers::try_from(vec![ir.geometry.bodies[0].id.clone()]).unwrap());
     ir.model.features.push(Feature {
         id: "test:model:feature#operation".try_into().unwrap(),
         product_definition: Some(ir.model.product_definitions[0].id.clone()),

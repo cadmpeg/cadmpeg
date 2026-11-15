@@ -454,7 +454,7 @@ pub(super) fn owner_attribute_ref(
         AttributeOwner::Face(face) => (face.color.is_some(), ColorOwner::Face),
     };
     if has_color {
-        return color_attribute_ref(&target.model, ordinal, color_owner, attribute_start);
+        return color_attribute_ref(&target.geometry, ordinal, color_owner, attribute_start);
     }
     let name = match owner {
         AttributeOwner::Body(body) => body_name_attribute_ref(target, body, attribute_start),
@@ -653,7 +653,7 @@ fn attribute_before_timestamp(
                 Ok(-1)
             } else {
                 color_attribute_ref(
-                    &target.model,
+                    &target.geometry,
                     owner_ordinal,
                     ColorOwner::Body,
                     attribute_start,
@@ -679,7 +679,7 @@ fn attribute_before_timestamp(
                 Ok(-1)
             } else {
                 color_attribute_ref(
-                    &target.model,
+                    &target.geometry,
                     owner_ordinal,
                     ColorOwner::Face,
                     attribute_start,
@@ -956,7 +956,7 @@ pub(super) fn encode_source_less_attributes(
             -1
         } else {
             color_attribute_ref(
-                &target.model,
+                &target.geometry,
                 body_ordinal,
                 ColorOwner::Body,
                 attribute_start,
@@ -988,7 +988,7 @@ pub(super) fn encode_source_less_attributes(
             -1
         } else {
             color_attribute_ref(
-                &target.model,
+                &target.geometry,
                 face_ordinal,
                 ColorOwner::Face,
                 attribute_start,
@@ -1022,7 +1022,7 @@ pub(super) fn encode_source_less_attributes(
                 -1
             } else {
                 color_attribute_ref(
-                    &target.model,
+                    &target.geometry,
                     body_ordinal,
                     ColorOwner::Body,
                     attribute_start,
@@ -1057,7 +1057,7 @@ pub(super) fn encode_source_less_attributes(
                 -1
             } else {
                 color_attribute_ref(
-                    &target.model,
+                    &target.geometry,
                     face_ordinal,
                     ColorOwner::Face,
                     attribute_start,

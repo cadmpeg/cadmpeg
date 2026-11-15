@@ -114,7 +114,12 @@ fn decode_builds_valid_topology_and_geometry() {
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 
     // Edges carry no analytic curve (their carriers were null), which is legal.
-    assert!(result.ir().geometry.edges.iter().all(|e| e.curve().is_none()));
+    assert!(result
+        .ir()
+        .geometry
+        .edges
+        .iter()
+        .all(|e| e.curve().is_none()));
     // The loop's coedge ring is the three coedges in order.
     assert_eq!(result.ir().geometry.loops[0].coedges().len(), 3);
 }
@@ -442,8 +447,14 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
     let mut free =
         cadmpeg_ir::document::CadIr::from_json(&renamed).expect("renamed free-vertex IR");
     source_less.geometry.shells[0].add_free_vertex(free.geometry.vertices[0].id.clone());
-    source_less.geometry.vertices.append(&mut free.geometry.vertices);
-    source_less.geometry.points.append(&mut free.geometry.points);
+    source_less
+        .geometry
+        .vertices
+        .append(&mut free.geometry.vertices);
+    source_less
+        .geometry
+        .points
+        .append(&mut free.geometry.points);
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -491,13 +502,31 @@ fn generated_source_less_writes_solid_and_wire_bodies_together() {
         .replace("f3d:brep:", "generated:combined_wire:");
     let mut wire =
         cadmpeg_ir::document::CadIr::from_json(&wire_json).expect("renamed combined wire IR");
-    source_less.geometry.bodies.append(&mut wire.geometry.bodies);
-    source_less.geometry.regions.append(&mut wire.geometry.regions);
-    source_less.geometry.shells.append(&mut wire.geometry.shells);
+    source_less
+        .geometry
+        .bodies
+        .append(&mut wire.geometry.bodies);
+    source_less
+        .geometry
+        .regions
+        .append(&mut wire.geometry.regions);
+    source_less
+        .geometry
+        .shells
+        .append(&mut wire.geometry.shells);
     source_less.geometry.edges.append(&mut wire.geometry.edges);
-    source_less.geometry.vertices.append(&mut wire.geometry.vertices);
-    source_less.geometry.points.append(&mut wire.geometry.points);
-    source_less.geometry.curves.append(&mut wire.geometry.curves);
+    source_less
+        .geometry
+        .vertices
+        .append(&mut wire.geometry.vertices);
+    source_less
+        .geometry
+        .points
+        .append(&mut wire.geometry.points);
+    source_less
+        .geometry
+        .curves
+        .append(&mut wire.geometry.curves);
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -678,8 +707,14 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
         let mut free =
             cadmpeg_ir::document::CadIr::from_json(&renamed).expect("renamed free-vertex IR");
         source_less.geometry.shells[0].add_free_vertex(free.geometry.vertices[0].id.clone());
-        source_less.geometry.vertices.append(&mut free.geometry.vertices);
-        source_less.geometry.points.append(&mut free.geometry.points);
+        source_less
+            .geometry
+            .vertices
+            .append(&mut free.geometry.vertices);
+        source_less
+            .geometry
+            .points
+            .append(&mut free.geometry.points);
     }
 
     let mut encoded = Vec::new();
@@ -747,16 +782,34 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         ])
         .expect("affine transform"),
     );
-    source_less.geometry.bodies.append(&mut second.geometry.bodies);
-    source_less.geometry.regions.append(&mut second.geometry.regions);
-    source_less.geometry.shells.append(&mut second.geometry.shells);
-    source_less.geometry.edges.append(&mut second.geometry.edges);
+    source_less
+        .geometry
+        .bodies
+        .append(&mut second.geometry.bodies);
+    source_less
+        .geometry
+        .regions
+        .append(&mut second.geometry.regions);
+    source_less
+        .geometry
+        .shells
+        .append(&mut second.geometry.shells);
+    source_less
+        .geometry
+        .edges
+        .append(&mut second.geometry.edges);
     source_less
         .geometry
         .vertices
         .append(&mut second.geometry.vertices);
-    source_less.geometry.points.append(&mut second.geometry.points);
-    source_less.geometry.curves.append(&mut second.geometry.curves);
+    source_less
+        .geometry
+        .points
+        .append(&mut second.geometry.points);
+    source_less
+        .geometry
+        .curves
+        .append(&mut second.geometry.curves);
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -814,13 +867,22 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
         cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second wire edge IR");
     let second_edge = second.geometry.edges[0].id.clone();
     source_less.geometry.shells[0].add_wire_edge(second_edge);
-    source_less.geometry.edges.append(&mut second.geometry.edges);
+    source_less
+        .geometry
+        .edges
+        .append(&mut second.geometry.edges);
     source_less
         .geometry
         .vertices
         .append(&mut second.geometry.vertices);
-    source_less.geometry.points.append(&mut second.geometry.points);
-    source_less.geometry.curves.append(&mut second.geometry.curves);
+    source_less
+        .geometry
+        .points
+        .append(&mut second.geometry.points);
+    source_less
+        .geometry
+        .curves
+        .append(&mut second.geometry.curves);
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -865,15 +927,30 @@ fn generated_source_less_writes_multi_region_wire_body() {
     let region_id = second.geometry.regions[0].id.clone();
     second.geometry.regions[0].body = body_id;
     source_less.geometry.bodies[0].regions.push(region_id);
-    source_less.geometry.regions.append(&mut second.geometry.regions);
-    source_less.geometry.shells.append(&mut second.geometry.shells);
-    source_less.geometry.edges.append(&mut second.geometry.edges);
+    source_less
+        .geometry
+        .regions
+        .append(&mut second.geometry.regions);
+    source_less
+        .geometry
+        .shells
+        .append(&mut second.geometry.shells);
+    source_less
+        .geometry
+        .edges
+        .append(&mut second.geometry.edges);
     source_less
         .geometry
         .vertices
         .append(&mut second.geometry.vertices);
-    source_less.geometry.points.append(&mut second.geometry.points);
-    source_less.geometry.curves.append(&mut second.geometry.curves);
+    source_less
+        .geometry
+        .points
+        .append(&mut second.geometry.points);
+    source_less
+        .geometry
+        .curves
+        .append(&mut second.geometry.curves);
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -926,14 +1003,26 @@ fn generated_source_less_writes_multi_shell_wire_region() {
     let shell_id = second.geometry.shells[0].id.clone();
     second.geometry.shells[0].region = region_id;
     source_less.geometry.regions[0].shells.push(shell_id);
-    source_less.geometry.shells.append(&mut second.geometry.shells);
-    source_less.geometry.edges.append(&mut second.geometry.edges);
+    source_less
+        .geometry
+        .shells
+        .append(&mut second.geometry.shells);
+    source_less
+        .geometry
+        .edges
+        .append(&mut second.geometry.edges);
     source_less
         .geometry
         .vertices
         .append(&mut second.geometry.vertices);
-    source_less.geometry.points.append(&mut second.geometry.points);
-    source_less.geometry.curves.append(&mut second.geometry.curves);
+    source_less
+        .geometry
+        .points
+        .append(&mut second.geometry.points);
+    source_less
+        .geometry
+        .curves
+        .append(&mut second.geometry.curves);
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1283,7 +1372,11 @@ fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction()
             .procedural_surfaces
             .iter()
             .find(|procedural| {
-                result.ir().geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+                result
+                    .ir()
+                    .geometry
+                    .procedural_surface_owner(&procedural.id)
+                    == Some(&surface.id)
             })
             .unwrap_or_else(|| panic!("{family} must retain its construction identity"));
         let ProceduralSurfaceDefinition::Unknown {

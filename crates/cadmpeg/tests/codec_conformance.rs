@@ -851,7 +851,12 @@ mod subset_carriers {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let edge = ir.geometry.edges[0].clone();
         let position = |vertex: &cadmpeg_ir::ids::VertexId| {
-            let vertex = ir.geometry.vertices.iter().find(|v| v.id == *vertex).unwrap();
+            let vertex = ir
+                .geometry
+                .vertices
+                .iter()
+                .find(|v| v.id == *vertex)
+                .unwrap();
             let point = ir
                 .geometry
                 .points

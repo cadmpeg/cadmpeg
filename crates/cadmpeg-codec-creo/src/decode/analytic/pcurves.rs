@@ -4308,7 +4308,9 @@ mod tests {
     #[test]
     fn a_pcurve_path_with_an_overflowing_placed_endpoint_is_mapped() {
         let mut ir = CadIr::empty();
-        ir.geometry.surfaces.push(overflowing_placed_plane_surface(7));
+        ir.geometry
+            .surfaces
+            .push(overflowing_placed_plane_surface(7));
         let mapped = crate::decode::with_service_context(|ctx| {
             super::map_pcurve_paths(
                 ctx,

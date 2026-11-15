@@ -70,14 +70,15 @@ fn accepted_primitive_color_arrays_replace_defaults_and_keep_primitive_sizes() {
                 .decode(&mut Cursor::new(source), &DecodeOptions::default())
                 .unwrap();
             let model = &decoded.ir().model;
+            let geometry = &decoded.ir().geometry;
             let targets = if entry == "LineColorArray" {
-                model
+                geometry
                     .edges
                     .iter()
                     .map(|edge| AppearanceTarget::Edge(edge.id.clone()))
                     .collect::<Vec<_>>()
             } else {
-                model
+                geometry
                     .vertices
                     .iter()
                     .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone()))

@@ -489,7 +489,10 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
         panic!("one standalone rolling-ball construction");
     };
     assert_eq!(
-        result.ir().geometry.procedural_surface_owner(&procedural.id),
+        result
+            .ir()
+            .geometry
+            .procedural_surface_owner(&procedural.id),
         Some(&result.ir().geometry.surfaces[0].id)
     );
     let surface = &result.ir().geometry.surfaces[0];

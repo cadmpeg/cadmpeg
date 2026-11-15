@@ -73,9 +73,17 @@ fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usi
         );
         assert_eq!(decoded.ir().geometry.faces.len(), 1, "{version:?}");
         assert_eq!(decoded.ir().geometry.loops.len(), loop_count, "{version:?}");
-        assert_eq!(decoded.ir().geometry.coedges.len(), edge_count, "{version:?}");
+        assert_eq!(
+            decoded.ir().geometry.coedges.len(),
+            edge_count,
+            "{version:?}"
+        );
         assert_eq!(decoded.ir().geometry.edges.len(), edge_count, "{version:?}");
-        assert_eq!(decoded.ir().geometry.vertices.len(), edge_count, "{version:?}");
+        assert_eq!(
+            decoded.ir().geometry.vertices.len(),
+            edge_count,
+            "{version:?}"
+        );
         for (actual, expected) in decoded.ir().geometry.edges.iter().zip(&ir.geometry.edges) {
             assert_eq!(actual.param_range(), expected.param_range(), "{version:?}");
         }
@@ -256,8 +264,11 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
 
     let base = ir.geometry.edges.len();
     let face = ir.geometry.faces[0].id.clone();
-    let loop_id = LoopId::mint(format!("cadir:model:loop#polygon.{}", ir.geometry.loops.len()))
-        .expect("identity grammar");
+    let loop_id = LoopId::mint(format!(
+        "cadir:model:loop#polygon.{}",
+        ir.geometry.loops.len()
+    ))
+    .expect("identity grammar");
     let point_ids = (0..points.len())
         .map(|index| {
             PointId::mint(format!("cadir:model:point#polygon.{}", base + index))
@@ -1067,7 +1078,11 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             (&edge.end, &edge.start)
         };
         let vertex_point = |id: &cadmpeg_ir::ids::VertexId| {
-            let vertex = ir.geometry.vertices.iter().find(|vertex| vertex.id == *id)?;
+            let vertex = ir
+                .geometry
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id == *id)?;
             ir.geometry
                 .points
                 .iter()

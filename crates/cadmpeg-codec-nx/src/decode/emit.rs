@@ -92,7 +92,7 @@ pub(super) fn emit_topology(
 ) -> Result<EndpointWitnesses, CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let &TopologyBudgets {
         exact_transfer: exact_transfer_budget,
@@ -470,7 +470,7 @@ pub(super) fn emit_topology(
                 });
 
                 let _attached = procedural_admission.add_curve(
-                    &mut ir.model,
+                    &mut ir.geometry,
                     &carrier.clone(),
                     ProceduralCurve::new(
                         construction,

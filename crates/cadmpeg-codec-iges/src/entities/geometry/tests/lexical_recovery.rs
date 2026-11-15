@@ -23,7 +23,10 @@ fn physically_dependent_point_retains_source_without_becoming_a_free_vertex() {
         .unwrap();
     assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(result.ir().geometry.vertices.is_empty());
-    let source = result.ir().geometry.points[0].source_object.as_ref().unwrap();
+    let source = result.ir().geometry.points[0]
+        .source_object
+        .as_ref()
+        .unwrap();
     assert_eq!(source.object_id.as_str(), "D1");
     assert_eq!(
         source.geometry_role,

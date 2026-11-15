@@ -259,7 +259,7 @@ impl<'a> WritableModel<'a> {
     pub(super) fn try_new(ir: &'a CadIr) -> Result<Self, CodecError> {
         let model = &ir.model;
         let geometry = &ir.geometry;
-        let Some(body) = model
+        let Some(body) = geometry
             .bodies
             .iter()
             .find(|body| matches!(body.kind, BodyKind::Sheet | BodyKind::Solid))
@@ -330,7 +330,8 @@ impl<'a> WritableModel<'a> {
         }
         let original_coedges = positions(geometry.coedges.iter().map(|coedge| coedge.id.as_str()))?;
         let original_edges = positions(geometry.edges.iter().map(|edge| edge.id.as_str()))?;
-        let original_vertices = positions(geometry.vertices.iter().map(|vertex| vertex.id.as_str()))?;
+        let original_vertices =
+            positions(geometry.vertices.iter().map(|vertex| vertex.id.as_str()))?;
         let mut ordered_coedges = Vec::new();
         let mut ordered_edges = Vec::new();
         let mut ordered_vertices = Vec::new();
@@ -361,7 +362,8 @@ impl<'a> WritableModel<'a> {
                         } else {
                             &edge.end
                         };
-                        let vertex = &geometry.vertices[resolve(&original_vertices, start.as_str())?];
+                        let vertex =
+                            &geometry.vertices[resolve(&original_vertices, start.as_str())?];
                         if !used_vertices.insert(vertex.id.as_str()) {
                             return Err(CodecError::Malformed(
                                 "planar loop has repeated traversal vertices".into(),
@@ -390,7 +392,7 @@ impl<'a> WritableModel<'a> {
         let vertices = ordered_vertices
             .into_iter()
             .map(|vertex| {
-                let point = model
+                let point = geometry
                     .points
                     .iter()
                     .find(|point| point.id == vertex.point)
@@ -421,7 +423,7 @@ impl<'a> WritableModel<'a> {
                     edge.id.as_str()
                 ))
             })?;
-            let curve = model
+            let curve = geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == *curve_id)
@@ -555,7 +557,7 @@ impl<'a> WritableModel<'a> {
                 "multi-face planar sheet requires one distinct line curve per edge".into(),
             ));
         }
-        let surfaces = model
+        let surfaces = geometry
             .surfaces
             .iter()
             .map(WritableFaceSurface::try_new)
@@ -571,7 +573,7 @@ impl<'a> WritableModel<'a> {
         }
         let mut used_surfaces = BTreeSet::new();
         let mut owned_loops = BTreeSet::new();
-        let faces = model
+        let faces = geometry
             .faces
             .iter()
             .map(|face| {
@@ -612,7 +614,7 @@ impl<'a> WritableModel<'a> {
             ));
         }
         let mut owned_coedges = BTreeSet::new();
-        let loops = model
+        let loops = geometry
             .loops
             .iter()
             .map(|loop_| {
@@ -670,7 +672,7 @@ impl<'a> WritableModel<'a> {
                                 id.as_str()
                             )));
                         }
-                        let pcurve = model
+                        let pcurve = geometry
                             .pcurves
                             .iter()
                             .find(|pcurve| pcurve.id == *id)

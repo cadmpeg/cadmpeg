@@ -246,7 +246,10 @@ fn speculative_session_append_reuses_source_cache_across_candidates() {
                 crate::native::Native::default(),
                 |combined, unknowns| {
                     assert_eq!(unknowns[0].data().unwrap().as_ptr(), source_pointer);
-                    assert_eq!(combined.geometry.points.last().unwrap().id.as_str(), identity);
+                    assert_eq!(
+                        combined.geometry.points.last().unwrap().id.as_str(),
+                        identity
+                    );
                     Ok(Ok::<_, ()>(()))
                 },
             )
@@ -280,9 +283,12 @@ fn speculative_session_append_extends_native_cache_and_preserves_rejected_positi
             ],
         );
         session
-            .try_append(crate::document::Topology::default(), crate::document::Model::default(), native, |_, _| {
-                Ok(Ok::<_, ()>(()))
-            })
+            .try_append(
+                crate::document::Topology::default(),
+                crate::document::Model::default(),
+                native,
+                |_, _| Ok(Ok::<_, ()>(())),
+            )
             .unwrap()
             .unwrap();
         assert!(session.contains(identity).unwrap());
@@ -296,12 +302,12 @@ fn speculative_session_append_extends_native_cache_and_preserves_rejected_positi
     };
     assert_eq!(
         session
-            .try_append(geometry, crate::document::Model::default(), crate::native::Native::default(), |_, _| Ok(Err::<
-                (),
-                _,
-            >(
-                "candidate rejection"
-            )))
+            .try_append(
+                geometry,
+                crate::document::Model::default(),
+                crate::native::Native::default(),
+                |_, _| Ok(Err::<(), _>("candidate rejection"))
+            )
             .unwrap(),
         Err("candidate rejection")
     );

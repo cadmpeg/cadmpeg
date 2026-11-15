@@ -1456,8 +1456,8 @@ impl<'ir> Writer<'ir> {
 
     /// The NURBS form of a wire edge.
     fn edge_nurbs(&self, edge: &cadmpeg_ir::topology::Edge) -> Option<WireCurve> {
-        let model = &self.ir.model;
-        let curve = model
+        let geometry = &self.ir.geometry;
+        let curve = geometry
             .curves
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve())?;
@@ -1485,9 +1485,16 @@ impl<'ir> Writer<'ir> {
         Vec<&'ir cadmpeg_ir::topology::Point>,
     ) {
         let geometry = &self.ir.geometry;
-        let vertex_points: BTreeSet<_> =
-            geometry.vertices.iter().map(|vertex| &vertex.point).collect();
-        let edge_curves: BTreeSet<_> = geometry.edges.iter().filter_map(|edge| edge.curve()).collect();
+        let vertex_points: BTreeSet<_> = geometry
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.point)
+            .collect();
+        let edge_curves: BTreeSet<_> = geometry
+            .edges
+            .iter()
+            .filter_map(|edge| edge.curve())
+            .collect();
         let independent = |source: Option<&cadmpeg_ir::SourceObjectAssociation>| {
             source.is_none_or(|source| {
                 source.geometry_role != Some(cadmpeg_ir::SourceGeometryRole::Support)
@@ -1596,6 +1603,7 @@ impl<'ir> Writer<'ir> {
     fn losses(&self) -> Vec<LossNote> {
         let unwritten = &self.unwritten;
         let model = &self.ir.model;
+        let geometry = &self.ir.geometry;
         let mut losses = Vec::new();
         if unwritten.solver_properties > 0 {
             losses.push(UsdLossCode::ExportSolverPropertyNotWritten.note(format!(
@@ -1661,7 +1669,7 @@ impl<'ir> Writer<'ir> {
             )));
         }
         let face_surfaces: BTreeSet<_> = geometry.faces.iter().map(|face| &face.surface).collect();
-        let free_surfaces = model
+        let free_surfaces = geometry
             .surfaces
             .iter()
             .filter(|surface| !face_surfaces.contains(&surface.id))

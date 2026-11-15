@@ -130,7 +130,8 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
             ),
         )
         .unwrap();
-    let Some(SolvedCurveGeometry::Nurbs(cached)) = geometry.curves[0].geometry.solved_cache() else {
+    let Some(SolvedCurveGeometry::Nurbs(cached)) = geometry.curves[0].geometry.solved_cache()
+    else {
         panic!("expected the attached NURBS cache");
     };
     assert_eq!(cached.knots().as_ptr(), original_knot_storage);
@@ -572,9 +573,10 @@ fn procedural_surface_attachment_moves_solved_cache() {
         None,
     );
     let mut cached = base.clone();
-    cached.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-        record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
-    });
+    cached.geometry.surfaces[0].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
+        });
     let solved = cached.geometry.surfaces[0].geometry.clone();
     cached
         .geometry
@@ -633,7 +635,9 @@ fn procedural_curve_attachment_moves_solved_cache() {
         .geometry
         .add_procedural_curve(&owner, procedural.clone())
         .unwrap();
-    base.geometry.add_procedural_curve(&owner, procedural).unwrap();
+    base.geometry
+        .add_procedural_curve(&owner, procedural)
+        .unwrap();
     assert_eq!(attached, base);
 }
 
@@ -691,7 +695,12 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
     let edge_values: Vec<f64> = (1..40)
         .map(|n| 1.0f64 - f64::from(n) * f64::EPSILON / 2.0)
         .collect();
-    for (point, value) in ir.geometry.points.iter_mut().zip(edge_values.iter().cycle()) {
+    for (point, value) in ir
+        .geometry
+        .points
+        .iter_mut()
+        .zip(edge_values.iter().cycle())
+    {
         let moved = point.position().get();
         point.set_position(
             crate::features::FinitePoint3::new(Point3::new(*value, moved.y, moved.z))
@@ -884,7 +893,8 @@ fn a_document_with_records_of_an_excluded_class_fails_to_parse() {
         .parameters
         .push(parameter("synthetic:test:parameter#depth"));
     assert_eq!(
-        ir.populated_arena(ArenaClass::Design).map(ArenaName::as_str),
+        ir.populated_arena(ArenaClass::Design)
+            .map(ArenaName::as_str),
         Some("parameters")
     );
     for (scope, expected) in [
@@ -928,7 +938,10 @@ fn a_design_record_outside_the_scope_is_refused_on_set_and_on_write() {
     assert_eq!(ir.check_scope(), Err(violation));
     assert_eq!(ir.set_scope(ContentScope::geometry()), Err(violation));
     let error = serde_json::to_string(&ir).unwrap_err();
-    assert!(error.to_string().contains(&violation.to_string()), "{error}");
+    assert!(
+        error.to_string().contains(&violation.to_string()),
+        "{error}"
+    );
     ir.set_scope(ContentScope::design()).unwrap();
     assert!(serde_json::to_string(&ir).is_ok());
 }

@@ -151,7 +151,7 @@ pub(super) fn try_decode_geometry(
     let mut ir = CadIr::empty();
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
@@ -520,8 +520,11 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
-            let _attached =
-                procedural_admission.add_surface(&mut ir.model, &surface_id.clone(), procedural)?;
+            let _attached = procedural_admission.add_surface(
+                &mut ir.geometry,
+                &surface_id.clone(),
+                procedural,
+            )?;
 
             surfaces_by_xmt.insert(offset.xmt, surface_id);
             counts.offset_surfaces += 1;
@@ -573,7 +576,7 @@ pub(super) fn try_decode_geometry(
             let procedural_index = ir.geometry.procedural_surfaces.len();
 
             let attached = procedural_admission.add_surface(
-                &mut ir.model,
+                &mut ir.geometry,
                 &surface_id.clone(),
                 ProceduralSurface::new(
                     procedural_id,
@@ -992,7 +995,7 @@ pub(super) fn try_decode_geometry(
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
             let _attached =
-                procedural_admission.add_curve(&mut ir.model, &curve_id.clone(), procedural)?;
+                procedural_admission.add_curve(&mut ir.geometry, &curve_id.clone(), procedural)?;
 
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
@@ -1920,7 +1923,9 @@ fn select_terminal_feature_bodies(
 }
 
 fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
-    ir.geometry.bodies.retain(|body| selected.contains(&body.id));
+    ir.geometry
+        .bodies
+        .retain(|body| selected.contains(&body.id));
     ir.geometry
         .regions
         .retain(|region| selected.contains(&region.body));
@@ -1935,12 +1940,16 @@ fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
     for shell in &ir.geometry.shells {
         shells.insert(shell.id.clone());
     }
-    ir.geometry.faces.retain(|face| shells.contains(&face.shell));
+    ir.geometry
+        .faces
+        .retain(|face| shells.contains(&face.shell));
     let mut faces: BTreeSet<FaceId> = BTreeSet::new();
     for face in &ir.geometry.faces {
         faces.insert(face.id.clone());
     }
-    ir.geometry.loops.retain(|loop_| faces.contains(&loop_.face));
+    ir.geometry
+        .loops
+        .retain(|loop_| faces.contains(&loop_.face));
     let mut loops: BTreeSet<LoopId> = BTreeSet::new();
     for loop_ in &ir.geometry.loops {
         loops.insert(loop_.id.clone());
@@ -1975,7 +1984,9 @@ fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
     for vertex in &ir.geometry.vertices {
         points.insert(vertex.point.clone());
     }
-    ir.geometry.points.retain(|point| points.contains(&point.id));
+    ir.geometry
+        .points
+        .retain(|point| points.contains(&point.id));
     prune_inactive_geometry(ir);
 }
 
@@ -2081,7 +2092,9 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
     ir.geometry
         .surfaces
         .retain(|surface| surfaces.contains(&surface.id));
-    ir.geometry.curves.retain(|curve| curves.contains(&curve.id));
+    ir.geometry
+        .curves
+        .retain(|curve| curves.contains(&curve.id));
     ir.geometry
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));

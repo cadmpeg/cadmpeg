@@ -180,26 +180,25 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(required, expected);
     assert_eq!(bodies.len(), 5);
-    let mut model = cadmpeg_ir::document::Model::default();
-    let mut geometry = cadmpeg_ir::document::Topology::default();
-    geometry.bodies.extend(bodies);
-    let loss = super::super::saved_free_edge_bodies_loss(&model).unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.geometry.bodies.extend(bodies);
+    let loss = super::super::saved_free_edge_bodies_loss(&ir).unwrap();
     assert!(loss.message.starts_with("2 saved free-edge bodies"));
     let definition: cadmpeg_ir::products::ProductDefinition =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:design:product-definition#1", "kind": "part", "bodies": []
         }))
         .unwrap();
-    model.product_definitions.push(definition);
-    let loss = super::super::saved_free_edge_bodies_loss(&model).unwrap();
+    ir.model.product_definitions.push(definition);
+    let loss = super::super::saved_free_edge_bodies_loss(&ir).unwrap();
     assert_eq!(
         loss.code,
         crate::loss::F3dLossCode::SavedFreeEdgeBodyUnowned.kind()
     );
     assert!(loss.message.starts_with("2 saved free-edge bodies"));
-    model.product_definitions[0].bodies = geometry.bodies[3..]
+    ir.model.product_definitions[0].bodies = ir.geometry.bodies[3..]
         .iter()
         .map(|body| body.id.clone())
         .collect();
-    assert!(super::super::saved_free_edge_bodies_loss(&model).is_none());
+    assert!(super::super::saved_free_edge_bodies_loss(&ir).is_none());
 }

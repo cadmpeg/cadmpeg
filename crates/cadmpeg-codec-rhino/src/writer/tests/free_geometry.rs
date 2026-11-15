@@ -662,7 +662,10 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         decoded.ir().geometry.bodies[0].name.as_deref(),
         Some("survey points")
     );
-    assert_eq!(decoded.ir().geometry.bodies[0].color, ir.geometry.bodies[0].color);
+    assert_eq!(
+        decoded.ir().geometry.bodies[0].color,
+        ir.geometry.bodies[0].color
+    );
     assert_eq!(decoded.ir().geometry.bodies[0].visible, Some(false));
 }
 

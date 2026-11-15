@@ -690,7 +690,7 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         let [body] = feature(base).evaluation.outputs().as_slice() else {
             panic!("{base}: one body")
         };
-        let body = model
+        let body = geometry
             .bodies
             .iter()
             .find(|candidate| &candidate.id == body)

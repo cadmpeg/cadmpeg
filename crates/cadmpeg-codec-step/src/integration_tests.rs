@@ -189,7 +189,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             .position()
             .get()
             .x += 1.0;
-        let expected_model = edited.model.clone();
+        let expected_geometry = edited.geometry.clone();
         let codec = StepCodec {
             options: options.clone(),
         };
@@ -226,13 +226,13 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         assert_valid(&edited_result);
         assert_eq!(
             edited_result.ir().geometry.bodies.len(),
-            expected_model.bodies.len()
+            expected_geometry.bodies.len()
         );
         assert_eq!(
             edited_result.ir().geometry.faces.len(),
-            expected_model.faces.len()
+            expected_geometry.faces.len()
         );
-        let expected_points = expected_model
+        let expected_points = expected_geometry
             .points
             .iter()
             .map(|point| point.position().get())

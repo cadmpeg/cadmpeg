@@ -536,14 +536,17 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let generated_curve_id = cadmpeg_ir::ids::CurveId::mint("generated:test:tolerant-use-curve#0")
         .expect("identity grammar");
-    source_less.geometry.curves.push(cadmpeg_ir::geometry::Curve {
-        parameter_range: None,
-        id: generated_curve_id.clone(),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            expected.clone(),
-        )),
-        source_object: None,
-    });
+    source_less
+        .geometry
+        .curves
+        .push(cadmpeg_ir::geometry::Curve {
+            parameter_range: None,
+            id: generated_curve_id.clone(),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                expected.clone(),
+            )),
+            source_object: None,
+        });
     let tolerant_coedge = source_less.geometry.coedges[0].id.clone();
     source_less.geometry.coedges[0].use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {
         curve: generated_curve_id,
@@ -687,7 +690,9 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         .geometry
         .curves
         .iter()
-        .find(|curve| decoded.ir().geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id))
+        .find(|curve| {
+            decoded.ir().geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id)
+        })
         .and_then(|curve| match curve.geometry.solved_cache() {
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
             _ => None,
@@ -760,7 +765,9 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
         .geometry
         .curves
         .iter()
-        .find(|curve| decoded.ir().geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id))
+        .find(|curve| {
+            decoded.ir().geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id)
+        })
         .and_then(|curve| match curve.geometry.solved_cache() {
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
             _ => None,
@@ -976,7 +983,9 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cache-first surface-offset round trip");
-    let expected = source_less.geometry.procedural_curves[0].definition().clone();
+    let expected = source_less.geometry.procedural_curves[0]
+        .definition()
+        .clone();
     let mut actual = round_trip.ir().geometry.procedural_curves[0]
         .definition()
         .clone();

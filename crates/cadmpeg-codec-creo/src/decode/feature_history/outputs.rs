@@ -192,8 +192,8 @@ fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) -> Result<Vec<BodyId>, 
                 .iter()
                 .filter(|lp| lp.id == coedge.owner_loop),
         );
-        let Some(face) =
-            lp.and_then(|lp| exactly_one(ir.geometry.faces.iter().filter(|face| face.id == lp.face)))
+        let Some(face) = lp
+            .and_then(|lp| exactly_one(ir.geometry.faces.iter().filter(|face| face.id == lp.face)))
         else {
             continue;
         };
@@ -209,8 +209,12 @@ fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) -> Result<Vec<BodyId>, 
     }
     let mut bodies = Vec::new();
     for shell_id in shell_ids {
-        let Some(shell) = exactly_one(ir.geometry.shells.iter().filter(|shell| shell.id == *shell_id))
-        else {
+        let Some(shell) = exactly_one(
+            ir.geometry
+                .shells
+                .iter()
+                .filter(|shell| shell.id == *shell_id),
+        ) else {
             continue;
         };
         let region = exactly_one(
@@ -220,7 +224,13 @@ fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) -> Result<Vec<BodyId>, 
                 .filter(|region| region.id == shell.region),
         );
         let Some(region) = region.filter(|region| {
-            exactly_one(ir.geometry.bodies.iter().filter(|body| body.id == region.body)).is_some()
+            exactly_one(
+                ir.geometry
+                    .bodies
+                    .iter()
+                    .filter(|body| body.id == region.body),
+            )
+            .is_some()
         }) else {
             continue;
         };

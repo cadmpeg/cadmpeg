@@ -75,7 +75,9 @@ fn an_unwritten_vertex_does_not_promote_its_support_point() {
     let mut fixture = edgeless_doc();
     let mut ir = CadIr::empty();
     ir.geometry.points.push(fixture.geometry.points.remove(0));
-    ir.geometry.vertices.push(fixture.geometry.vertices.remove(0));
+    ir.geometry
+        .vertices
+        .push(fixture.geometry.vertices.remove(0));
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,

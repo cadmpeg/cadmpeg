@@ -1222,8 +1222,9 @@ pub(super) fn validate_source_less_wire_ownership(
     let geometry = &target.geometry;
     let inconsistent =
         || CodecError::Malformed("source-less F3D wire ownership is inconsistent".into());
-    let region_ordinal =
-        |id: &cadmpeg_ir::ids::RegionId| geometry.regions.iter().position(|region| region.id == *id);
+    let region_ordinal = |id: &cadmpeg_ir::ids::RegionId| {
+        geometry.regions.iter().position(|region| region.id == *id)
+    };
     let shell_ordinal =
         |id: &cadmpeg_ir::ids::ShellId| geometry.shells.iter().position(|shell| shell.id == *id);
 

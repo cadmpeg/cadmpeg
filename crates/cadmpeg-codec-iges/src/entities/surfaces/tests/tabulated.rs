@@ -372,7 +372,11 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             .procedural_surfaces
             .iter()
             .find(|procedural| {
-                result.ir().geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+                result
+                    .ir()
+                    .geometry
+                    .procedural_surface_owner(&procedural.id)
+                    == Some(&surface.id)
             })
             .expect("placed NURBS tabulated construction");
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =

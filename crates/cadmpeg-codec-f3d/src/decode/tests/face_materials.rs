@@ -412,7 +412,10 @@ fn apply_body_presentation_names_preserves_existing_body_name() {
 
         let binding = make_body_binding(stream, 100, entity, body_id.as_str());
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
-        assert_eq!(ir.geometry.bodies[0].name.as_deref(), Some("CustomExisting"));
+        assert_eq!(
+            ir.geometry.bodies[0].name.as_deref(),
+            Some("CustomExisting")
+        );
     });
 }
 

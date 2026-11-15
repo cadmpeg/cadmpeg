@@ -481,7 +481,9 @@ fn decode_emits_charted_surface_intersection_construction() {
         .geometry
         .curves
         .iter()
-        .find(|curve| result.ir().geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id))
+        .find(|curve| {
+            result.ir().geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id)
+        })
         .expect("solved chart cache");
     let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
         panic!("charted NURBS cache");

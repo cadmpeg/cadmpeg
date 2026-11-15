@@ -313,7 +313,8 @@ fn an_unreferenced_edge_preserves_independent_geometry() {
 fn an_unbounded_near_full_arc_uses_endpoint_parameters() {
     for gap in [0.0, UNCERTAINTY * 0.5] {
         let mut ir = arc_wire(gap, false);
-        ir.geometry.edges[0].carrier = EdgeCarrier::unbounded(ir.geometry.edges[0].curve().cloned());
+        ir.geometry.edges[0].carrier =
+            EdgeCarrier::unbounded(ir.geometry.edges[0].curve().cloned());
         let bytes = write(&ir);
         assert_eq!(edge_count(&bytes), 2);
         let decoded = StepCodec::default()
@@ -383,7 +384,8 @@ fn an_unbounded_polyline_uses_its_sample_parameter_bounds() {
         ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
             PolylineCurve::new(samples, 0.0).expect("polyline"),
         ));
-        ir.geometry.edges[0].carrier = EdgeCarrier::unbounded(ir.geometry.edges[0].curve().cloned());
+        ir.geometry.edges[0].carrier =
+            EdgeCarrier::unbounded(ir.geometry.edges[0].curve().cloned());
         let bytes = write(&ir);
         assert_eq!(edge_count(&bytes), 2);
         let decoded = StepCodec::default()

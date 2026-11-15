@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::CodecError;
 
-use super::{Topology, ProceduralCarrierError};
+use super::{ProceduralCarrierError, Topology};
 use crate::geometry::{ProceduralCurve, ProceduralSurface};
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 

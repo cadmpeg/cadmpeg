@@ -59,8 +59,8 @@ pub(crate) fn attach_test_body_surface(
             shells: vec![shell_id.clone()],
         });
     }
-    let face_id =
-        FaceId::mint(format!("{body_id}:face:{}", ir.geometry.faces.len())).expect("identity grammar");
+    let face_id = FaceId::mint(format!("{body_id}:face:{}", ir.geometry.faces.len()))
+        .expect("identity grammar");
     if let Some(shell) = ir
         .geometry
         .shells

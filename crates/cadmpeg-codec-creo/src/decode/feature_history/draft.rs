@@ -116,10 +116,12 @@ pub(super) fn thicken_feature_definition(
             let face = FaceId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             faces.push(face);
         }
-        if faces
-            .iter()
-            .all(|face| ir.geometry.faces.iter().any(|candidate| candidate.id == *face))
-        {
+        if faces.iter().all(|face| {
+            ir.geometry
+                .faces
+                .iter()
+                .any(|candidate| candidate.id == *face)
+        }) {
             FaceSelection::Resolved { faces, native }
         } else if let Some(faces) = generated_surface_face_refs(
             &source_ids,

@@ -1715,9 +1715,11 @@ fn append_a5_rolling_ball_pools(
             Exactness::ByteExact,
         )?;
         admission.charge()?;
-        ir.geometry
-            .procedural_surfaces
-            .push(ProceduralSurface::new(procedural_id, definition, None));
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
+            procedural_id,
+            definition,
+            None,
+        ));
         carriers.insert(jet.pos, surface_index);
         if let Some((source_index, owner_pos, source_records)) = rolling_ball_carriers
             .get(&jet.pos)
@@ -3326,13 +3328,13 @@ fn append_resolved_consolidated_surface_curves(
                             None,
                         ),
                     });
-                    ir.geometry.coedges[coedge_index]
-                        .pcurves
-                        .push(cadmpeg_ir::topology::PcurveUse {
+                    ir.geometry.coedges[coedge_index].pcurves.push(
+                        cadmpeg_ir::topology::PcurveUse {
                             pcurve: pcurve_id,
                             isoparametric: None,
                             parameter_range: None,
-                        });
+                        },
+                    );
                     annotations.derived(&ir.geometry.coedges[coedge_index].id, "pcurves")?;
                 }
             }
@@ -3907,9 +3909,11 @@ fn append_a8_rolling_ball_pools(
             Exactness::ByteExact,
         )?;
         admission.charge()?;
-        ir.geometry
-            .procedural_surfaces
-            .push(ProceduralSurface::new(procedural_id, definition, None));
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
+            procedural_id,
+            definition,
+            None,
+        ));
     }
     Ok(())
 }
@@ -4230,7 +4234,7 @@ mod tests {
             )),
             source_object: None,
         });
-        let before = ir.model.clone();
+        let before = ir.clone();
         assert!(!with_admission(|admission| attach_standalone_wires(
             &mut ir,
             &mut AnnotationBuilder::new(),
@@ -4238,7 +4242,7 @@ mod tests {
             admission
         ))
         .expect("attach standalone wires"));
-        assert_eq!(ir.model, before);
+        assert_eq!(ir, before);
     }
 
     #[test]
@@ -4325,7 +4329,10 @@ mod tests {
         .expect("valid source object identity");
 
         assert_eq!(standalone.geometry.curves.len(), 1);
-        assert_eq!(pooled.geometry.curves.len(), standalone.geometry.curves.len());
+        assert_eq!(
+            pooled.geometry.curves.len(),
+            standalone.geometry.curves.len()
+        );
         assert_eq!(
             pooled
                 .geometry

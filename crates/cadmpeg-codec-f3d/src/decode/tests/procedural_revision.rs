@@ -728,18 +728,21 @@ fn record_level_surface_bounds_round_trip() {
     );
     {
         let replacement = Some([Some(0.1), None, Some(0.2), None]);
-        edit::replace(&mut source_less.geometry.procedural_surfaces[0], |previous| {
-            replacement
-                .map(cadmpeg_ir::geometry::RecordBounds::try_from)
-                .transpose()
-                .map(|bounds| {
-                    cadmpeg_ir::geometry::ProceduralSurface::new(
-                        previous.id.clone(),
-                        previous.definition().clone(),
-                        bounds,
-                    )
-                })
-        })
+        edit::replace(
+            &mut source_less.geometry.procedural_surfaces[0],
+            |previous| {
+                replacement
+                    .map(cadmpeg_ir::geometry::RecordBounds::try_from)
+                    .transpose()
+                    .map(|bounds| {
+                        cadmpeg_ir::geometry::ProceduralSurface::new(
+                            previous.id.clone(),
+                            previous.definition().clone(),
+                            bounds,
+                        )
+                    })
+            },
+        )
     }
     .expect("finite record bounds");
     source_less.source = None;

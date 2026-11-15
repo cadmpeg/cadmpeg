@@ -39,7 +39,11 @@ fn insert_native(ir: &mut CadIr, format: &str, ids: &[&str]) {
 #[test]
 fn no_entity_is_unlocated_even_with_a_resolving_related_id() {
     let ir = unit_cube().expect("valid cube");
-    let finding = finding(None, &[ir.geometry.faces[0].identity()], "invalid reference");
+    let finding = finding(
+        None,
+        &[ir.geometry.faces[0].identity()],
+        "invalid reference",
+    );
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(locator.scope(&finding), None);
 }

@@ -363,13 +363,13 @@ fn face_surface<'a>(
     result: &'a cadmpeg_ir::codec::DecodeResult,
     face: &str,
 ) -> Option<&'a cadmpeg_ir::geometry::SurfaceGeometry> {
-    let model = &result.ir().model;
-    let surface = &model
+    let geometry = &result.ir().geometry;
+    let surface = &geometry
         .faces
         .iter()
         .find(|item| item.id.as_str() == face)?
         .surface;
-    model
+    geometry
         .surfaces
         .iter()
         .find(|item| &item.id == surface)

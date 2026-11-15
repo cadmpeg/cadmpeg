@@ -343,9 +343,9 @@ impl AttachSnapshot {
         unknowns: &[UnknownRecord],
         losses: &[LossNote],
     ) -> Self {
-        let geometry = GeometryArenas::take(&mut ir.model);
+        let geometry = GeometryArenas::take(&mut ir.geometry);
         let document = ir.clone();
-        geometry.put(&mut ir.model);
+        geometry.put(&mut ir.geometry);
         Self {
             document,
             face_colors: ir.geometry.faces.iter().map(|face| face.color).collect(),
@@ -362,9 +362,9 @@ impl AttachSnapshot {
         unknowns: &mut Vec<UnknownRecord>,
         losses: &mut Vec<LossNote>,
     ) {
-        let geometry = GeometryArenas::take(&mut ir.model);
+        let geometry = GeometryArenas::take(&mut ir.geometry);
         *ir = self.document;
-        geometry.put(&mut ir.model);
+        geometry.put(&mut ir.geometry);
         for (face, color) in ir.geometry.faces.iter_mut().zip(self.face_colors) {
             face.color = color;
         }

@@ -3,7 +3,11 @@
 
 #[test]
 fn carrier_interval_round_trips_and_rejects_invalid_endpoints() {
-    let mut curve = crate::examples::unit_cube().unwrap().geometry.curves.remove(0);
+    let mut curve = crate::examples::unit_cube()
+        .unwrap()
+        .geometry
+        .curves
+        .remove(0);
     curve.parameter_range = crate::topology::IncreasingParameterInterval::new([2.0, 5.0]);
     let mut value = serde_json::to_value(&curve).unwrap();
     let recovered: crate::geometry::Curve = serde_json::from_value(value.clone()).unwrap();

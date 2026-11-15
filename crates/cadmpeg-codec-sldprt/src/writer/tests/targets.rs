@@ -65,7 +65,10 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
 fn sourced_ir(dialect: &'static str) -> CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].name = None;
-    ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
     ir.geometry
         .edges
         .iter_mut()

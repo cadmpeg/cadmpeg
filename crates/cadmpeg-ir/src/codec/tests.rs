@@ -486,7 +486,11 @@ fn the_wrapper_flags_each_requested_class_left_undelivered() {
     use cadmpeg_core::decode::ArenaClass::{Design, Model, Process};
     for (delivered, requested, missing) in [
         (DecodeDepth::Container, DecodeDepth::Geometry, &[Model][..]),
-        (DecodeDepth::Container, DecodeDepth::Full, &[Model, Design, Process]),
+        (
+            DecodeDepth::Container,
+            DecodeDepth::Full,
+            &[Model, Design, Process],
+        ),
         (DecodeDepth::Geometry, DecodeDepth::Design, &[Design]),
         (DecodeDepth::Geometry, DecodeDepth::Full, &[Design, Process]),
         (DecodeDepth::Design, DecodeDepth::Full, &[Process]),

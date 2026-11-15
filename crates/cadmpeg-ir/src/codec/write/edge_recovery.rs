@@ -231,15 +231,18 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
                 ) else {
                     continue;
                 };
-                document.geometry.procedural_curves.push(ProceduralCurve::new(
-                    construction_id.clone(),
-                    ProceduralCurveDefinition::SurfaceCurve {
-                        family: SurfaceCurveFamily::Parametric {
-                            context,
-                            tail: None,
+                document
+                    .geometry
+                    .procedural_curves
+                    .push(ProceduralCurve::new(
+                        construction_id.clone(),
+                        ProceduralCurveDefinition::SurfaceCurve {
+                            family: SurfaceCurveFamily::Parametric {
+                                context,
+                                tail: None,
+                            },
                         },
-                    },
-                ));
+                    ));
                 fit_construction = Some(construction_id.clone());
                 (
                     curve_id,
@@ -295,7 +298,8 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
         fitted_candidates.into_iter().zip(fits)
     {
         constructions.insert(construction_id);
-        if let (Some(geometry), Some(curve)) = (fit, document.geometry.curves.get_mut(curve_index)) {
+        if let (Some(geometry), Some(curve)) = (fit, document.geometry.curves.get_mut(curve_index))
+        {
             curve.geometry = CurveGeometry::Solved(geometry);
             sampled_fits.push(document.geometry.edges[ordinal].id.clone());
         } else {

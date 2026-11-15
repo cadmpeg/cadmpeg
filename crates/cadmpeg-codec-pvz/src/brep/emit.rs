@@ -12,7 +12,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
-use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
@@ -58,8 +57,8 @@ const DOMAIN_EXTENT_TOLERANCE: f64 = 1.0e-9;
 
 /// Destination of the neutral records of one exact stream.
 pub(crate) struct Sink<'s> {
-    /// Neutral model the records are appended to.
-    pub(crate) model: &'s mut Model,
+    /// Neutral topology the records are appended to.
+    pub(crate) geometry: &'s mut cadmpeg_ir::document::Topology,
     /// Exactness and provenance of the records.
     pub(crate) annotations: &'s mut AnnotationBuilder,
     /// Losses of the stream.

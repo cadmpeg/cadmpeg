@@ -89,16 +89,20 @@ fn attachment_failure_keeps_geometry_and_reports_one_error_loss() {
     assert!(!complete.ir().geometry.faces.is_empty());
 
     let contained = decode_failing_at(prt_with_arrangements(), Point::Exit);
-    let (model, complete_model) = (&contained.ir().model, &complete.ir().model);
-    assert_eq!(geometry.bodies, complete_model.bodies);
-    assert_eq!(geometry.shells, complete_model.shells);
-    assert_eq!(geometry.faces, complete_model.faces);
-    assert_eq!(geometry.loops, complete_model.loops);
-    assert_eq!(geometry.coedges, complete_model.coedges);
-    assert_eq!(geometry.edges, complete_model.edges);
-    assert_eq!(geometry.vertices, complete_model.vertices);
-    assert_eq!(geometry.surfaces, complete_model.surfaces);
-    assert_eq!(geometry.curves, complete_model.curves);
+    let (model, geometry, complete_geometry) = (
+        &contained.ir().model,
+        &contained.ir().geometry,
+        &complete.ir().geometry,
+    );
+    assert_eq!(geometry.bodies, complete_geometry.bodies);
+    assert_eq!(geometry.shells, complete_geometry.shells);
+    assert_eq!(geometry.faces, complete_geometry.faces);
+    assert_eq!(geometry.loops, complete_geometry.loops);
+    assert_eq!(geometry.coedges, complete_geometry.coedges);
+    assert_eq!(geometry.edges, complete_geometry.edges);
+    assert_eq!(geometry.vertices, complete_geometry.vertices);
+    assert_eq!(geometry.surfaces, complete_geometry.surfaces);
+    assert_eq!(geometry.curves, complete_geometry.curves);
     assert!(model.configurations.is_empty());
     assert!(model.attributes.is_empty());
     assert!(model.features.is_empty());

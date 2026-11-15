@@ -615,11 +615,13 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
         .to_string()
         .contains("lacks its native blend construction"));
 
-    source_less.geometry.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Unknown {
-        native_kind: None,
-        record: None,
-        cache: None,
-    });
+    source_less.geometry.procedural_curves[0].replace_definition(
+        ProceduralCurveDefinition::Unknown {
+            native_kind: None,
+            record: None,
+            cache: None,
+        },
+    );
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))

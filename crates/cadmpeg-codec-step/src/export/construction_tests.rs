@@ -45,7 +45,8 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
                 ),
             )
             .unwrap();
-        let SurfaceGeometry::Procedural { cache, .. } = &mut ir.geometry.surfaces[0].geometry else {
+        let SurfaceGeometry::Procedural { cache, .. } = &mut ir.geometry.surfaces[0].geometry
+        else {
             panic!("construction owner")
         };
         *cache = opaque_cache.then_some(SolvedSurfaceGeometry::Unknown { record: None });

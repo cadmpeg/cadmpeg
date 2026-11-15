@@ -388,7 +388,7 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
     let model = &result.ir().model;
     let geometry = &result.ir().geometry;
     let body = |member: &str| {
-        model
+        geometry
             .bodies
             .iter()
             .find(|body| body.id.as_str() == format!("pvz:model:body#{member}"))
@@ -399,7 +399,7 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
         assert_eq!(cube.kind, BodyKind::Solid);
         assert_eq!(cube.name.as_deref(), Some(member));
         assert_eq!(cube.regions.len(), 1);
-        let faces = model
+        let faces = geometry
             .faces
             .iter()
             .filter(|face| face.id.as_str().contains(&format!("#{member}:")))
@@ -449,7 +449,7 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
     let model = &result.ir().model;
     let geometry = &result.ir().geometry;
     let of_kind = |kind: BodyKind| {
-        let found: Vec<_> = model
+        let found: Vec<_> = geometry
             .bodies
             .iter()
             .filter(|body| body.kind == kind)
@@ -463,7 +463,7 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
         assert_eq!(body.name.as_deref(), Some("part.ol"));
     }
     let shells = |body: &cadmpeg_ir::topology::Body| -> usize {
-        model
+        geometry
             .regions
             .iter()
             .filter(|region| body.regions.contains(&region.id))

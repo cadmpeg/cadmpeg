@@ -29,6 +29,7 @@ fn damaged_first_optional_frame_preserves_detection_and_the_required_document() 
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(changed), &DecodeOptions::default())
         .expect("required document remains readable");
+    assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
     assert_eq!(decoded.ir().model, baseline.ir().model);
     assert!(!decoded.report().losses.is_empty());
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
@@ -70,6 +71,7 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
         .unwrap();
+    assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
     assert_eq!(decoded.ir().model, baseline.ir().model);
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     crate::test_support::test_archive::assert_valid_document(decoded.ir());
@@ -249,6 +251,7 @@ fn large_property_population_preserves_the_complete_checked_model() {
     let result = crate::FcstdCodec
         .decode(&mut Cursor::new(&bytes), &options)
         .unwrap();
+    assert_eq!(result.ir().geometry, baseline.ir().geometry);
     assert_eq!(result.ir().model, baseline.ir().model);
     crate::test_support::test_archive::assert_valid_document(result.ir());
     let arena = DecodeArena::new();
@@ -310,6 +313,7 @@ fn dependency_and_extension_count_metadata_preserves_checked_geometry() {
             let decoded = FcstdCodec
                 .decode(&mut Cursor::new(bytes), &options)
                 .unwrap();
+            assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
             assert_eq!(decoded.ir().model, baseline.ir().model);
             crate::test_support::test_archive::assert_valid_document(decoded.ir());
             assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
@@ -342,6 +346,7 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
         let roundtrip = FcstdCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap();
+        assert_eq!(roundtrip.ir().geometry, decoded.ir().geometry);
         assert_eq!(roundtrip.ir().model, decoded.ir().model);
         let properties = roundtrip
             .ir()

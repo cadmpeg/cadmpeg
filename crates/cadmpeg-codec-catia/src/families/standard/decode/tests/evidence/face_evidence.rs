@@ -682,8 +682,14 @@ fn standard_face_attachment_mints_face_body_region_and_shell_ids() {
     .expect("attach standard faces");
     assert_eq!(ir.geometry.faces[0].id.as_str(), "catia:standard:face#0");
     assert_eq!(ir.geometry.bodies[0].id.as_str(), "catia:standard:body#0");
-    assert_eq!(ir.geometry.regions[0].id.as_str(), "catia:standard:region#0-0");
-    assert_eq!(ir.geometry.shells[0].id.as_str(), "catia:standard:shell#0-0");
+    assert_eq!(
+        ir.geometry.regions[0].id.as_str(),
+        "catia:standard:region#0-0"
+    );
+    assert_eq!(
+        ir.geometry.shells[0].id.as_str(),
+        "catia:standard:shell#0-0"
+    );
     assert_eq!(ir.geometry.shells[0].faces().len(), 1);
 }
 

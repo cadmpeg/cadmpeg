@@ -93,7 +93,10 @@ fn a_surface_row_reports_the_carrier_and_the_faces_that_use_it() {
     assert_eq!(point(axis_point), [0.0; 3]);
     assert_eq!(point(axis_direction), [0.0, 0.0, 1.0]);
     assert_eq!(row.faces(), &[ir.geometry.faces[0].id.as_str().to_owned()]);
-    assert_eq!(row.bodies(), &[ir.geometry.bodies[0].id.as_str().to_owned()]);
+    assert_eq!(
+        row.bodies(),
+        &[ir.geometry.bodies[0].id.as_str().to_owned()]
+    );
     assert!(row.unresolved().is_none());
     assert_eq!(*row.status(), RowStatus::Measured);
 }

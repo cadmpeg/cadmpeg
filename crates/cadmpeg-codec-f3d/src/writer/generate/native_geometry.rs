@@ -4,7 +4,7 @@
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     pcurve::{PcurveGeometry, PcurveInlineForm, PcurveNurbs, PcurveNurbsPoles},
@@ -114,7 +114,9 @@ fn native_record_bounds(bytes: &mut Vec<u8>, target: &CadIr, surface: &cadmpeg_i
         .geometry
         .procedural_surfaces
         .iter()
-        .find(|procedural| target.geometry.procedural_surface_owner(&procedural.id) == Some(surface))
+        .find(|procedural| {
+            target.geometry.procedural_surface_owner(&procedural.id) == Some(surface)
+        })
         .and_then(cadmpeg_ir::geometry::ProceduralSurface::record_bounds);
     if let Some(bounds) = bounds {
         for bound in bounds.get() {
@@ -4959,8 +4961,11 @@ pub(crate) fn native_procedural_curve(
     curve_id: &cadmpeg_ir::ids::CurveId,
     solved_cache: &NurbsCurve,
 ) -> Result<bool, CodecError> {
-    let mut definitions =
-        target.geometry.procedural_curves.iter().filter(|procedural| {
+    let mut definitions = target
+        .geometry
+        .procedural_curves
+        .iter()
+        .filter(|procedural| {
             target.geometry.procedural_curve_owner(&procedural.id) == Some(curve_id)
         });
     let Some(procedural) = definitions.next() else {
@@ -5772,8 +5777,11 @@ pub(super) fn native_cacheless_procedural_curve(
     target: &CadIr,
     curve_id: &cadmpeg_ir::ids::CurveId,
 ) -> Result<bool, CodecError> {
-    let mut definitions =
-        target.geometry.procedural_curves.iter().filter(|procedural| {
+    let mut definitions = target
+        .geometry
+        .procedural_curves
+        .iter()
+        .filter(|procedural| {
             target.geometry.procedural_curve_owner(&procedural.id) == Some(curve_id)
         });
     let Some(procedural) = definitions.next() else {
@@ -6179,11 +6187,11 @@ mod pcurve_chart_tests {
 }
 
 pub(in crate::writer) fn pcurve_support_geometry<'a>(
-    model: &'a Model,
+    geometry: &'a Topology,
     pcurve_id: &PcurveId,
 ) -> Result<&'a SurfaceGeometry, CodecError> {
-    let surface_id = pcurve_support_surface(model, pcurve_id)?;
-    model
+    let surface_id = pcurve_support_surface(geometry, pcurve_id)?;
+    geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == *surface_id)
@@ -6197,15 +6205,15 @@ pub(in crate::writer) fn pcurve_support_geometry<'a>(
 
 /// The surface of the faces that use a pcurve.
 pub(in crate::writer) fn pcurve_support_surface<'a>(
-    model: &'a Model,
+    geometry: &'a Topology,
     pcurve_id: &PcurveId,
 ) -> Result<&'a SurfaceId, CodecError> {
     fn surface_for_loop<'a>(
-        model: &'a Model,
+        geometry: &'a Topology,
         loop_: &cadmpeg_ir::topology::Loop,
         pcurve_id: &PcurveId,
     ) -> Result<&'a SurfaceId, CodecError> {
-        let face = model
+        let face = geometry
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
@@ -6235,7 +6243,7 @@ pub(in crate::writer) fn pcurve_support_surface<'a>(
     let mut surface_id = None;
     for coedge in &geometry.coedges {
         if coedge.pcurves.iter().any(|use_| use_.pcurve == *pcurve_id) {
-            let loop_ = model
+            let loop_ = geometry
                 .loops
                 .iter()
                 .find(|loop_| loop_.id == coedge.owner_loop)
@@ -6245,13 +6253,13 @@ pub(in crate::writer) fn pcurve_support_surface<'a>(
                         coedge.owner_loop
                     ))
                 })?;
-            let surface = surface_for_loop(model, loop_, pcurve_id)?;
+            let surface = surface_for_loop(geometry, loop_, pcurve_id)?;
             record_surface(&mut surface_id, surface, pcurve_id)?;
         }
     }
     for loop_ in &geometry.loops {
         if loop_.vertex_pcurves().any(|use_| use_.pcurve == *pcurve_id) {
-            let surface = surface_for_loop(model, loop_, pcurve_id)?;
+            let surface = surface_for_loop(geometry, loop_, pcurve_id)?;
             record_surface(&mut surface_id, surface, pcurve_id)?;
         }
     }

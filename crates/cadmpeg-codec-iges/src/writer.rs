@@ -835,7 +835,12 @@ fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
                     | SolvedSurfaceGeometry::Sphere(_)
                     | SolvedSurfaceGeometry::Torus(_)
             )
-        )) && (!writes_brep || !ir.geometry.faces.iter().any(|face| face.surface == surface.id))
+        )) && (!writes_brep
+            || !ir
+                .geometry
+                .faces
+                .iter()
+                .any(|face| face.surface == surface.id))
     }) {
         return Err(CodecError::NotImplemented(format!(
             "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
@@ -1752,7 +1757,12 @@ fn brep_entities(
         .geometry
         .edges
         .iter()
-        .filter(|edge| ir.geometry.coedges.iter().any(|coedge| coedge.edge == edge.id))
+        .filter(|edge| {
+            ir.geometry
+                .coedges
+                .iter()
+                .any(|coedge| coedge.edge == edge.id)
+        })
         .filter_map(|edge| edge.curve().map(|curve| curve.as_str().to_owned()))
         .collect::<BTreeSet<_>>();
     let mut topology_edge_ids = std::collections::BTreeSet::new();
@@ -2460,7 +2470,12 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
                 continue;
             };
             for shell_id in &region.shells {
-                let Some(shell) = ir.geometry.shells.iter().find(|shell| shell.id == *shell_id) else {
+                let Some(shell) = ir
+                    .geometry
+                    .shells
+                    .iter()
+                    .find(|shell| shell.id == *shell_id)
+                else {
                     continue;
                 };
                 ignored.vertices.extend(
@@ -2479,7 +2494,12 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
         let Some(curve_id) = edge.curve() else {
             continue;
         };
-        let Some(curve) = ir.geometry.curves.iter().find(|curve| curve.id == *curve_id) else {
+        let Some(curve) = ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == *curve_id)
+        else {
             continue;
         };
         let matching_topology_tolerance = topology_edges
@@ -2890,7 +2910,12 @@ fn topology_entities(
                     .iter()
                     .find(|region| region.id == shell.region)
             })
-            .and_then(|region| ir.geometry.bodies.iter().find(|body| body.id == region.body))
+            .and_then(|region| {
+                ir.geometry
+                    .bodies
+                    .iter()
+                    .find(|body| body.id == region.body)
+            })
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "IGES sheet face {} has no owning body",
@@ -4910,7 +4935,12 @@ fn generated_endpoint_coordinate_scale(ir: &CadIr) -> Result<f64, CodecError> {
         let Some(range) = edge.param_range() else {
             continue;
         };
-        let Some(curve) = ir.geometry.curves.iter().find(|curve| curve.id == *curve_id) else {
+        let Some(curve) = ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == *curve_id)
+        else {
             continue;
         };
         for parameter in range {
@@ -5052,7 +5082,12 @@ fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
         }
     }
     for vertex in &ir.geometry.vertices {
-        if !ir.geometry.points.iter().any(|point| point.id == vertex.point) {
+        if !ir
+            .geometry
+            .points
+            .iter()
+            .any(|point| point.id == vertex.point)
+        {
             return Err(CodecError::malformed(format_args!(
                 "IGES vertex {} references missing point {}",
                 vertex.id, vertex.point

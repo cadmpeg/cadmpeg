@@ -1236,7 +1236,11 @@ fn bounded_edge_for_curve(
             .curve_positions
             .get(curve_id)
             .and_then(|position| ir.geometry.curves.get(*position)),
-        None => ir.geometry.curves.iter().find(|curve| curve.id == *curve_id),
+        None => ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == *curve_id),
     };
     let Some(curve) = curve else {
         return Ok(None);
@@ -1285,7 +1289,11 @@ fn bounded_nurbs_for_id(
             .curve_positions
             .get(curve_id)
             .and_then(|position| ir.geometry.curves.get(*position)),
-        None => ir.geometry.curves.iter().find(|curve| curve.id == *curve_id),
+        None => ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == *curve_id),
     };
     let Some(curve) = curve else {
         return Ok(None);
@@ -1840,7 +1848,7 @@ fn project_with_type_130_policy(
 ) -> Result<WireProjectionOutcome, CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let mut records = BTreeMap::new();
     for record in parameters {
@@ -2242,7 +2250,7 @@ fn project_with_type_130_policy(
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
         let _attached = procedural_admission.add_curve(
-            &mut ir.model,
+            &mut ir.geometry,
             &curve_id,
             ProceduralCurve::new(
                 crate::ids::procedural_curve(&stem),

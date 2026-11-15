@@ -139,7 +139,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     use crate::native::features::holes::SimpleHoleExtent;
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
-    use cadmpeg_ir::document::{CadIr, Model};
+    use cadmpeg_ir::document::{CadIr, Topology};
     use cadmpeg_ir::features::holes::HolePlacement;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface};
     use cadmpeg_ir::ids::{
@@ -290,7 +290,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             .unwrap(),
         );
         let mut ir = CadIr::empty();
-        ir.model = geometry;
+        ir.geometry = geometry;
 
         ({
             let outputs = std::collections::BTreeMap::from([

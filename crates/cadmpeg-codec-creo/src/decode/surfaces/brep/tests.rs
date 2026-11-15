@@ -181,7 +181,9 @@ fn typed_curve_id_fixture() -> CadIr {
         )),
         source_object: None,
     };
-    ir.geometry.curves.extend([circle(10), circle(10), circle(20)]);
+    ir.geometry
+        .curves
+        .extend([circle(10), circle(10), circle(20)]);
     ir
 }
 

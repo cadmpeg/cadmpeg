@@ -54,7 +54,10 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     // material, so strip the labels the round trip does not exercise here.
     let prepare = |ir: &mut cadmpeg_ir::document::CadIr| {
         ir.geometry.bodies[0].name = None;
-        ir.geometry.faces.iter_mut().for_each(|face| face.name = None);
+        ir.geometry
+            .faces
+            .iter_mut()
+            .for_each(|face| face.name = None);
         ir.geometry
             .edges
             .iter_mut()
@@ -85,7 +88,8 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     for Motion { rows, apply } in motions {
         let mut moved = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         prepare(&mut moved);
-        moved.geometry.bodies[0].transform = Some(Transform::affine(rows).expect("affine transform"));
+        moved.geometry.bodies[0].transform =
+            Some(Transform::affine(rows).expect("affine transform"));
         let mut bytes = Vec::new();
         crate::test_support::plan_fixture_with_native_envelope(
             EncodeInput::new(&moved, None),
@@ -189,8 +193,14 @@ fn decode_is_equivariant_under_rigid_translation() {
     let moved_out = encode_decode(&moved);
 
     // Topology is invariant under a rigid motion.
-    assert_eq!(base_out.geometry.faces.len(), moved_out.geometry.faces.len());
-    assert_eq!(base_out.geometry.edges.len(), moved_out.geometry.edges.len());
+    assert_eq!(
+        base_out.geometry.faces.len(),
+        moved_out.geometry.faces.len()
+    );
+    assert_eq!(
+        base_out.geometry.edges.len(),
+        moved_out.geometry.edges.len()
+    );
     assert_eq!(
         base_out.geometry.vertices.len(),
         moved_out.geometry.vertices.len()

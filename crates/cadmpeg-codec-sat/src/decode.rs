@@ -506,8 +506,9 @@ fn build_result(
         },
     ) = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
 
-    let geometry_transferred =
-        !(ir.geometry.surfaces.is_empty() && ir.geometry.points.is_empty() && ir.geometry.faces.is_empty());
+    let geometry_transferred = !(ir.geometry.surfaces.is_empty()
+        && ir.geometry.points.is_empty()
+        && ir.geometry.faces.is_empty());
     losses.extend(dialect_loss(kernel));
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {

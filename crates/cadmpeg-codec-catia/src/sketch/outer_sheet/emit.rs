@@ -7,7 +7,7 @@ use std::fmt::Display;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationStorage;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
 use cadmpeg_ir::geometry::{
@@ -40,7 +40,7 @@ struct Annotation {
 
 #[derive(Default)]
 struct Prepared {
-    model: Model,
+    geometry: Topology,
     annotations: Vec<Annotation>,
     identities: HashSet<String>,
 }
@@ -354,7 +354,7 @@ fn prepare_component(
     Ok(true)
 }
 
-fn append_model(target: &mut Model, source: &mut Model) {
+fn append_topology(target: &mut Topology, source: &mut Topology) {
     target.points.append(&mut source.points);
     target.vertices.append(&mut source.vertices);
     target.curves.append(&mut source.curves);
@@ -411,7 +411,7 @@ pub(super) fn emit(
                 }
             }
             if supported {
-                append_model(&mut prepared.model, &mut candidate.model);
+                append_topology(&mut prepared.geometry, &mut candidate.geometry);
                 prepared.annotations.append(&mut candidate.annotations);
                 prepared.identities.extend(candidate.identities);
             }
@@ -421,7 +421,7 @@ pub(super) fn emit(
     if bodies == 0 {
         return Ok(0);
     }
-    ctx.charge_entities(u64_from_index(prepared.entity_count()), ADMIT)?;
+    ctx.charge_entities(u64_from_index(prepared.geometry.entity_count()), ADMIT)?;
     for note in prepared.annotations {
         crate::assemble::annotate(
             annotations,
@@ -435,7 +435,7 @@ pub(super) fn emit(
             annotations.derived(&note.id, field)?;
         }
     }
-    append_model(&mut ir.model, &mut prepared.model);
+    append_topology(&mut ir.geometry, &mut prepared.geometry);
     Ok(bodies)
 }
 

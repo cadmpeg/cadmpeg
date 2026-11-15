@@ -14,6 +14,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometryDefinition};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::CadIr;
 
 const EPS_CARRIER_DISTANCE: f64 = 1.0e-6;
 const EPS_BOUNDARY_DISTANCE: f64 = 1.0e-4;
@@ -23,41 +24,42 @@ const MIN_TRIANGLE_DETERMINANT: f64 = 1.0e-24;
 const CURVE_SAMPLE_INTERVALS: u32 = 16;
 const MAX_WITNESS_WORK: usize = 2_000_000;
 
-pub(crate) fn contradicted_features(model: &Model) -> HashSet<FeatureId> {
-    if !model.features.iter().any(|feature| {
+pub(crate) fn contradicted_features(ir: &CadIr) -> HashSet<FeatureId> {
+    if !ir.model.features.iter().any(|feature| {
         candidate(feature)
-            .and_then(|(profile, _, _)| profile_sketch(model, profile))
+            .and_then(|(profile, _, _)| profile_sketch(&ir.model, profile))
             .is_some_and(|sketch| sketch.resolved_placement().is_some())
     }) {
         return HashSet::new();
     }
     let work = WorkBudget::new(MAX_WITNESS_WORK);
-    let Some(caps) = caps(model, &work) else {
+    let Some(caps) = caps(ir, &work) else {
         return HashSet::new();
     };
     let mut contradicted = HashSet::new();
-    for feature in &model.features {
+    for feature in &ir.model.features {
         if !work.charge() {
             break;
         }
-        if contradicts(model, feature, &caps, &work) {
+        if contradicts(&ir.model, feature, &caps, &work) {
             contradicted.insert(feature.id.clone());
         }
     }
     contradicted
 }
 
-pub(crate) fn retain_contradicted_directions(model: &mut Model) -> bool {
-    let contradicted = contradicted_features(model);
+pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> bool {
+    let contradicted = contradicted_features(ir);
     let mut changed = false;
-    for feature in &mut model.features {
+    for feature in &mut ir.model.features {
         if !contradicted.contains(&feature.id) {
             continue;
         }
         let original = feature.evaluation.definition().clone();
         feature.evaluation.edit(|definition, _| retain(definition));
         changed |= original != *feature.evaluation.definition();
-        for configuration in model
+        for configuration in ir
+            .model
             .configurations
             .iter_mut()
             .filter(|configuration| configuration.active)
@@ -317,32 +319,39 @@ struct Cap {
     transform: Transform,
 }
 
-fn caps(model: &Model, work: &WorkBudget) -> Option<Vec<Cap>> {
+fn caps(ir: &CadIr, work: &WorkBudget) -> Option<Vec<Cap>> {
     let indexing_work = [
-        geometry.surfaces.len(),
-        geometry.shells.len(),
-        geometry.regions.len(),
-        geometry.bodies.len(),
-        geometry.faces.len(),
-        geometry.loops.len(),
-        geometry.coedges.len(),
-        geometry.edges.len(),
-        geometry.vertices.len(),
-        geometry.points.len(),
-        geometry.curves.len(),
+        ir.geometry.surfaces.len(),
+        ir.geometry.shells.len(),
+        ir.geometry.regions.len(),
+        ir.geometry.bodies.len(),
+        ir.geometry.faces.len(),
+        ir.geometry.loops.len(),
+        ir.geometry.coedges.len(),
+        ir.geometry.edges.len(),
+        ir.geometry.vertices.len(),
+        ir.geometry.points.len(),
+        ir.geometry.curves.len(),
     ]
     .into_iter()
     .try_fold(0_usize, usize::checked_add)?;
     if !work.charge_by(indexing_work) {
         return None;
     }
-    let surfaces: HashMap<_, _> = model
+    let surfaces: HashMap<_, _> = ir
+        .geometry
         .surfaces
         .iter()
         .map(|s| (&s.id, &s.geometry))
         .collect();
-    let shells: HashMap<_, _> = geometry.shells.iter().map(|s| (&s.id, &s.region)).collect();
-    let regions: HashMap<_, _> = model
+    let shells: HashMap<_, _> = ir
+        .geometry
+        .shells
+        .iter()
+        .map(|s| (&s.id, &s.region))
+        .collect();
+    let regions: HashMap<_, _> = ir
+        .geometry
         .bodies
         .iter()
         .flat_map(|b| {
@@ -351,19 +360,30 @@ fn caps(model: &Model, work: &WorkBudget) -> Option<Vec<Cap>> {
                 .map(move |r| (r, b.transform.unwrap_or_else(Transform::identity)))
         })
         .collect();
-    let loops: HashMap<_, _> = geometry.loops.iter().map(|l| (&l.id, l)).collect();
-    let coedges: HashMap<_, _> = geometry.coedges.iter().map(|c| (&c.id, c)).collect();
-    let edges: HashMap<_, _> = geometry.edges.iter().map(|e| (&e.id, e)).collect();
-    let vertices: HashMap<_, _> = geometry.vertices.iter().map(|v| (&v.id, &v.point)).collect();
-    let points: HashMap<_, _> = model
+    let loops: HashMap<_, _> = ir.geometry.loops.iter().map(|l| (&l.id, l)).collect();
+    let coedges: HashMap<_, _> = ir.geometry.coedges.iter().map(|c| (&c.id, c)).collect();
+    let edges: HashMap<_, _> = ir.geometry.edges.iter().map(|e| (&e.id, e)).collect();
+    let vertices: HashMap<_, _> = ir
+        .geometry
+        .vertices
+        .iter()
+        .map(|v| (&v.id, &v.point))
+        .collect();
+    let points: HashMap<_, _> = ir
+        .geometry
         .points
         .iter()
         .map(|p| (&p.id, p.position().get()))
         .collect();
-    let curves: HashMap<_, _> = geometry.curves.iter().map(|c| (&c.id, &c.geometry)).collect();
+    let curves: HashMap<_, _> = ir
+        .geometry
+        .curves
+        .iter()
+        .map(|c| (&c.id, &c.geometry))
+        .collect();
     let mut result = Vec::new();
     let mut indices = HashMap::new();
-    for face in &geometry.faces {
+    for face in &ir.geometry.faces {
         let Some(SolvedSurfaceGeometry::Plane(plane)) =
             surfaces.get(&face.surface).and_then(|s| s.solved())
         else {
@@ -438,7 +458,7 @@ fn caps(model: &Model, work: &WorkBudget) -> Option<Vec<Cap>> {
         indices.insert(&face.id, result.len());
         result.push(cap);
     }
-    for mesh in &model.tessellations {
+    for mesh in &ir.model.tessellations {
         let face_count = mesh
             .faces
             .iter()

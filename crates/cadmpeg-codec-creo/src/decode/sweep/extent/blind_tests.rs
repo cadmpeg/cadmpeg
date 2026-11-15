@@ -155,7 +155,9 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     scan.features.entity_tables.push(table.clone());
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let mut ir = CadIr::empty();
-    ir.geometry.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
+    ir.geometry
+        .surfaces
+        .extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert_eq!(
         generated_cap_plane_extent(

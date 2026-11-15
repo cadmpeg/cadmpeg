@@ -261,7 +261,8 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
         )
         .unwrap();
 
-    let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = result.ir().geometry.surfaces[0].geometry.solved()
+    let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) =
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected a NURBS surface carrier");
     };

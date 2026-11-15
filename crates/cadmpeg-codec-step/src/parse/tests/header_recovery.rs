@@ -120,6 +120,7 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
                 .decode(&mut Cursor::new(&source), &DecodeOptions::default())
                 .unwrap(),
         );
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_eq!(
             recovered.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
@@ -195,6 +196,7 @@ fn unverified_implementation_level_does_not_impose_edition3_schema_cardinality()
         let recovered = codec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert!(!recovered.report().losses.is_empty());
     }
@@ -222,6 +224,7 @@ fn missing_file_name_keeps_geometry_and_retains_header_bytes() {
             .unwrap(),
     );
     assert!(!expected.ir().geometry.faces.is_empty());
+    assert_eq!(recovered.ir().geometry, expected.ir().geometry);
     assert_eq!(recovered.ir().model, expected.ir().model);
     assert!(recovered
         .report()
@@ -266,6 +269,7 @@ fn unverified_header_interpretation_keeps_geometry_and_exact_source() {
                 .decode(&mut Cursor::new(&source), &DecodeOptions::default())
                 .expect("readable header interpretation"),
         );
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert!(recovered
             .report()
@@ -325,6 +329,7 @@ fn unusable_presentation_literals_preserve_shape_and_exact_record() {
                 .decode(&mut Cursor::new(&source), &DecodeOptions::default())
                 .unwrap(),
         );
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert!(recovered
             .report()

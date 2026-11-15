@@ -678,7 +678,11 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         .surfaces
         .iter()
         .find(|surface| {
-            result.ir().geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            result
+                .ir()
+                .geometry
+                .procedural_surface_owner(&procedural.id)
+                == Some(&surface.id)
         })
         .expect("compound solved surface");
     let Some(SolvedSurfaceGeometry::Nurbs(solved)) = solved.geometry.solved_cache() else {

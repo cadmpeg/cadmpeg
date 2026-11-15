@@ -131,7 +131,10 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("intersection construction");
     };
-    assert_eq!(ir.geometry.procedural_curve_owner(&procedural.id), Some(&id));
+    assert_eq!(
+        ir.geometry.procedural_curve_owner(&procedural.id),
+        Some(&id)
+    );
     assert!(context.sides()[0]
         .surface
         .as_ref()

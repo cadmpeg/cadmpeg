@@ -90,7 +90,9 @@ fn indexed_curve_batch_preserves_single_attachment_rejections() {
         let before = geometry.clone();
         let mut scanned = geometry.clone();
         let expected = scanned.add_procedural_curve(&rows[0].0, rows[0].1.clone());
-        let actual = geometry.add_procedural_curves(vec![rows.remove(0)]).unwrap();
+        let actual = geometry
+            .add_procedural_curves(vec![rows.remove(0)])
+            .unwrap();
         assert_eq!(
             actual.as_ref().map_err(ToString::to_string),
             expected.as_ref().map_err(ToString::to_string)
@@ -163,7 +165,12 @@ fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let snapshot = serde_json::to_value(geometry.geometry_snapshot(&crate::document::Model::default(), "brep").unwrap()).unwrap();
+    let snapshot = serde_json::to_value(
+        geometry
+            .geometry_snapshot(&crate::document::Model::default(), "brep")
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(snapshot["procedural_curves"], encoded["procedural_curves"]);
     assert_eq!(
         snapshot["procedural_surfaces"],

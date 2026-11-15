@@ -317,7 +317,12 @@ pub(in crate::families) fn attach(
         .enumerate()
         .map(|(index, procedure)| (procedure.id.clone(), index))
         .collect();
-    let points: HashMap<_, _> = ir.geometry.points.iter().map(|p| (p.id.clone(), p)).collect();
+    let points: HashMap<_, _> = ir
+        .geometry
+        .points
+        .iter()
+        .map(|p| (p.id.clone(), p))
+        .collect();
     let vertices: HashMap<_, _> = ir
         .geometry
         .vertices
@@ -337,7 +342,12 @@ pub(in crate::families) fn attach(
         .iter()
         .map(|l| (l.id.clone(), l.face.clone()))
         .collect();
-    let faces: HashMap<_, _> = ir.geometry.faces.iter().map(|f| (f.id.clone(), f)).collect();
+    let faces: HashMap<_, _> = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|f| (f.id.clone(), f))
+        .collect();
     let surfaces: HashMap<_, _> = ir
         .geometry
         .surfaces

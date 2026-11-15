@@ -880,7 +880,10 @@ fn decode_projects_a_large_composite_batch_without_repeated_curve_scans() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.procedural_curves.len(), COMPOSITE_COUNT);
+    assert_eq!(
+        result.ir().geometry.procedural_curves.len(),
+        COMPOSITE_COUNT
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

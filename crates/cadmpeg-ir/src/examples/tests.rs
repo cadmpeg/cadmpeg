@@ -31,7 +31,12 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
         (crate::identity_key!("v"), Vector3::new(0.0, 1.0, 0.0)),
     ] {
         let id = v2_id!(CurveId, "curve", key);
-        let curve = ir.geometry.curves.iter().find(|curve| curve.id == id).unwrap();
+        let curve = ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == id)
+            .unwrap();
         let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &curve.geometry else {
             panic!("the directed SubD example curve is a line");
         };

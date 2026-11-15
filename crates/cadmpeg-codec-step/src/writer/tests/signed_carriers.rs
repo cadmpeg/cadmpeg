@@ -78,7 +78,11 @@ fn assert_pcurves_reach_their_vertices(source: &CadIr) {
     let geometry = &decoded.geometry;
     let position = |vertex: &VertexId| {
         let vertex = geometry.vertices.iter().find(|v| &v.id == vertex).unwrap();
-        let point = geometry.points.iter().find(|p| p.id == vertex.point).unwrap();
+        let point = geometry
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap();
         point.position().get()
     };
     let mut checked = 0;
@@ -86,7 +90,11 @@ fn assert_pcurves_reach_their_vertices(source: &CadIr) {
         let Some(use_) = coedge.pcurves.first() else {
             continue;
         };
-        let pcurve = geometry.pcurves.iter().find(|p| p.id == use_.pcurve).unwrap();
+        let pcurve = geometry
+            .pcurves
+            .iter()
+            .find(|p| p.id == use_.pcurve)
+            .unwrap();
         let surface = geometry
             .loops
             .iter()

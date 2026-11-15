@@ -175,7 +175,11 @@ fn iges_void_shell_faces_have_no_orientation_finding() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../cadmpeg-codec-iges/tests/golden/fixtures/explicit_void_solid.igs");
     let document = dumped(&path);
-    let [region] = document["geometry"]["regions"].as_array().unwrap().as_slice() else {
+    let [region] = document["geometry"]["regions"]
+        .as_array()
+        .unwrap()
+        .as_slice()
+    else {
         panic!("one region");
     };
     let void = region["shells"][1].as_str().unwrap();

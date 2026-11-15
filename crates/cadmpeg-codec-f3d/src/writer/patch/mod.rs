@@ -126,7 +126,8 @@ pub(crate) fn write_semantic(
                 .into(),
         ));
     }
-    let edited_curves = validate_curve_edits(&baseline.ir().geometry.curves, &target.geometry.curves)?;
+    let edited_curves =
+        validate_curve_edits(&baseline.ir().geometry.curves, &target.geometry.curves)?;
     let nurbs_curve_edits = target
         .geometry
         .curves
@@ -162,7 +163,7 @@ pub(crate) fn write_semantic(
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
-    let pcurve_edits = validate_pcurve_edits(&baseline.ir().model, &target.model)?;
+    let pcurve_edits = validate_pcurve_edits(&baseline.ir().geometry, &target.geometry)?;
     let edited_surfaces =
         validate_surface_edits(&baseline.ir().geometry.surfaces, &target.geometry.surfaces)?;
     let nurbs_surface_edits = target
@@ -297,7 +298,10 @@ pub(crate) fn write_semantic(
     let wire_topology_edits = validate_wire_topology_edits(natives)?;
     let mut user_knot_edits = user_knots::edits(baseline.ir(), target)?;
     let mut supported_target = baseline.ir().clone();
-    supported_target.geometry.subds.clone_from(&target.geometry.subds);
+    supported_target
+        .geometry
+        .subds
+        .clone_from(&target.geometry.subds);
     supported_target
         .geometry
         .points
@@ -326,12 +330,18 @@ pub(crate) fn write_semantic(
             body.visible = candidate.visible;
         }
     }
-    supported_target.geometry.edges.clone_from(&target.geometry.edges);
+    supported_target
+        .geometry
+        .edges
+        .clone_from(&target.geometry.edges);
     supported_target
         .geometry
         .vertices
         .clone_from(&target.geometry.vertices);
-    supported_target.geometry.faces.clone_from(&target.geometry.faces);
+    supported_target
+        .geometry
+        .faces
+        .clone_from(&target.geometry.faces);
     supported_target
         .geometry
         .coedges

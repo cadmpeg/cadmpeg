@@ -73,7 +73,12 @@ enum Assignment<T> {
 impl AppearancePlan {
     fn apply(self, ir: &mut CadIr) {
         for update in self.body_updates {
-            if let Some(body) = ir.geometry.bodies.iter_mut().find(|body| body.id == update.id) {
+            if let Some(body) = ir
+                .geometry
+                .bodies
+                .iter_mut()
+                .find(|body| body.id == update.id)
+            {
                 if let Assignment::Set(visible) = update.visible {
                     body.visible = visible;
                 }
@@ -4515,7 +4520,10 @@ mod shape_association_tests {
         let body_ids = select_shape_bodies(&ir, ["payload", "payload"]);
         assert_eq!(
             body_ids,
-            [ir.geometry.bodies[0].id.clone(), ir.geometry.bodies[0].id.clone()]
+            [
+                ir.geometry.bodies[0].id.clone(),
+                ir.geometry.bodies[0].id.clone()
+            ]
         );
     }
 

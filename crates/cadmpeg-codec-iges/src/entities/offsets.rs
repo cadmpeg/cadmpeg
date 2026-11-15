@@ -280,7 +280,7 @@ pub(super) fn project(
 ) -> Result<WireProjectionOutcome, CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let mut records = BTreeMap::new();
     for record in parameters {
@@ -829,7 +829,11 @@ pub(super) fn project(
                 }
                 let function_id =
                     crate::ids::curve(&crate::ids::Stem::directory(function_sequence));
-                let Some(function) = ir.geometry.curves.iter().find(|curve| curve.id == function_id)
+                let Some(function) = ir
+                    .geometry
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == function_id)
                 else {
                     super::push_geometry_loss(
                         &mut losses,
@@ -1203,7 +1207,7 @@ pub(super) fn project(
         });
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
-        let _attached = procedural_admission.add_curve(&mut ir.model, &curve_id, procedural)?;
+        let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve_id, procedural)?;
 
         wire_edges.push(edge_id);
         decoded.insert(entry.sequence);

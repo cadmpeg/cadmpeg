@@ -3020,7 +3020,10 @@ pub(in super::super) fn transfer_native_brep(
             .map_err(cadmpeg_core::CodecError::malformed)?;
         let point_position = ir.geometry.points.len();
         source_carriers.admit_point(ir, Point::new(point_id, position, Some(source_object)))?;
-        point_ids.admit(ir.geometry.points[point_position].id.as_str(), point_position);
+        point_ids.admit(
+            ir.geometry.points[point_position].id.as_str(),
+            point_position,
+        );
     }
     diagnostics.body_count_mismatch = !owner_grouped
         && !body_components.is_empty()
@@ -3483,7 +3486,9 @@ pub(in super::super) fn transfer_native_brep(
                 )?;
                 surface_positions.admit(&ir.geometry.surfaces, ir.geometry.surfaces.len() - 1);
                 exact_surfaces.admit(
-                    ir.geometry.surfaces[ir.geometry.surfaces.len() - 1].id.as_str(),
+                    ir.geometry.surfaces[ir.geometry.surfaces.len() - 1]
+                        .id
+                        .as_str(),
                     ir.geometry.surfaces.len() - 1,
                 );
             }
@@ -3842,8 +3847,12 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut surface_ids =
-        ExactIdPositions::new(ir.geometry.surfaces.iter().map(|surface| surface.id.as_str()));
+    let mut surface_ids = ExactIdPositions::new(
+        ir.geometry
+            .surfaces
+            .iter()
+            .map(|surface| surface.id.as_str()),
+    );
     let mut curve_ids =
         ExactIdPositions::new(ir.geometry.curves.iter().map(|curve| curve.id.as_str()));
     for pair in &scan.curves.fc05_cylinder_cap_pairs {
@@ -3976,7 +3985,10 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                     }),
                 },
             )?;
-            curve_ids.admit(ir.geometry.curves[curve_position].id.as_str(), curve_position);
+            curve_ids.admit(
+                ir.geometry.curves[curve_position].id.as_str(),
+                curve_position,
+            );
         }
     }
     Ok(())

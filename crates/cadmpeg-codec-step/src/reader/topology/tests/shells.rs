@@ -843,20 +843,20 @@ fn advanced_brep_mapped_representation_reuses_its_committed_solid_body() {
 fn loop_starts(ir: &CadIr, loop_id: &cadmpeg_ir::ids::LoopId) -> Vec<[f64; 3]> {
     use cadmpeg_ir::topology::Sense;
 
-    let model = &ir.model;
-    let face_loop = model
+    let geometry = &ir.geometry;
+    let face_loop = geometry
         .loops
         .iter()
         .find(|face_loop| &face_loop.id == loop_id)
         .expect("loop carrier");
     let mut starts = Vec::new();
     for coedge_id in face_loop.coedges() {
-        let coedge = model
+        let coedge = geometry
             .coedges
             .iter()
             .find(|coedge| &coedge.id == coedge_id)
             .expect("coedge carrier");
-        let edge = model
+        let edge = geometry
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
@@ -865,12 +865,12 @@ fn loop_starts(ir: &CadIr, loop_id: &cadmpeg_ir::ids::LoopId) -> Vec<[f64; 3]> {
             Sense::Forward => &edge.start,
             Sense::Reversed => &edge.end,
         };
-        let vertex = model
+        let vertex = geometry
             .vertices
             .iter()
             .find(|vertex| &vertex.id == vertex_id)
             .expect("vertex carrier");
-        let point = model
+        let point = geometry
             .points
             .iter()
             .find(|point| point.id == vertex.point)

@@ -475,7 +475,10 @@ pub(in crate::decode) fn native_solid_contains_feature(
                 return false;
             };
             let Some(body) = crate::decode::uniqueness::exactly_one(
-                ir.geometry.bodies.iter().filter(|body| body.id == region.body),
+                ir.geometry
+                    .bodies
+                    .iter()
+                    .filter(|body| body.id == region.body),
             ) else {
                 return false;
             };

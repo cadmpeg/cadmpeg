@@ -46,6 +46,7 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             )
             .unwrap(),
         );
+        assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
         assert_eq!(decoded.ir().model, baseline.ir().model);
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .unwrap()
@@ -96,6 +97,7 @@ fn unreadable_unreferenced_document_does_not_hide_a_readable_model_root() {
         &DecodeOptions::default(),
     )
     .unwrap();
+    assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
     assert_eq!(decoded.ir().model, baseline.ir().model);
     assert!(decoded
         .report()

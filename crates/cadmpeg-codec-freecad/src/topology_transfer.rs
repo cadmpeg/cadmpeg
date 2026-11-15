@@ -239,7 +239,9 @@ struct ArenaPositions {
 
 impl ArenaPositions {
     fn curve<'i>(&mut self, ir: &'i CadIr, id: &CurveId) -> Option<&'i Curve> {
-        let index = self.curves.find(&ir.geometry.curves, id, |curve| &curve.id)?;
+        let index = self
+            .curves
+            .find(&ir.geometry.curves, id, |curve| &curve.id)?;
         ir.geometry.curves.get(index)
     }
 
@@ -1579,12 +1581,14 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             if has_procedural_construction {
                 let admission = match self.procedural_admission.take() {
                     Some(admission) => admission,
-                    None => cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model),
+                    None => {
+                        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry)
+                    }
                 };
                 self.procedural_admission
                     .insert(admission)
                     .add_surface(
-                        &mut ir.model,
+                        &mut ir.geometry,
                         &id.clone(),
                         ProceduralSurface::new(
                             ProceduralSurfaceId::compose(

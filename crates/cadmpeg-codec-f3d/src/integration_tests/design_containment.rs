@@ -48,7 +48,10 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
 
     assert_eq!(contained.ir().geometry.bodies, full.ir().geometry.bodies);
     assert_eq!(contained.ir().geometry.faces, full.ir().geometry.faces);
-    assert_eq!(contained.ir().geometry.surfaces, full.ir().geometry.surfaces);
+    assert_eq!(
+        contained.ir().geometry.surfaces,
+        full.ir().geometry.surfaces
+    );
     assert_eq!(
         contained.ir().model.appearances,
         full.ir().model.appearances

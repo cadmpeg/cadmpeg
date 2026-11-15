@@ -373,12 +373,12 @@ fn authored_uniform_appearance_binds_every_box_edge_and_vertex() {
     assert_eq!(body_appearance.base_color, Some(body_color));
     assert_eq!(geometry.bodies[0].color, Some(body_color));
 
-    let edge_targets = model
+    let edge_targets = geometry
         .edges
         .iter()
         .map(|edge| AppearanceTarget::Edge(edge.id.clone()))
         .collect::<BTreeSet<_>>();
-    let vertex_targets = model
+    let vertex_targets = geometry
         .vertices
         .iter()
         .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone()))

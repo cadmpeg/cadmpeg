@@ -76,7 +76,9 @@ pub(super) fn retain_independent(
             .find(|candidate| candidate.id == region)
             .map(|region| region.body.clone());
         ir.geometry.shells.remove(shell_index);
-        ir.geometry.regions.retain(|candidate| candidate.id != region);
+        ir.geometry
+            .regions
+            .retain(|candidate| candidate.id != region);
         if let Some(body) = body {
             ir.geometry.bodies.retain(|candidate| candidate.id != body);
         }

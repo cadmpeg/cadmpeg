@@ -449,7 +449,7 @@ fn planar_solid_orientation_is_translation_and_scale_invariant() {
         let mut model = WritableModel::try_new(&ir).unwrap();
         // The sign owner consumes the oriented vertex rings; other writer fields
         // do not enter this calculation.
-        for vertex in &mut geometry.vertices {
+        for vertex in &mut model.vertices {
             vertex.point = Point3::new(
                 2.0 * scale * vertex.point.x + translation,
                 scale * vertex.point.y + translation,
@@ -457,7 +457,7 @@ fn planar_solid_orientation_is_translation_and_scale_invariant() {
             );
         }
         assert_eq!(planar_solid_orientation(&model), 1);
-        for loop_ in &mut geometry.loops {
+        for loop_ in &mut model.loops {
             loop_.coedges.reverse();
         }
         assert_eq!(planar_solid_orientation(&model), 2);

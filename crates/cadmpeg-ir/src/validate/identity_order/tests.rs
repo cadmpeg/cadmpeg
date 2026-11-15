@@ -8,7 +8,8 @@ use crate::validate::validate_neutral;
 #[test]
 fn ids_are_globally_unique_across_arenas() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.geometry.points[0].id = crate::ids::PointId::mint(ir.geometry.vertices[0].id.as_str()).unwrap();
+    ir.geometry.points[0].id =
+        crate::ids::PointId::mint(ir.geometry.vertices[0].id.as_str()).unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings

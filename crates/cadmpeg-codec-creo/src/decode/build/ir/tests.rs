@@ -281,7 +281,11 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
     });
     let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
-    )) = ir.geometry.surfaces.first().map(|surface| &surface.geometry)
+    )) = ir
+        .geometry
+        .surfaces
+        .first()
+        .map(|surface| &surface.geometry)
     else {
         panic!("placed plane was not admitted");
     };
@@ -298,7 +302,11 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
     assert_eq!(source_plane.origin, [1.0, 0.0, 0.0]);
     let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
-    )) = ir.geometry.surfaces.first().map(|surface| &surface.geometry)
+    )) = ir
+        .geometry
+        .surfaces
+        .first()
+        .map(|surface| &surface.geometry)
     else {
         panic!("placed plane changed family");
     };

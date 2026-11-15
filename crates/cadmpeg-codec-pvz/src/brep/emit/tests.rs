@@ -43,7 +43,7 @@ fn emit_edited(
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("part.ol"));
     let scope = IdentityKey::encode_segment("part.ol");
     let mut sink = Sink {
-        model: &mut ir.model,
+        geometry: &mut ir.geometry,
         annotations: &mut annotations,
         losses: &mut losses,
         stream: &stream,
@@ -71,7 +71,11 @@ fn cube_becomes_a_valid_outward_solid() {
     assert_eq!(geometry.bodies[0].kind, BodyKind::Solid);
     assert_eq!((geometry.faces.len(), geometry.shells.len()), (6, 1));
     assert_eq!(
-        (geometry.edges.len(), geometry.vertices.len(), geometry.coedges.len()),
+        (
+            geometry.edges.len(),
+            geometry.vertices.len(),
+            geometry.coedges.len()
+        ),
         (12, 8, 24)
     );
     let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
@@ -120,13 +124,16 @@ fn opaque_records_are_reported() {
 fn faces_without_loops_are_left_out() {
     let stream = cube_stream(true, [false; 6], [false; 6]);
     let (ir, losses, body) = emit_edited(stream, None, |model| {
-        let mut face = geometry.faces[0].clone();
+        let mut face = model.faces[0].clone();
         face.loops.clear();
-        geometry.faces.push(face);
+        model.faces.push(face);
     });
     assert_eq!(body.len(), 1);
     assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Solid);
-    assert_eq!((ir.geometry.faces.len(), ir.geometry.surfaces.len()), (6, 6));
+    assert_eq!(
+        (ir.geometry.faces.len(), ir.geometry.surfaces.len()),
+        (6, 6)
+    );
     assert!(losses
         .iter()
         .any(|note| note.code == PvzLossCode::ExactFaceUnboundedOmitted.kind()));
@@ -141,15 +148,15 @@ fn faces_without_loops_are_left_out() {
 fn open_shells_form_a_sheet_body_beside_the_solid() {
     let stream = cube_stream(true, [false; 6], [false; 6]);
     let (ir, _, body) = emit_edited(stream, None, |model| {
-        let mut face = geometry.faces[0].clone();
-        let mut record = geometry.loops[face.loops[0]].clone();
-        record.face = geometry.faces.len();
+        let mut face = model.faces[0].clone();
+        let mut record = model.loops[face.loops[0]].clone();
+        record.face = model.faces.len();
         record.coedges.truncate(1);
-        record.coedges[0].edge = Some(geometry.edges.len());
-        geometry.edges.push(geometry.edges[0].clone());
-        face.loops = vec![geometry.loops.len()];
-        geometry.loops.push(record);
-        geometry.faces.push(face);
+        record.coedges[0].edge = Some(model.edges.len());
+        model.edges.push(model.edges[0].clone());
+        face.loops = vec![model.loops.len()];
+        model.loops.push(record);
+        model.faces.push(face);
     });
     assert_eq!(body.len(), 2);
     let kinds: Vec<BodyKind> = ir.geometry.bodies.iter().map(|body| body.kind).collect();
@@ -475,10 +482,10 @@ fn undefined_surface_type_is_reported() {
 #[test]
 fn composite_edge_curve_is_reported() {
     let (ir, losses, _) = emit_edited(square_face(&[0, 1, 2, 3]), None, |model| {
-        let last = geometry.edges.len() - 1;
-        let member = geometry.edges[last].clone();
-        geometry.edges.push(member);
-        geometry.edges[last].geometry = CurveGeometry::Composite(vec![last + 1]);
+        let last = model.edges.len() - 1;
+        let member = model.edges[last].clone();
+        model.edges.push(member);
+        model.edges[last].geometry = CurveGeometry::Composite(vec![last + 1]);
     });
     assert!(reports(&losses, PvzLossCode::ExactCurveUntyped));
     assert_eq!(ir.geometry.curves.len(), 3);
@@ -487,7 +494,7 @@ fn composite_edge_curve_is_reported() {
 #[test]
 fn coedges_without_pcurves_are_reported() {
     let (ir, losses, _) = emit_edited(square_face(&[0, 1, 2, 3]), None, |model| {
-        for coedge in &mut geometry.loops[0].coedges {
+        for coedge in &mut model.loops[0].coedges {
             coedge.pcurve = None;
         }
     });
@@ -503,7 +510,7 @@ fn coedges_without_pcurves_are_reported() {
 fn pcurve_ends_off_the_edge_are_admitted_by_the_face_tolerance() {
     let offset = 2.5 * crate::brep::resolve::ENDPOINT_TOLERANCE;
     let (ir, losses, _) = emit_edited(square_face(&[0, 1, 2, 3]), None, |model| {
-        for pcurve in &mut geometry.pcurves {
+        for pcurve in &mut model.pcurves {
             if let CurveGeometry::Line { origin, .. } = &mut pcurve.geometry {
                 origin[1] += offset;
             }

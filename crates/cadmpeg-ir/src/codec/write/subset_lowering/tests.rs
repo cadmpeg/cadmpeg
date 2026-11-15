@@ -40,7 +40,11 @@ fn add_subset(
     let subset = SubsetCurveConstruction::try_new(source.clone(), range, sense, None).unwrap();
     let cache = cached
         .then(|| {
-            let source = ir.geometry.curves.iter().find(|curve| curve.id == *source)?;
+            let source = ir
+                .geometry
+                .curves
+                .iter()
+                .find(|curve| curve.id == *source)?;
             subset.local_cache(source.geometry.solved()?)
         })
         .flatten();

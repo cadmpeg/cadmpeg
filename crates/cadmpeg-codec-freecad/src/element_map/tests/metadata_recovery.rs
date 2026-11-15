@@ -38,6 +38,7 @@ fn malformed_naming_metadata_keeps_geometry_and_valid_native_state() {
         let recovered = FcstdCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .unwrap();
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry, "{after}");
         assert_eq!(recovered.ir().model, expected.ir().model, "{after}");
         assert!(recovered
             .report()
@@ -97,6 +98,7 @@ fn unreadable_naming_carriers_keep_geometry_and_contiguous_table_indices() {
         let recovered = FcstdCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .unwrap();
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         let tables = recovered
             .ir()

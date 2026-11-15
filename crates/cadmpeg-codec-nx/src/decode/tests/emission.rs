@@ -1105,7 +1105,10 @@ fn decode_emits_the_same_brep_without_a_footer_region() {
     assert_eq!(footerless.ir().geometry.faces.len(), 1);
     assert_eq!(footerless.ir().geometry.faces, footed.ir().geometry.faces);
     assert_eq!(footerless.ir().geometry.edges, footed.ir().geometry.edges);
-    assert_eq!(footerless.ir().geometry.surfaces, footed.ir().geometry.surfaces);
+    assert_eq!(
+        footerless.ir().geometry.surfaces,
+        footed.ir().geometry.surfaces
+    );
 }
 
 #[test]

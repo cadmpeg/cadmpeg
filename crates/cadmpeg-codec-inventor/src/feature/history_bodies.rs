@@ -15,7 +15,7 @@ use cadmpeg_asm::history::{
 };
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::{Feature, FeatureId};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -267,7 +267,7 @@ pub(crate) fn build(
                 .find(|(_, candidate)| Some(*candidate) == key)
                 .map(|(body, _)| body.as_str());
             let result = match body {
-                Some(body) => extract(ctx, &scratch.model, body),
+                Some(body) => extract(ctx, &scratch.geometry, body),
                 None => Ok(Extract::Absent),
             };
             match result {
@@ -423,7 +423,7 @@ impl Record<'_> {
 /// no record of the model.
 fn reach<'a>(
     ctx: &DecodeContext<'_>,
-    model: &'a Model,
+    geometry: &'a Topology,
     body: &str,
 ) -> Result<(HashSet<&'a str>, usize), CodecError> {
     let mut table = HashMap::<&str, Record<'_>>::new();
@@ -580,7 +580,11 @@ fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, Cod
 }
 
 /// Copy the records of one body of a decoded state into a nest.
-fn extract(ctx: &DecodeContext<'_>, geometry: &Topology, body: &str) -> Result<Extract, CodecError> {
+fn extract(
+    ctx: &DecodeContext<'_>,
+    geometry: &Topology,
+    body: &str,
+) -> Result<Extract, CodecError> {
     let (reached, missing) = reach(ctx, geometry, body)?;
     let Some(root) = geometry
         .bodies

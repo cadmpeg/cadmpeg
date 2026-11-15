@@ -520,7 +520,7 @@ pub(super) fn decode(
 ) -> Result<(StageOutcome<GeometryData>, CarrierIndex), CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let mut losses = Vec::new();
     let scale = match length_scale(exchange, ctx)? {
@@ -1192,7 +1192,7 @@ pub(super) fn decode(
                 geometry: CurveGeometry::Solved(geometry),
                 source_object: None,
             });
-            let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
+            let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve, procedural)?;
             carrier_index.curves.insert(id, curve_index);
             if let Some(offset) = curve_parameter_offsets.get(&parent_step).copied() {
                 curve_parameter_offsets.insert(id, offset);
@@ -1313,7 +1313,7 @@ pub(super) fn decode(
                 source_object: None,
             });
 
-            let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
+            let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve, procedural)?;
 
             carrier_index.curves.insert(id, curve_index);
             typed.insert(id);
@@ -1439,7 +1439,7 @@ pub(super) fn decode(
             geometry: CurveGeometry::Solved(copied_geometry),
             source_object: None,
         });
-        let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
+        let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve, procedural)?;
         carrier_index.curves.insert(id, curve_index);
         if let Some(offset) = curve_parameter_offsets.get(&source_step).copied() {
             curve_parameter_offsets.insert(id, offset);
@@ -1615,7 +1615,7 @@ pub(super) fn decode(
             source_object: None,
         });
         let _attached = procedural_admission.add_surface(
-            &mut ir.model,
+            &mut ir.geometry,
             &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::from(ids::construction(kind!("swept_surface"), id)),
@@ -1872,7 +1872,7 @@ pub(super) fn decode(
                 geometry: SurfaceGeometry::Solved(copied_geometry),
                 source_object: None,
             });
-            let _attached = procedural_admission.add_surface(&mut ir.model, &surface, match (|| {
+            let _attached = procedural_admission.add_surface(&mut ir.geometry, &surface, match (|| {
                     let ranges = parameter_ranges.map(|range| {
                         DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
                             ProceduralGeometryError::Payload(
@@ -1978,7 +1978,7 @@ pub(super) fn decode(
                 source_object: None,
             });
             let _attached = procedural_admission.add_surface(
-                &mut ir.model,
+                &mut ir.geometry,
                 &surface,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(
@@ -2024,7 +2024,7 @@ pub(super) fn decode(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
             });
-            let _attached = procedural_admission.add_surface(&mut ir.model, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
+            let _attached = procedural_admission.add_surface(&mut ir.geometry, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
                     ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
                     None,
@@ -2082,7 +2082,7 @@ pub(super) fn decode(
                 source_object: None,
             });
             let _attached = procedural_admission.add_surface(
-                &mut ir.model,
+                &mut ir.geometry,
                 &surface,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("surface_replica"), id)),
@@ -2349,7 +2349,7 @@ pub(super) fn decode(
             continue;
         }
         let _attached = procedural_admission.add_surface(
-            &mut ir.model,
+            &mut ir.geometry,
             &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::from(ids::construction(kind!("degenerate_torus"), id)),
@@ -3210,7 +3210,10 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
             continue;
         };
-        if ir.geometry.surfaces[surface_index.0].source_object.is_none() {
+        if ir.geometry.surfaces[surface_index.0]
+            .source_object
+            .is_none()
+        {
             ir.geometry.surfaces[surface_index.0].source_object =
                 Some(super::step_source_association(pcurve_id, None));
         }
@@ -3253,7 +3256,10 @@ pub(super) fn associate_surface_curve_supports(
             let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
                 continue;
             };
-            if ir.geometry.surfaces[surface_index.0].source_object.is_none() {
+            if ir.geometry.surfaces[surface_index.0]
+                .source_object
+                .is_none()
+            {
                 ir.geometry.surfaces[surface_index.0].source_object =
                     Some(super::step_source_association(surface_curve_id, None));
             }
@@ -5481,7 +5487,12 @@ fn directrix_parameter_scale_inner(
     let key = curve_id.as_str().to_string();
     let key = geometry_or_none!(CurveId::mint(key).ok());
     active.insert(key);
-    let scale = if let Some(curve) = ir.geometry.curves.iter().find(|curve| curve.id == *curve_id) {
+    let scale = if let Some(curve) = ir
+        .geometry
+        .curves
+        .iter()
+        .find(|curve| curve.id == *curve_id)
+    {
         if let Some(solved) = curve.geometry.solved() {
             directrix_geometry_parameter_scale(solved, length_scale, angle_scale, ctx)
         } else {

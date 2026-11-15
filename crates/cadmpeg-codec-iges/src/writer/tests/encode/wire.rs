@@ -205,7 +205,9 @@ fn synthesized_wire_refuses_shared_vertex_identity() {
     second.id = "cadir:model:edge#parallel".try_into().expect("edge ID");
     ir.geometry.shells[0].add_wire_edge(second.id.clone());
     ir.geometry.edges.push(second);
-    ir.geometry.edges.sort_by(|left, right| left.id.cmp(&right.id));
+    ir.geometry
+        .edges
+        .sort_by(|left, right| left.id.cmp(&right.id));
     let validation =
         cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

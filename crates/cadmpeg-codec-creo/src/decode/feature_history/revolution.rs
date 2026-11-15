@@ -232,7 +232,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     format_args!("{feature_id}:segment{}", segment.external_id),
                 )?
             };
-            if ir.geometry.surfaces.iter().any(|item| item.id == surface_id) {
+            if ir
+                .geometry
+                .surfaces
+                .iter()
+                .any(|item| item.id == surface_id)
+            {
                 continue;
             }
             annotate(
@@ -299,7 +304,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     &crate::identity::VISIBGEOM_SURFACE,
                     native_surface,
                 )?;
-                if ir.geometry.surfaces.iter().any(|item| item.id == surface_id) {
+                if ir
+                    .geometry
+                    .surfaces
+                    .iter()
+                    .any(|item| item.id == surface_id)
+                {
                     continue;
                 }
                 annotate(
@@ -349,10 +359,13 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
                 format_args!("{}:{suffix}", definition.identity.id()),
             )?;
-            let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) =
-                exactly_one(ir.geometry.curves.iter().filter(|curve| curve.id == curve_id))
-                    .map(|curve| source_carriers.curve_geometry(curve))
-            else {
+            let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) = exactly_one(
+                ir.geometry
+                    .curves
+                    .iter()
+                    .filter(|curve| curve.id == curve_id),
+            )
+            .map(|curve| source_carriers.curve_geometry(curve)) else {
                 continue;
             };
             let directrix_knots = directrix
@@ -400,7 +413,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 &crate::identity::FEATURE_REVOLUTION_CONSTRUCTION,
                 format_args!("{feature_id}:{suffix}"),
             )?;
-            if ir.geometry.surfaces.iter().any(|item| item.id == surface_id) {
+            if ir
+                .geometry
+                .surfaces
+                .iter()
+                .any(|item| item.id == surface_id)
+            {
                 continue;
             }
             annotate(

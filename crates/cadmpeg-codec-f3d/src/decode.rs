@@ -2995,7 +2995,7 @@ enum SessionPath {
 enum DesignState {
     /// Phase 2 ran. Its native records wait for finalization.
     Projected(Box<design_intent::DesignNative>),
-    /// No phase-2 output: the request is below [`DecodeDepth::Full`], or
+    /// No phase-2 output: the request is below [`DecodeDepth::Design`], or
     /// phase 2 failed and the containment loss and a native
     /// [`design_intent::DesignIntentFailure`] say so. The design reports read
     /// phase-2 records, so they do not run.
@@ -3009,14 +3009,16 @@ enum FinalizePath {
 }
 
 pub(crate) fn saved_free_edge_bodies_loss(
-    model: &cadmpeg_ir::document::Model,
+    ir: &cadmpeg_ir::CadIr,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    let owned = model
+    let owned = ir
+        .model
         .product_definitions
         .iter()
         .flat_map(|definition| &definition.bodies)
         .collect::<std::collections::BTreeSet<_>>();
-    let count = model
+    let count = ir
+        .geometry
         .bodies
         .iter()
         .filter(|body| {
@@ -3260,9 +3262,9 @@ impl<'a> F3dDecodeSession<'a> {
     ///
     /// This is the one point that decides whether design intent enters the
     /// document. Phase 2 does not run when the phase-1 timelines did not
-    /// decode, nor below [`DecodeDepth::Full`] where
+    /// decode, nor below [`DecodeDepth::Design`] where
     /// [`Self::cuts_design_intent`] holds; where it does not, phase 2 runs and
-    /// the session delivers `Full`. [`DesignState::Absent`] leaves a complete
+    /// the session delivers `Design`. [`DesignState::Absent`] leaves a complete
     /// product and geometry document from phase 1. A resource refusal, or any
     /// error after the session fused, still refuses the document.
     fn decode_design_state(
@@ -3270,12 +3272,12 @@ impl<'a> F3dDecodeSession<'a> {
         path: &FinalizePath,
         prereqs: &prereqs::ProductPrereqs,
     ) -> Result<DesignState, CodecError> {
-        if self.ctx.depth() < DecodeDepth::Full {
+        if self.ctx.depth() < DecodeDepth::Design {
             if self.cuts_design_intent(path, prereqs) {
                 return Ok(DesignState::Absent);
             }
             self.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
-                DecodeDepth::Full,
+                DecodeDepth::Design,
                 self.report.transfer.geometry_transferred(),
             );
         }
@@ -3660,7 +3662,7 @@ impl<'a> F3dDecodeSession<'a> {
                     crate::design::owners::attach(
                         scan,
                         &self.native,
-                        &mut self.ir.model,
+                        &mut self.ir,
                         &mut self.report.losses,
                     )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
@@ -3695,7 +3697,7 @@ impl<'a> F3dDecodeSession<'a> {
                         crate::design::owners::attach(
                             scan,
                             &self.native,
-                            &mut self.ir.model,
+                            &mut self.ir,
                             &mut self.report.losses,
                         )?;
                         true
@@ -4950,7 +4952,7 @@ fn decode_result(
         admitted_entities,
         "admit F3D entities",
     )?;
-    report.losses.extend(saved_free_edge_bodies_loss(&ir.model));
+    report.losses.extend(saved_free_edge_bodies_loss(&ir));
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;

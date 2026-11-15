@@ -50,6 +50,7 @@ fn binary_product_encoding_recovery_keeps_geometry_and_exact_header() {
             let mut bytes = original.clone();
             bytes[position] = 0xff;
             let recovered = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&bytes));
+            assert_eq!(recovered.ir().geometry, expected.ir().geometry);
             assert_eq!(recovered.ir().model, expected.ir().model);
             assert_eq!(recovered.ir().tolerances, expected.ir().tolerances);
             assert!(recovered
@@ -86,6 +87,7 @@ fn text_record_count_metadata_recovery_keeps_geometry_and_exact_header() {
             let source = original.replacen(" 0 2 2", &format!(" {value} 2 2"), 1);
             let recovered =
                 cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+            assert_eq!(recovered.ir().geometry, expected.ir().geometry);
             assert_eq!(recovered.ir().model, expected.ir().model);
             assert!(recovered
                 .report()
@@ -125,6 +127,7 @@ fn text_header_metadata_recovery_preserves_geometry_and_exact_header() {
         ] {
             let recovered =
                 cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+            assert_eq!(recovered.ir().geometry, expected.ir().geometry);
             assert_eq!(recovered.ir().model, expected.ir().model);
             assert!(!recovered.report().losses.is_empty());
             let header_end = source.match_indices('\n').nth(2).unwrap().0 + 1;
@@ -243,7 +246,10 @@ fn text_plane_pcurves_reach_their_vertices_in_the_stream_unit() {
     {
         let result = decode_bytes(&text_plane_triangle_stream(scale, offset));
         let geometry = &result.ir().geometry;
-        let plane = geometry.surfaces[0].geometry.solved().expect("plane carrier");
+        let plane = geometry.surfaces[0]
+            .geometry
+            .solved()
+            .expect("plane carrier");
         let vertices: Vec<_> = geometry
             .points
             .iter()
@@ -677,7 +683,10 @@ fn sat_header_conversion_keeps_geometry_with_default_tolerance() {
                 .losses
                 .iter()
                 .any(|loss| loss.code == SatLossCode::HeaderToleranceUnresolved.kind()));
-            assert_eq!(result.ir().geometry.faces.len(), usize::from(!container_only));
+            assert_eq!(
+                result.ir().geometry.faces.len(),
+                usize::from(!container_only)
+            );
         }
     }
 }
@@ -768,6 +777,7 @@ fn attachment_headers_keep_record_offsets_and_source_bytes() {
     source.extend(text_sphere_stream(1.0));
     let expected = decode_bytes(&text_sphere_stream(1.0));
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
+    assert_eq!(result.ir().geometry, expected.ir().geometry);
     assert_eq!(result.ir().model, expected.ir().model);
     assert!(result
         .report()
@@ -815,6 +825,7 @@ fn acis_base_extensions_do_not_shift_shared_entity_fields() {
         .replace("End-of-ASM-data", "End-of-ACIS-data");
     let expected = decode_bytes(&text_sphere_stream(1.0));
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+    assert_eq!(result.ir().geometry, expected.ir().geometry);
     assert_eq!(result.ir().model, expected.ir().model);
     assert!(result
         .report()

@@ -32,6 +32,7 @@ fn malformed_face_names_preserve_geometry_and_report_source_only_metadata() {
         let result = StepCodec::default()
             .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
             .unwrap();
+        assert_eq!(result.ir().geometry, expected.ir().geometry);
         assert_eq!(result.ir().model, expected.ir().model);
         assert!(result
             .report()

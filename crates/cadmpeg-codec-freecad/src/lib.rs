@@ -199,7 +199,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         ));
     }
-    let derived_census = (ir.decode_depth() == DecodeDepth::Full)
+    let derived_census = ir
+        .scope()
+        .design
         .then(|| design::census(&objects, &ir.model.features));
     match derived_census {
         None => {}
@@ -1063,11 +1065,11 @@ impl CodecBackend for FcstdCodec {
             geometry_transferred =
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
             ir.geometry.curves = curve_transfer.curves;
-            ir.model
+            ir.geometry
                 .add_procedural_curves(curve_transfer.procedural)?
                 .map_err(CodecError::malformed)?;
             ir.geometry.surfaces = surface_transfer.surfaces;
-            ir.model
+            ir.geometry
                 .add_procedural_surfaces(surface_transfer.procedural)?
                 .map_err(CodecError::malformed)?;
             geometry_transferred |= application_geometry::transfer(
@@ -1084,7 +1086,7 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &mut transfer_losses,
             )?;
-            if ctx.depth() == DecodeDepth::Full {
+            if ctx.depth() >= DecodeDepth::Design {
                 let (cycle_affected, design_losses) = design::transfer(
                     ctx,
                     &mut ir,
@@ -1110,7 +1112,7 @@ impl CodecBackend for FcstdCodec {
             }
             transfer_losses.extend(drawing_content::transfer(
                 ctx,
-                &mut ir.model,
+                &mut ir,
                 &graph.properties,
                 &scan.data,
             )?);
@@ -1159,7 +1161,7 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            if ctx.depth() == DecodeDepth::Full {
+            if ctx.depth() >= DecodeDepth::Design {
                 let design_census = design::census(&graph.objects, &ir.model.features)?;
                 ir.native
                     .namespace_mut("fcstd")

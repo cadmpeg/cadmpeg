@@ -257,7 +257,9 @@ fn decode_retains_generated_helix_construction() {
     source_less
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
-    let expected = source_less.geometry.procedural_curves[0].definition().clone();
+    let expected = source_less.geometry.procedural_curves[0]
+        .definition()
+        .clone();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -406,13 +408,18 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less law intcurve round trip");
-    assert!(round_trip.ir().geometry.procedural_curves.iter().any(|curve| {
-        matches!(
-            curve.definition(),
-            ProceduralCurveDefinition::Law { primary, .. }
-                if matches!(primary.formula().variables()[0], LawExpression::Edge { .. })
-        )
-    }));
+    assert!(round_trip
+        .ir()
+        .geometry
+        .procedural_curves
+        .iter()
+        .any(|curve| {
+            matches!(
+                curve.definition(),
+                ProceduralCurveDefinition::Law { primary, .. }
+                    if matches!(primary.formula().variables()[0], LawExpression::Edge { .. })
+            )
+        }));
 }
 
 #[test]
@@ -1427,7 +1434,9 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     source_less
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
-    let mut expected = source_less.geometry.procedural_curves[0].definition().clone();
+    let mut expected = source_less.geometry.procedural_curves[0]
+        .definition()
+        .clone();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)

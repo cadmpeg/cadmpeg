@@ -714,7 +714,9 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         source_object: None,
     };
     let mut ir = CadIr::empty();
-    ir.geometry.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
+    ir.geometry
+        .surfaces
+        .extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert!(matches!(
         crate::decode::with_service_context(
@@ -1260,7 +1262,9 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
         source_object: None,
     };
     let mut ir = CadIr::empty();
-    ir.geometry.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
+    ir.geometry
+        .surfaces
+        .extend([plane(31, 2.0), plane(32, 8.0)]);
 
     let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
         direction: ExtrudeDirection::Explicit {

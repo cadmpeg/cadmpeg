@@ -94,7 +94,7 @@ struct NativeRecordPlan<'a> {
 }
 
 impl<'a> NativeRecordPlan<'a> {
-    fn for_model(model: &'a cadmpeg_ir::document::Model) -> Result<Self, CodecError> {
+    fn for_model(geometry: &'a cadmpeg_ir::document::Topology) -> Result<Self, CodecError> {
         let body_start = 1;
         let region_start = native_record_index(body_start, geometry.bodies.len())?;
         let shell_start = native_record_index(region_start, geometry.regions.len())?;
@@ -139,11 +139,11 @@ impl<'a> NativeRecordPlan<'a> {
             };
             pcurves.push(PlannedPcurve {
                 geometry: &pcurve.geometry,
-                support: pcurve_support_geometry(model, &pcurve.id)?,
+                support: pcurve_support_geometry(geometry, &pcurve.id)?,
                 form,
             });
         }
-        let pcurve_record_count = model
+        let pcurve_record_count = geometry
             .pcurves
             .len()
             .checked_add(ref_pcurve_count)
@@ -152,7 +152,7 @@ impl<'a> NativeRecordPlan<'a> {
             })?;
         let coedge_start = native_record_index(pcurve_start, pcurve_record_count)?;
         let wire_coedge_start = native_record_index(coedge_start, geometry.coedges.len())?;
-        let wire_edge_count = model
+        let wire_edge_count = geometry
             .shells
             .iter()
             .map(|shell| shell.wire_edges().len())
@@ -161,7 +161,7 @@ impl<'a> NativeRecordPlan<'a> {
         let vertex_start = native_record_index(edge_start, geometry.edges.len())?;
         let point_start = native_record_index(vertex_start, geometry.vertices.len())?;
         let transform_start = native_record_index(point_start, geometry.points.len())?;
-        let transform_count = model
+        let transform_count = geometry
             .bodies
             .iter()
             .filter(|body| body.transform.is_some())
@@ -1746,13 +1746,13 @@ fn native_face_sidedness(
 }
 
 fn native_face_sense(
-    model: &cadmpeg_ir::document::Model,
+    geometry: &cadmpeg_ir::document::Topology,
     topology: &NativeGenerationIndex<'_>,
     face: &cadmpeg_ir::topology::Face,
 ) -> Sense {
     let carrier_flipped = topology.face_sidedness.get(face.id.as_str()).map_or_else(
         || {
-            model
+            geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == face.surface)

@@ -1220,7 +1220,7 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
             )
         };
         context.ir_mut().geometry.points.push(point("z"));
-        let checkpoint = ModelCheckpoint::capture(&context.session.document().model);
+        let checkpoint = ModelCheckpoint::capture(context.session.document());
         context
             .validate_candidate(|candidate, _| {
                 candidate.geometry.points.push(point("a"));
@@ -1238,9 +1238,7 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                 .as_str(),
             "rhino:test:point#a"
         );
-        checkpoint
-            .discard_appended(&mut context.ir_mut().model)
-            .unwrap();
+        checkpoint.discard_appended(context.ir_mut()).unwrap();
         assert_eq!(context.session.document().geometry.points.len(), 1);
         assert_eq!(
             context.session.document().geometry.points[0].id.as_str(),

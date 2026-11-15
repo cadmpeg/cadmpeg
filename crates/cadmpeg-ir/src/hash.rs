@@ -784,8 +784,14 @@ mod tests {
             )
             .unwrap();
         let text = normalized.to_canonical_json().unwrap();
-        let start = text.find("\n  \"scope\": {").expect("the document records its scope");
-        let end = start + text[start..].find("\n  },").expect("the scope object closes") + 5;
+        let start = text
+            .find("\n  \"scope\": {")
+            .expect("the document records its scope");
+        let end = start
+            + text[start..]
+                .find("\n  },")
+                .expect("the scope object closes")
+            + 5;
         crate::hash::sha256_hex(format!("{}{}", &text[..start], &text[end..]).as_bytes())
     }
 

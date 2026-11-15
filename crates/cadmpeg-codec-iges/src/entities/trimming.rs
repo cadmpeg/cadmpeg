@@ -659,7 +659,12 @@ fn source_curve_control_intervals(
     let active_id = curve_id.clone();
     active.insert(active_id);
     let result = (|| -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
-        let Some(curve) = ir.geometry.curves.iter().find(|curve| curve.id == *curve_id) else {
+        let Some(curve) = ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == *curve_id)
+        else {
             return Ok(None);
         };
         if let Some(sequence) = native_sequence_from_id(curve_id.as_str(), "iges:model:curve#D") {

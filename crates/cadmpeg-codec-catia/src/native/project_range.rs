@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::Model;
+use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use serde::{Deserialize, Serialize};
@@ -334,7 +334,7 @@ fn faces(
 pub(crate) fn bind(
     ctx: &DecodeContext<'_>,
     native: &mut CatiaNative,
-    model: &Model,
+    geometry: &Topology,
     scope: &ModelingGraphScope,
 ) -> Result<(), CodecError> {
     let mut has_project_range = false;
@@ -399,7 +399,7 @@ pub(crate) fn bind(
         let Some(origin) = origin(frame, &records, &identities) else {
             continue;
         };
-        let Some(faces) = faces(ctx, model, origin, diameter) else {
+        let Some(faces) = faces(ctx, geometry, origin, diameter) else {
             continue;
         };
         let target = ProjectRangeTarget {

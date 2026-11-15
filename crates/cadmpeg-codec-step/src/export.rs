@@ -502,7 +502,12 @@ impl<'a> Builder<'a> {
             model_name: "cadmpeg_model",
             emitter: Emitter::for_schema(schema),
             losses: Vec::new(),
-            points: ir.geometry.points.iter().map(|p| (p.id.as_str(), p)).collect(),
+            points: ir
+                .geometry
+                .points
+                .iter()
+                .map(|p| (p.id.as_str(), p))
+                .collect(),
             bodies: ir
                 .geometry
                 .bodies
@@ -533,7 +538,12 @@ impl<'a> Builder<'a> {
                 .iter()
                 .map(|v| (v.id.as_str(), v))
                 .collect(),
-            edges: ir.geometry.edges.iter().map(|e| (e.id.as_str(), e)).collect(),
+            edges: ir
+                .geometry
+                .edges
+                .iter()
+                .map(|e| (e.id.as_str(), e))
+                .collect(),
             coedges: ir
                 .geometry
                 .coedges
@@ -546,7 +556,12 @@ impl<'a> Builder<'a> {
                 .iter()
                 .map(|s| (s.id.as_str(), s))
                 .collect(),
-            curves: ir.geometry.curves.iter().map(|c| (c.id.as_str(), c)).collect(),
+            curves: ir
+                .geometry
+                .curves
+                .iter()
+                .map(|c| (c.id.as_str(), c))
+                .collect(),
             pcurves: ir
                 .geometry
                 .pcurves
@@ -569,7 +584,10 @@ impl<'a> Builder<'a> {
                 .procedural_curves
                 .iter()
                 .filter_map(|curve| {
-                    Some((ir.geometry.procedural_curve_owner(&curve.id)?.as_str(), curve))
+                    Some((
+                        ir.geometry.procedural_curve_owner(&curve.id)?.as_str(),
+                        curve,
+                    ))
                 })
                 .collect(),
             edge_coedges,

@@ -136,7 +136,9 @@ fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, Ca
         source_object: None,
     };
     let mut ir = CadIr::empty();
-    ir.geometry.surfaces.extend([plane(31, 0.0), plane(32, 2.0)]);
+    ir.geometry
+        .surfaces
+        .extend([plane(31, 0.0), plane(32, 2.0)]);
     let sketch_id = SketchId::mint("creo:model:sketch#7").expect("sketch identity");
     let mut uses = Vec::new();
     for (index, (start, end)) in [

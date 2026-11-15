@@ -1194,7 +1194,9 @@ mod tests {
                 ir.geometry.curves.iter().filter(|curve| curve.id == id),
             );
             assert_eq!(
-                index.unique(&ir.geometry.curves, curve_id).and_then(position),
+                index
+                    .unique(&ir.geometry.curves, curve_id)
+                    .and_then(position),
                 scanned.and_then(position),
                 "{curve_id}"
             );

@@ -353,7 +353,10 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().geometry.regions.len(), 1);
-    assert_eq!(result.ir().geometry.regions[0].id.as_str(), "nx:s0:region#12");
+    assert_eq!(
+        result.ir().geometry.regions[0].id.as_str(),
+        "nx:s0:region#12"
+    );
     assert_eq!(result.ir().geometry.faces.len(), 2);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");

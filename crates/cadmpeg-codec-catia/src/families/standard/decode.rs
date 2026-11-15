@@ -27,7 +27,7 @@ use crate::families::standard::fbb::EdgeTableForm;
 use crate::families::standard::records::{AnalyticSurfaceKind, StandardSurfaceRecord};
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
+use cadmpeg_ir::document::{CadIr, EntityRewrite};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface},
@@ -1668,15 +1668,16 @@ pub(in crate::families) fn try_decode_standard(
     }
 }
 
-fn retain_standard_population_model(model: &mut Model) {
+fn retain_standard_population_model(ir: &mut CadIr) {
     macro_rules! retain_standard {
-        ($($field:ident),+ $(,)?) => {
-            $(model.$field.retain(|entity| {
+        ($home:ident: $($field:ident),+ $(,)?) => {
+            $(ir.$home.$field.retain(|entity| {
                 entity.identity().starts_with("catia:standard:")
             });)+
         };
     }
     retain_standard!(
+        geometry:
         bodies,
         regions,
         shells,
@@ -1692,6 +1693,9 @@ fn retain_standard_population_model(model: &mut Model) {
         pcurves,
         procedural_surfaces,
         procedural_curves,
+    );
+    retain_standard!(
+        model:
         assets,
         features,
         feature_input_topologies,
@@ -1851,13 +1855,19 @@ fn try_decode_standard_populations(
     for (index, output) in outputs.into_iter().enumerate() {
         merged.admitted_model_entities += output.admitted_model_entities;
         let scope = format!("population-{}", index + 1);
-        let mut model = output.ir.model;
-        retain_standard_population_model(&mut model);
+        let mut population = output.ir;
+        retain_standard_population_model(&mut population);
         let mut rewriter = StandardPopulationScope { scope: &scope, ctx };
         match merged
             .ir
-            .model
-            .extend_rewritten(model, &mut rewriter)
+            .geometry
+            .extend_rewritten(population.geometry, &mut rewriter)
+            .and_then(|()| {
+                merged
+                    .ir
+                    .model
+                    .extend_rewritten(population.model, &mut rewriter)
+            })
             .map_err(CodecError::from)
         {
             Ok(()) => {}
@@ -3906,7 +3916,12 @@ fn partition_standard_face_components(
     }
     let body_id = BodyId::mint("catia:standard:body#0".to_owned())
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    let Some(body) = ir.geometry.bodies.iter_mut().find(|body| body.id == body_id) else {
+    let Some(body) = ir
+        .geometry
+        .bodies
+        .iter_mut()
+        .find(|body| body.id == body_id)
+    else {
         return Ok(false);
     };
     let mut region_ids = Vec::new();
@@ -6364,7 +6379,11 @@ fn emit_standard_topology(
         curve_indices.insert(id, index);
     }
     let edge_endpoints = |row: usize| {
-        edge_vertices[row].map(|vertex| ir.geometry.points[point_assignment[vertex]].position().get())
+        edge_vertices[row].map(|vertex| {
+            ir.geometry.points[point_assignment[vertex]]
+                .position()
+                .get()
+        })
     };
     let cylindrical_arc_ranges = edge_geometry::cylindrical_arcs::ranges(
         ir,
@@ -6452,40 +6471,40 @@ fn emit_standard_topology(
                     .curve()
                     .and_then(|id| curve_indices.get(id))
                     .map(|index| &ir.geometry.curves[*index].geometry);
-                let bounds_witness =
-                    match (edge_curve, ir.geometry.edges[edge_use.edge_row].param_range()) {
-                        (
-                            Some(
-                                curve @ CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
-                            ),
-                            Some(range),
-                        ) if matches!(
-                            support.geometry,
-                            crate::families::standard::records::StandardCurveGeometry::Circle { .. }
-                        ) && edge_geometry::arc_bounds::bounded_circle_branch(
-                            circle.center().get(),
-                            circle.radius().get(),
-                            *circle.frame().axis(),
-                            [start, end],
-                            &edge_geometry::arc_bounds::support_bounds(face_bounds, support),
-                        )
-                        .is_some_and(|(axis, _, bounded_range)| {
-                            axis == *circle.frame().axis() && bounded_range == range.get()
-                        }) =>
-                        {
-                            let [lower, upper] = range.get();
-                            cadmpeg_ir::eval::finite_or_refusal(
-                                cadmpeg_ir::eval::decode::outer_refusal(
-                                    cadmpeg_ir::eval::decode::curve_point(
-                                        ctx,
-                                        curve,
-                                        lower.midpoint(upper),
-                                    ),
-                                )?,
-                            )?
-                        }
-                        _ => None,
-                    };
+                let bounds_witness = match (
+                    edge_curve,
+                    ir.geometry.edges[edge_use.edge_row].param_range(),
+                ) {
+                    (
+                        Some(curve @ CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle))),
+                        Some(range),
+                    ) if matches!(
+                        support.geometry,
+                        crate::families::standard::records::StandardCurveGeometry::Circle { .. }
+                    ) && edge_geometry::arc_bounds::bounded_circle_branch(
+                        circle.center().get(),
+                        circle.radius().get(),
+                        *circle.frame().axis(),
+                        [start, end],
+                        &edge_geometry::arc_bounds::support_bounds(face_bounds, support),
+                    )
+                    .is_some_and(|(axis, _, bounded_range)| {
+                        axis == *circle.frame().axis() && bounded_range == range.get()
+                    }) =>
+                    {
+                        let [lower, upper] = range.get();
+                        cadmpeg_ir::eval::finite_or_refusal(
+                            cadmpeg_ir::eval::decode::outer_refusal(
+                                cadmpeg_ir::eval::decode::curve_point(
+                                    ctx,
+                                    curve,
+                                    lower.midpoint(upper),
+                                ),
+                            )?,
+                        )?
+                    }
+                    _ => None,
+                };
                 let pcurve_id = standard_pcurve_geometry(ctx,
 &ir.geometry.surfaces[surface_indices[&bindings[face_index].0]].geometry,
 support,

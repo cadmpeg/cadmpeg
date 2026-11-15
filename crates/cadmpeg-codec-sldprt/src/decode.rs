@@ -3759,7 +3759,7 @@ fn build_geometry_ir(
         ctx,
         scan,
         crate::appearance::visual_states::Inputs {
-            model: &ir.model,
+            ir: &ir,
             histories: &histories,
             lanes: &all_lanes,
             faces: &brep.native_face_identities,
@@ -3958,18 +3958,15 @@ fn build_geometry_ir(
     ) {
         pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
     }
-    let mut assigned_tessellations = crate::tessellation::assign_face_key_owners(
-        &mut ir.model,
-        &brep.face_keys,
-        &face_key_bindings,
-    );
+    let mut assigned_tessellations =
+        crate::tessellation::assign_face_key_owners(&mut ir, &brep.face_keys, &face_key_bindings);
     assigned_tessellations.extend(crate::tessellation::assign_persistent_owners(
-        &mut ir.model,
+        &mut ir,
         &face_identities,
         &persistent_face_bindings,
     ));
     let remaining_assignments =
-        crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model, &mut pmi_losses)?;
+        crate::tessellation::assign_unique_surface_owners(ctx, &mut ir, &mut pmi_losses)?;
     assigned_tessellations.extend(remaining_assignments);
     if native_appearance_plan.unresolved > 0 {
         pmi_losses.push(
@@ -4004,7 +4001,12 @@ fn build_geometry_ir(
             &mut annotations,
             ScopedAppearanceOrigin::VisualState,
         )?;
-        if let Some(face) = ir.geometry.faces.iter_mut().find(|face| &face.id == face_id) {
+        if let Some(face) = ir
+            .geometry
+            .faces
+            .iter_mut()
+            .find(|face| &face.id == face_id)
+        {
             face.color = Some(definition.color);
             scoped_color_faces.push(face_id.clone());
         }
@@ -4114,7 +4116,7 @@ fn build_geometry_ir(
         source.links_mut().extend(links);
     }
     crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
-    if crate::history::extrude_direction::retain_contradicted_directions(&mut ir.model) {
+    if crate::history::extrude_direction::retain_contradicted_directions(&mut ir) {
         stamp_feature_baseline(ctx, &mut ir)?;
     }
     stamp_configuration_baseline(ctx, &mut ir)?;
@@ -4954,16 +4956,13 @@ fn build_metadata_ir(
             retain_unresolved_appearance(&mut ir, &unresolved);
         }
         let _assigned = crate::tessellation::assign_persistent_owners(
-            &mut ir.model,
+            &mut ir,
             &[],
             &push.persistent_face_bindings,
         );
         let mut owner_losses = Vec::new();
-        let _assigned_unique = crate::tessellation::assign_unique_surface_owners(
-            ctx,
-            &mut ir.model,
-            &mut owner_losses,
-        )?;
+        let _assigned_unique =
+            crate::tessellation::assign_unique_surface_owners(ctx, &mut ir, &mut owner_losses)?;
         pmi_losses.append(&mut owner_losses);
         if push.mesh_count > 0 {
             pmi_losses.push(
@@ -5839,27 +5838,28 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
 pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
-    let mut partition = cadmpeg_ir::document::Model::default();
-    partition.bodies.clone_from(&ir.geometry.bodies);
-    partition.regions.clone_from(&ir.geometry.regions);
-    partition.shells.clone_from(&ir.geometry.shells);
-    partition.faces.clone_from(&ir.geometry.faces);
-    partition.loops.clone_from(&ir.geometry.loops);
-    partition.coedges.clone_from(&ir.geometry.coedges);
-    partition.edges.clone_from(&ir.geometry.edges);
-    partition.vertices.clone_from(&ir.geometry.vertices);
-    partition.points.clone_from(&ir.geometry.points);
-    partition.surfaces.clone_from(&ir.geometry.surfaces);
-    partition.curves.clone_from(&ir.geometry.curves);
-    partition.pcurves.clone_from(&ir.geometry.pcurves);
-    partition
+    let mut geometry = cadmpeg_ir::document::Topology::default();
+    let mut model = cadmpeg_ir::document::Model::default();
+    geometry.bodies.clone_from(&ir.geometry.bodies);
+    geometry.regions.clone_from(&ir.geometry.regions);
+    geometry.shells.clone_from(&ir.geometry.shells);
+    geometry.faces.clone_from(&ir.geometry.faces);
+    geometry.loops.clone_from(&ir.geometry.loops);
+    geometry.coedges.clone_from(&ir.geometry.coedges);
+    geometry.edges.clone_from(&ir.geometry.edges);
+    geometry.vertices.clone_from(&ir.geometry.vertices);
+    geometry.points.clone_from(&ir.geometry.points);
+    geometry.surfaces.clone_from(&ir.geometry.surfaces);
+    geometry.curves.clone_from(&ir.geometry.curves);
+    geometry.pcurves.clone_from(&ir.geometry.pcurves);
+    geometry
         .procedural_surfaces
         .clone_from(&ir.geometry.procedural_surfaces);
-    partition
+    geometry
         .procedural_curves
         .clone_from(&ir.geometry.procedural_curves);
-    partition.appearances.clone_from(&ir.model.appearances);
-    partition
+    model.appearances.clone_from(&ir.model.appearances);
+    model
         .appearance_bindings
         .clone_from(&ir.model.appearance_bindings);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -5868,7 +5868,7 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )?;
-    brep_partition_sha256(&ctx, ir.tolerances, partition).0
+    brep_partition_sha256(&ctx, ir.tolerances, geometry, model).0
 }
 
 /// [`brep_local_sha256`] without the deep clone, for the decode stamp path.
@@ -5900,45 +5900,47 @@ fn brep_local_sha256_in_place(
     for body in &mut ir.geometry.bodies {
         saved_body_display.push((take(&mut body.name), body.color));
     }
-    let mut partition = cadmpeg_ir::document::Model::default();
-    partition.bodies = take(&mut ir.geometry.bodies);
-    partition.regions = take(&mut ir.geometry.regions);
-    partition.shells = take(&mut ir.geometry.shells);
-    partition.faces = take(&mut ir.geometry.faces);
-    partition.loops = take(&mut ir.geometry.loops);
-    partition.coedges = take(&mut ir.geometry.coedges);
-    partition.edges = take(&mut ir.geometry.edges);
-    partition.vertices = take(&mut ir.geometry.vertices);
-    partition.points = take(&mut ir.geometry.points);
-    partition.surfaces = take(&mut ir.geometry.surfaces);
-    partition.curves = take(&mut ir.geometry.curves);
-    partition.pcurves = take(&mut ir.geometry.pcurves);
-    partition.procedural_surfaces = take(&mut ir.geometry.procedural_surfaces);
-    partition.procedural_curves = take(&mut ir.geometry.procedural_curves);
-    partition.appearances = appearance_partition.take_kept();
-    partition.appearance_bindings = binding_partition.take_kept();
-    let (hash, mut partition) = brep_partition_sha256(ctx, ir.tolerances, partition);
-    ir.geometry.bodies = take(&mut partition.bodies);
+    let mut geometry = cadmpeg_ir::document::Topology::default();
+    let mut model = cadmpeg_ir::document::Model::default();
+    geometry.bodies = take(&mut ir.geometry.bodies);
+    geometry.regions = take(&mut ir.geometry.regions);
+    geometry.shells = take(&mut ir.geometry.shells);
+    geometry.faces = take(&mut ir.geometry.faces);
+    geometry.loops = take(&mut ir.geometry.loops);
+    geometry.coedges = take(&mut ir.geometry.coedges);
+    geometry.edges = take(&mut ir.geometry.edges);
+    geometry.vertices = take(&mut ir.geometry.vertices);
+    geometry.points = take(&mut ir.geometry.points);
+    geometry.surfaces = take(&mut ir.geometry.surfaces);
+    geometry.curves = take(&mut ir.geometry.curves);
+    geometry.pcurves = take(&mut ir.geometry.pcurves);
+    geometry.procedural_surfaces = take(&mut ir.geometry.procedural_surfaces);
+    geometry.procedural_curves = take(&mut ir.geometry.procedural_curves);
+    model.appearances = appearance_partition.take_kept();
+    model.appearance_bindings = binding_partition.take_kept();
+    let (hash, mut geometry, mut model) =
+        brep_partition_sha256(ctx, ir.tolerances, geometry, model);
+    ir.geometry.bodies = take(&mut geometry.bodies);
     for (body, (name, color)) in ir.geometry.bodies.iter_mut().zip(saved_body_display) {
         body.name = name;
         body.color = color;
     }
-    ir.geometry.regions = take(&mut partition.regions);
-    ir.geometry.shells = take(&mut partition.shells);
-    ir.geometry.faces = take(&mut partition.faces);
-    ir.geometry.loops = take(&mut partition.loops);
-    ir.geometry.coedges = take(&mut partition.coedges);
-    ir.geometry.edges = take(&mut partition.edges);
-    ir.geometry.vertices = take(&mut partition.vertices);
-    ir.geometry.points = take(&mut partition.points);
-    ir.geometry.surfaces = take(&mut partition.surfaces);
-    ir.geometry.curves = take(&mut partition.curves);
-    ir.geometry.pcurves = take(&mut partition.pcurves);
-    ir.geometry.procedural_surfaces = take(&mut partition.procedural_surfaces);
-    ir.geometry.procedural_curves = take(&mut partition.procedural_curves);
-    ir.model.appearances = appearance_partition.restore(take(&mut partition.appearances))?;
+    ir.geometry.regions = take(&mut geometry.regions);
+    ir.geometry.shells = take(&mut geometry.shells);
+    ir.geometry.faces = take(&mut geometry.faces);
+    ir.geometry.loops = take(&mut geometry.loops);
+    ir.geometry.coedges = take(&mut geometry.coedges);
+    ir.geometry.edges = take(&mut geometry.edges);
+    ir.geometry.vertices = take(&mut geometry.vertices);
+    ir.geometry.points = take(&mut geometry.points);
+    ir.geometry.surfaces = take(&mut geometry.surfaces);
+    ir.geometry.curves = take(&mut geometry.curves);
+    ir.geometry.pcurves = take(&mut geometry.pcurves);
+    ir.geometry.procedural_surfaces = take(&mut geometry.procedural_surfaces);
+    ir.geometry.procedural_curves = take(&mut geometry.procedural_curves);
+    ir.model.appearances = appearance_partition.restore(take(&mut model.appearances))?;
     ir.model.appearance_bindings =
-        binding_partition.restore(take(&mut partition.appearance_bindings))?;
+        binding_partition.restore(take(&mut model.appearance_bindings))?;
     hash
 }
 
@@ -6077,12 +6079,18 @@ mod digest_tests {
 fn brep_partition_sha256(
     ctx: &DecodeContext<'_>,
     tolerances: cadmpeg_ir::units::Tolerances,
+    geometry: cadmpeg_ir::document::Topology,
     model: cadmpeg_ir::document::Model,
-) -> (Result<String, CodecError>, cadmpeg_ir::document::Model) {
+) -> (
+    Result<String, CodecError>,
+    cadmpeg_ir::document::Topology,
+    cadmpeg_ir::document::Model,
+) {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let mut normalized = CadIr::empty();
     normalized.tolerances = tolerances;
+    normalized.geometry = geometry;
     normalized.model = model;
     normalized.geometry.bodies.iter_mut().for_each(|body| {
         body.name = None;
@@ -6100,6 +6108,7 @@ fn brep_partition_sha256(
     });
     (
         cadmpeg_ir::hash::canonical_json_sha256(ctx, &normalized).map_err(Into::into),
+        normalized.geometry,
         normalized.model,
     )
 }

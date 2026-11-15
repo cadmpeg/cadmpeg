@@ -3,7 +3,7 @@
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+use cadmpeg_core::decode::{ArenaClass, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 mod assembly_losses;
@@ -211,14 +211,14 @@ fn design_records_project_only_at_full_depth() {
     // A geometry request stops before design projection: the same geometry,
     // no design records.
     assert_eq!(geometry.report().depth(), DecodeDepth::Geometry);
-    assert_eq!(geometry.ir().decode_depth(), DecodeDepth::Geometry);
-    assert_eq!(geometry.ir().model.populated_design_arena(), None);
+    assert_eq!(geometry.ir().scope(), DecodeDepth::Geometry.scope());
+    assert_eq!(geometry.ir().populated_arena(ArenaClass::Design), None);
     assert!(geometry.ir().model.parameters.is_empty());
     assert_eq!(geometry.ir().geometry.faces, full.ir().geometry.faces);
 
     assert_eq!(container.report().depth(), DecodeDepth::Container);
-    assert_eq!(container.ir().decode_depth(), DecodeDepth::Container);
-    assert_eq!(container.ir().model.populated_design_arena(), None);
+    assert_eq!(container.ir().scope(), DecodeDepth::Container.scope());
+    assert_eq!(container.ir().populated_arena(ArenaClass::Design), None);
     let native = container
         .ir()
         .native
@@ -245,18 +245,18 @@ fn design_records_project_only_at_full_depth() {
     assert_eq!(summary.cut, 1, "{summary:?}");
 }
 
-/// The model as JSON without its design arenas.
+/// The geometry and model as JSON without the model's design arenas.
 fn outside_design(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
     let mut model = serde_json::to_value(&ir.model).expect("serialize model");
     let serde_json::Value::Object(arenas) = &mut model else {
         panic!("a model serializes as a JSON object");
     };
     for arena in cadmpeg_ir::ArenaName::ALL {
-        if arena.class() == cadmpeg_ir::ArenaClass::Design {
+        if arena.class() == ArenaClass::Design {
             arenas.remove(arena.as_str());
         }
     }
-    model
+    serde_json::json!({ "geometry": &ir.geometry, "model": model })
 }
 
 #[test]
@@ -459,6 +459,7 @@ fn binary_kernel_metadata_recovery_preserves_geometry_and_valid_tolerance_peers(
         let mut bytes = original.clone();
         bytes[position] = 0xff;
         let recovered = decode(&bytes);
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_eq!(recovered.ir().tolerances, expected.ir().tolerances);
         assert!(recovered
@@ -479,6 +480,7 @@ fn binary_kernel_metadata_recovery_preserves_geometry_and_valid_tolerance_peers(
             let mut bytes = original.clone();
             bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
             let recovered = decode(&bytes);
+            assert_eq!(recovered.ir().geometry, expected.ir().geometry);
             assert_eq!(recovered.ir().model, expected.ir().model);
             if offset == cursor + 10 {
                 assert_eq!(

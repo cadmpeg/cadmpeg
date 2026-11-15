@@ -21,13 +21,13 @@ fn parse(stream: Stream) -> ExactModel {
 
 /// Every face normal of the resolved sides points away from the cube
 /// centre.
-fn assert_outward(geometry: &ExactTopology, topology: &Topology) {
+fn assert_outward(model: &ExactModel, topology: &Topology) {
     let centre = [CUBE_SIZE / 2.0; 3];
     for (index, face) in topology.faces.iter().enumerate() {
         assert!(face.side_derived, "face {index}");
-        let record = &geometry.faces[index];
+        let record = &model.faces[index];
         let point = domain_point(record, PcurveSlot::Native, [0.5, 0.5]).unwrap();
-        let normal = domain_normal(geometry, index, PcurveSlot::Native, [0.5, 0.5]).unwrap();
+        let normal = domain_normal(model, index, PcurveSlot::Native, [0.5, 0.5]).unwrap();
         let side = if face.reversed { -1.0 } else { 1.0 } * face.winding;
         assert!(dot(normal, sub(point, centre)) * side > 0.0, "face {index}");
     }
@@ -88,7 +88,7 @@ fn coincident_single_use_edges_carry_the_side() {
             Some((index, position))
         })
         .unwrap();
-    geometry.loops[loop_index].coedges[position].edge = Some(12);
+    model.loops[loop_index].coedges[position].edge = Some(12);
     let topology = resolve(&model, work_limit(&model)).unwrap();
     assert_outward(&model, &topology);
 }
@@ -145,7 +145,7 @@ fn one_unpaired_edge_keeps_the_outward_test() {
     let mut model = parse(cube_stream(true, [false; 6], [false; 6]));
     let copies = split_shared_edges(&mut model, false);
     let moved = copies[&0];
-    let CurveGeometry::Line { origin, .. } = &mut geometry.edges[moved].geometry else {
+    let CurveGeometry::Line { origin, .. } = &mut model.edges[moved].geometry else {
         panic!("line");
     };
     origin[2] += 1.0e-3;

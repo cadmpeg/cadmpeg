@@ -576,7 +576,10 @@ fn a_partition_with_geometry_keeps_its_own_bodies() {
         decoded.ir().geometry.bodies.len(),
         alone.ir().geometry.bodies.len()
     );
-    assert_eq!(decoded.ir().geometry.faces.len(), alone.ir().geometry.faces.len());
+    assert_eq!(
+        decoded.ir().geometry.faces.len(),
+        alone.ir().geometry.faces.len()
+    );
 }
 
 /// One block with an empty partition/deltas model, named `section`.

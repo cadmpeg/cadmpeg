@@ -37,7 +37,8 @@ pub(super) fn decode(
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
-    let face_indices = collect_identity_indices(ir.geometry.faces.iter().map(|face| face.id.as_str()));
+    let face_indices =
+        collect_identity_indices(ir.geometry.faces.iter().map(|face| face.id.as_str()));
     let body_indices =
         collect_identity_indices(ir.geometry.bodies.iter().map(|body| body.id.as_str()));
     let indices = PresentationIndices {

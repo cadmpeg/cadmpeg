@@ -682,13 +682,13 @@ fn decode_resolves_a_pcurve_shared_by_many_edge_uses_like_a_single_reference() {
             .unwrap()
     };
     let use_pcurves = |result: &cadmpeg_ir::codec::DecodeResult| {
-        let model = &result.ir().model;
-        model
+        let geometry = &result.ir().geometry;
+        geometry
             .coedges
             .iter()
             .map(|coedge| {
                 assert_eq!(coedge.pcurves.len(), 1);
-                model
+                geometry
                     .pcurves
                     .iter()
                     .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)

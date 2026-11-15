@@ -252,7 +252,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     })
     .expect("stage plane Brep");
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
-    let model = staged.draft.model();
+    let geometry = staged.draft.geometry();
     assert_eq!(
         (
             geometry.bodies.len(),

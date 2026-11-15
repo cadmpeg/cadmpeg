@@ -117,8 +117,13 @@ mod tests {
         let ir = crate::examples::unit_cube().expect("cube");
         let ids = ModelIndex::build(&ir);
         let owner = FeatureId::mint("test:model:feature#plate").expect("identity");
-        let profile =
-            PlanarProfileRef::Faces(ir.geometry.faces.iter().map(|face| face.id.clone()).collect());
+        let profile = PlanarProfileRef::Faces(
+            ir.geometry
+                .faces
+                .iter()
+                .map(|face| face.id.clone())
+                .collect(),
+        );
         let mut findings = Vec::new();
         check_profile(&owner, &profile, &ids, &mut findings);
         assert!(findings
