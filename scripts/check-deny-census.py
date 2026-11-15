@@ -1367,8 +1367,26 @@ class Arm:
 
 
 # A unit arm read through `cadmpeg_core::tag_only::read` refuses every key
-# beside its tag by name.
-TAG_ONLY_READER_RE = re.compile(r'deserialize_with\s*=\s*"(?:[\w:]*::)?tag_only::read"')
+# beside its tag by name. `crate::tag_only::read` names that reader only in
+# the crate that declares it.
+TAG_ONLY_READER = "cadmpeg_core::tag_only::read"
+TAG_ONLY_OWNER = "cadmpeg-core"
+
+
+def reads_by_tag_alone(raw, item):
+    """Whether a unit arm's one unconditional reader is the tag-only reader."""
+    readers = [(reader_type(value), conditional)
+               for key, value, conditional in serde_options(raw)
+               if key == "deserialize_with"]
+    if len(readers) != 1:
+        return False
+    reader, conditional = readers[0]
+    if conditional or reader is None:
+        return False
+    path = canonical_path(reader)
+    return path.lstrip(":") == TAG_ONLY_READER or (
+        path == "crate::tag_only::read" and item.crate.name == TAG_ONLY_OWNER
+    )
 
 
 GENERIC_HEADER_RE = re.compile(
@@ -2331,8 +2349,8 @@ def untagged_arms(item):
             )
             arms.append(Arm(name, "tuple", fields, untagged, skipped_newtype))
         else:
-            tag_only = TAG_ONLY_READER_RE.search(raw) is not None
-            arms.append(Arm(name, "unit", [], untagged, tag_only=tag_only))
+            arms.append(Arm(name, "unit", [], untagged,
+                            tag_only=reads_by_tag_alone(raw, item)))
     return arms
 
 
@@ -4076,7 +4094,8 @@ def main():
                         item.path, item.line,
                         f"{item.name}::{arm.name}: an internally tagged unit arm "
                         "ignores unknown keys even with deny_unknown_fields; "
-                        "use an empty struct arm",
+                        f"read it through {TAG_ONLY_READER} or use an empty "
+                        "struct arm",
                     ))
                 if units:
                     return False

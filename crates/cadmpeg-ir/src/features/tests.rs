@@ -10,6 +10,7 @@ mod curve_definitions;
 mod distinct_members;
 mod draft_second_side;
 mod revolve;
+mod tag_only_arms;
 mod thicken;
 mod unit_directions;
 

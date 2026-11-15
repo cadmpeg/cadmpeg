@@ -23,11 +23,11 @@ SPEC.loader.exec_module(census)
 
 
 class DenyCensusTests(unittest.TestCase):
-    def run_census(self, files: dict[str, str]) -> tuple[int, str]:
+    def run_census(self, files: dict[str, str], crate: str = "") -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as directory:
             paths = []
             for name, source in files.items():
-                path = Path(directory) / "src" / name
+                path = Path(directory, crate, "src", name)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(source, encoding="utf-8")
                 paths.append(path)
@@ -517,6 +517,58 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
             }
         '''})
         self.assertEqual(status, 0, output)
+
+    def test_internal_tagged_unit_arm_read_by_the_tag_only_reader_spellings(self) -> None:
+        cases = [
+            ("", "::cadmpeg_core::tag_only::read"),
+            ("", "cadmpeg_core :: tag_only :: read"),
+            ("cadmpeg-core", "crate::tag_only::read"),
+        ]
+        for crate, reader in cases:
+            with self.subTest(crate=crate, reader=reader):
+                status, output = self.run_census({"lib.rs": f'''
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader {{
+                        #[serde(deserialize_with = "{reader}")]
+                        A,
+                        B {{ value: u8 }},
+                    }}
+                '''}, crate=crate)
+                self.assertEqual(status, 0, output)
+
+    def test_internal_tagged_unit_arm_read_any_other_way_ignores_local_deny(self) -> None:
+        arms = {
+            "crate path outside the declaring crate":
+                '#[serde(deserialize_with = "crate::tag_only::read")]',
+            "suffix of another module":
+                '#[serde(deserialize_with = "other::tag_only::read")]',
+            "bare module path":
+                '#[serde(deserialize_with = "tag_only::read")]',
+            "conditional reader":
+                '#[cfg_attr(feature = "x", serde(deserialize_with = '
+                '"cadmpeg_core::tag_only::read"))]',
+            "reader named in documentation":
+                '/// #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]',
+            "reader named in a doc attribute":
+                '#[doc = "deserialize_with = \\"cadmpeg_core::tag_only::read\\""]',
+            "two readers":
+                '#[serde(deserialize_with = "cadmpeg_core::tag_only::read")] '
+                '#[cfg_attr(feature = "x", serde(deserialize_with = "other::read"))]',
+            "another reader":
+                '#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]',
+        }
+        for case, attributes in arms.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": f'''
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader {{
+                        {attributes}
+                        A,
+                        B {{ value: u8 }},
+                    }}
+                '''}, crate="cadmpeg-ir")
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader::A: an internally tagged unit arm", output)
 
     def test_internal_tagged_empty_struct_and_skipped_unit_arms(self) -> None:
         status, output = self.run_census({"lib.rs": '''
