@@ -152,7 +152,7 @@ fn an_allowance_that_skips_history_binding_keeps_the_placements() {
 #[test]
 fn attributed_local_children_repeat_under_each_containing_instance() {
     const TOLERANCE: f64 = 1e-12;
-    let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(&[300]);
+    let (bulk, meta) = crate::test_support::component_design::nested_local_component_design(&[300]);
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
@@ -209,7 +209,8 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
 #[test]
 fn unadmitted_membership_places_the_body_once_at_its_stored_frame() {
     for owners in [&[][..], &[200, 300][..], &[999][..]] {
-        let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
+        let (bulk, meta) =
+            crate::test_support::component_design::nested_local_component_design(owners);
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
@@ -278,7 +279,7 @@ fn unadmitted_membership_places_the_body_once_at_its_stored_frame() {
 #[test]
 fn design_without_occurrences_groups_its_unbound_body_at_its_stored_frame() {
     for owners in [&[][..], &[999][..]] {
-        let (bulk, meta) = crate::test_support::streams_test::flat_component_design(owners);
+        let (bulk, meta) = crate::test_support::component_design::flat_component_design(owners);
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
@@ -447,7 +448,8 @@ fn no_physical_model_requires_every_body_map_pair_to_be_history_only() {
 #[test]
 fn admitted_component_membership_wins_over_an_unregistered_owner() {
     for owners in [&[999, 300][..], &[300, 999][..]] {
-        let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
+        let (bulk, meta) =
+            crate::test_support::component_design::nested_local_component_design(owners);
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
