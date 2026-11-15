@@ -168,3 +168,48 @@ fn complete_assumed_membership_accepts_full_relative_source_order() {
         ));
     }
 }
+
+#[test]
+fn repeated_serializer_aliases_select_one_distinct_cage() {
+    let full = FormConstruction::complete(vec![
+        cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#a").unwrap(),
+        cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#b").unwrap(),
+    ])
+    .unwrap();
+    let facts = form_cages::FormFacts {
+        inputs: FormInputs::default(),
+        observations: full.observations().to_vec(),
+    };
+    for (alternatives, selected) in [
+        (vec![0], true),
+        (vec![0, 0], true),
+        (vec![0, 0, 0], true),
+        (vec![0, 1], false),
+        (Vec::new(), false),
+    ] {
+        let membership = facts
+            .membership(
+                vec![alternatives.into_iter().map(FormObservationIndex).collect()],
+                Some(1),
+                FormOrder::Source,
+                FormKnownOrder::Source,
+                true,
+            )
+            .unwrap();
+        let result =
+            FormConstruction::try_new(facts.inputs.clone(), facts.observations.clone(), membership)
+                .unwrap();
+        assert_eq!(result.membership_is_complete(), selected);
+        assert_eq!(
+            result
+                .committed_cages()
+                .map(cadmpeg_ir::ids::SubdId::as_str)
+                .collect::<Vec<_>>(),
+            if selected {
+                vec!["f3d:model:subd#a"]
+            } else {
+                Vec::new()
+            }
+        );
+    }
+}

@@ -57,7 +57,7 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
     const SECOND_ROLE: &str = "12345678-1234-4234-8234-123456789abc";
     let program = crate::test_support::zip_test::generated_form_tsm();
     let probe = super::decode(
-        crate::test_support::zip_test::f3d_with_partial_form_body_resources(
+        crate::test_support::zip_test::f3d_with_partial_form_body_resource_aliases(
             &program,
             "literal:probe",
         ),
@@ -80,8 +80,9 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
         "shortest native ID is {} bytes",
         collision.len()
     );
-    let child =
-        crate::test_support::zip_test::f3d_with_partial_form_body_resources(&program, &collision);
+    let child = crate::test_support::zip_test::f3d_with_partial_form_body_resource_aliases(
+        &program, &collision,
+    );
     let unmerged = super::decode(child.clone());
     assert!(unmerged
         .ir()
@@ -163,6 +164,18 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
             assert!(decoded.ir().model.subds.iter().any(|cage| cage.id == *id));
             assert!(all_cages.insert(id.as_str().to_owned()));
         }
+        let association = form
+            .inputs()
+            .resource_associations
+            .iter()
+            .find(|association| association.resource.source.as_str().ends_with("#1720"))
+            .unwrap();
+        assert!(association.cage.as_str().contains(&prefix));
+        assert!(association.resource.source.as_str().contains(&prefix));
+        assert!(form
+            .referenced_cages()
+            .any(|cage| cage == &association.cage));
+        assert_eq!(association.resource.entry.as_str(), "FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000099.tsm");
         let foreign = form.inputs().reference_evidence.iter().find(|reference| matches!(&reference.target, FormNativeReferenceTarget::Document { asset_guid, target_type_guid: Some(type_guid), link_name, version: Some(version), .. } if asset_guid == &collision && type_guid == "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA" && link_name == &collision && version.key == "11111111-2222-3333-4444-555555555555" && version.urn == collision)).unwrap();
         assert!(foreign.source.as_str().contains(&prefix));
         assert!(decoded

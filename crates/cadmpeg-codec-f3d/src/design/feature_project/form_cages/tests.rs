@@ -15,6 +15,7 @@ use super::{
 use cadmpeg_ir::features::form::*;
 
 mod final_boundaries;
+mod resource_associations;
 mod review;
 mod review1368;
 mod tracking;

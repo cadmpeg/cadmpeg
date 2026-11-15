@@ -431,7 +431,7 @@ pub(crate) fn f3d_with_form_body_resource(tsm: &[u8]) -> Vec<u8> {
     )
 }
 
-pub(crate) fn f3d_with_partial_form_body_resources(tsm: &[u8], literal: &str) -> Vec<u8> {
+pub(crate) fn f3d_with_partial_form_body_resource_aliases(tsm: &[u8], literal: &str) -> Vec<u8> {
     use crate::test_support::{indexed_header, lp_ascii, lp_utf16, push_marked_reference};
     let (mut bulk, mut records) = generated_design_form_bulkstream();
     let mut types = generated_design_types(GeneratedDesignMetastreamVariant::Form);
@@ -441,7 +441,7 @@ pub(crate) fn f3d_with_partial_form_body_resources(tsm: &[u8], literal: &str) ->
             "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
             0,
             "Fusion",
-            &[1700u64, 1710][..],
+            &[1700u64, 1710, 1720][..],
         ),
         (
             "FA1F0081-C9A1-4E14-8F25-D12DD868ED90",
@@ -480,6 +480,7 @@ pub(crate) fn f3d_with_partial_form_body_resources(tsm: &[u8], literal: &str) ->
         (1702, 2),
         (1703, 3),
         (1704, 4),
+        (1720, 0),
         (1710, 0),
         (1711, 1),
         (1712, 2),
@@ -491,15 +492,15 @@ pub(crate) fn f3d_with_partial_form_body_resources(tsm: &[u8], literal: &str) ->
             .unwrap();
         indexed_header(&mut bulk, tag, record);
         match record {
-            1700 | 1710 => {
+            1700 | 1710 | 1720 => {
                 bulk.extend_from_slice(&[0; 10]);
-                let uuid = if record == 1700 {
-                    "00000000-0000-4000-8000-000000000099"
-                } else {
+                let uuid = if record == 1710 {
                     "00000000-0000-4000-8000-000000000100"
+                } else {
+                    "00000000-0000-4000-8000-000000000099"
                 };
                 lp_utf16(&mut bulk, &format!("TSpline.{uuid}.tsm"));
-                push_marked_reference(&mut bulk, if record == 1700 { 1702 } else { 1712 });
+                push_marked_reference(&mut bulk, if record == 1710 { 1712 } else { 1702 });
             }
             1701 | 1711 => {
                 for value in [

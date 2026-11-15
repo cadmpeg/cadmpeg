@@ -21,11 +21,11 @@ use cadmpeg_ir::features::form::{
     FormExternalVersion, FormInputPath, FormInputs, FormKnownOrder, FormListRole, FormMember,
     FormMembership, FormNativeList, FormNativeMember, FormNativeReference,
     FormNativeReferenceTarget, FormObservationIndex, FormOrder, FormOrderEvidence,
-    FormPositionEvidence, FormReferenceRole, FormResource, FormResourceAvailability,
-    FormResourceStateEvidence,
+    FormPositionEvidence, FormReferenceRole, FormResource, FormResourceAssociation,
+    FormResourceAvailability, FormResourceStateEvidence,
 };
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, NonEmptyMembers};
-use cadmpeg_ir::ids::NativeId;
+use cadmpeg_ir::ids::{NativeId, SubdId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::subd::SubdSurface;
 
@@ -166,6 +166,12 @@ pub(crate) fn project_forms(
                 stream: &entry.name,
             };
             let membership = collect_membership(ctx, scan, source, scopes, &mut facts, losses)?;
+            let compacted = facts.prepare_resources();
+            let mut membership = remap_membership(membership, &compacted);
+            if membership_has_duplicate_members(&membership) {
+                membership = facts.reconcile(membership.clone(), membership);
+            }
+            let membership = facts.enforce_resource_membership(membership);
             let construction =
                 FormConstruction::try_new(facts.inputs, facts.observations, membership)
                     .map_err(CodecError::malformed)?;
@@ -315,14 +321,15 @@ fn retain_knowledge(
             facts.inputs.resource_evidence.push(resource.clone());
         }
     }
+    for association in &new.inputs().resource_associations {
+        facts.remember_association(association.cage.clone(), association.resource.clone());
+    }
     for state in &new.inputs().resource_state_evidence {
         if !facts.inputs.resource_state_evidence.contains(state) {
             facts.inputs.resource_state_evidence.push(state.clone());
         }
     }
-    let resource_conflict = facts.normalize_resource_conflicts();
-    let compacted = facts.coalesce_resource_observations();
-    facts.reconcile_resource_states();
+    let compacted = facts.prepare_resources();
     for index in &mut mapping {
         *index = compacted[index.0];
     }
@@ -351,72 +358,7 @@ fn retain_knowledge(
     } else {
         facts.reconcile(old_membership, new_membership)
     };
-    if resource_conflict && matches!(membership, FormMembership::Complete { .. }) {
-        facts.capture_membership(&membership);
-        facts.capture_closure(&membership);
-        let (cardinality, order, members) = membership_parts(membership);
-        membership = FormMembership::Partial {
-            cardinality,
-            order,
-            members,
-        };
-    }
-    let (_, _, selected) = membership_parts(membership.clone());
-    let mut selected_resource_conflict = false;
-    for member in selected {
-        if let Some((resource, _)) =
-            resource_state(&facts.observations[member.observation.0].binding)
-        {
-            selected_resource_conflict |=
-                facts.inputs.resource_state_evidence.iter().any(|state| {
-                    state.resource.entry == resource.entry
-                        && matches!(
-                            state.availability,
-                            FormResourceAvailability::Inactive
-                                | FormResourceAvailability::Ambiguous
-                        )
-                });
-        }
-        if let FormCageBinding::Undecoded {
-            resource,
-            availability,
-        } = &mut facts.observations[member.observation.0].binding
-        {
-            if *availability == FormResourceAvailability::Inactive {
-                let state = FormResourceStateEvidence {
-                    resource: resource.clone(),
-                    availability: *availability,
-                };
-                if !facts.inputs.resource_state_evidence.contains(&state) {
-                    facts.inputs.resource_state_evidence.push(state);
-                }
-                *availability = FormResourceAvailability::Ambiguous;
-                let (cardinality, order, members) = membership_parts(membership);
-                membership = FormMembership::Partial {
-                    cardinality,
-                    order,
-                    members,
-                };
-            }
-        }
-    }
-    if selected_resource_conflict && matches!(membership, FormMembership::Complete { .. }) {
-        facts.capture_membership(&membership);
-        facts.capture_closure(&membership);
-        let (cardinality, order, members) = membership_parts(membership);
-        membership = FormMembership::Partial {
-            cardinality,
-            order,
-            members,
-        };
-    }
-    facts.inputs.resource_state_evidence.sort_by(|a, b| {
-        (&a.resource.entry, &a.resource.source, a.availability).cmp(&(
-            &b.resource.entry,
-            &b.resource.source,
-            b.availability,
-        ))
-    });
+    membership = facts.enforce_resource_membership(membership);
     FormConstruction::try_new(facts.inputs, facts.observations, membership)
         .map_err(CodecError::malformed)
 }
@@ -653,21 +595,16 @@ fn merge_memberships(left: FormMembership, right: FormMembership) -> FormMembers
         if let (
             FormMembership::Complete { members, order, .. },
             FormMembership::Partial {
-                cardinality: Some(count),
                 order: FormOrder::Source,
                 members: claims,
+                ..
             },
         ) = (&mut complete, other)
         {
-            if usize::try_from(*count).ok() == Some(members.len())
-                && claims.len() == members.len()
-                && claims.iter().all(|claim| {
-                    claim
-                        .ordinal
-                        .and_then(|ordinal| usize::try_from(ordinal).ok())
-                        .and_then(|ordinal| members.get(ordinal))
-                        == Some(&claim.observation)
-                })
+            if claims
+                .iter()
+                .map(|claim| claim.observation)
+                .eq(members.iter().copied())
             {
                 *order = FormKnownOrder::Source;
             }
@@ -1166,57 +1103,173 @@ impl FormFacts {
                 .sort_by(|a, b| a.entry.cmp(&b.entry).then(a.source.cmp(&b.source)));
         }
     }
-    fn normalize_resource_conflicts(&mut self) -> bool {
-        let mut groups: HashMap<cadmpeg_core::text::NonBlankString, Vec<usize>> = HashMap::new();
-        for (index, observation) in self.observations.iter().enumerate() {
+    fn remember_association(&mut self, cage: SubdId, resource: FormResource) {
+        let association = FormResourceAssociation { cage, resource };
+        if self.observations.iter().any(|observation| {
+            matches!(&observation.binding,
+                FormCageBinding::Decoded { cage, resource: Some(resource) }
+                if cage == &association.cage && resource == &association.resource)
+        }) {
+            return;
+        }
+        if !self.inputs.resource_associations.contains(&association) {
+            self.inputs.resource_associations.push(association);
+        }
+        self.inputs.resource_associations.sort_by(|a, b| {
+            (&a.cage, &a.resource.entry, &a.resource.source).cmp(&(
+                &b.cage,
+                &b.resource.entry,
+                &b.resource.source,
+            ))
+        });
+    }
+    fn detach_resource_entry(&mut self, entry: &cadmpeg_core::text::NonBlankString) {
+        let mut displaced = Vec::new();
+        for observation in &mut self.observations {
+            if let FormCageBinding::Decoded { cage, resource } = &mut observation.binding {
+                if let Some(bound) = resource
+                    .as_ref()
+                    .filter(|resource| &resource.entry == entry)
+                {
+                    displaced.push((cage.clone(), bound.clone()));
+                    *resource = None;
+                }
+            }
+        }
+        for (cage, resource) in displaced {
+            self.remember_resource(resource.clone());
+            self.remember_association(cage, resource);
+        }
+    }
+    fn prepare_resources(&mut self) -> Vec<FormObservationIndex> {
+        self.reconcile_resource_states();
+        self.normalize_resource_conflicts();
+        let mapping = self.coalesce_resource_observations();
+        self.reconcile_resource_states();
+        self.inputs.resource_associations.retain(|association| {
+            !self.observations.iter().any(|observation| {
+                matches!(&observation.binding,
+                    FormCageBinding::Decoded { cage, resource: Some(resource) }
+                    if cage == &association.cage && resource == &association.resource)
+            })
+        });
+        mapping
+    }
+    fn enforce_resource_membership(&mut self, mut membership: FormMembership) -> FormMembership {
+        let (_, _, selected) = membership_parts(membership.clone());
+        let mut conflict = false;
+        for member in selected {
+            if let FormCageBinding::Decoded { cage, .. } =
+                &self.observations[member.observation.0].binding
+            {
+                conflict |= self
+                    .inputs
+                    .cage_resource_conflicts(&self.observations, cage);
+            }
+            match &mut self.observations[member.observation.0].binding {
+                FormCageBinding::Undecoded {
+                    resource,
+                    availability,
+                } if *availability == FormResourceAvailability::Inactive => {
+                    let state = FormResourceStateEvidence {
+                        resource: resource.clone(),
+                        availability: *availability,
+                    };
+                    if !self.inputs.resource_state_evidence.contains(&state) {
+                        self.inputs.resource_state_evidence.push(state);
+                    }
+                    *availability = FormResourceAvailability::Ambiguous;
+                }
+                _ => {}
+            }
+        }
+        if conflict && matches!(membership, FormMembership::Complete { .. }) {
+            self.capture_membership(&membership);
+            self.capture_closure(&membership);
+            let (cardinality, order, members) = membership_parts(membership);
+            membership = FormMembership::Partial {
+                cardinality,
+                order,
+                members,
+            };
+        }
+        self.inputs.resource_state_evidence.sort_by(|a, b| {
+            (&a.resource.entry, &a.resource.source, a.availability).cmp(&(
+                &b.resource.entry,
+                &b.resource.source,
+                b.availability,
+            ))
+        });
+        membership
+    }
+    fn normalize_resource_conflicts(&mut self) {
+        let ambiguous = self
+            .observations
+            .iter()
+            .filter_map(|observation| match &observation.binding {
+                FormCageBinding::Undecoded {
+                    resource,
+                    availability: FormResourceAvailability::Ambiguous,
+                } => Some(resource.entry.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for entry in ambiguous {
+            self.detach_resource_entry(&entry);
+        }
+        let mut groups: HashMap<cadmpeg_core::text::NonBlankString, Vec<(SubdId, FormResource)>> =
+            HashMap::new();
+        for observation in &self.observations {
             if let FormCageBinding::Decoded {
+                cage,
                 resource: Some(resource),
-                ..
             } = &observation.binding
             {
                 groups
                     .entry(resource.entry.clone())
                     .or_default()
-                    .push(index);
+                    .push((cage.clone(), resource.clone()));
             }
+        }
+        for association in &self.inputs.resource_associations {
+            groups
+                .entry(association.resource.entry.clone())
+                .or_default()
+                .push((association.cage.clone(), association.resource.clone()));
         }
         let mut conflicts = groups
             .into_iter()
-            .filter(|(_, indices)| indices.len() > 1)
+            .filter(|(_, associations)| {
+                associations
+                    .iter()
+                    .map(|(cage, _)| cage)
+                    .collect::<HashSet<_>>()
+                    .len()
+                    > 1
+            })
             .collect::<Vec<_>>();
         conflicts.sort_by(|a, b| a.0.cmp(&b.0));
-        let found = !conflicts.is_empty();
-        for (_, indices) in conflicts {
-            let mut resources = Vec::new();
-            let mut paths = Vec::new();
-            for index in indices {
-                let observation = &mut self.observations[index];
-                if let FormCageBinding::Decoded { resource, .. } = &mut observation.binding {
-                    if let Some(resource) = resource.take() {
-                        resources.push(resource);
-                    }
-                }
-                for path in &observation.paths {
-                    if !paths.contains(path) {
-                        paths.push(path.clone());
-                    }
-                }
+        for (entry, associations) in conflicts {
+            self.detach_resource_entry(&entry);
+            let Some(resource) = associations
+                .iter()
+                .map(|(_, resource)| resource)
+                .min_by(|a, b| (&a.entry, &a.source).cmp(&(&b.entry, &b.source)))
+                .cloned()
+            else {
+                continue;
+            };
+            for (_, item) in associations {
+                self.remember_resource(item);
             }
-            paths.sort_by(|a, b| a.references.as_slice().cmp(b.references.as_slice()));
-            if let Some(resource) = resources.first().cloned() {
-                for item in resources {
-                    self.remember_resource(item);
-                }
-                self.observe(FormCageObservation {
-                    paths,
-                    binding: FormCageBinding::Undecoded {
-                        resource,
-                        availability: FormResourceAvailability::Ambiguous,
-                    },
-                });
-            }
+            self.observe(FormCageObservation {
+                paths: Vec::new(),
+                binding: FormCageBinding::Undecoded {
+                    resource,
+                    availability: FormResourceAvailability::Ambiguous,
+                },
+            });
         }
-        found
     }
     fn coalesce_resource_observations(&mut self) -> Vec<FormObservationIndex> {
         let mut mapping = (0..self.observations.len())
@@ -1227,41 +1280,65 @@ impl FormFacts {
                 .observations
                 .iter()
                 .enumerate()
-                .find_map(|(decoded, observation)| {
-                    let FormCageBinding::Decoded {
-                        resource: Some(resource),
-                        ..
+                .find_map(|(undecoded, observation)| {
+                    let FormCageBinding::Undecoded {
+                        resource,
+                        availability,
                     } = &observation.binding
                     else {
                         return None;
                     };
-                    self.observations
+                    if *availability == FormResourceAvailability::Ambiguous {
+                        return None;
+                    }
+                    let matches = self
+                        .observations
                         .iter()
                         .enumerate()
-                        .find_map(|(undecoded, candidate)| match &candidate.binding {
-                            FormCageBinding::Undecoded {
-                                resource: other,
-                                availability,
-                            } if other.entry == resource.entry
-                                && *availability != FormResourceAvailability::Ambiguous =>
-                            {
-                                Some((
-                                    decoded,
-                                    undecoded,
-                                    resource.clone(),
-                                    other.clone(),
-                                    *availability,
-                                ))
-                            }
-                            _ => None,
+                        .filter_map(|(decoded, candidate)| {
+                            let FormCageBinding::Decoded {
+                                cage,
+                                resource: bound,
+                            } = &candidate.binding
+                            else {
+                                return None;
+                            };
+                            let existing = bound
+                                .as_ref()
+                                .filter(|bound| bound.entry == resource.entry)
+                                .or_else(|| {
+                                    self.inputs
+                                        .resource_associations
+                                        .iter()
+                                        .find(|association| {
+                                            association.cage == *cage
+                                                && association.resource.entry == resource.entry
+                                        })
+                                        .map(|association| &association.resource)
+                                });
+                            existing.map(|existing| (decoded, existing.clone()))
                         })
+                        .collect::<Vec<_>>();
+                    match matches.as_slice() {
+                        [(decoded, existing)] => Some((
+                            *decoded,
+                            undecoded,
+                            existing.clone(),
+                            resource.clone(),
+                            *availability,
+                        )),
+                        _ => None,
+                    }
                 });
             let Some((decoded, undecoded, existing, resource, availability)) = pair else {
                 break;
             };
             let removed = self.observations.remove(undecoded);
             let decoded_after = decoded - usize::from(undecoded < decoded);
-            if availability == FormResourceAvailability::Inactive {
+            if matches!(
+                availability,
+                FormResourceAvailability::ActiveUndecoded | FormResourceAvailability::Inactive
+            ) {
                 let state = FormResourceStateEvidence {
                     resource: resource.clone(),
                     availability,
@@ -1359,12 +1436,13 @@ impl FormFacts {
     }
     fn observe(&mut self, mut observation: FormCageObservation) -> FormObservationIndex {
         if let FormCageBinding::Decoded {
+            cage,
             resource: Some(resource),
-            ..
         } = &observation.binding
         {
             if self.observations.iter().any(|old| matches!(&old.binding, FormCageBinding::Undecoded { resource: existing, availability: FormResourceAvailability::Ambiguous } if existing.entry == resource.entry)) {
                 self.remember_resource(resource.clone());
+                self.remember_association(cage.clone(), resource.clone());
                 if let FormCageBinding::Decoded { resource, .. } = &mut observation.binding { *resource = None; }
             }
         }
@@ -1373,26 +1451,7 @@ impl FormFacts {
             availability: FormResourceAvailability::Ambiguous,
         } = &observation.binding
         {
-            let mut displaced = Vec::new();
-            for old in &mut self.observations {
-                if let FormCageBinding::Decoded {
-                    resource: old_resource,
-                    ..
-                } = &mut old.binding
-                {
-                    if old_resource
-                        .as_ref()
-                        .is_some_and(|old| old.entry == resource.entry)
-                    {
-                        if let Some(old) = old_resource.take() {
-                            displaced.push(old);
-                        }
-                    }
-                }
-            }
-            for resource in displaced {
-                self.remember_resource(resource);
-            }
+            self.detach_resource_entry(&resource.entry);
         }
         if let Some(index) =
             self.observations
@@ -1405,18 +1464,6 @@ impl FormFacts {
                     (FormCageBinding::Unresolved {}, FormCageBinding::Unresolved {}) => {
                         old.paths == observation.paths
                     }
-                    (
-                        FormCageBinding::Decoded {
-                            resource: Some(a), ..
-                        },
-                        FormCageBinding::Undecoded { resource: b, .. },
-                    )
-                    | (
-                        FormCageBinding::Undecoded { resource: a, .. },
-                        FormCageBinding::Decoded {
-                            resource: Some(b), ..
-                        },
-                    ) => a.entry == b.entry,
                     (
                         FormCageBinding::Undecoded { resource: a, .. },
                         FormCageBinding::Undecoded { resource: b, .. },
@@ -1441,23 +1488,45 @@ impl FormFacts {
                     }
                 }
             }
-            if matches!(
-                self.observations[index].binding,
-                FormCageBinding::Undecoded { .. }
-            ) && matches!(observation.binding, FormCageBinding::Decoded { .. })
-            {
-                self.observations[index].binding = observation.binding.clone();
-            }
+            let mut states = Vec::new();
             if let (
                 FormCageBinding::Undecoded {
-                    availability: old, ..
+                    resource: old_resource,
+                    availability: old,
                 },
                 FormCageBinding::Undecoded {
-                    availability: new, ..
+                    resource: new_resource,
+                    availability: new,
                 },
             ) = (&mut self.observations[index].binding, &observation.binding)
             {
-                *old = merge_resource_availability(*old, *new);
+                let joined = merge_resource_availability(*old, *new);
+                if joined == FormResourceAvailability::Ambiguous {
+                    for (resource, availability) in
+                        [(old_resource.clone(), *old), (new_resource.clone(), *new)]
+                    {
+                        if !matches!(
+                            availability,
+                            FormResourceAvailability::Unknown | FormResourceAvailability::Ambiguous
+                        ) {
+                            states.push(FormResourceStateEvidence {
+                                resource,
+                                availability,
+                            });
+                        }
+                    }
+                }
+                if (&new_resource.entry, &new_resource.source)
+                    < (&old_resource.entry, &old_resource.source)
+                {
+                    old_resource.clone_from(new_resource);
+                }
+                *old = joined;
+            }
+            for state in states {
+                if !self.inputs.resource_state_evidence.contains(&state) {
+                    self.inputs.resource_state_evidence.push(state);
+                }
             }
             if let (
                 FormCageBinding::Decoded { resource: old, .. },
@@ -1468,6 +1537,18 @@ impl FormFacts {
                     || matches!((&*old, new), (Some(a), Some(b)) if (&b.entry, &b.source) < (&a.entry, &a.source))
                 {
                     old.clone_from(new);
+                }
+            }
+            if let FormCageBinding::Decoded { cage, resource } = &self.observations[index].binding {
+                let cage = cage.clone();
+                let primary = resource.clone();
+                if let Some(primary) = &primary {
+                    self.inputs.resource_associations.retain(|association| {
+                        association.cage != cage || &association.resource != primary
+                    });
+                }
+                for resource in [old_resource, new_resource].into_iter().flatten() {
+                    self.remember_association(cage.clone(), resource);
                 }
             }
             for path in observation.paths {
@@ -1523,63 +1604,79 @@ impl FormFacts {
             if types.selection_groups.get(&group) != Some(&0) {
                 continue;
             }
-            if let Some(run) = form_tracking_members(
-                ctx,
-                source.bytes,
-                source.records,
-                group,
-                source.scope.record_index,
-            )? {
-                if let Some(owner) = &run.owner {
-                    self.reference(
-                        ctx,
+            if let Some(run) = form_tracking_members(ctx, source.bytes, source.records, group)? {
+                let FormTrackingRun::Parsed { owner, members } = run else {
+                    self.missing_reference(
                         source.scope,
                         group,
                         (FormReferenceRole::TrackingOwner, 0, None),
-                        owner,
-                        None,
+                        false,
                     )?;
-                    if foreign_type_conflict(owner) {
-                        note(
-                            losses,
-                            F3dLossCode::FeatureFormReferenceTypeConflict,
-                            &source.scope.id,
-                            "foreign reference type claims conflict",
-                        );
-                    }
-                    match owner.local() {
-                        None if matches!(owner, FormReference::Null) => note(
-                            losses,
-                            F3dLossCode::FeatureFormTrackingOwnerConflict,
-                            &source.scope.id,
-                            "a tracking group has a null owner",
-                        ),
-                        None => note(
-                            losses,
-                            F3dLossCode::FeatureFormForeignReferenceUnresolved,
-                            &source.scope.id,
-                            "a tracking owner names another namespace",
-                        ),
-                        Some((target, inline)) => {
-                            if target != u64::from(source.scope.record_index) {
-                                note(
-                                    losses,
-                                    F3dLossCode::FeatureFormTrackingOwnerConflict,
-                                    &source.scope.id,
-                                    "a tracking group names a different owner",
-                                );
-                            }
-                            if !types.reference_matches(target, None, inline) {
-                                note(
-                                    losses,
-                                    F3dLossCode::FeatureFormReferenceTypeConflict,
-                                    &source.scope.id,
-                                    "a tracking owner type conflicts with its target registration",
-                                );
-                            }
+                    note(
+                        losses,
+                        F3dLossCode::FeatureFormTrackingOwnerConflict,
+                        &source.scope.id,
+                        "a tracking group owner is unreadable",
+                    );
+                    continue;
+                };
+                self.reference(
+                    ctx,
+                    source.scope,
+                    group,
+                    (FormReferenceRole::TrackingOwner, 0, None),
+                    &owner,
+                    None,
+                )?;
+                if foreign_type_conflict(&owner) {
+                    note(
+                        losses,
+                        F3dLossCode::FeatureFormReferenceTypeConflict,
+                        &source.scope.id,
+                        "foreign reference type claims conflict",
+                    );
+                }
+                match owner.local() {
+                    None if matches!(owner, FormReference::Null) => note(
+                        losses,
+                        F3dLossCode::FeatureFormTrackingOwnerConflict,
+                        &source.scope.id,
+                        "a tracking group has a null owner",
+                    ),
+                    None => note(
+                        losses,
+                        F3dLossCode::FeatureFormForeignReferenceUnresolved,
+                        &source.scope.id,
+                        "a tracking owner names another namespace",
+                    ),
+                    Some((target, inline)) => {
+                        if target != u64::from(source.scope.record_index) {
+                            note(
+                                losses,
+                                F3dLossCode::FeatureFormTrackingOwnerConflict,
+                                &source.scope.id,
+                                "a tracking group names a different owner",
+                            );
+                        }
+                        if !types.reference_matches(target, None, inline) {
+                            note(
+                                losses,
+                                F3dLossCode::FeatureFormReferenceTypeConflict,
+                                &source.scope.id,
+                                "a tracking owner type conflicts with its target registration",
+                            );
                         }
                     }
                 }
+                let Some(run) = members else {
+                    note(
+                        losses,
+                        F3dLossCode::FeatureFormTrackingRunUnresolved,
+                        &source.scope.id,
+                        "a tracking owner is retained but its member count is unavailable or exceeds the frame",
+                    );
+                    continue;
+                };
                 for (members, reference_role, list_role, fixed_slots) in std::iter::once((
                     &run.members,
                     FormReferenceRole::TrackingMember,
@@ -1661,28 +1758,6 @@ impl FormFacts {
                         local[ordinal] = target;
                     }
                     self.list(source.scope, group, list_role, &local)?;
-                }
-            } else if let Some((start, end)) = one_indexed_frame(source.records, group) {
-                if let Some(frame) = source.bytes.get(start..end) {
-                    if frame.get(selection_prefix::ZERO_RUN_10..selection_prefix::OWNER_MARKER)
-                        == Some(&[0; 10])
-                    {
-                        let mut cursor = selection_prefix::OWNER_MARKER;
-                        if take_form_reference(ctx, frame, &mut cursor)?.is_none() {
-                            self.missing_reference(
-                                source.scope,
-                                group,
-                                (FormReferenceRole::TrackingOwner, 0, None),
-                                false,
-                            )?;
-                            note(
-                                losses,
-                                F3dLossCode::FeatureFormTrackingOwnerConflict,
-                                &source.scope.id,
-                                "a tracking group owner is unreadable",
-                            );
-                        }
-                    }
                 }
             }
         }
@@ -1816,7 +1891,7 @@ impl FormFacts {
                 let observation = self.observe(FormCageObservation {
                     paths: vec![path.clone()],
                     binding: FormCageBinding::Undecoded {
-                        resource,
+                        resource: resource.clone(),
                         availability,
                     },
                 });
@@ -1828,7 +1903,7 @@ impl FormFacts {
                         paths: vec![path.clone()],
                         binding: FormCageBinding::Decoded {
                             cage: cage.id.clone(),
-                            resource: None,
+                            resource: Some(resource.clone()),
                         },
                     });
                 }
@@ -1848,10 +1923,15 @@ impl FormFacts {
         let mut seen = HashSet::new();
         let mut complete = closed && (cardinality == Some(0) || !slots.is_empty());
         for (ordinal, alternatives) in slots.into_iter().enumerate() {
-            let [observation] = alternatives.as_slice() else {
+            let mut alternatives = alternatives.into_iter();
+            let Some(observation) = alternatives.next() else {
                 complete = false;
                 continue;
             };
+            if alternatives.any(|alternative| alternative != observation) {
+                complete = false;
+                continue;
+            }
             if matches!(
                 self.observations[observation.0].binding,
                 FormCageBinding::Undecoded {
@@ -1862,7 +1942,7 @@ impl FormFacts {
                 complete = false;
                 continue;
             }
-            if !seen.insert(*observation) {
+            if !seen.insert(observation) {
                 complete = false;
                 continue;
             }
@@ -1871,7 +1951,7 @@ impl FormFacts {
                 FormCageBinding::Decoded { .. }
             );
             members.push(FormMember {
-                observation: *observation,
+                observation,
                 ordinal: if cardinality.is_some() {
                     Some(u32::try_from(ordinal).map_err(CodecError::malformed)?)
                 } else {
@@ -2014,7 +2094,7 @@ fn retain_serializer_candidate(
         facts.observe(FormCageObservation {
             paths: vec![path.clone()],
             binding: FormCageBinding::Undecoded {
-                resource,
+                resource: resource.clone(),
                 availability,
             },
         });
@@ -2023,7 +2103,7 @@ fn retain_serializer_candidate(
                 paths: vec![path.clone()],
                 binding: FormCageBinding::Decoded {
                     cage: cage.id.clone(),
-                    resource: None,
+                    resource: Some(resource.clone()),
                 },
             });
         }
@@ -2603,8 +2683,15 @@ fn body_membership(
     })
 }
 
-struct FormTrackingRun {
-    owner: Option<FormReference>,
+enum FormTrackingRun {
+    UnreadableOwner,
+    Parsed {
+        owner: FormReference,
+        members: Option<FormTrackingMembers>,
+    },
+}
+
+struct FormTrackingMembers {
     members: Vec<Option<FormReference>>,
     fixed_members: Option<Vec<Option<FormReference>>>,
 }
@@ -2614,9 +2701,8 @@ fn form_tracking_members(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     group: u32,
-    owner: u32,
 ) -> Result<Option<FormTrackingRun>, CodecError> {
-    let parsed = (|| {
+    let framed = (|| {
         let (start, paired) = one_indexed_frame(records, group)?;
         let frame = bytes.get(start..paired)?;
         if frame.get(selection_prefix::ZERO_RUN_10..selection_prefix::OWNER_MARKER)
@@ -2624,27 +2710,48 @@ fn form_tracking_members(
         {
             return None;
         }
-        let short_owner = frame.get(selection_prefix::OWNER_MARKER)
-            == Some(&selection_prefix::OWNER_MARKER_VALUE)
-            && View::u64_le_at(frame, selection_prefix::OWNER_SCOPE_RECORD_INDEX)
-                == Some(u64::from(owner))
-            && frame.get(selection_prefix::OWNER_ZERO_TAIL..selection_prefix::MEMBER_COUNT)
-                == Some(&[0; 2]);
-        let mut at = selection_prefix::MEMBER_COUNT;
-        if !short_owner {
-            at = selection_prefix::OWNER_MARKER;
-            crate::bytes::take_reference_lossless(frame, &mut at)?;
+        Some(frame)
+    })();
+    let Some(frame) = framed else {
+        return Ok(None);
+    };
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
+    let mut at = selection_prefix::OWNER_MARKER;
+    let fixed_owner = if frame.get(selection_prefix::OWNER_MARKER)
+        == Some(&selection_prefix::OWNER_MARKER_VALUE)
+        && frame.get(selection_prefix::OWNER_ZERO_TAIL..selection_prefix::MEMBER_COUNT)
+            == Some(&[0; 2])
+    {
+        View::u64_le_at(frame, selection_prefix::OWNER_SCOPE_RECORD_INDEX)
+    } else {
+        None
+    };
+    let owner = if let Some(target) = fixed_owner {
+        at = selection_prefix::MEMBER_COUNT;
+        FormReference::Local {
+            target,
+            inline_type_guid: None,
         }
+    } else {
+        let Some(owner) = take_form_reference(ctx, frame, &mut at)? else {
+            return Ok(Some(FormTrackingRun::UnreadableOwner));
+        };
+        owner
+    };
+    let parsed = (|| {
         let count = View::u32_le_at(frame, at)?;
         at = at.checked_add(4)?;
         let count_usize = bounded_len(u64::from(count), 1, frame.len().checked_sub(at)?)?;
-        Some((frame, count_usize, at))
+        Some((count_usize, at))
     })();
-    let Some((frame, count_usize, start)) = parsed else {
-        return Ok(None);
+    let Some((count_usize, start)) = parsed else {
+        return Ok(Some(FormTrackingRun::Parsed {
+            owner,
+            members: None,
+        }));
     };
-    let mut owner_at = selection_prefix::OWNER_MARKER;
-    let owner_reference = take_form_reference(ctx, frame, &mut owner_at)?;
     let mut members = ctx.alloc_filled(count_usize, None, "Form tracking members")?;
     let mut at = start;
     for member in &mut members {
@@ -2681,10 +2788,12 @@ fn form_tracking_members(
     } else {
         None
     };
-    Ok(Some(FormTrackingRun {
-        owner: owner_reference,
-        members,
-        fixed_members,
+    Ok(Some(FormTrackingRun::Parsed {
+        owner,
+        members: Some(FormTrackingMembers {
+            members,
+            fixed_members,
+        }),
     }))
 }
 

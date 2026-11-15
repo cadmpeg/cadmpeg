@@ -1031,7 +1031,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** A retained inline type can differ from the registered type of its local target. Separate source records can establish different positions or counts for a Form.
 
-**Note.** `feature.form-reference-type-conflict`, `feature.form-foreign-reference-unresolved`, `feature.form-tracking-owner-conflict`, `feature.form-serializer-reference-unresolved` and `feature.form-membership-conflict` record the unresolved joins and membership claims. `feature.form-tracking-fixed-slots-assumed` records the alternative fixed-slot reading. Compatible local sibling facts remain available.
+**Note.** `feature.form-reference-type-conflict`, `feature.form-foreign-reference-unresolved`, `feature.form-tracking-owner-conflict`, `feature.form-serializer-reference-unresolved` and `feature.form-membership-conflict` record the unresolved joins and membership claims. `feature.form-tracking-fixed-slots-assumed` records the alternative fixed-slot reading. `feature.form-tracking-run-unresolved` retains the decoded owner when the member count is unavailable or exceeds the frame. Compatible local sibling facts remain available.
 
 ### DR-325. Empty Form selection group
 

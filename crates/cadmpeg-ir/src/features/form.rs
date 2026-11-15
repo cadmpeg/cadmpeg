@@ -18,7 +18,7 @@ pub struct FormInputs {
     pub references: Vec<NativeId>,
     #[cfg_attr(
         feature = "schema",
-        schemars(schema_with = "unique_form_vec::<Vec<NativeId>>")
+        schemars(schema_with = "form_reference_runs_schema")
     )]
     #[doc = include_str!("form-api-item.md")]
     pub reference_runs: Vec<Vec<NativeId>>,
@@ -61,6 +61,13 @@ pub struct FormInputs {
     )]
     #[doc = include_str!("form-api-item.md")]
     pub resource_evidence: Vec<FormResource>,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "unique_form_vec::<FormResourceAssociation>")
+    )]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[doc = include_str!("form-api-item.md")]
+    pub resource_associations: Vec<FormResourceAssociation>,
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormResourceStateEvidence>")
@@ -149,6 +156,7 @@ pub struct FormNativeReference {
         feature = "schema",
         schemars(
             with = "String",
+            length(min = 36, max = 36),
             regex(
                 pattern = "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
             )
@@ -236,6 +244,7 @@ pub enum FormNativeReferenceTarget {
             feature = "schema",
             schemars(
                 with = "String",
+                length(min = 36, max = 36),
                 regex(
                     pattern = "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
                 )
@@ -383,6 +392,67 @@ pub struct FormResource {
     pub source: NativeId,
     #[doc = include_str!("form-api-item.md")]
     pub entry: NonBlankString,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = include_str!("form-api-item.md")]
+pub struct FormResourceAssociation {
+    #[doc = include_str!("form-api-item.md")]
+    pub cage: SubdId,
+    #[doc = include_str!("form-api-item.md")]
+    pub resource: FormResource,
+}
+
+impl FormInputs {
+    fn cage_resources<'a>(
+        &'a self,
+        observations: &'a [FormCageObservation],
+        cage: &'a SubdId,
+    ) -> impl Iterator<Item = &'a FormResource> {
+        observations
+            .iter()
+            .filter_map(move |observation| match &observation.binding {
+                FormCageBinding::Decoded {
+                    cage: bound,
+                    resource: Some(resource),
+                } if bound == cage => Some(resource),
+                _ => None,
+            })
+            .chain(
+                self.resource_associations
+                    .iter()
+                    .filter(move |association| &association.cage == cage)
+                    .map(|association| &association.resource),
+            )
+    }
+
+    #[doc = include_str!("form-api-item.md")]
+    pub fn cage_resource_conflicts(
+        &self,
+        observations: &[FormCageObservation],
+        cage: &SubdId,
+    ) -> bool {
+        self.cage_resources(observations, cage).any(|resource| {
+            self.resource_state_evidence.iter().any(|state| {
+                state.resource.entry == resource.entry
+                    && matches!(
+                        state.availability,
+                        FormResourceAvailability::Inactive | FormResourceAvailability::Ambiguous
+                    )
+            }) || observations.iter().any(|observation| match &observation.binding {
+                FormCageBinding::Undecoded {
+                    resource: candidate,
+                    availability: FormResourceAvailability::Inactive | FormResourceAvailability::Ambiguous,
+                } => candidate.entry == resource.entry,
+                FormCageBinding::Decoded { cage: other, .. } if other != cage => self
+                    .cage_resources(observations, other)
+                    .any(|candidate| candidate.entry == resource.entry),
+                _ => false,
+            })
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -656,6 +726,18 @@ impl FormConstruction {
         {
             return Err("duplicate Form cage observation");
         }
+        for (index, association) in inputs.resource_associations.iter().enumerate() {
+            if inputs.resource_associations[..index].contains(association)
+                || !cages.contains(&association.cage)
+                || observations.iter().any(|observation| {
+                    matches!(&observation.binding,
+                        FormCageBinding::Decoded { cage, resource: Some(resource) }
+                        if cage == &association.cage && resource == &association.resource)
+                })
+            {
+                return Err("invalid Form resource association");
+            }
+        }
         let mut decoded_resources = HashSet::new();
         let mut ambiguous_resource = false;
         for observation in &observations {
@@ -813,17 +895,9 @@ impl FormConstruction {
                             .get(index.0)
                             .map(|observation| &observation.binding)
                         {
-                            Some(FormCageBinding::Decoded {
-                                resource: Some(resource),
-                                ..
-                            }) => !inputs.resource_state_evidence.iter().any(|state| {
-                                state.resource.entry == resource.entry
-                                    && matches!(
-                                        state.availability,
-                                        FormResourceAvailability::Inactive
-                                            | FormResourceAvailability::Ambiguous
-                                    )
-                            }),
+                            Some(FormCageBinding::Decoded { cage, .. }) => {
+                                !inputs.cage_resource_conflicts(&observations, cage)
+                            }
                             _ => true,
                         }
                     })
@@ -1002,6 +1076,19 @@ fn unique_form_vec<T: JsonSchema>(generator: &mut schemars::SchemaGenerator) -> 
 }
 
 #[cfg(feature = "schema")]
+fn form_reference_runs_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = unique_form_vec::<Vec<NativeId>>(generator);
+    let mut run = generator.subschema_for::<Vec<NativeId>>();
+    run.insert("minItems".into(), 1.into());
+    schema.insert("items".into(), run.into());
+    schema.insert(
+        "anyOf".into(),
+        serde_json::json!([{"maxItems": 0}, {"minItems": 2}]),
+    );
+    schema
+}
+
+#[cfg(feature = "schema")]
 fn form_order_members_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
     let mut schema = generator.subschema_for::<Vec<FormObservationIndex>>();
     schema.insert("minItems".into(), 2.into());
@@ -1146,6 +1233,7 @@ rewrite_record!(FormPositionEvidence, []; { source, observation, ordinal });
 rewrite_record!(FormNativeMember, []; { ordinal, reference });
 rewrite_record!(FormInputPath, []; { references });
 rewrite_record!(FormCageObservation, []; { paths, binding });
+rewrite_record!(FormResourceAssociation, []; { cage, resource });
 rewrite_record!(FormResourceStateEvidence, []; { resource, availability });
 
 rewrite_record!(FormMember, []; { observation, ordinal });
@@ -1231,6 +1319,8 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormInputs {
             .visit_identity_references(ctx, visitor)?;
         self.resource_evidence
             .visit_identity_references(ctx, visitor)?;
+        self.resource_associations
+            .visit_identity_references(ctx, visitor)?;
         self.resource_state_evidence
             .visit_identity_references(ctx, visitor)
     }
@@ -1250,6 +1340,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormInputs {
             cardinality_evidence: self.cardinality_evidence,
             closure_evidence: self.closure_evidence,
             resource_evidence: self.resource_evidence.rewrite_identities(ctx, map)?,
+            resource_associations: self.resource_associations.rewrite_identities(ctx, map)?,
             resource_state_evidence: self.resource_state_evidence.rewrite_identities(ctx, map)?,
         })
     }

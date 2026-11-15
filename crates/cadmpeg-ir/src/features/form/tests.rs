@@ -932,3 +932,287 @@ fn membership_checks_order_and_complete_closure_evidence() {
         );
     }
 }
+
+#[test]
+fn resource_associations_are_checked_and_round_trip() {
+    let empty = FormConstruction::complete(Vec::new()).unwrap();
+    let omitted = serde_json::to_value(&empty).unwrap();
+    assert!(omitted["inputs"].get("resource_associations").is_none());
+    assert_eq!(
+        serde_json::from_value::<FormConstruction>(omitted.clone()).unwrap(),
+        empty
+    );
+    let mut explicit_empty = omitted.clone();
+    explicit_empty["inputs"]["resource_associations"] = serde_json::json!([]);
+    assert_eq!(
+        serde_json::from_value::<FormConstruction>(explicit_empty).unwrap(),
+        empty
+    );
+    let mut null = omitted;
+    null["inputs"]["resource_associations"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<FormConstruction>(null).is_err());
+    let cage = SubdId::mint("test:model:subd#a").unwrap();
+    let other = SubdId::mint("test:model:subd#b").unwrap();
+    let primary = FormResource {
+        source: NativeId::mint("test:stream:record#r").unwrap(),
+        entry: cadmpeg_core::nonblank_literal!("asset/r.tsm"),
+    };
+    let alias = FormResource {
+        source: NativeId::mint("test:stream:record#t").unwrap(),
+        entry: cadmpeg_core::nonblank_literal!("asset/t.tsm"),
+    };
+    let association = FormResourceAssociation {
+        cage: cage.clone(),
+        resource: alias.clone(),
+    };
+    let inputs = FormInputs {
+        resource_associations: vec![association.clone()],
+        ..FormInputs::default()
+    };
+    let observations = vec![FormCageObservation {
+        paths: Vec::new(),
+        binding: FormCageBinding::Decoded {
+            cage: cage.clone(),
+            resource: Some(primary.clone()),
+        },
+    }];
+    let complete = FormMembership::Complete {
+        members: vec![FormObservationIndex(0)],
+        order: FormKnownOrder::Source,
+        certainty: FormKnownOrder::Source,
+    };
+    let valid =
+        FormConstruction::try_new(inputs.clone(), observations.clone(), complete.clone()).unwrap();
+    let wire = serde_json::to_value(&valid).unwrap();
+    assert_eq!(
+        serde_json::from_value::<FormConstruction>(wire.clone()).unwrap(),
+        valid
+    );
+    let mut duplicate = wire.clone();
+    duplicate["inputs"]["resource_associations"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::to_value(&association).unwrap());
+    assert!(serde_json::from_value::<FormConstruction>(duplicate).is_err());
+    let mut unknown_cage = wire.clone();
+    unknown_cage["inputs"]["resource_associations"][0]["cage"] = serde_json::json!(other.as_str());
+    assert!(serde_json::from_value::<FormConstruction>(unknown_cage).is_err());
+    let mut duplicate_binding_wire = wire.clone();
+    duplicate_binding_wire["inputs"]["resource_associations"][0]["resource"] =
+        serde_json::to_value(&primary).unwrap();
+    assert!(serde_json::from_value::<FormConstruction>(duplicate_binding_wire).is_err());
+    let mut conflicting_wire = wire;
+    conflicting_wire["inputs"]["resource_state_evidence"] = serde_json::json!([{
+        "resource": {"source": "test:stream:record#t", "entry": "asset/t.tsm"},
+        "availability": "inactive"
+    }]);
+    assert!(serde_json::from_value::<FormConstruction>(conflicting_wire).is_err());
+    let mut duplicate_binding = inputs.clone();
+    duplicate_binding.resource_associations[0].resource = primary;
+    assert!(
+        FormConstruction::try_new(duplicate_binding, observations.clone(), complete.clone())
+            .is_err()
+    );
+    let mut conflict = inputs.clone();
+    conflict
+        .resource_state_evidence
+        .push(FormResourceStateEvidence {
+            resource: alias.clone(),
+            availability: FormResourceAvailability::Inactive,
+        });
+    assert!(
+        FormConstruction::try_new(conflict.clone(), observations.clone(), complete.clone())
+            .is_err()
+    );
+    let partial = FormMembership::Partial {
+        cardinality: Some(1),
+        order: FormOrder::Source,
+        members: vec![FormMember {
+            observation: FormObservationIndex(0),
+            ordinal: Some(0),
+        }],
+    };
+    assert!(FormConstruction::try_new(conflict, observations.clone(), partial).is_ok());
+    let mut unrelated = inputs.clone();
+    unrelated
+        .resource_state_evidence
+        .push(FormResourceStateEvidence {
+            resource: FormResource {
+                source: NativeId::mint("test:stream:record#x").unwrap(),
+                entry: cadmpeg_core::nonblank_literal!("asset/x.tsm"),
+            },
+            availability: FormResourceAvailability::Ambiguous,
+        });
+    assert!(FormConstruction::try_new(unrelated, observations.clone(), complete.clone()).is_ok());
+    let mut shared = inputs;
+    shared.resource_associations.push(FormResourceAssociation {
+        cage: other.clone(),
+        resource: alias,
+    });
+    let mut both = observations;
+    both.push(FormCageObservation {
+        paths: Vec::new(),
+        binding: FormCageBinding::Decoded {
+            cage: other,
+            resource: None,
+        },
+    });
+    assert!(FormConstruction::try_new(shared, both, complete).is_err());
+}
+
+#[test]
+fn resource_association_identities_rewrite_and_entry_stays_literal() {
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
+    let source = "test:stream:record#t";
+    let cage = SubdId::mint("test:model:subd#a").unwrap();
+    let construction = FormConstruction::try_new(
+        FormInputs {
+            resource_associations: vec![FormResourceAssociation {
+                cage: cage.clone(),
+                resource: FormResource {
+                    source: NativeId::mint(source).unwrap(),
+                    entry: cadmpeg_core::text::NonBlankString::new(source.to_owned()).unwrap(),
+                },
+            }],
+            ..FormInputs::default()
+        },
+        vec![FormCageObservation {
+            paths: Vec::new(),
+            binding: FormCageBinding::Decoded {
+                cage,
+                resource: None,
+            },
+        }],
+        FormMembership::Complete {
+            members: vec![FormObservationIndex(0)],
+            order: FormKnownOrder::Source,
+            certainty: FormKnownOrder::Source,
+        },
+    )
+    .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .unwrap();
+    let mut visited = Vec::new();
+    construction
+        .visit_identity_references(&ctx, &mut |id| {
+            visited.push(id.to_owned());
+            Ok(())
+        })
+        .unwrap();
+    assert!(!visited.contains(&source.to_owned()));
+    assert_eq!(
+        visited
+            .iter()
+            .filter(|id| id.as_str() == "test:model:subd#a")
+            .count(),
+        2
+    );
+    let targets = BTreeMap::from([(source.to_owned(), "copy:stream:record#t".to_owned())]);
+    let replacements = TextReplacements::build(targets.iter()).unwrap();
+    let mut map = IdentityMap::new(|id: &str| Ok(id.replacen("test:", "copy:", 1)))
+        .with_text_replacements(&replacements);
+    let rewritten = construction
+        .clone()
+        .rewrite_identities(&ctx, &mut map)
+        .unwrap();
+    map.finish().unwrap();
+    assert_eq!(
+        rewritten.inputs().resource_associations[0].cage.as_str(),
+        "copy:model:subd#a"
+    );
+    assert_eq!(
+        rewritten.inputs().resource_associations[0]
+            .resource
+            .source
+            .as_str(),
+        "copy:stream:record#t"
+    );
+    assert_eq!(
+        rewritten.inputs().resource_associations[0]
+            .resource
+            .entry
+            .as_str(),
+        source
+    );
+    assert_eq!(
+        rewritten.committed_cages().next().unwrap().as_str(),
+        "copy:model:subd#a"
+    );
+    assert!(
+        crate::schema::rewrite::identities(&ctx, construction, |id| {
+            if id == source {
+                Err(cadmpeg_core::CodecError::malformed(
+                    "native identity failure",
+                ))
+            } else {
+                Ok(id.to_owned())
+            }
+        })
+        .is_err()
+    );
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn resource_association_schema_requires_unique_items() {
+    let schema = serde_json::to_value(schemars::schema_for!(FormConstruction)).unwrap();
+    assert_eq!(
+        schema["$defs"]["FormInputs"]["properties"]["resource_associations"]["uniqueItems"],
+        true
+    );
+    assert_eq!(
+        schema["$defs"]["FormInputs"]["properties"]["resource_associations"]["type"],
+        "array"
+    );
+    assert!(!schema["$defs"]["FormInputs"]["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|required| required == "resource_associations"));
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn form_reference_schema_retains_run_bounds_and_exact_guid_lengths() {
+    let schema = serde_json::to_value(schemars::schema_for!(FormConstruction)).unwrap();
+    let runs = &schema["$defs"]["FormInputs"]["properties"]["reference_runs"];
+    assert_eq!(runs["type"], "array");
+    assert_eq!(runs["uniqueItems"], true);
+    assert_eq!(runs["items"]["minItems"], 1);
+    let bounds = runs["anyOf"].as_array().unwrap();
+    assert!(bounds.iter().any(|bound| bound["maxItems"] == 0));
+    assert!(bounds.iter().any(|bound| bound["minItems"] == 2));
+    let inline = &schema["$defs"]["FormNativeReference"]["properties"]["inline_type_guid"];
+    let document = schema["$defs"]["FormNativeReferenceTarget"]["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|branch| branch["properties"].get("target_type_guid"))
+        .unwrap();
+    for guid in [inline, document] {
+        assert_eq!(guid["minLength"], 36);
+        assert_eq!(guid["maxLength"], 36);
+    }
+    for (value, valid) in [
+        (serde_json::json!([]), true),
+        (serde_json::json!([["test:stream:record#1"]]), false),
+        (serde_json::json!([[], ["test:stream:record#1"]]), false),
+        (
+            serde_json::json!([["test:stream:record#1"], ["test:stream:record#2"]]),
+            true,
+        ),
+    ] {
+        let mut inputs = no_inputs();
+        inputs["reference_runs"] = value;
+        let form = form_wire("complete", serde_json::json!([]), inputs);
+        assert_eq!(
+            serde_json::from_value::<FormConstruction>(form).is_ok(),
+            valid
+        );
+    }
+}

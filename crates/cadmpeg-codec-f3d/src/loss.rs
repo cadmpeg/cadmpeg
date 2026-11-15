@@ -671,6 +671,7 @@ pub(crate) enum F3dLossCode {
     FeatureFormReferenceTypeConflict,
     FeatureFormForeignReferenceUnresolved,
     FeatureFormTrackingOwnerConflict,
+    FeatureFormTrackingRunUnresolved,
     FeatureFormTrackingFixedSlotsAssumed,
     FeatureFormSerializerReferenceUnresolved,
     FeatureFormMembershipConflict,
@@ -1453,6 +1454,7 @@ impl F3dLossCode {
         Self::FeatureFormReferenceTypeConflict,
         Self::FeatureFormForeignReferenceUnresolved,
         Self::FeatureFormTrackingOwnerConflict,
+        Self::FeatureFormTrackingRunUnresolved,
         Self::FeatureFormTrackingFixedSlotsAssumed,
         Self::FeatureFormSerializerReferenceUnresolved,
         Self::FeatureFormMembershipConflict,
@@ -2299,6 +2301,7 @@ impl F3dLossCode {
                 "feature.form-foreign-reference-unresolved"
             }
             Self::FeatureFormTrackingOwnerConflict => "feature.form-tracking-owner-conflict",
+            Self::FeatureFormTrackingRunUnresolved => "feature.form-tracking-run-unresolved",
             Self::FeatureFormTrackingFixedSlotsAssumed => {
                 "feature.form-tracking-fixed-slots-assumed"
             }
@@ -3048,6 +3051,7 @@ impl F3dLossCode {
             | Self::FeatureFormReferenceTypeConflict
             | Self::FeatureFormForeignReferenceUnresolved
             | Self::FeatureFormTrackingOwnerConflict
+            | Self::FeatureFormTrackingRunUnresolved
             | Self::FeatureFormTrackingFixedSlotsAssumed
             | Self::FeatureFormSerializerReferenceUnresolved
             | Self::FeatureFormMembershipConflict
@@ -3638,6 +3642,7 @@ impl F3dLossCode {
             | Self::FeatureFormReferenceTypeConflict
             | Self::FeatureFormForeignReferenceUnresolved
             | Self::FeatureFormTrackingOwnerConflict
+            | Self::FeatureFormTrackingRunUnresolved
             | Self::FeatureFormTrackingFixedSlotsAssumed
             | Self::FeatureFormSerializerReferenceUnresolved
             | Self::FeatureFormMembershipConflict
