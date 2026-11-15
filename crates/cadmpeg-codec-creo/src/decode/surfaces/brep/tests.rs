@@ -1295,7 +1295,7 @@ fn bounded_circle_arcs_prove_disjoint_cap_holes() {
     native.model.faces.push(
         serde_json::from_value(serde_json::json!({
             "id": "creo:visibgeom:face#1", "shell": "creo:visibgeom:shell#6", "surface": "creo:visibgeom:surface#1",
-            "sense": "forward", "loops": {"classification": "unspecified", "loops": ["creo:visibgeom:loop#1"]}
+            "sense": "forward", "loops": {"kind": "unspecified", "loops": ["creo:visibgeom:loop#1"]}
         }))
         .expect("native face"),
     );

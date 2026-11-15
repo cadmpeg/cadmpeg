@@ -36,9 +36,9 @@ fn separate_completeness_requires_shell_geometry_and_keep_body() {
             Some(MeshSeparationGroups::Selected { members: None }),
         ] {
             let source: MeshSelection = serde_json::from_value(if native {
-                serde_json::json!({"native":"native-scope"})
+                serde_json::json!({"kind": "native", "value": {"native": "native-scope"}})
             } else {
-                serde_json::json!(["test:mesh:tessellation#41"])
+                serde_json::json!({"kind": "tessellations", "value": ["test:mesh:tessellation#41"]})
             })
             .unwrap();
             let definition = FeatureDefinition::Operation(FeatureOperation::MeshModify {
@@ -166,19 +166,20 @@ fn form_completeness_requires_complete_membership_with_a_committed_cage() {
         serde_json::json!([{"observation":0,"ordinal":0}]),
     ] {
         assert!(feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition":"form", "cages": {
-                    "observations":[{"paths":[],"binding":{"state":"decoded","cage":"test:model:subd#1"}}],
-                    "membership":{"state":"partial","cardinality":2,"order":"unknown","members":members}
-                }
-            })
+            serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {
+                "cages": {"kind": "retained", "value": {
+                    "observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#1"}}],
+                    "membership":{"kind":"partial","cardinality":2,"order":"unknown","members":members}
+                }},
+                "inputs": {"parameters": {}, "references": [], "lists": []}
+            }}})
         )));
     }
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition":"form","cages":["test:model:subd#1"],
-            "cage_inputs":{"observations":[{"paths":[],"binding":{"state":"decoded","cage":"test:model:subd#1"}}],"membership":{"state":"complete","members":[0],"order":"assumed","certainty":"assumed"}}
-        })
+        serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {
+            "cages": {"kind": "complete", "value": ["test:model:subd#1"]},
+            "inputs": {"parameters": {}, "references": [], "lists": []},
+            "cage_inputs":{"observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#1"}}],"membership":{"kind":"complete","members":[0],"order":"assumed","certainty":"assumed"}}}}})
     )));
 }
 
@@ -880,7 +881,7 @@ fn mesh_combination_local_operands_remain_incomplete_in_both_reports() {
 #[test]
 fn plane_cut_completeness_requires_the_source_plane_and_active_controls() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-    let base = serde_json::json!({"definition":"mesh_modify","source":["test:mesh:tessellation#1"],"modification":{"kind":"plane_cut","cut":{"origin":{"x":0,"y":0,"z":0},"normal":{"x":0,"y":0,"z":1},"mode":"trim","fill":"no_fill","retained_side":"positive"}}});
+    let base = serde_json::json!({"kind": "mesh_modify", "value": {"source":{"kind":"tessellations","value":["test:mesh:tessellation#1"]},"modification":{"kind":"plane_cut","cut":{"origin":{"x":0,"y":0,"z":0},"normal":{"x":0,"y":0,"z":1},"mode":"trim","fill":"no_fill","retained_side":"positive"}}}});
     let incomplete = |wire| {
         feature_definition_is_incomplete(&FeatureDefinition::Operation(
             serde_json::from_value::<FeatureOperation>(wire).unwrap(),
@@ -889,7 +890,7 @@ fn plane_cut_completeness_requires_the_source_plane_and_active_controls() {
     assert!(!incomplete(base.clone()));
     for key in ["origin", "normal", "mode", "fill", "retained_side"] {
         let mut wire = base.clone();
-        wire["modification"]["cut"]
+        wire["value"]["modification"]["cut"]
             .as_object_mut()
             .unwrap()
             .remove(key);
@@ -897,24 +898,24 @@ fn plane_cut_completeness_requires_the_source_plane_and_active_controls() {
     }
     for (mode, fill_required) in [("split_bodies", true), ("split_faces", false)] {
         let mut wire = base.clone();
-        wire["modification"]["cut"]["mode"] = mode.into();
-        wire["modification"]["cut"]
+        wire["value"]["modification"]["cut"]["mode"] = mode.into();
+        wire["value"]["modification"]["cut"]
             .as_object_mut()
             .unwrap()
             .remove("retained_side");
         assert!(!incomplete(wire.clone()));
-        wire["modification"]["cut"]
+        wire["value"]["modification"]["cut"]
             .as_object_mut()
             .unwrap()
             .remove("fill");
         assert_eq!(incomplete(wire), fill_required);
     }
     for source in [
-        serde_json::json!({"native":"scope","members":["7"]}),
-        serde_json::json!({"feature":"test:model:feature#cut"}),
+        serde_json::json!({"kind": "native", "value": {"native":"scope","members":["7"]}}),
+        serde_json::json!({"kind": "unresolved", "value": {"feature":"test:model:feature#cut"}}),
     ] {
         let mut wire = base.clone();
-        wire["source"] = source;
+        wire["value"]["source"] = source;
         assert!(incomplete(wire));
     }
 }

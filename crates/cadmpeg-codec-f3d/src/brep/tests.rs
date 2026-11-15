@@ -598,7 +598,10 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         let face = entity(3, 1);
         let ring = entity(4, 1);
         asm.bodies.push(
-            serde_json::from_value(serde_json::json!({"id": body, "regions": [region]})).unwrap(),
+            serde_json::from_value(
+                serde_json::json!({"id": body, "kind": "solid", "regions": [region]}),
+            )
+            .unwrap(),
         );
         asm.regions.push(Region {
             id: RegionId::mint(region.clone()).unwrap(),
@@ -622,7 +625,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         asm.faces.push(
             serde_json::from_value(serde_json::json!({
                 "id": face, "shell": shell, "surface": entity(6, 1), "sense": "forward",
-                "loops": {"classification": "unspecified", "loops": if spec.edges == 0 { vec![] } else { vec![ring.clone()] }},
+                "loops": {"kind": "unspecified", "loops": if spec.edges == 0 { vec![] } else { vec![ring.clone()] }},
             }))
             .unwrap(),
         );
@@ -632,7 +635,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         if spec.edges != 0 {
             asm.loops.push(
                 serde_json::from_value(serde_json::json!({
-                    "id": ring, "face": face, "boundary": {"kind": "ring", "coedges": coedges},
+                    "id": ring, "face": face, "boundary": {"kind": "ring", "coedges": coedges, "vertex_uses": []},
                 }))
                 .unwrap(),
             );
@@ -642,7 +645,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
             asm.coedges.push(
                 serde_json::from_value(serde_json::json!({
                     "id": coedges[usize::try_from(index).unwrap()], "owner_loop": ring, "edge": edge,
-                    "radial_next": coedges[usize::try_from(index).unwrap()], "sense": "forward",
+                    "radial_next": coedges[usize::try_from(index).unwrap()], "sense": "forward", "pcurves": [],
                 }))
                 .unwrap(),
             );
@@ -675,7 +678,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         if spec.face_attribute {
             asm.attributes.push(
                 serde_json::from_value(serde_json::json!({
-                    "id": entity(8, 1), "target": {"kind": "face", "id": face},
+                    "id": entity(8, 1), "target": {"kind": "face", "value": face},
                     "name": "generic_tag_attrib_def", "values": [],
                 }))
                 .unwrap(),
