@@ -318,6 +318,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** The record that dates an unbound Split or Base feature must be found before a history state can be assigned. A state must not be assigned from a body key that appears or disappears without a tag. The join of the body reference of an edge selector to a history body, which selects the owner edge in the state of that body, needs a rule.
 
+### DE-17. Contour-flange thickness side
+
+**Question.** Which contour-flange operands place the sheet thickness relative to the open profile, and which values select the other side or a centered sheet?
+
+**Known.** Section 13.5 defines the contour plate, contour attachment control, bend, and corner. In the two known contour flanges, plate slot 2 is the plate-side enumeration `(2, 0)` and the attachment modes are `(9, 1)` and `(9, 4)`. In the measured one, the sheet lies opposite the consumed sketch normal crossed with the first profile tangent. The reader states no thickness side for a contour flange.
+
+**Need.** Contour flanges with other plate-side values, other attachment modes, or a reversed profile order, and the side of the sheet for each, before a side rule can map these operands to a thickness side.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

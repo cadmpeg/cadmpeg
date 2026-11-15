@@ -106,6 +106,86 @@ fn attachment_keeps_order_qualifiers_states_and_optional_reference() {
 }
 
 #[test]
+fn contour_attachment_has_the_extended_attachment_fields_and_one_final_byte() {
+    for version in [29, 31] {
+        let mut bytes = header(version);
+        reference_bytes(&mut bytes, 10);
+        bytes.extend_from_slice(&[1, 1, 1]);
+        bytes.extend_from_slice(&0x8000_000b_u32.to_le_bytes());
+        bytes.extend_from_slice(&0x8000_000c_u32.to_le_bytes());
+        bytes.push(7);
+        let parsed = exact_record(&bytes, CONTOUR_ATTACHMENT_TYPE, version);
+        let PmDcFeaturePropertyKind::SheetMetal { definition } = parsed.kind else {
+            panic!("contour attachment");
+        };
+        assert_eq!(
+            definition.references(),
+            (1..=12)
+                .map(|index| PmDcReference::from_packed(0x8000_0000 | index))
+                .collect::<Vec<_>>()
+        );
+        let SheetMetalProperty::ContourAttachment {
+            directions,
+            radius,
+            states,
+            extension,
+            value,
+            ..
+        } = definition
+        else {
+            panic!("contour attachment variant");
+        };
+        assert_eq!([directions[0].index(), directions[1].index()], [4, 5]);
+        assert_eq!(radius.index(), 6);
+        assert_eq!(states.as_ref(), &[1, 1, 1]);
+        assert_eq!(extension.index(), 12);
+        assert_eq!(value, 7);
+        let mut short = header(version);
+        reference_bytes(&mut short, 10);
+        short.extend_from_slice(&[1, 1, 1]);
+        short.extend_from_slice(&0x8000_000b_u32.to_le_bytes());
+        assert!(decode(&short, CONTOUR_ATTACHMENT_TYPE, version).is_err());
+    }
+}
+
+#[test]
+fn contour_attachment_validation_uses_the_extended_operand_types() {
+    let mut bytes = header(31);
+    reference_bytes(&mut bytes, 10);
+    bytes.extend_from_slice(&[1, 1, 1]);
+    bytes.extend_from_slice(&0x8000_000b_u32.to_le_bytes());
+    bytes.extend_from_slice(&0x8000_000c_u32.to_le_bytes());
+    bytes.push(0);
+    let payload = decode(&bytes, CONTOUR_ATTACHMENT_TYPE, 31).expect("contour attachment");
+    let located = Located::new(
+        payload,
+        RecordTypeId::from_bytes(CONTOUR_ATTACHMENT_TYPE),
+        cadmpeg_ir::ids::IdentityKey::try_new("synthetic").expect("key"),
+        20,
+    );
+    let mut types: Vec<_> = ATTACHMENT_EXTENDED_REFERENCES
+        .iter()
+        .map(|id| type_id_string(*id))
+        .collect();
+    let check = |types: &[String]| {
+        valid_references(&located, |ordinal| {
+            types
+                .get(usize::try_from(ordinal).expect("fixture ordinal"))
+                .map(String::as_str)
+        })
+    };
+    assert!(check(&types));
+    types[11] = type_id_string(ATTACHMENT_TYPE);
+    assert!(!check(&types));
+    types[11] = type_id_string(ATTACHMENT_STATE_TYPE);
+    let mut wrong_identity = located.clone();
+    wrong_identity.identity.type_id = RecordTypeId::from_bytes(ATTACHMENT_TYPE);
+    assert!(!valid_references(&wrong_identity, |ordinal| types
+        .get(usize::try_from(ordinal).expect("fixture ordinal"))
+        .map(String::as_str)));
+}
+
+#[test]
 fn relief_transition_and_corner_keep_each_reference_and_scalar() {
     for version in [19, 23, 29, 31] {
         for (kind, count) in [
@@ -303,6 +383,10 @@ fn attachment_state_can_reference_the_shared_hem_control_family() {
         .get(usize::try_from(ordinal).expect("fixture ordinal"))
         .map(String::as_str)));
     types[2] = type_id_string(HEM_CONTROL_TYPE);
+    assert!(valid_references(&located, |ordinal| types
+        .get(usize::try_from(ordinal).expect("fixture ordinal"))
+        .map(String::as_str)));
+    types[2] = type_id_string(CONTOUR_ATTACHMENT_TYPE);
     assert!(valid_references(&located, |ordinal| types
         .get(usize::try_from(ordinal).expect("fixture ordinal"))
         .map(String::as_str)));
