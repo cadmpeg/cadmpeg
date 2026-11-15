@@ -1,15 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "fcstd:model:body#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1",
@@ -117,8 +110,6 @@
           "sense": "forward"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -205,8 +196,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -289,33 +278,6 @@
           "tolerance": 1e-7
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#ExternalPrototype",
-          "name": "ExternalPrototype",
-          "native_ref": "fcstd:native:object#ExternalPrototype",
-          "ordinal": 1,
-          "outputs": [
-            "fcstd:model:body#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        }
-      ],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -354,9 +316,6 @@
           "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1%3A1"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -507,10 +466,6 @@
           }
         }
       ],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1%40location1",
@@ -539,11 +494,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "fcstd:model:body#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1",
@@ -553,8 +505,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12%40location1",
@@ -575,14 +525,6 @@
           "region": "fcstd:model:region#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -674,7 +616,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1%40location1",
@@ -686,7 +627,68 @@
           "point": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3%40location1",
           "tolerance": 1e-7
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#ExternalPrototype",
+          "name": "ExternalPrototype",
+          "native_ref": "fcstd:native:object#ExternalPrototype",
+          "ordinal": 1,
+          "outputs": [
+            "fcstd:model:body#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        }
       ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -807,6 +809,12 @@
         }
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
+    },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {

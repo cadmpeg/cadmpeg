@@ -185,7 +185,7 @@ fn malformed_saved_spline_reports_transfer_loss() {
         .expect("transfer"),
         0
     );
-    assert!(ir.model.curves.is_empty());
+    assert!(ir.geometry.curves.is_empty());
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,

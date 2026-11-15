@@ -456,7 +456,7 @@ where
     ) -> Option<&'a NurbsSurface> {
         let cached = (self.physical)(record.byte_offset())
             .and_then(|position| carriers.get(&position))
-            .and_then(|&index| ir.model.surfaces.get(index));
+            .and_then(|&index| ir.geometry.surfaces.get(index));
         if let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))) =
             cached.map(|s| &s.geometry)
         {

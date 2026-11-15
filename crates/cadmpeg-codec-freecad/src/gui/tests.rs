@@ -51,12 +51,12 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     let vertex = VertexId::mint("fcstd:test:vertex#shape:0").expect("vertex id");
-    ir.model.vertices.push(Vertex {
+    ir.geometry.vertices.push(Vertex {
         id: vertex.clone(),
         point: PointId::mint("fcstd:test:point#0").expect("point id"),
         tolerance: None,
     });
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: EdgeId::mint("fcstd:test:edge#shape:0").expect("edge id"),
         carrier: EdgeCarrier::unbounded(None),
         start: vertex.clone(),
@@ -139,7 +139,7 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         &cadmpeg_ir::identity_namespace!("fcstd", "model", "vertex"),
         cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("v1")),
     );
-    ir.model.vertices.push(Vertex {
+    ir.geometry.vertices.push(Vertex {
         id: vertex_id.clone(),
         point: cadmpeg_ir::ids::PointId::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
@@ -147,7 +147,7 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         ),
         tolerance: None,
     });
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: EdgeId::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
             cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("e1")),

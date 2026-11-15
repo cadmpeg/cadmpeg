@@ -1,40 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "sldprt:appearance:entity53#900",
-          "channels": {},
-          "id": "sldprt:appearance:binding#face:700:900",
-          "object_type": "Face",
-          "source_entity_id": "700",
-          "target": {
-            "kind": "face",
-            "value": "sldprt:brep:face#10"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.75,
-            "g": 0.5,
-            "r": 0.25
-          },
-          "id": "sldprt:appearance:entity53#900",
-          "properties": {},
-          "schema": "entity-53",
-          "textures": []
-        }
-      ],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "sldprt:brep:body#700",
@@ -70,27 +38,7 @@
           "sense": "forward"
         }
       ],
-      "colliders": [],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#700"
-          ],
-          "feature_states": {},
-          "id": "sldprt:model:configuration#425:0",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#425:0",
-          "ordinal": 0,
-          "parameter_overrides": {},
-          "parameter_values": {},
-          "properties": {},
-          "source_index": 0
-        }
-      ],
       "curves": [],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {},
@@ -131,10 +79,6 @@
           "surface": "sldprt:brep:surf#10"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -150,14 +94,7 @@
           "id": "sldprt:brep:loop#20"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "sldprt:brep:point#60",
@@ -184,11 +121,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "sldprt:brep:body#700",
@@ -198,8 +132,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "sldprt:brep:shell#70",
@@ -212,14 +144,6 @@
           "region": "sldprt:brep:region#80"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -247,7 +171,6 @@
           "id": "sldprt:brep:surf#10"
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "sldprt:brep:vertex#50",
@@ -261,7 +184,86 @@
           "id": "sldprt:brep:vertex#52",
           "point": "sldprt:brep:point#62"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "sldprt:appearance:entity53#900",
+          "channels": {},
+          "id": "sldprt:appearance:binding#face:700:900",
+          "object_type": "Face",
+          "source_entity_id": "700",
+          "target": {
+            "kind": "face",
+            "value": "sldprt:brep:face#10"
+          }
+        }
       ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.75,
+            "g": 0.5,
+            "r": 0.25
+          },
+          "id": "sldprt:appearance:entity53#900",
+          "properties": {},
+          "schema": "entity-53",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [
+        {
+          "active": true,
+          "bodies": [
+            "sldprt:brep:body#700"
+          ],
+          "feature_states": {},
+          "id": "sldprt:model:configuration#425:0",
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#425:0",
+          "ordinal": 0,
+          "parameter_overrides": {},
+          "parameter_values": {},
+          "properties": {},
+          "source_index": 0
+        }
+      ],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -318,6 +320,12 @@
           }
         ]
       }
+    },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {

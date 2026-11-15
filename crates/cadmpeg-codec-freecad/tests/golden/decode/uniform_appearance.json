@@ -1,368 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:13%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:13%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:15%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:15%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:17%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:17%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:18%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:18%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:21%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:21%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:22%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:22%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:25%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:25%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:26%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:26%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:3%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:3%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:5%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:5%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:7%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:7%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:8%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:8%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#Box:1",
-          "channels": {},
-          "id": "fcstd:appearance:binding#shape-material:Box:0",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "body",
-            "value": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:1%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:11%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:12%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:14%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:16%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:2%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:4%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:6%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.10196078568696976,
-            "g": 0.20000000298023224,
-            "r": 0.7019608020782471
-          },
-          "id": "fcstd:appearance:edge#Box",
-          "name": "Box line appearance",
-          "properties": {
-            "line_width": 3.0
-          },
-          "schema": "FCStd ViewProvider line style",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.10196078568696976,
-            "g": 0.20000000298023224,
-            "r": 0.7019608020782471
-          },
-          "id": "fcstd:appearance:edge#Box:1",
-          "name": "Box Edge1 appearance",
-          "properties": {
-            "line_width": 3.0
-          },
-          "schema": "FCStd LineColorArray",
-          "textures": []
-        },
-        {
-          "asset_guid": "7f9fd73b-50c9-41d8-b7b2-575a030c1eeb",
-          "base_color": {
-            "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
-          },
-          "id": "fcstd:appearance:shape-material#Box:1",
-          "name": "Box face 1 material",
-          "properties": {
-            "ambient_packed": 1431655680.0,
-            "emissive_packed": 0.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649088.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.3019607961177826,
-            "g": 0.800000011920929,
-            "r": 0.10196078568696976
-          },
-          "id": "fcstd:appearance:vertex#Box",
-          "name": "Box point appearance",
-          "properties": {
-            "point_size": 5.0
-          },
-          "schema": "FCStd ViewProvider point style",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.3019607961177826,
-            "g": 0.800000011920929,
-            "r": 0.10196078568696976
-          },
-          "id": "fcstd:appearance:vertex#Box:1",
-          "name": "Box Vertex1 appearance",
-          "properties": {
-            "point_size": 5.0
-          },
-          "schema": "FCStd PointColorArray",
-          "textures": []
-        }
-      ],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "color": {
@@ -765,8 +405,6 @@
           "sense": "forward"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -1057,8 +695,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -1297,33 +933,6 @@
           "tolerance": 1e-7
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Box",
-          "name": "Box",
-          "native_ref": "fcstd:native:object#Box",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        }
-      ],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -1410,9 +1019,6 @@
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:32%40location1%3A1"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -1967,10 +1573,6 @@
           }
         }
       ],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:1%40location1",
@@ -2077,54 +1679,8 @@
           }
         }
       ],
-      "presentation_documents": [
-        {
-          "id": "fcstd:presentation:document#0",
-          "native_ref": "fcstd:gui:document#0",
-          "schema_version": 1,
-          "states": [
-            {
-              "assets": [],
-              "attributes": {},
-              "kind": {
-                "kind": "Native",
-                "value": "Expand"
-              },
-              "order": 0
-            },
-            {
-              "assets": [],
-              "attributes": {
-                "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
-              },
-              "kind": {
-                "kind": "Camera",
-                "value": {
-                  "orientation": [
-                    0.74290609,
-                    0.30772209,
-                    0.59447283,
-                    1.2171158
-                  ],
-                  "position": [
-                    17.311642,
-                    -2.3116379,
-                    17.811638
-                  ],
-                  "properties": {
-                    "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
-                  }
-                }
-              },
-              "order": 1
-            }
-          ]
-        }
-      ],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
@@ -2134,8 +1690,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33%40location1",
@@ -2168,14 +1722,6 @@
           "region": "fcstd:model:region#Box:Shape:Box.Shape.brp:34%40location1"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -2353,7 +1899,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
@@ -2395,7 +1940,464 @@
           "point": "fcstd:model:point#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:13%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:13%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:15%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:15%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:17%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:17%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:18%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:18%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:21%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:21%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:22%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:22%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:25%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:25%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:26%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:26%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:3%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:3%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:5%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:5%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:7%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:7%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:8%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:8%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#Box:1",
+          "channels": {},
+          "id": "fcstd:appearance:binding#shape-material:Box:0",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "body",
+            "value": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:1%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:11%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:12%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:14%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:16%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:2%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:4%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:6%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
+          }
+        }
       ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.10196078568696976,
+            "g": 0.20000000298023224,
+            "r": 0.7019608020782471
+          },
+          "id": "fcstd:appearance:edge#Box",
+          "name": "Box line appearance",
+          "properties": {
+            "line_width": 3.0
+          },
+          "schema": "FCStd ViewProvider line style",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.10196078568696976,
+            "g": 0.20000000298023224,
+            "r": 0.7019608020782471
+          },
+          "id": "fcstd:appearance:edge#Box:1",
+          "name": "Box Edge1 appearance",
+          "properties": {
+            "line_width": 3.0
+          },
+          "schema": "FCStd LineColorArray",
+          "textures": []
+        },
+        {
+          "asset_guid": "7f9fd73b-50c9-41d8-b7b2-575a030c1eeb",
+          "base_color": {
+            "a": 1.0,
+            "b": 0.6000000238418579,
+            "g": 0.4000000059604645,
+            "r": 0.20000000298023224
+          },
+          "id": "fcstd:appearance:shape-material#Box:1",
+          "name": "Box face 1 material",
+          "properties": {
+            "ambient_packed": 1431655680.0,
+            "emissive_packed": 0.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649088.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.3019607961177826,
+            "g": 0.800000011920929,
+            "r": 0.10196078568696976
+          },
+          "id": "fcstd:appearance:vertex#Box",
+          "name": "Box point appearance",
+          "properties": {
+            "point_size": 5.0
+          },
+          "schema": "FCStd ViewProvider point style",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.3019607961177826,
+            "g": 0.800000011920929,
+            "r": 0.10196078568696976
+          },
+          "id": "fcstd:appearance:vertex#Box:1",
+          "name": "Box Vertex1 appearance",
+          "properties": {
+            "point_size": 5.0
+          },
+          "schema": "FCStd PointColorArray",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Box",
+          "name": "Box",
+          "native_ref": "fcstd:native:object#Box",
+          "ordinal": 0,
+          "outputs": [
+            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        }
+      ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [
+        {
+          "id": "fcstd:presentation:document#0",
+          "native_ref": "fcstd:gui:document#0",
+          "schema_version": 1,
+          "states": [
+            {
+              "assets": [],
+              "attributes": {},
+              "kind": {
+                "kind": "Native",
+                "value": "Expand"
+              },
+              "order": 0
+            },
+            {
+              "assets": [],
+              "attributes": {
+                "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
+              },
+              "kind": {
+                "kind": "Camera",
+                "value": {
+                  "orientation": [
+                    0.74290609,
+                    0.30772209,
+                    0.59447283,
+                    1.2171158
+                  ],
+                  "position": [
+                    17.311642,
+                    -2.3116379,
+                    17.811638
+                  ],
+                  "properties": {
+                    "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
+                  }
+                }
+              },
+              "order": 1
+            }
+          ]
+        }
+      ],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": [
         {
           "display_mode": "0",
@@ -2552,6 +2554,12 @@
         }
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
+    },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {

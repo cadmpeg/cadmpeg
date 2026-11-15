@@ -183,8 +183,8 @@ fn patched_corpus_documents_keep_measured_geometry() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap_or_else(|_| panic!("{label}: the patched archive does not decode"));
         assert_eq!(
-            round_trip.ir().model.bodies.len(),
-            decoded.ir().model.bodies.len(),
+            round_trip.ir().geometry.bodies.len(),
+            decoded.ir().geometry.bodies.len(),
             "{label}: the body count changes"
         );
         measures_agree(&label, decoded.ir(), round_trip.ir())
@@ -345,17 +345,18 @@ fn authored_uniform_appearance_binds_every_box_edge_and_vertex() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
 
-    assert_eq!(model.bodies.len(), 1);
-    assert_eq!(model.faces.len(), 6);
-    assert_eq!(model.edges.len(), 12);
-    assert_eq!(model.vertices.len(), 8);
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.faces.len(), 6);
+    assert_eq!(geometry.edges.len(), 12);
+    assert_eq!(geometry.vertices.len(), 8);
 
     let body_color = Color::from_rgba8(51, 102, 153, 255);
     let edge_color = Color::from_rgba8(179, 51, 26, 255);
     let vertex_color = Color::from_rgba8(26, 204, 77, 255);
 
-    let body_target = AppearanceTarget::Body(model.bodies[0].id.clone());
+    let body_target = AppearanceTarget::Body(geometry.bodies[0].id.clone());
     let body_bindings = model
         .appearance_bindings
         .iter()
@@ -370,14 +371,14 @@ fn authored_uniform_appearance_binds_every_box_edge_and_vertex() {
         .find(|appearance| appearance.id == body_binding.appearance)
         .unwrap();
     assert_eq!(body_appearance.base_color, Some(body_color));
-    assert_eq!(model.bodies[0].color, Some(body_color));
+    assert_eq!(geometry.bodies[0].color, Some(body_color));
 
-    let edge_targets = model
+    let edge_targets = geometry
         .edges
         .iter()
         .map(|edge| AppearanceTarget::Edge(edge.id.clone()))
         .collect::<BTreeSet<_>>();
-    let vertex_targets = model
+    let vertex_targets = geometry
         .vertices
         .iter()
         .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone()))

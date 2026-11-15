@@ -28,9 +28,9 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact NURBS extrusion cache");
     };
@@ -97,13 +97,13 @@ fn decode_solves_a_tabulated_surface_from_a_type_142_model_carrier() {
 
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| {
             result
                 .ir()
-                .model
+                .geometry
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("iges:model:surface#D9")
@@ -144,7 +144,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
         );
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "iges:model:surface#D3")
@@ -156,7 +156,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
         };
         let procedural = result
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.id == *construction)
@@ -181,7 +181,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
         );
         let directrix_geometry = &result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *directrix)
@@ -253,7 +253,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
         );
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
@@ -265,7 +265,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
         };
         let procedural = result
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.id == *construction)
@@ -293,7 +293,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
         );
         let directrix_geometry = &result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *directrix)
@@ -357,7 +357,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
         );
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
@@ -368,11 +368,15 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
         ));
         let procedural = result
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|procedural| {
-                result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+                result
+                    .ir()
+                    .geometry
+                    .procedural_surface_owner(&procedural.id)
+                    == Some(&surface.id)
             })
             .expect("placed NURBS tabulated construction");
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =
@@ -390,7 +394,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
         assert_eq!(*native_position, Point3::new(10.0, 20.0, 32.0));
         let directrix_geometry = &result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *directrix)

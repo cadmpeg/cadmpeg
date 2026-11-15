@@ -1064,20 +1064,20 @@ impl super::Builder<'_, '_, '_, '_> {
             kind,
             face_ids: _,
         } = imported;
-        let model = &mut self.ir.model;
+        let geometry = &mut self.ir.geometry;
         let region_ids = regions.iter().map(|region| region.id.clone()).collect();
-        model.points.extend(points);
-        model.vertices.extend(vertices);
-        model.curves.extend(curves);
-        model.surfaces.extend(surfaces);
-        model.pcurves.extend(pcurves);
-        model.edges.extend(edges);
-        model.coedges.extend(coedges);
-        model.loops.extend(loops);
-        model.faces.extend(faces);
-        model.shells.extend(shells);
-        model.regions.extend(regions);
-        if let Err(error) = model.add_procedural_surfaces(constructions)? {
+        geometry.points.extend(points);
+        geometry.vertices.extend(vertices);
+        geometry.curves.extend(curves);
+        geometry.surfaces.extend(surfaces);
+        geometry.pcurves.extend(pcurves);
+        geometry.edges.extend(edges);
+        geometry.coedges.extend(coedges);
+        geometry.loops.extend(loops);
+        geometry.faces.extend(faces);
+        geometry.shells.extend(shells);
+        geometry.regions.extend(regions);
+        if let Err(error) = geometry.add_procedural_surfaces(constructions)? {
             return Ok(Err(error.to_string()));
         }
         let tolerance = records.tolerance * self.scale;

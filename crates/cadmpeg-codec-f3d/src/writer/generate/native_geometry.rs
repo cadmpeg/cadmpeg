@@ -4,7 +4,7 @@
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     pcurve::{PcurveGeometry, PcurveInlineForm, PcurveNurbs, PcurveNurbsPoles},
@@ -111,10 +111,12 @@ pub(crate) fn native_procedural_surface(
 /// surface's procedural construction, after its subtype scope closes.
 fn native_record_bounds(bytes: &mut Vec<u8>, target: &CadIr, surface: &cadmpeg_ir::ids::SurfaceId) {
     let bounds = target
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
-        .find(|procedural| target.model.procedural_surface_owner(&procedural.id) == Some(surface))
+        .find(|procedural| {
+            target.geometry.procedural_surface_owner(&procedural.id) == Some(surface)
+        })
         .and_then(cadmpeg_ir::geometry::ProceduralSurface::record_bounds);
     if let Some(bounds) = bounds {
         for bound in bounds.get() {
@@ -130,11 +132,11 @@ fn native_procedural_surface_definition(
     solved_cache: &NurbsSurface,
 ) -> Result<bool, CodecError> {
     let mut definitions = target
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .filter(|procedural| {
-            target.model.procedural_surface_owner(&procedural.id) == Some(&solved_surface.id)
+            target.geometry.procedural_surface_owner(&procedural.id) == Some(&solved_surface.id)
         });
     let Some(procedural) = definitions.next() else {
         return Ok(false);
@@ -155,7 +157,7 @@ fn native_procedural_surface_definition(
                 )
             })?;
             let support = target
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == construction.support)
@@ -291,7 +293,7 @@ fn native_procedural_surface_definition(
                     }
                     native_i64(bytes, *selector);
                     let secondary = target
-                        .model
+                        .geometry
                         .surfaces
                         .iter()
                         .find(|candidate| candidate.id == *surface)
@@ -338,7 +340,7 @@ fn native_procedural_surface_definition(
                 } => {
                     native_i64(bytes, 5);
                     let secondary = target
-                        .model
+                        .geometry
                         .surfaces
                         .iter()
                         .find(|candidate| candidate.id == *surface)
@@ -542,7 +544,7 @@ fn native_procedural_surface_definition(
             for item in components {
                 let component = &item.component;
                 let component = target
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == *component)
@@ -573,7 +575,7 @@ fn native_procedural_surface_definition(
                 .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw);
             {
                 let support = target
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == *support)
@@ -581,7 +583,7 @@ fn native_procedural_surface_definition(
                         CodecError::Malformed("taper support surface is missing".into())
                     })?;
                 let reference = target
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|curve| curve.id == *reference)
@@ -840,7 +842,7 @@ fn native_procedural_surface_definition(
             let profiles = [first, second]
                 .map(|id| {
                     target
-                        .model
+                        .geometry
                         .curves
                         .iter()
                         .find(|curve| curve.id == *id)
@@ -922,7 +924,7 @@ fn native_procedural_surface_definition(
             let curves = [first, second]
                 .map(|id| {
                     target
-                        .model
+                        .geometry
                         .curves
                         .iter()
                         .find(|curve| curve.id == *id)
@@ -1044,7 +1046,7 @@ fn native_procedural_surface_definition(
                     )
                 })?;
                 let directrix = target
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|curve| curve.id == *directrix)
@@ -1110,7 +1112,7 @@ fn native_procedural_surface_definition(
             let extension = &definition_payload.extension().to_raw();
             {
                 let support = target
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == *support)
@@ -1333,7 +1335,7 @@ fn native_g2_side(
 ) -> Result<(), CodecError> {
     native_string(bytes, &side.label)?;
     let surface = target
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == side.surface)
@@ -1342,7 +1344,7 @@ fn native_g2_side(
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
     let curve = target
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == side.curve)
@@ -1387,7 +1389,7 @@ fn encode_native_g2_blend(
             None => native_ident(bytes, "nullbs")?,
             Some(support) => {
                 let surface = target
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .find(|candidate| candidate.id == support.surface)
@@ -1421,7 +1423,7 @@ fn encode_native_g2_blend(
     }
     native_g2_side(bytes, target, &construction.second)?;
     let second_exact = target
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == construction.second_exact_surface)
@@ -1563,7 +1565,7 @@ fn native_loft_section(
                 } => {
                     if let Some(surface_id) = surface {
                         let surface = target
-                            .model
+                            .geometry
                             .surfaces
                             .iter()
                             .find(|surface| surface.id == *surface_id)
@@ -1631,7 +1633,7 @@ fn native_loft_curve(
     parameter_range: Option<[f64; 2]>,
 ) -> Result<NurbsCurve, CodecError> {
     let curve = target
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *id)
@@ -1658,7 +1660,7 @@ fn native_compound_loft_scale(
     for member in &scale.members {
         native_i64(bytes, member.type_code);
         let curve = target
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == member.curve)
@@ -1677,7 +1679,7 @@ fn native_compound_loft_scale(
         native_nurbs_curve(bytes, &curve)?;
         let surface_id = &member.data.surface;
         let surface = target
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == *surface_id)
@@ -1954,11 +1956,11 @@ fn native_cacheless_procedural_surface_definition(
     surface: &Surface,
 ) -> Result<bool, CodecError> {
     let mut definitions = target
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .filter(|procedural| {
-            target.model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            target.geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
         });
     let Some(procedural) = definitions.next() else {
         return Ok(false);
@@ -2154,7 +2156,7 @@ fn native_cacheless_procedural_surface_definition(
         let support = definition_payload.support();
         let parameter_ranges = definition_payload.parameter_ranges();
         let support = target
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == *support)
@@ -2336,7 +2338,7 @@ fn native_law_expression(
         LawExpression::Edge { curve, parameters } => {
             native_string(bytes, "EDGE")?;
             let carrier = target
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|candidate| candidate.id == curve.id)
@@ -2583,7 +2585,7 @@ fn native_skin_profile_data(
 ) -> Result<(), CodecError> {
     let surface_id = &data.surface;
     let surface = target
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == *surface_id)
@@ -2626,7 +2628,7 @@ fn encode_native_skin_surface(
             for profile in profiles {
                 native_i64(bytes, profile.type_code);
                 let curve = target
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|curve| curve.id == profile.curve)
@@ -3128,7 +3130,7 @@ fn encode_native_sweep_surface(
             native_f64(bytes, *path_parameter);
             native_enum(bytes, *singularity);
             let support = target
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == *support_surface)
@@ -3368,7 +3370,7 @@ fn encode_native_extrusion(
         solved_cache,
     } = input;
     let directrix = target
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *directrix)
@@ -3713,7 +3715,7 @@ fn native_vertex_blend_boundary(
             fit_tolerance,
         } => {
             let surface = target
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|candidate| candidate.id == *surface)
@@ -3814,7 +3816,7 @@ fn native_revision_cl_scale(
             } => {
                 if let Some(surface_id) = surface {
                     let surface = target
-                        .model
+                        .geometry
                         .surfaces
                         .iter()
                         .find(|surface| surface.id == *surface_id)
@@ -4162,7 +4164,7 @@ fn native_rolling_ball_side(
     let support_geometry = if let Some(support) = &side.surface {
         let id = &support.surface;
         let surface = target
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == *id)
@@ -4197,7 +4199,7 @@ fn native_rolling_ball_side(
     if let Some(support) = &side.curve {
         let id = &support.curve;
         let curve = target
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *id)
@@ -4250,7 +4252,7 @@ fn native_rolling_ball_third_side(
 ) -> Result<(), CodecError> {
     native_string(bytes, &side.label)?;
     let surface = target
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == side.surface)
@@ -4262,7 +4264,7 @@ fn native_rolling_ball_third_side(
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
     let curve = target
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == side.curve)
@@ -4412,7 +4414,7 @@ fn encode_native_rolling_ball(
             ));
         }
         let carrier = target
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == support.surface)
@@ -4430,7 +4432,7 @@ fn encode_native_rolling_ball(
         CodecError::Malformed("source-less rb_blend_spl_sur lacks a spine".into())
     })?;
     let spine = target
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *spine)
@@ -4871,7 +4873,7 @@ mod native_interval_curve_tests {
             ([0.0, (MAX_INDEX_FLOAT) * 0.75], false),
             ([0.0, (MAX_INDEX_FLOAT) * 0.125], false),
         ] {
-            let procedural = &mut target.model.procedural_surfaces[0];
+            let procedural = &mut target.geometry.procedural_surfaces[0];
             let ProceduralSurfaceDefinition::Sweep(payload) = procedural.definition() else {
                 panic!("sweep construction")
             };
@@ -4895,7 +4897,7 @@ mod native_interval_curve_tests {
                 *definition = ProceduralSurfaceDefinition::Sweep(replacement);
             });
             target
-                .model
+                .geometry
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == profile)
@@ -4918,7 +4920,7 @@ mod native_interval_curve_tests {
                 let decoded = crate::F3dCodec
                     .decode(&mut Cursor::new(&output[2..]), &DecodeOptions::default())
                     .expect("ordinary circle interval decodes");
-                assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1);
+                assert_eq!(decoded.ir().geometry.procedural_surfaces.len(), 1);
             } else {
                 let error = result.expect_err("unallocatable conic interval must be refused");
                 assert!(error.to_string().contains("conic"), "{error}");
@@ -4937,7 +4939,7 @@ fn native_spring_pcurve(
     match support {
         cadmpeg_ir::geometry::SpringSupport::Surface(surface_id) => {
             let surface = target
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == *surface_id)
@@ -4959,9 +4961,12 @@ pub(crate) fn native_procedural_curve(
     curve_id: &cadmpeg_ir::ids::CurveId,
     solved_cache: &NurbsCurve,
 ) -> Result<bool, CodecError> {
-    let mut definitions =
-        target.model.procedural_curves.iter().filter(|procedural| {
-            target.model.procedural_curve_owner(&procedural.id) == Some(curve_id)
+    let mut definitions = target
+        .geometry
+        .procedural_curves
+        .iter()
+        .filter(|procedural| {
+            target.geometry.procedural_curve_owner(&procedural.id) == Some(curve_id)
         });
     let Some(procedural) = definitions.next() else {
         return Ok(false);
@@ -5048,7 +5053,7 @@ pub(crate) fn native_procedural_curve(
         match source {
             cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve } => {
                 let source = target
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|candidate| candidate.id == *curve)
@@ -5167,7 +5172,7 @@ pub(crate) fn native_procedural_curve(
         let tail = definition_payload.tail();
 
         let source = target
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *source)
@@ -5239,7 +5244,7 @@ pub(crate) fn native_procedural_curve(
         for (ordinal, component) in components.iter().enumerate() {
             let component = &component.component;
             let component = target
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == *component)
@@ -5363,7 +5368,7 @@ pub(crate) fn native_procedural_curve(
             }
         };
         let cast_surface = target
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == *cast_surface)
@@ -5402,7 +5407,7 @@ pub(crate) fn native_procedural_curve(
         let shift = definition_payload.shift();
         let scale = definition_payload.scale();
         let base = target
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *base)
@@ -5498,7 +5503,7 @@ pub(crate) fn native_procedural_curve(
             match support {
                 cadmpeg_ir::geometry::SpringSupport::Surface(surface_id) => {
                     let surface = target
-                        .model
+                        .geometry
                         .surfaces
                         .iter()
                         .find(|surface| surface.id == *surface_id)
@@ -5570,7 +5575,7 @@ pub(crate) fn native_procedural_curve(
             )
         })?;
         let surface = target
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == *surface_id)
@@ -5624,7 +5629,7 @@ pub(crate) fn native_procedural_curve(
         let offset = definition_payload.offset();
         let roles = definition_payload.roles();
         let source = target
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *source)
@@ -5665,7 +5670,7 @@ pub(crate) fn native_procedural_curve(
         let source = definition_payload.source();
         let parameter_range = definition_payload.parameter_range();
         let source = target
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *source)
@@ -5772,9 +5777,12 @@ pub(super) fn native_cacheless_procedural_curve(
     target: &CadIr,
     curve_id: &cadmpeg_ir::ids::CurveId,
 ) -> Result<bool, CodecError> {
-    let mut definitions =
-        target.model.procedural_curves.iter().filter(|procedural| {
-            target.model.procedural_curve_owner(&procedural.id) == Some(curve_id)
+    let mut definitions = target
+        .geometry
+        .procedural_curves
+        .iter()
+        .filter(|procedural| {
+            target.geometry.procedural_curve_owner(&procedural.id) == Some(curve_id)
         });
     let Some(procedural) = definitions.next() else {
         return Ok(false);
@@ -6061,7 +6069,7 @@ mod pcurve_chart_tests {
         target.native = cadmpeg_ir::native::Native::default();
 
         for (origin, direction) in [(1.0, 2.0), (f64::MAX, f64::MAX)] {
-            target.model.procedural_curves[0].edit_definition(|definition| {
+            target.geometry.procedural_curves[0].edit_definition(|definition| {
                 let ProceduralCurveDefinition::Spring(payload) = definition else {
                     panic!("fixture must retain its spring construction");
                 };
@@ -6179,11 +6187,11 @@ mod pcurve_chart_tests {
 }
 
 pub(in crate::writer) fn pcurve_support_geometry<'a>(
-    model: &'a Model,
+    geometry: &'a Topology,
     pcurve_id: &PcurveId,
 ) -> Result<&'a SurfaceGeometry, CodecError> {
-    let surface_id = pcurve_support_surface(model, pcurve_id)?;
-    model
+    let surface_id = pcurve_support_surface(geometry, pcurve_id)?;
+    geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == *surface_id)
@@ -6197,15 +6205,15 @@ pub(in crate::writer) fn pcurve_support_geometry<'a>(
 
 /// The surface of the faces that use a pcurve.
 pub(in crate::writer) fn pcurve_support_surface<'a>(
-    model: &'a Model,
+    geometry: &'a Topology,
     pcurve_id: &PcurveId,
 ) -> Result<&'a SurfaceId, CodecError> {
     fn surface_for_loop<'a>(
-        model: &'a Model,
+        geometry: &'a Topology,
         loop_: &cadmpeg_ir::topology::Loop,
         pcurve_id: &PcurveId,
     ) -> Result<&'a SurfaceId, CodecError> {
-        let face = model
+        let face = geometry
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
@@ -6233,9 +6241,9 @@ pub(in crate::writer) fn pcurve_support_surface<'a>(
     }
 
     let mut surface_id = None;
-    for coedge in &model.coedges {
+    for coedge in &geometry.coedges {
         if coedge.pcurves.iter().any(|use_| use_.pcurve == *pcurve_id) {
-            let loop_ = model
+            let loop_ = geometry
                 .loops
                 .iter()
                 .find(|loop_| loop_.id == coedge.owner_loop)
@@ -6245,13 +6253,13 @@ pub(in crate::writer) fn pcurve_support_surface<'a>(
                         coedge.owner_loop
                     ))
                 })?;
-            let surface = surface_for_loop(model, loop_, pcurve_id)?;
+            let surface = surface_for_loop(geometry, loop_, pcurve_id)?;
             record_surface(&mut surface_id, surface, pcurve_id)?;
         }
     }
-    for loop_ in &model.loops {
+    for loop_ in &geometry.loops {
         if loop_.vertex_pcurves().any(|use_| use_.pcurve == *pcurve_id) {
-            let surface = surface_for_loop(model, loop_, pcurve_id)?;
+            let surface = surface_for_loop(geometry, loop_, pcurve_id)?;
             record_surface(&mut surface_id, surface, pcurve_id)?;
         }
     }
@@ -6280,7 +6288,7 @@ fn native_intcurve_support_context(
     for side in context.sides() {
         if let Some(surface_id) = &side.surface {
             let surface = target
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == *surface_id)
@@ -6298,7 +6306,7 @@ fn native_intcurve_support_context(
         if let Some(pcurve) = &side.pcurve {
             let native = if let Some(surface_id) = &side.surface {
                 let surface = target
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == *surface_id)
@@ -6355,7 +6363,7 @@ fn native_law_version_context(
     for side in context.sides() {
         if let Some(surface_id) = &side.surface {
             let surface = target
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == *surface_id)
@@ -6373,7 +6381,7 @@ fn native_law_version_context(
         if let Some(pcurve) = &side.pcurve {
             let native = if let Some(surface_id) = &side.surface {
                 let surface = target
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == *surface_id)
@@ -6742,7 +6750,7 @@ fn native_cache_first_curve_context(
     for (side, bounds) in context.sides().iter().zip(&form.support_bounds) {
         if let Some(surface_id) = &side.surface {
             let surface = target
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == *surface_id)
@@ -6779,7 +6787,7 @@ fn native_cache_first_curve_context(
         if let Some(pcurve) = &side.pcurve {
             let native = if let Some(surface_id) = &side.surface {
                 let surface = target
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == *surface_id)

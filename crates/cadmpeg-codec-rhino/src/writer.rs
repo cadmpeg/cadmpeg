@@ -146,7 +146,7 @@ fn write_seekable(
 
     plan.brep_records.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut plan.brep_records, output)?;
-    for point in ir.model.points.iter().filter(|point| {
+    for point in ir.geometry.points.iter().filter(|point| {
         !plan.topology_points.contains(point.id.as_str())
             && !is_support(point.source_object.as_ref())
     }) {
@@ -297,7 +297,7 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
     use cadmpeg_ir::topology::BodyKind;
     use std::collections::BTreeSet;
 
-    let model = &ir.model;
+    let geometry = &ir.geometry;
     let mut scopes = Vec::new();
     let mut all_regions = BTreeSet::new();
     let mut all_shells = BTreeSet::new();
@@ -311,7 +311,7 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
     let mut all_curves = BTreeSet::new();
     let mut all_pcurves = BTreeSet::new();
 
-    for body in model
+    for body in geometry
         .bodies
         .iter()
         .filter(|body| matches!(body.kind, BodyKind::Sheet | BodyKind::Solid))
@@ -321,43 +321,43 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             .iter()
             .map(|id| id.as_str().to_owned())
             .collect::<BTreeSet<_>>();
-        let shells = model
+        let shells = geometry
             .regions
             .iter()
             .filter(|region| regions.contains(region.id.as_str()))
             .flat_map(|region| region.shells.iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
-        let faces = model
+        let faces = geometry
             .shells
             .iter()
             .filter(|shell| shells.contains(shell.id.as_str()))
             .flat_map(|shell| shell.faces().iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
-        let surfaces = model
+        let surfaces = geometry
             .faces
             .iter()
             .filter(|face| faces.contains(face.id.as_str()))
             .map(|face| face.surface.as_str().to_owned())
             .collect::<BTreeSet<_>>();
-        let loops = model
+        let loops = geometry
             .faces
             .iter()
             .filter(|face| faces.contains(face.id.as_str()))
             .flat_map(|face| face.loops.iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
-        let coedges = model
+        let coedges = geometry
             .loops
             .iter()
             .filter(|loop_| loops.contains(loop_.id.as_str()))
             .flat_map(|loop_| loop_.coedges().iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
-        let edges = model
+        let edges = geometry
             .coedges
             .iter()
             .filter(|coedge| coedges.contains(coedge.id.as_str()))
             .map(|coedge| coedge.edge.as_str().to_owned())
             .collect::<BTreeSet<_>>();
-        let pcurves = model
+        let pcurves = geometry
             .coedges
             .iter()
             .filter(|coedge| coedges.contains(coedge.id.as_str()))
@@ -369,19 +369,19 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
                     .map(|id| id.as_str().to_owned())
             })
             .collect::<BTreeSet<_>>();
-        let vertices = model
+        let vertices = geometry
             .edges
             .iter()
             .filter(|edge| edges.contains(edge.id.as_str()))
             .flat_map(|edge| [edge.start.as_str().to_owned(), edge.end.as_str().to_owned()])
             .collect::<BTreeSet<_>>();
-        let curves = model
+        let curves = geometry
             .edges
             .iter()
             .filter(|edge| edges.contains(edge.id.as_str()))
             .filter_map(|edge| edge.curve().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
-        let points = model
+        let points = geometry
             .vertices
             .iter()
             .filter(|vertex| vertices.contains(vertex.id.as_str()))
@@ -410,68 +410,68 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
 
         let mut scoped = CadIr::empty();
         scoped.tolerances = ir.tolerances;
-        scoped.model.bodies.push(body.clone());
-        scoped.model.regions = model
+        scoped.geometry.bodies.push(body.clone());
+        scoped.geometry.regions = geometry
             .regions
             .iter()
             .filter(|entity| regions.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.shells = model
+        scoped.geometry.shells = geometry
             .shells
             .iter()
             .filter(|entity| shells.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.faces = model
+        scoped.geometry.faces = geometry
             .faces
             .iter()
             .filter(|entity| faces.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.loops = model
+        scoped.geometry.loops = geometry
             .loops
             .iter()
             .filter(|entity| loops.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.coedges = model
+        scoped.geometry.coedges = geometry
             .coedges
             .iter()
             .filter(|entity| coedges.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.edges = model
+        scoped.geometry.edges = geometry
             .edges
             .iter()
             .filter(|entity| edges.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.vertices = model
+        scoped.geometry.vertices = geometry
             .vertices
             .iter()
             .filter(|entity| vertices.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.points = model
+        scoped.geometry.points = geometry
             .points
             .iter()
             .filter(|entity| points.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.surfaces = model
+        scoped.geometry.surfaces = geometry
             .surfaces
             .iter()
             .filter(|entity| surfaces.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.curves = model
+        scoped.geometry.curves = geometry
             .curves
             .iter()
             .filter(|entity| curves.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.pcurves = model
+        scoped.geometry.pcurves = geometry
             .pcurves
             .iter()
             .filter(|entity| pcurves.contains(entity.id.as_str()))
@@ -494,41 +494,41 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
 
     let mut scoped = CadIr::empty();
     scoped.tolerances = ir.tolerances;
-    scoped.model.bodies = ir
-        .model
+    scoped.geometry.bodies = ir
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.kind == BodyKind::General)
         .cloned()
         .collect();
     let bodies = scoped
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
-    scoped.model.regions = ir
-        .model
+    scoped.geometry.regions = ir
+        .geometry
         .regions
         .iter()
         .filter(|region| bodies.contains(region.body.as_str()))
         .cloned()
         .collect();
     let regions = scoped
-        .model
+        .geometry
         .regions
         .iter()
         .map(|region| region.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
-    scoped.model.shells = ir
-        .model
+    scoped.geometry.shells = ir
+        .geometry
         .shells
         .iter()
         .filter(|shell| regions.contains(shell.region.as_str()))
         .cloned()
         .collect();
     let vertices = scoped
-        .model
+        .geometry
         .shells
         .iter()
         .flat_map(|shell| {
@@ -538,21 +538,21 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
                 .map(|id| id.as_str().to_owned())
         })
         .collect::<BTreeSet<_>>();
-    scoped.model.vertices = ir
-        .model
+    scoped.geometry.vertices = ir
+        .geometry
         .vertices
         .iter()
         .filter(|vertex| vertices.contains(vertex.id.as_str()))
         .cloned()
         .collect();
     let points = scoped
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| vertex.point.as_str())
         .collect::<BTreeSet<_>>();
-    scoped.model.points = ir
-        .model
+    scoped.geometry.points = ir
+        .geometry
         .points
         .iter()
         .filter(|point| points.contains(point.id.as_str()))
@@ -582,10 +582,11 @@ fn prepare_write(
         ));
     }
     let model = &ir.model;
+    let geometry = &ir.geometry;
     let unsupported = [
-        ("subds", model.subds.len()),
-        ("procedural_surfaces", model.procedural_surfaces.len()),
-        ("procedural_curves", model.procedural_curves.len()),
+        ("subds", geometry.subds.len()),
+        ("procedural_surfaces", geometry.procedural_surfaces.len()),
+        ("procedural_curves", geometry.procedural_curves.len()),
         ("features", model.features.len()),
         ("configurations", model.configurations.len()),
         ("parameters", model.parameters.len()),
@@ -607,7 +608,7 @@ fn prepare_write(
         )));
     }
     native_i32_count(
-        model.points.len(),
+        geometry.points.len(),
         "point arena exceeds native counts".into(),
     )?;
     let breps = brep_scopes(ir)?;
@@ -615,7 +616,7 @@ fn prepare_write(
         .iter()
         .flat_map(|scope| scope.pcurves.iter())
         .collect::<std::collections::BTreeSet<_>>();
-    if used_pcurves.len() != model.pcurves.len() {
+    if used_pcurves.len() != geometry.pcurves.len() {
         return Err(CodecError::NotImplemented(
             "pcurves without writable Brep coedge ownership are not writable".into(),
         ));
@@ -629,21 +630,21 @@ fn prepare_write(
         .flat_map(|scope| scope.surfaces.iter().cloned())
         .collect::<std::collections::BTreeSet<_>>();
     let general = general_topology_ir(ir);
-    let scoped_count = |select: fn(&cadmpeg_ir::document::Model) -> usize| {
+    let scoped_count = |select: fn(&cadmpeg_ir::document::Topology) -> usize| {
         breps
             .iter()
-            .map(|scope| select(&scope.ir.model))
+            .map(|scope| select(&scope.ir.geometry))
             .sum::<usize>()
-            + select(&general.model)
+            + select(&general.geometry)
     };
-    if scoped_count(|model| model.bodies.len()) != model.bodies.len()
-        || scoped_count(|model| model.regions.len()) != model.regions.len()
-        || scoped_count(|model| model.shells.len()) != model.shells.len()
-        || scoped_count(|model| model.faces.len()) != model.faces.len()
-        || scoped_count(|model| model.loops.len()) != model.loops.len()
-        || scoped_count(|model| model.coedges.len()) != model.coedges.len()
-        || scoped_count(|model| model.edges.len()) != model.edges.len()
-        || scoped_count(|model| model.vertices.len()) != model.vertices.len()
+    if scoped_count(|geometry| geometry.bodies.len()) != geometry.bodies.len()
+        || scoped_count(|geometry| geometry.regions.len()) != geometry.regions.len()
+        || scoped_count(|geometry| geometry.shells.len()) != geometry.shells.len()
+        || scoped_count(|geometry| geometry.faces.len()) != geometry.faces.len()
+        || scoped_count(|geometry| geometry.loops.len()) != geometry.loops.len()
+        || scoped_count(|geometry| geometry.coedges.len()) != geometry.coedges.len()
+        || scoped_count(|geometry| geometry.edges.len()) != geometry.edges.len()
+        || scoped_count(|geometry| geometry.vertices.len()) != geometry.vertices.len()
     {
         return Err(CodecError::NotImplemented(
             "orphan or unsupported topology is not writable".into(),
@@ -653,7 +654,7 @@ fn prepare_write(
     for scope in &breps {
         topology_points.extend(scope.points.iter().cloned());
     }
-    let curves = model
+    let curves = geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -667,7 +668,7 @@ fn prepare_write(
             ))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    let surfaces = model
+    let surfaces = geometry
         .surfaces
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
@@ -683,7 +684,7 @@ fn prepare_write(
     }
     let mut brep_records = tempfile::tempfile()?;
     for scope in &breps {
-        let body = &scope.ir.model.bodies[0];
+        let body = &scope.ir.geometry.bodies[0];
         let model = WritableModel::try_new(&scope.ir)?;
         let payload = brep_payload(&ctx, &model, archive_version)?;
         brep_records.write_all(&brep_object_record(
@@ -1733,13 +1734,13 @@ type PointGroups = (std::collections::BTreeSet<String>, Vec<PointGroup>);
 fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
     use cadmpeg_ir::topology::BodyKind;
 
-    let model = &ir.model;
+    let geometry = &ir.geometry;
     let mut regions = std::collections::BTreeSet::new();
     let mut shells = std::collections::BTreeSet::new();
     let mut vertices = std::collections::BTreeSet::new();
     let mut points = std::collections::BTreeSet::new();
     let mut groups = Vec::new();
-    for body in &model.bodies {
+    for body in &geometry.bodies {
         if body.kind != BodyKind::General || body.regions.len() != 1 || body.transform.is_some() {
             return Err(CodecError::NotImplemented(format!(
                 "body {} is not a free-vertex body without placement",
@@ -1747,7 +1748,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
             )));
         }
         check_object_attributes(body.id.as_str(), body.name.as_deref())?;
-        let region = model
+        let region = geometry
             .regions
             .iter()
             .find(|region| region.id == body.regions[0])
@@ -1763,7 +1764,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 body.id.as_str()
             )));
         }
-        let shell = model
+        let shell = geometry
             .shells
             .iter()
             .find(|shell| shell.id == region.shells[0])
@@ -1783,7 +1784,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
         }
         let mut group = Vec::new();
         for vertex_id in shell.free_vertices() {
-            let vertex = model
+            let vertex = geometry
                 .vertices
                 .iter()
                 .find(|vertex| vertex.id == *vertex_id)
@@ -1796,7 +1797,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                     vertex.id.as_str()
                 )));
             }
-            let point = model
+            let point = geometry
                 .points
                 .iter()
                 .find(|point| point.id == vertex.point)
@@ -1828,9 +1829,9 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
             visible: body.visible,
         });
     }
-    if regions.len() != model.regions.len()
-        || shells.len() != model.shells.len()
-        || vertices.len() != model.vertices.len()
+    if regions.len() != geometry.regions.len()
+        || shells.len() != geometry.shells.len()
+        || vertices.len() != geometry.vertices.len()
     {
         return Err(CodecError::NotImplemented(
             "orphan region, shell, or vertex topology is not writable".into(),

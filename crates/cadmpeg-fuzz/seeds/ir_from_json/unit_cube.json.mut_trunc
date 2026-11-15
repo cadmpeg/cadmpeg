@@ -1,7 +1,11 @@
 {
-  "fragment": false,
   "ir_version": "11",
-  "decode_depth": "full",
+  "fragment": false,
+  "scope": {
+    "model": true,
+    "design": true,
+    "process": true
+  },
   "units": {
     "length": "millimeter",
     "angle": "radian",
@@ -12,7 +16,7 @@
     "linear": 1e-6,
     "angular": 1e-10
   },
-  "model": {
+  "geometry": {
     "bodies": [
       {
         "id": "synthetic:cube:body#0",
@@ -473,4 +477,4 @@
         "start": "synthetic:cube:vertex#3",
         "end": "synthetic:cube:vertex#7"
       },
-      {
+     

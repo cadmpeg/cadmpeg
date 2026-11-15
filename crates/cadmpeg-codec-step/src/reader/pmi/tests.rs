@@ -826,7 +826,7 @@ fn associated_curve_placement_does_not_create_presentation_ambiguity() {
     }));
     assert!(result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve.id.as_str() == "step:data:curve#9"));
@@ -1745,7 +1745,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
     }));
     let point = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#50")
@@ -1944,7 +1944,7 @@ fn nonfinite_pmi_placement_omits_records_and_retains_source() {
     )
     .expect("omit the bounded point and its PMI dependents");
     let result = EditableDecodeResult::from(result);
-    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
     assert!(result.ir().model.pmi.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::ParseRecordOmitted.kind()

@@ -1,97 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
-          "channels": {},
-          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%230",
-          "source_entity_id": "/Looks/Box_face_1_material",
-          "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:0"
-          }
-        },
-        {
-          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
-          "channels": {},
-          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%231",
-          "source_entity_id": "/Looks/Box_face_1_material",
-          "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:1"
-          }
-        },
-        {
-          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
-          "channels": {},
-          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%232",
-          "source_entity_id": "/Looks/Box_face_1_material",
-          "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:2"
-          }
-        },
-        {
-          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
-          "channels": {},
-          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%233",
-          "source_entity_id": "/Looks/Box_face_1_material",
-          "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:3"
-          }
-        },
-        {
-          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
-          "channels": {},
-          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%234",
-          "source_entity_id": "/Looks/Box_face_1_material",
-          "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:4"
-          }
-        },
-        {
-          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
-          "channels": {},
-          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%235",
-          "source_entity_id": "/Looks/Box_face_1_material",
-          "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:5"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
-          },
-          "id": "usd:stage:appearance#/Looks/Box_face_1_material",
-          "name": "Box_face_1_material",
-          "properties": {
-            "UsdPreviewSurface/diffuseColor.b": 0.6000000238418579,
-            "UsdPreviewSurface/diffuseColor.g": 0.4000000059604645,
-            "UsdPreviewSurface/diffuseColor.r": 0.20000000298023224,
-            "base_color.b": 0.6000000238418579,
-            "base_color.g": 0.4000000059604645,
-            "base_color.r": 0.20000000298023224
-          },
-          "schema": "ND_open_pbr_surface_surfaceshader",
-          "textures": []
-        }
-      ],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/Occurrence",
@@ -488,8 +399,6 @@
           "sense": "forward"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -876,8 +785,6 @@
           "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:9"
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -1092,10 +999,6 @@
           "surface": "usd:stage:surface#/Occurrence:surface-nurbs:5"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -1182,48 +1085,6 @@
           "id": "usd:stage:loop#/Occurrence:loop:5"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "usd:stage:occurrence#/Occurrence",
-          "name": "Occurrence",
-          "native_ref": "/Occurrence",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Occurrence",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -1970,10 +1831,6 @@
           }
         }
       ],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "usd:stage:point#/Occurrence:vertex:0",
@@ -2040,23 +1897,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [
-        {
-          "bodies": [
-            "usd:stage:body#/Occurrence"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/Occurrence",
-          "kind": "group",
-          "native_ref": "/Occurrence",
-          "sketches": [],
-          "source_name": "Occurrence"
-        }
-      ],
       "regions": [
         {
           "body": "usd:stage:body#/Occurrence",
@@ -2066,8 +1908,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "usd:stage:shell#/Occurrence:shell:0",
@@ -2100,14 +1940,6 @@
           "region": "usd:stage:region#/Occurrence:region:0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -2441,6 +2273,210 @@
           "id": "usd:stage:surface#/Occurrence:surface-nurbs:5"
         }
       ],
+      "vertices": [
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:0",
+          "point": "usd:stage:point#/Occurrence:vertex:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:1",
+          "point": "usd:stage:point#/Occurrence:vertex:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:2",
+          "point": "usd:stage:point#/Occurrence:vertex:2"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:3",
+          "point": "usd:stage:point#/Occurrence:vertex:3"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:4",
+          "point": "usd:stage:point#/Occurrence:vertex:4"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:5",
+          "point": "usd:stage:point#/Occurrence:vertex:5"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:6",
+          "point": "usd:stage:point#/Occurrence:vertex:6"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:7",
+          "point": "usd:stage:point#/Occurrence:vertex:7"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "channels": {},
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%230",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "kind": "face",
+            "value": "usd:stage:face#/Occurrence:face:0"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "channels": {},
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%231",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "kind": "face",
+            "value": "usd:stage:face#/Occurrence:face:1"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "channels": {},
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%232",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "kind": "face",
+            "value": "usd:stage:face#/Occurrence:face:2"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "channels": {},
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%233",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "kind": "face",
+            "value": "usd:stage:face#/Occurrence:face:3"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "channels": {},
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%234",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "kind": "face",
+            "value": "usd:stage:face#/Occurrence:face:4"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "channels": {},
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%235",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "kind": "face",
+            "value": "usd:stage:face#/Occurrence:face:5"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.6000000238418579,
+            "g": 0.4000000059604645,
+            "r": 0.20000000298023224
+          },
+          "id": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "name": "Box_face_1_material",
+          "properties": {
+            "UsdPreviewSurface/diffuseColor.b": 0.6000000238418579,
+            "UsdPreviewSurface/diffuseColor.g": 0.4000000059604645,
+            "UsdPreviewSurface/diffuseColor.r": 0.20000000298023224,
+            "base_color.b": 0.6000000238418579,
+            "base_color.g": 0.4000000059604645,
+            "base_color.r": 0.20000000298023224
+          },
+          "schema": "ND_open_pbr_surface_surfaceshader",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Occurrence",
+          "name": "Occurrence",
+          "native_ref": "/Occurrence",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Occurrence",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "usd:stage:body#/Occurrence"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/Occurrence",
+          "kind": "group",
+          "native_ref": "/Occurrence",
+          "sketches": [],
+          "source_name": "Occurrence"
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [
         {
           "body": "usd:stage:body#/Occurrence",
@@ -2808,43 +2844,15 @@
           "triangle_groups": []
         }
       ],
-      "vertices": [
-        {
-          "id": "usd:stage:vertex#/Occurrence:vertex:0",
-          "point": "usd:stage:point#/Occurrence:vertex:0"
-        },
-        {
-          "id": "usd:stage:vertex#/Occurrence:vertex:1",
-          "point": "usd:stage:point#/Occurrence:vertex:1"
-        },
-        {
-          "id": "usd:stage:vertex#/Occurrence:vertex:2",
-          "point": "usd:stage:point#/Occurrence:vertex:2"
-        },
-        {
-          "id": "usd:stage:vertex#/Occurrence:vertex:3",
-          "point": "usd:stage:point#/Occurrence:vertex:3"
-        },
-        {
-          "id": "usd:stage:vertex#/Occurrence:vertex:4",
-          "point": "usd:stage:point#/Occurrence:vertex:4"
-        },
-        {
-          "id": "usd:stage:vertex#/Occurrence:vertex:5",
-          "point": "usd:stage:point#/Occurrence:vertex:5"
-        },
-        {
-          "id": "usd:stage:vertex#/Occurrence:vertex:6",
-          "point": "usd:stage:point#/Occurrence:vertex:6"
-        },
-        {
-          "id": "usd:stage:vertex#/Occurrence:vertex:7",
-          "point": "usd:stage:point#/Occurrence:vertex:7"
-        }
-      ],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Occurrence",

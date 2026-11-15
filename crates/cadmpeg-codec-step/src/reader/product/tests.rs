@@ -84,7 +84,7 @@ fn product_descriptions_transfer_from_product_and_definition() {
             description: Some("Round-tripped description".into()),
             part_number: Some("DESCRIBED".into()),
             bom_properties: std::collections::BTreeMap::new(),
-            bodies: vec![ir.model.bodies[0].id.clone()],
+            bodies: vec![ir.geometry.bodies[0].id.clone()],
             native_ref: None,
         });
     let mut output = Vec::new();
@@ -583,8 +583,8 @@ fn conflicting_standalone_mapped_body_placements_are_not_overwritten() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode conflicting standalone body mappings");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::BodyConflictingMappedPlacements.kind()
             && loss.severity == cadmpeg_ir::report::Severity::Error
@@ -607,9 +607,9 @@ fn ps03_repeated_mapped_body_placements_require_one_cadir_transform() {
     let same_transform = decode_fixture(include_bytes!(
         "tests/data/ps03_repeated_mapped_placements_same_transform.p21"
     ));
-    assert_eq!(same_transform.ir().model.bodies.len(), 1);
+    assert_eq!(same_transform.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        same_transform.ir().model.bodies[0]
+        same_transform.ir().geometry.bodies[0]
             .transform
             .expect("one shared body transform")
             .rows()[0][3],
@@ -626,8 +626,8 @@ fn ps03_repeated_mapped_body_placements_require_one_cadir_transform() {
         include_bytes!("tests/data/ps03_repeated_mapped_placements_reordered.p21").as_slice(),
     ] {
         let conflicting = decode_fixture(bytes);
-        assert_eq!(conflicting.ir().model.bodies.len(), 1);
-        assert!(conflicting.ir().model.bodies[0].transform.is_none());
+        assert_eq!(conflicting.ir().geometry.bodies.len(), 1);
+        assert!(conflicting.ir().geometry.bodies[0].transform.is_none());
         assert!(conflicting.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::BodyConflictingMappedPlacements.kind()
                 && loss.severity == cadmpeg_ir::report::Severity::Error
@@ -651,8 +651,8 @@ fn drawing_mapped_items_do_not_place_exact_bodies() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode drawing mapped item");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
             .contains("MAPPED_ITEM #22 has no resolved body placement")
@@ -673,8 +673,8 @@ fn nested_drawing_mapped_items_do_not_place_exact_bodies() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode nested drawing mapped item");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
             .contains("MAPPED_ITEM #22 has no resolved body placement")
@@ -726,8 +726,8 @@ fn two_dimensional_mapping_does_not_change_body_placement() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode 2D mapped presentation item");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
             .contains("MAPPED_ITEM has no resolved body placement")
@@ -1430,7 +1430,7 @@ fn decode_applies_canonical_cartesian_operator_to_mapped_body() {
     ])
     .expect("affine transform");
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].transform = Some(transform);
+    ir.geometry.bodies[0].transform = Some(transform);
     let mut output = Vec::new();
     write_step(
         &ir,
@@ -1502,7 +1502,7 @@ fn decode_applies_canonical_cartesian_operator_to_mapped_body() {
             &DecodeOptions::default(),
         )
         .expect("decode mapped body with canonical operator");
-    assert_eq!(decoded.ir().model.bodies[0].transform, Some(transform));
+    assert_eq!(decoded.ir().geometry.bodies[0].transform, Some(transform));
 }
 
 #[test]
@@ -1551,6 +1551,6 @@ END-ISO-10303-21;"
             "parent owns the occurrence, not its child's body"
         );
         assert_eq!(child.bodies.len(), 1);
-        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(decoded.ir().geometry.faces.len(), 1);
     }
 }
