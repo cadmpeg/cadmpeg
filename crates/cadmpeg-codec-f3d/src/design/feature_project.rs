@@ -1591,6 +1591,17 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     scope.id
                                 )));
                             }
+                            if matches!(
+                                construction,
+                                crate::records::feature::base_feature::DesignBaseFeatureConstruction::SuffixResultBodies { .. }
+                            ) && construction.body_entity_suffixes().len() > 1
+                            {
+                                projection_losses.push(crate::loss::F3dLossCode::FeatureBaseFeatureSuffixRunOrderAssumed.note(format!(
+                                    "Base Feature {} stores {} bodies in a suffix result-body frame; its body, repeated, and result entries are read as three consecutive runs (DR-646).",
+                                    scope.id,
+                                    construction.body_entity_suffixes().len()
+                                )));
+                            }
                             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                                 bodies: design_body_selection(
                                     scope,

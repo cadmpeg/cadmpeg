@@ -552,6 +552,16 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer must emit the counted head and its reference for a pattern that uses it, and a reader must know whether the reference changes the pattern's seed, direction or distribution.
 
+### DR-654. Stored profile loop curves off the selected material boundary
+
+**Question.** Which sketch curves does a typed profile loop list when the selected region has a curve that ends inside it, or two coincident curves along one boundary interval?
+
+**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. It requires every stored curve to bound a selected atomic region. A loop that lists a line ending inside a circle, or a line coincident with part of another listed line, names a curve that bounds no selected region in that reading. The selection stays native with `feature.profile-selection-native`.
+
+**Need.** Controlled Extrudes of one region with a line that ends inside it, and of two regions separated by two coincident lines, with the stored loops and the resulting end caps, to state when a listed curve contributes no boundary interval.
+
+**Conflict.** None.
+
 ### DR-97. Freedom entry second value `0`
 
 **Question.** What does a freedom entry state when its second f64 is `0` rather than π?
@@ -1011,7 +1021,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Membership certainty and order certainty remain independent.
 
-### DR-646. Conflicting and foreign Form reference joins
+### DR-657. Conflicting and foreign Form reference joins
 
 **Question.** Which Form cage belongs to a source slot when its body, serializer, tracking group or owned list carries conflicting type, owner, position or namespace evidence?
 
@@ -1719,13 +1729,23 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** What does the flag byte of the marked null reference in a `Base Feature` result-body envelope state?
 
-**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the marked null reference of the ordinary form. Ordinary frames written by earlier releases store `0`. A public 318-byte class-348/257 ordinary frame stores `1` and repeats its passive reference. Six controlled one-body 331-byte ordinary frames from the current Fusion release, whose body is built in place, store `1` and repeat their body entity suffix. The decoder reads the result runs of a flagged ordinary frame as the ordinary result set and reports `feature.base-feature-null-flag-assumed`. Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 of the 262-byte wide zero-body form as zero; offsets 20 through 30 there have the layout of a marked null reference. One public 262-byte wide zero-body frame stores `1` at offset 29, and its current and preceding history states are equal; two other public frames of this form store `0`. A controlled 275-byte wide zero-body frame that holds a mesh body stores `1` at offset 29. A controlled 316-byte class-368/258 frame, whose body is a copy of a body in a referenced design, stores u32 `N` at offset 20 in place of `2N`, one run of `N` body-suffix entries, a marked null reference with flag `1` at offset 39, u32 `N`, and a repeated run of body suffixes; its kind starts at offset `169 + 37N`. The decoder keeps the wide zero-body frames with flag `1` and the 316-byte frame as unbound stored-body scopes.
+**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the marked null reference of the ordinary form. Ordinary frames written by earlier releases store `0`. A public 318-byte class-348/257 ordinary frame stores `1` and repeats its passive reference. Six controlled one-body 331-byte ordinary frames from the current Fusion release, whose body is built in place, store `1` and repeat their body entity suffix. A controlled 316-byte class-368/258 suffix result-body frame, whose body is a copy of a body in a referenced design, stores `1`. The decoder reads the result runs of a flagged ordinary or suffix result-body frame as the ordinary result set and reports `feature.base-feature-null-flag-assumed`. Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 of the 262-byte wide zero-body form as zero; offsets 20 through 30 there have the layout of a marked null reference. One public 262-byte wide zero-body frame stores `1` at offset 29, and its current and preceding history states are equal; two other public frames of this form store `0`. A controlled 275-byte wide zero-body frame that holds a mesh body stores `1` at offset 29. The decoder keeps the wide zero-body frames with flag `1` as unbound stored-body scopes.
 
 **Need.** Saves of one design that differ only in this byte, for example across Fusion releases or design options.
 
 **Conflict.** None.
 
 **Note.** DR-483 tracks a marked null reference whose byte after the flag byte is `1`. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
+
+### DR-646. Entry order of a multi-body suffix result-body frame
+
+**Question.** How does a `Base Feature` suffix result-body frame with more than one body order its body, repeated, and result entries?
+
+**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the one-body suffix result-body form. The ordinary form stores each entry kind as one consecutive run. The decoder reads a frame with u32 `N` greater than `1` at offset 20 and its kind at offset `169 + 37N` as `N` body entries, the marked null reference, u32 `N`, `N` repeated entries, one zero byte, the metadata record, u32 `N`, and `N` result entries, and reports `feature.base-feature-suffix-run-order-assumed`.
+
+**Need.** A controlled save whose Base Feature copies two bodies from a referenced design.
+
+**Conflict.** None.
 
 ### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
@@ -3261,3 +3281,23 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled to-object flanges whose selected construction remains external or unresolved while the signed offset is retained.
 
 **Note.** `feature.edge-flange-height-target-native` retains the decoded target selection program. `feature.edge-flange-height-target-scope-assumed` retains the owning scope program when that target selection is unresolved. The target and signed offset remain independent neutral construction inputs.
+
+### DR-655. Profile loop entries without a sketch-curve record
+
+**Question.** Which record carries the curve of a profile loop entry when no sketch-curve record of the owning Sketch has the entry's primary identity?
+
+**Known.** A public RailCore II 300ZL design stores a typed-reference profile selection under Sketch owner 1115 with one loop of seven entries. Their primary identities are 241, 233, 244, 228, 231, 237, and 238. The Sketch holds curve records for every identity except 231. No uint64 property in the stream holds the value 231 outside the selection and ASM history records. A second design names primary identity 392 under Sketch owner 6681 with the same absence. A third design lists fifteen entries under owner 1977; the curve records that carry those identities name owner 1014.
+
+**Need.** A stored carrier or a derivation rule for the absent curves, and the owner join for the third design.
+
+**Note.** The selection stays native with `feature.profile-selection-native`.
+
+### DR-656. Sketch curve records with a nested geometry record
+
+**Question.** Which field of a sketch-curve record that stores no inline geometry gives the curve's geometry?
+
+**Known.** Public RailCore II 300ZL curve records of a class with `crv_primary_id` and `crv_secondary_id` followed by eight `0xff` bytes, a nested class record, and typed references store no f64 line or arc values at the geometry offset. Their profile selections resolve to identities that have no neutral sketch entity.
+
+**Need.** The geometry carrier of these records.
+
+**Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
