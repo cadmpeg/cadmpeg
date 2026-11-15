@@ -581,24 +581,24 @@ fn run_pattern_constructions_fixture() {
         [4.0, 9.0, 14.0]
     );
 
-    let mut invalid_inactive_spacing = rectangular_owners.clone();
+    // A count-one direction keeps the distance Fusion stores for it.
+    let mut inactive_spacing = rectangular_owners.clone();
     {
-        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(
-            invalid_inactive_spacing[3].clone(),
-        );
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::from(inactive_spacing[3].clone());
         wire.evaluated_value = 1.0;
-        invalid_inactive_spacing[3] =
+        inactive_spacing[3] =
             crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
-    assert_eq!(
-        tested_rectangular_pattern_construction(
-            &[],
-            &crate::design::test_support::indexed_record_offsets_for_test(&[]),
-            &scope,
-            &invalid_inactive_spacing
-        ),
-        None
-    );
+    let kept = tested_rectangular_pattern_construction(
+        &[],
+        &crate::design::test_support::indexed_record_offsets_for_test(&[]),
+        &scope,
+        &inactive_spacing,
+    )
+    .expect("count-one direction with a distance");
+    assert_eq!(kept.v_extent(), 1.0);
+    assert_eq!(kept.active_direction_count(), 1);
     let mut duplicate_lane = rectangular_owners.clone();
     {
         let mut wire =
@@ -1728,6 +1728,7 @@ fn rectangular_pattern_spacing_direction_validates_shifted_fields() {
 mod compact_extent;
 mod compact_spacing;
 mod counted_distribution;
+mod counted_head_forms;
 
 fn spacing_payload() -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -1875,8 +1876,13 @@ fn distribution_payload(symmetric: u8, v_direction: Option<u32>, distance_type: 
     bytes
 }
 
-#[test]
-fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() {
+/// The scope, the 5 by 3 construction, and the U direction that
+/// `distribution_payload` belongs to.
+fn distribution_inputs() -> (
+    DesignParameterScope,
+    crate::records::feature::patterns::DesignRectangularPatternConstruction,
+    crate::records::feature::patterns::DesignRectangularPatternDirection,
+) {
     use crate::records::feature::patterns::{
         DesignRectangularPatternConstruction, DesignRectangularPatternConstructionWire,
     };
@@ -1911,6 +1917,12 @@ fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() 
     let direction =
         super::exact_rectangular_pattern_direction(&spacing_direction_frame(), 0, 221, 20, 23, 10)
             .unwrap();
+    (scope, construction, direction)
+}
+
+#[test]
+fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() {
+    let (scope, construction, direction) = distribution_inputs();
     let parse = |bytes: &[u8]| {
         super::exact_rectangular_pattern_distribution(
             bytes,

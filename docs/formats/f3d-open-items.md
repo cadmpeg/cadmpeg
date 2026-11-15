@@ -560,6 +560,8 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer must emit the counted head and its reference for a pattern that uses it, and a reader must know whether the reference changes the pattern's seed, direction or distribution.
 
+**Note.** The u32 after the counted head is `2` in the saves that set up this item, and `1` in a save whose 196-byte direction record stores distance type `10`. After a V-direction reference, one save stores the counted head with eight zero bytes and u32 `1` after it.
+
 ### DR-654. Stored profile loop curves off the selected material boundary
 
 **Question.** Which sketch curves does a typed profile loop list when the selected region has a curve that ends inside it, or two coincident curves along one boundary interval?
@@ -2438,6 +2440,14 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Need.** Saves that vary the spacing and the start point on one path, with the two values compared against the instance positions.
 
 **Conflict.** None.
+
+### DR-642. Pattern compute option
+
+**Question.** Which bytes store the Compute option of a rectangular or circular pattern of features, and what does each value change?
+
+**Known.** Fusion offers the options Optimized, Identical, and Adjust. Three saves differ only in this option and pattern one cut whose profile ends on a slanted body edge. Adjust gives copies that are pure translations of the seed, so the copies stop short of the edge. Optimized gives copies that extend to the edge, and removes 0.1414 mm³ more. Identical fails the pattern feature. When every copy cuts through the body, the three options give the same volume. The decoder projects every pattern as pure translations.
+
+**Need.** The byte that differs between the three saves, and a save of a circular pattern with each option.
 
 ### DR-643. Persistent tags of omitted bodies
 

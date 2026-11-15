@@ -8902,6 +8902,21 @@ Parsed by:
 | 4 | 11 | `reference` | `bytes[11]` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. |
 | 15 | 4 | `zero_run` | `bytes[4]` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. |
 
+## `rectangular_pattern_payload_referenced_counted_head`
+
+Spec §Assembly operands · layout: byte offsets · size: 23 B
+
+Offsets are relative to the byte after the V-direction reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | After a V-direction reference, the counted form stores eight zero bytes in place of the four. · value `1` |
+| 4 | 11 | `reference` | `bytes[11]` | little | spec | After a V-direction reference, the counted form stores eight zero bytes in place of the four. |
+| 15 | 8 | `zero_run` | `bytes[8]` | little | spec | After a V-direction reference, the counted form stores eight zero bytes in place of the four. |
+
 ## `rectangular_pattern_payload_suffix`
 
 Spec §Assembly operands · layout: byte offsets · size: 37 B

@@ -99,7 +99,10 @@ pub(super) fn exact_rectangular_pattern_construction(
     let Some(mut construction) = parsed else {
         return Ok(None);
     };
-    let directions = exact_rectangular_pattern_directions(bytes, records, scope);
+    let directions = active_direction_records(
+        &construction,
+        exact_rectangular_pattern_directions(bytes, records, scope),
+    );
     let secondary = exact_rectangular_pattern_secondary_direction(
         bytes,
         records,
@@ -140,6 +143,28 @@ pub(super) fn exact_rectangular_pattern_construction(
         }
     }
     Ok(Some(construction))
+}
+
+/// The direction records of the active directions. A scope that stores both
+/// direction slots, direction one first, keeps the record of an inactive
+/// direction; every other record list is returned whole.
+fn active_direction_records(
+    construction: &DesignRectangularPatternConstruction,
+    directions: Vec<patterns::DesignRectangularPatternDirection>,
+) -> Vec<patterns::DesignRectangularPatternDirection> {
+    if directions.len() != 2 {
+        return directions;
+    }
+    let active = [
+        (construction.u_count(), construction.u_extent()),
+        (construction.v_count(), construction.v_extent()),
+    ]
+    .map(|(count, extent)| count > 1 && extent != 0.0);
+    directions
+        .into_iter()
+        .zip(active)
+        .filter_map(|(direction, active)| active.then_some(direction))
+        .collect()
 }
 
 /// The direction records of a rectangular-pattern scope, in reference order.
@@ -188,7 +213,7 @@ fn exact_rectangular_pattern_direction(
     let shift = match (length, distance_type) {
         (frame::LEN, 8) => 0,
         (spacing::LEN, 7) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
-        (compact::LEN, 7) | (compact_extent::LEN, 8) => 0,
+        (compact::LEN, 7) | (compact_extent::LEN, 8 | 10) => 0,
         _ => return None,
     };
     let compact_spacing = length == compact::LEN;
@@ -388,9 +413,12 @@ fn exact_rectangular_pattern_distribution(
     use crate::layout::rectangular_pattern_payload_counted_head as counted_head;
     use crate::layout::rectangular_pattern_payload_distribution as block;
     use crate::layout::rectangular_pattern_payload_prefix as prefix;
+    use crate::layout::rectangular_pattern_payload_referenced_counted_head as referenced_head;
     use crate::layout::rectangular_pattern_payload_suffix as suffix;
     const ENTRY_LEN: usize = 16;
     const MARKED_REFERENCE_LEN: usize = 11;
+    /// The u32 that can follow a counted head in place of `2`.
+    const COUNTED_FIXED_VALUE: u32 = 1;
 
     let u_direction = directions.first()?.record_index;
     let frames =
@@ -399,32 +427,51 @@ fn exact_rectangular_pattern_distribution(
         return None;
     };
     let after_prefix = start + prefix::LEN;
-    // `at` is the block offset that places `FIXED_TWO` on the u32 `2`.
-    let (at, zero_run) = match bytes.get(after_prefix)? {
-        0 => {
-            let head = after_prefix + 1;
-            if View::u32_le_at(bytes, head + counted_head::COUNT) == Some(counted_head::COUNT_VALUE)
-            {
-                // The counted form replaces the twelve zero bytes with the
-                // count, a marked record reference, and four zero bytes.
-                marked_record_reference(bytes, head + counted_head::REFERENCE)?;
-                (
-                    (head + counted_head::LEN).checked_sub(block::FIXED_TWO)?,
-                    head + counted_head::ZERO_RUN..head + counted_head::LEN,
-                )
-            } else {
-                (head, head + block::ZERO_RUN..head + block::FIXED_TWO)
-            }
-        }
+    // `at` is the block offset that places `FIXED_TWO` on the u32 after the
+    // head.
+    let head = match bytes.get(after_prefix)? {
+        0 => after_prefix + 1,
         1 => {
             marked_record_reference(bytes, after_prefix)?;
-            let at = after_prefix + MARKED_REFERENCE_LEN;
-            (at, at + block::ZERO_RUN..at + block::FIXED_TWO)
+            after_prefix + MARKED_REFERENCE_LEN
         }
         _ => return None,
     };
-    if bytes.get(zero_run.clone())? != &[0; 12][..zero_run.len()]
-        || View::u32_le_at(bytes, at + block::FIXED_TWO) != Some(block::FIXED_TWO_VALUE)
+    // The counted form replaces the twelve zero bytes with a count, a marked
+    // record reference, and four zero bytes, or eight zero bytes after a
+    // V-direction reference.
+    let (count, count_value, reference, run, len) = if head == after_prefix + 1 {
+        (
+            counted_head::COUNT,
+            counted_head::COUNT_VALUE,
+            counted_head::REFERENCE,
+            counted_head::ZERO_RUN,
+            counted_head::LEN,
+        )
+    } else {
+        (
+            referenced_head::COUNT,
+            referenced_head::COUNT_VALUE,
+            referenced_head::REFERENCE,
+            referenced_head::ZERO_RUN,
+            referenced_head::LEN,
+        )
+    };
+    let counted = View::u32_le_at(bytes, head + count) == Some(count_value);
+    let (at, zero_run) = if counted {
+        marked_record_reference(bytes, head + reference)?;
+        (
+            (head + len).checked_sub(block::FIXED_TWO)?,
+            head + run..head + len,
+        )
+    } else {
+        (head, head + block::ZERO_RUN..head + block::FIXED_TWO)
+    };
+    // After a counted head the u32 is `1` or `2`; after twelve zero bytes it
+    // is `2`.
+    let fixed = View::u32_le_at(bytes, at + block::FIXED_TWO);
+    if bytes.get(zero_run.clone())?.iter().any(|byte| *byte != 0)
+        || !(fixed == Some(block::FIXED_TWO_VALUE) || counted && fixed == Some(COUNTED_FIXED_VALUE))
         || View::u32_le_at(bytes, at + block::SENTINEL) != Some(u32::MAX)
     {
         return None;

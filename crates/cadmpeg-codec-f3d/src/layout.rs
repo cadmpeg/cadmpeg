@@ -8016,6 +8016,26 @@ pub(crate) mod rectangular_pattern_payload_counted_head {
     pub(crate) const ZERO_RUN: usize = 15;
 }
 
+/// Byte offsets for the `rectangular_pattern_payload_referenced_counted_head` record.
+///
+/// Spec §Assembly operands. Record length 23 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the V-direction reference.
+/// ```
+pub(crate) mod rectangular_pattern_payload_referenced_counted_head {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 23;
+    /// Offset of `count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const COUNT: usize = 0;
+    /// Stated value of `count` (`u32`). Spec §Assembly operands.
+    pub(crate) const COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE: usize = 4;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN: usize = 15;
+}
+
 /// Byte offsets for the `rectangular_pattern_payload_suffix` record.
 ///
 /// Spec §Assembly operands. Record length 37 B.
