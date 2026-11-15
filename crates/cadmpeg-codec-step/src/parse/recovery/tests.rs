@@ -11,7 +11,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::record_unreadable_kind;
 
 use crate::loss::StepLossCode;
-use crate::parse::{parse_inner, ParseDiagnosticKind};
+use crate::parse::{parse_inner, ParseDiagnosticKind, Value};
 use crate::test_support::{with_policy_context, with_service_context};
 use crate::StepCodec;
 
@@ -103,13 +103,13 @@ fn given_up_losses(report: &DecodeReport) -> Vec<&LossNote> {
 #[test]
 fn a_given_up_statement_names_the_records_that_need_it() {
     let source = exchange(
-        "#1=CARTESIAN_POINT('',(1.,2.,3.));#2=ITEM(%,3);#3=ITEM(#2);#4=ITEM((#3));#5=ITEM(#9);#6=GEOMETRIC_SET('',(#1));",
+        "#1=CARTESIAN_POINT('',(1.,2.,3.));#2=ITEM(%,3);#3=ITEM(#2);#4=ITEM(#3);#5=ITEM(#9);#6=GEOMETRIC_SET('',(#1,#3));",
     );
     let dependent = source.find("#3=").expect("first dependent");
     let transitive = source.find("#4=").expect("transitive dependent");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .expect("the independent point decodes");
+        .expect("the set keeps its readable entry");
     assert_eq!(decoded.ir().geometry.points.len(), 1);
     let losses = given_up_losses(decoded.report());
     let [loss] = losses.as_slice() else {
@@ -129,7 +129,7 @@ fn a_given_up_statement_names_the_records_that_need_it() {
     };
     assert!(omission.message.contains("instance #5"));
     let (_, _, fidelity) = decoded.into_parts();
-    for (offset, text) in [(dependent, "#3=ITEM(#2);"), (transitive, "#4=ITEM((#3));")] {
+    for (offset, text) in [(dependent, "#3=ITEM(#2);"), (transitive, "#4=ITEM(#3);")] {
         assert_eq!(
             fidelity
                 .retained_record(&format!("step:file:omitted#{offset}"))
@@ -138,6 +138,40 @@ fn a_given_up_statement_names_the_records_that_need_it() {
             Some(text.as_bytes())
         );
     }
+}
+
+#[test]
+fn a_record_that_lists_a_given_up_statement_loses_only_those_entries() {
+    let source = exchange(
+        "#1=ITEM();#2=ITEM(%,3);#3=ITEM(#2);#4=ITEM((#1,#3,LABEL(#2)),((#2),#1));#5=ITEM((#4));",
+    );
+    let (parsed, diagnostics) =
+        with_service_context(source.as_bytes(), parse_inner).expect("bounded graph");
+    assert_eq!(
+        parsed.records().keys().copied().collect::<Vec<_>>(),
+        [1, 4, 5]
+    );
+    assert_eq!(
+        parsed.records()[&4].partials[0]
+            .parameters
+            .iter()
+            .collect::<Vec<_>>(),
+        [
+            &Value::List(vec![Value::Reference(1)]),
+            &Value::List(vec![Value::List(Vec::new()), Value::Reference(1)]),
+        ]
+    );
+    let [statement] = parsed.given_up() else {
+        panic!("one given-up statement");
+    };
+    assert_eq!(
+        statement.dropped,
+        [source.find("#3=").expect("direct user")]
+    );
+    assert_eq!(parsed.omitted_spans().len(), 1);
+    assert!(!diagnostics
+        .iter()
+        .any(|item| item.kind == ParseDiagnosticKind::RecordOmitted));
 }
 
 #[test]

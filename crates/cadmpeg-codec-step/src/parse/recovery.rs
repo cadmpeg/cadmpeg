@@ -217,26 +217,36 @@ impl Parser<'_, '_, '_> {
         omitted: &mut Vec<Range<usize>>,
     ) -> Result<(), ParseError> {
         // Each pending record carries the given-up statement it needs, if its
-        // only missing references name one.
+        // only missing references name one. A record that lists a given-up
+        // statement only inside aggregates is not pending: it loses those
+        // entries.
         let mut pending = Vec::new();
+        let mut listing = BTreeSet::new();
         for (&id, record) in records.iter() {
             let mut missing = None;
             let mut given_up = None;
+            let mut listed_given_up = false;
             for partial in &record.partials {
                 for value in &partial.parameters {
-                    visit_references(value, self.budget, &mut |target, value_instance| {
-                        if (value_instance && !external_values.contains(&target))
-                            || (!value_instance
-                                && !records.contains_key(&target)
-                                && !external.contains(&target))
-                        {
-                            match self.given_up_names.get(&target) {
-                                Some(&part) if !value_instance => given_up = Some(part),
-                                _ => missing = Some((target, value_instance)),
+                    visit_placed_references(
+                        value,
+                        self.budget,
+                        false,
+                        &mut |target, value_instance, listed| {
+                            if (value_instance && !external_values.contains(&target))
+                                || (!value_instance
+                                    && !records.contains_key(&target)
+                                    && !external.contains(&target))
+                            {
+                                match self.given_up_names.get(&target) {
+                                    Some(_) if !value_instance && listed => listed_given_up = true,
+                                    Some(&part) if !value_instance => given_up = Some(part),
+                                    _ => missing = Some((target, value_instance)),
+                                }
                             }
-                        }
-                        Ok(())
-                    })?;
+                            Ok(())
+                        },
+                    )?;
                 }
             }
             if let Some((target, value_instance)) = missing {
@@ -245,31 +255,72 @@ impl Parser<'_, '_, '_> {
                 pending.push((id, None));
             } else if given_up.is_some() {
                 pending.push((id, given_up));
+            } else if listed_given_up {
+                listing.insert(id);
             }
         }
-        if pending.is_empty() {
-            return Ok(());
+        if !pending.is_empty() {
+            self.propagate_omissions(records, pending, &mut listing, omitted)?;
         }
-        // Build the reverse graph only when an omission must propagate. Each
-        // edge is indexed once; each removed node unlocks its direct users.
-        let mut reverse = BTreeMap::<u64, Vec<u64>>::new();
-
-        for (&id, record) in records.iter() {
+        let mut absent = BTreeSet::new();
+        for record in listing.iter().filter_map(|id| records.get(id)) {
             for partial in &record.partials {
                 for value in &partial.parameters {
                     visit_references(value, self.budget, &mut |target, value_instance| {
-                        if !value_instance {
-                            reverse.entry(target).or_default().push(id);
+                        if !value_instance
+                            && !records.contains_key(&target)
+                            && !external.contains(&target)
+                        {
+                            absent.insert(target);
                         }
                         Ok(())
                     })?;
                 }
             }
         }
-        let mut queued = pending
-            .iter()
-            .map(|&(id, _)| id)
-            .collect::<std::collections::BTreeSet<_>>();
+        for id in listing {
+            if let Some(record) = records.get_mut(&id) {
+                for value in record.values_mut() {
+                    drop_listed_entries(value, self.budget, &absent)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Removes each pending record and, transitively, every record that
+    /// needs a removed one. A record that lists a record dropped for a
+    /// given-up statement only inside aggregates is added to `listing`
+    /// instead.
+    fn propagate_omissions(
+        &mut self,
+        records: &mut BTreeMap<u64, RawRecord>,
+        mut pending: Vec<(u64, Option<usize>)>,
+        listing: &mut BTreeSet<u64>,
+        omitted: &mut Vec<Range<usize>>,
+    ) -> Result<(), ParseError> {
+        // Each edge is indexed once; each removed node unlocks its direct
+        // users.
+        let mut reverse = BTreeMap::<u64, Vec<(u64, bool)>>::new();
+
+        for (&id, record) in records.iter() {
+            for partial in &record.partials {
+                for value in &partial.parameters {
+                    visit_placed_references(
+                        value,
+                        self.budget,
+                        false,
+                        &mut |target, value_instance, listed| {
+                            if !value_instance {
+                                reverse.entry(target).or_default().push((id, listed));
+                            }
+                            Ok(())
+                        },
+                    )?;
+                }
+            }
+        }
+        let mut queued = pending.iter().map(|&(id, _)| id).collect::<BTreeSet<_>>();
         while let Some((id, part)) = pending.pop() {
             if let Some(record) = records.remove(&id) {
                 match part {
@@ -278,7 +329,11 @@ impl Parser<'_, '_, '_> {
                 }
             }
             if let Some(users) = reverse.get(&id) {
-                for &user in users {
+                for &(user, listed) in users {
+                    if part.is_some() && listed {
+                        listing.insert(user);
+                        continue;
+                    }
                     if queued.insert(user) {
                         if let Some(record) = records.get(&user) {
                             if part.is_none() {
@@ -299,17 +354,58 @@ pub(super) fn visit_references(
     budget: &DecodeContext<'_>,
     visit: &mut impl FnMut(u64, bool) -> Result<(), ParseError>,
 ) -> Result<(), ParseError> {
+    visit_placed_references(value, budget, false, &mut |id, value_instance, _| {
+        visit(id, value_instance)
+    })
+}
+
+/// Visits each reference with whether it is a value instance and whether it
+/// lies inside an aggregate.
+fn visit_placed_references(
+    value: &Value,
+    budget: &DecodeContext<'_>,
+    listed: bool,
+    visit: &mut impl FnMut(u64, bool, bool) -> Result<(), ParseError>,
+) -> Result<(), ParseError> {
     let _depth = budget.enter_nested("step_reference_visit_depth")?;
 
     match value {
-        Value::Reference(id) => visit(*id, false)?,
-        Value::ExternalReference(id) => visit(*id, true)?,
+        Value::Reference(id) => visit(*id, false, listed)?,
+        Value::ExternalReference(id) => visit(*id, true, listed)?,
         Value::List(values) => {
             for value in values {
-                visit_references(value, budget, visit)?;
+                visit_placed_references(value, budget, true, visit)?;
             }
         }
-        Value::Typed(_, value) => visit_references(value, budget, visit)?,
+        Value::Typed(_, value) => visit_placed_references(value, budget, listed, visit)?,
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Removes from every aggregate in `value` each entry that is a reference to
+/// a record in `absent`, possibly under defined-type wrappers.
+fn drop_listed_entries(
+    value: &mut Value,
+    budget: &DecodeContext<'_>,
+    absent: &BTreeSet<u64>,
+) -> Result<(), ParseError> {
+    let _depth = budget.enter_nested("step_reference_visit_depth")?;
+
+    match value {
+        Value::List(entries) => {
+            entries.retain(|entry| {
+                let mut entry = entry;
+                while let Value::Typed(_, inner) = entry {
+                    entry = inner;
+                }
+                !matches!(entry, Value::Reference(id) if absent.contains(id))
+            });
+            for entry in entries {
+                drop_listed_entries(entry, budget, absent)?;
+            }
+        }
+        Value::Typed(_, value) => drop_listed_entries(value, budget, absent)?,
         _ => {}
     }
     Ok(())
