@@ -7123,6 +7123,10 @@ fn parse_profile_curve_selection_prefix(
         return None;
     }
     let (sketch_scope_record_index, _) = reference_target(scope_at + sketch_reference)?;
+    let scope_sketch_containers = match records.offsets(sketch_scope_record_index).first() {
+        Some(&at) if typed => typed_sketch_container_references(bytes, at),
+        _ => Vec::new(),
+    };
     let &identity_at = records.offsets(identity_index).first()?;
     let (identity_target, groups_start) = reference_target(identity_at + selection_back_reference)?;
     if bytes.get(identity_at + identity_zero..identity_at + selection_back_reference)
@@ -7150,6 +7154,7 @@ fn parse_profile_curve_selection_prefix(
             sketch_scope_offset: cadmpeg_core::decode::u64_from_index(
                 scope_at + sketch_reference + 1,
             ),
+            scope_sketch_containers,
             identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
             identity_end_offset: cadmpeg_core::decode::u64_from_index(identity_end),
             groups: Vec::new(),
@@ -7158,6 +7163,34 @@ fn parse_profile_curve_selection_prefix(
         groups_start,
         if typed { 2 } else { 3 },
     ))
+}
+
+/// The record indices that typed local references of type
+/// [`super::sketch::SKETCH_CONTAINER_TYPE_GUID`] name inside the frame of the record at
+/// `record_at`, in stored order without repeats. The frame ends at the next
+/// indexed record header.
+fn typed_sketch_container_references(bytes: &[u8], record_at: usize) -> Vec<u32> {
+    use crate::bytes::{typed_local_reference, TYPED_LOCAL_REFERENCE_LEN};
+    let mut containers = Vec::new();
+    let Some(end) = next_indexed_record_offset(bytes, record_at + indexed_header::LEN) else {
+        return containers;
+    };
+    let mut at = record_at + indexed_header::LEN;
+    while at + TYPED_LOCAL_REFERENCE_LEN <= end {
+        if bytes[at] == 1 {
+            if let Some((target, guid)) = typed_local_reference(bytes, at) {
+                if guid.eq_ignore_ascii_case(super::sketch::SKETCH_CONTAINER_TYPE_GUID) {
+                    if !containers.contains(&target) {
+                        containers.push(target);
+                    }
+                    at += TYPED_LOCAL_REFERENCE_LEN;
+                    continue;
+                }
+            }
+        }
+        at += 1;
+    }
+    containers
 }
 
 fn parse_profile_curve_selection(
