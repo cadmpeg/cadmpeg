@@ -35,7 +35,7 @@ fn probe_values() -> [Value; 7] {
 
 /// One step of a concrete JSON path.
 #[derive(Clone)]
-enum Step {
+pub(crate) enum Step {
     /// Object member.
     Key(String),
     /// Array element.
@@ -137,7 +137,11 @@ fn probe_key(fields: &Map<String, Value>) -> String {
 /// The graft is `empty` carrying the shape's own array element, or its own
 /// top-level subtree when the shape sits in no array. `None` states a path the
 /// graft cannot carry.
-fn grafted_document(ir: &Value, empty: &Value, path: &[Step]) -> Option<(Value, Vec<Step>)> {
+pub(crate) fn grafted_document(
+    ir: &Value,
+    empty: &Value,
+    path: &[Step],
+) -> Option<(Value, Vec<Step>)> {
     if path.is_empty() {
         return Some((ir.clone(), Vec::new()));
     }
@@ -223,7 +227,7 @@ fn collect_shapes(value: &Value, path: &mut Vec<Step>, found: &mut Vec<Vec<Step>
 }
 
 /// The path with every array index replaced by `#`.
-fn normalise(path: &[Step]) -> String {
+pub(crate) fn normalise(path: &[Step]) -> String {
     let mut text = String::new();
     for step in path {
         text.push('/');
@@ -235,7 +239,7 @@ fn normalise(path: &[Step]) -> String {
     text
 }
 
-fn object_at_mut<'a>(
+pub(crate) fn object_at_mut<'a>(
     value: &'a mut Value,
     path: &[Step],
 ) -> Result<&'a mut Map<String, Value>, serde_json::Error> {

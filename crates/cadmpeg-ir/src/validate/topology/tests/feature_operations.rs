@@ -660,11 +660,15 @@ fn captured_component_positions_validate_resolved_occurrences() {
 fn form_candidate_cages_participate_in_referential_validation() {
     let mut ir = unit_cube().unwrap();
     ir.model.features.push(serde_json::from_value(serde_json::json!({
-        "id":"test:model:feature#form-candidate", "ordinal":0, "suppressed":null,
-        "definition":{"definition":"form","cages":{
-            "observations":[{"paths":[],"binding":{"state":"decoded","cage":"test:model:subd#candidate"}}],
-            "membership":{"state":"partial","order":"unknown","members":[]}
-        }}
+        "id":"test:model:feature#form-candidate", "ordinal":0,
+        "dependencies": [], "source_properties": {}, "source_content": [], "outputs": [],
+        "definition":{"kind":"operation","value":{"kind":"form","value":{
+            "cages":{"kind":"retained","value":{
+                "observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#candidate"}}],
+                "membership":{"kind":"partial","order":"unknown","members":[]}
+            }},
+            "inputs":{"parameters":{},"references":[],"lists":[]}
+        }}}
     })).unwrap());
     let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
     assert!(findings.iter().any(|finding| finding.entity.as_deref()
