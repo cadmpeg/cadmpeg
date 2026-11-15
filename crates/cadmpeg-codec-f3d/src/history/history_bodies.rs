@@ -250,10 +250,10 @@ fn unbound_base_slots(
 /// The history, input state and body slots a Split selects, when the scope
 /// binds one history that holds the input state and the feature's own state
 /// exactly once.
-fn split_targets<'a>(
+fn split_targets(
     feature: &Feature,
     scopes: &[DesignParameterScope],
-    histories: &'a [AsmHistory],
+    histories: &[AsmHistory],
     bindings: &HashMap<String, String>,
 ) -> Option<(usize, i64, Vec<i64>)> {
     let FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, .. }) =
@@ -402,8 +402,7 @@ fn fill_history(
                 });
                 match build(
                     ctx,
-                    archive,
-                    versions,
+                    (archive, versions),
                     bytes,
                     (&header.metadata, subtypes),
                     want,
@@ -445,8 +444,7 @@ fn archive_subtypes(
 
 fn build(
     ctx: &DecodeContext<'_>,
-    archive: &super::HistoricalRecordArchive,
-    versions: &BTreeMap<i64, i64>,
+    (archive, versions): (&super::HistoricalRecordArchive, &BTreeMap<i64, i64>),
     bytes: &[u8],
     tables: (
         &cadmpeg_asm::kernel_header::KernelHeader,
