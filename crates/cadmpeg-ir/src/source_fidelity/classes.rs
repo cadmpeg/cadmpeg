@@ -12,7 +12,7 @@ use serde::{Deserializer, Serializer};
 use crate::document::ArenaClass;
 
 /// Returns the wire name of an arena class.
-pub(crate) const fn name(class: ArenaClass) -> &'static str {
+pub(super) const fn name(class: ArenaClass) -> &'static str {
     match class {
         ArenaClass::Model => "model",
         ArenaClass::Design => "design",

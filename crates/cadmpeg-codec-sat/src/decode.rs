@@ -97,7 +97,6 @@ fn decode_asm_binary(
         header,
         stream: Some(stream),
     };
-    let (matched, kernel) = layers(&evidence);
     let mut result = build_result(
         ctx,
         Sha256Digest::digest(bytes),
@@ -105,8 +104,7 @@ fn decode_asm_binary(
         attributes,
         &header.metadata,
         None,
-        matched,
-        &kernel,
+        layers(&evidence),
     )?;
     if header.metadata.unreadable_product_fields().next().is_some() {
         retain_source(
@@ -183,7 +181,6 @@ fn decode_acis_binary(
         header,
         stream: Some(stream),
     };
-    let (matched, kernel) = layers(&evidence);
     let mut result = build_result(
         ctx,
         Sha256Digest::digest(bytes),
@@ -191,8 +188,7 @@ fn decode_acis_binary(
         attributes,
         &header.metadata,
         None,
-        matched,
-        &kernel,
+        layers(&evidence),
     )?;
     if header.metadata.unreadable_product_fields().next().is_some() {
         retain_source(
@@ -305,8 +301,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         attributes,
         &header,
         Some(branch),
-        matched,
-        &kernel,
+        (matched, kernel),
     )?;
     crate::loss::text_stream_losses(
         text_header.diagnostics.iter().chain(&framing),
@@ -433,7 +428,6 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_result(
     ctx: &DecodeContext<'_>,
     decode_digest: Sha256Digest,
@@ -441,8 +435,7 @@ fn build_result(
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
     text_dialect: Option<sat::Terminator>,
-    matched: DialectMatch,
-    kernel: &DialectMatch,
+    (matched, kernel): (DialectMatch, DialectMatch),
 ) -> Result<Decoded, CodecError> {
     let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(matched)
@@ -528,7 +521,7 @@ fn build_result(
 
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
-    losses.extend(dialect_loss(kernel));
+    losses.extend(dialect_loss(&kernel));
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{}`.", terminator_line(dialect))

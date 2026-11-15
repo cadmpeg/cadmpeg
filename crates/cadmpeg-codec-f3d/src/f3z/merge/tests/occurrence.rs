@@ -9,6 +9,7 @@ use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureContent;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::RegionId;
 use cadmpeg_ir::schema::rewrite::typed::TextReplacements;
@@ -193,9 +194,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
         .merge(
             &mut ir,
             &mut report,
-            &mut cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(
-                b"",
-            )),
+            &mut cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b"")),
             &crate::xref::XrefTable::default(),
         )
         .unwrap();
@@ -991,8 +990,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             cadmpeg_core::decode::DecodeDepth::Full,
             false,
         ));
-    let mut fidelity =
-        cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b""));
+    let mut fidelity = cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b""));
     let merged = crate::f3z::merge::MergeSession {
         ctx: &ctx,
         scan: &scan,
@@ -1506,9 +1504,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             .merge(
                 &mut ir,
                 &mut report,
-                &mut cadmpeg_ir::SourceFidelity::new(
-                    cadmpeg_ir::hash::digest::Sha256Digest::digest(b"")
-                ),
+                &mut cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b"")),
                 &table
             )
             .unwrap(),

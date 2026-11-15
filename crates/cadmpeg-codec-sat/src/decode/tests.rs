@@ -1001,7 +1001,6 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
         branch: stream.terminator,
         header: &header,
     }));
-    let (matched, kernel) = super::layers(&evidence);
     let mut graph = AsmBrep::default();
     graph
         .stats
@@ -1014,8 +1013,7 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
         BTreeMap::new(),
         &header,
         Some(stream.terminator),
-        matched,
-        &kernel,
+        super::layers(&evidence),
     )
     .unwrap();
     assert!(result
