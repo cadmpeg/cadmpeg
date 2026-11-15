@@ -666,6 +666,11 @@ pub(crate) enum F3dLossCode {
     FeatureFormCageBindingAmbiguous,
     FeatureFormBodyReferencesPartialAssumed,
     FeatureFormBodyRegistrationUnsupported,
+    FeatureFormReferenceTypeConflict,
+    FeatureFormForeignReferenceUnresolved,
+    FeatureFormTrackingOwnerConflict,
+    FeatureFormSerializerReferenceUnresolved,
+    FeatureFormMembershipConflict,
     /// A legacy Scale form is selected by the frame length of its English
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
@@ -1441,6 +1446,11 @@ impl F3dLossCode {
         Self::FeatureFormCageBindingAmbiguous,
         Self::FeatureFormBodyReferencesPartialAssumed,
         Self::FeatureFormBodyRegistrationUnsupported,
+        Self::FeatureFormReferenceTypeConflict,
+        Self::FeatureFormForeignReferenceUnresolved,
+        Self::FeatureFormTrackingOwnerConflict,
+        Self::FeatureFormSerializerReferenceUnresolved,
+        Self::FeatureFormMembershipConflict,
         Self::FeatureScaleFrameLengthFormAssumed,
         Self::FeatureScaleMatrixWordAssumed,
         Self::FeatureScaleUnlistedGroupsAssumed,
@@ -2276,6 +2286,15 @@ impl F3dLossCode {
             Self::FeatureFormBodyRegistrationUnsupported => {
                 "feature.form-body-registration-unsupported"
             }
+            Self::FeatureFormReferenceTypeConflict => "feature.form-reference-type-conflict",
+            Self::FeatureFormForeignReferenceUnresolved => {
+                "feature.form-foreign-reference-unresolved"
+            }
+            Self::FeatureFormTrackingOwnerConflict => "feature.form-tracking-owner-conflict",
+            Self::FeatureFormSerializerReferenceUnresolved => {
+                "feature.form-serializer-reference-unresolved"
+            }
+            Self::FeatureFormMembershipConflict => "feature.form-membership-conflict",
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
             Self::FeatureScaleMatrixWordAssumed => "feature.scale-matrix-word-assumed",
             Self::FeatureScaleUnlistedGroupsAssumed => "feature.scale-unlisted-groups-assumed",
@@ -3014,6 +3033,11 @@ impl F3dLossCode {
             | Self::FeatureFormCageBindingAmbiguous
             | Self::FeatureFormBodyReferencesPartialAssumed
             | Self::FeatureFormBodyRegistrationUnsupported
+            | Self::FeatureFormReferenceTypeConflict
+            | Self::FeatureFormForeignReferenceUnresolved
+            | Self::FeatureFormTrackingOwnerConflict
+            | Self::FeatureFormSerializerReferenceUnresolved
+            | Self::FeatureFormMembershipConflict
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureScaleMatrixWordAssumed
             | Self::FeatureScaleUnlistedGroupsAssumed
@@ -3597,6 +3621,11 @@ impl F3dLossCode {
             | Self::FeatureFormCageBindingAmbiguous
             | Self::FeatureFormBodyReferencesPartialAssumed
             | Self::FeatureFormBodyRegistrationUnsupported
+            | Self::FeatureFormReferenceTypeConflict
+            | Self::FeatureFormForeignReferenceUnresolved
+            | Self::FeatureFormTrackingOwnerConflict
+            | Self::FeatureFormSerializerReferenceUnresolved
+            | Self::FeatureFormMembershipConflict
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureScaleMatrixWordAssumed
             | Self::FeatureScaleUnlistedGroupsAssumed
@@ -4298,6 +4327,11 @@ mod tests {
                 "feature.form-cage-binding-ambiguous",
                 "feature.form-body-references-partial-assumed",
                 "feature.form-body-registration-unsupported",
+                "feature.form-reference-type-conflict",
+                "feature.form-foreign-reference-unresolved",
+                "feature.form-tracking-owner-conflict",
+                "feature.form-serializer-reference-unresolved",
+                "feature.form-membership-conflict",
                 "feature.scale-frame-length-form-assumed",
                 "feature.scale-matrix-word-assumed",
                 "feature.scale-unlisted-groups-assumed",

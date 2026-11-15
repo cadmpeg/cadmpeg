@@ -45,7 +45,7 @@ mod selection_overlap;
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
 
-#[doc(hidden)]
+#[doc = include_str!("features/form-api.md")]
 pub mod form;
 
 pub mod holes;

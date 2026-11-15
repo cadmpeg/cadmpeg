@@ -431,6 +431,118 @@ pub(crate) fn f3d_with_form_body_resource(tsm: &[u8]) -> Vec<u8> {
     )
 }
 
+pub(crate) fn f3d_with_partial_form_body_resources(tsm: &[u8]) -> Vec<u8> {
+    use crate::test_support::{indexed_header, lp_ascii, lp_utf16, push_marked_reference};
+    let (mut bulk, mut records) = generated_design_form_bulkstream();
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::Form);
+    let rows = [
+        (
+            "830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06571",
+            "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            0,
+            "Fusion",
+            &[1700u64, 1710][..],
+        ),
+        (
+            "FA1F0081-C9A1-4E14-8F25-D12DD868ED90",
+            "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+            10,
+            "Fusion",
+            &[1701u64, 1711][..],
+        ),
+        (
+            "22709494-9149-4A70-A829-7D748A7B5DB1",
+            "1B7920A0-725B-4368-9448-E4D323D53E7C",
+            6,
+            "Fusion",
+            &[1702u64, 1712][..],
+        ),
+        (
+            "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA",
+            "",
+            4,
+            "Fusion",
+            &[1703u64][..],
+        ),
+        (
+            "702B9CD2-537C-429E-8CC4-22BEEEB98C37",
+            "",
+            1,
+            "Fusion",
+            &[1704u64][..],
+        ),
+    ];
+    let first = types.len();
+    types.extend(rows);
+    for (record, kind) in [
+        (1700u32, 0usize),
+        (1701, 1),
+        (1702, 2),
+        (1703, 3),
+        (1704, 4),
+        (1710, 0),
+        (1711, 1),
+        (1712, 2),
+    ] {
+        records.push((u64::from(record), u64::try_from(bulk.len()).unwrap()));
+        let tag: [u8; 3] = format!("{:03}", first + kind + 256)
+            .as_bytes()
+            .try_into()
+            .unwrap();
+        indexed_header(&mut bulk, tag, record);
+        match record {
+            1700 | 1710 => {
+                bulk.extend_from_slice(&[0; 10]);
+                let uuid = if record == 1700 {
+                    "00000000-0000-4000-8000-000000000099"
+                } else {
+                    "00000000-0000-4000-8000-000000000100"
+                };
+                lp_utf16(&mut bulk, &format!("TSpline.{uuid}.tsm"));
+                push_marked_reference(&mut bulk, if record == 1700 { 1702 } else { 1712 });
+            }
+            1701 | 1711 => {
+                for value in [
+                    "00000000-0000-4000-8000-000000000001",
+                    "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+                    "",
+                    "PrismMaterial-001",
+                ] {
+                    lp_utf16(&mut bulk, value);
+                }
+                push_marked_reference(&mut bulk, 1400);
+                if record == 1701 {
+                    push_marked_reference(&mut bulk, 1703);
+                    push_marked_reference(&mut bulk, 1702);
+                    push_marked_reference(&mut bulk, 1704);
+                } else {
+                    bulk.push(1);
+                    bulk.extend_from_slice(&22u64.to_le_bytes());
+                    bulk.push(1);
+                    bulk.extend_from_slice(&7u32.to_le_bytes());
+                    lp_utf16(&mut bulk, "11111111-2222-3333-4444-555555555555");
+                    bulk.push(0);
+                    lp_ascii(&mut bulk, "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA");
+                    lp_utf16(&mut bulk, "literal:foreign/link");
+                    bulk.push(0);
+                    push_marked_reference(&mut bulk, 1712);
+                    push_marked_reference(&mut bulk, 9999);
+                }
+                indexed_header(&mut bulk, *b"258", record);
+            }
+            _ => bulk.extend_from_slice(&[0; 10]),
+        }
+    }
+    let meta = crate::test_support::streams_test::design_metastream_with_records(&types, &records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
+        &synthetic_geometry_smbh(), &[], &bulk, &meta,
+        &[
+            ("FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000099.tsm", tsm),
+            ("FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000100.tsm", tsm),
+        ],
+    )
+}
+
 pub(crate) fn generated_form_tsm() -> Vec<u8> {
     br"#TS0200
 degree 3
