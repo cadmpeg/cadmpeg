@@ -155,6 +155,7 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
         &[],
         super::DecodeMode::Decode(Packaging::Bare),
         &ctx,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&extended),
     )
     .expect("synthesized unknown record conversion")
     .decoded;

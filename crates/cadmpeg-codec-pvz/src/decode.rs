@@ -16,6 +16,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model, SourceMeta};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
@@ -84,7 +85,10 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             losses,
             ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), geometry_transferred))
         },
-        source_fidelity: SourceFidelity::with_annotations(annotations),
+        source_fidelity: SourceFidelity::with_annotations(
+            annotations,
+            Sha256Digest::digest(root.window()),
+        ),
     })
 }
 

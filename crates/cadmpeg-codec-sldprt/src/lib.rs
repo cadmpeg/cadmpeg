@@ -504,7 +504,9 @@ mod tests {
     fn source_record_join_borrows_the_retained_source_image() {
         let payload = vec![0x5a; 4096];
         let payload_ptr = payload.as_ptr();
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut fidelity = cadmpeg_ir::SourceFidelity::new(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(&payload),
+        );
         let id: cadmpeg_ir::ids::UnknownId = SOURCE_IMAGE_ID
             .to_owned()
             .try_into()

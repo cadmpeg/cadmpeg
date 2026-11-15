@@ -815,7 +815,8 @@ mod tests {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("test context");
-        let mut source_fidelity = crate::SourceFidelity::default();
+        let mut source_fidelity =
+            crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(&[]));
         source_fidelity
             .attach_native_unknown_records(
                 &mut ir,

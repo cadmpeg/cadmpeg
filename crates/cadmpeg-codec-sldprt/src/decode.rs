@@ -26,6 +26,7 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 
 use crate::loss::SldprtLossCode;
@@ -185,6 +186,7 @@ fn decode_scan(
     mut scan: container::ContainerScan<'_>,
     placed_virtual: &BTreeSet<String>,
 ) -> Result<Decoded, CodecError> {
+    let decode_digest = Sha256Digest::digest(scan.source_image);
     let classification = crate::dialect::classify_layers(&scan)?;
     let form_padding = classification.host().form_code_padding();
     // Marker identities are admitted during scanning. Compound stream identities
@@ -206,7 +208,7 @@ fn decode_scan(
             build_container_report(ctx, &scan, &classification, container::notes(&scan), 0)?;
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         report.losses.append(&mut pmi_losses);
-        return decode_result(ctx, ir, report, annotations, unknowns);
+        return decode_result(ctx, decode_digest, ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
@@ -232,7 +234,7 @@ fn decode_scan(
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
             append_design_losses(ctx, &ir, &mut report)?;
-            return decode_result(ctx, ir, report, annotations, unknowns);
+            return decode_result(ctx, decode_digest, ir, report, annotations, unknowns);
         }
     }
 
@@ -256,7 +258,7 @@ fn decode_scan(
     report.losses.append(&mut pmi_losses);
     append_tessellation_losses(&ir, &mut report);
     append_design_losses(ctx, &ir, &mut report)?;
-    decode_result(ctx, ir, report, annotations, unknowns)
+    decode_result(ctx, decode_digest, ir, report, annotations, unknowns)
 }
 
 fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
@@ -279,12 +281,14 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
 
 fn decode_result(
     ctx: &DecodeContext<'_>,
+    decode_digest: Sha256Digest,
     mut ir: CadIr,
     body: DecodeBody,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<Decoded, CodecError> {
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity =
+        cadmpeg_ir::SourceFidelity::with_annotations(annotations, decode_digest);
     let source_image = unknowns
         .iter()
         .position(|record| record.id().as_str() == "sldprt:file:source-image#0")

@@ -37,6 +37,7 @@ fn decoded_unknown_limit_error(
     crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
         match super::super::decoded(
             ctx,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
             ir,
             body,
             cadmpeg_ir::Annotations::default(),

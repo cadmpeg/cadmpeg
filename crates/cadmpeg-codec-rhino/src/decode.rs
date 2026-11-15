@@ -2757,7 +2757,10 @@ impl<'a> DecodeContext<'a> {
             )
         };
         let notes = vec![note];
-        let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+            self.annotations,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(self.scan.data),
+        );
         let (mut ir, unknowns) = self.session.into_parts();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;

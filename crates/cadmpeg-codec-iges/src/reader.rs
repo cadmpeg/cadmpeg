@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::{
     decode::{TransferLedger, TransferOutcome},
@@ -154,7 +155,7 @@ fn source_fidelity(
         .map_err(|_| CodecError::Malformed("IGES source image id is invalid".into()))?;
     let owner = "iges".to_owned();
 
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::new(Sha256Digest::digest(source_bytes));
     fidelity.insert_retained_record(id, RetainedSourceRecord::whole(owner, retained_source))?;
     Ok(fidelity)
 }

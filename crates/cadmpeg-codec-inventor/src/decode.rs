@@ -51,11 +51,12 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    decode_container(ctx, &InventorContainer::open(ctx, root)?)
+    decode_container(ctx, root, &InventorContainer::open(ctx, root)?)
 }
 
 fn decode_container<'a>(
     ctx: &DecodeContext<'a>,
+    root: View<'a>,
     container: &InventorContainer<'a>,
 ) -> Result<Decoded, CodecError> {
     // One predicate, read once from the parsed declarations: it decides the
@@ -1236,7 +1237,7 @@ fn decode_container<'a>(
         }
     }
     let preview_asset_count = ir.model.assets.len();
-    let mut source_fidelity = SourceFidelity::default();
+    let mut source_fidelity = SourceFidelity::for_root(root);
     let mut annotations = AnnotationBuilder::new();
     for record in kernel_annotations {
         admit_kernel_annotation(&mut annotations, &record)?;

@@ -954,7 +954,7 @@ impl CodecBackend for FcstdCodec {
                 thumbnail.len().to_string(),
             );
         }
-        let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();

@@ -16,6 +16,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
 
@@ -3634,7 +3635,8 @@ fn decode_result(
     if let Some(loss) = crate::dialect::dialect_loss(matched) {
         body.losses.push(loss);
     }
-    let mut source_fidelity = SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity =
+        SourceFidelity::with_annotations(annotations, Sha256Digest::digest(&scan.data));
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns, ctx)?;
     Ok(Decoded {
         ir,

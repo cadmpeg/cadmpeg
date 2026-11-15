@@ -13,6 +13,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
@@ -98,6 +99,7 @@ fn decode_asm_binary(
     let (matched, kernel) = layers(&evidence);
     let mut result = build_result(
         ctx,
+        Sha256Digest::digest(bytes),
         payload,
         attributes,
         &header.metadata,
@@ -183,6 +185,7 @@ fn decode_acis_binary(
     let (matched, kernel) = layers(&evidence);
     let mut result = build_result(
         ctx,
+        Sha256Digest::digest(bytes),
         payload,
         attributes,
         &header.metadata,
@@ -296,6 +299,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     };
     let mut result = build_result(
         ctx,
+        Sha256Digest::digest(bytes),
         payload,
         attributes,
         &header,
@@ -415,8 +419,10 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_result(
     ctx: &DecodeContext<'_>,
+    decode_digest: Sha256Digest,
     payload: Option<AsmBrep>,
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
@@ -469,7 +475,7 @@ fn build_result(
                 losses,
                 ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {})
             },
-            source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+            source_fidelity: cadmpeg_ir::SourceFidelity::new(decode_digest),
         });
     };
 
@@ -569,7 +575,8 @@ fn build_result(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());
+    let mut source_fidelity =
+        cadmpeg_ir::SourceFidelity::with_annotations(annotations.build(), decode_digest);
     source_fidelity.attach_native_unknown_records(&mut ir, FORMAT, unknowns, ctx)?;
     Ok(Decoded {
         ir,

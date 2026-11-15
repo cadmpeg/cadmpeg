@@ -307,7 +307,9 @@ mod tests {
         Decoded {
             ir,
             body: DecodeBody::new(transfer),
-            source_fidelity: SourceFidelity::default(),
+            source_fidelity: SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(
+                &[],
+            )),
         }
     }
 

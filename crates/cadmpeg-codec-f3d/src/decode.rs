@@ -4950,7 +4950,10 @@ fn decode_result(
         "admit F3D entities",
     )?;
     report.losses.extend(saved_free_edge_bodies_loss(&ir.model));
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+        retained.annotations,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(scan.source_image),
+    );
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let mut source = crate::report::classify_document(

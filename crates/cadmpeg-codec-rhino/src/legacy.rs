@@ -3026,7 +3026,8 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     ] {
         coverage.record(key, count);
     }
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut source_fidelity =
+        cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(data));
     source_fidelity.retain_unknown_records(
         "rhino",
         opaque_records.into_iter().chain(typed_source_records),

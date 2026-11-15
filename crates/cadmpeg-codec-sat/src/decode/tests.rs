@@ -978,6 +978,7 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
         .insert("tcoedge-use-curve-invalid-interval".into(), 1);
     let result = super::build_result(
         &ctx,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes),
         Some(graph),
         BTreeMap::new(),
         &header,

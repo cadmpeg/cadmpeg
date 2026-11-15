@@ -10,6 +10,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -295,7 +296,8 @@ pub(crate) fn decode(
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
     let (exchange, diagnostics) = parse::parse(input, ctx)?;
-    decode_exchange(input, exchange, &diagnostics, ctx, packaging)
+    let decode_digest = Sha256Digest::digest(input);
+    decode_exchange(input, exchange, &diagnostics, ctx, packaging, decode_digest)
 }
 
 pub(crate) fn decode_exchange(
@@ -304,6 +306,7 @@ pub(crate) fn decode_exchange(
     diagnostics: &[ParseDiagnostic],
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
+    decode_digest: Sha256Digest,
 ) -> Result<Decoded, CodecError> {
     decode_exchange_mode(
         input,
@@ -311,6 +314,7 @@ pub(crate) fn decode_exchange(
         diagnostics,
         DecodeMode::Decode(packaging),
         ctx,
+        decode_digest,
     )
     .map(|result| result.decoded)
 }
@@ -326,7 +330,15 @@ pub(crate) fn analyze_exchange(
     diagnostics: &[ParseDiagnostic],
     ctx: &DecodeContext<'_>,
 ) -> Result<AnalyzedExchange, CodecError> {
-    decode_exchange_mode(input, exchange, diagnostics, DecodeMode::Inspect, ctx)
+    let decode_digest = Sha256Digest::digest(input);
+    decode_exchange_mode(
+        input,
+        exchange,
+        diagnostics,
+        DecodeMode::Inspect,
+        ctx,
+        decode_digest,
+    )
 }
 
 fn decode_exchange_mode(
@@ -335,10 +347,11 @@ fn decode_exchange_mode(
     diagnostics: &[ParseDiagnostic],
     mode: DecodeMode,
     ctx: &DecodeContext<'_>,
+    decode_digest: Sha256Digest,
 ) -> Result<AnalyzedExchange, CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
     if ctx.container_only() {
-        return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
+        return Ok(session.into_result(SourceFidelity::new(decode_digest), BTreeSet::new()));
     }
 
     let mut header_spans = Vec::new();
@@ -517,7 +530,7 @@ fn decode_exchange_mode(
     let mut opaque_ids = BTreeMap::new();
     let mut source_targets = BTreeMap::new();
     let mut opaque_sources = Vec::new();
-    let mut source_fidelity = SourceFidelity::default();
+    let mut source_fidelity = SourceFidelity::new(decode_digest);
     if matches!(mode, DecodeMode::Decode(_)) {
         let metadata_offsets = diagnostics
             .iter()

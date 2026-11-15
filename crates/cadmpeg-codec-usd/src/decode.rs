@@ -50,6 +50,6 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             losses,
             ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), transferred))
         },
-        source_fidelity: SourceFidelity::default(),
+        source_fidelity: SourceFidelity::for_root(root),
     })
 }

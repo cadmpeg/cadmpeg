@@ -15,6 +15,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -85,6 +86,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
 /// decode successfully with no geometry, including an assembly whose geometry
 /// resides in external child parts.
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
+    let decode_digest = Sha256Digest::digest(root.window());
     let scan = scan(ctx, root)?;
     let (classification, notes) = crate::scan_notes::summarize(&scan)?;
     let (dialects, dialect_losses) = classification.into_report_parts();
@@ -96,7 +98,15 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         body.losses.extend(native_losses);
         report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly);
-        return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
+        return decoded(
+            ctx,
+            decode_digest,
+            ir,
+            body,
+            annotations,
+            unknowns,
+            &mut admitted_entities,
+        );
     }
 
     if let Some((ir, body, annotations, unknowns)) = try_decode_geometry(
@@ -107,18 +117,35 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         &notes,
         &mut admitted_entities,
     )? {
-        return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
+        return decoded(
+            ctx,
+            decode_digest,
+            ir,
+            body,
+            annotations,
+            unknowns,
+            &mut admitted_entities,
+        );
     }
 
     let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
     let mut body = build_container_body(&scan, dialect_losses, notes);
     body.losses.extend(native_losses);
     report_untransferred_streams(&scan, &mut body, TypedNative::Available);
-    decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
+    decoded(
+        ctx,
+        decode_digest,
+        ir,
+        body,
+        annotations,
+        unknowns,
+        &mut admitted_entities,
+    )
 }
 
 fn decoded(
     ctx: &DecodeContext<'_>,
+    decode_digest: Sha256Digest,
     mut ir: CadIr,
     body: DecodeBody,
     annotations: cadmpeg_ir::Annotations,
@@ -130,7 +157,8 @@ fn decoded(
         admitted_entities,
         "admit NX entities",
     )?;
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity =
+        cadmpeg_ir::SourceFidelity::with_annotations(annotations, decode_digest);
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns, ctx)?;
     Ok(Decoded {
         ir,

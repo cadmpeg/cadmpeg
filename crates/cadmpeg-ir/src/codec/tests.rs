@@ -25,7 +25,9 @@ fn decoded(ir: CadIr) -> Decoded {
     Decoded {
         ir,
         body: DecodeBody::new(crate::report::decode::DecodeTransfer::full(true)),
-        source_fidelity: SourceFidelity::default(),
+        source_fidelity: SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(
+            b"test source",
+        )),
     }
 }
 
@@ -422,7 +424,9 @@ fn a_decode_result_keeps_the_body_it_was_given() {
         Decoded {
             ir: unit_cube().expect("valid unit cube fixture"),
             body,
-            source_fidelity: SourceFidelity::default(),
+            source_fidelity: SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(
+                b"test source",
+            )),
         },
         FormatId::new("test"),
         DecodeDepth::Container,
