@@ -34,6 +34,11 @@ pub(super) struct EdgeGeometry {
 }
 
 impl EdgeGeometry {
+    /// The midpoint tangent of the edge.
+    pub(super) fn tangent(self) -> Option<Vector3> {
+        self.tangent
+    }
+
     /// Whether the edge has the finite axis row and the finite nonzero
     /// directions that `BlendSpine::admits` compares.
     pub(super) fn is_classified(self) -> bool {
