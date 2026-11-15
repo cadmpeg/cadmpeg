@@ -366,7 +366,7 @@ fn stored_caps_preserve_prior_targets_outside_recipe_references() {
 
 #[test]
 fn a_cap_proven_selection_survives_a_second_cap_proven_predecessor() {
-    let (face, slots, losses) = run_configured(false, 0.0, None, |feature, operand, before| {
+    let (face, slots, losses) = run_configured(false, -1.5, None, |feature, operand, before| {
         feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 start,
@@ -442,7 +442,7 @@ fn a_start_cap_does_not_prove_a_target_when_a_separate_terminal_cap_exists() {
 
 #[test]
 fn a_lateral_plane_with_its_origin_on_a_cap_is_not_a_cap_match() {
-    let (face, slots, losses) = run_configured(false, 0.0, None, |feature, _, before| {
+    let (face, slots, losses) = run_configured(false, -1.5, None, |feature, _, before| {
         feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 start,
@@ -571,4 +571,13 @@ fn a_recipe_referenced_selection_ahead_of_the_start_is_kept() {
     assert_eq!(selection_slots(&face), Some(vec![3484]));
     assert_eq!(slots, [3484]);
     assert!(losses.is_empty());
+}
+
+#[test]
+fn a_retained_selection_behind_the_start_does_not_pass_the_stored_cap_fallback() {
+    let (face, slots, _) = run_configured(false, -1.5, None, |_, operand, _| {
+        operand.recipe_references[0].candidate_faces = vec![crate::ids::brep_face_id(3484)];
+    });
+    assert!(matches!(face, FaceSelection::Native(_)));
+    assert!(slots.is_empty());
 }

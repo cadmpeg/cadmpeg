@@ -83,11 +83,6 @@ pub(crate) fn bind(
             });
             let Some(operand) = operands.next() else { return };
             if operands.next().is_some() { return; }
-            let referenced: BTreeSet<_> = operand.recipe_references.iter()
-                .flat_map(super::effective_faces)
-                .filter_map(|face| super::stable_ref(face.as_str()))
-                .collect();
-            if referenced.is_empty() { return; }
             let behind_start = history.topology(previous).is_some_and(|before| {
                 selection_behind_start(
                     face,
@@ -98,6 +93,13 @@ pub(crate) fn bind(
                     input.linear_tolerance,
                 )
             });
+            let referenced: BTreeSet<_> = operand.recipe_references.iter()
+                .flat_map(super::effective_faces)
+                .filter_map(|face| super::stable_ref(face.as_str()))
+                .collect();
+            if referenced.is_empty() && !behind_start {
+                return;
+            }
             if !behind_start
                 && selection_slots(face).is_some_and(|slots| {
                     !slots.is_empty() && slots.iter().all(|slot| referenced.contains(slot))
@@ -152,9 +154,21 @@ pub(crate) fn bind(
                     offset.map_or(0.0, Length::get),
                     (input.linear_tolerance, input.angular_tolerance),
                 );
+                let not_behind = |slots: &BTreeSet<i64>| -> BTreeSet<i64> {
+                    slots.iter().copied().filter(|slot| {
+                        !start.is_some_and(|start| slot_behind_start(
+                            *slot,
+                            start,
+                            sweep,
+                            before,
+                            offset.map_or(0.0, Length::get),
+                            input.linear_tolerance,
+                        ))
+                    }).collect()
+                };
                 start.and_then(|start| cap_match(&referenced, Some(start), &caps))
-                    .or_else(|| cap_match(&retained, None, retained_caps))
-                    .or_else(|| cap_match(&preceding, None, retained_caps))
+                    .or_else(|| cap_match(&not_behind(&retained), None, retained_caps))
+                    .or_else(|| cap_match(&not_behind(&preceding), None, retained_caps))
             });
             if let Some(slot) = selected {
                 if let Some(selection) = crate::design::face_resolve::historical_face_selection_with_native(
@@ -289,10 +303,29 @@ fn selection_behind_start(
         let [slot] = slots.as_slice() else {
             return None;
         };
-        let end = exact_plane(before, *slot)?.origin.translated(sweep, offset);
-        Some(end.vector_from(start).dot(sweep) < -linear_tolerance)
+        Some(slot_behind_start(*slot, start, sweep, before, offset, linear_tolerance))
     };
     behind().unwrap_or(false)
+}
+
+/// Whether the planar face `slot`, moved by `offset` along `sweep`, lies
+/// behind `start`. A face without an exact plane is not behind.
+fn slot_behind_start(
+    slot: i64,
+    start: Point3,
+    sweep: Vector3,
+    before: &AsmHistoricalTopology,
+    offset: f64,
+    linear_tolerance: f64,
+) -> bool {
+    exact_plane(before, slot).is_some_and(|plane| {
+        plane
+            .origin
+            .translated(sweep, offset)
+            .vector_from(start)
+            .dot(sweep)
+            < -linear_tolerance
+    })
 }
 
 fn select_target(
