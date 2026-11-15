@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Borrowed wire projections for feature metadata and memberships.
+//! Wire projections for feature metadata, memberships, and sweep sections.
 
 use super::{
-    CoilPlacement, FeatureEquationCurve, FeatureResultMembers, SelectionReference,
-    SketchFeatureBinding,
+    CoilPlacement, FeatureEquationCurve, FeatureResultMembers, PlanarProfileRef,
+    SelectionReference, SketchFeatureBinding, SweepCircularRegion, SweepSection,
 };
 use crate::math::{Point3, Vector3};
+use crate::scalar::PositiveLength;
 use crate::sketches::SketchId;
 use cadmpeg_core::text::NonBlankString;
 use serde::ser::SerializeSeq;
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 impl Serialize for FeatureResultMembers {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -99,6 +100,44 @@ impl Serialize for CoilPlacement {
                 radial: frame.v_axis().into(),
             },
             Self::Native { native_ref } => Wire::Native { native_ref },
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SweepCircularRegionWire {
+    outer_radius: PositiveLength,
+    #[serde(default, deserialize_with = "deserialize_wall_thickness")]
+    wall_thickness: Option<PositiveLength>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_wall_thickness, PositiveLength, "wall_thickness");
+
+impl<'de> Deserialize<'de> for SweepCircularRegion {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = SweepCircularRegionWire::deserialize(deserializer)?;
+        Self::new(wire.outer_radius, wire.wall_thickness).map_err(serde::de::Error::custom)
+    }
+}
+
+impl<G: Serialize> Serialize for SweepSection<G> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+        enum SectionWire<'a, G> {
+            #[serde(rename = "unresolved")]
+            Unnamed,
+            Unresolved(&'a String),
+            Profile(&'a PlanarProfileRef),
+            Generated(&'a G),
+        }
+        match self {
+            Self::Unresolved(None) => SectionWire::Unnamed,
+            Self::Unresolved(Some(native)) => SectionWire::Unresolved(native),
+            Self::Profile(profile) => SectionWire::Profile(profile),
+            Self::Generated(generated) => SectionWire::Generated(generated),
         }
         .serialize(serializer)
     }
