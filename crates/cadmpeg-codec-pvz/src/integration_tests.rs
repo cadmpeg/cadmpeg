@@ -8,6 +8,7 @@ use cadmpeg_core::decode::{DecodeDepth, InspectOptions};
 use cadmpeg_core::dialect::Admission;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::loss::PvzLossCode;
@@ -124,10 +125,7 @@ fn decode_classifies_the_package_and_reports_an_undecodable_structure() {
     );
 
     assert!(!result.report().geometry_transferred());
-    assert_eq!(
-        loss_codes(&result),
-        [PvzLossCode::StructureMemberMalformed.kind()]
-    );
+    assert_eq!(loss_codes(&result), [record_unreadable_kind()]);
     assert!(result.ir().model.product_definitions.is_empty());
     assert!(result.ir().model.tessellations.is_empty());
 
@@ -275,7 +273,7 @@ fn a_malformed_geometry_member_is_reported_and_the_rest_decodes() {
         ("plate.ol", &plate_member()),
     ]);
     let result = decode(&bytes);
-    assert!(loss_codes(&result).contains(&PvzLossCode::GeometryMemberMalformed.kind()));
+    assert!(loss_codes(&result).contains(&record_unreadable_kind()));
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(result.ir().model.occurrences.len(), 4);
 }
@@ -295,14 +293,28 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == PvzLossCode::GeometryMemberMalformed.kind())
+        .filter(|loss| loss.code == record_unreadable_kind())
         .collect();
     assert_eq!(malformed.len(), 1);
     assert!(malformed[0]
         .message
-        .starts_with("geometry member \"bracket.ol\" did not open"));
+        .starts_with("part archive-entry \"bracket.ol\" stream=\"\" offset="));
+    assert!(malformed[0].message.ends_with("; dropped=[]"));
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(result.ir().model.occurrences.len(), 4);
+    let stubs = result.ir().native_unknowns("pvz").unwrap();
+    let [stub] = stubs.as_slice() else {
+        panic!("one stub: {stubs:?}");
+    };
+    assert!(stub.links.is_empty());
+    assert!(malformed[0]
+        .message
+        .contains(&format!("record={}", stub.id)));
+    let (_, _, fidelity) = result.into_parts();
+    assert_eq!(
+        fidelity.retained_record(stub.id.as_str()).unwrap().data(),
+        Some(b"not a bzip2 stream".as_slice())
+    );
 }
 
 #[test]
@@ -332,7 +344,7 @@ fn an_unknown_structure_signature_is_residual_and_charged() {
         loss_codes(&result),
         [
             PvzLossCode::SourceDialectUnverified.kind(),
-            PvzLossCode::StructureMemberMalformed.kind(),
+            record_unreadable_kind(),
         ]
     );
 }
@@ -352,7 +364,7 @@ fn an_unreadable_central_directory_is_recovered_and_charged() {
         loss_codes(&result),
         [
             PvzLossCode::ContainerDirectoryRecovered.kind(),
-            PvzLossCode::StructureMemberMalformed.kind(),
+            record_unreadable_kind(),
         ]
     );
 }

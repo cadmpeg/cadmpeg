@@ -19,6 +19,7 @@ use cadmpeg_ir::document::{CadIr, EntityRewrite, Model, SourceMeta};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::SourceFidelity;
 
 use crate::loss::PvzLossCode;
@@ -57,8 +58,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     ));
     let mut geometry_transferred = false;
     let mut annotations = Annotations::default();
+    let mut given_up = Vec::new();
     if !ctx.container_only() {
-        match crate::pvs::read(ctx, structure_member) {
+        match ctx.run_part(|| crate::pvs::read(ctx, structure_member))? {
             Ok(structure) => {
                 geometry_transferred = decode_model(
                     ctx,
@@ -67,16 +69,20 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                     &mut ir,
                     &mut annotations,
                     &mut losses,
+                    &mut given_up,
                 )?;
             }
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => losses.push(PvzLossCode::StructureMemberMalformed.note(format!(
-                "the .pvs structure member {} did not decode ({error}); the package carries no \
-                 product structure, and none of its {geometry_members} .ol geometry members \
-                 was placed",
-                package.structure_name()
-            ))),
+            Err(error) => given_up.push(give_up_member(
+                ctx,
+                &package,
+                package.structure_name(),
+                error,
+            )?),
         }
+    }
+    let mut source_fidelity = SourceFidelity::with_annotations(annotations);
+    for part in given_up {
+        losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
     Ok(Decoded {
         ir,
@@ -84,8 +90,19 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             losses,
             ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), geometry_transferred))
         },
-        source_fidelity: SourceFidelity::with_annotations(annotations),
+        source_fidelity,
     })
+}
+
+/// Gives up the member `name`, keeping its stored bytes.
+fn give_up_member(
+    ctx: &DecodeContext<'_>,
+    package: &Package<'_>,
+    name: &str,
+    error: CodecError,
+) -> Result<GivenUpPart, CodecError> {
+    let part = Part::new("pvz", "archive-entry", package.stored(name)?).named(name);
+    ctx.give_up_part(part, error)
 }
 
 /// Decodes the product structure and the geometry members it names.
@@ -97,6 +114,7 @@ fn decode_model(
     ir: &mut CadIr,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<bool, CodecError> {
     losses.extend(structure.residue.losses());
     crate::model::definitions(ctx, structure, ir, losses)?;
@@ -121,25 +139,14 @@ fn decode_model(
             missing.push(name);
             continue;
         }
-        let member = match package.member(ctx, name) {
-            Ok(member) => member,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        let decoded = ctx.run_part(|| {
+            let member = package.member(ctx, name)?;
+            crate::ol::decode(ctx, member).map(|geometry| (member, geometry))
+        })?;
+        let (member, geometry) = match decoded {
+            Ok(decoded) => decoded,
             Err(error) => {
-                losses.push(
-                    PvzLossCode::GeometryMemberMalformed
-                        .note(format!("geometry member {name:?} did not open: {error}")),
-                );
-                continue;
-            }
-        };
-        let geometry = match crate::ol::decode(ctx, member) {
-            Ok(geometry) => geometry,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => {
-                losses.push(
-                    PvzLossCode::GeometryMemberMalformed
-                        .note(format!("geometry member {name:?} did not decode: {error}")),
-                );
+                given_up.push(give_up_member(ctx, package, name, error)?);
                 continue;
             }
         };
