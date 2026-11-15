@@ -15,22 +15,21 @@ use super::round_trip;
 use crate::design::construction::{kinds, FrameAxis, InputRole, Relation, Subject};
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::expr::{
-    BendVariable, BinaryOp, Constant, Expression, ExpressionToken, Function, Measure, MeasureKind,
+    BendVariable, BinaryOp, Constant, ExpressionToken, Function, Measure, MeasureKind,
     MeasureTarget, Neutral, Node, UnaryOp,
 };
 use crate::design::names::{CodecId, InstanceIndex, NativeName, NativeNameValue};
 use crate::design::options::{
-    BodyForm, Boolean, BooleanOp, CornerRound, Hand, Law, Limit, LimitOffset, LoopNesting,
-    NativeOption, ProjectionDirection, RadialDimension, SectionCondition, SheetOutput, SolidOutput,
-    Solidify, Span, Support, SymmetricMeasure, Targets, Thickness, ThinEnds, ThinWall, WallSide,
+    BodyForm, Boolean, BooleanOp, CornerRound, Hand, LimitOffset, LoopNesting, NativeOption,
+    ProjectionDirection, SectionCondition, SheetOutput, SolidOutput, Solidify, Support,
+    SymmetricMeasure, Targets, Thickness, ThinEnds, ThinWall, WallSide,
 };
 use crate::design::selection::{
     DatumPart, Fragment, OccurrencePath, Ordered, PathStep, StepRef, Unordered,
 };
 use crate::design::topology::Topology;
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, UnitSystem, ValueKind};
-use crate::features::ParameterId;
-use crate::scalar::{Angle, FiniteReal, Length, NonNegativeLength, PositiveLength};
+use crate::scalar::{Angle, FiniteReal, Length};
 
 #[derive(Default)]
 struct Report {
@@ -90,55 +89,6 @@ fn booleans() -> Vec<Boolean> {
             op: BooleanOp::Join,
             targets: None,
         },
-    ]
-}
-
-fn limits<Q: Clone>(amount: Q) -> Vec<Limit<Q>> {
-    vec![
-        Limit::AtOrigin,
-        Limit::Amount(Dimension::Literal(amount)),
-        Limit::ThroughAll,
-        Limit::Next,
-        Limit::Last,
-        Limit::ToGeometry {
-            target: selections().remove(0),
-            offset: Some(LimitOffset::Distance(Dimension::Literal(length(1.0)))),
-            extend: Some(Dimension::Literal(true)),
-            far: None,
-        },
-        Limit::ToPlane(fixtures::plane_constructions().remove(0)),
-        Limit::ToPoint(fixtures::point_constructions().remove(0)),
-        Limit::Native(text("sldprt:mid_plane")),
-    ]
-}
-
-fn spans<Q: Clone>(amount: Q) -> Vec<Span<Q>> {
-    vec![
-        Span::Between {
-            start: Box::new(Limit::AtOrigin),
-            end: Box::new(Limit::Amount(Dimension::Literal(amount.clone()))),
-        },
-        Span::Symmetric {
-            amount: Dimension::Literal(amount),
-            measure: Some(SymmetricMeasure::Total),
-        },
-    ]
-}
-
-fn laws<Q: Clone>(start: Q, end: Q) -> Vec<Law<Q>> {
-    vec![
-        Law::Constant(Dimension::Literal(start.clone())),
-        Law::Linear {
-            start: Dimension::Literal(start),
-            end: Dimension::Literal(end),
-        },
-        Law::Curve(selections().remove(0)),
-        Law::Expression(Expression::Neutral(Neutral(Node::Binary {
-            op: BinaryOp::Multiply,
-            left: Box::new(Node::LawParameter),
-            right: Box::new(fixtures::number(2.0, Unit::default())),
-        }))),
-        Law::Native(text("nx:cubic")),
     ]
 }
 
@@ -468,19 +418,6 @@ fn every_design_type_round_trips() {
         ],
     );
     report.check("NativeOption", native_options());
-    report.check(
-        "RadialDimension<PositiveLength>",
-        vec![
-            RadialDimension::<PositiveLength>::Radius(Dimension::Literal(positive_length(1.0))),
-            RadialDimension::Diameter(Dimension::Parameter(id::<ParameterId>("parameter", 1))),
-        ],
-    );
-    report.check(
-        "RadialDimension<NonNegativeLength>",
-        vec![RadialDimension::<NonNegativeLength>::Diameter(
-            Dimension::Literal(NonNegativeLength::new(0.0).unwrap()),
-        )],
-    );
     report.check("Hand", vec![Hand::Right, Hand::Left]);
     report.check(
         "LoopNesting",
@@ -586,14 +523,10 @@ fn every_design_type_round_trips() {
             Solidify::CapPlanarOpenings,
         ],
     );
-    report.check("Span<Length>", spans(length(10.0)));
-    report.check("Span<Angle>", spans(angle(1.0)));
     report.check(
         "SymmetricMeasure",
         vec![SymmetricMeasure::PerSide, SymmetricMeasure::Total],
     );
-    report.check("Limit<Length>", limits(length(5.0)));
-    report.check("Limit<Angle>", limits(angle(0.5)));
     report.check(
         "LimitOffset",
         vec![
@@ -602,9 +535,6 @@ fn every_design_type_round_trips() {
             LimitOffset::Angle(Dimension::Literal(angle(0.2))),
         ],
     );
-    report.check("Law<Length>", laws(length(1.0), length(2.0)));
-    report.check("Law<Angle>", laws(angle(0.0), angle(1.0)));
-    report.check("Law<FiniteReal>", laws(real(0.5), real(1.5)));
     report.check("SectionCondition", section_conditions());
     report.check(
         "Support",

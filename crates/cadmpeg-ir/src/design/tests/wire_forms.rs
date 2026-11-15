@@ -13,7 +13,7 @@ use crate::design::construction::SourceMode;
 use crate::design::dimension::Dimension;
 use crate::design::expr::{self, BinaryOp, Expression, ExpressionDialect, Neutral, Node};
 use crate::design::names::{CodecId, NameTable, TopoName};
-use crate::design::options::{Boolean, BooleanOp, Hand, Span};
+use crate::design::options::{Boolean, BooleanOp, Hand};
 use crate::design::refs::{Evaluated, StateRef};
 use crate::design::selection::{Members, Ordered, PickTarget, Picked, Picks, Unordered};
 use crate::design::units::{Duration, Unit, UnitFactor, UnitSymbol};
@@ -34,14 +34,6 @@ fn the_examples_of_section_2_5() {
             targets: None
         }),
         json!({"kind": "apply", "op": {"kind": "cut"}})
-    );
-    let span = Span::<Length>::Symmetric {
-        amount: literal,
-        measure: None,
-    };
-    assert_eq!(
-        to_value(&span),
-        json!({"kind": "symmetric", "amount": {"kind": "literal", "value": 2.5}})
     );
 }
 

@@ -37,10 +37,6 @@ pub enum Dimension<T, P = ParameterId> {
     Negated(P),
 }
 
-/// A dimension of a process value, which can bind a process or a design
-/// parameter.
-pub type ProcessDimension<T> = Dimension<T, ParamRef>;
-
 /// A reference to a design parameter of any scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
