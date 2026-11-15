@@ -552,6 +552,16 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer must emit the counted head and its reference for a pattern that uses it, and a reader must know whether the reference changes the pattern's seed, direction or distribution.
 
+### DR-654. Stored profile loop curves off the selected material boundary
+
+**Question.** Which sketch curves does a typed profile loop list when the selected region has a curve that ends inside it, or two coincident curves along one boundary interval?
+
+**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. It requires every stored curve to bound a selected atomic region. A loop that lists a line ending inside a circle, or a line coincident with part of another listed line, names a curve that bounds no selected region in that reading. The selection stays native with `feature.profile-selection-native`.
+
+**Need.** Controlled Extrudes of one region with a line that ends inside it, and of two regions separated by two coincident lines, with the stored loops and the resulting end caps, to state when a listed curve contributes no boundary interval.
+
+**Conflict.** None.
+
 ### DR-97. Freedom entry second value `0`
 
 **Question.** What does a freedom entry state when its second f64 is `0` rather than π?
@@ -1433,9 +1443,9 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte, the pitch marker, and the zero bytes before the trailer `01` select?
 
-**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. In the extended standard form, the first marker byte is the full-length flag, the pitch-marker byte is the modeled flag, and the second marker byte is `1`. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
+**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. In the extended standard form, the first marker byte is the full-length flag and the pitch-marker byte is the modeled flag of a scope with a result. Its second marker byte is `1` or `2`: threads on one external face store `1`, threads on two external faces and a thread on one internal face store `2`, and threads edited after other features store either value on one face. Thread type, designation, class, length, offset, hand, and the modeled option leave it unchanged. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
 
-**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time.
+**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time. For the second marker byte of the extended standard form: one external and one internal thread on faces made by the same feature, each saved before and after an edit of its face selection.
 
 **Conflict.** None.
 
@@ -1659,13 +1669,13 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** What do the two u64 values of each 16-byte entry after the entry count of an extended Thread prefix state?
 
-**Known.** A modeled extended Thread stores count `1` and one entry with u64 `1` and u64 `0x130`. The Design stream of that thread has no indexed record `0x130`. A cosmetic extended Thread stores count `0` and no entry.
+**Known.** A modeled extended Thread stores one entry for each selected face, and a cosmetic extended Thread stores count `0` and no entry. The first u64 values of one thread are `1` on one face, `1` and `6` on two faces, and `1`, `6`, and `7` on three faces. The second u64 values of one thread are consecutive, and they increase through the modeled threads of a design in timeline order. The Design stream has no indexed record with a second value.
 
-**Need.** Modeled threads on several faces, on bodies of different sizes, and in designs with different record counts.
+**Need.** Modeled threads on four or more faces, and the entity that carries a second value as its identity.
 
 **Conflict.** None.
 
-**Note.** The decoder admits entry counts `0` and `1`, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
+**Note.** The decoder requires one entry for each face-selection pair of a modeled thread, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
 
 ### DR-206. Sides of a two-sided to-object Revolve
 
@@ -1707,13 +1717,23 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** What does the flag byte of the marked null reference in a `Base Feature` result-body envelope state?
 
-**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the marked null reference of the ordinary form. Ordinary frames written by earlier releases store `0`. A public 318-byte class-348/257 ordinary frame stores `1` and repeats its passive reference. Six controlled one-body 331-byte ordinary frames from the current Fusion release, whose body is built in place, store `1` and repeat their body entity suffix. The decoder reads the result runs of a flagged ordinary frame as the ordinary result set and reports `feature.base-feature-null-flag-assumed`. Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 of the 262-byte wide zero-body form as zero; offsets 20 through 30 there have the layout of a marked null reference. One public 262-byte wide zero-body frame stores `1` at offset 29, and its current and preceding history states are equal; two other public frames of this form store `0`. A controlled 275-byte wide zero-body frame that holds a mesh body stores `1` at offset 29. A controlled 316-byte class-368/258 frame, whose body is a copy of a body in a referenced design, stores u32 `N` at offset 20 in place of `2N`, one run of `N` body-suffix entries, a marked null reference with flag `1` at offset 39, u32 `N`, and a repeated run of body suffixes; its kind starts at offset `169 + 37N`. The decoder keeps the wide zero-body frames with flag `1` and the 316-byte frame as unbound stored-body scopes.
+**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the marked null reference of the ordinary form. Ordinary frames written by earlier releases store `0`. A public 318-byte class-348/257 ordinary frame stores `1` and repeats its passive reference. Six controlled one-body 331-byte ordinary frames from the current Fusion release, whose body is built in place, store `1` and repeat their body entity suffix. A controlled 316-byte class-368/258 suffix result-body frame, whose body is a copy of a body in a referenced design, stores `1`. The decoder reads the result runs of a flagged ordinary or suffix result-body frame as the ordinary result set and reports `feature.base-feature-null-flag-assumed`. Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 of the 262-byte wide zero-body form as zero; offsets 20 through 30 there have the layout of a marked null reference. One public 262-byte wide zero-body frame stores `1` at offset 29, and its current and preceding history states are equal; two other public frames of this form store `0`. A controlled 275-byte wide zero-body frame that holds a mesh body stores `1` at offset 29. The decoder keeps the wide zero-body frames with flag `1` as unbound stored-body scopes.
 
 **Need.** Saves of one design that differ only in this byte, for example across Fusion releases or design options.
 
 **Conflict.** None.
 
 **Note.** DR-483 tracks a marked null reference whose byte after the flag byte is `1`. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
+
+### DR-646. Entry order of a multi-body suffix result-body frame
+
+**Question.** How does a `Base Feature` suffix result-body frame with more than one body order its body, repeated, and result entries?
+
+**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the one-body suffix result-body form. The ordinary form stores each entry kind as one consecutive run. The decoder reads a frame with u32 `N` greater than `1` at offset 20 and its kind at offset `169 + 37N` as `N` body entries, the marked null reference, u32 `N`, `N` repeated entries, one zero byte, the metadata record, u32 `N`, and `N` result entries, and reports `feature.base-feature-suffix-run-order-assumed`.
+
+**Need.** A controlled save whose Base Feature copies two bodies from a referenced design.
+
+**Conflict.** None.
 
 ### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
