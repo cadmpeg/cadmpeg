@@ -3289,3 +3289,23 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** The geometry carrier of these records.
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
+
+### DR-670. Carrier state of a Hole on a reconstructed plane
+
+**Question.** What do the carrier position and the carrier point parameters of a face-point Hole store when its point record names a reconstructed plane at another position?
+
+**Known.** The carrier has `refType` `19`. The point record has `refType` `17` and its position lies on the reconstructed plane. The carrier position differs from the point-record position, and the carrier point parameters share their first value with the point-record parameters. The drilled cylinder lies on the point-record position.
+
+**Need.** A second Hole whose carrier and point record disagree, with the Hole saved before and after the plane is moved.
+
+**Note.** The entry point is the point-record position. The carrier position is retained in the native carrier record.
+
+### DR-671. Second direct selection of a Hole on a reconstructed plane
+
+**Question.** What does the second direct support-face selection of the same Hole select, and how does it relate to the carrier input?
+
+**Known.** The Hole scope references two direct support-face selections after its point-data records. The first is the sole input of the point record. The carrier input names the second. The second selection owns a record with a sketch name and a sketch frame in place of a reconstructed plane record.
+
+**Need.** A second Hole whose carrier input names a sketch selection, and a save that moves the sketch.
+
+**Note.** The sketch frame is not used for placement.
