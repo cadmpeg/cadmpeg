@@ -564,7 +564,10 @@ fn a_one_clause_node_refuses_an_open_edge_and_a_crowded_vertex() {
     let mut open = closed_edge_topology();
     open.edge_vertices[0].end_vertex = 6;
     open.vertices.push(6);
-    assert_eq!(FaceRecipeIndex::new(&open).resolve(&closed_edge_operand(0)), None);
+    assert_eq!(
+        FaceRecipeIndex::new(&open).resolve(&closed_edge_operand(0)),
+        None
+    );
     let mut crowded = closed_edge_topology();
     crowded.faces.push(203);
     crowded.face_loops.push(AsmHistoricalRelation {
@@ -583,5 +586,8 @@ fn a_one_clause_node_refuses_an_open_edge_and_a_crowded_vertex() {
         previous: 2002,
         radial_next: 2000,
     });
-    assert_eq!(FaceRecipeIndex::new(&crowded).resolve(&closed_edge_operand(0)), None);
+    assert_eq!(
+        FaceRecipeIndex::new(&crowded).resolve(&closed_edge_operand(0)),
+        None
+    );
 }

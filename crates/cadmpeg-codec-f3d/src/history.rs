@@ -3813,13 +3813,14 @@ fn face_selection_state_with<'a>(
     } else {
         unique_history_state_pair(histories, state_id, previous_state_id)
     }?;
-    let spans_transitions = spanning || matches!(
-        feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::MoveFace { .. }
-                | cadmpeg_ir::features::FeatureOperation::DeleteFace { heal: true, .. }
-        )
-    );
+    let spans_transitions = spanning
+        || matches!(
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::MoveFace { .. }
+                    | cadmpeg_ir::features::FeatureOperation::DeleteFace { heal: true, .. }
+            )
+        );
     if !spans_transitions && state.transition.as_ref()?.previous_state_id != Some(previous_state_id)
     {
         return None;

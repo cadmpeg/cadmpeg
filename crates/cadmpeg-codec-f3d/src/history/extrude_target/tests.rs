@@ -237,7 +237,11 @@ fn run_spanning(
         None,
         false,
         if spanning {
-            vec![state(22, after), state(10, before.clone()), state(6, before)]
+            vec![
+                state(22, after),
+                state(10, before.clone()),
+                state(6, before),
+            ]
         } else {
             vec![state(22, after), state(6, before)]
         },

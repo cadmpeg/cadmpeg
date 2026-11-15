@@ -149,9 +149,7 @@ impl FaceRecipeIndex {
         let [first, second] = corners.as_slice() else {
             return None;
         };
-        if first.edges != [edge, edge]
-            || second.edges != [edge, edge]
-            || first.face == second.face
+        if first.edges != [edge, edge] || second.edges != [edge, edge] || first.face == second.face
         {
             return None;
         }
