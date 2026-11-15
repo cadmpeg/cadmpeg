@@ -98,13 +98,38 @@ fn equal_numeric_forms_in_different_domains_do_not_select_style_default() {
 }
 
 #[test]
-fn relief_and_transition_booleans_require_the_pinned_true_value() {
-    assert!(projected(&Fixture::new()).is_ok());
+fn either_relief_and_transition_boolean_keeps_the_equal_style_form() {
     for index in [29, 35] {
         let mut fixture = Fixture::new();
         fixture.edit(index, |kind| {
             if let PmDcFeaturePropertyKind::Boolean { value, .. } = kind {
                 *value = false;
+            }
+        });
+        let value = projected(&fixture).expect("operands");
+        assert_eq!(value.relief.form, SheetMetalReliefForm::StyleDefault);
+        assert_eq!(
+            value.transition.form,
+            SheetMetalTransitionForm::StyleDefault
+        );
+    }
+}
+
+#[test]
+fn a_false_boolean_does_not_admit_a_form_other_than_the_style_form() {
+    for (control, form) in [(29, 31), (35, 32)] {
+        let mut fixture = Fixture::new();
+        fixture.edit(control, |kind| {
+            if let PmDcFeaturePropertyKind::Boolean { value, .. } = kind {
+                *value = false;
+            }
+        });
+        fixture.edit(form, |kind| {
+            if let PmDcFeaturePropertyKind::SheetMetal {
+                definition: SheetMetalProperty::Enumeration { value, .. },
+            } = kind
+            {
+                *value += 1;
             }
         });
         assert!(projected(&fixture).is_err());
@@ -602,19 +627,25 @@ fn the_first_refused_check_follows_the_evaluation_order() {
             PlateRefusal::AttachmentMode,
         ),
         (
-            29,
+            31,
             |kind| {
-                if let PmDcFeaturePropertyKind::Boolean { value, .. } = kind {
-                    *value = false;
+                if let PmDcFeaturePropertyKind::SheetMetal {
+                    definition: SheetMetalProperty::Enumeration { value, .. },
+                } = kind
+                {
+                    *value = 0;
                 }
             },
             PlateRefusal::Relief,
         ),
         (
-            35,
+            32,
             |kind| {
-                if let PmDcFeaturePropertyKind::Boolean { value, .. } = kind {
-                    *value = false;
+                if let PmDcFeaturePropertyKind::SheetMetal {
+                    definition: SheetMetalProperty::Enumeration { value, .. },
+                } = kind
+                {
+                    *value = 1;
                 }
             },
             PlateRefusal::Transition,
