@@ -3023,14 +3023,3 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The termination stays the native selection and reports `feature.face-selection-native`.
 
-### DR-652. Base Feature frame of 257 bytes with the zero-body prefix
-
-**Question.** Does a class-341 `Base Feature` primary paired with class 263 and a 257-byte frame store an empty result-body set?
-
-**Known.** The frame carries `u8 1` at offset 20, zero bytes at offsets 11 through 19 and 21 through 31, `u8 1` at offset 32, the shared metadata record at offset 33, u32 `36` at offset 55, a null GUID at offset 59, u32 `1` at offset 134, the current history-state u32 at offset 149, and the kind at offset 157, as the class-444 zero-body frame does. The frame is one byte shorter than the 258-byte zero-body frame. The current and previous history-state identities are equal. No decoded body-entity suffix or result record exists. Three such scopes occur in one design.
-
-**Need.** The meaning of the one byte by which the frame is shorter, from a design that stores such a scope after a feature that changes bodies.
-
-**Conflict.** None.
-
-**Note.** The scope stays a native `Base Feature` selection and reports `feature.stored-bodies-unbound`.
