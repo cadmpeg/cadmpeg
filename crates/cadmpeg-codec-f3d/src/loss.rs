@@ -283,6 +283,20 @@ pub(crate) enum F3dLossCode {
     FeatureMeshOperationFieldsUninterpreted,
     FeatureMeshSectionCurvesUnresolved,
     FeatureMeshConversionScopeUnparsed,
+    FeatureMeshPlaneCutScopeUnparsed,
+    FeatureMeshPlaneCutTailPartial,
+    FeatureMeshPlaneCutPlanePartial,
+    FeatureMeshPlaneCutSelectorUnruled,
+    FeatureMeshPlaneCutFieldsUninterpreted,
+    FeatureMeshPlaneCutSourceUnresolved,
+    FeatureMeshPlaneCutSelectionUnresolved,
+    FeatureMeshPlaneCutMembershipAssumed,
+    FeatureMeshPlaneCutMatrixOrientationAssumed,
+    FeatureMeshPlaneCutUnitsAssumed,
+    FeatureMeshPlaneCutModelSpaceAssumed,
+    FeatureMeshPlaneCutRetainedSideAssumed,
+    FeatureMeshPlaneCutSplitFacesAssumed,
+    FeatureMeshPlaneCutUniformFillAssumed,
     FeatureMeshCombineScopeUnparsed,
     FeatureMeshCombineTailPartial,
     FeatureMeshCombineSelectorUnruled,
@@ -1108,6 +1122,20 @@ impl F3dLossCode {
         Self::FeatureMeshOperationFieldsUninterpreted,
         Self::FeatureMeshSectionCurvesUnresolved,
         Self::FeatureMeshConversionScopeUnparsed,
+        Self::FeatureMeshPlaneCutScopeUnparsed,
+        Self::FeatureMeshPlaneCutTailPartial,
+        Self::FeatureMeshPlaneCutPlanePartial,
+        Self::FeatureMeshPlaneCutSelectorUnruled,
+        Self::FeatureMeshPlaneCutFieldsUninterpreted,
+        Self::FeatureMeshPlaneCutSourceUnresolved,
+        Self::FeatureMeshPlaneCutSelectionUnresolved,
+        Self::FeatureMeshPlaneCutMembershipAssumed,
+        Self::FeatureMeshPlaneCutMatrixOrientationAssumed,
+        Self::FeatureMeshPlaneCutUnitsAssumed,
+        Self::FeatureMeshPlaneCutModelSpaceAssumed,
+        Self::FeatureMeshPlaneCutRetainedSideAssumed,
+        Self::FeatureMeshPlaneCutSplitFacesAssumed,
+        Self::FeatureMeshPlaneCutUniformFillAssumed,
         Self::FeatureMeshCombineScopeUnparsed,
         Self::FeatureMeshCombineTailPartial,
         Self::FeatureMeshCombineSelectorUnruled,
@@ -1829,6 +1857,36 @@ impl F3dLossCode {
             }
             Self::FeatureMeshSectionCurvesUnresolved => "feature.mesh-section-curves-unresolved",
             Self::FeatureMeshConversionScopeUnparsed => "feature.mesh-conversion-scope-unparsed",
+            Self::FeatureMeshPlaneCutScopeUnparsed => "feature.mesh-plane-cut-scope-unparsed",
+            Self::FeatureMeshPlaneCutTailPartial => "feature.mesh-plane-cut-tail-partial",
+            Self::FeatureMeshPlaneCutPlanePartial => "feature.mesh-plane-cut-plane-partial",
+            Self::FeatureMeshPlaneCutSelectorUnruled => "feature.mesh-plane-cut-selector-unruled",
+            Self::FeatureMeshPlaneCutFieldsUninterpreted => {
+                "feature.mesh-plane-cut-fields-uninterpreted"
+            }
+            Self::FeatureMeshPlaneCutSourceUnresolved => "feature.mesh-plane-cut-source-unresolved",
+            Self::FeatureMeshPlaneCutSelectionUnresolved => {
+                "feature.mesh-plane-cut-selection-unresolved"
+            }
+            Self::FeatureMeshPlaneCutMembershipAssumed => {
+                "feature.mesh-plane-cut-membership-assumed"
+            }
+            Self::FeatureMeshPlaneCutMatrixOrientationAssumed => {
+                "feature.mesh-plane-cut-matrix-orientation-assumed"
+            }
+            Self::FeatureMeshPlaneCutUnitsAssumed => "feature.mesh-plane-cut-units-assumed",
+            Self::FeatureMeshPlaneCutModelSpaceAssumed => {
+                "feature.mesh-plane-cut-model-space-assumed"
+            }
+            Self::FeatureMeshPlaneCutRetainedSideAssumed => {
+                "feature.mesh-plane-cut-retained-side-assumed"
+            }
+            Self::FeatureMeshPlaneCutSplitFacesAssumed => {
+                "feature.mesh-plane-cut-split-faces-assumed"
+            }
+            Self::FeatureMeshPlaneCutUniformFillAssumed => {
+                "feature.mesh-plane-cut-uniform-fill-assumed"
+            }
             Self::FeatureMeshCombineScopeUnparsed => "feature.mesh-combine-scope-unparsed",
             Self::FeatureMeshCombineTailPartial => "feature.mesh-combine-tail-partial",
             Self::FeatureMeshCombineSelectorUnruled => "feature.mesh-combine-selector-unruled",
@@ -2553,6 +2611,20 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
             | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshPlaneCutScopeUnparsed
+            | Self::FeatureMeshPlaneCutTailPartial
+            | Self::FeatureMeshPlaneCutPlanePartial
+            | Self::FeatureMeshPlaneCutSelectorUnruled
+            | Self::FeatureMeshPlaneCutFieldsUninterpreted
+            | Self::FeatureMeshPlaneCutSourceUnresolved
+            | Self::FeatureMeshPlaneCutSelectionUnresolved
+            | Self::FeatureMeshPlaneCutMembershipAssumed
+            | Self::FeatureMeshPlaneCutMatrixOrientationAssumed
+            | Self::FeatureMeshPlaneCutUnitsAssumed
+            | Self::FeatureMeshPlaneCutModelSpaceAssumed
+            | Self::FeatureMeshPlaneCutRetainedSideAssumed
+            | Self::FeatureMeshPlaneCutSplitFacesAssumed
+            | Self::FeatureMeshPlaneCutUniformFillAssumed
             | Self::FeatureMeshCombineScopeUnparsed
             | Self::FeatureMeshCombineTailPartial
             | Self::FeatureMeshCombineSelectorUnruled
@@ -3065,6 +3137,20 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
             | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshPlaneCutScopeUnparsed
+            | Self::FeatureMeshPlaneCutTailPartial
+            | Self::FeatureMeshPlaneCutPlanePartial
+            | Self::FeatureMeshPlaneCutSelectorUnruled
+            | Self::FeatureMeshPlaneCutFieldsUninterpreted
+            | Self::FeatureMeshPlaneCutSourceUnresolved
+            | Self::FeatureMeshPlaneCutSelectionUnresolved
+            | Self::FeatureMeshPlaneCutMembershipAssumed
+            | Self::FeatureMeshPlaneCutMatrixOrientationAssumed
+            | Self::FeatureMeshPlaneCutUnitsAssumed
+            | Self::FeatureMeshPlaneCutModelSpaceAssumed
+            | Self::FeatureMeshPlaneCutRetainedSideAssumed
+            | Self::FeatureMeshPlaneCutSplitFacesAssumed
+            | Self::FeatureMeshPlaneCutUniformFillAssumed
             | Self::FeatureMeshCombineScopeUnparsed
             | Self::FeatureMeshCombineTailPartial
             | Self::FeatureMeshCombineSelectorUnruled
@@ -3639,6 +3725,20 @@ mod tests {
                 "feature.mesh-operation-fields-uninterpreted",
                 "feature.mesh-section-curves-unresolved",
                 "feature.mesh-conversion-scope-unparsed",
+                "feature.mesh-plane-cut-scope-unparsed",
+                "feature.mesh-plane-cut-tail-partial",
+                "feature.mesh-plane-cut-plane-partial",
+                "feature.mesh-plane-cut-selector-unruled",
+                "feature.mesh-plane-cut-fields-uninterpreted",
+                "feature.mesh-plane-cut-source-unresolved",
+                "feature.mesh-plane-cut-selection-unresolved",
+                "feature.mesh-plane-cut-membership-assumed",
+                "feature.mesh-plane-cut-matrix-orientation-assumed",
+                "feature.mesh-plane-cut-units-assumed",
+                "feature.mesh-plane-cut-model-space-assumed",
+                "feature.mesh-plane-cut-retained-side-assumed",
+                "feature.mesh-plane-cut-split-faces-assumed",
+                "feature.mesh-plane-cut-uniform-fill-assumed",
                 "feature.mesh-combine-scope-unparsed",
                 "feature.mesh-combine-tail-partial",
                 "feature.mesh-combine-selector-unruled",

@@ -12,6 +12,11 @@ rewrite_enum!(MeshSelection, []; {
     Unresolved { feature },
 });
 
+rewrite_scalar!(super::MeshPlaneCutMode);
+rewrite_scalar!(super::MeshPlaneCutFill);
+rewrite_scalar!(super::MeshPlaneCutSide);
+rewrite_record!(super::MeshPlaneCut, []; { origin, normal, mode, fill, retained_side });
+
 rewrite_scalar!(MeshFaceDistribution);
 rewrite_scalar!(MeshConversionMethod);
 rewrite_record!(MeshConversion, []; { sources, method });
@@ -30,6 +35,7 @@ rewrite_enum!(MeshRepair, []; {
 });
 
 rewrite_enum!(MeshModification, []; {
+    PlaneCut { cut },
     Reduce { distribution, target },
     Repair { method },
     Remesh { distribution, edge_length, shape_preservation },

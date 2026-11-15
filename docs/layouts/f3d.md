@@ -11515,6 +11515,27 @@ Parsed by:
 | 5 | 51 | `carrier_reference` | `bytes[51]` | little | spec | Immediately before the carrier reference |
 | 56 | 8 | `thickness` | `f64` | little | spec | Immediately before the carrier reference |
 
+## `mesh_plane_cut_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 162 B
+
+Flag-00 prefix. Flag 01 inserts a four-byte word before the cut selector. Reference slots follow this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/plane_cut.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 4 | `cut_selector` | `u32` | little | spec | The u32 cut selector is followed |
+| 25 | 4 | `matrix_count` | `u32` | little | spec | u32 matrix count of `16` |
+| 29 | 128 | `matrix` | `f64[16]` | little | spec | sixteen f64 matrix components in serialized order |
+| 157 | 4 | `fill_selector` | `u32` | little | spec | a u32 fill selector |
+| 161 | 1 | `control_byte` | `u8` | little | spec | and a control byte |
+
+Unstated regions:
+
+- `0..21` (21 B): Indexed header and mesh scope prefix.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
