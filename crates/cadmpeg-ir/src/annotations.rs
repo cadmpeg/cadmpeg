@@ -26,11 +26,9 @@ pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 #[serde(deny_unknown_fields)]
 pub struct Annotations {
     /// Source location for each annotated entity.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub provenance: BTreeMap<String, AnnotationProvenance>,
     /// Non-byte-exact entity or field annotations.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     exactness: BTreeMap<String, ExactnessNote>,
 }
@@ -275,14 +273,13 @@ impl<'de> Deserialize<'de> for NonEmptyMap {
 /// Exactness for an entity and sparse overrides for its serialized fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExactnessNote {
     /// The entity itself is not byte-exact; listed fields override it.
     Entity {
         /// Exactness of the entity except where overridden by `fields`.
         entity: Inexactness,
         /// Exactness overrides keyed by serde field path.
-        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
         fields: BTreeMap<FieldName, Exactness>,
     },

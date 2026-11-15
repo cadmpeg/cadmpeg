@@ -141,7 +141,6 @@ pub struct ContainerSummary {
     /// Enumerated entries.
     pub entries: Vec<ContainerEntry>,
     /// Losses resolved during inspection. Omitted when empty.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub losses: Vec<LossNote>,
     /// Codec-defined informational notes.
     pub notes: Vec<String>,

@@ -255,7 +255,6 @@ pub struct SourceObjectAssociation {
     )]
     pub layer: Option<String>,
     /// Native instance identifiers from outermost to innermost.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instance_path: Vec<String>,
 }
 

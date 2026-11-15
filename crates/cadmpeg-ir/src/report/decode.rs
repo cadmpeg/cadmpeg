@@ -34,7 +34,7 @@ pub struct DecodeReport {
 /// records its [`depth`](Self::depth) on the document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "transfer", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum DecodeTransfer {
     /// The decoder stopped after container inspection and transferred no
@@ -116,7 +116,6 @@ struct DecodeReportWire {
     /// Typed source-transfer state.
     transfer: DecodeTransfer,
     /// Decode coverage counts keyed by declared measure name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     coverage: BTreeMap<String, usize>,
     /// Explicit loss notes.
@@ -124,7 +123,6 @@ struct DecodeReportWire {
     /// Free-form informational notes (e.g. container findings).
     notes: Vec<String>,
     /// Per-source disposition ledger for decoded records and entities.
-    #[serde(default, skip_serializing_if = "TransferLedger::is_empty")]
     transfer_ledger: TransferLedger,
 }
 
@@ -200,7 +198,7 @@ pub enum TransferDisposition {
 /// record has no target.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "disposition", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum TransferOutcome {
     /// Transferred as an exact neutral or native entity.

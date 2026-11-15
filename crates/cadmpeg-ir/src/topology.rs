@@ -156,7 +156,6 @@ pub struct Body {
     /// Arena id.
     pub id: BodyId,
     /// The dimensional kind of topology contained by the body.
-    #[serde(default)]
     pub kind: BodyKind,
     /// Constituent regions.
     pub regions: Vec<RegionId>,
@@ -498,7 +497,7 @@ impl Face {
 /// produce one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "classification", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum FaceLoops {
     /// The source did not classify outer versus inner; loops keep source order.
@@ -670,7 +669,6 @@ pub enum LoopBoundary {
         /// Referenced pole vertex.
         vertex: VertexId,
         /// Ordered parameter-space images associated with the pole.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pcurves: Vec<PcurveUse>,
     },
     /// An ordered coedge ring and its anchored pole occurrences.
@@ -695,7 +693,6 @@ impl std::error::Error for LoopRingError {}
 #[serde(try_from = "LoopRingWire")]
 pub struct LoopRing {
     coedges: Vec<CoedgeId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     vertex_uses: Vec<AnchoredVertexUse>,
 }
 
@@ -706,7 +703,6 @@ struct LoopRingWire {
     /// Coedges in source traversal order.
     coedges: Vec<CoedgeId>,
     /// Pole occurrences in source traversal order.
-    #[serde(default)]
     vertex_uses: Vec<AnchoredVertexUse>,
 }
 
@@ -953,7 +949,6 @@ pub struct AnchoredVertexUse {
     /// Preceding coedge in the cyclic traversal.
     pub after: CoedgeId,
     /// Ordered parameter-space images associated with this pole occurrence.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
 }
 
@@ -976,7 +971,6 @@ pub struct Coedge {
     /// Direction relative to the edge curve.
     pub sense: Sense,
     /// Ordered parameter-space images of this coedge on the face surface.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
     /// Optional coedge-local 3D carrier used instead of the shared edge curve.
     #[serde(

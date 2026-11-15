@@ -70,7 +70,6 @@ pub struct Drawing {
     )]
     pub visible: Option<bool>,
     /// Ordered relationships grouped by exact source-property role.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub relationships: BTreeMap<NonBlankString, Vec<crate::references::ReferenceSelection>>,
     /// Page template drawing identity.
@@ -105,7 +104,6 @@ pub struct Drawing {
     pub sheet: Option<DrawingSheet>,
     /// Curves in source order. Origin is the view origin; X points right and Y points up.
     /// Coordinates are millimetres before view scale and rotation.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub curves: Vec<DrawingCurve>,
     /// Page-space template primitives and positioned text; template owners only.
     #[serde(
@@ -122,11 +120,9 @@ pub struct Drawing {
     )]
     pub x_direction: Option<crate::units::NonzeroVector<3>>,
     /// Remaining typed or exactly framed parameters by source name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameters: BTreeMap<NonBlankString, String>,
     /// Template, image, symbol, or other retained assets.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
     /// Native drawing record supplying this entity.
     pub native_ref: String,
@@ -338,7 +334,6 @@ pub struct DrawingSheet {
     /// Positive sheet height in millimetres.
     pub height_mm: crate::scalar::PositiveReal,
     /// Ordered name/value pairs; names are unique.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<TitleBlockField>,
 }
 

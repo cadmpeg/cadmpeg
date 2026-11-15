@@ -208,13 +208,10 @@ struct SpreadsheetWire {
     /// Used cells in persistence order.
     cells: Vec<SpreadsheetCell>,
     /// Non-default column widths.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     column_widths: Vec<SpreadsheetDimensionWire>,
     /// Non-default row heights.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     row_heights: Vec<SpreadsheetDimensionWire>,
     /// Merged rectangular ranges.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     merged_ranges: Vec<SpreadsheetRange>,
     /// Full-fidelity source sheet record.
     #[serde(

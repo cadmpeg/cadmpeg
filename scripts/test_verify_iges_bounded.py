@@ -52,7 +52,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         }
         self.write(
             {
-                "ir_version": "10",
+                "ir_version": "11",
                 "command": "dump",
                 "status": "refused",
                 "refusal": refusal,
@@ -67,7 +67,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
     def test_rejects_success_report_as_refusal(self) -> None:
         self.write(
             {
-                "ir_version": "10",
+                "ir_version": "11",
                 "command": "dump",
                 "status": "ok",
                 "refusal": None,
@@ -98,7 +98,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
                 actual, error = MODULE.load_decode_refusal(self.path)
 
                 self.assertIsNone(actual)
-                self.assertEqual(error, 'decode refusal report does not use ir_version "10"')
+                self.assertEqual(error, 'decode refusal report does not use ir_version "11"')
 
     def test_gate_rejects_unclassified_decode_exit(self) -> None:
         input_path = Path(self.directory.name) / "input.igs"
@@ -129,7 +129,7 @@ import sys
 report = pathlib.Path(sys.argv[sys.argv.index('--report') + 1])
 assert sys.argv[1] == 'dump'
 report.write_text(json.dumps({
-    'ir_version': '10',
+    'ir_version': '11',
     'command': 'dump',
     'status': 'refused',
     'refusal': {

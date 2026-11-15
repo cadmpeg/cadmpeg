@@ -43,7 +43,6 @@ pub struct ReferenceSelection {
     /// Local, external, or explicit-null target identity.
     pub target: ReferenceTarget,
     /// Ordered model subelement selectors.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subelements: Vec<String>,
 }
 

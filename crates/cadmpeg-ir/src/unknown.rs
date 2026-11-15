@@ -32,7 +32,6 @@ pub struct NativeUnknownRecord {
     /// Arena id.
     pub id: UnknownId,
     /// Related entity IDs from any document arena.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<Identity>,
 }
 
@@ -40,7 +39,7 @@ pub struct NativeUnknownRecord {
 /// authoritative sidecar admission checks them before recovery or replay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "retention", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum RawRetainedBytes {
     Inline {
         #[serde(with = "crate::bytes")]
@@ -113,7 +112,6 @@ pub struct UnknownRecord {
     /// contradicts the bytes beside it.
     retention: RawRetainedBytes,
     /// Related entity IDs from any document arena.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     links: Vec<String>,
 }
 

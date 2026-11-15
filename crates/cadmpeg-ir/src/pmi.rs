@@ -149,7 +149,7 @@ pub enum PmiQuantity {
 /// Semantic dimensional characteristic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum DimensionKind {
     /// Size of one shape aspect.
@@ -173,7 +173,7 @@ pub enum DimensionKind {
 /// Geometric form of a datum target feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum DatumTargetForm {
     /// Point target.
@@ -193,7 +193,7 @@ pub enum DatumTargetForm {
 /// Semantic geometric-tolerance characteristic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum GeometricToleranceKind {
     /// Straightness.
@@ -248,7 +248,6 @@ pub struct DatumReference {
     )]
     pub common_group: Option<u32>,
     /// Source-defined material-condition and translation modifiers.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modifiers: Vec<String>,
 }
 
@@ -325,7 +324,7 @@ pub struct LimitsAndFits {
 /// Tolerance carried by a semantic dimension.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "form", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DimensionTolerance {
     /// Signed lower and upper deviations from the nominal value.
     PlusMinus {
@@ -388,7 +387,6 @@ struct PmiDimensionWire {
     )]
     tolerance: Option<DimensionTolerance>,
     /// Source-defined dimensional modifiers, such as auxiliary or statistical.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     modifiers: Vec<String>,
 }
 
@@ -578,7 +576,6 @@ pub enum PmiDefinition {
         /// Target identifier shown with the datum target.
         identification: String,
         /// Shape aspects that provide the datum-target basis.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         basis: Vec<PmiTarget>,
     },
     /// Geometric tolerance, zone units, modifiers, and optional datum system.
@@ -616,10 +613,8 @@ pub enum PmiDefinition {
         )]
         datum_system: Option<PmiId>,
         /// Source-defined geometric-tolerance modifiers.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         modifiers: Vec<String>,
         /// Tolerance-zone size, form, and projected extent constraints.
-        #[serde(default, skip_serializing_if = "zones::ToleranceConstraints::is_empty")]
         constraints: zones::ToleranceConstraints,
     },
     /// Size or location dimension with optional plus/minus limits.
@@ -641,7 +636,6 @@ pub enum PmiDefinition {
         )]
         placement: Option<Transform>,
         /// Semantic annotations depicted by this presentation.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         semantics: Vec<PmiId>,
     },
 }
@@ -668,7 +662,6 @@ pub struct PmiAnnotation {
     )]
     pub visible: Option<bool>,
     /// Qualified model objects.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<PmiTarget>,
     /// Semantic or graphical payload.
     pub definition: PmiDefinition,

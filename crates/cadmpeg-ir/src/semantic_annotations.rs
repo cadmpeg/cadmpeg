@@ -50,10 +50,8 @@ pub struct SemanticAnnotation {
     /// Source order among semantic annotations.
     pub order: u32,
     /// Ordered visible text fragments.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text: Vec<String>,
     /// Ordered references grouped by exact source-property role.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub references: BTreeMap<NonBlankString, Vec<crate::references::ReferenceSelection>>,
     /// Stored measurement or exact measurement from verified reference geometry.
@@ -61,10 +59,8 @@ pub struct SemanticAnnotation {
     #[serde(deserialize_with = "deserialize_value")]
     pub value: Option<crate::scalar::FiniteReal>,
     /// Ordered page-space reference points, empty or one pair, in millimetres.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reference_anchors: Vec<crate::units::FiniteVector<2>>,
     /// Stored physical text size and family.
-    #[serde(default, skip_serializing_if = "AnnotationTextStyle::is_empty")]
     pub text_style: AnnotationTextStyle,
     /// Persisted formatting expression or visible dimension format.
     #[serde(
@@ -106,11 +102,9 @@ pub struct SemanticAnnotation {
     )]
     pub lower_tolerance: Option<crate::scalar::FiniteReal>,
     /// Remaining typed or exactly framed parameters by source name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameters: BTreeMap<NonBlankString, String>,
     /// Symbol, image, font, or other retained assets.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
     /// Native semantic annotation record supplying this entity.
     pub native_ref: String,

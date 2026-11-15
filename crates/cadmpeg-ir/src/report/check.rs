@@ -170,7 +170,6 @@ pub struct Finding {
     pub entity: Option<String>,
     /// Other document entities a finding about `entity` involves, in message
     /// order. Empty when `entity` is absent.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub related: Vec<String>,
 }
 
@@ -185,7 +184,6 @@ pub struct ValidationReport {
     /// Findings, in discovery order.
     pub findings: Vec<Finding>,
     /// Loss notes supplied to validation.
-    #[serde(default)]
     pub losses: Vec<LossNote>,
 }
 

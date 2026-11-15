@@ -73,14 +73,11 @@ pub struct ProductDefinition {
     )]
     pub part_number: Option<String>,
     /// Additional persisted BOM identity fields by exact property name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub bom_properties: BTreeMap<NonBlankString, String>,
     /// Shape bodies owned by this reusable definition.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bodies: Vec<BodyId>,
     /// Sketches owned by this reusable definition.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sketches: Vec<SketchId>,
     /// Format-native object supplying this definition.
     #[serde(
@@ -94,7 +91,7 @@ pub struct ProductDefinition {
 /// Local or unresolved external prototype of an occurrence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "scope", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum PrototypeReference {
     /// Prototype resolves to a definition in this document.
@@ -121,7 +118,7 @@ pub enum PrototypeReference {
 /// Typed identity or explicit absence of an external document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "resolution", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExternalDocument {
     /// Non-empty file path stored by the source.
     Path {
@@ -159,8 +156,8 @@ impl ExternalDocument {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
-    tag = "policy",
-    content = "native_policy",
+    tag = "kind",
+    content = "value",
     rename_all = "snake_case",
     deny_unknown_fields
 )]
@@ -971,7 +968,7 @@ impl<'a> AssemblyGraph<'a> {
 /// Container that owns a joint operand object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "container", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OperandContainer {
     /// Object in the current document root.
     Root {},
@@ -982,7 +979,6 @@ pub enum OperandContainer {
         /// Native keys of the nested occurrences, outermost first, that lead
         /// from the prototype of `occurrence` to the document that owns the
         /// object. Empty when the prototype of `occurrence` owns the object.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         occurrence_path: Vec<String>,
     },
     /// Object in an external document.
@@ -1002,7 +998,6 @@ pub struct JointOperand {
     /// Exact referenced application object identity.
     pub object: String,
     /// Ordered persistent object/element paths.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subelements: Vec<String>,
 }
 
@@ -1140,7 +1135,7 @@ impl JointLimits {
 /// The wire spelling of [`JointLimits`], before the ordered-pair mint.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "bounds", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 enum JointLimitsWire {
     /// Only the lower bound is enabled.
@@ -1221,7 +1216,12 @@ pub struct JointConnector {
 /// Structurally complete operands and frames for an assembly joint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "arity", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum JointOperands {
     /// One grounded connector and its optional attachment offset.
     Grounded {
@@ -1451,7 +1451,6 @@ pub enum PairedJointKind {
         /// The revolute joint of the pinion and the slider joint of the rack that
         /// the coupling acts on, in that order. Empty when the coupling acts on
         /// the connectors directly.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         coupled_joints: Vec<JointId>,
     },
     /// Couples translation and rotation by screw pitch.
@@ -1492,7 +1491,6 @@ pub enum PairedJointKind {
         /// The revolute joints of the first and the second gear that the
         /// coupling acts on, in that order. Empty when the coupling acts on the
         /// connectors directly.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         coupled_joints: Vec<JointId>,
     },
     /// Couples two pulley rotations through a belt.
@@ -1632,7 +1630,6 @@ pub struct AssemblyJoint {
     )]
     pub driving_parameter: Option<crate::features::ParameterId>,
     /// Motors and springs that drive degrees of freedom of the joint.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drives: Vec<JointDrive>,
     /// Format-native joint record supplying this constraint.
     #[serde(

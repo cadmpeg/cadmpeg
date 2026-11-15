@@ -332,7 +332,12 @@ pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 /// pins one.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum LossKind {
     /// Shared loss whose wire code is determined by its taxonomy.
     Shared {

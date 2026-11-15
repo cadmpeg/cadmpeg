@@ -105,7 +105,7 @@ pub enum DecodeSidecarParseError {
 /// of bytes that are not retained.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "retention", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RetainedBytes {
     /// The source bytes themselves. Their length and digest are functions of
     /// them, so neither is stored.
@@ -327,10 +327,8 @@ impl RetainedSourceRecord {
 #[serde(deny_unknown_fields)]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
-    #[serde(default)]
     pub annotations: Annotations,
     /// Native records retained for recovery or replay, keyed by record id.
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
 }

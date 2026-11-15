@@ -432,7 +432,6 @@ struct EntryIdentityWire {
     /// Codec-defined role classification.
     role: ContainerRole,
     /// Extra codec-extracted attributes, sorted by key.
-    #[serde(default)]
     #[serde(deserialize_with = "crate::distinct_keys::btree_map")]
     attributes: BTreeMap<String, String>,
 }
@@ -468,7 +467,7 @@ struct CompressedSizesWire {
 /// beside them and cannot disagree with them.
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 enum VerbatimSizeWire {
     /// Neither the payload nor its stored span is reported.
@@ -533,7 +532,7 @@ impl From<VerbatimSizeWire> for VerbatimSize {
 /// unrepresentable rather than refused.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "compression")]
+#[serde(tag = "kind")]
 #[serde(deny_unknown_fields)]
 enum ContainerEntryWire {
     /// A container directory node that holds no bytes of its own.
@@ -592,7 +591,7 @@ enum ContainerEntryWire {
         sizes: CompressedSizesWire,
     },
     /// Bytes stored compressed with Unix compress.
-    #[serde(rename = "unix-compress")]
+    #[serde(rename = "unix_compress")]
     UnixCompress {
         /// The entry fields every storage kind carries.
         #[serde(flatten)]
