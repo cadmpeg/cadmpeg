@@ -3028,10 +3028,17 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     }
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(data));
+    let untyped = opaque_records
+        .iter()
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
     source_fidelity.retain_unknown_records(
         "rhino",
         opaque_records.into_iter().chain(typed_source_records),
     )?;
+    for id in untyped {
+        source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
+    }
     Ok(Decoded {
         ir,
         body: DecodeBody {
@@ -4013,6 +4020,14 @@ mod tests {
             .iter()
             .find(|(id, _)| id.as_str().starts_with("rhino:legacy:record#00200004-"))
             .expect("the malformed direct record is retained under its typecode");
+        assert_eq!(
+            malformed.untyped().iter().copied().collect::<Vec<_>>(),
+            [cadmpeg_ir::ArenaClass::Model]
+        );
+        assert!(retained
+            .iter()
+            .filter(|(id, _)| *id != malformed_id)
+            .all(|(_, record)| record.untyped().is_empty()));
         assert_eq!(
             malformed.offset(),
             cadmpeg_core::decode::u64_from_index(record_offset)
