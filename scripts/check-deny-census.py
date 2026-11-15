@@ -7,7 +7,10 @@ sweeps test shapes the goldens carry; this checker follows declared
 read routes in the three wire crates. Explicit lexical imports are resolved
 before applying the unique-declaration fallback for bare names; this is not a
 complete Rust name-resolution proof. Visible unresolved wildcards and cyclic
-bindings fail the static check. Re-export traversal remains a static limit.
+bindings fail the static check. A qualified path names the module it spells:
+the module's own declaration, or what its ``use`` declarations bring in under
+that name, and never a same-named declaration in a descendant module. A path
+that starts with a type parameter of its item is that parameter.
 Declarations without attributes are included when following a read route.
 Nongeneric type aliases are followed to their targets; other alias shapes
 fail the static check when used as a read route.
@@ -21,8 +24,9 @@ payload spelled ``P::Name`` or ``<P as Trait>::Name`` for a type parameter
 ``P`` is proved through the one bound trait that declares ``Name``: every impl
 of that trait in the wire crates states the type, and each is proved in the
 impl's own module. An unreadable bound, an impl that states no readable type,
-an impl outside the wire crates, a call naming the trait to a macro that
-spells ``impl``, and a trait without an impl fail the proof.
+a type that depends on what fills the impl's own parameters, an impl anywhere
+in the workspace outside the wire crates' sources, a call naming the trait to
+a macro that spells ``impl``, and a trait without an impl fail the proof.
 
 A second, independent rule runs over every crate: an optional key whose writer
 omits it for ``None`` (``skip_serializing_if = "Option::is_none"``) must read
@@ -203,9 +207,11 @@ class ImportBinding:
 class SourceContext:
     """Path and lexical scope used to resolve names inside a helper body."""
 
-    def __init__(self, path, scope):
+    def __init__(self, path, scope, line=0, name="a helper body"):
         self.path = path
         self.scope = scope
+        self.line = line
+        self.name = name
         source_index = path.parts.index("src")
         self.crate = Path(*path.parts[:source_index])
 
@@ -1323,16 +1329,19 @@ class Arm:
 GENERIC_HEADER_RE = re.compile(
     r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(?:struct|enum|type)\s+[A-Za-z_$]\w*\s*<"
 )
+IMPL_GENERIC_HEADER_RE = re.compile(r"^\s*impl\s*<")
 
 
 def generic_parameters(item):
     """Return the item's declared type parameters as ``(name, default)``.
 
-    Lifetimes and const parameters cannot name a reader, so they are not
-    returned. A header this parser cannot read returns an empty list, which
-    keeps the caller on its fail-closed route.
+    An impl block's parameters are read from its ``impl<..>`` header. Lifetimes
+    and const parameters cannot name a reader, so they are not returned. A
+    header this parser cannot read returns an empty list, which keeps the
+    caller on its fail-closed route.
     """
-    opening = GENERIC_HEADER_RE.match(item.body)
+    header = IMPL_GENERIC_HEADER_RE if item.kind == "impl" else GENERIC_HEADER_RE
+    opening = header.match(item.body)
     if opening is None:
         return []
     end = generic_end(item.body, opening.end() - 1)
@@ -1351,13 +1360,15 @@ def generic_parameters(item):
     return parameters
 
 
-def generic_arguments(declaration, position, items, resolve):
+def generic_arguments(declaration, position, items, resolve, values=()):
     """Return every argument a workspace declaration states at ``position``.
 
-    Only declarations are read. A function signature forwards its caller's
-    parameter and instantiates no reader, so it is not a source of arguments
-    here; a declaration that supplies fewer arguments than ``position``
-    leaves the parameter on its default and contributes nothing.
+    Declarations are read, and each ``(value, impl)`` of ``values``: the type
+    an impl states for an associated type, read in that impl. A function
+    signature forwards its caller's parameter and instantiates no reader, so
+    it is not a source of arguments here; a use that supplies fewer arguments
+    than ``position`` leaves the parameter on its default and contributes
+    nothing. A use is spelled ``Name<..>`` or ``Name::<..>``.
 
     A use is an argument for ``declaration`` only when ``resolve`` reads its
     spelled path, from the declaration that states it, as ``declaration``
@@ -1365,12 +1376,14 @@ def generic_arguments(declaration, position, items, resolve):
     second list holds every use whose path resolves to no one declaration,
     which leaves its argument unread.
     """
-    use = re.compile(rf"\b{re.escape(declaration.name)}\s*<")
+    use = re.compile(rf"\b{re.escape(declaration.name)}\s*(?:::\s*)?<")
     arguments = []
     unresolved = []
-    for item in items:
-        code = SOURCE_POLICY.mask_rust_non_code(item.body)
-        header = GENERIC_HEADER_RE.match(code)
+    sources = [(item.body, item, True) for item in items]
+    sources += [(value, item, False) for value, item in values]
+    for text, item, declared in sources:
+        code = SOURCE_POLICY.mask_rust_non_code(text)
+        header = GENERIC_HEADER_RE.match(code) if declared else None
         own_header = header.end() - 1 if header is not None else None
         for match in use.finditer(code):
             if match.end() - 1 == own_header:
@@ -1387,7 +1400,7 @@ def generic_arguments(declaration, position, items, resolve):
                 continue
             if target is not declaration:
                 continue
-            parts = split_tuple_types(item.body[match.end():end - 1])
+            parts = split_tuple_types(text[match.end():end - 1])
             if position < len(parts):
                 arguments.append((parts[position], item))
     return arguments, unresolved
@@ -1661,12 +1674,11 @@ def associated_type_definitions(code):
 
 
 @SOURCE_POLICY.cached_analysis
-def collect_trait_impls(path):
-    """Every trait impl of one file with the associated types it states."""
+def trait_impl_blocks(path):
+    """Each trait impl of one file as ``(start, brace, end, trait, self type)``."""
     source = read_source(path)
     code, _ = SOURCE_POLICY.production_source(source)
-    offsets, scopes = lexical_scopes(code)
-    impls = []
+    blocks = []
     for opening in re.finditer(r"\bimpl\b", code):
         brace = body_open(code, opening.end())
         if brace is None:
@@ -1677,13 +1689,24 @@ def collect_trait_impls(path):
         end = delimited_end(code, brace)
         if end is None:
             raise ValueError(f"{path}: incomplete impl at byte {opening.start()}")
-        trait, self_type = header
-        line = source.count("\n", 0, opening.start()) + 1
+        blocks.append((opening.start(), brace, end, *header))
+    return blocks
+
+
+@SOURCE_POLICY.cached_analysis
+def collect_trait_impls(path):
+    """Every trait impl of one file with the associated types it states."""
+    source = read_source(path)
+    code, _ = SOURCE_POLICY.production_source(source)
+    offsets, scopes = lexical_scopes(code)
+    impls = []
+    for start, brace, end, trait, self_type in trait_impl_blocks(path):
+        line = source.count("\n", 0, start) + 1
         context = Item(
             path, line, "impl", f"impl {trait} for {self_type}", "",
-            source[opening.start():end],
-            scopes[bisect_right(offsets, opening.start()) - 1],
-            opening.start(), end,
+            source[start:end],
+            scopes[bisect_right(offsets, start) - 1],
+            start, end,
         )
         impls.append(TraitImpl(
             path, line, trait, self_type, context,
@@ -1727,15 +1750,31 @@ def macro_call_naming(path, macros, name):
 
 
 def trait_impl_source_files():
-    """Every non-test source outside the wire crates, read for trait impls.
+    """Every non-test Rust source of the workspace outside the wire crates.
 
-    An impl outside the wire crates states an associated type the census
-    cannot prove, since the type it names is not in the declaration index.
+    Only an impl in a wire crate's ``src`` states a type the declaration
+    index holds. An impl anywhere else - another crate, ``examples/``,
+    ``benches/``, a build script - states one the census cannot prove.
+    The build output and hidden directories at the workspace root hold no
+    workspace source.
     """
+
+    def fail(error):
+        raise error
+
     roots = [Path(root) for root in ROOTS]
-    for path in absent_key_source_files():
-        if not any(root == path or root in path.parents for root in roots):
-            yield path
+    for directory, children, files in os.walk(".", onerror=fail):
+        children[:] = sorted(
+            name for name in children
+            if name not in SKIP_DIRS
+            and not (directory == "." and (name == "target" or name.startswith(".")))
+        )
+        for name in sorted(files):
+            if not name.endswith(".rs") or name in SKIP_BASENAMES:
+                continue
+            path = Path(directory) / name
+            if not any(root in path.parents for root in roots):
+                yield path
 
 
 def type_without_attributes(text):
@@ -1941,13 +1980,17 @@ def alias_target(item):
     return match.group(1) if match else None
 
 
-def resolve_item(index, name, owner, ambiguities):
+def resolve_item(index, name, owner, ambiguities, reexports=None, seen=frozenset()):
     """Resolve qualified declarations and distinguish lexical item scopes.
 
     A bare name may have been imported from a different file. A unique
     declaration remains the census's imported-name fallback; duplicates require
     a declaration in the current lexical scope. Qualified paths never use that
-    fallback. An unresolved qualified path fails closed.
+    fallback. A qualified path names the module it spells: when that module
+    declares no such item, ``reexports(index, crate, module, name, seen)``
+    states what the module's own ``use`` declarations bring in under the
+    name. A declaration in a descendant module is never the meaning of a
+    shorter path. An unresolved qualified path fails closed.
     """
     parts = name.lstrip(":").split("::")
     candidates = index.get(parts[-1], ())
@@ -1974,17 +2017,8 @@ def resolve_item(index, name, owner, ambiguities):
         wanted = scope + tuple(prefix)
         matches = [candidate for candidate in candidates
                    if candidate.crate == crate and candidate.scope == wanted]
-        if not matches:
-            # A public re-export can refer to a declaration in a descendant
-            # module. A unique descendant is source evidence for that module
-            # route; ambiguous descendants still fail closed.
-            descendants = [
-                candidate for candidate in candidates
-                if candidate.crate == crate
-                and candidate.scope[:len(wanted)] == wanted
-            ]
-            if len(descendants) == 1:
-                matches = descendants
+        if not matches and reexports is not None:
+            matches = reexports(index, crate, wanted, parts[-1], seen)
     else:
         scope = owner.scope
         while True:
@@ -2701,6 +2735,17 @@ def main():
             else:
                 helper_targets[name] = target
 
+    # The type each wire-crate impl states for an associated type, read in
+    # that impl: a generic declaration it names is instantiated there.
+    impl_values = [
+        (value, implementation.context)
+        for implementations in trait_impls.values()
+        for implementation in implementations
+        for values in implementation.definitions.values()
+        for value in values
+        if value is not None
+    ]
+
     failures = []
     arm_failures = []
     ambiguities = []
@@ -2782,6 +2827,44 @@ def main():
             return import_ambiguous
         return import_missing
 
+    module_bindings = {}
+    for bindings in imports.values():
+        for binding in bindings:
+            if any(part.startswith("@") for part in binding.scope):
+                continue
+            crate = Path(*binding.path.parts[:binding.path.parts.index("src")])
+            module_bindings.setdefault((crate, binding.scope), []).append(binding)
+
+    def reexports(declarations, crate, scope, name, seen):
+        """What the ``use`` declarations of one module bring in as ``name``.
+
+        A named binding shadows a glob, so globs are read only when no
+        binding names ``name``. Each binding's target is resolved from the
+        module that states it. A cycle, an ambiguous import there, and two
+        globs bringing in two declarations leave the name unresolved.
+        """
+        bindings = module_bindings.get((crate, scope), ())
+        named = [binding for binding in bindings if binding.alias == name]
+        found = []
+        for binding in named or [binding for binding in bindings if binding.alias == "*"]:
+            if binding in seen:
+                return []
+            target = binding.target if named else f"{binding.target}::{name}"
+            context = SourceContext(binding.path, binding.scope)
+            if target.split("::", 1)[0] not in {"", "crate", "self", "super"}:
+                # A path keyword names a module no import can rebind.
+                imported = imported_path(target, context)
+                if imported is import_ambiguous:
+                    return []
+                if imported is not import_missing:
+                    target = imported
+            resolved = resolve_item(
+                declarations, target, context, [], reexports, seen | {binding}
+            )
+            if resolved is not None and resolved not in found:
+                found.append(resolved)
+        return found
+
     def resolve_reader_target(name, owner, reader, position=None):
         """Resolve a call, preferring a local wire declared in its body."""
         imported = imported_path(name, owner, position)
@@ -2797,7 +2880,7 @@ def main():
             ]
             if len(local) == 1:
                 return local[0]
-        return resolve_item(index, name, owner, ambiguities)
+        return resolve_item(index, name, owner, ambiguities, reexports)
 
     def helper_source_applies(sources, owner):
         """Apply a macro-generated helper only from its unique module owner."""
@@ -3014,7 +3097,7 @@ def main():
             return None
         if imported is not import_missing:
             path = imported
-        return resolve_item(index, path, owner, ambiguities)
+        return resolve_item(index, path, owner, ambiguities, reexports)
 
     def declaration_for(path, owner, declarations):
         """Resolve one spelled path from ``owner`` without reporting a miss.
@@ -3026,7 +3109,7 @@ def main():
             return None
         if imported is not import_missing:
             path = imported
-        return resolve_item(declarations, path, owner, [])
+        return resolve_item(declarations, path, owner, [], reexports)
 
     unread_traits = {}
 
@@ -3041,25 +3124,36 @@ def main():
         if identity in unread_traits:
             return unread_traits[identity]
         reason = None
-        for path in trait_impl_source_files():
-            if trait.name not in read_source(path):
-                continue
+        sources = list(trait_impl_source_files())
+        foreign = [path for path in sources if trait.name in read_source(path)]
+        for path in foreign:
+            try:
+                blocks = trait_impl_blocks(path)
+            except ValueError:
+                reason = (
+                    f"{path.as_posix()} names {trait.name} outside the wire "
+                    "crates and the census cannot read its impls"
+                )
+                break
             outside = next(
-                (
-                    implementation for implementation in collect_trait_impls(path)
-                    if implementation.trait.rsplit("::", 1)[-1] == trait.name
-                ),
+                (block for block in blocks
+                 if block[3].rsplit("::", 1)[-1] == trait.name),
                 None,
             )
             if outside is not None:
+                line = read_source(path).count("\n", 0, outside[0]) + 1
                 reason = (
-                    f"impl {outside.trait} for {outside.self_type} at "
-                    f"{outside.path.as_posix()}:{outside.line} is outside the "
+                    f"impl {outside[3]} for {outside[4]} at "
+                    f"{path.as_posix()}:{line} is outside the "
                     "wire crates, so its associated types are unread"
                 )
                 break
-        for path in () if reason else paths:
-            line = macro_call_naming(path, implementing, trait.name)
+        macros = set(implementing)
+        for path in () if reason else sources:
+            if "macro_rules" in read_source(path):
+                macros.update(implementing_macros(path))
+        for path in () if reason else paths + foreign:
+            line = macro_call_naming(path, macros, trait.name)
             if line is not None:
                 reason = (
                     f"the macro call at {path.as_posix()}:{line} names "
@@ -3168,6 +3262,7 @@ def main():
             arguments, unresolved = generic_arguments(
                 current, at, order,
                 lambda spelled, source: declaration_for(spelled, source, index),
+                impl_values,
             )
             if unresolved:
                 spelled, source = unresolved[0]
@@ -3184,7 +3279,9 @@ def main():
             for candidate, source in candidates:
                 argument, _ = type_parts(candidate)
                 forwarded = None
-                if argument is not None and "::" not in argument:
+                # An impl's own parameter has no instantiation to follow; the
+                # payload proof below refuses it.
+                if argument is not None and "::" not in argument and source.kind != "impl":
                     forwarded = next(
                         (
                             (parameter_index, candidate_default)
@@ -3237,10 +3334,17 @@ def main():
         ):
             return False, "conditional deserialize_with leaves the reader unproved"
 
+        # A type parameter shadows every module, import and declaration of its
+        # name, so a path that starts with one is read as that parameter.
+        parameters = generic_parameters(owner)
+        names = {parameter for parameter, _ in parameters}
         associated = associated_type_path(field)
-        if associated is not None and associated[0] in {
-            parameter for parameter, _ in generic_parameters(owner)
-        }:
+        if associated is not None and associated[0] in names:
+            if owner.kind == "impl":
+                return False, (
+                    f"the type {associated[0]}::{associated[2]} depends on what "
+                    "fills the impl, which the census does not read"
+                )
             if custom:
                 return False, (
                     "a custom deserializer on an associated-type payload is "
@@ -3251,7 +3355,13 @@ def main():
         path, args = type_parts(field)
         if path is None:
             return False, "unsupported payload type syntax"
-        imported = imported_path(path, owner)
+        head = path.split("::", 1)[0]
+        if head in names and (owner.kind == "impl" or head != path):
+            return False, (
+                f"the type {path} depends on what fills the generic parameter "
+                f"{head} of {owner.name}, which the census does not read"
+            )
+        imported = import_missing if path in names else imported_path(path, owner)
         if imported is import_ambiguous:
             return False, f"ambiguous imported payload reader {path}"
         resolved_path = path if imported is import_missing else imported
@@ -3295,6 +3405,12 @@ def main():
                     ),
                 ):
                     return False, f"custom deserializer {helper} has no forwarding proof"
+
+        if path in names:
+            position = [parameter for parameter, _ in parameters].index(path)
+            return generic_parameter_proof(
+                owner, path, position, parameters[position][1]
+            )
 
         # Names in the Rust type namespace can shadow prelude and standard
         # container types. A local or uniquely imported declaration therefore
@@ -3343,19 +3459,6 @@ def main():
                 )
             if "::" in path or path in index:
                 return False, f"cannot resolve payload reader {path}"
-            parameters = generic_parameters(owner)
-            position = next(
-                (
-                    at
-                    for at, (parameter, _) in enumerate(parameters)
-                    if parameter == path
-                ),
-                None,
-            )
-            if position is not None:
-                return generic_parameter_proof(
-                    owner, path, position, parameters[position][1]
-                )
             # A bare imported generic is outside this lexical census. It can
             # be an object reader, so fail closed instead of fabricating a
             # declaration or claiming a generic instantiation is safe.

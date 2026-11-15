@@ -106,9 +106,17 @@ struct TraitImpl {
     line: usize,
     trait_path: syn::Path,
     self_type: String,
-    /// Associated type name -> whether each type the impl states holds an
-    /// `Option`, or why the census cannot read it.
-    types: BTreeMap<String, Vec<Result<bool, String>>>,
+    /// The impl's own type parameters.
+    parameters: Vec<String>,
+    /// Associated type name -> each type the impl states, or why the census
+    /// cannot read it.
+    types: BTreeMap<String, Vec<Result<syn::Type, String>>>,
+}
+
+/// A type alias of the wire crates: its parameters and the type it names.
+struct Alias {
+    generics: syn::Generics,
+    ty: syn::Type,
 }
 
 impl TraitImpl {
@@ -140,6 +148,7 @@ pub(crate) struct Declarations {
 struct TraitIndex {
     traits: BTreeMap<Declaration, BTreeMap<String, AssociatedDeclaration>>,
     impls: Vec<TraitImpl>,
+    aliases: BTreeMap<Declaration, Alias>,
     /// Each `macro_rules!` body or item macro call that spells `impl`, as its
     /// location and tokens: an impl it expands to is not parsed here.
     macros: Vec<(String, usize, Vec<String>)>,
@@ -224,17 +233,25 @@ impl TraitIndex {
                 syn::Item::Impl(implementation) => {
                     self.collect_impl(implementation, relative, scope);
                 }
+                syn::Item::Type(alias) => {
+                    self.aliases.insert(
+                        Declaration {
+                            path: relative.to_owned(),
+                            scope: scope.to_owned(),
+                            name: alias.ident.to_string(),
+                        },
+                        Alias {
+                            generics: alias.generics.clone(),
+                            ty: (*alias.ty).clone(),
+                        },
+                    );
+                }
                 syn::Item::Fn(function) => {
-                    let nested: Vec<syn::Item> = function
-                        .block
-                        .stmts
-                        .iter()
-                        .filter_map(|statement| match statement {
-                            syn::Stmt::Item(item) => Some(item.clone()),
-                            _ => None,
-                        })
-                        .collect();
+                    let (nested, calls) = function_body_items(function);
                     self.collect(&nested, relative, scope);
+                    for invocation in calls {
+                        self.record_call(&invocation.mac, relative);
+                    }
                 }
                 syn::Item::Mod(module) => {
                     if is_test_module(module) {
@@ -246,29 +263,50 @@ impl TraitIndex {
                         self.collect(nested, relative, &nested_scope);
                     }
                 }
-                syn::Item::Macro(invocation) => {
-                    let mut tokens = Vec::new();
-                    flatten_tokens(&invocation.mac.tokens, &mut tokens);
-                    let line = invocation.mac.path.span().start().line;
-                    let spells_impl = tokens.iter().any(|token| token == "impl");
-                    if let Some(defined) = &invocation.ident {
-                        if spells_impl {
-                            self.implementing.insert(defined.to_string());
-                        }
-                    } else if let Some(called) = invocation.mac.path.segments.last() {
-                        self.calls.push((
-                            relative.to_owned(),
-                            line,
-                            called.ident.to_string(),
-                            tokens.clone(),
-                        ));
-                    }
-                    if spells_impl {
-                        self.macros.push((relative.to_owned(), line, tokens));
-                    }
-                }
+                syn::Item::Macro(invocation) => match &invocation.ident {
+                    Some(defined) => self.record_definition(&invocation.mac, defined, relative),
+                    None => self.record_call(&invocation.mac, relative),
+                },
                 _ => {}
             }
+        }
+    }
+
+    /// Records a `macro_rules!` definition named `defined`.
+    fn record_definition(&mut self, mac: &syn::Macro, defined: &syn::Ident, relative: &str) {
+        let mut tokens = Vec::new();
+        flatten_tokens(&mac.tokens, &mut tokens);
+        if tokens.iter().any(|token| token == "impl") {
+            self.implementing.insert(defined.to_string());
+            self.macros
+                .push((relative.to_owned(), mac.path.span().start().line, tokens));
+        }
+    }
+
+    /// Records a macro call, or a `macro_rules!` definition parsed as a
+    /// statement, whose first token is the macro's name.
+    fn record_call(&mut self, mac: &syn::Macro, relative: &str) {
+        let mut tokens = Vec::new();
+        flatten_tokens(&mac.tokens, &mut tokens);
+        let line = mac.path.span().start().line;
+        let spells_impl = tokens.iter().any(|token| token == "impl");
+        let Some(called) = mac.path.segments.last() else {
+            return;
+        };
+        if called.ident == "macro_rules" {
+            if let (true, Some(defined)) = (spells_impl, tokens.first()) {
+                self.implementing.insert(defined.clone());
+            }
+        } else {
+            self.calls.push((
+                relative.to_owned(),
+                line,
+                called.ident.to_string(),
+                tokens.clone(),
+            ));
+        }
+        if spells_impl {
+            self.macros.push((relative.to_owned(), line, tokens));
         }
     }
 
@@ -289,13 +327,13 @@ impl TraitIndex {
                 _ => None,
             })
             .collect();
-        let mut types: BTreeMap<String, Vec<Result<bool, String>>> = BTreeMap::new();
+        let mut types: BTreeMap<String, Vec<Result<syn::Type, String>>> = BTreeMap::new();
         for member in &implementation.items {
             let syn::ImplItem::Type(associated) = member else {
                 continue;
             };
             let stated = if associated.generics.params.is_empty() {
-                impl_type_is_optional(&associated.ty, &parameters)
+                Ok(associated.ty.clone())
             } else {
                 Err(format!(
                     "type {} takes arguments the census does not read",
@@ -313,9 +351,25 @@ impl TraitIndex {
             line: implementation.self_ty.span().start().line,
             trait_path: trait_path.clone(),
             self_type: type_name(&implementation.self_ty),
+            parameters,
             types,
         });
     }
+}
+
+/// The items a function body declares, and the macros it calls in
+/// statement position, where a call can expand to an impl.
+fn function_body_items(function: &syn::ItemFn) -> (Vec<syn::Item>, Vec<syn::StmtMacro>) {
+    let mut items = Vec::new();
+    let mut calls = Vec::new();
+    for statement in &function.block.stmts {
+        match statement {
+            syn::Stmt::Item(item) => items.push(item.clone()),
+            syn::Stmt::Macro(call) => calls.push(call.clone()),
+            _ => {}
+        }
+    }
+    (items, calls)
 }
 
 impl Declarations {
@@ -351,7 +405,10 @@ impl Declarations {
     /// A field spelled `Option<..>` does. A field spelled `P::Name` or
     /// `<P as Trait>::Name` for a type parameter `P` of `generics` holds the
     /// type each impl of the one bound trait that declares `Name` states, so
-    /// it holds an `Option` when any impl's does.
+    /// it holds an `Option` when any impl's does. A field spelled by a type
+    /// alias holds what the alias names, read where the alias is declared;
+    /// an alias that names one of its own parameters holds the argument the
+    /// field states for it.
     pub(crate) fn is_optional(
         &self,
         file: &str,
@@ -359,17 +416,149 @@ impl Declarations {
         generics: &syn::Generics,
         ty: &syn::Type,
     ) -> Result<bool, String> {
+        let site = Site {
+            file,
+            scope,
+            generics,
+            impl_parameters: None,
+        };
+        self.holds_option(&site, ty, 0)
+    }
+
+    fn holds_option(&self, site: &Site<'_>, ty: &syn::Type, depth: usize) -> Result<bool, String> {
+        if depth > MAX_TYPE_DEPTH {
+            return Err(format!(
+                "the aliases and impls reached from {} name each other past {MAX_TYPE_DEPTH} steps",
+                site.file
+            ));
+        }
+        if let syn::Type::Reference(borrowed) = ty {
+            return self.holds_option(site, &borrowed.elem, depth);
+        }
         if is_option_type(ty) {
             return Ok(true);
         }
-        let Some((parameter, named_trait, name)) = associated_type(ty, generics) else {
+        if let (Some(parameters), syn::Type::Path(typed)) = (site.impl_parameters, ty) {
+            let first = typed
+                .path
+                .segments
+                .first()
+                .map(|segment| segment.ident.to_string())
+                .unwrap_or_default();
+            if typed.qself.is_some()
+                || (first == "Self" && typed.path.segments.len() > 1)
+                || parameters.contains(&first)
+            {
+                return Err(format!(
+                    "the type {} depends on what fills the impl, which the census does not read",
+                    path_text(&typed.path)
+                ));
+            }
+        }
+        if let Some((parameter, named_trait, name)) = associated_type(ty, site.generics) {
+            return self.associated_holds_option(site, &parameter, named_trait, &name, depth);
+        }
+        self.alias_holds_option(site, ty, depth)
+    }
+
+    /// Whether the alias `ty` names, if it names one, holds an `Option`.
+    fn alias_holds_option(
+        &self,
+        site: &Site<'_>,
+        ty: &syn::Type,
+        depth: usize,
+    ) -> Result<bool, String> {
+        let syn::Type::Path(typed) = ty else {
             return Ok(false);
         };
+        let Some(last) = typed.path.segments.last() else {
+            return Ok(false);
+        };
+        let index = self.trait_index();
+        if typed.qself.is_some()
+            || !index
+                .aliases
+                .keys()
+                .any(|declared| last.ident == declared.name)
+            || (typed.path.segments.len() == 1
+                && site
+                    .generics
+                    .type_params()
+                    .any(|declared| declared.ident == last.ident))
+        {
+            return Ok(false);
+        }
+        let Some(declaration) = self.resolve(site.file, site.scope, &typed.path) else {
+            return Ok(false);
+        };
+        let Some(alias) = index.aliases.get(&declaration) else {
+            return Ok(false);
+        };
+        let alias_site = Site {
+            file: &declaration.path,
+            scope: &declaration.scope,
+            generics: &alias.generics,
+            impl_parameters: None,
+        };
+        let parameters: Vec<&syn::TypeParam> = alias.generics.type_params().collect();
+        let names: Vec<&syn::Ident> = parameters.iter().map(|declared| &declared.ident).collect();
+        let mut body = &alias.ty;
+        while let syn::Type::Reference(borrowed) = body {
+            body = &borrowed.elem;
+        }
+        let named = match body {
+            syn::Type::Path(named) if named.qself.is_none() => named.path.get_ident(),
+            _ => None,
+        };
+        if let Some(position) = named.and_then(|ident| names.iter().position(|name| *name == ident))
+        {
+            let arguments: Vec<&syn::Type> = match &last.arguments {
+                syn::PathArguments::AngleBracketed(arguments) => arguments
+                    .args
+                    .iter()
+                    .filter_map(|argument| match argument {
+                        syn::GenericArgument::Type(argument) => Some(argument),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            return match (arguments.get(position), &parameters[position].default) {
+                (Some(argument), _) => self.holds_option(site, argument, depth + 1),
+                (None, Some((_, default))) => self.holds_option(&alias_site, default, depth + 1),
+                (None, None) => Err(format!(
+                    "{declaration} names its parameter {}, for which the use states no argument",
+                    names[position]
+                )),
+            };
+        }
+        if mentions_any(body, &names)
+            && type_head(body)
+                .is_some_and(|head| index.aliases.keys().any(|declared| head == declared.name))
+        {
+            return Err(format!(
+                "{declaration} passes its parameters on to another alias, which the census does not read"
+            ));
+        }
+        self.holds_option(&alias_site, &alias.ty, depth + 1)
+    }
+
+    /// Whether `parameter::name` holds an `Option`: whether any impl of the
+    /// one bound trait that declares `name` states one there.
+    fn associated_holds_option(
+        &self,
+        site: &Site<'_>,
+        parameter: &str,
+        named_trait: Option<syn::Path>,
+        name: &str,
+        depth: usize,
+    ) -> Result<bool, String> {
+        let (file, scope, generics) = (site.file, site.scope, site.generics);
         let index = self.trait_index();
         let label = format!("{parameter}::{name}");
         let bounds = match named_trait {
             Some(path) => vec![path],
-            None => parameter_bounds(generics, &parameter),
+            None => parameter_bounds(generics, parameter),
         };
         if bounds.is_empty() {
             return Err(format!(
@@ -400,7 +589,7 @@ impl Declarations {
                     path_text(bound)
                 ));
             };
-            match types.get(&name) {
+            match types.get(name) {
                 Some(AssociatedDeclaration::Required) => declaring.push(declaration),
                 Some(AssociatedDeclaration::Defaulted) => {
                     return Err(format!("{declaration}::{name} states a default"));
@@ -444,6 +633,8 @@ impl Declarations {
         }
         let mut optional = false;
         let mut found = false;
+        // A type an impl states names no parameter a declaration instantiates.
+        let no_generics = syn::Generics::default();
         for implementation in &index.impls {
             if implementation
                 .trait_path
@@ -468,14 +659,24 @@ impl Declarations {
                 continue;
             }
             found = true;
-            let Some(stated) = implementation.types.get(&name) else {
+            let Some(stated) = implementation.types.get(name) else {
                 return Err(format!(
                     "{} states no type {name}",
                     implementation.describe()
                 ));
             };
+            let impl_site = Site {
+                file: &implementation.path,
+                scope: &implementation.scope,
+                generics: &no_generics,
+                impl_parameters: Some(&implementation.parameters),
+            };
             for value in stated {
-                match value {
+                match value
+                    .as_ref()
+                    .map_err(String::clone)
+                    .and_then(|value| self.holds_option(&impl_site, value, depth + 1))
+                {
                     Ok(holds_option) => optional |= holds_option,
                     Err(reason) => {
                         return Err(format!("{}: {reason}", implementation.describe()));
@@ -491,20 +692,25 @@ impl Declarations {
         Ok(optional)
     }
 
-    /// An impl of a trait named `name` in a crate outside the wire crates.
+    /// An impl of a trait named `name` anywhere in the workspace outside the
+    /// wire crates' sources, or a call there naming `name` to a macro that
+    /// spells `impl`.
+    ///
+    /// Only an impl in a wire crate's `src` is read; one in another crate,
+    /// in `examples/`, in `benches/` or in a build script states a type the
+    /// census does not read.
     fn foreign_impl(&self, name: &str) -> Option<String> {
         if let Some(found) = self.foreign.borrow().get(name) {
             return found.clone();
         }
-        let mut files = Vec::new();
-        collect_rust_sources(&self.root.join("crates"), &mut files)
-            .unwrap_or_else(|error| panic!("cannot collect crates: {error}"));
-        files.sort();
+        let mut implementing = self.trait_index().implementing.clone();
+        let mut calls = Vec::new();
         let mut found = None;
-        for file in files {
+        for file in workspace_sources(&self.root) {
             let relative = relative_path(&self.root, &file);
-            if !relative.contains("/src/")
-                || is_test_path(&relative)
+            // The leading separator makes a test tree at the workspace root
+            // one too.
+            if is_test_path(&format!("/{relative}"))
                 || WIRE_ROOTS
                     .iter()
                     .any(|root| relative.starts_with(&format!("{root}/")))
@@ -512,19 +718,41 @@ impl Declarations {
                 continue;
             }
             let text = std::fs::read_to_string(&file).expect("read source");
-            if !text.contains(name) {
+            let names = text.contains(name);
+            if !names && !text.contains("macro_rules") {
                 continue;
             }
             let Ok(parsed) = syn::parse_file(&text) else {
-                found = Some(format!(
-                    "{relative}, which names {name} and does not parse,"
-                ));
-                break;
+                if names {
+                    found = Some(format!(
+                        "{relative}, which names {name} and does not parse,"
+                    ));
+                    break;
+                }
+                continue;
             };
-            if let Some(line) = impl_of_named_trait(&parsed.items, name) {
+            let mut scan = ForeignScan::default();
+            scan.items(&parsed.items, name);
+            if let Some(line) = scan.impl_line {
                 found = Some(format!("an impl of {name} at {relative}:{line}"));
                 break;
             }
+            implementing.extend(scan.implementing);
+            calls.extend(
+                scan.calls
+                    .into_iter()
+                    .map(|(line, called)| (relative.clone(), line, called)),
+            );
+        }
+        if found.is_none() {
+            found = calls
+                .into_iter()
+                .find(|(_, _, called)| implementing.contains(called))
+                .map(|(relative, line, called)| {
+                    format!(
+                        "the call to {called}! at {relative}:{line}, which names {name} and whose macro spells impl,"
+                    )
+                });
         }
         self.foreign
             .borrow_mut()
@@ -533,75 +761,167 @@ impl Declarations {
     }
 }
 
-/// The line of an impl, at any depth of `items`, of a trait whose path ends
-/// in `name`.
-fn impl_of_named_trait(items: &[syn::Item], name: &str) -> Option<usize> {
-    for item in items {
-        match item {
-            syn::Item::Impl(implementation) => {
-                if let Some((path, _)) = &implementation.trait_ {
-                    if path
-                        .segments
-                        .last()
-                        .is_some_and(|segment| segment.ident == name)
-                    {
-                        return Some(implementation.self_ty.span().start().line);
-                    }
-                }
-            }
-            syn::Item::Mod(module) if !is_test_module(module) => {
-                if let Some((_, nested)) = &module.content {
-                    if let Some(line) = impl_of_named_trait(nested, name) {
-                        return Some(line);
-                    }
-                }
-            }
-            syn::Item::Fn(function) => {
-                let nested: Vec<syn::Item> = function
-                    .block
-                    .stmts
-                    .iter()
-                    .filter_map(|statement| match statement {
-                        syn::Stmt::Item(item) => Some(item.clone()),
-                        _ => None,
-                    })
-                    .collect();
-                if let Some(line) = impl_of_named_trait(&nested, name) {
-                    return Some(line);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
+/// The deepest chain of aliases and impl-stated types the census follows.
+const MAX_TYPE_DEPTH: usize = 32;
+
+/// Where a type is written: the module its paths resolve in and the
+/// parameters it can name.
+struct Site<'a> {
+    file: &'a str,
+    scope: &'a [String],
+    generics: &'a syn::Generics,
+    /// For a type an impl states, the impl's own parameters: what fills them
+    /// is not read.
+    impl_parameters: Option<&'a [String]>,
 }
 
-/// Whether one associated type an impl states holds an `Option`, or why the
-/// census cannot read it: a type that names the impl's own parameters or
-/// another associated type depends on what fills them.
-fn impl_type_is_optional(ty: &syn::Type, parameters: &[String]) -> Result<bool, String> {
-    if is_option_type(ty) {
-        return Ok(true);
+/// What a source outside the wire crates states about one trait name.
+#[derive(Default)]
+struct ForeignScan {
+    /// The first impl of a trait of that name.
+    impl_line: Option<usize>,
+    /// The names of the `macro_rules!` definitions whose body spells `impl`.
+    implementing: BTreeSet<String>,
+    /// Each macro call whose tokens name the trait, as its line and macro.
+    calls: Vec<(usize, String)>,
+}
+
+impl ForeignScan {
+    fn items(&mut self, items: &[syn::Item], name: &str) {
+        for item in items {
+            match item {
+                syn::Item::Impl(implementation) => {
+                    let named = implementation.trait_.as_ref().is_some_and(|(path, _)| {
+                        path.segments
+                            .last()
+                            .is_some_and(|segment| segment.ident == name)
+                    });
+                    if named && self.impl_line.is_none() {
+                        self.impl_line = Some(implementation.self_ty.span().start().line);
+                    }
+                }
+                syn::Item::Mod(module) if !is_test_module(module) => {
+                    if let Some((_, nested)) = &module.content {
+                        self.items(nested, name);
+                    }
+                }
+                syn::Item::Fn(function) => {
+                    let (nested, calls) = function_body_items(function);
+                    self.items(&nested, name);
+                    for call in calls {
+                        self.macro_use(&call.mac, None, name);
+                    }
+                }
+                syn::Item::Macro(invocation) => {
+                    self.macro_use(&invocation.mac, invocation.ident.as_ref(), name);
+                }
+                _ => {}
+            }
+        }
     }
-    let syn::Type::Path(typed) = ty else {
-        return Ok(false);
-    };
-    let first = typed
-        .path
-        .segments
-        .first()
-        .map(|segment| segment.ident.to_string())
-        .unwrap_or_default();
-    if typed.qself.is_some()
-        || (first == "Self" && typed.path.segments.len() > 1)
-        || parameters.contains(&first)
-    {
-        return Err(format!(
-            "the type {} depends on what fills the impl, which the census does not read",
-            path_text(&typed.path)
-        ));
+
+    /// Records a `macro_rules!` definition that spells `impl`, or a call
+    /// whose tokens name `name`.
+    fn macro_use(&mut self, mac: &syn::Macro, defined: Option<&syn::Ident>, name: &str) {
+        let mut tokens = Vec::new();
+        flatten_tokens(&mac.tokens, &mut tokens);
+        let Some(called) = mac.path.segments.last() else {
+            return;
+        };
+        let defined = match defined {
+            Some(defined) => Some(defined.to_string()),
+            None if called.ident == "macro_rules" => tokens.first().cloned(),
+            None => None,
+        };
+        match defined {
+            Some(defined) => {
+                if tokens.iter().any(|token| token == "impl") {
+                    self.implementing.insert(defined);
+                }
+            }
+            None => {
+                if tokens.iter().any(|token| token == name) {
+                    self.calls
+                        .push((mac.path.span().start().line, called.ident.to_string()));
+                }
+            }
+        }
     }
-    Ok(false)
+}
+
+/// Every `*.rs` under the workspace `root`, outside the build output and the
+/// hidden directories at the root.
+fn workspace_sources(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let entries = std::fs::read_dir(root)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", root.display()));
+    for entry in entries {
+        let path = entry
+            .unwrap_or_else(|error| panic!("cannot read {}: {error}", root.display()))
+            .path();
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if path.is_dir() {
+            if name != "target" && !name.starts_with('.') {
+                collect_rust_sources(&path, &mut files)
+                    .unwrap_or_else(|error| panic!("cannot collect {name}: {error}"));
+            }
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            files.push(path);
+        }
+    }
+    files.sort();
+    files
+}
+
+/// The last segment of the path `ty` spells, through borrows.
+fn type_head(ty: &syn::Type) -> Option<String> {
+    match ty {
+        syn::Type::Reference(borrowed) => type_head(&borrowed.elem),
+        syn::Type::Path(typed) => typed
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string()),
+        _ => None,
+    }
+}
+
+/// Whether `ty` names any of `names` as a path's first segment, at any
+/// depth. A type shape this walk does not read counts as naming one.
+fn mentions_any(ty: &syn::Type, names: &[&syn::Ident]) -> bool {
+    match ty {
+        syn::Type::Path(typed) => {
+            typed
+                .qself
+                .as_ref()
+                .is_some_and(|qself| mentions_any(&qself.ty, names))
+                || typed
+                    .path
+                    .segments
+                    .first()
+                    .is_some_and(|segment| names.contains(&&segment.ident))
+                || typed.path.segments.iter().any(|segment| match &segment.arguments {
+                    syn::PathArguments::AngleBracketed(arguments) => {
+                        arguments.args.iter().any(|argument| {
+                            matches!(argument, syn::GenericArgument::Type(inner) if mentions_any(inner, names))
+                        })
+                    }
+                    syn::PathArguments::None => false,
+                    syn::PathArguments::Parenthesized(_) => true,
+                })
+        }
+        syn::Type::Reference(inner) => mentions_any(&inner.elem, names),
+        syn::Type::Array(inner) => mentions_any(&inner.elem, names),
+        syn::Type::Slice(inner) => mentions_any(&inner.elem, names),
+        syn::Type::Paren(inner) => mentions_any(&inner.elem, names),
+        syn::Type::Group(inner) => mentions_any(&inner.elem, names),
+        syn::Type::Ptr(inner) => mentions_any(&inner.elem, names),
+        syn::Type::Tuple(tuple) => tuple.elems.iter().any(|inner| mentions_any(inner, names)),
+        _ => true,
+    }
 }
 
 /// Read `P::Name` or `<P as Trait>::Name`, through a borrow, as
@@ -725,306 +1045,4 @@ fn type_name(ty: &syn::Type) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use crate::optional_absence_census;
-
-    /// A source tree holding the three wire crates, removed when dropped.
-    struct Fixture {
-        root: PathBuf,
-    }
-
-    impl Fixture {
-        fn new(name: &str, files: &[(&str, &str)]) -> Self {
-            let root = std::env::temp_dir().join(format!(
-                "cadmpeg-source-census-{name}-{}",
-                std::process::id()
-            ));
-            if root.exists() {
-                std::fs::remove_dir_all(&root).expect("clear a stale fixture");
-            }
-            let mut files = files.to_vec();
-            files.push(("crates/cadmpeg-core/src/lib.rs", ""));
-            files.push(("crates/cadmpeg-asm/src/lib.rs", ""));
-            for (path, text) in files {
-                let file = root.join(path);
-                std::fs::create_dir_all(file.parent().expect("a fixture file has a parent"))
-                    .expect("create a fixture directory");
-                std::fs::write(&file, text).expect("write a fixture file");
-            }
-            Self { root }
-        }
-
-        fn offenders(&self) -> Vec<String> {
-            optional_absence_census(&self.root).1
-        }
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            if let Err(error) = std::fs::remove_dir_all(&self.root) {
-                eprintln!("remove {}: {error}", self.root.display());
-            }
-        }
-    }
-
-    const NULLABLE_NAME: &str = r#"
-        #[derive(Serialize, Deserialize)]
-        pub struct Sketch {
-            #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
-            pub name: Option<String>,
-        }
-    "#;
-
-    #[test]
-    fn same_named_types_in_two_modules_are_each_their_own_writer() {
-        let fixture = Fixture::new(
-            "same-named-writers",
-            &[
-                ("crates/cadmpeg-ir/src/lib.rs", "mod sketches; mod design;"),
-                ("crates/cadmpeg-ir/src/sketches.rs", NULLABLE_NAME),
-                (
-                    "crates/cadmpeg-ir/src/design.rs",
-                    &NULLABLE_NAME.replace(
-                        "#[serde(deserialize_with",
-                        "#[serde(skip_serializing_if = \"Option::is_none\", deserialize_with",
-                    ),
-                ),
-            ],
-        );
-        let offenders = fixture.offenders();
-        assert_eq!(offenders.len(), 1, "{offenders:#?}");
-        assert!(
-            offenders[0].starts_with("crates/cadmpeg-ir/src/design.rs:")
-                && offenders[0]
-                    .contains("admits null, but cadmpeg_ir::design::Sketch skips the key for None"),
-            "{offenders:#?}"
-        );
-    }
-
-    const ROUTED: &str = r#"
-        #[derive(Deserialize)]
-        struct SketchWire {
-            #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
-            name: Option<String>,
-        }
-        #[derive(Serialize, Deserialize)]
-        #[serde(try_from = "SketchWire")]
-        pub struct Sketch {
-            SKIP
-            pub name: Option<String>,
-        }
-    "#;
-
-    #[test]
-    fn each_wire_is_paired_with_the_owner_in_its_own_module() {
-        let fixture = Fixture::new(
-            "same-named-wires",
-            &[
-                ("crates/cadmpeg-ir/src/lib.rs", "mod sketches; mod design;"),
-                (
-                    "crates/cadmpeg-ir/src/sketches.rs",
-                    &ROUTED.replace(
-                        "SKIP",
-                        "#[serde(skip_serializing_if = \"Option::is_none\")]",
-                    ),
-                ),
-                (
-                    "crates/cadmpeg-ir/src/design.rs",
-                    &ROUTED.replace("SKIP", ""),
-                ),
-            ],
-        );
-        let offenders = fixture.offenders();
-        assert_eq!(offenders.len(), 1, "{offenders:#?}");
-        assert!(
-            offenders[0].starts_with("crates/cadmpeg-ir/src/sketches.rs:")
-                && offenders[0].contains(
-                    "SketchWire.name admits null, but cadmpeg_ir::sketches::Sketch skips"
-                ),
-            "{offenders:#?}"
-        );
-    }
-
-    #[test]
-    fn a_conversion_that_resolves_nowhere_leaves_its_wire_unpaired() {
-        let fixture = Fixture::new(
-            "unresolved-wire",
-            &[
-                ("crates/cadmpeg-ir/src/lib.rs", "mod design;"),
-                (
-                    "crates/cadmpeg-ir/src/design.rs",
-                    &ROUTED.replace("SKIP", "").replace(
-                        "try_from = \"SketchWire\"",
-                        "try_from = \"elsewhere::SketchWire\"",
-                    ),
-                ),
-            ],
-        );
-        let offenders = fixture.offenders();
-        assert_eq!(offenders.len(), 1, "{offenders:#?}");
-        assert!(
-            offenders[0].contains("SketchWire.name cadmpeg_ir::design::SketchWire may be read for cadmpeg_ir::design::Sketch"),
-            "{offenders:#?}"
-        );
-    }
-
-    const SPACE: &str = r"
-        pub trait Space {
-            type Point;
-        }
-        pub struct Planar;
-        impl Space for Planar {
-            type Point = PLANAR;
-        }
-        pub struct Spatial;
-        impl Space for Spatial {
-            type Point = u8;
-        }
-        #[derive(Serialize, Deserialize)]
-        pub struct Entity<S: Space> {
-            pub point: S::Point,
-        }
-    ";
-
-    fn space(name: &str, source: &str) -> Fixture {
-        Fixture::new(
-            name,
-            &[
-                ("crates/cadmpeg-ir/src/lib.rs", "mod space;"),
-                ("crates/cadmpeg-ir/src/space.rs", source),
-            ],
-        )
-    }
-
-    #[test]
-    fn an_associated_type_no_impl_states_as_an_option_is_no_optional_key() {
-        let offenders = space("associated-plain", &SPACE.replace("PLANAR", "u16")).offenders();
-        assert!(offenders.is_empty(), "{offenders:#?}");
-    }
-
-    #[test]
-    fn an_associated_type_one_impl_states_as_an_option_is_an_optional_key() {
-        for source in [
-            SPACE.replace("PLANAR", "Option<u16>"),
-            SPACE
-                .replace("PLANAR", "Option<u16>")
-                .replace("S::Point", "<S as Space>::Point"),
-            SPACE
-                .replace("PLANAR", "Option<u16>")
-                .replace("Entity<S: Space> {", "Entity<S> where S: Space {"),
-        ] {
-            let offenders = space("associated-option", &source).offenders();
-            assert_eq!(offenders.len(), 1, "{offenders:#?}");
-            assert!(
-                offenders[0].starts_with("crates/cadmpeg-ir/src/space.rs:")
-                    && offenders[0].contains("Entity.point states no deserialize_with"),
-                "{offenders:#?}"
-            );
-        }
-    }
-
-    #[test]
-    fn an_associated_type_the_census_cannot_read_is_an_offender() {
-        let plain = SPACE.replace("PLANAR", "u16");
-        for (source, reason) in [
-            (
-                plain.replace("type Point = u8;", ""),
-                "impl Space for Spatial at crates/cadmpeg-ir/src/space.rs:",
-            ),
-            (
-                plain.replace("Entity<S: Space>", "Entity<S>"),
-                "S::Point names a type parameter with no trait bound that declares Point",
-            ),
-            (
-                plain.replace("Entity<S: Space>", "Entity<S: Space + external::Mystery>"),
-                "the bound external::Mystery of S is no wire-crate trait",
-            ),
-            (
-                plain.replace("type Point;", "type Point = u8;"),
-                "cadmpeg_ir::space::Space::Point states a default",
-            ),
-            (
-                plain.replace("type Point = u8;", "type Point = Self::Other;"),
-                "the type Self::Other depends on what fills the impl",
-            ),
-            (
-                plain
-                    .replace(
-                        "impl Space for Planar {\n            type Point = u16;\n        }",
-                        "",
-                    )
-                    .replace(
-                        "impl Space for Spatial {\n            type Point = u8;\n        }",
-                        "",
-                    ),
-                "cadmpeg_ir::space::Space has no impl in the wire crates",
-            ),
-        ] {
-            let offenders = space("associated-unread", &source).offenders();
-            assert_eq!(offenders.len(), 1, "{reason}: {offenders:#?}");
-            assert!(offenders[0].contains(reason), "{reason}: {offenders:#?}");
-        }
-    }
-
-    #[test]
-    fn an_impl_outside_the_wire_crates_leaves_the_associated_type_unread() {
-        let fixture = Fixture::new(
-            "associated-foreign",
-            &[
-                ("crates/cadmpeg-ir/src/lib.rs", "mod space;"),
-                ("crates/cadmpeg-ir/src/space.rs", &SPACE.replace("PLANAR", "u16")),
-                (
-                    "crates/codec/src/lib.rs",
-                    "pub struct Codec; impl cadmpeg_ir::space::Space for Codec { type Point = u8; }",
-                ),
-            ],
-        );
-        let offenders = fixture.offenders();
-        assert_eq!(offenders.len(), 1, "{offenders:#?}");
-        assert!(
-            offenders[0].contains(
-                "an impl of Space at crates/codec/src/lib.rs:1 is outside the wire crates"
-            ),
-            "{offenders:#?}"
-        );
-    }
-
-    #[test]
-    fn a_macro_call_naming_the_trait_leaves_its_impls_unread() {
-        let source = SPACE.replace("PLANAR", "u16")
-            + r"
-                macro_rules! implement {
-                    ($trait:ident, $name:ident) => {
-                        impl $trait for $name { type Point = Option<u8>; }
-                    };
-                }
-                pub struct Extra;
-                implement!(Space, Extra);
-            ";
-        let offenders = space("associated-macro", &source).offenders();
-        assert_eq!(offenders.len(), 1, "{offenders:#?}");
-        assert!(
-            offenders[0].contains("the call to implement! at crates/cadmpeg-ir/src/space.rs:"),
-            "{offenders:#?}"
-        );
-    }
-
-    #[test]
-    fn a_same_named_trait_in_another_module_is_another_trait() {
-        let fixture = Fixture::new(
-            "associated-same-named-trait",
-            &[
-                ("crates/cadmpeg-ir/src/lib.rs", "mod space; mod other;"),
-                ("crates/cadmpeg-ir/src/space.rs", &SPACE.replace("PLANAR", "u16")),
-                (
-                    "crates/cadmpeg-ir/src/other.rs",
-                    "pub trait Space { type Point; } pub struct Loose; impl Space for Loose { type Point = Option<u8>; }",
-                ),
-            ],
-        );
-        let offenders = fixture.offenders();
-        assert!(offenders.is_empty(), "{offenders:#?}");
-    }
-}
+mod tests;
