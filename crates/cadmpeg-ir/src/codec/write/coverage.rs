@@ -27,6 +27,10 @@ pub enum ArenaDisposition {
     /// The payload does not represent the arena; the wrapper charges a loss
     /// when it is non-empty.
     Omitted,
+    /// The payload never reads the arena. Its records are nests that hold
+    /// states the other arenas do not, so no payload represents them and the
+    /// wrapper charges no loss.
+    Ignored,
 }
 
 impl ArenaDisposition {

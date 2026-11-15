@@ -282,6 +282,7 @@ impl DesignNative {
 pub(super) struct DesignModel {
     pub(super) configurations: Vec<DesignConfiguration>,
     pub(super) features: Vec<Feature>,
+    pub(super) history_bodies: Vec<cadmpeg_ir::history_body::HistoryBody>,
     pub(super) parameters: Vec<DesignParameter>,
     /// Canvas and decal assets that the geometry assets do not hold yet.
     pub(super) assets: Vec<Asset>,
@@ -300,6 +301,7 @@ impl DesignModel {
         let Self {
             configurations,
             features,
+            history_bodies,
             parameters,
             assets,
             feature_input_topologies,
@@ -312,6 +314,7 @@ impl DesignModel {
         } = self;
         model.configurations = configurations;
         model.features = features;
+        model.history_bodies = history_bodies;
         model.parameters = parameters;
         model.assets.extend(assets);
         model.feature_input_topologies = feature_input_topologies;
@@ -808,6 +811,18 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.primary_brep,
     )?;
     losses.extend(bound_outputs.losses);
+    model.history_bodies = crate::history::history_bodies::fill(
+        ctx,
+        scan,
+        crate::history::history_bodies::Inputs {
+            features: &model.features,
+            scopes: &design.design_parameter_scopes,
+            histories: &design.asm_histories,
+            bindings: &scope_histories,
+            primary_brep: geometry.primary_brep,
+        },
+        &mut losses,
+    )?;
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     losses.extend(crate::design::feature_project::sweep_fallback::project(
         &mut model.features,

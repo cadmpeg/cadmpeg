@@ -56,3 +56,25 @@ fn each_cube_face_is_two_outward_triangles_of_its_area() {
             .fold(f64::INFINITY, f64::min);
     assert!((total - 6.0 * side * side).abs() <= AREA_TOLERANCE * side * side);
 }
+
+#[test]
+fn a_history_body_is_invisible_to_the_tessellator() {
+    let nested = cadmpeg_ir::examples::unit_cube_with_history_body().expect("fixture");
+    let mut plain = nested.clone();
+    plain.model.history_bodies.clear();
+    let mut with = Tessellator::new(&nested, Options::default());
+    let mut without = Tessellator::new(&plain, Options::default());
+    for face in &plain.model.faces {
+        let found = with.face(&face.id).expect("model face");
+        let expected = without.face(&face.id).expect("model face");
+        assert_eq!(found.positions, expected.positions);
+        assert_eq!(found.triangles, expected.triangles);
+    }
+    for face in &nested.model.history_bodies[0].topology.faces {
+        assert!(
+            with.face(&face.id).is_err(),
+            "nest face {} is not a model face",
+            face.id
+        );
+    }
+}
