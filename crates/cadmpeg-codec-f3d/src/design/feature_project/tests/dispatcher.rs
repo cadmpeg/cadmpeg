@@ -989,6 +989,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 external: true,
                 modeled: true,
                 full_length: Some(true),
+                right_handed: Some(true),
             }),
         });
     }

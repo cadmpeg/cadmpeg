@@ -1443,9 +1443,9 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte, the pitch marker, and the zero bytes before the trailer `01` select?
 
-**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. In the extended standard form, the first marker byte is the full-length flag, the pitch-marker byte is the modeled flag, and the second marker byte is `1`. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
+**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. In the extended standard form, the first marker byte is the full-length flag and the pitch-marker byte is the modeled flag of a scope with a result. Its second marker byte is `1` or `2`: threads on one external face store `1`, threads on two external faces and a thread on one internal face store `2`, and threads edited after other features store either value on one face. Thread type, designation, class, length, offset, hand, and the modeled option leave it unchanged. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
 
-**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time.
+**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time. For the second marker byte of the extended standard form: one external and one internal thread on faces made by the same feature, each saved before and after an edit of its face selection.
 
 **Conflict.** None.
 
@@ -1669,13 +1669,13 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** What do the two u64 values of each 16-byte entry after the entry count of an extended Thread prefix state?
 
-**Known.** A modeled extended Thread stores count `1` and one entry with u64 `1` and u64 `0x130`. The Design stream of that thread has no indexed record `0x130`. A cosmetic extended Thread stores count `0` and no entry.
+**Known.** A modeled extended Thread stores one entry for each selected face, and a cosmetic extended Thread stores count `0` and no entry. The first u64 values of one thread are `1` on one face, `1` and `6` on two faces, and `1`, `6`, and `7` on three faces. The second u64 values of one thread are consecutive, and they increase through the modeled threads of a design in timeline order. The Design stream has no indexed record with a second value.
 
-**Need.** Modeled threads on several faces, on bodies of different sizes, and in designs with different record counts.
+**Need.** Modeled threads on four or more faces, and the entity that carries a second value as its identity.
 
 **Conflict.** None.
 
-**Note.** The decoder admits entry counts `0` and `1`, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
+**Note.** The decoder requires one entry for each face-selection pair of a modeled thread, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
 
 ### DR-206. Sides of a two-sided to-object Revolve
 

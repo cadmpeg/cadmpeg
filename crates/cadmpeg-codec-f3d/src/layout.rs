@@ -8945,10 +8945,8 @@ pub(crate) mod thread_extended_standard_trailer {
     pub(crate) const LENGTH_REFERENCE: usize = 1;
     /// Offset of `offset_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const OFFSET_REFERENCE: usize = 12;
-    /// Offset of `end_flag` (`u8`). Spec §3.1.
-    pub(crate) const END_FLAG: usize = 23;
-    /// Stated value of `end_flag` (`u8`). Spec §3.1.
-    pub(crate) const END_FLAG_VALUE: u8 = 1;
+    /// Offset of `right_handed` (`u8`). Spec §3.1.
+    pub(crate) const RIGHT_HANDED: usize = 23;
 }
 
 /// Byte offsets for the `thread_extended_compact_trailer` record.
