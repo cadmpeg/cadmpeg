@@ -88,9 +88,21 @@ pub(crate) fn bind(
                 .filter_map(|face| super::stable_ref(face.as_str()))
                 .collect();
             if referenced.is_empty() { return; }
-            if selection_slots(face).is_some_and(|slots| {
-                !slots.is_empty() && slots.iter().all(|slot| referenced.contains(slot))
-            }) {
+            let behind_start = history.topology(previous).is_some_and(|before| {
+                selection_behind_start(
+                    face,
+                    SweepFrame { profile, direction, start },
+                    sketches,
+                    before,
+                    offset.map_or(0.0, Length::get),
+                    input.linear_tolerance,
+                )
+            });
+            if !behind_start
+                && selection_slots(face).is_some_and(|slots| {
+                    !slots.is_empty() && slots.iter().all(|slot| referenced.contains(slot))
+                })
+            {
                 return;
             }
             let retained: BTreeSet<_> = selection_slots(face).unwrap_or_default().into_iter().collect();
@@ -239,6 +251,46 @@ fn start_origin(
         }
         _ => None,
     }
+}
+
+/// The profile, direction and start of an Extrude.
+struct SweepFrame<'a> {
+    profile: &'a cadmpeg_ir::features::ProfileRef,
+    direction: &'a ExtrudeDirection,
+    start: &'a ExtrudeStart,
+}
+
+/// Whether the selected planar termination face, moved by `offset` along the
+/// sweep, lies behind the start of the sweep. A to-face extent ends ahead of
+/// its start, so such a face is not the termination.
+fn selection_behind_start(
+    face: &FaceSelection,
+    frame: SweepFrame<'_>,
+    sketches: &[Sketch],
+    before: &AsmHistoricalTopology,
+    offset: f64,
+    linear_tolerance: f64,
+) -> bool {
+    let behind = || {
+        let (origin, normal, _) = crate::design::face_resolve::extrude_profile_sketch_id(frame.profile)
+            .and_then(|id| sketches.iter().find(|sketch| sketch.id == *id))
+            .and_then(Sketch::resolved_placement)?;
+        let sweep = match frame.direction {
+            ExtrudeDirection::ProfileNormal {} => normal.get(),
+            ExtrudeDirection::ReversedProfileNormal {} => normal.get().scale(-1.0),
+            ExtrudeDirection::Explicit { vector, .. } => vector.get(),
+            ExtrudeDirection::Unresolved {} => return None,
+        }
+        .unit()?;
+        let start = start_origin(frame.start, origin.get(), normal.get(), sweep, before)?;
+        let slots = selection_slots(face)?;
+        let [slot] = slots.as_slice() else {
+            return None;
+        };
+        let end = exact_plane(before, *slot)?.origin.translated(sweep, offset);
+        Some(end.vector_from(start).dot(sweep) < -linear_tolerance)
+    };
+    behind().unwrap_or(false)
 }
 
 fn select_target(

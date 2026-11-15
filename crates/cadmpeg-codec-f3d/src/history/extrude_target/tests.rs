@@ -553,3 +553,22 @@ fn an_unselected_target_without_a_preceding_candidate_has_no_withdrawal_loss() {
     assert!(slots.is_empty());
     assert!(losses.is_empty());
 }
+
+#[test]
+fn a_recipe_referenced_selection_behind_the_start_stays_native() {
+    let (face, slots, _) = run_configured(false, 18.5, None, |_, operand, _| {
+        operand.recipe_references[0].candidate_faces = vec![crate::ids::brep_face_id(3465)];
+    });
+    assert!(matches!(face, FaceSelection::Native(_)));
+    assert!(slots.is_empty());
+}
+
+#[test]
+fn a_recipe_referenced_selection_ahead_of_the_start_is_kept() {
+    let (face, slots, losses) = run_configured(false, 18.5, None, |_, operand, _| {
+        operand.recipe_references[0].candidate_faces = vec![crate::ids::brep_face_id(3484)];
+    });
+    assert_eq!(selection_slots(&face), Some(vec![3484]));
+    assert_eq!(slots, [3484]);
+    assert!(losses.is_empty());
+}
