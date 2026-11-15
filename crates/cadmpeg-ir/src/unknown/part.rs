@@ -39,7 +39,8 @@ pub struct Part<'a> {
     kind: &'static str,
     name: Option<String>,
     stream: Option<StreamName>,
-    extent: View<'a>,
+    offset: u64,
+    bytes: &'a [u8],
     containing: Option<Identity>,
     dropped: Vec<Identity>,
 }
@@ -49,12 +50,20 @@ impl<'a> Part<'a> {
     /// `codec`'s source.
     #[must_use]
     pub fn new(codec: &'static str, kind: &'static str, extent: View<'a>) -> Self {
+        Self::at(codec, kind, u64_from_index(extent.start()), extent.window())
+    }
+
+    /// A part of `kind` whose `bytes` start at `offset` in the root stream
+    /// of `codec`'s source.
+    #[must_use]
+    pub fn at(codec: &'static str, kind: &'static str, offset: u64, bytes: &'a [u8]) -> Self {
         Self {
             codec,
             kind,
             name: None,
             stream: None,
-            extent,
+            offset,
+            bytes,
             containing: None,
             dropped: Vec::new(),
         }
@@ -68,7 +77,7 @@ impl<'a> Part<'a> {
         self
     }
 
-    /// Places the part in a named stream. `extent`'s offsets are offsets in
+    /// Places the part in a named stream. The part's offset is an offset in
     /// that stream.
     #[must_use]
     pub fn in_stream(mut self, stream: StreamName) -> Self {
@@ -113,7 +122,7 @@ impl<'a> Part<'a> {
     }
 
     fn offset(&self) -> u64 {
-        u64_from_index(self.extent.start())
+        self.offset
     }
 }
 
@@ -133,10 +142,11 @@ impl GivenUpPart {
         &self.stub.id
     }
 
-    /// The `record.unreadable` loss that names the part.
+    /// A copy of the `record.unreadable` loss that names the part, for a
+    /// report that does not commit it.
     #[must_use]
-    pub fn loss(&self) -> &LossNote {
-        &self.loss
+    pub fn loss(&self) -> LossNote {
+        self.loss.clone()
     }
 
     /// Adds the stub to the codec's native `unknowns` arena of `ir` and the
@@ -247,7 +257,7 @@ impl DecodeParts for DecodeContext<'_> {
             return Err(error);
         }
         let id = part.id()?;
-        let bytes = part.extent.window();
+        let bytes = part.bytes;
         let length = u64_from_index(bytes.len());
         self.retain_bytes(length, "given-up part source bytes")?;
         let mut data = self.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
