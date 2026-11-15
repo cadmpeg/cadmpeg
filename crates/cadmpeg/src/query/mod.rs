@@ -1358,9 +1358,11 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
             } else {
                 println!("namespace\tarena\tentries");
                 for (arena, entries) in entity_counts {
-                    let home = cadmpeg_ir::ArenaName::parse(arena)
-                        .map_or("model", |name| name.home().as_str());
-                    println!("{home}\t{}\t{entries}", cell(arena));
+                    let (home, key) = cadmpeg_ir::ArenaName::parse(arena)
+                        .map_or(("model", arena.as_str()), |name| {
+                            (name.home().as_str(), name.key())
+                        });
+                    println!("{home}\t{}\t{entries}", cell(key));
                 }
             }
             if let Some(note) = note {

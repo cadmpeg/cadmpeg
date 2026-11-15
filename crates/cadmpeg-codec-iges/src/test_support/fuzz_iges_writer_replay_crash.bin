@@ -991,7 +991,7 @@
     "pmi": [],
     "presentation_layers": []
   },
-  "design": {},
+  "design": {"scopes": [], "containers": [], "features": [], "parameters": [], "spreadsheets": [], "programs": [], "configurations": [], "arrangements": [], "publications": [], "evaluations": [], "names": []},
   "process": {},
   "native": {}
 }
