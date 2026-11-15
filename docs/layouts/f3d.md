@@ -4691,6 +4691,22 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
 
+## `offset_23_extrude_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 27 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 12 | `zero_run_12` | `bytes[12]` | little | spec | at primary-header offset 23 after twelve zero bytes |
+| 23 | 4 | `operation` | `u32` | little | spec | at primary-header offset 23 after twelve zero bytes |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
 ## `current_extrude_operation_fields`
 
 Spec §3.1 · layout: byte offsets · size: 42 B

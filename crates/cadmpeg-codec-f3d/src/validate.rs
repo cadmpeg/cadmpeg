@@ -4549,6 +4549,7 @@ fn direct_extrude_operation_valid(
         ]
     } else {
         &[
+            crate::layout::offset_23_extrude_prologue::OPERATION,
             crate::layout::offset_24_extrude_prologue::OPERATION,
             crate::layout::compact_shifted_extrude_prologue::OPERATION,
             crate::layout::shifted_extrude_prologue::OPERATION,
@@ -5035,6 +5036,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             header.byte_offset == transform.byte_offset()
                                 && header.class_tag == transform.class_tag
                         })
+                    // The following header can be the lone paired header of an
+                    // omitted primary frame, which has no header entry.
                     && records_by_index
                         .get(&(native_stream, transform.following_record_index()))
                         .is_none_or(|header| {

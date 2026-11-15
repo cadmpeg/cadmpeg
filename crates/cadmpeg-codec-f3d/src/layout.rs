@@ -4261,6 +4261,16 @@ pub(crate) mod offset_24_extrude_prologue {
     pub(crate) const OPERATION: usize = 24;
 }
 
+/// Byte offsets for the `offset_23_extrude_prologue` record.
+///
+/// Spec §3.1. Record length 27 B.
+pub(crate) mod offset_23_extrude_prologue {
+    /// Offset of `zero_run_12` (`bytes[12]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_12: usize = 11;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 23;
+}
+
 /// Byte offsets for the `current_extrude_operation_fields` record.
 ///
 /// Spec §3.1. Record length 42 B.
