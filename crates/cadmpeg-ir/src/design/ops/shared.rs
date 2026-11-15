@@ -97,10 +97,9 @@ pub enum LinkState {
     Current,
     /// The source changed after the copy was made.
     OutOfDate,
-    /// The source does not resolve (FreeCAD `Missing`, a SolidWorks dangling
-    /// reference).
+    /// The source does not resolve.
     Broken,
-    /// The copy does not follow its source (FreeCAD `Frozen`).
+    /// The copy does not follow its source.
     Locked,
 }
 
@@ -139,7 +138,7 @@ pub enum RunSides<Q> {
         extent: Option<SymmetricMeasure>,
     },
     /// A second arm against the run's direction with its own spacing.
-    Reverse(Spacing<Q>),
+    Reverse(Box<Spacing<Q>>),
 }
 
 /// The spacing of a run. Every count includes the seed.
@@ -182,7 +181,7 @@ pub enum Spacing<Q> {
     /// A linear run filled up to a reference.
     UpTo {
         /// The reference the run fills up to.
-        reference: OrderedSelection,
+        reference: Box<OrderedSelection>,
         /// The count or the spacing.
         fill: UpToFill<Q>,
         /// The distance short of the reference at which the run stops.
@@ -232,7 +231,7 @@ pub enum Locus {
     /// The seed's centroid.
     Centroid {},
     /// A constructed point.
-    Point(Construction<kinds::Point>),
+    Point(Box<Construction<kinds::Point>>),
 }
 
 cadmpeg_core::named_optional_field!(deserialize_associative<T>, T, "associative");

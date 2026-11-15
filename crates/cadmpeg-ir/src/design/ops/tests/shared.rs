@@ -64,7 +64,9 @@ pub(super) fn links() -> Vec<Link> {
 fn locus() -> Vec<Locus> {
     vec![
         Locus::Centroid {},
-        Locus::Point(construction::<kinds::Point>(Some(point3(1.0, 2.0, 3.0)))),
+        Locus::Point(Box::new(construction::<kinds::Point>(Some(point3(
+            1.0, 2.0, 3.0,
+        ))))),
     ]
 }
 
@@ -92,13 +94,13 @@ pub(super) fn length_spacings() -> Vec<Spacing<Length>> {
         },
         Spacing::Fit { count: lit(6) },
         Spacing::UpTo {
-            reference: selection(5),
+            reference: Box::new(selection(5)),
             fill: UpToFill::Pitch(lit(length(3.0))),
             offset: Some(lit(length(1.0))),
             from: Some(Locus::Centroid {}),
         },
         Spacing::UpTo {
-            reference: unread(),
+            reference: Box::new(unread()),
             fill: UpToFill::Count(lit(3)),
             offset: None,
             from: None,
@@ -135,10 +137,10 @@ pub(super) fn length_sides() -> Vec<RunSides<Length>> {
             count: None,
             extent: None,
         },
-        RunSides::Reverse(Spacing::Pitch {
+        RunSides::Reverse(Box::new(Spacing::Pitch {
             count: lit(2),
             pitch: lit(length(5.0)),
-        }),
+        })),
     ]
 }
 
@@ -149,7 +151,7 @@ pub(super) fn angle_sides() -> Vec<RunSides<Angle>> {
             count: Some(SymmetricMeasure::PerSide),
             extent: None,
         },
-        RunSides::Reverse(Spacing::Fit { count: lit(3) }),
+        RunSides::Reverse(Box::new(Spacing::Fit { count: lit(3) })),
     ]
 }
 

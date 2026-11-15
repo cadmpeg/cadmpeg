@@ -77,7 +77,7 @@ pub struct Sketch {
 pub enum SketchPlane {
     /// The plane frame, as a construction. Its `resolved` is the solved
     /// frame, a cache.
-    Placed(Construction<kinds::Frame>),
+    Placed(Box<Construction<kinds::Frame>>),
     /// A block definition: a sketch with no plane, whose entities block
     /// instances in other sketches place.
     Block {},
@@ -316,7 +316,7 @@ pub enum EntityDefinition<S: SketchSpace> {
     /// A defining form beyond the curve.
     Defined {
         /// The defining form.
-        form: EntityForm<S>,
+        form: Box<EntityForm<S>>,
         /// The form's cache. `None` only where the source stores no solved
         /// value.
         #[serde(
@@ -352,9 +352,9 @@ pub enum EntityForm<S: SketchSpace> {
         rho: Dimension<FiniteReal>,
     },
     /// An entity computed from model geometry.
-    Derived(Derivation),
+    Derived(Box<Derivation>),
     /// Text.
-    Text(SketchText<S>),
+    Text(Box<SketchText<S>>),
     /// A placed block definition.
     BlockInstance(BlockInstance),
     /// An entity of a block definition that the host sketch shows, with its
@@ -681,7 +681,7 @@ pub enum DerivationMode {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_direction"
         )]
-        direction: Option<ProjectionDirection>,
+        direction: Option<Box<ProjectionDirection>>,
     },
     /// A derivation whose meaning is not established.
     Native(NonBlankString),
@@ -962,7 +962,7 @@ pub enum Operand<S: SketchSpace> {
     /// spatial sketch.
     Frame(PrincipalEntity),
     /// A selection of model geometry.
-    Model(OrderedSelection),
+    Model(Box<OrderedSelection>),
 }
 
 /// A geometric relation or a dimension between sketch operands.
@@ -1158,7 +1158,7 @@ pub enum SketchRelation<S: SketchSpace> {
     /// Results at a signed distance from their sources.
     Offset(SketchOffset<S>),
     /// Copies of seed entities.
-    Pattern(SketchPattern<S>),
+    Pattern(Box<SketchPattern<S>>),
     /// A polygon.
     Polygon(SketchPolygon<S>),
     /// A slot.

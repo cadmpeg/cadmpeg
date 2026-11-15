@@ -112,8 +112,8 @@ fn native_name() -> NativeName {
 
 fn sketch_planes() -> Vec<SketchPlane> {
     vec![
-        SketchPlane::Placed(frame()),
-        SketchPlane::Placed(construction(None)),
+        SketchPlane::Placed(Box::new(frame())),
+        SketchPlane::Placed(Box::new(construction(None))),
         SketchPlane::Block {},
     ]
 }
@@ -334,7 +334,7 @@ fn derivation_modes() -> Vec<DerivationMode> {
         },
         DerivationMode::OntoFaces {
             faces: selection(6),
-            direction: Some(ProjectionDirection::SurfaceNormal),
+            direction: Some(Box::new(ProjectionDirection::SurfaceNormal)),
         },
         DerivationMode::OntoFaces {
             faces: unread(),
@@ -454,8 +454,16 @@ fn entity_forms<S: Fixture>() -> Vec<EntityForm<S>> {
     forms.push(EntityForm::Conic {
         rho: lit(real(0.5)),
     });
-    forms.extend(derivations().into_iter().map(EntityForm::Derived));
-    forms.extend(sketch_texts::<S>().into_iter().map(EntityForm::Text));
+    forms.extend(
+        derivations()
+            .into_iter()
+            .map(|derivation| EntityForm::Derived(Box::new(derivation))),
+    );
+    forms.extend(
+        sketch_texts::<S>()
+            .into_iter()
+            .map(|text| EntityForm::Text(Box::new(text))),
+    );
     forms.extend(block_instances().into_iter().map(EntityForm::BlockInstance));
     forms.push(EntityForm::Instanced {
         instance: S::entity(5),
@@ -476,7 +484,10 @@ fn entity_definitions<S: Fixture>() -> Vec<EntityDefinition<S>> {
         entity_forms::<S>()
             .into_iter()
             .zip(solved)
-            .map(|(form, solved)| EntityDefinition::Defined { form, solved }),
+            .map(|(form, solved)| EntityDefinition::Defined {
+                form: Box::new(form),
+                solved,
+            }),
     );
     definitions
 }
@@ -517,7 +528,7 @@ fn operands<S: Fixture>() -> Vec<Operand<S>> {
     vec![
         Operand::Entity(S::entity(1)),
         Operand::Frame(PrincipalEntity::Origin),
-        Operand::Model(selection(8)),
+        Operand::Model(Box::new(selection(8))),
     ]
 }
 
@@ -717,7 +728,7 @@ fn relations<S: Fixture>() -> Vec<SketchRelation<S>> {
         },
         SketchRelation::Perpendicular {
             a: entity(1),
-            b: Operand::Model(selection(3)),
+            b: Operand::Model(Box::new(selection(3))),
         },
         SketchRelation::Tangent {
             a: entity(1),
@@ -753,7 +764,7 @@ fn relations<S: Fixture>() -> Vec<SketchRelation<S>> {
             second: [entity(3), entity(4)],
         },
         SketchRelation::Fixed {
-            of: Operand::Model(unread()),
+            of: Operand::Model(Box::new(unread())),
         },
         SketchRelation::Distance {
             a: Operand::Frame(PrincipalEntity::Origin),
@@ -773,7 +784,7 @@ fn relations<S: Fixture>() -> Vec<SketchRelation<S>> {
         },
         SketchRelation::Pierce {
             point: S::entity(1),
-            curve: Operand::Model(selection(4)),
+            curve: Operand::Model(Box::new(selection(4))),
         },
         SketchRelation::Weight {
             pole: S::entity(5),
@@ -826,7 +837,11 @@ fn relations<S: Fixture>() -> Vec<SketchRelation<S>> {
             }),
     );
     relations.extend(sketch_offsets().into_iter().map(SketchRelation::Offset));
-    relations.extend(sketch_patterns().into_iter().map(SketchRelation::Pattern));
+    relations.extend(
+        sketch_patterns()
+            .into_iter()
+            .map(|pattern| SketchRelation::Pattern(Box::new(pattern))),
+    );
     relations.extend(sketch_polygons().into_iter().map(SketchRelation::Polygon));
     relations.extend(sketch_slots().into_iter().map(SketchRelation::Slot));
     relations
@@ -926,7 +941,7 @@ fn each_enum_has_its_tag_form() {
     assert_eq!(to_value(&TextVerticalBox::CapHeight), json!("cap_height"));
     assert_eq!(to_value(&SketchPlane::Block {}), json!({"kind": "block"}));
     refuses::<SketchPlane>(r#"{"kind": "block", "extra": 1}"#);
-    let placed = to_value(&SketchPlane::Placed(construction(None)));
+    let placed = to_value(&SketchPlane::Placed(Box::new(construction(None))));
     assert_eq!(
         placed,
         json!({"kind": "placed", "inputs": [], "after": [], "resolved_in": {}})
