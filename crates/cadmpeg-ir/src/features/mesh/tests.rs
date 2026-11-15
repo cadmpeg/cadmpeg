@@ -53,7 +53,7 @@ fn separation_rewrite_traverses_owned_group_selectors_and_source_identity() {
     let scope = "f3d:Design/BulkStream.dat:design-parameter-scope#57";
     let renamed = "f3d:child/Design/BulkStream.dat:design-parameter-scope#57";
     let replacements = std::collections::BTreeMap::from([(scope.to_owned(), renamed.to_owned())]);
-    let wire = serde_json::json!({"definition":"mesh_modify", "source":{"feature":"test:model:feature#separate"}, "modification":{"kind":"separate", "separation":{"groups":{"kind":"selected", "members":[format!("{scope}/alpha"), "beta"]}, "keep_body":false}}});
+    let wire = serde_json::json!({"definition":"mesh_modify", "source":{"feature":"test:model:feature#separate"}, "modification":{"kind":"separate", "separation":{"groups":{"kind":"selected", "members":[scope, format!("{scope}/alpha"), "beta"]}, "keep_body":false}}});
     let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
     crate::test_support::with_service_decode_context(|ctx| {
         let text = TextReplacements::build(replacements.iter())?;
@@ -62,8 +62,7 @@ fn separation_rewrite_traverses_owned_group_selectors_and_source_identity() {
         let rewritten = operation.rewrite_identities(ctx, &mut map)?;
         let mut expected = wire.clone();
         expected["source"]["feature"] = "test:child/model:feature#separate".into();
-        expected["modification"]["separation"]["groups"]["members"][0] =
-            format!("{renamed}/alpha").into();
+        expected["modification"]["separation"]["groups"]["members"][0] = renamed.into();
         assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
         map.finish()
     })

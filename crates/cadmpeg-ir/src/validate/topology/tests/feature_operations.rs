@@ -36,7 +36,7 @@ fn separation_sources_validate_dangling_tessellations_and_real_feature_anchors()
             native_ref: None,
         });
     }
-    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    let findings = feature_reference_findings(&ir);
     for ordinal in [0, 1, 2, 3] {
         assert_eq!(
             findings.iter().any(|finding| finding.check
@@ -47,9 +47,7 @@ fn separation_sources_validate_dangling_tessellations_and_real_feature_anchors()
         );
     }
     ir.model.features[2].evaluation.set_definition(FeatureDefinition::Operation(serde_json::from_value(serde_json::json!({"definition":"mesh_modify", "source":{"feature":"test:model:feature#missing"}, "modification":{"kind":"smooth"}})).unwrap()));
-    assert!(!validate_neutral(&ir, Vec::new())
-        .unwrap()
-        .findings
+    assert!(!feature_reference_findings(&ir)
         .iter()
         .any(|finding| finding.entity.as_deref() == Some("test:model:feature#2")));
 }
