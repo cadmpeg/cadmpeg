@@ -2175,8 +2175,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         && binding.entity_reference_offset < scope.paired_byte_offset()
                 })
         });
-        let valid_sketch_profile =
-            |profile: &records::topology::sketch_profile::DesignSketchProfileOperand| {
+        let valid_profile_frame =
+            |profile: &records::topology::sketch_profile::DesignSketchProfileOperand,
+             allow_absent: bool| {
                 let header = records_by_index.get(&(native_stream, profile.record_index));
                 let entity = entities_by_suffix.get(&(native_stream, profile.entity_id.suffix()));
                 usize::try_from(profile.scope_reference_ordinal)
@@ -2187,17 +2188,27 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         header.byte_offset == profile.byte_offset()
                             && header.class_tag == profile.class_tag
                     })
-                    && entity.is_some_and(|entity| {
-                        entity.in_sketch_module() && entity.entity_id == profile.entity_id
-                    })
+                    && if profile.sketch_absent {
+                        allow_absent && entity.is_none()
+                    } else {
+                        entity.is_some_and(|entity| {
+                            entity.in_sketch_module() && entity.entity_id == profile.entity_id
+                        })
+                    }
                     && profile.region_selection.as_ref().is_none_or(|selection| {
                         valid_sketch_profile_region_selection(profile, selection)
                     })
             };
+        let valid_sketch_profile =
+            |profile: &records::topology::sketch_profile::DesignSketchProfileOperand| {
+                valid_profile_frame(profile, false)
+            };
         let native_profiles_link = scope.extrude_native_profiles().is_none_or(|profiles| {
-            profiles.len() > 1
+            (profiles.len() > 1 || profiles.iter().any(|profile| profile.sketch_absent))
                 && scope.extrude_profile().is_none()
-                && profiles.iter().all(valid_sketch_profile)
+                && profiles
+                    .iter()
+                    .all(|profile| valid_profile_frame(profile, true))
                 && profiles
                     .iter()
                     .map(|profile| profile.record_index)
@@ -5026,7 +5037,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         })
                     && records_by_index
                         .get(&(native_stream, transform.following_record_index()))
-                        .is_some_and(|header| {
+                        .is_none_or(|header| {
                             header.byte_offset == transform.following_byte_offset()
                                 && header.class_tag == transform.following_class_tag
                         })

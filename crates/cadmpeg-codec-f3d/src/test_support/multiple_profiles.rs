@@ -86,7 +86,21 @@ pub(crate) fn fixture_with_curve_region_operands(
             tail[71..75].copy_from_slice(&(record + 1).to_le_bytes());
             tail[82] = 1;
             tail[83..87].copy_from_slice(&1u32.to_le_bytes());
-            if tail_length == 89 {
+            if tail_length == 82 {
+                // The 83-byte tail's fields with the later references one
+                // byte earlier.
+                let mut short = [0; 82];
+                short[0] = 1;
+                short[16..20].copy_from_slice(&0x41u32.to_le_bytes());
+                short[46] = 1;
+                short[47..51].copy_from_slice(&(record + 2).to_le_bytes());
+                short[57..59].copy_from_slice(&flags);
+                short[59] = 1;
+                short[60..64].copy_from_slice(&(record + 1).to_le_bytes());
+                short[71] = 1;
+                short[72..76].copy_from_slice(&1u32.to_le_bytes());
+                bytes.extend_from_slice(&short);
+            } else if tail_length == 89 {
                 bytes.extend_from_slice(&tail[..53]);
                 bytes.extend_from_slice(&tail[57..]);
             } else {
