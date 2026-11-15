@@ -1256,6 +1256,54 @@ fn expr_check_binding(expr: &syn::Expr) -> Option<String> {
     .flatten()
 }
 
+/// The declarations of the three wire crates, resolved from a module by the
+/// lexical resolution the reader routes use: imports, re-exports, globs and
+/// `self`/`super`/`crate` paths are followed where each is written.
+pub(super) struct DeclarationResolver {
+    index: SourceIndex,
+}
+
+impl DeclarationResolver {
+    pub(super) fn read(root: &Path) -> Self {
+        Self {
+            index: source_index(root),
+        }
+    }
+
+    /// The type declaration `path` names from module `scope` of the file
+    /// `file`, as `(file, module scope, name)`, or `None` when it names no
+    /// one type declaration of the wire crates.
+    pub(super) fn resolve(
+        &self,
+        file: &str,
+        scope: &[String],
+        path: &syn::Path,
+    ) -> Option<(String, Vec<String>, String)> {
+        let shape = PathShape {
+            segments: path
+                .segments
+                .iter()
+                .map(|segment| segment.ident.to_string())
+                .collect(),
+            absolute: path.leading_colon.is_some(),
+        };
+        match resolve::resolve_path_from_context(
+            file,
+            scope,
+            &shape,
+            &self.index,
+            &mut BTreeSet::new(),
+        ) {
+            resolve::ResolvedPath::Local(symbol) if symbol.kind == SymbolKind::Type => {
+                Some((symbol.path, symbol.scope, symbol.name))
+            }
+            resolve::ResolvedPath::Local(_)
+            | resolve::ResolvedPath::External(_)
+            | resolve::ResolvedPath::Unknown => None,
+        }
+    }
+}
+
 fn path_is_named(path: &syn::Path, name: &str) -> bool {
     path.segments.last().is_some_and(|segment| {
         segment.ident == name && matches!(segment.arguments, syn::PathArguments::None)

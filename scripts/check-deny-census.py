@@ -12,6 +12,18 @@ Declarations without attributes are included when following a read route.
 Nongeneric type aliases are followed to their targets; other alias shapes
 fail the static check when used as a read route.
 
+A type name is resolved by its module path, so same-named declarations in two
+modules are each checked against their own declaration. A generic parameter is
+proved over its default and every argument a declaration states for that one
+declaration: a use is attributed by resolving its spelled path where it is
+written, and a use that resolves to no one declaration fails the proof. A
+payload spelled ``P::Name`` or ``<P as Trait>::Name`` for a type parameter
+``P`` is proved through the one bound trait that declares ``Name``: every impl
+of that trait in the wire crates states the type, and each is proved in the
+impl's own module. An unreadable bound, an impl that states no readable type,
+an impl outside the wire crates, a call naming the trait to a macro that
+spells ``impl``, and a trait without an impl fail the proof.
+
 A second, independent rule runs over every crate: an optional key whose writer
 omits it for ``None`` (``skip_serializing_if = "Option::is_none"``) must read
 through a reader declared by ``cadmpeg_core::named_optional_field!``, so an
@@ -1339,31 +1351,391 @@ def generic_parameters(item):
     return parameters
 
 
-def generic_arguments(name, position, items):
+def generic_arguments(declaration, position, items, resolve):
     """Return every argument a workspace declaration states at ``position``.
 
     Only declarations are read. A function signature forwards its caller's
     parameter and instantiates no reader, so it is not a source of arguments
     here; a declaration that supplies fewer arguments than ``position``
     leaves the parameter on its default and contributes nothing.
+
+    A use is an argument for ``declaration`` only when ``resolve`` reads its
+    spelled path, from the declaration that states it, as ``declaration``
+    itself: a same-named type in another module is another parameter. The
+    second list holds every use whose path resolves to no one declaration,
+    which leaves its argument unread.
     """
-    use = re.compile(rf"\b{re.escape(name)}\s*<")
+    use = re.compile(rf"\b{re.escape(declaration.name)}\s*<")
     arguments = []
+    unresolved = []
     for item in items:
-        header = GENERIC_HEADER_RE.match(item.body)
+        code = SOURCE_POLICY.mask_rust_non_code(item.body)
+        header = GENERIC_HEADER_RE.match(code)
         own_header = header.end() - 1 if header is not None else None
-        for match in use.finditer(item.body):
+        for match in use.finditer(code):
             if match.end() - 1 == own_header:
                 # The declaration's own header states parameters, not
                 # arguments; its default is read by the caller.
                 continue
-            end = generic_end(item.body, match.end() - 1)
+            end = generic_end(code, match.end() - 1)
             if end is None:
+                continue
+            spelled = spelled_path(code, match.start(), declaration.name)
+            target = resolve(spelled, item)
+            if target is None:
+                unresolved.append((spelled, item))
+                continue
+            if target is not declaration:
                 continue
             parts = split_tuple_types(item.body[match.end():end - 1])
             if position < len(parts):
                 arguments.append((parts[position], item))
-    return arguments
+    return arguments, unresolved
+
+
+def spelled_path(code, start, name):
+    """The whole path a use spells, read back from its final segment."""
+    path = [name]
+    cursor = start
+    while True:
+        prefix = code[:cursor].rstrip()
+        if not prefix.endswith("::"):
+            break
+        prefix = prefix[:-2].rstrip()
+        segment = re.search(r"[A-Za-z_$]\w*$", prefix[-256:])
+        if segment is None:
+            return "::" + "::".join(path)
+        path.insert(0, segment.group())
+        cursor = len(prefix) - len(segment.group())
+    return canonical_path("::".join(path))
+
+
+def split_top_level(text, separator):
+    """Split masked type text at one separator outside every delimiter."""
+    code = SOURCE_POLICY.mask_rust_non_code(text)
+    depth = start = 0
+    parts = []
+    for index, char in enumerate(code):
+        if char in "([{<":
+            depth += 1
+        elif char in ")]}>" and depth:
+            depth -= 1
+        elif char == separator and depth == 0:
+            parts.append(text[start:index])
+            start = index + 1
+    parts.append(text[start:])
+    return [part.strip() for part in parts if part.strip()]
+
+
+def where_clause(code, start):
+    """The where clause between a declaration's header and its body, if any."""
+    depth = 0
+    clause = None
+    for index in range(start, len(code)):
+        char = code[index]
+        if char in "([<":
+            depth += 1
+        elif char in ")]>" and depth:
+            depth -= 1
+        elif char in "{;" and depth == 0:
+            return None if clause is None else code[clause:index]
+        elif (
+            depth == 0
+            and clause is None
+            and code.startswith("where", index)
+            and (index == 0 or not (code[index - 1].isalnum() or code[index - 1] == "_"))
+            and not (code[index + 5:index + 6].isalnum() or code[index + 5:index + 6] == "_")
+        ):
+            clause = index + len("where")
+    return None if clause is None else code[clause:]
+
+
+def generic_bounds(item):
+    """Return each type parameter's trait bounds as written paths.
+
+    The header and the where clause are both read. A predicate on anything
+    other than a bare parameter, a lifetime and a `?Sized` relaxation bound
+    no associated type and are not returned.
+    """
+    code = SOURCE_POLICY.mask_rust_non_code(item.body)
+    opening = GENERIC_HEADER_RE.match(code)
+    if opening is None:
+        return {}
+    end = generic_end(code, opening.end() - 1)
+    if end is None:
+        return {}
+    predicates = split_top_level(code[opening.end():end - 1], ",")
+    clause = where_clause(code, end)
+    if clause is not None:
+        predicates.extend(split_top_level(clause, ","))
+    bounds = {}
+    for predicate in predicates:
+        name, colon, rest = predicate.partition(":")
+        name = name.strip()
+        if not colon or not re.fullmatch(r"[A-Za-z_]\w*", name):
+            continue
+        rest = split_top_level(rest, "=")
+        for bound in split_top_level(rest[0], "+") if rest else ():
+            if bound.startswith(("'", "?")):
+                continue
+            path = re.match(r"(?:::)?(?:[A-Za-z_]\w*\s*::\s*)*[A-Za-z_]\w*", bound)
+            bounds.setdefault(name, []).append(
+                canonical_path(path.group()) if path else bound
+            )
+    return bounds
+
+
+ASSOCIATED_TYPE = re.compile(
+    r"\s*(?P<parameter>[A-Za-z_]\w*)\s*::\s*(?P<name>[A-Za-z_]\w*)\s*"
+)
+QUALIFIED_ASSOCIATED_TYPE = re.compile(
+    r"\s*<\s*(?P<parameter>[A-Za-z_]\w*)\s+as\s+"
+    r"(?P<trait>(?:::)?(?:[A-Za-z_]\w*\s*::\s*)*[A-Za-z_]\w*)\s*>"
+    r"\s*::\s*(?P<name>[A-Za-z_]\w*)\s*"
+)
+
+
+def associated_type_path(text):
+    """Read ``P::Name`` or ``<P as Trait>::Name`` as (P, trait or None, Name)."""
+    code = type_without_attributes(text)
+    qualified = QUALIFIED_ASSOCIATED_TYPE.fullmatch(code)
+    if qualified is not None:
+        return (
+            qualified.group("parameter"),
+            canonical_path(qualified.group("trait")),
+            qualified.group("name"),
+        )
+    bare = ASSOCIATED_TYPE.fullmatch(code)
+    if bare is not None:
+        return bare.group("parameter"), None, bare.group("name")
+    return None
+
+
+# Standard and serde traits declare no associated type a payload can name.
+# A bound that resolves to no workspace trait and is not one of these may
+# declare one the census cannot read, which fails the proof.
+TRAITS_WITHOUT_ASSOCIATED_TYPES = {
+    "Clone", "Copy", "Debug", "Display", "Default", "PartialEq", "Eq",
+    "PartialOrd", "Ord", "Hash", "Send", "Sync", "Sized", "Unpin",
+    "Serialize", "Deserialize", "DeserializeOwned", "JsonSchema",
+}
+TRAIT_RE = re.compile(
+    r"\b(?:pub(?:\s*\([^)]*\))?\s+)?(?:unsafe\s+)?trait\s+(?P<name>[A-Za-z_]\w*)"
+)
+
+
+@SOURCE_POLICY.cached_analysis
+def collect_traits(path):
+    """Every trait declaration of one file, as an item with its body."""
+    source = read_source(path)
+    code, _ = SOURCE_POLICY.production_source(source)
+    offsets, scopes = lexical_scopes(code)
+    traits = []
+    for match in TRAIT_RE.finditer(code):
+        brace = body_open(code, match.end())
+        if brace is None:
+            continue
+        end = delimited_end(code, brace)
+        if end is None:
+            raise ValueError(f"{path}: incomplete trait at byte {match.start()}")
+        traits.append(Item(
+            path,
+            source.count("\n", 0, match.start()) + 1,
+            "trait",
+            match.group("name"),
+            "",
+            source[match.start():end],
+            scopes[bisect_right(offsets, match.start()) - 1],
+            match.start(),
+            end,
+        ))
+    return traits
+
+
+def trait_associated_type(trait, name):
+    """Whether ``trait`` declares the associated type ``name``.
+
+    Returns ``"declared"``, ``None`` when the trait states no such type, or a
+    reason the declaration is no proof: a default is a value no impl states,
+    and a generic associated type takes arguments this census does not read.
+    """
+    code = SOURCE_POLICY.mask_rust_non_code(trait.body)
+    brace = body_open(code, 0)
+    end = None if brace is None else delimited_end(code, brace)
+    if end is None:
+        return f"the trait {trait.name} has no body the census can read"
+    body = code[brace + 1:end - 1]
+    depth = 0
+    for index, char in enumerate(body):
+        if char in "([{":
+            depth += 1
+        elif char in ")]}" and depth:
+            depth -= 1
+        if depth or not body.startswith("type", index):
+            continue
+        if index and (body[index - 1].isalnum() or body[index - 1] == "_"):
+            continue
+        match = re.compile(rf"type\s+{re.escape(name)}\b\s*").match(body, index)
+        if match is None:
+            continue
+        if body.startswith("<", match.end()):
+            return f"{trait.name}::{name} is a generic associated type"
+        nested = 0
+        for char in body[match.end():]:
+            if char in "([{<":
+                nested += 1
+            elif char in ")]}>" and nested:
+                nested -= 1
+            elif char == "=" and not nested:
+                return f"{trait.name}::{name} states a default"
+            elif char == ";" and not nested:
+                break
+        return "declared"
+    return None
+
+
+class TraitImpl:
+    """One ``impl Trait for Type`` block and the associated types it states."""
+
+    def __init__(self, path, line, trait, self_type, context, definitions):
+        self.path = path
+        self.line = line
+        self.trait = trait
+        self.self_type = self_type
+        # An item over the impl block, so its associated types resolve in the
+        # impl's own module and imports.
+        self.context = context
+        # Associated type name -> each value the block states, or ``None``
+        # for a definition this parser cannot read.
+        self.definitions = definitions
+
+
+def trait_impl_header(header):
+    """Return ``(trait path, self type)`` for a trait impl header."""
+    code = SOURCE_POLICY.mask_rust_non_code(header)
+    implementation = re.match(r"\s*impl\b", code)
+    if implementation is None:
+        return None
+    trait_start = implementation.end()
+    while trait_start < len(code) and code[trait_start].isspace():
+        trait_start += 1
+    if trait_start < len(code) and code[trait_start] == "<":
+        trait_start = generic_end(code, trait_start)
+        if trait_start is None:
+            return None
+    for_match = re.search(r"\bfor\b", code[trait_start:])
+    if for_match is None:
+        return None
+    trait = re.fullmatch(
+        r"\s*(?P<path>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*[A-Za-z_$]\w*)\s*(?:<.*>)?\s*",
+        code[trait_start:trait_start + for_match.start()],
+        re.S,
+    )
+    if trait is None:
+        return None
+    self_type = code[trait_start + for_match.end():]
+    self_type = re.split(r"\bwhere\b", self_type, maxsplit=1)[0]
+    return canonical_path(trait.group("path")), " ".join(self_type.split())
+
+
+def associated_type_definitions(code):
+    """Each ``type Name = Value;`` at the top level of one impl body."""
+    depth = 0
+    depths = []
+    for char in code:
+        depths.append(depth)
+        if char in "([{":
+            depth += 1
+        elif char in ")]}" and depth:
+            depth -= 1
+    definitions = {}
+    for match in re.finditer(r"\btype\s+(?P<name>[A-Za-z_]\w*)\s*", code):
+        if depths[match.start()] != 0:
+            continue
+        end = statement_end(code, match.end())
+        value = None
+        if end is not None and code[match.end():match.end() + 1] == "=":
+            value = code[match.end() + 1:end - 1].strip() or None
+        definitions.setdefault(match.group("name"), []).append(value)
+    return definitions
+
+
+@SOURCE_POLICY.cached_analysis
+def collect_trait_impls(path):
+    """Every trait impl of one file with the associated types it states."""
+    source = read_source(path)
+    code, _ = SOURCE_POLICY.production_source(source)
+    offsets, scopes = lexical_scopes(code)
+    impls = []
+    for opening in re.finditer(r"\bimpl\b", code):
+        brace = body_open(code, opening.end())
+        if brace is None:
+            continue
+        header = trait_impl_header(code[opening.start():brace])
+        if header is None:
+            continue
+        end = delimited_end(code, brace)
+        if end is None:
+            raise ValueError(f"{path}: incomplete impl at byte {opening.start()}")
+        trait, self_type = header
+        line = source.count("\n", 0, opening.start()) + 1
+        context = Item(
+            path, line, "impl", f"impl {trait} for {self_type}", "",
+            source[opening.start():end],
+            scopes[bisect_right(offsets, opening.start()) - 1],
+            opening.start(), end,
+        )
+        impls.append(TraitImpl(
+            path, line, trait, self_type, context,
+            associated_type_definitions(code[brace + 1:end - 1]),
+        ))
+    return impls
+
+
+@SOURCE_POLICY.cached_analysis
+def implementing_macros(path):
+    """Each ``macro_rules!`` of one file whose body spells ``impl``.
+
+    Its invocations can name the trait an expansion implements, so a call
+    that names a trait leaves that trait's impls unread.
+    """
+    source = read_source(path)
+    code, _ = SOURCE_POLICY.production_source(source)
+    macros = []
+    for definition in re.finditer(r"\bmacro_rules\s*!\s*([A-Za-z_]\w*)\s*\{", code):
+        end = delimited_end(code, definition.end() - 1)
+        if end is not None and re.search(r"\bimpl\b", code[definition.end():end]):
+            macros.append(definition.group(1))
+    return macros
+
+
+def macro_call_naming(path, macros, name):
+    """The line of a call in ``path`` to one of ``macros`` that names ``name``."""
+    if not macros:
+        return None
+    source = read_source(path)
+    code, _ = SOURCE_POLICY.production_source(source)
+    alternatives = "|".join(re.escape(macro) for macro in sorted(macros))
+    for call in re.finditer(rf"\b(?:{alternatives})\s*!\s*([({{\[])", code):
+        left = call.group(1)
+        right = {"(": ")", "{": "}", "[": "]"}[left]
+        end = delimited_end(code, call.end() - 1, left, right)
+        arguments = code[call.end():end]
+        if re.search(rf"(?<![\w$]){re.escape(name)}\b", arguments):
+            return source.count("\n", 0, call.start()) + 1
+    return None
+
+
+def trait_impl_source_files():
+    """Every non-test source outside the wire crates, read for trait impls.
+
+    An impl outside the wire crates states an associated type the census
+    cannot prove, since the type it names is not in the declaration index.
+    """
+    roots = [Path(root) for root in ROOTS]
+    for path in absent_key_source_files():
+        if not any(root == path or root in path.parents for root in roots):
+            yield path
 
 
 def type_without_attributes(text):
@@ -2296,7 +2668,17 @@ def main():
     helper_forwarder_sources = {}
     helper_targets = {}
     helper_target_sources = {}
+    traits = {}
+    trait_impls = {}
+    implementing = set()
     for path in paths:
+        implementing.update(implementing_macros(path))
+        for trait in collect_traits(path):
+            traits.setdefault(trait.name, []).append(trait)
+        for implementation in collect_trait_impls(path):
+            trait_impls.setdefault(
+                implementation.trait.rsplit("::", 1)[-1], []
+            ).append(implementation)
         items = [item for item in raw_items[path] if not item.name.startswith("$")]
         generated = macro_generated_items(path, raw_items[path], templates)
         for item in items + generated:
@@ -2634,6 +3016,134 @@ def main():
             path = imported
         return resolve_item(index, path, owner, ambiguities)
 
+    def declaration_for(path, owner, declarations):
+        """Resolve one spelled path from ``owner`` without reporting a miss.
+
+        The caller states what an unresolved path means for its proof.
+        """
+        imported = imported_path(path, owner)
+        if imported is import_ambiguous:
+            return None
+        if imported is not import_missing:
+            path = imported
+        return resolve_item(declarations, path, owner, [])
+
+    unread_traits = {}
+
+    def unread_trait(trait):
+        """Why the census cannot read every impl of ``trait``, or ``None``.
+
+        An impl outside the wire crates names a type the declaration index
+        does not hold, and a call naming the trait to a macro that spells
+        ``impl`` may expand to an impl no source states.
+        """
+        identity = (trait.path, trait.start)
+        if identity in unread_traits:
+            return unread_traits[identity]
+        reason = None
+        for path in trait_impl_source_files():
+            if trait.name not in read_source(path):
+                continue
+            outside = next(
+                (
+                    implementation for implementation in collect_trait_impls(path)
+                    if implementation.trait.rsplit("::", 1)[-1] == trait.name
+                ),
+                None,
+            )
+            if outside is not None:
+                reason = (
+                    f"impl {outside.trait} for {outside.self_type} at "
+                    f"{outside.path.as_posix()}:{outside.line} is outside the "
+                    "wire crates, so its associated types are unread"
+                )
+                break
+        for path in () if reason else paths:
+            line = macro_call_naming(path, implementing, trait.name)
+            if line is not None:
+                reason = (
+                    f"the macro call at {path.as_posix()}:{line} names "
+                    f"{trait.name} and its macro spells impl, so an impl it "
+                    "expands is unread"
+                )
+                break
+        unread_traits[identity] = reason
+        return reason
+
+    def associated_type_proof(owner, parameter, trait_path, name):
+        """Prove ``parameter::name`` through every impl of its trait.
+
+        A type parameter names no reader of its own, but every type that can
+        fill it implements the trait its bound names, and each such impl
+        states the associated type. The trait is the one bound of the
+        parameter that declares ``name``; each wire-crate impl of it is read
+        and its associated type proved in the impl's own module. An impl of a
+        trait of that name outside the wire crates, a call naming the trait to
+        a macro that spells ``impl``, an impl that states no readable value,
+        and a trait with no impl leave the payload unproved.
+        """
+        label = f"{parameter}::{name}"
+        bounds = [trait_path] if trait_path else generic_bounds(owner).get(parameter, [])
+        if not bounds:
+            return False, (
+                f"generic parameter {parameter} of {owner.name} states no trait "
+                f"bound that declares {name}"
+            )
+        declaring = []
+        for bound in bounds:
+            trait = declaration_for(bound, owner, traits)
+            if trait is None:
+                base = bound.rsplit("::", 1)[-1]
+                if base in TRAITS_WITHOUT_ASSOCIATED_TYPES and base not in traits:
+                    continue
+                return False, (
+                    f"the bound {bound} of {parameter} is no workspace trait "
+                    f"the census can read, so {label} is unread"
+                )
+            declared = trait_associated_type(trait, name)
+            if declared == "declared":
+                declaring.append(trait)
+            elif declared is not None:
+                return False, declared
+        if len(declaring) != 1:
+            return False, (
+                f"{len(declaring)} bounds of {parameter} declare {name}, so "
+                f"{label} names no one trait"
+            )
+        trait = declaring[0]
+        unread = unread_trait(trait)
+        if unread is not None:
+            return False, unread
+        impls = []
+        for implementation in trait_impls.get(trait.name, ()):
+            resolved = declaration_for(implementation.trait, implementation.context, traits)
+            if resolved is None:
+                return False, (
+                    f"the trait of impl {implementation.trait} for "
+                    f"{implementation.self_type} at "
+                    f"{implementation.path.as_posix()}:{implementation.line} "
+                    "resolves to no one declaration"
+                )
+            if resolved is trait:
+                impls.append(implementation)
+        if not impls:
+            return False, f"{trait.name} has no impl in the wire crates, so {label} is unread"
+        for implementation in impls:
+            where = (
+                f"impl {trait.name} for {implementation.self_type} at "
+                f"{implementation.path.as_posix()}:{implementation.line}"
+            )
+            values = implementation.definitions.get(name)
+            if not values:
+                return False, f"{where} states no type {name}"
+            for value in values:
+                if value is None:
+                    return False, f"{where} states a type {name} the census cannot read"
+                ok, reason = payload_proof(value, implementation.context)
+                if not ok:
+                    return False, f"{where}: type {name} = {value}: {reason}"
+        return True, f"every impl of {trait.name} states a checked {name}"
+
     def generic_parameter_proof(owner, parameter, position, default):
         """Prove every type the workspace can put in one generic parameter.
 
@@ -2655,7 +3165,17 @@ def main():
                 continue
             visited.add(identity)
             candidates = [] if fallback is None else [(fallback, current)]
-            candidates.extend(generic_arguments(current.name, at, order))
+            arguments, unresolved = generic_arguments(
+                current, at, order,
+                lambda spelled, source: declaration_for(spelled, source, index),
+            )
+            if unresolved:
+                spelled, source = unresolved[0]
+                return False, (
+                    f"{route}the use of {spelled} in {source.name} resolves to "
+                    f"no one declaration, so its argument for {name} is unread"
+                )
+            candidates.extend(arguments)
             if not candidates:
                 return False, (
                     f"{route}generic parameter {name} has no default and no "
@@ -2716,6 +3236,17 @@ def main():
             for key, _, conditional in serde_options(field)
         ):
             return False, "conditional deserialize_with leaves the reader unproved"
+
+        associated = associated_type_path(field)
+        if associated is not None and associated[0] in {
+            parameter for parameter, _ in generic_parameters(owner)
+        }:
+            if custom:
+                return False, (
+                    "a custom deserializer on an associated-type payload is "
+                    "not a source proof"
+                )
+            return associated_type_proof(owner, *associated)
 
         path, args = type_parts(field)
         if path is None:

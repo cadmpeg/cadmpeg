@@ -5,6 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use declarations::{module_scope, Declaration, Declarations};
+
+mod declarations;
 mod reader_routes;
 
 /// Every hand-written `Deserialize` in the three wire crates, with the reader
@@ -640,6 +643,7 @@ fn every_hand_written_deserialize_refuses_a_null_spelling() {
         .and_then(Path::parent)
         .expect("the repository root sits two levels above the crate manifest")
         .to_path_buf();
+    let declarations = Declarations::read(&root);
     let mut disagreements = Vec::new();
     for (path, name, _class) in HAND_IMPLS {
         if name.starts_with('$') {
@@ -648,7 +652,14 @@ fn every_hand_written_deserialize_refuses_a_null_spelling() {
         let text = std::fs::read_to_string(root.join(path)).expect("read source");
         let parsed = syn::parse_file(&text).expect("every source file in the wire crates parses");
         let mut skipping = Vec::new();
-        declared_optional_fields(&parsed.items, name, &mut skipping);
+        declared_optional_fields(
+            &parsed.items,
+            path,
+            &module_scope(path),
+            name,
+            &declarations,
+            &mut skipping,
+        );
         let mut listed: Vec<String> = HAND_IMPL_NULL_REFUSALS
             .iter()
             .filter(|(listed_path, listed_name, _, _)| listed_path == path && listed_name == name)
@@ -684,36 +695,54 @@ fn every_hand_written_deserialize_refuses_a_null_spelling() {
     );
 }
 
-/// Records the name of every `Option` field of the type named `name`,
-/// recursing into inline modules.
-fn declared_optional_fields(items: &[syn::Item], name: &str, found: &mut Vec<String>) {
-    fn record(fields: &syn::Fields, found: &mut Vec<String>) {
+/// Records the name of every `Option` field of the type named `name` in
+/// module `scope` of `relative`, recursing into inline modules. A field whose
+/// optionality the census cannot read is recorded with the reason, which no
+/// listed guard site matches.
+fn declared_optional_fields(
+    items: &[syn::Item],
+    relative: &str,
+    scope: &[String],
+    name: &str,
+    declarations: &Declarations,
+    found: &mut Vec<String>,
+) {
+    let record = |fields: &syn::Fields, generics: &syn::Generics, found: &mut Vec<String>| {
         for field in fields {
-            if !is_option_type(&field.ty) {
-                continue;
+            let field_name = field
+                .ident
+                .as_ref()
+                .map_or_else(|| "<tuple field>".to_owned(), syn::Ident::to_string);
+            match declarations.is_optional(relative, scope, generics, &field.ty) {
+                Ok(true) => found.push(field_name),
+                Ok(false) => {}
+                Err(reason) => found.push(format!("{field_name} ({reason})")),
             }
-            found.push(
-                field
-                    .ident
-                    .as_ref()
-                    .map_or_else(|| "<tuple field>".to_owned(), syn::Ident::to_string),
-            );
         }
-    }
+    };
 
     for item in items {
         match item {
             syn::Item::Struct(declaration) if declaration.ident == name => {
-                record(&declaration.fields, found);
+                record(&declaration.fields, &declaration.generics, found);
             }
             syn::Item::Enum(declaration) if declaration.ident == name => {
                 for variant in &declaration.variants {
-                    record(&variant.fields, found);
+                    record(&variant.fields, &declaration.generics, found);
                 }
             }
             syn::Item::Mod(module) => {
                 if let Some((_, nested)) = &module.content {
-                    declared_optional_fields(nested, name, found);
+                    let mut nested_scope = scope.to_owned();
+                    nested_scope.push(module.ident.to_string());
+                    declared_optional_fields(
+                        nested,
+                        relative,
+                        &nested_scope,
+                        name,
+                        declarations,
+                        found,
+                    );
                 }
             }
             _ => {}
@@ -755,7 +784,12 @@ fn every_read_optional_field_refuses_a_null_spelling() {
         !null_refusing_helpers().is_empty(),
         "no source defines a named_optional_field! shim, so no key could refuse null"
     );
-    let (readable, offenders) = optional_absence_census();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the repository root sits two levels above the crate manifest")
+        .to_path_buf();
+    let (readable, offenders) = optional_absence_census(&root);
     assert!(
         readable > 0,
         "the optional-field census read no types that derive or implement Deserialize"
@@ -863,74 +897,128 @@ enum WriteSpelling {
 /// A read-only wire whose owner states `try_from` or `from` is paired by that
 /// attribute, and a type that derives `Serialize` writes its own keys. What is
 /// left is a wire a hand-written reader names in code, and an owner whose
-/// `Serialize` is hand-written. Each pair here was read at both declarations.
-const WRITING_DECLARATIONS: &[(&str, &str)] = &[
+/// `Serialize` is hand-written. Each pair here was read at both declarations,
+/// as (file, reading type, writing type); the writing type is resolved from
+/// the reading type's own module.
+const WRITING_DECLARATIONS: &[(&str, &str, &str)] = &[
     // `Feature` writes through `FeatureWriteWire` on both routes: the
     // standalone `Serialize` impl builds one, and the model route builds a
     // `Vec<FeatureWriteWire>` beside the `Vec<FeatureRowWire>` it reads.
-    ("FeatureReadWire", "FeatureWriteWire"),
-    ("FeatureRowWire", "FeatureWriteWire"),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "FeatureReadWire",
+        "FeatureWriteWire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "FeatureRowWire",
+        "FeatureWriteWire",
+    ),
     // `CadIr` writes through `CadIrWriteWire` in its hand-written `Serialize`.
-    ("CadIrReadWire", "CadIrWriteWire"),
+    (
+        "crates/cadmpeg-ir/src/document.rs",
+        "CadIrReadWire",
+        "CadIrWriteWire",
+    ),
     // Each of these is read by a hand-written `Deserialize` impl for the type
     // named beside it, which derives `Serialize` and writes the keys.
-    ("HoleShapeWire", "HoleShape"),
-    ("NurbsSurfaceWire", "NurbsSurface"),
-    ("SweepCircularRegionWire", "SweepCircularRegion"),
-    ("TreeChildrenWire", "TreeChildren"),
+    (
+        "crates/cadmpeg-ir/src/features/holes.rs",
+        "HoleShapeWire",
+        "HoleShape",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry/nurbs.rs",
+        "NurbsSurfaceWire",
+        "NurbsSurface",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "SweepCircularRegionWire",
+        "SweepCircularRegion",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "TreeChildrenWire",
+        "TreeChildren",
+    ),
     // `TSplineSubtransform` writes its `Inline` form by delegating to
     // `InlineTSplineSubtransform`, which derives `Serialize`.
-    ("TSplineSubtransformWire", "InlineTSplineSubtransform"),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "TSplineSubtransformWire",
+        "InlineTSplineSubtransform",
+    ),
 ];
 
 /// Keys whose writing declaration is hand-written code, with the spelling read
-/// at that code.
+/// at that code, as (file, reading type, key, spelling).
 ///
 /// `WireMembers` serializes a map by hand: it writes `free_vertex` only for
 /// the `Vertex` variant, so the key is left out for every other state.
-const HAND_WRITTEN_KEYS: &[(&str, &str, WriteSpelling)] =
-    &[("WireMembersWire", "free_vertex", WriteSpelling::Omitted)];
+const HAND_WRITTEN_KEYS: &[(&str, &str, &str, WriteSpelling)] = &[(
+    "crates/cadmpeg-asm/src/brep/records.rs",
+    "WireMembersWire",
+    "free_vertex",
+    WriteSpelling::Omitted,
+)];
 
-/// Every declaration of the three wire crates, indexed for writer resolution.
-#[derive(Default)]
+/// Every declaration of the three wire crates, indexed for writer resolution
+/// by its module path: two modules' same-named types are two declarations.
 struct WireIndex {
-    /// Per type name that derives `Serialize`, the `None` spelling of each
+    declarations: Declarations,
+    /// Per declaration that derives `Serialize`, the `None` spelling of each
     /// named field. A key one type writes two ways is absent here and present
     /// in `split_keys`.
-    written_keys: BTreeMap<String, BTreeMap<String, WriteSpelling>>,
+    written_keys: BTreeMap<Declaration, BTreeMap<String, WriteSpelling>>,
     /// The `(type, key)` pairs one declaration writes two ways.
-    split_keys: BTreeSet<(String, String)>,
-    /// Type names whose declaration derives `Serialize`.
-    writes_own_keys: BTreeSet<String>,
-    /// Type name -> the type its container `into` names.
-    writes_through: BTreeMap<String, String>,
-    /// Wire type name -> every type whose container `try_from` or `from`
+    split_keys: BTreeSet<(Declaration, String)>,
+    /// The `(type, key)` pairs whose optionality the census cannot read,
+    /// with the reason.
+    unread_keys: BTreeMap<(Declaration, String), String>,
+    /// Declarations that derive `Serialize`.
+    writes_own_keys: BTreeSet<Declaration>,
+    /// Declaration -> the type its container `into` or `remote` names, or
+    /// why that name resolves to no one declaration.
+    writes_through: BTreeMap<Declaration, Result<Declaration, String>>,
+    /// Wire declaration -> every type whose container `try_from` or `from`
     /// routes a read through it.
-    read_routers: BTreeMap<String, BTreeSet<String>>,
-    /// Type names declared twice in the three crates, which makes a name no
+    read_routers: BTreeMap<Declaration, BTreeSet<Declaration>>,
+    /// Per last path segment, each type whose `try_from` or `from` names a
+    /// wire that resolves to no one declaration: any wire of that name may be
+    /// the one it reads through.
+    unresolved_routes: BTreeMap<String, BTreeSet<Declaration>>,
+    /// Declarations stated twice in one module, which makes their path no
     /// address.
-    twice_declared: BTreeSet<String>,
+    twice_declared: BTreeSet<Declaration>,
 }
 
 impl WireIndex {
     /// The writing declaration for the type `reader`, or why there is none.
-    fn writing_declaration(&self, reader: &str) -> Result<String, String> {
+    fn writing_declaration(&self, reader: &Declaration) -> Result<Declaration, String> {
         if self.twice_declared.contains(reader) {
             return Err(format!(
-                "{reader} is declared twice in the wire crates, so the name addresses no declaration"
+                "{reader} is declared twice in one module, so its path addresses no declaration"
             ));
         }
-        if let Some((_, writer)) = WRITING_DECLARATIONS
-            .iter()
-            .find(|(named, _)| *named == reader)
-        {
-            return Ok((*writer).to_owned());
+        if let Some(writer) = self.listed_writer(reader) {
+            return writer;
         }
         if let Some(target) = self.writes_through.get(reader) {
-            return Ok(target.clone());
+            return target.clone();
         }
         if self.writes_own_keys.contains(reader) {
-            return Ok(reader.to_owned());
+            return Ok(reader.clone());
+        }
+        if let Some(owner) = self
+            .unresolved_routes
+            .get(&reader.name)
+            .and_then(|owners| owners.iter().next())
+        {
+            return Err(format!(
+                "{reader} may be read for {owner}, whose conversion names a {} that resolves to no one declaration",
+                reader.name
+            ));
         }
         let mut owners = self.read_routers.get(reader).into_iter().flatten();
         let (Some(owner), None) = (owners.next(), owners.next()) else {
@@ -938,14 +1026,11 @@ impl WireIndex {
                 "{reader} writes no keys of its own and no single container attribute routes a read through it"
             ));
         };
-        if let Some((_, writer)) = WRITING_DECLARATIONS
-            .iter()
-            .find(|(named, _)| named == owner)
-        {
-            return Ok((*writer).to_owned());
+        if let Some(writer) = self.listed_writer(owner) {
+            return writer;
         }
         if let Some(target) = self.writes_through.get(owner) {
-            return Ok(target.clone());
+            return target.clone();
         }
         if self.writes_own_keys.contains(owner) {
             return Ok(owner.clone());
@@ -955,14 +1040,25 @@ impl WireIndex {
         ))
     }
 
+    /// The writer [`WRITING_DECLARATIONS`] states for `reader`, if listed.
+    fn listed_writer(&self, reader: &Declaration) -> Option<Result<Declaration, String>> {
+        WRITING_DECLARATIONS
+            .iter()
+            .find(|(file, named, _)| *file == reader.path && *named == reader.name)
+            .map(|(_, _, writer)| self.declarations.resolve_named(reader, writer))
+    }
+
     /// How the writing declaration `writer` spells `None` at `key`.
-    fn spelling(&self, writer: &str, key: &str) -> Result<WriteSpelling, String> {
-        if self
-            .split_keys
-            .contains(&(writer.to_owned(), key.to_owned()))
-        {
+    fn spelling(&self, writer: &Declaration, key: &str) -> Result<WriteSpelling, String> {
+        let pair = (writer.clone(), key.to_owned());
+        if self.split_keys.contains(&pair) {
             return Err(format!(
                 "the writing declaration {writer} states {key} twice with different skips"
+            ));
+        }
+        if let Some(reason) = self.unread_keys.get(&pair) {
+            return Err(format!(
+                "the writing declaration {writer} at {key}: {reason}"
             ));
         }
         self.written_keys
@@ -973,14 +1069,20 @@ impl WireIndex {
     }
 }
 
-/// Reads every declaration of the three wire crates into a [`WireIndex`].
-fn wire_index() -> WireIndex {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the repository root sits two levels above the crate manifest")
-        .to_path_buf();
-    let mut index = WireIndex::default();
+/// Reads every declaration of the three wire crates under `root` into a
+/// [`WireIndex`].
+fn wire_index(root: &Path) -> WireIndex {
+    let mut index = WireIndex {
+        declarations: Declarations::read(root),
+        written_keys: BTreeMap::new(),
+        split_keys: BTreeSet::new(),
+        unread_keys: BTreeMap::new(),
+        writes_own_keys: BTreeSet::new(),
+        writes_through: BTreeMap::new(),
+        read_routers: BTreeMap::new(),
+        unresolved_routes: BTreeMap::new(),
+        twice_declared: BTreeSet::new(),
+    };
     let mut seen = BTreeSet::new();
     for source in [
         "crates/cadmpeg-ir/src",
@@ -993,7 +1095,7 @@ fn wire_index() -> WireIndex {
         files.sort();
         for file in files {
             let relative = file
-                .strip_prefix(&root)
+                .strip_prefix(root)
                 .expect("a collected source sits under the repository root")
                 .to_string_lossy()
                 .replace('\\', "/");
@@ -1004,24 +1106,38 @@ fn wire_index() -> WireIndex {
             let parsed = syn::parse_file(&text)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
-            index_declarations(&parsed.items, &mut seen, &mut index);
+            index_declarations(
+                &parsed.items,
+                &relative,
+                &module_scope(&relative),
+                &mut seen,
+                &mut index,
+            );
         }
     }
     index
 }
 
 /// Records every struct and enum among `items`, recursing into inline modules.
-fn index_declarations(items: &[syn::Item], seen: &mut BTreeSet<String>, index: &mut WireIndex) {
+fn index_declarations(
+    items: &[syn::Item],
+    relative: &str,
+    scope: &[String],
+    seen: &mut BTreeSet<Declaration>,
+    index: &mut WireIndex,
+) {
     for item in items {
-        let (name, attrs, fields) = match item {
+        let (name, attrs, generics, fields) = match item {
             syn::Item::Struct(declaration) => (
                 declaration.ident.to_string(),
                 &declaration.attrs,
+                &declaration.generics,
                 vec![&declaration.fields],
             ),
             syn::Item::Enum(declaration) => (
                 declaration.ident.to_string(),
                 &declaration.attrs,
+                &declaration.generics,
                 declaration
                     .variants
                     .iter()
@@ -1033,7 +1149,9 @@ fn index_declarations(items: &[syn::Item], seen: &mut BTreeSet<String>, index: &
                     continue;
                 }
                 if let Some((_, nested)) = &module.content {
-                    index_declarations(nested, seen, index);
+                    let mut nested_scope = scope.to_owned();
+                    nested_scope.push(module.ident.to_string());
+                    index_declarations(nested, relative, &nested_scope, seen, index);
                 }
                 continue;
             }
@@ -1043,39 +1161,68 @@ fn index_declarations(items: &[syn::Item], seen: &mut BTreeSet<String>, index: &
         if !writes && !attrs.iter().any(derive_list_names_deserialize) {
             continue;
         }
-        if !seen.insert(name.clone()) {
-            index.twice_declared.insert(name.clone());
+        let declared = Declaration {
+            path: relative.to_owned(),
+            scope: scope.to_owned(),
+            name,
+        };
+        if !seen.insert(declared.clone()) {
+            index.twice_declared.insert(declared.clone());
         }
         for key in ["into", "remote"] {
             if let Some(target) = container_conversion(attrs, key) {
-                index.writes_through.insert(name.clone(), target);
+                let target = index.declarations.resolve_named(&declared, &target);
+                index.writes_through.insert(declared.clone(), target);
             }
         }
         for attribute in attrs {
             for key in ["try_from", "from"] {
-                if let Some(wire) = container_conversion(std::slice::from_ref(attribute), key) {
-                    index
-                        .read_routers
-                        .entry(wire)
-                        .or_default()
-                        .insert(name.clone());
+                let Some(wire) = container_conversion(std::slice::from_ref(attribute), key) else {
+                    continue;
+                };
+                match index.declarations.resolve_named(&declared, &wire) {
+                    Ok(wire) => {
+                        index
+                            .read_routers
+                            .entry(wire)
+                            .or_default()
+                            .insert(declared.clone());
+                    }
+                    Err(_) => {
+                        let last = wire.rsplit("::").next().unwrap_or(&wire);
+                        let last = last.split('<').next().unwrap_or(last).trim().to_owned();
+                        index
+                            .unresolved_routes
+                            .entry(last)
+                            .or_default()
+                            .insert(declared.clone());
+                    }
                 }
             }
         }
         if !writes {
             continue;
         }
-        index.writes_own_keys.insert(name.clone());
+        index.writes_own_keys.insert(declared.clone());
         for group in fields {
             for field in group {
                 let Some(key) = field.ident.as_ref().map(syn::Ident::to_string) else {
                     continue;
                 };
-                let spelling = write_spelling(field);
-                let keys = index.written_keys.entry(name.clone()).or_default();
+                let optional = index
+                    .declarations
+                    .is_optional(relative, scope, generics, &field.ty);
+                let spelling = match optional {
+                    Ok(optional) => write_spelling(field, optional),
+                    Err(reason) => {
+                        index.unread_keys.insert((declared.clone(), key), reason);
+                        continue;
+                    }
+                };
+                let keys = index.written_keys.entry(declared.clone()).or_default();
                 match keys.insert(key.clone(), spelling) {
                     Some(earlier) if earlier != spelling => {
-                        index.split_keys.insert((name.clone(), key));
+                        index.split_keys.insert((declared.clone(), key));
                     }
                     Some(_) | None => {}
                 }
@@ -1128,14 +1275,10 @@ fn derive_list_names_serialize(attribute: &syn::Attribute) -> bool {
 }
 
 /// The count of readable types visited, and every `file:line` where one of
-/// their fields skips on `None` without a `deserialize_with`.
-fn optional_absence_census() -> (usize, Vec<String>) {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the repository root sits two levels above the crate manifest")
-        .to_path_buf();
-    let index = wire_index();
+/// their fields skips on `None` without a `deserialize_with`, in the wire
+/// crates under `root`.
+fn optional_absence_census(root: &Path) -> (usize, Vec<String>) {
+    let index = wire_index(root);
     let mut readable = 0_usize;
     let mut offenders = Vec::new();
     for source in [
@@ -1149,7 +1292,7 @@ fn optional_absence_census() -> (usize, Vec<String>) {
         files.sort();
         for file in files {
             let relative = file
-                .strip_prefix(&root)
+                .strip_prefix(root)
                 .expect("a collected source sits under the repository root")
                 .to_string_lossy()
                 .replace('\\', "/");
@@ -1163,6 +1306,7 @@ fn optional_absence_census() -> (usize, Vec<String>) {
             collect_optional_fields(
                 &parsed.items,
                 &relative,
+                &module_scope(&relative),
                 &index,
                 &mut readable,
                 &mut offenders,
@@ -1177,10 +1321,16 @@ fn optional_absence_census() -> (usize, Vec<String>) {
 fn collect_optional_fields(
     items: &[syn::Item],
     relative: &str,
+    scope: &[String],
     index: &WireIndex,
     readable: &mut usize,
     offenders: &mut Vec<String>,
 ) {
+    let reader = |name: &syn::Ident| Declaration {
+        path: relative.to_owned(),
+        scope: scope.to_owned(),
+        name: name.to_string(),
+    };
     for item in items {
         match item {
             syn::Item::Struct(declaration) => {
@@ -1188,17 +1338,27 @@ fn collect_optional_fields(
                     continue;
                 }
                 *readable += 1;
-                let reader = declaration.ident.to_string();
-                record_unguarded_fields(&declaration.fields, relative, &reader, index, offenders);
+                record_unguarded_fields(
+                    &declaration.fields,
+                    &declaration.generics,
+                    &reader(&declaration.ident),
+                    index,
+                    offenders,
+                );
             }
             syn::Item::Enum(declaration) => {
                 if !reads_its_own_keys(&declaration.attrs) {
                     continue;
                 }
                 *readable += 1;
-                let reader = declaration.ident.to_string();
                 for variant in &declaration.variants {
-                    record_unguarded_fields(&variant.fields, relative, &reader, index, offenders);
+                    record_unguarded_fields(
+                        &variant.fields,
+                        &declaration.generics,
+                        &reader(&declaration.ident),
+                        index,
+                        offenders,
+                    );
                 }
             }
             syn::Item::Mod(module) => {
@@ -1206,7 +1366,16 @@ fn collect_optional_fields(
                     continue;
                 }
                 if let Some((_, nested)) = &module.content {
-                    collect_optional_fields(nested, relative, index, readable, offenders);
+                    let mut nested_scope = scope.to_owned();
+                    nested_scope.push(module.ident.to_string());
+                    collect_optional_fields(
+                        nested,
+                        relative,
+                        &nested_scope,
+                        index,
+                        readable,
+                        offenders,
+                    );
                 }
             }
             _ => {}
@@ -1315,18 +1484,18 @@ const NULL_STATING_HELPERS: &[&str] = &["cadmpeg_core::absent_key::nullable"];
 /// document reads gives `null` a second spelling of absence unless a helper
 /// refuses it, whatever the field's `skip_serializing_if` says: the writing
 /// half and the reading half are separate declarations, and only the reading
-/// half decides what `null` becomes.
+/// half decides what `null` becomes. A field typed by a type parameter's
+/// associated type holds an `Option` when any impl's type is one, and one
+/// whose impls the census cannot read is an offender.
 fn record_unguarded_fields(
     fields: &syn::Fields,
-    relative: &str,
-    reader: &str,
+    generics: &syn::Generics,
+    reader: &Declaration,
     index: &WireIndex,
     offenders: &mut Vec<String>,
 ) {
+    let relative = reader.path.as_str();
     for field in fields {
-        if !is_option_type(&field.ty) {
-            continue;
-        }
         let span = field
             .ident
             .as_ref()
@@ -1335,7 +1504,18 @@ fn record_unguarded_fields(
             .ident
             .as_ref()
             .map_or_else(|| "<tuple field>".to_owned(), syn::Ident::to_string);
-        let at = format!("{relative}:{} {reader}.{name}", span.start().line);
+        let at = format!("{relative}:{} {}.{name}", span.start().line, reader.name);
+        match index
+            .declarations
+            .is_optional(relative, &reader.scope, generics, &field.ty)
+        {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(reason) => {
+                offenders.push(format!("{at} {reason}"));
+                continue;
+            }
+        }
         let helper = absence_spelling(field);
         let read = match helper.as_deref() {
             Some(helper) if refuses_null(relative, helper) => ReadSpelling::Present,
@@ -1359,10 +1539,9 @@ fn record_unguarded_fields(
             )),
             (ReadSpelling::Present, true) | (ReadSpelling::Nullable, false) => {}
         }
-        if let Some((_, _, written)) = HAND_WRITTEN_KEYS
-            .iter()
-            .find(|(named, key, _)| *named == reader && *key == name)
-        {
+        if let Some((_, _, _, written)) = HAND_WRITTEN_KEYS.iter().find(|(file, named, key, _)| {
+            *file == reader.path && *named == reader.name && *key == name
+        }) {
             record_spelling_match(&at, read, *written, "the hand-written writer", offenders);
             continue;
         }
@@ -1373,11 +1552,11 @@ fn record_unguarded_fields(
                 continue;
             }
         };
-        let written = if writer == reader {
+        let written = if writer == *reader {
             // The reading and writing declarations are one declaration, so the
             // field states both halves and no key lookup is needed. A field
             // with no name states no key at all, and is only reachable here.
-            write_spelling(field)
+            write_spelling(field, true)
         } else {
             match index.spelling(&writer, &name) {
                 Ok(written) => written,
@@ -1387,7 +1566,7 @@ fn record_unguarded_fields(
                 }
             }
         };
-        record_spelling_match(&at, read, written, &writer, offenders);
+        record_spelling_match(&at, read, written, &writer.to_string(), offenders);
     }
 }
 
@@ -1423,11 +1602,12 @@ enum ReadSpelling {
     Nullable,
 }
 
-/// How the writing declaration spells a `None` at this field.
-fn write_spelling(field: &syn::Field) -> WriteSpelling {
+/// How the writing declaration spells a `None` at this field, which holds an
+/// `Option` when `optional`.
+fn write_spelling(field: &syn::Field, optional: bool) -> WriteSpelling {
     if states_skip(field) {
         WriteSpelling::Omitted
-    } else if is_option_type(&field.ty) {
+    } else if optional {
         WriteSpelling::Null
     } else {
         WriteSpelling::Always
