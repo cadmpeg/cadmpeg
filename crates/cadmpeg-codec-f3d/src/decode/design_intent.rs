@@ -1103,6 +1103,21 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &model.spatial_sketch_entities,
         );
     losses.extend(
+        crate::design::profile_select::face_profile_sets::bind_extrude_face_profile_sets_with(
+            &mut model.features,
+            &crate::design::profile_select::face_profile_sets::FaceProfileSetResolution {
+                scopes: &design.design_parameter_scopes,
+                groups: &design.design_construction_operand_groups,
+                operands: &design.design_face_operands,
+                histories: &design.asm_histories,
+                scope_histories: &scope_histories,
+                linear_tolerance: geometry.tolerances.linear.get(),
+                ctx,
+            },
+            true,
+        )?,
+    );
+    losses.extend(
         crate::design::profile_select::bind_extrude_profile_selections(
             &mut model.features,
             &design.design_parameter_scopes,
@@ -1135,7 +1150,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         )?,
     );
     losses.extend(
-        crate::design::profile_select::face_profile_sets::bind_extrude_face_profile_sets(
+        crate::design::profile_select::face_profile_sets::bind_extrude_face_profile_sets_with(
             &mut model.features,
             &crate::design::profile_select::face_profile_sets::FaceProfileSetResolution {
                 scopes: &design.design_parameter_scopes,
@@ -1146,9 +1161,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                 linear_tolerance: geometry.tolerances.linear.get(),
                 ctx,
             },
+            false,
         )?,
-    );
-    losses.extend(profile_work.losses());
+    );    losses.extend(profile_work.losses());
     let unprofiled = crate::design::profile_select::unprofiled_region_losses(
         ctx,
         unprofiled,

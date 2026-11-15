@@ -177,6 +177,17 @@ pub(crate) fn bind_extrude_face_profile_sets(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &FaceProfileSetResolution<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
+    bind_extrude_face_profile_sets_with(features, resolution, false)
+}
+
+/// Bind face profile sets. With `defer_closed_edge`, a profile whose recipe
+/// has a closed-edge node stays native, so a later pass can bind it after
+/// the sketch-selection route.
+pub(crate) fn bind_extrude_face_profile_sets_with(
+    features: &mut [cadmpeg_ir::features::Feature],
+    resolution: &FaceProfileSetResolution<'_>,
+    defer_closed_edge: bool,
+) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     for feature in features {
         let Some(scope) = feature
@@ -188,7 +199,7 @@ pub(crate) fn bind_extrude_face_profile_sets(
         };
         let mut outcome = Ok(Vec::new());
         feature.evaluation.edit(|definition, _| {
-            outcome = bind_one(definition, scope, resolution, SEARCH_LIMITS);
+            outcome = bind_one(definition, scope, resolution, SEARCH_LIMITS, defer_closed_edge);
         });
         losses.extend(outcome?);
     }
@@ -200,6 +211,7 @@ fn bind_one(
     scope: &DesignParameterScope,
     resolution: &FaceProfileSetResolution<'_>,
     limits: SearchLimits,
+    defer_closed_edge: bool,
 ) -> Result<Vec<LossNote>, CodecError> {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
@@ -250,6 +262,9 @@ fn bind_one(
         let Some(operand) = resolution.operands.get(index) else {
             return Ok(Vec::new());
         };
+        if defer_closed_edge && operand.has_closed_edge_node() {
+            return Ok(Vec::new());
+        }
         match (
             operand.resolved_face_slots.as_slice(),
             &operand.resolved_active_face,
