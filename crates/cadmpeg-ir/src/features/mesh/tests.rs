@@ -470,3 +470,94 @@ fn conversion_schema_exposes_sources_on_the_tagged_operation() {
     assert!(conversion["properties"]["method"].is_object());
     assert_eq!(conversion["additionalProperties"], false);
 }
+
+#[test]
+fn plane_cut_round_trips_independent_components_and_rewrites_sources() {
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+    for cut in [
+        serde_json::json!({}),
+        serde_json::json!({"origin":{"x":2.0,"y":3.0,"z":5.0}}),
+        serde_json::json!({"normal":{"x":0.0,"y":0.0,"z":2.0},"mode":"split_faces"}),
+        serde_json::json!({"mode":"trim","fill":"no_fill","retained_side":"negative"}),
+        serde_json::json!({"mode":"split_bodies","fill":"uniform","retained_side":"positive"}),
+    ] {
+        for source in [
+            serde_json::json!({"feature":"test:model:feature#cut"}),
+            serde_json::json!(["test:mesh:tessellation#source"]),
+            serde_json::json!({"native":"scope","members":["9","7"]}),
+        ] {
+            let wire = serde_json::json!({"definition":"mesh_modify","source":source,"modification":{"kind":"plane_cut","cut":cut}});
+            let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
+            crate::test_support::with_service_decode_context(|ctx| {
+                let mut identities =
+                    IdentityMap::new(|source: &str| Ok(source.replace("test:", "test:child/")));
+                let cloned = operation.rewrite_identities(ctx, &mut identities)?;
+                let cloned = serde_json::to_value(cloned).unwrap();
+                assert_eq!(cloned["modification"], wire["modification"]);
+                assert_eq!(
+                    cloned["source"],
+                    if source.get("feature").is_some() {
+                        serde_json::json!({"feature":"test:child/model:feature#cut"})
+                    } else if source.is_array() {
+                        serde_json::json!(["test:child/mesh:tessellation#source"])
+                    } else {
+                        source.clone()
+                    }
+                );
+                Ok(())
+            })
+            .unwrap();
+        }
+    }
+    assert_eq!(
+        serde_json::to_value(super::MeshPlaneCut::default()).unwrap(),
+        serde_json::json!({})
+    );
+}
+
+#[test]
+fn plane_cut_rejects_null_unknown_keys_and_invalid_checked_geometry() {
+    for key in ["origin", "normal", "mode", "fill", "retained_side"] {
+        let mut wire = serde_json::json!({});
+        wire[key] = serde_json::Value::Null;
+        let error = serde_json::from_value::<super::MeshPlaneCut>(wire).unwrap_err();
+        assert!(error.to_string().contains(key));
+    }
+    for wire in [
+        serde_json::json!({"normal":{"x":0,"y":0,"z":0}}),
+        serde_json::json!({"normal":{"x":1e308,"y":0,"z":0}}),
+        serde_json::json!({"mode":"other"}),
+        serde_json::json!({"fill":"other"}),
+        serde_json::json!({"retained_side":"other"}),
+        serde_json::json!({"u_axis":{"x":1,"y":0,"z":0}}),
+    ] {
+        assert!(serde_json::from_value::<super::MeshPlaneCut>(wire).is_err());
+    }
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn plane_cut_schema_matches_omitted_optional_values_and_control_vocabulary() {
+    let schema = serde_json::to_value(schemars::schema_for!(super::MeshPlaneCut)).unwrap();
+    for key in ["origin", "normal", "mode", "fill", "retained_side"] {
+        assert!(schema["properties"][key].is_object());
+        assert!(!schema["properties"][key].to_string().contains("null"));
+        assert!(!schema["required"]
+            .as_array()
+            .is_some_and(|required| required.contains(&serde_json::json!(key))));
+    }
+    assert_eq!(schema["additionalProperties"], false);
+    for value in [
+        "trim",
+        "split_bodies",
+        "split_faces",
+        "no_fill",
+        "minimal",
+        "uniform",
+        "positive",
+        "negative",
+    ] {
+        assert!(schema.to_string().contains(value));
+    }
+}
