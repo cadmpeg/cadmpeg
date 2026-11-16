@@ -863,7 +863,7 @@ fn unreadable_child_map_reference_keeps_independent_geometry() {
         &DecodeOptions::default(),
     );
     let recovered = result.expect("independent BRep geometry survives invalid naming map");
-    assert_eq!(recovered.ir().model.faces.len(), 48);
+    assert_eq!(recovered.ir().geometry.faces.len(), 48);
     assert!(recovered
         .report()
         .losses

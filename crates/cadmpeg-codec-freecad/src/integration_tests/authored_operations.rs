@@ -47,6 +47,7 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
     let feature = |name: &str| {
         model
             .features
@@ -720,23 +721,19 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         let [body] = feature(base).evaluation.outputs().as_slice() else {
             panic!("{base}: one body")
         };
-        let body = model
+        let body = geometry
             .bodies
             .iter()
             .find(|candidate| &candidate.id == body)
             .unwrap();
-        let in_body = body
-            .regions
-            .iter()
-            .filter_map(|id| model.regions.iter().find(|item| &item.id == id))
+        let in_body = geometry
+            .body_regions(&body.id)
             .flat_map(|region| &region.shells)
-            .filter_map(|id| model.shells.iter().find(|item| &item.id == id))
-            .flat_map(cadmpeg_ir::topology::Shell::faces)
-            .filter_map(|id| model.faces.iter().find(|item| &item.id == id))
+            .flat_map(|id| geometry.shell_faces(id))
             .flat_map(|face| face.loops.iter())
-            .filter_map(|id| model.loops.iter().find(|item| &item.id == id))
+            .filter_map(|id| geometry.loops.iter().find(|item| &item.id == id))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
-            .filter_map(|id| model.coedges.iter().find(|item| &item.id == id))
+            .filter_map(|id| geometry.coedges.iter().find(|item| &item.id == id))
             .any(|coedge| &coedge.edge == edge);
         assert!(in_body, "{name}: selected edge belongs to {base}");
     }

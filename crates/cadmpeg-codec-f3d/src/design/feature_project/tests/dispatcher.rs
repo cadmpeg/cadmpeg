@@ -1307,6 +1307,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::default(),
+        native_ref: None,
     }];
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
@@ -1450,6 +1451,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
             source_object: None,
             cage: cadmpeg_ir::subd::SubdCage::default(),
+            native_ref: None,
         }];
 
         crate::test_support::zip_test::with_scan(&archive, |scan| {

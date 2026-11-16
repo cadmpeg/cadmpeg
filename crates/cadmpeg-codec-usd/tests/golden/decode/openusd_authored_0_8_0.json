@@ -1,79 +1,31 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "usd:stage:appearance#/Plant/Looks/Steel",
-          "channels": {},
-          "id": "usd:stage:appearance-binding#/Plant/Frame/Tube",
-          "source_entity_id": "/Plant/Looks/Steel",
-          "target": {
-            "kind": "tessellation",
-            "value": "usd:stage:tessellation#/Plant/Frame/Tube"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.6499999761581421,
-            "g": 0.6200000047683716,
-            "r": 0.6000000238418579
-          },
-          "id": "usd:stage:appearance#/Plant/Looks/Steel",
-          "name": "Steel",
-          "properties": {
-            "diffuseColor.b": 0.6499999761581421,
-            "diffuseColor.g": 0.6200000047683716,
-            "diffuseColor.r": 0.6000000238418579,
-            "metallic": 1.0,
-            "roughness": 0.30000001192092896
-          },
-          "schema": "UsdPreviewSurface",
-          "textures": []
-        }
-      ],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/Plant/Frame/Rail",
           "kind": "wire",
-          "name": "Rail",
-          "regions": [
-            "usd:stage:region#/Plant/Frame/Rail"
-          ]
+          "name": "Rail"
         },
         {
           "id": "usd:stage:body#/Plant/Frame/Tube",
           "kind": "general",
-          "name": "Tube",
-          "regions": []
+          "name": "Tube"
         },
         {
           "id": "usd:stage:body#/Plant/Roof",
           "kind": "sheet",
-          "name": "Roof",
-          "regions": [
-            "usd:stage:region#/Plant/Roof"
-          ]
+          "name": "Roof"
         },
         {
           "id": "usd:stage:body#prototype0",
           "kind": "general",
-          "name": "Leg0",
-          "regions": []
+          "name": "Leg0"
         }
       ],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -128,8 +80,6 @@
           "id": "usd:stage:curve#/Plant/Frame/Rail:0"
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -139,9 +89,11 @@
               5.0
             ]
           },
-          "end": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
-          "id": "usd:stage:edge#/Plant/Frame/Rail:0",
-          "start": "usd:stage:vertex#/Plant/Frame/Rail:0:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
+            "start": "usd:stage:vertex#/Plant/Frame/Rail:0:0"
+          },
+          "id": "usd:stage:edge#/Plant/Frame/Rail:0"
         }
       ],
       "faces": [
@@ -156,11 +108,191 @@
           "surface": "usd:stage:surface#/Plant/Roof"
         }
       ],
+      "loops": [],
+      "pcurves": [],
+      "points": [
+        {
+          "id": "usd:stage:point#/Plant/Frame/Rail:0:0",
+          "position": {
+            "x": 1000.0000000000001,
+            "y": 0.0,
+            "z": 2333.3333333333335
+          }
+        },
+        {
+          "id": "usd:stage:point#/Plant/Frame/Rail:0:1",
+          "position": {
+            "x": 3000.0000000000005,
+            "y": 0.0,
+            "z": 2333.3333333333335
+          }
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [
+        {
+          "body": "usd:stage:body#/Plant/Frame/Rail",
+          "id": "usd:stage:region#/Plant/Frame/Rail",
+          "shells": [
+            "usd:stage:shell#/Plant/Frame/Rail"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Plant/Roof",
+          "id": "usd:stage:region#/Plant/Roof",
+          "shells": [
+            "usd:stage:shell#/Plant/Roof"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "usd:stage:shell#/Plant/Frame/Rail",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Plant/Frame/Rail:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Plant/Frame/Rail"
+        },
+        {
+          "id": "usd:stage:shell#/Plant/Roof",
+          "members": [],
+          "region": "usd:stage:region#/Plant/Roof"
+        }
+      ],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 3000.0
+                    },
+                    {
+                      "x": 0.0,
+                      "y": 3000.0,
+                      "z": 3000.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 2000.0,
+                      "y": 0.0,
+                      "z": 4000.0
+                    },
+                    {
+                      "x": 2000.0,
+                      "y": 3000.0,
+                      "z": 4000.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 4000.0,
+                      "y": 0.0,
+                      "z": 3000.0
+                    },
+                    {
+                      "x": 4000.0,
+                      "y": 3000.0,
+                      "z": 3000.0
+                    }
+                  ]
+                ]
+              },
+              "u_degree": 2,
+              "u_knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "v_periodic": false
+            }
+          },
+          "id": "usd:stage:surface#/Plant/Roof"
+        }
+      ],
+      "vertices": [
+        {
+          "id": "usd:stage:vertex#/Plant/Frame/Rail:0:0",
+          "point": "usd:stage:point#/Plant/Frame/Rail:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
+          "point": "usd:stage:point#/Plant/Frame/Rail:0:1"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "usd:stage:appearance#/Plant/Looks/Steel",
+          "channels": {},
+          "id": "usd:stage:appearance-binding#/Plant/Frame/Tube",
+          "source_entity_id": "/Plant/Looks/Steel",
+          "target": {
+            "kind": "tessellation",
+            "value": "usd:stage:tessellation#/Plant/Frame/Tube"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.6499999761581421,
+            "g": 0.6200000047683716,
+            "r": 0.6000000238418579
+          },
+          "id": "usd:stage:appearance#/Plant/Looks/Steel",
+          "name": "Steel",
+          "properties": {
+            "diffuseColor.b": 0.6499999761581421,
+            "diffuseColor.g": 0.6200000047683716,
+            "diffuseColor.r": 0.6000000238418579,
+            "metallic": 1.0,
+            "roughness": 0.30000001192092896
+          },
+          "schema": "UsdPreviewSurface",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [],
       "history_bodies": [],
-      "loops": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -437,33 +569,12 @@
         }
       ],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [
-        {
-          "id": "usd:stage:point#/Plant/Frame/Rail:0:0",
-          "position": {
-            "x": 1000.0000000000001,
-            "y": 0.0,
-            "z": 2333.3333333333335
-          }
-        },
-        {
-          "id": "usd:stage:point#/Plant/Frame/Rail:0:1",
-          "position": {
-            "x": 3000.0000000000005,
-            "y": 0.0,
-            "z": 2333.3333333333335
-          }
-        }
-      ],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
           "bodies": [],
@@ -528,46 +639,8 @@
           "source_name": "Leg"
         }
       ],
-      "regions": [
-        {
-          "body": "usd:stage:body#/Plant/Frame/Rail",
-          "id": "usd:stage:region#/Plant/Frame/Rail",
-          "shells": [
-            "usd:stage:shell#/Plant/Frame/Rail"
-          ]
-        },
-        {
-          "body": "usd:stage:body#/Plant/Roof",
-          "id": "usd:stage:region#/Plant/Roof",
-          "shells": [
-            "usd:stage:shell#/Plant/Roof"
-          ]
-        }
-      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "usd:stage:shell#/Plant/Frame/Rail",
-          "members": [
-            {
-              "id": "usd:stage:edge#/Plant/Frame/Rail:0",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "usd:stage:region#/Plant/Frame/Rail"
-        },
-        {
-          "id": "usd:stage:shell#/Plant/Roof",
-          "members": [
-            {
-              "id": "usd:stage:face#/Plant/Roof",
-              "kind": "face"
-            }
-          ],
-          "region": "usd:stage:region#/Plant/Roof"
-        }
-      ],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -576,78 +649,6 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "nurbs",
-              "normal_reversed": false,
-              "poles": {
-                "kind": "polynomial",
-                "rows": [
-                  [
-                    {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 3000.0
-                    },
-                    {
-                      "x": 0.0,
-                      "y": 3000.0,
-                      "z": 3000.0
-                    }
-                  ],
-                  [
-                    {
-                      "x": 2000.0,
-                      "y": 0.0,
-                      "z": 4000.0
-                    },
-                    {
-                      "x": 2000.0,
-                      "y": 3000.0,
-                      "z": 4000.0
-                    }
-                  ],
-                  [
-                    {
-                      "x": 4000.0,
-                      "y": 0.0,
-                      "z": 3000.0
-                    },
-                    {
-                      "x": 4000.0,
-                      "y": 3000.0,
-                      "z": 3000.0
-                    }
-                  ]
-                ]
-              },
-              "u_degree": 2,
-              "u_knots": [
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                1.0,
-                1.0
-              ],
-              "u_periodic": false,
-              "v_degree": 1,
-              "v_knots": [
-                0.0,
-                0.0,
-                1.0,
-                1.0
-              ],
-              "v_periodic": false
-            }
-          },
-          "id": "usd:stage:surface#/Plant/Roof"
-        }
-      ],
       "tessellations": [
         {
           "body": "usd:stage:body#/Plant/Frame/Tube",
@@ -822,19 +823,15 @@
           "triangle_groups": []
         }
       ],
-      "vertices": [
-        {
-          "id": "usd:stage:vertex#/Plant/Frame/Rail:0:0",
-          "point": "usd:stage:point#/Plant/Frame/Rail:0:0"
-        },
-        {
-          "id": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
-          "point": "usd:stage:point#/Plant/Frame/Rail:0:1"
-        }
-      ],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Plant",
@@ -925,6 +922,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "8adf1f271e308a0dd6a03599de7aab5ff418b041037d70f3a07c13c8580c6756",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

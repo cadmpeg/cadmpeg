@@ -41,7 +41,7 @@ fn oblique_extrusion(unknown_cache: bool) -> CadIr {
     let curve = CurveId::mint("test:model:curve#extrusion-directrix").unwrap();
     let construction =
         ProceduralSurfaceId::mint("test:model:surface-construction#extrusion").unwrap();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::new(
@@ -58,8 +58,9 @@ fn oblique_extrusion(unknown_cache: bool) -> CadIr {
         )),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
         ProceduralSurfaceDefinition::Extrusion(ExtrusionSurfaceConstruction::legacy(
             curve,
@@ -70,7 +71,7 @@ fn oblique_extrusion(unknown_cache: bool) -> CadIr {
         )),
         None,
     ));
-    ir.model
+    ir.geometry
         .surfaces
         .iter_mut()
         .find(|item| item.id == surface)
@@ -89,7 +90,7 @@ fn an_oblique_bspline_extrusion_measures_a_face_with_3d_boundaries() {
         for placed in [false, true] {
             let mut ir = oblique_extrusion(unknown_cache);
             if placed {
-                ir.model.bodies[0].transform = Some(
+                ir.geometry.bodies[0].transform = Some(
                     Transform::affine([
                         [-2.0, 0.0, 0.0, 10.0],
                         [0.0, 2.0, 0.0, -4.0],

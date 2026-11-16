@@ -1,7 +1,24 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
     "ir_version": "11",
     "model": {
       "appearance_bindings": [],
@@ -10,15 +27,10 @@
       "assembly_joints": [],
       "assets": [],
       "attributes": [],
-      "bodies": [],
-      "coedges": [],
       "colliders": [],
       "configurations": [],
-      "curves": [],
       "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [
@@ -55,7 +67,6 @@
         }
       ],
       "history_bodies": [],
-      "loops": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -115,16 +126,12 @@
           }
         }
       ],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
           "bodies": [],
@@ -137,10 +144,8 @@
           "source_name": "widget.prt "
         }
       ],
-      "regions": [],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -149,10 +154,7 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -190,19 +192,19 @@
         ]
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "common_name": "widget.prt ",
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "188",
         "model_name": "widget.prt ",
-        "section.0.length": "89",
         "section.0.name": "DEPDB_DATA",
-        "section.0.offset": "99",
         "section.0.raw_name": "DEPDB_DATA",
         "section.0.role": "metadata",
-        "section_count": "1",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
@@ -746,6 +748,9 @@
         }
       }
     },
-    "retained_records": {}
+    "decode_digest": "594656cddc62ae5e7d4ba3132640a69f16376b4fd4afe84809c3b17a537bfbc2",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

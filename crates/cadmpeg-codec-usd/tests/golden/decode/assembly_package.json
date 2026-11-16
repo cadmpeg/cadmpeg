@@ -1,7 +1,35 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
+    "geometry": {
+      "bodies": [
+        {
+          "id": "usd:stage:body#/Assembly/Plate/Large",
+          "kind": "general",
+          "name": "Large"
+        },
+        {
+          "id": "usd:stage:body#prototype0/Shank",
+          "kind": "general",
+          "name": "Shank"
+        }
+      ],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
     "ir_version": "11",
     "model": {
       "appearance_bindings": [],
@@ -10,33 +38,14 @@
       "assembly_joints": [],
       "assets": [],
       "attributes": [],
-      "bodies": [
-        {
-          "id": "usd:stage:body#/Assembly/Plate/Large",
-          "kind": "general",
-          "name": "Large",
-          "regions": []
-        },
-        {
-          "id": "usd:stage:body#prototype0/Shank",
-          "kind": "general",
-          "name": "Shank",
-          "regions": []
-        }
-      ],
-      "coedges": [],
       "colliders": [],
       "configurations": [],
-      "curves": [],
       "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [],
       "history_bodies": [],
-      "loops": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -313,16 +322,12 @@
         }
       ],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
           "bodies": [],
@@ -374,10 +379,8 @@
           "source_name": "Shank"
         }
       ],
-      "regions": [],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -386,8 +389,6 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [
         {
           "body": "usd:stage:body#/Assembly/Plate/Large",
@@ -484,10 +485,15 @@
           "triangle_groups": []
         }
       ],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Assembly",
@@ -588,6 +594,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "fdced49b0fb2e5b9bee334f68f3f2b0e0b182858973297b79a753875fd135ff7",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

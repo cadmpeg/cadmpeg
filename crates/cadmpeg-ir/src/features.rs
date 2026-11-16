@@ -1459,16 +1459,22 @@ pub struct ParameterPmi {
 #[serde(deny_unknown_fields)]
 pub enum PmiDimensionSubtype {
     /// Linear distance.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Linear,
     /// Angular extent in radians.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Angle,
     /// Diameter.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Diameter,
     /// Radius.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Radial,
     /// Linear coordinate measured from an ordinate origin.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Ordinate,
     /// Dimensionless integral instance count.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Count,
     /// Source-native family without a neutral equivalent.
     Native(String),
@@ -1632,57 +1638,6 @@ pub struct Feature {
     pub native_ref: Option<String>,
 }
 
-#[derive(Serialize)]
-pub(crate) struct FeatureWriteWire<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    product_definition: &'a Option<ProductDefinitionId>,
-    id: &'a FeatureId,
-    ordinal: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    name: &'a Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    suppressed: &'a Option<bool>,
-    /// Regeneration predecessor of a feature that has no tree parent.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    regeneration_parent: Option<&'a FeatureId>,
-    dependencies: &'a DistinctMembers<FeatureId>,
-    source_properties: &'a BTreeMap<NonBlankString, String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source_tag: &'a Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source_text: &'a Option<String>,
-    source_content: &'a FeatureContent,
-    outputs: &'a Vec<BodyId>,
-    definition: &'a FeatureDefinition,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    native_ref: &'a Option<String>,
-}
-
-impl<'a> FeatureWriteWire<'a> {
-    pub(crate) fn new(feature: &'a Feature, regeneration_parent: Option<&'a FeatureId>) -> Self {
-        Self {
-            product_definition: &feature.product_definition,
-            id: &feature.id,
-            ordinal: feature.ordinal,
-            name: &feature.name,
-            suppressed: &feature.suppressed,
-            regeneration_parent,
-            dependencies: &feature.dependencies,
-            source_properties: &feature.source_properties,
-            source_tag: &feature.source_tag,
-            source_text: &feature.source_text,
-            source_content: &feature.source_content,
-            outputs: feature.evaluation.outputs(),
-            definition: feature.evaluation.definition(),
-            native_ref: &feature.native_ref,
-        }
-    }
-
-    fn standalone(feature: &'a Feature) -> Self {
-        Self::new(feature, None)
-    }
-}
-
 /// One row of the model route's feature list.
 ///
 /// `regeneration_parent` is a model-route datum: the read hands it to
@@ -1805,15 +1760,6 @@ impl<'de> Deserialize<'de> for Feature {
         D: serde::Deserializer<'de>,
     {
         Ok(FeatureReadWire::deserialize(deserializer)?.into_feature())
-    }
-}
-
-impl Serialize for Feature {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        FeatureWriteWire::standalone(self).serialize(serializer)
     }
 }
 
@@ -2198,6 +2144,7 @@ pub enum DatumPlaneReference {
 #[serde(deny_unknown_fields)]
 pub enum SketchPointSelection {
     /// Selection exists semantically but its sketch entity is not resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Point in a planar sketch.
     Planar {
@@ -3728,6 +3675,10 @@ pub enum FeatureOperation {
         /// Adjacent faces supplying tangent or curvature conditions.
         support_faces: FaceSelection,
         /// Uniform, component-specific, or unresolved boundary continuity.
+        #[serde(
+            default = "FilledSurfaceContinuityState::unresolved",
+            skip_serializing_if = "FilledSurfaceContinuityState::is_unresolved"
+        )]
         continuity: FilledSurfaceContinuityState,
         /// Whether the generated patch is merged into adjacent surface bodies,
         /// when resolved.
@@ -4369,8 +4320,10 @@ pub enum GeometryImportFormat {
 )]
 pub enum FuzzyTolerance {
     /// Let the modeling kernel use its default tolerance.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     KernelDefault,
     /// Determine a suitable tolerance from the participating shapes.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Automatic,
     /// Use the supplied positive model-unit tolerance.
     Explicit(PositiveLength),
@@ -5489,8 +5442,10 @@ pub enum RibSide {
 pub enum RibDraft {
     /// Draft semantics are present but unresolved.
     #[default]
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Rib walls have no draft.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     None,
     /// Rib walls use the specified draft angle.
     Angle(SlopeAngle),
@@ -5835,9 +5790,15 @@ impl FilledSurfaceContinuity {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct FilledSurfaceContinuityState(
-    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
-    Option<FilledSurfaceContinuity>,
+    #[serde(deserialize_with = "deserialize_continuity")] Option<FilledSurfaceContinuity>,
 );
+
+cadmpeg_core::named_optional_field!(
+    deserialize_continuity,
+    FilledSurfaceContinuity,
+    "continuity"
+);
+cadmpeg_core::named_optional_field!(deserialize_section_native, String, "value");
 
 impl FilledSurfaceContinuityState {
     /// Creates an unresolved continuity state.
@@ -6022,8 +5983,10 @@ pub enum RuledSurfaceCorner {
 #[serde(deny_unknown_fields)]
 pub enum ScaleCenter {
     /// Combined centroid of the selected bodies.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Centroid,
     /// Model coordinate-system origin.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ModelOrigin,
     /// Explicit model-space point.
     Point(FinitePoint3),
@@ -6438,8 +6401,10 @@ selection_field_deserializer!(deserialize_local_value, "value");
 )]
 pub enum EdgeSelection {
     /// Selection exists semantically but its operands are not resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Every edge of the operation's input body.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     All,
     /// Resolved topological edges.
     Edges(Vec<EdgeId>),
@@ -6533,6 +6498,7 @@ pub struct GeneratedVertexRef {
 #[serde(deny_unknown_fields)]
 pub enum VertexSelection {
     /// Selection exists semantically but its operand is not resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Vertex in an intermediate regenerated feature result, paired with the
     /// format-native selection required for rewrite.
@@ -6568,6 +6534,7 @@ pub enum VertexSelection {
 )]
 pub enum FaceSelection {
     /// Selection exists semantically but its operands are not resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Resolved topological faces; empty for no selected faces.
     Faces(Vec<FaceId>),
@@ -7397,6 +7364,7 @@ where
 )]
 pub enum BodySelection {
     /// Selection exists semantically but its operands are not resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
     /// Resolved topological bodies.
     Bodies(#[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))] DistinctMembers<BodyId>),
@@ -8271,7 +8239,7 @@ pub type SheetSweepSection = SweepSection<NoGeneratedSection>;
 /// `G` names the geometry the result may generate. A solid result generates a
 /// circular region; a sheet result generates nothing, and its `G` is
 /// uninhabited.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -8281,7 +8249,7 @@ pub type SheetSweepSection = SweepSection<NoGeneratedSection>;
 )]
 pub enum SweepSection<G = GeneratedSweepSection> {
     /// The source requires a cross-section, but its carrier is unresolved.
-    Unresolved(#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<String>),
+    Unresolved(#[serde(deserialize_with = "deserialize_section_native")] Option<String>),
     /// Cross-section supplied by referenced profile geometry.
     Profile(PlanarProfileRef),
     /// Cross-section generated by the sweep construction itself.
@@ -9954,7 +9922,7 @@ impl Feature {
 
 mod identity_rewrite;
 
-mod serialization;
+pub(crate) mod serialization;
 
 cadmpeg_core::named_optional_field!(
     deserialize_product_definition,

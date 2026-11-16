@@ -1,22 +1,12 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "iges:model:body#D55",
           "kind": "solid",
-          "regions": [
-            "iges:model:region#D55"
-          ],
           "visible": true
         }
       ],
@@ -118,8 +108,6 @@
           "sense": "reversed"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -314,8 +302,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -325,9 +311,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D55:D33:2",
-          "id": "iges:model:edge#D55:D35:1",
-          "start": "iges:model:vertex#D55:D33:1"
+          "ends": {
+            "end": "iges:model:vertex#D55:D33:2",
+            "start": "iges:model:vertex#D55:D33:1"
+          },
+          "id": "iges:model:edge#D55:D35:1"
         },
         {
           "carrier": {
@@ -337,9 +325,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D55:D33:3",
-          "id": "iges:model:edge#D55:D35:2",
-          "start": "iges:model:vertex#D55:D33:1"
+          "ends": {
+            "end": "iges:model:vertex#D55:D33:3",
+            "start": "iges:model:vertex#D55:D33:1"
+          },
+          "id": "iges:model:edge#D55:D35:2"
         },
         {
           "carrier": {
@@ -349,9 +339,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D55:D33:4",
-          "id": "iges:model:edge#D55:D35:3",
-          "start": "iges:model:vertex#D55:D33:1"
+          "ends": {
+            "end": "iges:model:vertex#D55:D33:4",
+            "start": "iges:model:vertex#D55:D33:1"
+          },
+          "id": "iges:model:edge#D55:D35:3"
         },
         {
           "carrier": {
@@ -361,9 +353,11 @@
               1.4142135623730951
             ]
           },
-          "end": "iges:model:vertex#D55:D33:3",
-          "id": "iges:model:edge#D55:D35:4",
-          "start": "iges:model:vertex#D55:D33:2"
+          "ends": {
+            "end": "iges:model:vertex#D55:D33:3",
+            "start": "iges:model:vertex#D55:D33:2"
+          },
+          "id": "iges:model:edge#D55:D35:4"
         },
         {
           "carrier": {
@@ -373,9 +367,11 @@
               1.4142135623730951
             ]
           },
-          "end": "iges:model:vertex#D55:D33:4",
-          "id": "iges:model:edge#D55:D35:5",
-          "start": "iges:model:vertex#D55:D33:2"
+          "ends": {
+            "end": "iges:model:vertex#D55:D33:4",
+            "start": "iges:model:vertex#D55:D33:2"
+          },
+          "id": "iges:model:edge#D55:D35:5"
         },
         {
           "carrier": {
@@ -385,9 +381,11 @@
               1.4142135623730951
             ]
           },
-          "end": "iges:model:vertex#D55:D33:4",
-          "id": "iges:model:edge#D55:D35:6",
-          "start": "iges:model:vertex#D55:D33:3"
+          "ends": {
+            "end": "iges:model:vertex#D55:D33:4",
+            "start": "iges:model:vertex#D55:D33:3"
+          },
+          "id": "iges:model:edge#D55:D35:6"
         }
       ],
       "faces": [
@@ -436,10 +434,6 @@
           "surface": "iges:model:surface#D19"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -494,14 +488,7 @@
           "id": "iges:model:loop#D55:D53:D43"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "iges:model:point#D55:D33:1",
@@ -536,11 +523,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "iges:model:body#D55",
@@ -550,40 +534,13 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "iges:model:shell#D55:D53",
-          "members": [
-            {
-              "id": "iges:model:face#D55:D53:D45",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D55:D53:D47",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D55:D53:D49",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D55:D53:D51",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D55"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -719,7 +676,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "iges:model:vertex#D55:D33:1",
@@ -737,7 +693,45 @@
           "id": "iges:model:vertex#D55:D33:4",
           "point": "iges:model:point#D55:D33:4"
         }
-      ],
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -4802,6 +4796,12 @@
         "views": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
@@ -5116,6 +5116,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "7441d51afbc8dc10c880a3f6926caefea668ff07c2ee394e00fa88a6a143bc14",
+    "file_digests": {},
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -5123,8 +5125,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

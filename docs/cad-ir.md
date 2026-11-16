@@ -10,21 +10,25 @@ A product document has three semantic layers:
 
 ```text
 CadIr
-├── ir_version, decode_depth, source?, units, tolerances
-├── model
+├── ir_version, scope, source?, units, tolerances
+├── geometry
 │   ├── topology and geometry carriers
-│   ├── procedural constructions and neutral features
+│   └── subdivision surfaces and procedural constructions
+├── model
+│   ├── neutral features
 │   └── tessellation, appearance, and attributes
+├── design
+├── process
 └── native
 ```
 
-`model` is format-neutral. `native` is a map keyed by format ID. Each value is a map of arena name to arena. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
+`geometry`, `model`, `design`, and `process` are format-neutral. `design` and `process` are empty objects in this version. `native` is a map keyed by format ID. Each value is a map of arena name to arena. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
 
-`decode_depth` is required. It records how much of the source the decode transferred: `container`, `geometry`, or `full`. Each model arena is classed as model or design. The design arenas are `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, the six sketch arenas, and `spreadsheets`. A document below `full` holds no record in a design arena, and readers and writers refuse one that does. Configurations are design because they key parameter overrides and feature states by design IDs. `assets` is model because tessellation texture assignments reference assets.
+`scope` is required. It records the content classes the document holds, as the object `{ "model": bool, "design": bool, "process": bool }`. A decode at depth `container`, `geometry`, `design`, or `full` records `{}`, `{model}`, `{model, design}`, or all three classes; a class the request names and the decode does not deliver is absent from the scope and charges `decode/depth.not-delivered`. A scope with `design` holds `model`, and a scope with `process` holds `design`. Each neutral arena is classed as model, design, or process. The design arenas are `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, the six sketch arenas, and `spreadsheets`; they live in `model` in this version. No arena is classed as process yet. A document holds no record in an arena whose class its scope excludes, and readers and writers refuse one that does. Configurations are design because they key parameter overrides and feature states by design IDs. `assets` is model because tessellation texture assignments reference assets.
 
 `source` is absent when the document has no source-container metadata. A present source block contains `format`, `attributes`, and `dialects`. `dialects` is always serialized. It is `null` for an unclassified source and otherwise contains the complete source `DialectLayers`, including the primary and every nested or carried layer. The primary dialect namespace equals `source.format`.
 
-The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `assets`, `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, `presentation_layers`, `physical_materials`, `mass_properties`, `rigid_bodies`, `colliders`, `articulations`, `physics_scenes`, `solver_settings`, `declared_measures`, `point_clouds`, and `history_bodies`. References are string IDs. `ProductDefinition.sketches` lists owned planar sketch IDs. Each ID names a member of `model.sketches` and a sketch belongs to at most one product definition. An absent or empty list owns no sketches. A sketch with no product definition belongs to the design root. `subds` contains subdivision-surface control cages and is a free carrier arena.
+The `geometry` arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, and `procedural_curves`. The `model` arenas, in serialization order, are `assets`, `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, `presentation_layers`, `physical_materials`, `mass_properties`, `rigid_bodies`, `colliders`, `articulations`, `physics_scenes`, `solver_settings`, `declared_measures`, `point_clouds`, and `history_bodies`. References are string IDs. `ProductDefinition.sketches` lists owned planar sketch IDs. Each ID names a member of `model.sketches` and a sketch belongs to at most one product definition. An absent or empty list owns no sketches. A sketch with no product definition belongs to the design root. `subds` contains subdivision-surface control cages and is a free carrier arena.
 
 Pcurve geometry is a parameter-space line, angular circle, angular ellipse, parabola, hyperbola, first-order harmonic, first-order hyperbolic, polar harmonic, polar NURBS, NURBS, trimmed, or signed-offset curve. Circle and ellipse carriers store independent `x_axis` and `y_axis` parameter directions; a clockwise parameterization has a negated `y_axis`. General harmonic carriers evaluate `center + cosine*cos(t) + sine*sin(t)`; general hyperbolic carriers evaluate `center + cosine*cosh(t) + sine*sinh(t)`. A polar harmonic maps first-order radial-plane and axial harmonic coefficients to `(atan2(y, x), v)` without changing the spatial curve parameter. A polar NURBS evaluates radial-plane and axial control channels with one degree, knot vector, weight vector, and parameter, then maps the radial result through `atan2`. A signed offset adds its distance along the regular basis curve's left unit normal. Point evaluation requires a finite nonzero exact basis tangent; a nested signed offset has no point evaluation.
 
@@ -73,7 +77,7 @@ body → region → shell → face → loop → coedge → edge → vertex → p
                            └── surface
 ```
 
-`Body.kind` is `solid`, `sheet`, `wire`, or `general`. A body optionally records a display name, color, and `visible`. `visible` states whether the source document displays the body. Exporters omit bodies with `visible: false` from display-oriented formats. A body owns regions. A region is a connected component of a body and owns shells. A shell owns at least one of faces, wire edges, or free vertices. A face is an oriented bounded portion of one surface and owns loops. A loop's boundary role is `outer`, `inner`, or `unspecified`; a face has at most one explicit outer loop and may have only inner loops when the surface parameter domain supplies the exterior. An edge loop lists coedges in traversal order and may contain ordered pole-vertex uses anchored after a coedge. A vertex loop contains one unanchored vertex use and no coedges. A coedge and a pole-vertex use each own an ordered list of parameter-space curve uses. The uses of a coedge are in its traversal order, with its sense applied, and form one chain from its start to its end; the uses of a pole-vertex use follow the loop traversal. A use's optional parameter range states its interval in the traversal direction, so a decreasing range traverses the pcurve backward. Each pcurve use may record whether the source declared it isoparametric. An edge joins two vertices and optionally references a curve and canonical parameter range. A vertex references a point carrier. Point remains a separate carrier because it has independent identity and provenance.
+`Body.kind` is `solid`, `sheet`, `wire`, or `general`. A body optionally records a display name, color, and `visible`. `visible` states whether the source document displays the body. Exporters omit bodies with `visible: false` from display-oriented formats. Each record names its parent: `Region.body`, `Shell.region`, `Face.shell`, `Loop.face`, and `Coedge.owner_loop`. A body's regions and a shell's faces are the records whose parent pointer names them, and no list of them is stored. A region is a connected component of a body and lists its shells, the exterior first. A shell's `members` list its wire edges and free vertices, which name no parent. A face is an oriented bounded portion of one surface and owns loops. A loop's boundary role is `outer`, `inner`, or `unspecified`; a face has at most one explicit outer loop and may have only inner loops when the surface parameter domain supplies the exterior. An edge loop lists coedges in traversal order and may contain ordered pole-vertex uses anchored after a coedge. A vertex loop contains one unanchored vertex use and no coedges. A coedge and a pole-vertex use each own an ordered list of parameter-space curve uses. The uses of a coedge are in its traversal order, with its sense applied, and form one chain from its start to its end; the uses of a pole-vertex use follow the loop traversal. A use's optional parameter range states its interval in the traversal direction, so a decreasing range traverses the pcurve backward. Each pcurve use may record whether the source declared it isoparametric. An edge's `ends` names its start and end vertices; an edge with no `ends` is a closed edge with no vertex on a closed carrier curve. An edge optionally references a curve and canonical parameter range. A vertex references a point carrier. Point remains a separate carrier because it has independent identity and provenance.
 
 | cadmpeg IR | ACIS/ASM | Parasolid        | STEP AP242                                                            |
 | ---------- | -------- | ---------------- | --------------------------------------------------------------------- |
@@ -420,7 +424,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "11"` ([`cadir-v11.md`](cadir-v11.md) §3.6). The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "11"` ([`cadir-v11.md`](cadir-v11.md) §3.6). The `geometry.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -436,15 +440,14 @@ The generated document begins with this complete hierarchy and representative ra
 {
   "fragment": false,
   "ir_version": "11",
-  "decode_depth": "full",
+  "scope": { "model": true, "design": true, "process": true },
   "units": { "length": "millimeter", "angle": "radian", "mass": "kilogram", "time": "second" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
-  "model": {
+  "geometry": {
     "bodies": [
       {
         "id": "body0",
         "kind": "solid",
-        "regions": ["region0"],
         "name": "unit cube"
       }
     ],
@@ -453,7 +456,7 @@ The generated document begins with this complete hierarchy and representative ra
       {
         "id": "shell0",
         "region": "region0",
-        "faces": ["f_bottom", "f_top", "f_front", "f_right", "f_back", "f_left"]
+        "members": []
       }
     ],
     "faces": [
@@ -496,10 +499,8 @@ The generated document begins with this complete hierarchy and representative ra
     "edges": [
       {
         "id": "e0",
-        "curve": "crv_e0",
-        "start": "v0",
-        "end": "v1",
-        "param_range": [0.0, 10.0]
+        "carrier": { "curve": "crv_e0", "param_range": [0.0, 10.0] },
+        "ends": { "start": "v0", "end": "v1" }
       }
     ],
     "vertices": [
@@ -532,11 +533,14 @@ The generated document begins with this complete hierarchy and representative ra
       }
     ]
   },
+  "model": { "features": [] },
+  "design": {},
+  "process": {},
   "native": {}
 }
 ```
 
-The extract omits repeated faces, loops, coedges, edges, vertices, points, surfaces, and curves. Regenerate the complete canonical artifact with:
+The extract omits repeated faces, loops, coedges, edges, vertices, points, surfaces, and curves, the empty topology arenas, and every model arena after `features`. Regenerate the complete canonical artifact with:
 
 ```sh
 cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json

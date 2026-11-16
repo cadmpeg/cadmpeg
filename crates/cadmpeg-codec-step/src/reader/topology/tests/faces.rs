@@ -37,11 +37,11 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode base face");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
     let surface = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
@@ -69,7 +69,7 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         .expect("decode implicit face witness");
     let base_surface = base
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
@@ -91,7 +91,7 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         .expect("decode rotated implicit face witness");
     let rotated_surface = rotated
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
@@ -107,7 +107,7 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         .expect("decode reversed implicit face witness");
     let reversed_surface = reversed
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
@@ -126,10 +126,10 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
     let non_planar = StepCodec::default()
         .decode(&mut Cursor::new(non_planar), &DecodeOptions::default())
         .expect("decode non-planar implicit face witness");
-    assert!(non_planar.ir().model.bodies.is_empty());
+    assert!(non_planar.ir().geometry.bodies.is_empty());
     assert!(!non_planar
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8"));
@@ -146,21 +146,21 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .expect("decode complex face-bound witness");
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
-    assert_eq!(decoded.ir().model.loops.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.loops.len(), 1);
     assert_eq!(
         decoded
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
-            .find(|face| face.id == decoded.ir().model.loops[0].face)
-            .map(|face| face.loop_role(&decoded.ir().model.loops[0].id))
+            .find(|face| face.id == decoded.ir().geometry.loops[0].face)
+            .map(|face| face.loop_role(&decoded.ir().geometry.loops[0].id))
             .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
-    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#implicit-face-8"
             && matches!(
                 surface.geometry,
@@ -180,20 +180,20 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind()));
-    assert_eq!(reordered.ir().model.bodies.len(), 1);
-    assert_eq!(reordered.ir().model.loops.len(), 1);
+    assert_eq!(reordered.ir().geometry.bodies.len(), 1);
+    assert_eq!(reordered.ir().geometry.loops.len(), 1);
     assert_eq!(
         reordered
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
-            .find(|face| face.id == reordered.ir().model.loops[0].face)
-            .map(|face| face.loop_role(&reordered.ir().model.loops[0].id))
+            .find(|face| face.id == reordered.ir().geometry.loops[0].face)
+            .map(|face| face.loop_role(&reordered.ir().geometry.loops[0].id))
             .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
-    assert!(reordered.ir().model.surfaces.iter().any(|surface| {
+    assert!(reordered.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#implicit-face-8"
             && matches!(
                 surface.geometry,
@@ -214,10 +214,10 @@ fn edge_loop_without_explicit_surface_rejects_implicit_plane() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode edge-loop base-face witness");
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "step:data:surface#implicit-face-26"));
@@ -248,10 +248,10 @@ fn non_planar_base_face_is_rejected_without_an_inferred_surface() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode non-planar base face");
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(!decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29"));
@@ -274,11 +274,11 @@ fn complex_outer_face_bound_uses_inherited_attributes() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex face bound");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
     let surface = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#28")
@@ -310,7 +310,7 @@ fn implicit_face_plane_uses_all_coplanar_poly_loops() {
 
     let surface = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
@@ -344,21 +344,21 @@ fn implicit_face_plane_is_independent_of_coplanar_bound_set_order() {
 
     let first_surface = first
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-14")
         .expect("first implicit face plane");
     let reordered_surface = reordered
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-14")
         .expect("reordered implicit face plane");
     assert_eq!(first_surface.geometry, reordered_surface.geometry);
-    assert_eq!(first.ir().model.bodies.len(), 1);
-    assert_eq!(reordered.ir().model.bodies.len(), 1);
+    assert_eq!(first.ir().geometry.bodies.len(), 1);
+    assert_eq!(reordered.ir().geometry.bodies.len(), 1);
     assert!(
         cadmpeg_ir::validate_neutral(first.ir(), first.report().losses.clone())
             .expect("validate the neutral model")
@@ -382,9 +382,9 @@ fn implicit_face_plane_rejects_non_coplanar_poly_loop_bounds_in_any_order() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(input), &DecodeOptions::default())
             .expect("decode non-coplanar witness");
-        assert!(decoded.ir().model.bodies.is_empty());
-        assert!(decoded.ir().model.faces.is_empty());
-        assert!(decoded.ir().model.surfaces.is_empty());
+        assert!(decoded.ir().geometry.bodies.is_empty());
+        assert!(decoded.ir().geometry.faces.is_empty());
+        assert!(decoded.ir().geometry.surfaces.is_empty());
         assert!(decoded.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::TopologyRootRejected.kind()
                 && loss.message.contains("implicit face plane")
@@ -428,8 +428,8 @@ fn nearly_collinear_implicit_face_is_rejected_without_a_fabricated_plane() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode nearly collinear base face");
 
-    assert!(decoded.ir().model.bodies.is_empty());
-    assert!(decoded.ir().model.surfaces.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
+    assert!(decoded.ir().geometry.surfaces.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyRootRejected.kind()
             && loss.message.contains("implicit face plane")
@@ -460,7 +460,7 @@ fn implicit_face_plane_keeps_base_orientation_across_oriented_face() {
 
     let surface = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-34")
@@ -471,7 +471,7 @@ fn implicit_face_plane_keeps_base_orientation_across_oriented_face() {
     let normal = *plane_surface.frame().axis().as_raw();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
-        decoded.ir().model.faces[0].sense,
+        decoded.ir().geometry.faces[0].sense,
         cadmpeg_ir::topology::Sense::Forward
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
@@ -493,15 +493,15 @@ fn oriented_face_subtype_composes_face_orientation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode oriented face");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
     assert_eq!(
-        decoded.ir().model.faces[0].sense,
+        decoded.ir().geometry.faces[0].sense,
         cadmpeg_ir::topology::Sense::Forward
     );
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Forward));
@@ -523,15 +523,15 @@ fn nested_oriented_faces_compose_back_to_the_base_orientation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode nested oriented faces");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
     assert_eq!(
-        decoded.ir().model.faces[0].sense,
+        decoded.ir().geometry.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Reversed));
@@ -554,8 +554,8 @@ fn subface_subtype_reuses_parent_surface_and_own_bounds() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode subface");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -575,8 +575,8 @@ fn complex_advanced_face_uses_its_explicit_surface_carrier() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex advanced face");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
             && matches!(
                 surface.geometry,
@@ -609,8 +609,8 @@ fn connected_face_sub_set_validates_and_uses_its_own_members() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode connected face subset");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
     assert!(!decoded
         .report()
         .losses
@@ -627,19 +627,20 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     use cadmpeg_ir::topology::Loop;
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let face = ir.model.faces[0].id.clone();
-    let vertex = ir.model.vertices[0].id.clone();
+    let face = ir.geometry.faces[0].id.clone();
+    let vertex = ir.geometry.vertices[0].id.clone();
     let inner = LoopId::mint("zzzz:test:loop#inner").expect("identity grammar");
-    ir.model.loops.push(Loop {
+    ir.geometry.loops.push(Loop {
         id: inner.clone(),
         face: face.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
             vertex,
             pcurves: Vec::new(),
         },
+        native_ref: None,
     });
-    let outer = ir.model.faces[0].loops.iter().next().unwrap().clone();
-    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);
+    let outer = ir.geometry.faces[0].loops.iter().next().unwrap().clone();
+    ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);
     let output = export(&ir);
     let (exchange, diagnostics) =
         crate::test_support::with_service_context(output.as_bytes(), crate::parse::parse_inner)
@@ -693,7 +694,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .expect("decode reversed face bounds");
     let face = decoded
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == ids::data(kind!("face"), face_step).as_str())
@@ -741,8 +742,8 @@ fn duplicate_face_outer_bound_witnesses_recover_unspecified_loops_in_any_order()
             .losses
             .iter()
             .any(|loss| loss.code == StepLossCode::TopologyRootRejected.kind()));
-        assert_eq!(decoded.ir().model.faces.len(), 1);
-        assert_eq!(decoded.ir().model.loops.len(), 2);
+        assert_eq!(decoded.ir().geometry.faces.len(), 1);
+        assert_eq!(decoded.ir().geometry.loops.len(), 2);
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .unwrap()
             .findings
@@ -778,7 +779,7 @@ fn duplicate_face_outer_bound_witnesses_recover_unspecified_loops_in_any_order()
                 .links
                 .is_empty());
         }
-        let face = decoded.ir().model.faces.first().expect("one face");
+        let face = decoded.ir().geometry.faces.first().expect("one face");
         let cadmpeg_ir::topology::FaceLoops::Unspecified { loops } = &face.loops else {
             panic!(
                 "several outer bounds state no classification: {:?}",
@@ -813,8 +814,8 @@ fn duplicate_face_outer_bound_witnesses_recover_unspecified_loops_in_any_order()
 #[test]
 fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.faces[0].surface = ir.model.faces[1].surface.clone();
-    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+    ir.geometry.faces[0].surface = ir.geometry.faces[1].surface.clone();
+    ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     let output = export(&ir);
     // Five face-owned surfaces remain after sharing, and the displaced carrier
     // is retained once as standalone construction geometry.
@@ -834,7 +835,7 @@ fn advanced_face_name_transfers_through_inherited_representation_item() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode named face");
     assert_eq!(
-        decoded.ir().model.faces[0].name.as_deref(),
+        decoded.ir().geometry.faces[0].name.as_deref(),
         Some("named face")
     );
 
@@ -850,7 +851,7 @@ fn advanced_face_name_transfers_through_inherited_representation_item() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written named face");
     assert_eq!(
-        roundtrip.ir().model.faces[0].name.as_deref(),
+        roundtrip.ir().geometry.faces[0].name.as_deref(),
         Some("named face")
     );
 }
@@ -867,7 +868,7 @@ fn complex_advanced_face_name_uses_representation_item_partial() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex named face");
     assert_eq!(
-        decoded.ir().model.faces[0].name.as_deref(),
+        decoded.ir().geometry.faces[0].name.as_deref(),
         Some("complex named face")
     );
 }
@@ -883,13 +884,13 @@ fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode sheet with unknown mandatory carriers");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
-    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.edges.len(), 3);
     assert!(matches!(
         decoded
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == "step:data:curve#16")
@@ -900,7 +901,7 @@ fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
     assert!(matches!(
         decoded
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "step:data:surface#28")
@@ -932,11 +933,11 @@ fn unsupported_surface_carrier_on_face_surface_preserves_topology_as_unknown() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode FACE_SURFACE with unknown carrier");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert!(matches!(
         decoded
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "step:data:surface#28")

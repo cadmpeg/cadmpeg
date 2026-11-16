@@ -529,13 +529,13 @@ fn decode_transfers_equation_verified_model_reference_circles() {
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),
     );
-    assert!(result.ir().model.curves.iter().any(
+    assert!(result.ir().geometry.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if { circle_curve.radius().get() == 1.0 })
     ));
     let circle = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "creo:mdl_ref_info:arc_z#45")
@@ -587,7 +587,7 @@ fn decode_retains_line3d_original_length() {
     assert_eq!(record.fields().unwrap()["original_length"], 1.0);
     let curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "creo:mdl_ref_info:line3d#35")
@@ -611,7 +611,7 @@ fn decode_disambiguates_repeated_line3d_entity_ids() {
         .expect("decode");
     let ids = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -644,7 +644,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),
     );
-    assert!(result.ir().model.curves.iter().any(
+    assert!(result.ir().geometry.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if { (ellipse_curve.major_radius().get() == 1.0) && (ellipse_curve.minor_radius().get() == 1.0) })
     ));
@@ -661,7 +661,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     );
     let ellipse = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "creo:mdl_ref_info:conic#43")

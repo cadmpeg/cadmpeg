@@ -1,28 +1,16 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "iges:model:body#free-geometry",
           "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
+          "name": "IGES free geometry"
         }
       ],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -102,8 +90,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -113,25 +99,16 @@
               2.0
             ]
           },
-          "end": "iges:model:vertex#D1-end",
-          "id": "iges:model:edge#D1",
-          "start": "iges:model:vertex#D1-start"
+          "ends": {
+            "end": "iges:model:vertex#D1-end",
+            "start": "iges:model:vertex#D1-start"
+          },
+          "id": "iges:model:edge#D1"
         }
       ],
       "faces": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "iges:model:point#D1-end",
@@ -150,11 +127,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "iges:model:body#free-geometry",
@@ -164,8 +138,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "iges:model:shell#free-geometry",
@@ -178,17 +150,8 @@
           "region": "iges:model:region#free-geometry"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [],
-      "tessellations": [],
       "vertices": [
         {
           "id": "iges:model:vertex#D1-end",
@@ -198,7 +161,45 @@
           "id": "iges:model:vertex#D1-start",
           "point": "iges:model:point#D1-start"
         }
-      ],
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -727,6 +728,12 @@
         "views": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
@@ -834,6 +841,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "c89d94fc56d0d166b05e99601b4f173f9286f68cef37d41ccef79b77179dff23",
+    "file_digests": {},
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -841,8 +850,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

@@ -509,7 +509,7 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     assert_eq!(brep.regions.len(), 1);
     assert_eq!(brep.shells.len(), 1);
     assert_eq!(
-        brep.shells[0].wire_edges(),
+        brep.shells[0].wire_edges().cloned().collect::<Vec<_>>(),
         vec![EdgeId::mint(id(FORMAT, 1).into_string()).expect("identity grammar")]
     );
     assert_eq!(brep.edges.len(), 1);
@@ -622,7 +622,10 @@ fn null_curve_apex_edge_is_a_point_edge_of_a_solid() {
         assert_eq!(brep.bodies.len(), 1);
         assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Solid);
         let apex = edge_by_record(&brep, 14);
-        assert_eq!(apex.start, apex.end);
+        assert_eq!(
+            apex.ends.as_ref().unwrap().start,
+            apex.ends.as_ref().unwrap().end
+        );
         assert_eq!(apex.param_range(), None);
         let carrier = apex.curve().expect("apex edge carrier");
         let curve = brep
@@ -967,11 +970,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         shells: vec![Shell::new(
             ShellId::mint(id(FORMAT, 3).into_string()).expect("identity grammar"),
             RegionId::mint("test:model:region#0").expect("identity grammar"),
-            vec![face_id.clone()],
-            Vec::new(),
-            Vec::new(),
-        )
-        .unwrap()],
+        )],
         loops: vec![Loop {
             id: LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar"),
             face: face_id,
@@ -983,6 +982,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
                 )
                 .expect("valid loop ring"),
             ),
+            native_ref: None,
         }],
         ..AsmBrep::default()
     };
@@ -1064,16 +1064,17 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         bodies: vec![Body {
             id: body_id.clone(),
             kind: BodyKind::Sheet,
-            regions: vec![RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar")],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         }],
         regions: vec![Region {
             id: RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
             body: body_id.clone(),
             shells: Vec::new(),
+            native_ref: None,
         }],
         ..AsmBrep::default()
     };
@@ -1597,20 +1598,19 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
         bodies: vec![Body {
             id: body_id.clone(),
             kind: BodyKind::Sheet,
-            regions: vec![region_id.clone()],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         }],
         regions: vec![Region {
             id: region_id.clone(),
             body: body_id,
             shells: vec![shell_id.clone()],
+            native_ref: None,
         }],
-        shells: vec![
-            Shell::with_faces(shell_id.clone(), region_id, vec![face_id.clone()]).expect("shell"),
-        ],
+        shells: vec![Shell::new(shell_id.clone(), region_id)],
         faces: vec![Face {
             id: face_id.clone(),
             shell: shell_id,
@@ -1620,6 +1620,7 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         }],
         ..AsmBrep::default()
     };

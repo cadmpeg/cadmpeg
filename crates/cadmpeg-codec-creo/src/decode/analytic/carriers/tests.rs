@@ -21,6 +21,7 @@ fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry,
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -135,7 +136,7 @@ fn native_surface_lookups_match_the_identity_matcher_scan() {
     ] {
         let mut surface = cylinder_surface(0, 1.0);
         surface.id = SurfaceId::mint(id.to_owned()).expect("identity grammar");
-        ir.model.surfaces.push(surface);
+        ir.geometry.surfaces.push(surface);
     }
     let namespaces = NativeSurfaceNamespaces::new(&scan);
     let scanned = |surfaces: &[Surface], id: u32| {
@@ -153,24 +154,24 @@ fn native_surface_lookups_match_the_identity_matcher_scan() {
         NamedSurfaces::Unique(position) => Some(position),
         NamedSurfaces::Duplicate => None,
     };
-    let index = ModelSurfaceIndex::new(&ir.model.surfaces);
+    let index = ModelSurfaceIndex::new(&ir.geometry.surfaces);
     for id in 0..=9 {
         let indexed = index
             .named(namespaces.prefix(id), id)
             .map(|named| match named {
                 NamedSurfaces::Unique(surface) => ir
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .position(|candidate| std::ptr::eq(candidate, surface)),
                 NamedSurfaces::Duplicate => None,
             });
-        assert_eq!(indexed, scanned(&ir.model.surfaces, id), "{id}");
+        assert_eq!(indexed, scanned(&ir.geometry.surfaces, id), "{id}");
     }
 
-    let mut positions = ModelSurfacePositions::new(&ir.model.surfaces[..3]);
-    for appended in 3..=ir.model.surfaces.len() {
-        let surfaces = &ir.model.surfaces[..appended];
+    let mut positions = ModelSurfacePositions::new(&ir.geometry.surfaces[..3]);
+    for appended in 3..=ir.geometry.surfaces.len() {
+        let surfaces = &ir.geometry.surfaces[..appended];
         for id in 0..=9 {
             assert_eq!(
                 positions.named(namespaces.prefix(id), id).map(as_option),
@@ -178,8 +179,8 @@ fn native_surface_lookups_match_the_identity_matcher_scan() {
                 "{id} after {appended} surfaces"
             );
         }
-        if appended < ir.model.surfaces.len() {
-            positions.admit(&ir.model.surfaces, appended);
+        if appended < ir.geometry.surfaces.len() {
+            positions.admit(&ir.geometry.surfaces, appended);
         }
     }
 }
@@ -271,7 +272,7 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Cylinder));
     let mut ir = CadIr::empty();
-    ir.model
+    ir.geometry
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
@@ -318,8 +319,8 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
             body_offset: 0,
         });
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(cylinder_surface(7, 0.75));
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    ir.geometry.surfaces.push(cylinder_surface(7, 0.75));
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 12.5),
             Vector3::new(0.0, -1.0, 0.0),
@@ -393,7 +394,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
             body_offset: 0,
         });
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(cylinder_surface(7, 0.2));
+    ir.geometry.surfaces.push(cylinder_surface(7, 0.2));
 
     let carriers = crate::decode::with_service_context(|ctx| {
         placed_carriers(
@@ -428,7 +429,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
             offset: 0,
         });
     let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         carrier_surface(
             7,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -467,7 +468,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
 fn placed_carriers_admits_unique_rowless_model_surface() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(cylinder_surface(7, 2.0));
+    ir.geometry.surfaces.push(cylinder_surface(7, 2.0));
 
     let carriers = crate::decode::with_service_context(|ctx| {
         placed_carriers(
@@ -494,7 +495,7 @@ fn placed_carriers_resolve_each_row_namespace_once() {
         .rows
         .extend((1..=ROWS).map(|id| carrier_row(id, crate::surface::SurfaceKind::Cylinder)));
     let mut ir = CadIr::empty();
-    ir.model
+    ir.geometry
         .surfaces
         .extend((1..=ROWS).map(|id| cylinder_surface(id, f64::from(id))));
 
@@ -518,7 +519,7 @@ fn placed_carriers_resolve_each_row_namespace_once() {
 fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
-    ir.model
+    ir.geometry
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
@@ -679,9 +680,10 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
             .expect("valid CircleCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut ir = CadIr::empty();
-    ir.model.curves.extend([curve.clone(), curve]);
+    ir.geometry.curves.extend([curve.clone(), curve]);
 
     assert_eq!(
         crate::decode::with_service_context(|ctx| transfer_topology_bound_planes(
@@ -695,7 +697,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
         .expect("valid source object identity"),
         0
     );
-    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
 }
 
 #[test]

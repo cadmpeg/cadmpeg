@@ -1,22 +1,12 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "rhino:object:body#record-000000-offset-177.caps",
           "kind": "sheet",
-          "regions": [
-            "rhino:object:region#record-000000-offset-177.cap-0"
-          ],
           "visible": true
         }
       ],
@@ -34,8 +24,6 @@
           "sense": "forward"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -94,8 +82,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -105,9 +91,11 @@
               4.0
             ]
           },
-          "end": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
-          "id": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0",
-          "start": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0"
+          "ends": {
+            "end": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
+            "start": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0"
+          },
+          "id": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0"
         }
       ],
       "faces": [
@@ -124,10 +112,6 @@
           "surface": "rhino:object:surface#record-000000-offset-177.cap-0"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -141,9 +125,6 @@
           "id": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -197,10 +178,6 @@
           }
         }
       ],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "rhino:object:point#record-000000-offset-177.cap-0.profile-0",
@@ -217,8 +194,6 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [
         {
@@ -238,7 +213,6 @@
           "surface": "rhino:object:surface#record-000000-offset-177.lateral-0"
         }
       ],
-      "product_definitions": [],
       "regions": [
         {
           "body": "rhino:object:body#record-000000-offset-177.caps",
@@ -248,28 +222,13 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "rhino:object:shell#record-000000-offset-177.cap-0",
-          "members": [
-            {
-              "id": "rhino:object:face#record-000000-offset-177.cap-0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "rhino:object:region#record-000000-offset-177.cap-0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -403,6 +362,49 @@
           }
         }
       ],
+      "vertices": [
+        {
+          "id": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
+          "point": "rhino:object:point#record-000000-offset-177.cap-0.profile-0"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [
         {
           "channels": [],
@@ -429,12 +431,6 @@
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": []
-        }
-      ],
-      "vertices": [
-        {
-          "id": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
-          "point": "rhino:object:point#record-000000-offset-177.cap-0.profile-0"
         }
       ],
       "view_presentations": []
@@ -496,6 +492,12 @@
         "views": [],
         "windows_bitmaps": []
       }
+    },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {
@@ -723,6 +725,8 @@
       },
       "provenance": {}
     },
+    "decode_digest": "b7a33834673ad07a44203f8fc26dc49e97b78d3a5594d58351569843b7ef180a",
+    "file_digests": {},
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -730,8 +734,10 @@
           "kind": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

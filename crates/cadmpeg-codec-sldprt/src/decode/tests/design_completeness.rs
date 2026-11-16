@@ -1375,7 +1375,7 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.clear();
     ir.model.parameters.clear();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let repeated = vec![body.clone(), body.clone()];
     assert!(cadmpeg_ir::features::DistinctMembers::try_from(repeated,).is_err());
     let feature = |id: &str, ordinal: u64, outputs: Vec<BodyId>| Feature {

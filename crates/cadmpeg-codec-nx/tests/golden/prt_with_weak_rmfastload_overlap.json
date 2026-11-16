@@ -1,38 +1,21 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
+      "design": {},
       "fragment": false,
-      "ir_version": "11",
-      "model": {
-        "appearance_bindings": [],
-        "appearances": [],
-        "articulations": [],
-        "assembly_joints": [],
-        "assets": [],
-        "attributes": [],
+      "geometry": {
         "bodies": [
           {
             "id": "nx:s0:body#2",
-            "kind": "sheet",
-            "regions": [
-              "nx:s0:region#4"
-            ]
+            "kind": "sheet"
           },
           {
             "id": "nx:s1:body#2",
-            "kind": "sheet",
-            "regions": [
-              "nx:s1:region#4"
-            ]
+            "kind": "sheet"
           }
         ],
         "coedges": [],
-        "colliders": [],
-        "configurations": [],
         "curves": [],
-        "declared_measures": [],
-        "drawings": [],
         "edges": [],
         "faces": [
           {
@@ -1136,25 +1119,11 @@
             "tolerance": 0.1
           }
         ],
-        "feature_input_topologies": [],
-        "feature_result_topologies": [],
-        "features": [],
-        "history_bodies": [],
         "loops": [],
-        "mass_properties": [],
-        "occurrences": [],
-        "parameters": [],
         "pcurves": [],
-        "physical_materials": [],
-        "physics_scenes": [],
-        "pmi": [],
-        "point_clouds": [],
         "points": [],
-        "presentation_documents": [],
-        "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_definitions": [],
         "regions": [
           {
             "body": "nx:s0:body#2",
@@ -1171,430 +1140,18 @@
             ]
           }
         ],
-        "rigid_bodies": [],
-        "semantic_annotations": [],
         "shells": [
           {
             "id": "nx:s0:shell#3",
-            "members": [
-              {
-                "id": "nx:s0:face#300",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#301",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#302",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#303",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#304",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#305",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#306",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#307",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#308",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#309",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#310",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#311",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#312",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#313",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#314",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#315",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#316",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#317",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#318",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#319",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#320",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#321",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#322",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#323",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#324",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#325",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#326",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#327",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#328",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#329",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#330",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#331",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#332",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#333",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#334",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#335",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#336",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#337",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#338",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#339",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#340",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#341",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#342",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#343",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#344",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#345",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#346",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#347",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#348",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#349",
-                "kind": "face"
-              }
-            ],
+            "members": [],
             "region": "nx:s0:region#4"
           },
           {
             "id": "nx:s1:shell#3",
-            "members": [
-              {
-                "id": "nx:s1:face#300",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#301",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#302",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#303",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#304",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#305",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#306",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#307",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#308",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#309",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#310",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#311",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#312",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#313",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#314",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#315",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#316",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#317",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#318",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#319",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#320",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#321",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#322",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#323",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#324",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#325",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#326",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#327",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#328",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#329",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#330",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#331",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#332",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#333",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#334",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#335",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#336",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#337",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#338",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#339",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#340",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#341",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#342",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#343",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#344",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#345",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#346",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#347",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#348",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#349",
-                "kind": "face"
-              }
-            ],
+            "members": [],
             "region": "nx:s1:region#4"
           }
         ],
-        "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
-        "solver_settings": [],
-        "spatial_sketch_constraints": [],
-        "spatial_sketch_entities": [],
-        "spatial_sketches": [],
-        "spreadsheets": [],
         "subds": [],
         "surfaces": [
           {
@@ -3998,8 +3555,45 @@
             "id": "nx:s1:surf#9"
           }
         ],
+        "vertices": []
+      },
+      "ir_version": "11",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "articulations": [],
+        "assembly_joints": [],
+        "assets": [],
+        "attributes": [],
+        "colliders": [],
+        "configurations": [],
+        "declared_measures": [],
+        "drawings": [],
+        "feature_input_topologies": [],
+        "feature_result_topologies": [],
+        "features": [],
+        "history_bodies": [],
+        "mass_properties": [],
+        "occurrences": [],
+        "parameters": [],
+        "physical_materials": [],
+        "physics_scenes": [],
+        "pmi": [],
+        "point_clouds": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "product_definitions": [],
+        "rigid_bodies": [],
+        "semantic_annotations": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "solver_settings": [],
+        "spatial_sketch_constraints": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
         "tessellations": [],
-        "vertices": [],
         "view_presentations": []
       },
       "native": {
@@ -4631,20 +4225,14 @@
           ]
         }
       },
+      "process": {},
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
+      },
       "source": {
-        "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "2",
-          "file_size": "3430",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "3416",
-          "header_entry_count": "2",
-          "jpeg_preview_count": "0",
-          "partition_streams": "2",
-          "plain_streams": "0",
-          "rmfastload_active_object_count": "50"
-        },
+        "attributes": {},
         "identity": {
           "dialects": {
             "extra": [
@@ -7072,6 +6660,8 @@
           }
         }
       },
+      "decode_digest": "1caf66bc0923e48a9583e696ed13064964db25a23c78a2a296557cfb4a9b202e",
+      "file_digests": {},
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -7079,7 +6669,10 @@
             "kind": "inline"
           },
           "offset": 121,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -7087,9 +6680,15 @@
             "kind": "inline"
           },
           "offset": 1657,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

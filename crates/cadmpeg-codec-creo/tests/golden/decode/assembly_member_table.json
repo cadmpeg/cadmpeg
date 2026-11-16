@@ -1,7 +1,24 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
     "ir_version": "11",
     "model": {
       "appearance_bindings": [],
@@ -10,20 +27,14 @@
       "assembly_joints": [],
       "assets": [],
       "attributes": [],
-      "bodies": [],
-      "coedges": [],
       "colliders": [],
       "configurations": [],
-      "curves": [],
       "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [],
       "history_bodies": [],
-      "loops": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -191,16 +202,12 @@
         }
       ],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
           "bodies": [],
@@ -213,10 +220,8 @@
           "source_name": "TOP_ASSY"
         }
       ],
-      "regions": [],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -225,30 +230,25 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "365",
         "model_name": "TOP_ASSY",
-        "section.0.length": "36",
         "section.0.name": "BasBasData",
-        "section.0.offset": "91",
         "section.0.raw_name": "BasBasData",
         "section.0.role": "model-data",
-        "section.1.length": "238",
         "section.1.name": "NeuAsmSld",
-        "section.1.offset": "127",
         "section.1.raw_name": "NeuAsmSld",
         "section.1.role": "metadata",
-        "section_count": "2",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 ASSEMBLY 2562 2120"
       },
@@ -822,6 +822,9 @@
         }
       }
     },
-    "retained_records": {}
+    "decode_digest": "42e21f1cb63013a46d09b17368da5b33135268201ece65b7af88e3c55ae85d51",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

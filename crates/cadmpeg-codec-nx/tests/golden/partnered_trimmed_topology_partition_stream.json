@@ -1,23 +1,13 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
+      "design": {},
       "fragment": false,
-      "ir_version": "11",
-      "model": {
-        "appearance_bindings": [],
-        "appearances": [],
-        "articulations": [],
-        "assembly_joints": [],
-        "assets": [],
-        "attributes": [],
+      "geometry": {
         "bodies": [
           {
             "id": "nx:s0:body#2",
-            "kind": "solid",
-            "regions": [
-              "nx:s0:region#12"
-            ]
+            "kind": "solid"
           }
         ],
         "coedges": [
@@ -38,8 +28,6 @@
             "sense": "reversed"
           }
         ],
-        "colliders": [],
-        "configurations": [],
         "curves": [
           {
             "geometry": {
@@ -61,8 +49,6 @@
             "id": "nx:s0:crv#0"
           }
         ],
-        "declared_measures": [],
-        "drawings": [],
         "edges": [
           {
             "carrier": {
@@ -72,9 +58,11 @@
                 0.75
               ]
             },
-            "end": "nx:s0:vertex#23",
+            "ends": {
+              "end": "nx:s0:vertex#23",
+              "start": "nx:s0:vertex#10"
+            },
             "id": "nx:s0:edge#8",
-            "start": "nx:s0:vertex#10",
             "tolerance": 0.3
           }
         ],
@@ -106,10 +94,6 @@
             "tolerance": 0.2
           }
         ],
-        "feature_input_topologies": [],
-        "feature_result_topologies": [],
-        "features": [],
-        "history_bodies": [],
         "loops": [
           {
             "boundary": {
@@ -134,14 +118,7 @@
             "id": "nx:s0:loop#5"
           }
         ],
-        "mass_properties": [],
-        "occurrences": [],
-        "parameters": [],
         "pcurves": [],
-        "physical_materials": [],
-        "physics_scenes": [],
-        "pmi": [],
-        "point_clouds": [],
         "points": [
           {
             "id": "nx:s0:pt#0",
@@ -160,11 +137,8 @@
             }
           }
         ],
-        "presentation_documents": [],
-        "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_definitions": [],
         "regions": [
           {
             "body": "nx:s0:body#2",
@@ -174,32 +148,13 @@
             ]
           }
         ],
-        "rigid_bodies": [],
-        "semantic_annotations": [],
         "shells": [
           {
             "id": "nx:s0:shell#3",
-            "members": [
-              {
-                "id": "nx:s0:face#4",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#20",
-                "kind": "face"
-              }
-            ],
+            "members": [],
             "region": "nx:s0:region#12"
           }
         ],
-        "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
-        "solver_settings": [],
-        "spatial_sketch_constraints": [],
-        "spatial_sketch_entities": [],
-        "spatial_sketches": [],
-        "spreadsheets": [],
         "subds": [],
         "surfaces": [
           {
@@ -227,7 +182,6 @@
             "id": "nx:s0:surf#0"
           }
         ],
-        "tessellations": [],
         "vertices": [
           {
             "id": "nx:s0:vertex#10",
@@ -239,7 +193,45 @@
             "point": "nx:s0:pt#1",
             "tolerance": 0.1
           }
-        ],
+        ]
+      },
+      "ir_version": "11",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "articulations": [],
+        "assembly_joints": [],
+        "assets": [],
+        "attributes": [],
+        "colliders": [],
+        "configurations": [],
+        "declared_measures": [],
+        "drawings": [],
+        "feature_input_topologies": [],
+        "feature_result_topologies": [],
+        "features": [],
+        "history_bodies": [],
+        "mass_properties": [],
+        "occurrences": [],
+        "parameters": [],
+        "physical_materials": [],
+        "physics_scenes": [],
+        "pmi": [],
+        "point_clouds": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "product_definitions": [],
+        "rigid_bodies": [],
+        "semantic_annotations": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "solver_settings": [],
+        "spatial_sketch_constraints": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "tessellations": [],
         "view_presentations": []
       },
       "native": {
@@ -280,19 +272,14 @@
           ]
         }
       },
+      "process": {},
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
+      },
       "source": {
-        "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "428",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "414",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "partition_streams": "1",
-          "plain_streams": "0"
-        },
+        "attributes": {},
         "identity": {
           "dialects": {
             "extra": [
@@ -557,6 +544,8 @@
           }
         }
       },
+      "decode_digest": "e08278763ddcae773c3b7632badede7287ddbdb92c8da1f5a7122e81fc94b54d",
+      "file_digests": {},
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -564,9 +553,15 @@
             "kind": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

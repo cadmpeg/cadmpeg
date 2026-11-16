@@ -80,7 +80,7 @@ impl AssemblyProjection {
             let tail = format!("@{site}");
             let bodies = decoded
                 .ir
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .filter(|body| body.id.as_str().ends_with(&tail))
@@ -120,7 +120,7 @@ impl AssemblyProjection {
         }
         decoded.ir.model.occurrences.extend(self.occurrences);
         decoded.body.losses.extend(self.losses);
-        decoded.ir.model.finalize();
+        decoded.ir.finalize();
     }
 
     /// The site keys of the virtual component sections that the assembly

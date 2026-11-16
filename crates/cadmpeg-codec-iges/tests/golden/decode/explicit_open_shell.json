@@ -1,22 +1,12 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "iges:model:body#D23",
           "kind": "sheet",
-          "regions": [
-            "iges:model:region#D23"
-          ],
           "visible": true
         }
       ],
@@ -54,8 +44,6 @@
           "sense": "forward"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -186,8 +174,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -197,9 +183,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D23:D15:2",
-          "id": "iges:model:edge#D23:D17:1",
-          "start": "iges:model:vertex#D23:D15:1"
+          "ends": {
+            "end": "iges:model:vertex#D23:D15:2",
+            "start": "iges:model:vertex#D23:D15:1"
+          },
+          "id": "iges:model:edge#D23:D17:1"
         },
         {
           "carrier": {
@@ -209,9 +197,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D23:D15:3",
-          "id": "iges:model:edge#D23:D17:2",
-          "start": "iges:model:vertex#D23:D15:2"
+          "ends": {
+            "end": "iges:model:vertex#D23:D15:3",
+            "start": "iges:model:vertex#D23:D15:2"
+          },
+          "id": "iges:model:edge#D23:D17:2"
         },
         {
           "carrier": {
@@ -221,9 +211,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D23:D15:4",
-          "id": "iges:model:edge#D23:D17:3",
-          "start": "iges:model:vertex#D23:D15:3"
+          "ends": {
+            "end": "iges:model:vertex#D23:D15:4",
+            "start": "iges:model:vertex#D23:D15:3"
+          },
+          "id": "iges:model:edge#D23:D17:3"
         },
         {
           "carrier": {
@@ -233,9 +225,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D23:D15:1",
-          "id": "iges:model:edge#D23:D17:4",
-          "start": "iges:model:vertex#D23:D15:4"
+          "ends": {
+            "end": "iges:model:vertex#D23:D15:1",
+            "start": "iges:model:vertex#D23:D15:4"
+          },
+          "id": "iges:model:edge#D23:D17:4"
         }
       ],
       "faces": [
@@ -251,10 +245,6 @@
           "surface": "iges:model:surface#D5"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -271,14 +261,7 @@
           "id": "iges:model:loop#D23:D19"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "iges:model:point#D23:D15:1",
@@ -313,11 +296,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "iges:model:body#D23",
@@ -327,28 +307,13 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "iges:model:shell#D23",
-          "members": [
-            {
-              "id": "iges:model:face#D23:D21",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D23"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -385,7 +350,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "iges:model:vertex#D23:D15:1",
@@ -403,7 +367,45 @@
           "id": "iges:model:vertex#D23:D15:4",
           "point": "iges:model:point#D23:D15:4"
         }
-      ],
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -2254,6 +2256,12 @@
         "views": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
@@ -2438,6 +2446,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "ed5cadfdd27287d98c0ec74974708f4654c886f49063877f23ac0f446c2cc125",
+    "file_digests": {},
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -2445,8 +2455,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

@@ -1,7 +1,24 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
     "ir_version": "11",
     "model": {
       "appearance_bindings": [],
@@ -10,33 +27,23 @@
       "assembly_joints": [],
       "assets": [],
       "attributes": [],
-      "bodies": [],
-      "coedges": [],
       "colliders": [],
       "configurations": [],
-      "curves": [],
       "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [],
       "history_bodies": [],
-      "loops": [],
       "mass_properties": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
           "bodies": [],
@@ -50,10 +57,8 @@
           "source_name": "Part"
         }
       ],
-      "regions": [],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -62,10 +67,7 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -84,14 +86,14 @@
         ]
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "28",
-        "bytes_structural": "539",
-        "bytes_typed": "30",
-        "bytes_unclassified": "0",
-        "data_sections": "2",
-        "entity_instances": "2",
         "schema": "AP242"
       },
       "identity": {
@@ -124,7 +126,14 @@
     }
   },
   "report": {
-    "coverage": {},
+    "coverage": {
+      "bytes_named_opaque": 28,
+      "bytes_structural": 539,
+      "bytes_typed": 30,
+      "bytes_unclassified": 0,
+      "data_sections": 2,
+      "entity_instances": 2
+    },
     "identity": {
       "dialects": {
         "extra": [],
@@ -224,6 +233,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "46c8315eb30763649e852f221f917853175810cd936be52cee921ed4e864fdd4",
+    "file_digests": {},
     "retained_records": {
       "step:data:example_record#2": {
         "bytes": {
@@ -231,7 +242,10 @@
           "kind": "inline"
         },
         "offset": 398,
-        "stream": ""
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       },
       "step:file:signature#0": {
         "bytes": {
@@ -239,8 +253,12 @@
           "kind": "inline"
         },
         "offset": 453,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

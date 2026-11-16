@@ -1,23 +1,13 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
+      "design": {},
       "fragment": false,
-      "ir_version": "11",
-      "model": {
-        "appearance_bindings": [],
-        "appearances": [],
-        "articulations": [],
-        "assembly_joints": [],
-        "assets": [],
-        "attributes": [],
+      "geometry": {
         "bodies": [
           {
             "id": "nx:s0:body#2",
-            "kind": "sheet",
-            "regions": [
-              "nx:s0:region#12"
-            ]
+            "kind": "sheet"
           }
         ],
         "coedges": [
@@ -30,8 +20,6 @@
             "sense": "forward"
           }
         ],
-        "colliders": [],
-        "configurations": [],
         "curves": [
           {
             "geometry": {
@@ -90,16 +78,16 @@
             }
           }
         ],
-        "declared_measures": [],
-        "drawings": [],
         "edges": [
           {
             "carrier": {
               "curve": "nx:s0:intersection-crv#0"
             },
-            "end": "nx:s0:vertex#10",
+            "ends": {
+              "end": "nx:s0:vertex#10",
+              "start": "nx:s0:vertex#10"
+            },
             "id": "nx:s0:edge#8",
-            "start": "nx:s0:vertex#10",
             "tolerance": 0.3
           }
         ],
@@ -118,10 +106,6 @@
             "tolerance": 0.2
           }
         ],
-        "feature_input_topologies": [],
-        "feature_result_topologies": [],
-        "features": [],
-        "history_bodies": [],
         "loops": [
           {
             "boundary": {
@@ -135,14 +119,7 @@
             "id": "nx:s0:loop#5"
           }
         ],
-        "mass_properties": [],
-        "occurrences": [],
-        "parameters": [],
         "pcurves": [],
-        "physical_materials": [],
-        "physics_scenes": [],
-        "pmi": [],
-        "point_clouds": [],
         "points": [
           {
             "id": "nx:s0:pt#0",
@@ -153,8 +130,6 @@
             }
           }
         ],
-        "presentation_documents": [],
-        "presentation_layers": [],
         "procedural_curves": [
           {
             "curve": "nx:s0:intersection-crv#0",
@@ -315,7 +290,6 @@
           }
         ],
         "procedural_surfaces": [],
-        "product_definitions": [],
         "regions": [
           {
             "body": "nx:s0:body#2",
@@ -325,28 +299,13 @@
             ]
           }
         ],
-        "rigid_bodies": [],
-        "semantic_annotations": [],
         "shells": [
           {
             "id": "nx:s0:shell#3",
-            "members": [
-              {
-                "id": "nx:s0:face#4",
-                "kind": "face"
-              }
-            ],
+            "members": [],
             "region": "nx:s0:region#12"
           }
         ],
-        "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
-        "solver_settings": [],
-        "spatial_sketch_constraints": [],
-        "spatial_sketch_entities": [],
-        "spatial_sketches": [],
-        "spreadsheets": [],
         "subds": [],
         "surfaces": [
           {
@@ -398,14 +357,51 @@
             "id": "nx:s0:surf#1"
           }
         ],
-        "tessellations": [],
         "vertices": [
           {
             "id": "nx:s0:vertex#10",
             "point": "nx:s0:pt#0",
             "tolerance": 0.1
           }
-        ],
+        ]
+      },
+      "ir_version": "11",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "articulations": [],
+        "assembly_joints": [],
+        "assets": [],
+        "attributes": [],
+        "colliders": [],
+        "configurations": [],
+        "declared_measures": [],
+        "drawings": [],
+        "feature_input_topologies": [],
+        "feature_result_topologies": [],
+        "features": [],
+        "history_bodies": [],
+        "mass_properties": [],
+        "occurrences": [],
+        "parameters": [],
+        "physical_materials": [],
+        "physics_scenes": [],
+        "pmi": [],
+        "point_clouds": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "product_definitions": [],
+        "rigid_bodies": [],
+        "semantic_annotations": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "solver_settings": [],
+        "spatial_sketch_constraints": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "tessellations": [],
         "view_presentations": []
       },
       "native": {
@@ -558,25 +554,17 @@
           ]
         }
       },
+      "process": {},
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
+      },
       "source": {
         "attributes": {
-          "deltas.0.bytes_decoded": "0",
           "deltas.0.grammar": "sequential_owned_records",
-          "deltas.0.instances": "0",
-          "deltas.0.schemas": "0",
           "deltas.0.selection": "unresolved",
-          "deltas.0.stop_offset": "0",
-          "deltas.0.stop_reason": "UnsupportedBase",
-          "deltas_streams": "1",
-          "directory_entries": "1",
-          "file_size": "689",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "675",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "partition_streams": "1",
-          "plain_streams": "0"
+          "deltas.0.stop_reason": "UnsupportedBase"
         },
         "identity": {
           "dialects": {
@@ -891,6 +879,8 @@
           }
         }
       },
+      "decode_digest": "b748fc84cb62456fe9505cc2d175e4fb90a1f9dedb97ac4a1ac74f306aff6b51",
+      "file_digests": {},
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -898,7 +888,10 @@
             "kind": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -906,9 +899,15 @@
             "kind": "inline"
           },
           "offset": 457,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

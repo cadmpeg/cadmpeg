@@ -1,23 +1,13 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/Occurrence",
           "kind": "solid",
-          "name": "Occurrence",
-          "regions": [
-            "usd:stage:region#/Occurrence:region:0"
-          ]
+          "name": "Occurrence"
         }
       ],
       "coedges": [
@@ -118,8 +108,6 @@
           "sense": "reversed"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -358,8 +346,6 @@
           "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:2"
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -369,9 +355,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:0",
-          "id": "usd:stage:edge#/Occurrence:edge:0",
-          "start": "usd:stage:vertex#/Occurrence:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:0",
+            "start": "usd:stage:vertex#/Occurrence:vertex:0"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:0"
         },
         {
           "carrier": {
@@ -381,9 +369,11 @@
               0.004
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:0",
-          "id": "usd:stage:edge#/Occurrence:edge:1",
-          "start": "usd:stage:vertex#/Occurrence:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:0",
+            "start": "usd:stage:vertex#/Occurrence:vertex:1"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:1"
         },
         {
           "carrier": {
@@ -393,9 +383,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:1",
-          "id": "usd:stage:edge#/Occurrence:edge:2",
-          "start": "usd:stage:vertex#/Occurrence:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:1",
+            "start": "usd:stage:vertex#/Occurrence:vertex:1"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:2"
         }
       ],
       "faces": [
@@ -433,10 +425,6 @@
           "surface": "usd:stage:surface#/Occurrence:surface-nurbs:2"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -475,48 +463,6 @@
           "id": "usd:stage:loop#/Occurrence:loop:2"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "usd:stage:occurrence#/Occurrence",
-          "name": "Occurrence",
-          "native_ref": "/Occurrence",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Occurrence",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -3399,10 +3345,6 @@
           }
         }
       ],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "usd:stage:point#/Occurrence:vertex:0",
@@ -3421,23 +3363,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [
-        {
-          "bodies": [
-            "usd:stage:body#/Occurrence"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/Occurrence",
-          "kind": "group",
-          "native_ref": "/Occurrence",
-          "sketches": [],
-          "source_name": "Occurrence"
-        }
-      ],
       "regions": [
         {
           "body": "usd:stage:body#/Occurrence",
@@ -3447,36 +3374,13 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "usd:stage:shell#/Occurrence:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/Occurrence:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Occurrence:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Occurrence:face:2",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/Occurrence:region:0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -3829,7 +3733,6 @@
           "id": "usd:stage:surface#/Occurrence:surface-nurbs:2"
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "usd:stage:vertex#/Occurrence:vertex:0",
@@ -3839,10 +3742,105 @@
           "id": "usd:stage:vertex#/Occurrence:vertex:1",
           "point": "usd:stage:point#/Occurrence:vertex:1"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Occurrence",
+          "name": "Occurrence",
+          "native_ref": "/Occurrence",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Occurrence",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
       ],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "usd:stage:body#/Occurrence"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/Occurrence",
+          "kind": "group",
+          "native_ref": "/Occurrence",
+          "sketches": [],
+          "source_name": "Occurrence"
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Occurrence",
@@ -3908,6 +3906,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "1168e078adf1bc8622c41260e10315b96824bd1f10a8865ac75ded40fa116fcc",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

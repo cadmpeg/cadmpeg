@@ -1,71 +1,43 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/World/Ball",
           "kind": "solid",
-          "name": "Ball",
-          "regions": [
-            "usd:stage:region#/World/Ball:region:0"
-          ]
+          "name": "Ball"
         },
         {
           "id": "usd:stage:body#/World/Box",
           "kind": "solid",
-          "name": "Box",
-          "regions": [
-            "usd:stage:region#/World/Box:region:0"
-          ]
+          "name": "Box"
         },
         {
           "id": "usd:stage:body#/World/Can",
           "kind": "solid",
-          "name": "Can",
-          "regions": [
-            "usd:stage:region#/World/Can:region:0"
-          ]
+          "name": "Can"
         },
         {
           "id": "usd:stage:body#/World/Frustum",
           "kind": "solid",
-          "name": "Frustum",
-          "regions": [
-            "usd:stage:region#/World/Frustum:region:0"
-          ]
+          "name": "Frustum"
         },
         {
           "id": "usd:stage:body#/World/Funnel",
           "kind": "solid",
-          "name": "Funnel",
-          "regions": [
-            "usd:stage:region#/World/Funnel:region:0"
-          ]
+          "name": "Funnel"
         },
         {
           "id": "usd:stage:body#/World/Pill",
           "kind": "solid",
-          "name": "Pill",
-          "regions": [
-            "usd:stage:region#/World/Pill:region:0"
-          ]
+          "name": "Pill"
         },
         {
           "id": "usd:stage:body#/World/Sheet",
           "kind": "sheet",
-          "name": "Sheet",
-          "regions": [
-            "usd:stage:region#/World/Sheet:region:0"
-          ]
+          "name": "Sheet"
         }
       ],
       "coedges": [
@@ -502,8 +474,6 @@
           "sense": "reversed"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -1111,8 +1081,6 @@
           "id": "usd:stage:curve#/World/Sheet:curve3d-analytic:3"
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -1122,9 +1090,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:4",
-          "id": "usd:stage:edge#/World/Box:edge:0",
-          "start": "usd:stage:vertex#/World/Box:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:4",
+            "start": "usd:stage:vertex#/World/Box:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:0"
         },
         {
           "carrier": {
@@ -1134,9 +1104,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:6",
-          "id": "usd:stage:edge#/World/Box:edge:1",
-          "start": "usd:stage:vertex#/World/Box:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:6",
+            "start": "usd:stage:vertex#/World/Box:vertex:4"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:1"
         },
         {
           "carrier": {
@@ -1146,9 +1118,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:7",
-          "id": "usd:stage:edge#/World/Box:edge:10",
-          "start": "usd:stage:vertex#/World/Box:vertex:6"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:7",
+            "start": "usd:stage:vertex#/World/Box:vertex:6"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:10"
         },
         {
           "carrier": {
@@ -1158,9 +1132,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:3",
-          "id": "usd:stage:edge#/World/Box:edge:11",
-          "start": "usd:stage:vertex#/World/Box:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:3",
+            "start": "usd:stage:vertex#/World/Box:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:11"
         },
         {
           "carrier": {
@@ -1170,9 +1146,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:6",
-          "id": "usd:stage:edge#/World/Box:edge:2",
-          "start": "usd:stage:vertex#/World/Box:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:6",
+            "start": "usd:stage:vertex#/World/Box:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:2"
         },
         {
           "carrier": {
@@ -1182,9 +1160,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:2",
-          "id": "usd:stage:edge#/World/Box:edge:3",
-          "start": "usd:stage:vertex#/World/Box:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:2",
+            "start": "usd:stage:vertex#/World/Box:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:3"
         },
         {
           "carrier": {
@@ -1194,9 +1174,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:3",
-          "id": "usd:stage:edge#/World/Box:edge:4",
-          "start": "usd:stage:vertex#/World/Box:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:3",
+            "start": "usd:stage:vertex#/World/Box:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:4"
         },
         {
           "carrier": {
@@ -1206,9 +1188,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:7",
-          "id": "usd:stage:edge#/World/Box:edge:5",
-          "start": "usd:stage:vertex#/World/Box:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:7",
+            "start": "usd:stage:vertex#/World/Box:vertex:3"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:5"
         },
         {
           "carrier": {
@@ -1218,9 +1202,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:7",
-          "id": "usd:stage:edge#/World/Box:edge:6",
-          "start": "usd:stage:vertex#/World/Box:vertex:5"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:7",
+            "start": "usd:stage:vertex#/World/Box:vertex:5"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:6"
         },
         {
           "carrier": {
@@ -1230,9 +1216,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:5",
-          "id": "usd:stage:edge#/World/Box:edge:7",
-          "start": "usd:stage:vertex#/World/Box:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:5",
+            "start": "usd:stage:vertex#/World/Box:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:7"
         },
         {
           "carrier": {
@@ -1242,9 +1230,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:1",
-          "id": "usd:stage:edge#/World/Box:edge:8",
-          "start": "usd:stage:vertex#/World/Box:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:1",
+            "start": "usd:stage:vertex#/World/Box:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:8"
         },
         {
           "carrier": {
@@ -1254,9 +1244,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:5",
-          "id": "usd:stage:edge#/World/Box:edge:9",
-          "start": "usd:stage:vertex#/World/Box:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:5",
+            "start": "usd:stage:vertex#/World/Box:vertex:4"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:9"
         },
         {
           "carrier": {
@@ -1266,9 +1258,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Can:vertex:0",
-          "id": "usd:stage:edge#/World/Can:edge:0",
-          "start": "usd:stage:vertex#/World/Can:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Can:vertex:0",
+            "start": "usd:stage:vertex#/World/Can:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Can:edge:0"
         },
         {
           "carrier": {
@@ -1278,9 +1272,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Can:vertex:1",
-          "id": "usd:stage:edge#/World/Can:edge:1",
-          "start": "usd:stage:vertex#/World/Can:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Can:vertex:1",
+            "start": "usd:stage:vertex#/World/Can:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Can:edge:1"
         },
         {
           "carrier": {
@@ -1290,9 +1286,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Can:vertex:1",
-          "id": "usd:stage:edge#/World/Can:edge:2",
-          "start": "usd:stage:vertex#/World/Can:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Can:vertex:1",
+            "start": "usd:stage:vertex#/World/Can:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Can:edge:2"
         },
         {
           "carrier": {
@@ -1302,9 +1300,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Frustum:vertex:0",
-          "id": "usd:stage:edge#/World/Frustum:edge:0",
-          "start": "usd:stage:vertex#/World/Frustum:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Frustum:vertex:0",
+            "start": "usd:stage:vertex#/World/Frustum:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Frustum:edge:0"
         },
         {
           "carrier": {
@@ -1314,9 +1314,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Frustum:vertex:1",
-          "id": "usd:stage:edge#/World/Frustum:edge:1",
-          "start": "usd:stage:vertex#/World/Frustum:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Frustum:vertex:1",
+            "start": "usd:stage:vertex#/World/Frustum:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Frustum:edge:1"
         },
         {
           "carrier": {
@@ -1326,9 +1328,11 @@
               31.622776601683796
             ]
           },
-          "end": "usd:stage:vertex#/World/Frustum:vertex:1",
-          "id": "usd:stage:edge#/World/Frustum:edge:2",
-          "start": "usd:stage:vertex#/World/Frustum:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Frustum:vertex:1",
+            "start": "usd:stage:vertex#/World/Frustum:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Frustum:edge:2"
         },
         {
           "carrier": {
@@ -1338,9 +1342,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Funnel:vertex:0",
-          "id": "usd:stage:edge#/World/Funnel:edge:0",
-          "start": "usd:stage:vertex#/World/Funnel:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Funnel:vertex:0",
+            "start": "usd:stage:vertex#/World/Funnel:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Funnel:edge:0"
         },
         {
           "carrier": {
@@ -1350,9 +1356,11 @@
               36.05551275463989
             ]
           },
-          "end": "usd:stage:vertex#/World/Funnel:vertex:1",
-          "id": "usd:stage:edge#/World/Funnel:edge:1",
-          "start": "usd:stage:vertex#/World/Funnel:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Funnel:vertex:1",
+            "start": "usd:stage:vertex#/World/Funnel:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Funnel:edge:1"
         },
         {
           "carrier": {
@@ -1362,9 +1370,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Pill:vertex:0",
-          "id": "usd:stage:edge#/World/Pill:edge:0",
-          "start": "usd:stage:vertex#/World/Pill:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Pill:vertex:0",
+            "start": "usd:stage:vertex#/World/Pill:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Pill:edge:0"
         },
         {
           "carrier": {
@@ -1374,9 +1384,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Pill:vertex:1",
-          "id": "usd:stage:edge#/World/Pill:edge:1",
-          "start": "usd:stage:vertex#/World/Pill:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Pill:vertex:1",
+            "start": "usd:stage:vertex#/World/Pill:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Pill:edge:1"
         },
         {
           "carrier": {
@@ -1386,9 +1398,11 @@
               1.5707963267948966
             ]
           },
-          "end": "usd:stage:vertex#/World/Pill:vertex:0",
-          "id": "usd:stage:edge#/World/Pill:edge:2",
-          "start": "usd:stage:vertex#/World/Pill:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Pill:vertex:0",
+            "start": "usd:stage:vertex#/World/Pill:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/Pill:edge:2"
         },
         {
           "carrier": {
@@ -1398,9 +1412,11 @@
               20.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Pill:vertex:1",
-          "id": "usd:stage:edge#/World/Pill:edge:3",
-          "start": "usd:stage:vertex#/World/Pill:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Pill:vertex:1",
+            "start": "usd:stage:vertex#/World/Pill:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Pill:edge:3"
         },
         {
           "carrier": {
@@ -1410,9 +1426,11 @@
               1.5707963267948966
             ]
           },
-          "end": "usd:stage:vertex#/World/Pill:vertex:3",
-          "id": "usd:stage:edge#/World/Pill:edge:4",
-          "start": "usd:stage:vertex#/World/Pill:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Pill:vertex:3",
+            "start": "usd:stage:vertex#/World/Pill:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Pill:edge:4"
         },
         {
           "carrier": {
@@ -1422,9 +1440,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Sheet:vertex:1",
-          "id": "usd:stage:edge#/World/Sheet:edge:0",
-          "start": "usd:stage:vertex#/World/Sheet:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Sheet:vertex:1",
+            "start": "usd:stage:vertex#/World/Sheet:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Sheet:edge:0"
         },
         {
           "carrier": {
@@ -1434,9 +1454,11 @@
               50.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Sheet:vertex:2",
-          "id": "usd:stage:edge#/World/Sheet:edge:1",
-          "start": "usd:stage:vertex#/World/Sheet:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Sheet:vertex:2",
+            "start": "usd:stage:vertex#/World/Sheet:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Sheet:edge:1"
         },
         {
           "carrier": {
@@ -1446,9 +1468,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Sheet:vertex:3",
-          "id": "usd:stage:edge#/World/Sheet:edge:2",
-          "start": "usd:stage:vertex#/World/Sheet:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Sheet:vertex:3",
+            "start": "usd:stage:vertex#/World/Sheet:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/Sheet:edge:2"
         },
         {
           "carrier": {
@@ -1458,9 +1482,11 @@
               50.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Sheet:vertex:3",
-          "id": "usd:stage:edge#/World/Sheet:edge:3",
-          "start": "usd:stage:vertex#/World/Sheet:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Sheet:vertex:3",
+            "start": "usd:stage:vertex#/World/Sheet:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Sheet:edge:3"
         }
       ],
       "faces": [
@@ -1673,10 +1699,6 @@
           "surface": "usd:stage:surface#/World/Sheet:surface-analytic:0"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -1913,326 +1935,7 @@
           "id": "usd:stage:loop#/World/Sheet:loop:0"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "usd:stage:occurrence#/World",
-          "name": "World",
-          "native_ref": "/World",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/Ball",
-          "name": "Ball",
-          "native_ref": "/World/Ball",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/Ball",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/Box",
-          "name": "Box",
-          "native_ref": "/World/Box",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/Box",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/Can",
-          "name": "Can",
-          "native_ref": "/World/Can",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/Can",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/Frustum",
-          "name": "Frustum",
-          "native_ref": "/World/Frustum",
-          "ordinal": 5,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/Frustum",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/Funnel",
-          "name": "Funnel",
-          "native_ref": "/World/Funnel",
-          "ordinal": 3,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/Funnel",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/Pill",
-          "name": "Pill",
-          "native_ref": "/World/Pill",
-          "ordinal": 4,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/Pill",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/Sheet",
-          "name": "Sheet",
-          "native_ref": "/World/Sheet",
-          "ordinal": 6,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/Sheet",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "usd:stage:point#/World/Box:vertex:0",
@@ -2411,98 +2114,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [
-        {
-          "bodies": [],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/World",
-          "kind": "group",
-          "native_ref": "/World",
-          "sketches": [],
-          "source_name": "World"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/World/Ball"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/World/Ball",
-          "kind": "group",
-          "native_ref": "/World/Ball",
-          "sketches": [],
-          "source_name": "Ball"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/World/Box"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/World/Box",
-          "kind": "group",
-          "native_ref": "/World/Box",
-          "sketches": [],
-          "source_name": "Box"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/World/Can"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/World/Can",
-          "kind": "group",
-          "native_ref": "/World/Can",
-          "sketches": [],
-          "source_name": "Can"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/World/Frustum"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/World/Frustum",
-          "kind": "group",
-          "native_ref": "/World/Frustum",
-          "sketches": [],
-          "source_name": "Frustum"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/World/Funnel"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/World/Funnel",
-          "kind": "group",
-          "native_ref": "/World/Funnel",
-          "sketches": [],
-          "source_name": "Funnel"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/World/Pill"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/World/Pill",
-          "kind": "group",
-          "native_ref": "/World/Pill",
-          "sketches": [],
-          "source_name": "Pill"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/World/Sheet"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/World/Sheet",
-          "kind": "group",
-          "native_ref": "/World/Sheet",
-          "sketches": [],
-          "source_name": "Sheet"
-        }
-      ],
       "regions": [
         {
           "body": "usd:stage:body#/World/Ball",
@@ -2554,136 +2167,43 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "usd:stage:shell#/World/Ball:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Ball:face:0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Ball:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Box:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Box:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Box:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Box:face:2",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Box:face:3",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Box:face:4",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Box:face:5",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Box:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Can:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Can:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Can:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Can:face:2",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Can:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Frustum:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Frustum:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Frustum:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Frustum:face:2",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Frustum:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Funnel:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Funnel:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Funnel:face:1",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Funnel:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Pill:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Pill:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Pill:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Pill:face:2",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Pill:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Sheet:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Sheet:face:0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Sheet:region:0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -3154,7 +2674,6 @@
           "id": "usd:stage:surface#/World/Sheet:surface-analytic:0"
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "usd:stage:vertex#/World/Box:vertex:0",
@@ -3244,10 +2763,453 @@
           "id": "usd:stage:vertex#/World/Sheet:vertex:3",
           "point": "usd:stage:point#/World/Sheet:vertex:3"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/World",
+          "name": "World",
+          "native_ref": "/World",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/Ball",
+          "name": "Ball",
+          "native_ref": "/World/Ball",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/Ball",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/Box",
+          "name": "Box",
+          "native_ref": "/World/Box",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/Box",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/Can",
+          "name": "Can",
+          "native_ref": "/World/Can",
+          "ordinal": 2,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/Can",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/Frustum",
+          "name": "Frustum",
+          "native_ref": "/World/Frustum",
+          "ordinal": 5,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/Frustum",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/Funnel",
+          "name": "Funnel",
+          "native_ref": "/World/Funnel",
+          "ordinal": 3,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/Funnel",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/Pill",
+          "name": "Pill",
+          "native_ref": "/World/Pill",
+          "ordinal": 4,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/Pill",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/Sheet",
+          "name": "Sheet",
+          "native_ref": "/World/Sheet",
+          "ordinal": 6,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/Sheet",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
       ],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World",
+          "kind": "group",
+          "native_ref": "/World",
+          "sketches": [],
+          "source_name": "World"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/World/Ball"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/Ball",
+          "kind": "group",
+          "native_ref": "/World/Ball",
+          "sketches": [],
+          "source_name": "Ball"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/World/Box"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/Box",
+          "kind": "group",
+          "native_ref": "/World/Box",
+          "sketches": [],
+          "source_name": "Box"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/World/Can"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/Can",
+          "kind": "group",
+          "native_ref": "/World/Can",
+          "sketches": [],
+          "source_name": "Can"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/World/Frustum"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/Frustum",
+          "kind": "group",
+          "native_ref": "/World/Frustum",
+          "sketches": [],
+          "source_name": "Frustum"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/World/Funnel"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/Funnel",
+          "kind": "group",
+          "native_ref": "/World/Funnel",
+          "sketches": [],
+          "source_name": "Funnel"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/World/Pill"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/Pill",
+          "kind": "group",
+          "native_ref": "/World/Pill",
+          "sketches": [],
+          "source_name": "Pill"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/World/Sheet"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/Sheet",
+          "kind": "group",
+          "native_ref": "/World/Sheet",
+          "sketches": [],
+          "source_name": "Sheet"
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "meters_per_unit": "0.01",
@@ -3312,6 +3274,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "928338c43ed158b1fbd621b807bf97e7c038ed34f04b8d342c82625a454c95e3",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

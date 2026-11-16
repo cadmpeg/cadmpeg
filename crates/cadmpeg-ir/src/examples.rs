@@ -80,24 +80,24 @@ pub fn unit_cube_with_history_body() -> Result<CadIr, ExampleError> {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
     let mut ir = unit_cube()?;
-    let model = ir.model.clone();
-    let body = model
+    let geometry = ir.geometry.clone();
+    let body = geometry
         .bodies
         .into_iter()
         .next()
         .ok_or(ExampleError::Geometry("the cube has a body"))?;
     let mut nest = BodyTopology::new(body);
-    nest.regions = model.regions;
-    nest.shells = model.shells;
-    nest.faces = model.faces;
-    nest.loops = model.loops;
-    nest.coedges = model.coedges;
-    nest.edges = model.edges;
-    nest.vertices = model.vertices;
-    nest.surfaces = model.surfaces;
-    nest.curves = model.curves;
-    nest.pcurves = model.pcurves;
-    nest.points = model.points;
+    nest.regions = geometry.regions;
+    nest.shells = geometry.shells;
+    nest.faces = geometry.faces;
+    nest.loops = geometry.loops;
+    nest.coedges = geometry.coedges;
+    nest.edges = geometry.edges;
+    nest.vertices = geometry.vertices;
+    nest.surfaces = geometry.surfaces;
+    nest.curves = geometry.curves;
+    nest.pcurves = geometry.pcurves;
+    nest.points = geometry.points;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -230,13 +230,14 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         let position = FinitePoint3::new(Point3::new(*x, *y, *z))
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(ExampleError::Geometry)?;
-        ir.model
+        ir.geometry
             .points
             .push(Point::new(cube_id!(PointId, "point", i), position, None));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: cube_id!(VertexId, "vertex", i),
             point: cube_id!(PointId, "point", i),
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -247,7 +248,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         let dir = Vector3::new(bx - ax, by - ay, bz - az);
         let len = dir.norm();
         let unit = Vector3::new(dir.x / len, dir.y / len, dir.z / len);
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: cube_id!(CurveId, "curve", i),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -255,17 +256,21 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
                     .map_err(ExampleError::Geometry)?,
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: cube_id!(EdgeId, "edge", i),
             carrier: crate::topology::EdgeCarrier::new(
                 Some(cube_id!(CurveId, "curve", i)),
                 Some([0.0, len]),
             )
             .map_err(ExampleError::Geometry)?,
-            start: cube_id!(VertexId, "vertex", *a),
-            end: cube_id!(VertexId, "vertex", *b),
+            ends: Some(crate::topology::EdgeEnds::new(
+                cube_id!(VertexId, "vertex", *a),
+                cube_id!(VertexId, "vertex", *b),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -273,7 +278,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
     let mut edge_to_coedges: HashMap<usize, Vec<CoedgeId>> = HashMap::new();
     for (name, normal, origin, ring) in &face_defs {
         let surf_id = cube_id!(SurfaceId, "surface", name.clone());
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surf_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
@@ -284,6 +289,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
                 .map_err(ExampleError::Geometry)?,
             )),
             source_object: None,
+            native_ref: None,
         });
 
         let loop_id = cube_id!(LoopId, "loop", name.clone());
@@ -292,7 +298,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
             .collect();
 
         for (i, (edge_index, forward)) in ring.iter().enumerate() {
-            ir.model.coedges.push(Coedge {
+            ir.geometry.coedges.push(Coedge {
                 id: coedge_ids[i].clone(),
                 owner_loop: loop_id.clone(),
                 edge: cube_id!(EdgeId, "edge", *edge_index),
@@ -304,6 +310,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
                 },
                 pcurves: Vec::new(),
                 use_curve: None,
+                native_ref: None,
             });
             edge_to_coedges
                 .entry(*edge_index)
@@ -311,15 +318,16 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
                 .push(coedge_ids[i].clone());
         }
 
-        ir.model.loops.push(Loop {
+        ir.geometry.loops.push(Loop {
             id: loop_id.clone(),
             face: cube_id!(FaceId, "face", name.clone()),
             boundary: crate::topology::LoopBoundary::Ring(crate::topology::LoopRing::new(
                 coedge_ids.clone(),
                 Vec::new(),
             )?),
+            native_ref: None,
         });
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: cube_id!(FaceId, "face", name.clone()),
             shell: cube_id!(ShellId, "shell", 0_usize),
             surface: surf_id,
@@ -328,6 +336,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
             name: Some(format!("{name} face")),
             color: None,
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -342,36 +351,31 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
             ]
         })
         .collect();
-    for ce in &mut ir.model.coedges {
+    for ce in &mut ir.geometry.coedges {
         if let Some(p) = partner_of.get(ce.id.as_str()) {
             ce.radial_next = p.clone();
         }
     }
 
     // Shell, region, body.
-    ir.model.shells.push(Shell::new(
+    ir.geometry.shells.push(Shell::new(
         cube_id!(ShellId, "shell", 0_usize),
         cube_id!(RegionId, "region", 0_usize),
-        face_defs
-            .iter()
-            .map(|(name, ..)| cube_id!(FaceId, "face", name.clone()))
-            .collect(),
-        Vec::new(),
-        Vec::new(),
-    )?);
-    ir.model.regions.push(Region {
+    ));
+    ir.geometry.regions.push(Region {
         id: cube_id!(RegionId, "region", 0_usize),
         body: cube_id!(BodyId, "body", 0_usize),
         shells: vec![cube_id!(ShellId, "shell", 0_usize)],
+        native_ref: None,
     });
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: cube_id!(BodyId, "body", 0_usize),
         kind: BodyKind::Solid,
-        regions: vec![cube_id!(RegionId, "region", 0_usize)],
         transform: None,
         name: Some("unit cube".into()),
         color: None,
         visible: None,
+        native_ref: None,
     });
 
     ir.finalize();
@@ -382,7 +386,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.
 pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
     let mut ir = CadIr::empty();
-    ir.model.curves = vec![
+    ir.geometry.curves = vec![
         Curve {
             parameter_range: None,
             id: v2_id!(CurveId, "curve", crate::identity_key!("u")),
@@ -390,6 +394,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
                 crate::geometry::analytic::LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS),
             )),
             source_object: None,
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
@@ -398,6 +403,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
                 crate::geometry::analytic::LineCurve::new(FinitePoint3::ZERO, UnitVector3::Y_AXIS),
             )),
             source_object: None,
+            native_ref: None,
         },
     ];
     let construction = v2_id!(
@@ -405,7 +411,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
         "procedural-surface",
         crate::identity_key!("sum")
     );
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: v2_id!(SurfaceId, "surface", crate::identity_key!("sum-cache")),
         geometry: SurfaceGeometry::Procedural {
             construction: construction.clone(),
@@ -417,6 +423,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
             )),
         },
         source_object: None,
+        native_ref: None,
     });
     let mut sum_definition = ProceduralSurfaceDefinition::Sum(
         crate::geometry::surface_payloads::SumSurfaceConstruction::try_new(
@@ -429,10 +436,12 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
     sum_definition.set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(
         EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9,
     )?))?;
-    ir.model
-        .procedural_surfaces
-        .push(ProceduralSurface::new(construction, sum_definition, None));
-    ir.model.subds.push(SubdSurface {
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        sum_definition,
+        None,
+    ));
+    ir.geometry.subds.push(SubdSurface {
         id: v2_id!(SubdId, "subd", crate::identity_key!("directed")),
         scheme: SubdScheme::CatmullClark,
         source_object: None,
@@ -487,7 +496,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
                     },
                 )?,
             ],
-            vec![SubdFace::new(vec![
+            vec![SubdFace::from_edge_uses(vec![
                 SubdEdgeUse {
                     edge: 0,
                     reversed: false,
@@ -511,6 +520,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
         .map_err(|_| {
             crate::geometry::ProceduralGeometryError::Payload("invalid directed SubD example cage")
         })?,
+        native_ref: None,
     });
     ir.finalize();
     Ok(ir)

@@ -1,62 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "iges:appearance:standard#2",
-          "channels": {},
-          "id": "iges:model:appearance-binding#body-D11",
-          "object_type": "Body",
-          "target": {
-            "kind": "body",
-            "value": "iges:model:body#D11"
-          }
-        },
-        {
-          "appearance": "iges:appearance:color#D13",
-          "channels": {},
-          "id": "iges:model:appearance-binding#face-D9",
-          "object_type": "Face",
-          "target": {
-            "kind": "face",
-            "value": "iges:model:face#D11:D9"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
-          },
-          "id": "iges:appearance:color#D13",
-          "name": "custom",
-          "properties": {},
-          "schema": "IGES color",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.0,
-            "g": 0.0,
-            "r": 1.0
-          },
-          "id": "iges:appearance:standard#2",
-          "properties": {},
-          "schema": "IGES color",
-          "textures": []
-        }
-      ],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "color": {
@@ -67,26 +13,19 @@
           },
           "id": "iges:model:body#D11",
           "kind": "sheet",
-          "regions": [
-            "iges:model:region#D11"
-          ],
           "visible": true
         }
       ],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [],
       "faces": [
         {
           "color": {
             "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
+            "b": 0.6,
+            "g": 0.4,
+            "r": 0.2
           },
           "id": "iges:model:face#D11:D9",
           "loops": {
@@ -99,10 +38,6 @@
           "surface": "iges:model:surface#D3"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -114,14 +49,7 @@
           "id": "iges:model:loop#D11:D7"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "iges:model:point#D11:D5:1",
@@ -132,11 +60,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "iges:model:body#D11",
@@ -146,28 +71,13 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "iges:model:shell#D11",
-          "members": [
-            {
-              "id": "iges:model:face#D11:D9",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D11"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -205,13 +115,97 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "iges:model:vertex#D11:D5:1",
           "point": "iges:model:point#D11:D5:1"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "iges:appearance:standard#2",
+          "channels": {},
+          "id": "iges:model:appearance-binding#body-D11",
+          "object_type": "Body",
+          "target": {
+            "kind": "body",
+            "value": "iges:model:body#D11"
+          }
+        },
+        {
+          "appearance": "iges:appearance:color#D13",
+          "channels": {},
+          "id": "iges:model:appearance-binding#face-D9",
+          "object_type": "Face",
+          "target": {
+            "kind": "face",
+            "value": "iges:model:face#D11:D9"
+          }
+        }
       ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.6,
+            "g": 0.4,
+            "r": 0.2
+          },
+          "id": "iges:appearance:color#D13",
+          "name": "custom",
+          "properties": {},
+          "schema": "IGES color",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.0,
+            "g": 0.0,
+            "r": 1.0
+          },
+          "id": "iges:appearance:standard#2",
+          "properties": {},
+          "schema": "IGES color",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -1116,6 +1110,12 @@
         "views": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
@@ -1259,6 +1259,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "e16cc607a946e9c79a59f9b6da0ec977b3e08235336fe5e54f02cf604675a276",
+    "file_digests": {},
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -1266,8 +1268,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

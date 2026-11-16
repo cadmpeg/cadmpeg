@@ -1,55 +1,20 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [],
       "faces": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [
         {
           "cage": {
@@ -117,22 +82,38 @@
             ],
             "faces": [
               {
-                "edges": [
+                "sides": [
                   {
-                    "edge": 0,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 0,
+                        "reversed": false
+                      }
+                    ]
                   },
                   {
-                    "edge": 1,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 1,
+                        "reversed": false
+                      }
+                    ]
                   },
                   {
-                    "edge": 2,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 2,
+                        "reversed": false
+                      }
+                    ]
                   },
                   {
-                    "edge": 3,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 3,
+                        "reversed": false
+                      }
+                    ]
                   }
                 ]
               }
@@ -184,8 +165,45 @@
         }
       ],
       "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -243,6 +261,12 @@
         "views": [],
         "windows_bitmaps": []
       }
+    },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {
@@ -368,6 +392,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "cdcf90b5e739e3a4a0c5ffa417e06218c751dc9133da3502d6d98bdb38ea9132",
+    "file_digests": {},
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -375,8 +401,10 @@
           "kind": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

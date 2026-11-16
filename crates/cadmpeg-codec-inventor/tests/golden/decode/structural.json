@@ -1,7 +1,24 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
     "ir_version": "11",
     "model": {
       "appearance_bindings": [],
@@ -10,38 +27,26 @@
       "assembly_joints": [],
       "assets": [],
       "attributes": [],
-      "bodies": [],
-      "coedges": [],
       "colliders": [],
       "configurations": [],
-      "curves": [],
       "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [],
       "history_bodies": [],
-      "loops": [],
       "mass_properties": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -50,10 +55,7 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -190,12 +192,16 @@
         "wire_topologies": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "cfb_major_version": "3",
-        "cfb_sector_size": "512",
-        "document_kind": "unknown",
-        "rse_segment_pairs": "0"
+        "document_kind": "unknown"
       },
       "identity": {
         "dialects": {
@@ -348,6 +354,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "41556a60229e345e81f4ea0992ff6594edba01e4010a3c3463218d5b7fbe371d",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

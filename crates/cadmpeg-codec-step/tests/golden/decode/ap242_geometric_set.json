@@ -1,27 +1,15 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "step:data:body#13",
-          "kind": "sheet",
-          "regions": [
-            "step:data:region#13"
-          ]
+          "kind": "sheet"
         }
       ],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -78,8 +66,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [],
       "faces": [
         {
@@ -93,22 +79,9 @@
           "surface": "step:data:surface#11"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [
         {
@@ -125,7 +98,6 @@
           "surface": "step:data:surface#11"
         }
       ],
-      "product_definitions": [],
       "regions": [
         {
           "body": "step:data:body#13",
@@ -135,28 +107,13 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "step:data:shell#geometric-set-13",
-          "members": [
-            {
-              "id": "step:data:face#11-geometric-set-13",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "step:data:region#13"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -214,19 +171,56 @@
           }
         }
       ],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "283",
-        "bytes_typed": "695",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "13",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
       "identity": {
@@ -258,7 +252,14 @@
     }
   },
   "report": {
-    "coverage": {},
+    "coverage": {
+      "bytes_named_opaque": 0,
+      "bytes_structural": 283,
+      "bytes_typed": 695,
+      "bytes_unclassified": 0,
+      "data_sections": 1,
+      "entity_instances": 13
+    },
     "identity": {
       "dialects": {
         "extra": [],
@@ -306,6 +307,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "c8f472b387fc89c6fd081a5eed1f3a4ad9e8800a39f7668d2c1bfa988f997c7b",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

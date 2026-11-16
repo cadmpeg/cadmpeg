@@ -1,22 +1,12 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "sldprt:brep:body#900",
-          "kind": "solid",
-          "regions": [
-            "sldprt:brep:region#902"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -45,6 +35,157 @@
           "sense": "forward"
         }
       ],
+      "curves": [],
+      "edges": [
+        {
+          "carrier": {},
+          "ends": {
+            "end": "sldprt:brep:vertex#51",
+            "start": "sldprt:brep:vertex#50"
+          },
+          "id": "sldprt:brep:edge#40"
+        },
+        {
+          "carrier": {},
+          "ends": {
+            "end": "sldprt:brep:vertex#52",
+            "start": "sldprt:brep:vertex#51"
+          },
+          "id": "sldprt:brep:edge#41"
+        },
+        {
+          "carrier": {},
+          "ends": {
+            "end": "sldprt:brep:vertex#50",
+            "start": "sldprt:brep:vertex#52"
+          },
+          "id": "sldprt:brep:edge#42"
+        }
+      ],
+      "faces": [
+        {
+          "id": "sldprt:brep:face#10",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "sldprt:brep:loop#20"
+            ]
+          },
+          "sense": "forward",
+          "shell": "sldprt:brep:shell#901",
+          "surface": "sldprt:brep:surf#10"
+        }
+      ],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "sldprt:brep:coedge#30",
+              "sldprt:brep:coedge#31",
+              "sldprt:brep:coedge#32"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "sldprt:brep:face#10",
+          "id": "sldprt:brep:loop#20"
+        }
+      ],
+      "pcurves": [],
+      "points": [
+        {
+          "id": "sldprt:brep:point#60",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "sldprt:brep:point#61",
+          "position": {
+            "x": 1000.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "sldprt:brep:point#62",
+          "position": {
+            "x": 0.0,
+            "y": 1000.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [
+        {
+          "body": "sldprt:brep:body#900",
+          "id": "sldprt:brep:region#902",
+          "shells": [
+            "sldprt:brep:shell#901"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "sldprt:brep:shell#901",
+          "members": [],
+          "region": "sldprt:brep:region#902"
+        }
+      ],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "sldprt:brep:surf#10"
+        }
+      ],
+      "vertices": [
+        {
+          "id": "sldprt:brep:vertex#50",
+          "point": "sldprt:brep:point#60"
+        },
+        {
+          "id": "sldprt:brep:vertex#51",
+          "point": "sldprt:brep:point#61"
+        },
+        {
+          "id": "sldprt:brep:vertex#52",
+          "point": "sldprt:brep:point#62"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
       "colliders": [],
       "configurations": [
         {
@@ -87,43 +228,8 @@
           "source_index": 0
         }
       ],
-      "curves": [],
       "declared_measures": [],
       "drawings": [],
-      "edges": [
-        {
-          "carrier": {},
-          "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
-        },
-        {
-          "carrier": {},
-          "end": "sldprt:brep:vertex#52",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
-        },
-        {
-          "carrier": {},
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#52"
-        }
-      ],
-      "faces": [
-        {
-          "id": "sldprt:brep:face#10",
-          "loops": {
-            "kind": "unspecified",
-            "loops": [
-              "sldprt:brep:loop#20"
-            ]
-          },
-          "sense": "forward",
-          "shell": "sldprt:brep:shell#901",
-          "surface": "sldprt:brep:surf#10"
-        }
-      ],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [
@@ -152,21 +258,6 @@
         }
       ],
       "history_bodies": [],
-      "loops": [
-        {
-          "boundary": {
-            "coedges": [
-              "sldprt:brep:coedge#30",
-              "sldprt:brep:coedge#31",
-              "sldprt:brep:coedge#32"
-            ],
-            "kind": "ring",
-            "vertex_uses": []
-          },
-          "face": "sldprt:brep:face#10",
-          "id": "sldprt:brep:loop#20"
-        }
-      ],
       "mass_properties": [],
       "occurrences": [],
       "parameters": [
@@ -195,65 +286,15 @@
           }
         }
       ],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [
-        {
-          "id": "sldprt:brep:point#60",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "sldprt:brep:point#61",
-          "position": {
-            "x": 1000.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "sldprt:brep:point#62",
-          "position": {
-            "x": 0.0,
-            "y": 1000.0,
-            "z": 0.0
-          }
-        }
-      ],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [
-        {
-          "body": "sldprt:brep:body#900",
-          "id": "sldprt:brep:region#902",
-          "shells": [
-            "sldprt:brep:shell#901"
-          ]
-        }
-      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "sldprt:brep:shell#901",
-          "members": [
-            {
-              "id": "sldprt:brep:face#10",
-              "kind": "face"
-            }
-          ],
-          "region": "sldprt:brep:region#902"
-        }
-      ],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -262,48 +303,7 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            }
-          },
-          "id": "sldprt:brep:surf#10"
-        }
-      ],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "sldprt:brep:vertex#50",
-          "point": "sldprt:brep:point#60"
-        },
-        {
-          "id": "sldprt:brep:vertex#51",
-          "point": "sldprt:brep:point#61"
-        },
-        {
-          "id": "sldprt:brep:vertex#52",
-          "point": "sldprt:brep:point#62"
-        }
-      ],
       "view_presentations": []
     },
     "native": {
@@ -402,18 +402,20 @@
         ]
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "4",
-        "bmp_thumbnail_count": "0",
         "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "compound_stream_count": "0",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0",
         "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#348:0",
@@ -679,6 +681,8 @@
         }
       }
     },
+    "decode_digest": "8826c7cba725aa9e26046dca86e6981ba5c11b4cd5015ee933147884ec8b59ba",
+    "file_digests": {},
     "retained_records": {
       "sldprt:file:block#12": {
         "bytes": {
@@ -686,7 +690,8 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:block#348": {
         "bytes": {
@@ -694,7 +699,8 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords"
+        "stream": "Contents/Keywords",
+        "untyped": []
       },
       "sldprt:file:block#495": {
         "bytes": {
@@ -702,7 +708,8 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/PMISemanticDataDB"
+        "stream": "Contents/PMISemanticDataDB",
+        "untyped": []
       },
       "sldprt:file:block#767": {
         "bytes": {
@@ -710,7 +717,11 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features"
+        "stream": "Contents/Features",
+        "untyped": [
+          "model",
+          "design"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -718,8 +729,13 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

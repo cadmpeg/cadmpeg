@@ -27,5 +27,5 @@ fn pcurve_normalization_scales_owned_nurbs_coordinates() {
         SourceUnitCarriers::push_pcurve(ctx, &mut ir, pcurve, Some([2.0, 3.0]))
     })
     .expect("service");
-    assert_eq!(ir.model.pcurves, vec![expected]);
+    assert_eq!(ir.geometry.pcurves, vec![expected]);
 }

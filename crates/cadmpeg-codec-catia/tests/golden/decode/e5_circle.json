@@ -1,19 +1,10 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -41,41 +32,15 @@
           "id": "catia:e5:curve#0"
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [],
       "faces": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -104,8 +69,45 @@
           "id": "catia:e5:surf#0"
         }
       ],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -175,21 +177,14 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
-      "attributes": {
-        "brep_stream_len": "280",
-        "brep_stream_sha256": "c97d160a4e1cab022f297a75a98047f86019686f879b6b3fd0e84def83f25ee2",
-        "external_reference_count": "0",
-        "fbb_face_rows": "0",
-        "fbb_runs": "0",
-        "file_size": "543",
-        "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "543",
-        "preview_count": "0",
-        "stream_count": "2",
-        "vertex_records": "2"
-      },
+      "attributes": {},
       "identity": {
         "dialects": {
           "extra": [],
@@ -615,6 +610,8 @@
         }
       }
     },
+    "decode_digest": "3c781c9560b30e4d5ffb86a4176e9e82cbf4990ef1afb3bdca4a3b87d06e7dab",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#e5": {
         "bytes": {
@@ -622,8 +619,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

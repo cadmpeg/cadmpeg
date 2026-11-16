@@ -29,6 +29,13 @@ pub struct SubdSurface {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<SourceObjectAssociation>,
+    /// The source record this surface projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// Admission error in a subdivision control cage.
@@ -129,6 +136,12 @@ impl SubdCage {
         &self.edges
     }
 
+    /// Control faces in cage order.
+    #[must_use]
+    pub fn faces(&self) -> &[SubdFace] {
+        &self.faces
+    }
+
     /// Atomically edit edge copies while preserving cage invariants.
     /// A present user-knot extension gives every unannotated edge an inherited value.
     pub fn edit_edges(
@@ -157,7 +170,7 @@ impl SubdCage {
             let mut first = None;
             let mut previous = None;
             let mut closed = true;
-            for use_ in &face.edges {
+            for use_ in face.edge_uses() {
                 let Some(edge) = self
                     .edges
                     .get(cadmpeg_core::decode::index_from_u32(use_.edge))
@@ -257,7 +270,7 @@ impl SubdCage {
                         )));
                     };
                     let mut incident = false;
-                    for use_ in &face.edges {
+                    for use_ in face.edge_uses() {
                         for owner in
                             self.edges[cadmpeg_core::decode::index_from_u32(use_.edge)].vertices
                         {
@@ -583,6 +596,9 @@ impl TryFrom<SubdSymmetryWire> for SubdSymmetry {
 pub enum SubdScheme {
     /// Catmull-Clark subdivision.
     CatmullClark,
+    /// T-spline evaluation with the NURCCS rule at extraordinary points, star
+    /// smoothness 0, G1 caps, and degree 3.
+    TSpline,
 }
 
 /// A control-cage vertex and its subdivision tag.
@@ -907,6 +923,12 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
 }
 
 impl SubdEdge {
+    /// The knot interval the edge states, before any user value.
+    #[must_use]
+    pub const fn knot_interval(&self) -> Option<PositiveReal> {
+        self.knot_interval
+    }
+
     /// Effective knot interval, with an explicit user value taking precedence.
     #[must_use]
     pub fn effective_knot_interval(&self) -> Option<f64> {
@@ -1026,6 +1048,7 @@ impl SubdEdge {
 )]
 pub enum SubdUserKnot {
     /// Use the edge's base knot interval.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Inherit,
     /// Use this finite nonnegative interval, including explicit zero.
     Override(NonNegativeReal),
@@ -1045,40 +1068,78 @@ pub enum SubdEdgeTag {
     Crease,
 }
 
-/// A subdivision face bounded by a directed edge ring.
+/// A subdivision face bounded by a directed edge ring, listed as its sides in
+/// boundary order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdFaceWire")]
 pub struct SubdFace {
-    edges: Vec<SubdEdgeUse>,
+    sides: Vec<SubdFaceSide>,
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SubdFaceWire {
-    /// Directed edge uses in boundary order.
-    edges: Vec<SubdEdgeUse>,
+    /// Sides in boundary order.
+    sides: Vec<SubdFaceSide>,
 }
 
 impl TryFrom<SubdFaceWire> for SubdFace {
     type Error = SubdError;
 
     fn try_from(wire: SubdFaceWire) -> Result<Self, Self::Error> {
-        Self::new(wire.edges)
+        Self::new(wire.sides)
     }
 }
 
 impl SubdFace {
-    /// Construct a face with at least three directed edge uses.
-    pub fn new(edges: Vec<SubdEdgeUse>) -> Result<Self, SubdError> {
-        if edges.len() < 3 {
+    /// Construct a face with at least three sides, each of at least one
+    /// directed edge use.
+    pub fn new(sides: Vec<SubdFaceSide>) -> Result<Self, SubdError> {
+        if sides.len() < 3 {
             return Err(SubdError::Admission(
-                "edges must contain at least three uses".into(),
+                "sides must contain at least three sides".into(),
             ));
         }
-        Ok(Self { edges })
+        if sides.iter().any(|side| side.edges.is_empty()) {
+            return Err(SubdError::Admission(
+                "each side must contain at least one edge use".into(),
+            ));
+        }
+        Ok(Self { sides })
     }
+
+    /// Construct a face whose every directed edge use is one side.
+    pub fn from_edge_uses(edges: Vec<SubdEdgeUse>) -> Result<Self, SubdError> {
+        Self::new(
+            edges
+                .into_iter()
+                .map(|edge| SubdFaceSide { edges: vec![edge] })
+                .collect(),
+        )
+    }
+
+    /// Sides in boundary order.
+    #[must_use]
+    pub fn sides(&self) -> &[SubdFaceSide] {
+        &self.sides
+    }
+
+    /// Directed edge uses in boundary order, across every side.
+    pub fn edge_uses(&self) -> impl Iterator<Item = &SubdEdgeUse> {
+        self.sides.iter().flat_map(|side| &side.edges)
+    }
+}
+
+/// One side of a subdivision face: its directed edge uses in boundary order.
+/// Each joint between two uses of one side is a T-junction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct SubdFaceSide {
+    /// Directed edge uses in boundary order.
+    pub edges: Vec<SubdEdgeUse>,
 }
 
 /// One directed use of a subdivision edge in a face ring.
@@ -1107,6 +1168,7 @@ cadmpeg_core::named_optional_field!(
     "secondary_grips"
 );
 cadmpeg_core::named_optional_field!(deserialize_knot_interval, f64, "knot_interval");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_user_knot, SubdUserKnot, "user_knot");
 
 mod identity_rewrite;

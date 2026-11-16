@@ -1,27 +1,15 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "catia:standard:body#unbound-points",
-          "kind": "wire",
-          "regions": [
-            "catia:standard:region#unbound-points"
-          ]
+          "kind": "wire"
         }
       ],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -114,23 +102,10 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [],
       "faces": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "catia:standard:pt#0",
@@ -157,11 +132,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "catia:standard:body#unbound-points",
@@ -171,8 +143,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "catia:standard:shell#unbound-points",
@@ -193,14 +163,6 @@
           "region": "catia:standard:region#unbound-points"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -249,7 +211,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "catia:standard:v#0",
@@ -263,7 +224,45 @@
           "id": "catia:standard:v#2",
           "point": "catia:standard:pt#2"
         }
-      ],
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -335,21 +334,14 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
-      "attributes": {
-        "brep_stream_len": "324",
-        "brep_stream_sha256": "7cc50f0a65a1b74cbab53eea06f88440daacdbf5ed50a4cd98ba1f994dda158e",
-        "external_reference_count": "0",
-        "fbb_face_rows": "2",
-        "fbb_runs": "1",
-        "file_size": "951",
-        "finjpl_segment_count": "0",
-        "inner_offset": "380",
-        "outer_dir_offset": "951",
-        "preview_count": "0",
-        "stream_count": "2",
-        "vertex_records": "3"
-      },
+      "attributes": {},
       "identity": {
         "dialects": {
           "extra": [],
@@ -981,6 +973,8 @@
         }
       }
     },
+    "decode_digest": "130e98caa9107675b117709e9ce013a778702e837923b4a8f73da7d50ffe9f9d",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
         "bytes": {
@@ -988,8 +982,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

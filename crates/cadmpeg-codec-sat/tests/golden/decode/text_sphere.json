@@ -1,30 +1,16 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "sat:brep:entity#1",
-          "kind": "solid",
-          "regions": [
-            "sat:brep:entity#2"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [],
       "faces": [
         {
@@ -38,25 +24,11 @@
           "surface": "sat:brep:entity#5"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "sat:brep:entity#1",
@@ -66,28 +38,13 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "sat:brep:entity#3",
-          "members": [
-            {
-              "id": "sat:brep:entity#4",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "sat:brep:entity#2"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -116,8 +73,45 @@
           "id": "sat:brep:entity#5"
         }
       ],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -158,10 +152,15 @@
         "wire_topologies": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "acis_save_format_version": "23200",
-        "kernel_entity_count": "2",
         "kernel_family": "asm",
         "kernel_flags": "2",
         "product_family": "Autodesk Neutron",
@@ -289,6 +288,9 @@
         }
       }
     },
-    "retained_records": {}
+    "decode_digest": "77def74217826845d623413a2daa2a7b6dbd0317bc61b1a984d1414f768f7a23",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

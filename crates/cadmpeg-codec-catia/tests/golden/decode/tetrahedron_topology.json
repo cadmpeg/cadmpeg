@@ -1,76 +1,12 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "channels": {},
-          "id": "catia:appearance:binding#0:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "kind": "face",
-            "value": "catia:standard:face#0"
-          }
-        },
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "channels": {},
-          "id": "catia:appearance:binding#1:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "kind": "face",
-            "value": "catia:standard:face#1"
-          }
-        },
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "channels": {},
-          "id": "catia:appearance:binding#2:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "kind": "face",
-            "value": "catia:standard:face#2"
-          }
-        },
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "channels": {},
-          "id": "catia:appearance:binding#3:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "kind": "face",
-            "value": "catia:standard:face#3"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 0.8235294222831726,
-            "b": 0.8235294222831726,
-            "g": 0.8235294222831726,
-            "r": 0.8235294222831726
-          },
-          "id": "catia:appearance:rgba#d2d2d2d2",
-          "properties": {},
-          "schema": "CATIA V5 display color",
-          "textures": []
-        }
-      ],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "catia:standard:body#0",
-          "kind": "solid",
-          "regions": [
-            "catia:standard:region#0-0"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -171,8 +107,6 @@
           "sense": "reversed"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -319,8 +253,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -330,9 +262,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#1",
-          "id": "catia:standard:edge#0",
-          "start": "catia:standard:v#0"
+          "ends": {
+            "end": "catia:standard:v#1",
+            "start": "catia:standard:v#0"
+          },
+          "id": "catia:standard:edge#0"
         },
         {
           "carrier": {
@@ -342,9 +276,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#2",
-          "id": "catia:standard:edge#1",
-          "start": "catia:standard:v#1"
+          "ends": {
+            "end": "catia:standard:v#2",
+            "start": "catia:standard:v#1"
+          },
+          "id": "catia:standard:edge#1"
         },
         {
           "carrier": {
@@ -354,9 +290,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#0",
-          "id": "catia:standard:edge#2",
-          "start": "catia:standard:v#2"
+          "ends": {
+            "end": "catia:standard:v#0",
+            "start": "catia:standard:v#2"
+          },
+          "id": "catia:standard:edge#2"
         },
         {
           "carrier": {
@@ -366,9 +304,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#3",
-          "id": "catia:standard:edge#3",
-          "start": "catia:standard:v#0"
+          "ends": {
+            "end": "catia:standard:v#3",
+            "start": "catia:standard:v#0"
+          },
+          "id": "catia:standard:edge#3"
         },
         {
           "carrier": {
@@ -378,9 +318,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#3",
-          "id": "catia:standard:edge#4",
-          "start": "catia:standard:v#1"
+          "ends": {
+            "end": "catia:standard:v#3",
+            "start": "catia:standard:v#1"
+          },
+          "id": "catia:standard:edge#4"
         },
         {
           "carrier": {
@@ -390,9 +332,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#3",
-          "id": "catia:standard:edge#5",
-          "start": "catia:standard:v#2"
+          "ends": {
+            "end": "catia:standard:v#3",
+            "start": "catia:standard:v#2"
+          },
+          "id": "catia:standard:edge#5"
         }
       ],
       "faces": [
@@ -441,10 +385,6 @@
           "surface": "catia:standard:surf#3"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -563,14 +503,7 @@
           "id": "catia:standard:loop#3:0"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "catia:standard:pt#0",
@@ -605,11 +538,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "catia:standard:body#0",
@@ -619,40 +549,13 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "catia:standard:shell#0-0",
-          "members": [
-            {
-              "id": "catia:standard:face#0",
-              "kind": "face"
-            },
-            {
-              "id": "catia:standard:face#1",
-              "kind": "face"
-            },
-            {
-              "id": "catia:standard:face#2",
-              "kind": "face"
-            },
-            {
-              "id": "catia:standard:face#3",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "catia:standard:region#0-0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -776,7 +679,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "catia:standard:v#0",
@@ -794,7 +696,99 @@
           "id": "catia:standard:v#3",
           "point": "catia:standard:pt#3"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#0:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "kind": "face",
+            "value": "catia:standard:face#0"
+          }
+        },
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#1:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "kind": "face",
+            "value": "catia:standard:face#1"
+          }
+        },
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#2:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "kind": "face",
+            "value": "catia:standard:face#2"
+          }
+        },
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#3:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "kind": "face",
+            "value": "catia:standard:face#3"
+          }
+        }
       ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 0.8235294117647058,
+            "b": 0.8235294117647058,
+            "g": 0.8235294117647058,
+            "r": 0.8235294117647058
+          },
+          "id": "catia:appearance:rgba#d2d2d2d2",
+          "properties": {},
+          "schema": "CATIA V5 display color",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -872,21 +866,14 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
-      "attributes": {
-        "brep_stream_len": "616",
-        "brep_stream_sha256": "d7fb4c3acc0a6eba22f5b98742357824db6b2fd70767cf9be35ec0bcd799c626",
-        "external_reference_count": "0",
-        "fbb_face_rows": "4",
-        "fbb_runs": "1",
-        "file_size": "879",
-        "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "879",
-        "preview_count": "0",
-        "stream_count": "2",
-        "vertex_records": "4"
-      },
+      "attributes": {},
       "identity": {
         "dialects": {
           "extra": [],
@@ -1359,8 +1346,7 @@
         "catia:standard:body#0": {
           "entity": "inferred",
           "fields": {
-            "kind": "derived",
-            "regions": "derived"
+            "kind": "derived"
           },
           "kind": "entity"
         },
@@ -1517,54 +1503,54 @@
         "catia:standard:edge#0": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#1": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#2": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#3": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#4": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#5": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
@@ -1647,7 +1633,6 @@
         "catia:standard:shell#0-0": {
           "entity": "inferred",
           "fields": {
-            "faces": "derived",
             "region": "derived"
           },
           "kind": "entity"
@@ -1920,6 +1905,8 @@
         }
       }
     },
+    "decode_digest": "c0ac58d0d7f4492b5f4beae33ee29f7f1fab5b7b65ad9e48930abb554f2622f1",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
         "bytes": {
@@ -1927,8 +1914,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

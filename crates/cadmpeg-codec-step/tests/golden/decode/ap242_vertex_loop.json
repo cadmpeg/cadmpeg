@@ -1,30 +1,16 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "step:data:body#18",
-          "kind": "solid",
-          "regions": [
-            "step:data:region#18"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [],
       "faces": [
         {
@@ -41,10 +27,6 @@
           "surface": "step:data:surface#7"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -65,14 +47,7 @@
           "id": "step:data:loop#13-face-16"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "step:data:point#8",
@@ -103,11 +78,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "step:data:body#18",
@@ -117,28 +89,13 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "step:data:shell#17",
-          "members": [
-            {
-              "id": "step:data:face#16",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "step:data:region#18"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -173,7 +130,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "step:data:vertex#10",
@@ -183,18 +139,56 @@
           "id": "step:data:vertex#11",
           "point": "step:data:point#9"
         }
-      ],
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "297",
-        "bytes_typed": "702",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "19",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
       "identity": {
@@ -226,7 +220,14 @@
     }
   },
   "report": {
-    "coverage": {},
+    "coverage": {
+      "bytes_named_opaque": 0,
+      "bytes_structural": 297,
+      "bytes_typed": 702,
+      "bytes_unclassified": 0,
+      "data_sections": 1,
+      "entity_instances": 19
+    },
     "identity": {
       "dialects": {
         "extra": [],
@@ -274,6 +275,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "11619e3fabddf67f1f1ccf87e047a8cbff553a6e2a187afb530043b6da72fd26",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }
