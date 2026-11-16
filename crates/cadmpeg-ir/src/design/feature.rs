@@ -14,6 +14,10 @@ use serde::{Deserialize, Serialize};
 use super::construction::{kinds, Construction};
 use super::dimension::Dimension;
 use super::names::NativeName;
+use super::ops::dressup::{
+    Chamfer, Decal, Dome, Draft, Emboss, Fillet, Hole, Offset, ShellFeature, Thicken, Thread,
+};
+use super::ops::swept::{Extrude, HelicalSweep, Loft, Primitive, Revolve, Rib, Sweep};
 use super::options::NativeOptions;
 use super::selection::{DefinitionRef, SetSelection};
 use crate::features::FeatureId;
@@ -161,6 +165,42 @@ pub enum FeatureOperation {
     SpatialSketch(SpatialSketchId),
     /// A sheet: names the sheet record the feature owns.
     Spreadsheet(SpreadsheetId),
+    /// An extrusion (§6.3).
+    Extrude(Box<Extrude>),
+    /// A revolution (§6.3).
+    Revolve(Box<Revolve>),
+    /// A sweep (§6.3).
+    Sweep(Box<Sweep>),
+    /// A helical sweep (§6.3).
+    HelicalSweep(Box<HelicalSweep>),
+    /// A rib (§6.3).
+    Rib(Box<Rib>),
+    /// A primitive (§6.3).
+    Primitive(Box<Primitive>),
+    /// A loft (§6.3).
+    Loft(Box<Loft>),
+    /// A fillet (§6.4).
+    Fillet(Box<Fillet>),
+    /// A chamfer (§6.4).
+    Chamfer(Box<Chamfer>),
+    /// A shell (§6.4).
+    Shell(Box<ShellFeature>),
+    /// A draft (§6.4).
+    Draft(Box<Draft>),
+    /// A thicken (§6.4).
+    Thicken(Box<Thicken>),
+    /// An offset (§6.4).
+    Offset(Box<Offset>),
+    /// A hole (§6.4).
+    Hole(Box<Hole>),
+    /// A thread (§6.4).
+    Thread(Box<Thread>),
+    /// An emboss (§6.4).
+    Emboss(Box<Emboss>),
+    /// A dome (§6.4).
+    Dome(Box<Dome>),
+    /// A decal (§6.4).
+    Decal(Box<Decal>),
     /// A design feature whose removed volume is the volume a manufacturing
     /// operation machines.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]

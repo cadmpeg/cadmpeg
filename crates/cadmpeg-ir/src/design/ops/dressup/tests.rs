@@ -25,6 +25,7 @@ use crate::design::read;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection, Unordered,
 };
+use crate::design::tests::arm_failures;
 use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
 use crate::features::{FinitePoint3, ParameterId};
 use crate::math::Point3;
@@ -1263,6 +1264,28 @@ fn every_dressup_type_round_trips() {
     report.check("Decal", decals());
     report.check("DecalPlacement", decal_placements());
     assert!(report.failures.is_empty(), "{:#?}", report.failures);
+}
+
+/// §5.10: each dress-up operation is the `FeatureOperation` arm its family
+/// names, holding the operation as its value.
+#[test]
+fn every_dressup_operation_is_a_feature_operation_arm() {
+    use crate::design::feature::{FeatureOperation as Op, OperationFamily as Family};
+    let failures = [
+        arm_failures(Family::Fillet, fillets(), Op::Fillet),
+        arm_failures(Family::Chamfer, chamfers(), Op::Chamfer),
+        arm_failures(Family::Shell, shells(), Op::Shell),
+        arm_failures(Family::Draft, drafts(), Op::Draft),
+        arm_failures(Family::Thicken, thickens(), Op::Thicken),
+        arm_failures(Family::Offset, offsets(), Op::Offset),
+        arm_failures(Family::Hole, holes(), Op::Hole),
+        arm_failures(Family::Thread, threads(), Op::Thread),
+        arm_failures(Family::Emboss, embosses(), Op::Emboss),
+        arm_failures(Family::Dome, domes(), Op::Dome),
+        arm_failures(Family::Decal, decals(), Op::Decal),
+    ]
+    .concat();
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 #[test]
