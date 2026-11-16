@@ -19,8 +19,7 @@ fn loft_subdata_names_its_form_and_refuses_a_restated_dimension() {
     assert_eq!(
         wire,
         serde_json::json!({
-            "form": "type211",
-            "dimensions": [3, 4],
+            "kind": "type211", "dimensions": [3, 4],
             "row": [0.5, 1.5]
         })
     );
@@ -41,7 +40,7 @@ fn loft_subdata_names_its_form_and_refuses_a_restated_dimension() {
     )
     .expect("a table of one shared column width");
     let wire = serde_json::to_value(&table).expect("serializes");
-    assert_eq!(wire["form"], "table");
+    assert_eq!(wire["kind"], "table");
     assert_eq!(wire["type_code"], serde_json::json!(7));
     assert!(wire.get("row_count").is_none());
     assert!(wire.get("column_count").is_none());

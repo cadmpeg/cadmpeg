@@ -599,10 +599,10 @@ fn append_component(
         if affine_vertices.contains(&vertex) {
             inferred_fields.push((point_id.to_string(), "position"));
         }
-        ir.model
+        ir.geometry
             .points
             .push(Point::new(point_id.clone(), point, None));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
             tolerance: PositiveReal::new(vertex_gaps[&vertex].max(GAP_MM)),
@@ -628,13 +628,13 @@ fn append_component(
         if edge_accuracy_mm > GAP_MM {
             inferred_fields.push((edge_id.to_string(), "tolerance"));
         }
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(side.curve.clone())),
             parameter_range: None,
             source_object: None,
         });
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: edge_id,
             carrier: EdgeCarrier::new(
                 Some(curve),
@@ -654,7 +654,7 @@ fn append_component(
         admit(face.as_str(), patch.face, "roster_face")?;
         admit(ring.as_str(), patch.face, "outer_boundary")?;
         admit(surface.as_str(), patch.face, "face_surface")?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(patch.surface.clone()),
             source_object: None,
@@ -700,7 +700,7 @@ fn append_component(
                     format_args!("{}:{}", patch.face, side.edge)
                 );
                 admit(pcurve.as_str(), side.edge, "boundary_surface_curve")?;
-                ir.model.pcurves.push(Pcurve {
+                ir.geometry.pcurves.push(Pcurve {
                     id: pcurve.clone(),
                     geometry: side.pcurve.clone(),
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
@@ -713,7 +713,7 @@ fn append_component(
                 };
                 let range = DirectedParameterRange::new(range).map_err(CodecError::malformed)?;
                 coedges.push(id.clone());
-                ir.model.coedges.push(Coedge {
+                ir.geometry.coedges.push(Coedge {
                     id,
                     owner_loop: ring.clone(),
                     edge: id!(EdgeId, "edge", side.edge),
@@ -727,7 +727,7 @@ fn append_component(
                     use_curve: None,
                 });
             }
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: ring.clone(),
                 face: face.clone(),
                 boundary: LoopBoundary::Ring(
@@ -735,7 +735,7 @@ fn append_component(
                 ),
             });
         }
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: face.clone(),
             shell: shell.clone(),
             surface,
@@ -755,15 +755,15 @@ fn append_component(
             annotations.field_exactness(face, "sense", Exactness::Inferred)?;
         }
     }
-    ir.model.shells.push(
+    ir.geometry.shells.push(
         Shell::with_faces(shell.clone(), region.clone(), faces).map_err(CodecError::malformed)?,
     );
-    ir.model.regions.push(Region {
+    ir.geometry.regions.push(Region {
         id: region.clone(),
         body: body_id.clone(),
         shells: vec![shell],
     });
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
         regions: vec![region],

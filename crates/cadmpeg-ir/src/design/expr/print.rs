@@ -2,7 +2,9 @@
 //! Printing a tree as canonical expression text.
 
 use super::super::units::Unit;
-use super::{BendVariable, BinaryOp, Constant, ExprError, Measure, NeutralWire, Node, UnaryOp};
+use super::{
+    level, BendVariable, BinaryOp, Chain, Constant, ExprError, Measure, NeutralWire, Node, UnaryOp,
+};
 
 fn malformed<T>(message: impl Into<String>) -> Result<T, ExprError> {
     Err(ExprError::Malformed(message.into()))
@@ -85,9 +87,9 @@ fn format_unit(unit: &Unit) -> String {
     out
 }
 
-const fn level<R>(node: &Node<R>) -> u8 {
+const fn precedence<R>(node: &Node<R>) -> u8 {
     match node {
-        Node::Binary { op, .. } => binary_level(*op),
+        Node::Binary { op, .. } => binary_precedence(*op),
         Node::Unary {
             op: UnaryOp::Not, ..
         } => 3,
@@ -99,7 +101,7 @@ const fn level<R>(node: &Node<R>) -> u8 {
     }
 }
 
-const fn binary_level(op: BinaryOp) -> u8 {
+const fn binary_precedence(op: BinaryOp) -> u8 {
     match op {
         BinaryOp::Or => 1,
         BinaryOp::And => 2,
@@ -138,14 +140,25 @@ struct Printer<R> {
     measures: Vec<Measure>,
 }
 
+/// The printer enters a level of the expression ceiling wherever the parser
+/// enters one reading the text it prints, so it refuses exactly the trees
+/// whose text the parser refuses.
 impl<R: PartialEq + Clone> Printer<R> {
+    /// Prints `node` where its context binds at `need`, in parentheses if it
+    /// binds looser. Parentheses nest a level.
     fn show(&mut self, node: &Node<R>, need: u8) -> Result<String, ExprError> {
-        let text = self.raw(node)?;
-        Ok(if level(node) < need {
-            format!("({text})")
+        if precedence(node) < need {
+            let _level = level()?;
+            Ok(format!("({})", self.raw(node)?))
         } else {
-            text
-        })
+            self.raw(node)
+        }
+    }
+
+    /// Prints an operand that the parser reads one level deeper.
+    fn nested(&mut self, node: &Node<R>, need: u8) -> Result<String, ExprError> {
+        let _level = level()?;
+        self.show(node, need)
     }
 
     fn raw(&mut self, node: &Node<R>) -> Result<String, ExprError> {
@@ -188,31 +201,45 @@ impl<R: PartialEq + Clone> Printer<R> {
             Node::Unary {
                 op: UnaryOp::Negate,
                 operand,
-            } => format!("-{}", self.show(operand, 7)?),
+            } => format!("-{}", self.nested(operand, 7)?),
             Node::Unary {
                 op: UnaryOp::Not,
                 operand,
-            } => format!("not {}", self.show(operand, 3)?),
+            } => format!("not {}", self.nested(operand, 3)?),
             Node::Binary { op, left, right } => {
                 let op = *op;
-                let at = binary_level(op);
                 let mark = binary_mark(op);
-                if op == BinaryOp::Power {
-                    format!("{}^{}", self.show(left, 9)?, self.show(right, 7)?)
-                } else if at == 4 {
-                    format!("{} {mark} {}", self.show(left, 5)?, self.show(right, 5)?)
-                } else {
-                    format!(
-                        "{} {mark} {}",
-                        self.show(left, at)?,
-                        self.show(right, at + 1)?
-                    )
+                match op {
+                    BinaryOp::Power => {
+                        format!("{}^{}", self.show(left, 9)?, self.nested(right, 7)?)
+                    }
+                    BinaryOp::Equal
+                    | BinaryOp::NotEqual
+                    | BinaryOp::Less
+                    | BinaryOp::LessEqual
+                    | BinaryOp::Greater
+                    | BinaryOp::GreaterEqual => {
+                        format!("{} {mark} {}", self.show(left, 5)?, self.show(right, 5)?)
+                    }
+                    BinaryOp::Or
+                    | BinaryOp::And
+                    | BinaryOp::Add
+                    | BinaryOp::Subtract
+                    | BinaryOp::Multiply
+                    | BinaryOp::Divide => self.chain(op, left, right)?,
                 }
             }
             Node::Call { function, args } => {
+                if args.is_empty() {
+                    return malformed(format!(
+                        "a call of {} states no argument; canonical text calls a function with \
+                         at least one",
+                        function.name()
+                    ));
+                }
                 let parts = args
                     .iter()
-                    .map(|arg| self.show(arg, 0))
+                    .map(|arg| self.nested(arg, 0))
                     .collect::<Result<Vec<_>, _>>()?;
                 format!("{}({})", function.name(), parts.join(", "))
             }
@@ -220,12 +247,42 @@ impl<R: PartialEq + Clone> Printer<R> {
                 let [condition, then, otherwise] = branches.as_ref();
                 format!(
                     "if({}, {}, {})",
-                    self.show(condition, 0)?,
-                    self.show(then, 0)?,
-                    self.show(otherwise, 0)?
+                    self.nested(condition, 0)?,
+                    self.nested(then, 0)?,
+                    self.nested(otherwise, 0)?
                 )
             }
         })
+    }
+
+    /// Prints a left-associative chain whose last operation is `op`, walking
+    /// its left spine without recursion.
+    fn chain(
+        &mut self,
+        op: BinaryOp,
+        left: &Node<R>,
+        right: &Node<R>,
+    ) -> Result<String, ExprError> {
+        let at = binary_precedence(op);
+        let mut operations = vec![(op, right)];
+        let mut first = left;
+        while let Node::Binary { op, left, right } = first {
+            if binary_precedence(*op) != at {
+                break;
+            }
+            operations.push((*op, right));
+            first = left;
+        }
+        let mut text = self.show(first, at)?;
+        let mut chain = Chain::new();
+        for (op, operand) in operations.into_iter().rev() {
+            chain.next()?;
+            text.push(' ');
+            text.push_str(binary_mark(op));
+            text.push(' ');
+            text.push_str(&self.show(operand, at + 1)?);
+        }
+        Ok(text)
     }
 }
 
@@ -234,12 +291,15 @@ impl<R: PartialEq + Clone> Printer<R> {
 ///
 /// # Errors
 ///
-/// Returns [`ExprError::Malformed`] for a number with no canonical text.
+/// Returns [`ExprError::Malformed`] for a number with no canonical text or a
+/// call with no argument, and [`ExprError::ResourceLimit`] for a tree whose
+/// text nests past the expression ceiling.
 pub fn print<R: PartialEq + Clone>(node: &Node<R>) -> Result<NeutralWire<R>, ExprError> {
     let mut printer = Printer {
         refs: Vec::new(),
         measures: Vec::new(),
     };
+    let _level = level()?;
     let text = printer.raw(node)?;
     Ok(NeutralWire {
         text,

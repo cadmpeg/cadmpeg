@@ -17,7 +17,7 @@ fn model(bytes: &[u8], name: &str) -> serde_json::Value {
     let result = UsdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap_or_else(|error| panic!("{name}: {error}"));
-    serde_json::to_value(&result.ir().model).expect("serialize the model")
+    serde_json::json!({ "geometry": &result.ir().geometry, "model": &result.ir().model })
 }
 
 /// The text fixture a binary fixture `<stem>_<major>_<minor>_<patch>` was
@@ -135,6 +135,7 @@ fn a_written_crate_layer_reads_as_its_text_layer() {
         assert!(as_crate.starts_with(b"PXR-USDC\x00\x08\x00"), "{name}");
         let from_text = crate::test_support::decode_bytes(&as_text);
         let from_crate = crate::test_support::decode_bytes(&as_crate);
+        assert_eq!(from_text.ir().geometry, from_crate.ir().geometry, "{name}");
         assert_eq!(from_text.ir().model, from_crate.ir().model, "{name}");
     }
 }

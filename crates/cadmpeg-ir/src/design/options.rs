@@ -109,11 +109,13 @@ pub struct SolidOutput {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BodyForm {
     /// A solid.
-    Solid {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Solid,
     /// A solid wall about the profile curves.
     Thin(ThinWall),
     /// A surface result.
-    Sheet {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Sheet,
 }
 
 /// A solid wall about the profile curves.
@@ -150,6 +152,7 @@ pub struct ThinWall {
 )]
 pub enum CornerRound {
     /// Sharp corners.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Sharp,
     /// Corners rounded to the radius.
     Round(Dimension<PositiveLength>),
@@ -202,15 +205,19 @@ pub enum Thickness {
 pub enum WallSide {
     /// Into the material that a closed profile or a face bounds; for a face
     /// offset, against the face normal.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Inside,
     /// Away from the material that a closed profile or a face bounds; for a
     /// face offset, along the face normal.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Outside,
     /// The left side of an open profile, seen looking against the profile
     /// normal.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Left,
     /// The right side of an open profile, seen looking against the profile
     /// normal.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Right,
     /// A source side rule that is not established.
     Native(NonBlankString),
@@ -229,6 +236,7 @@ pub enum ThinEnds {
     /// The ends are capped with the thickness.
     Capped(Dimension<PositiveLength>),
     /// The ends are merged.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Merged,
 }
 
@@ -238,7 +246,8 @@ pub enum ThinEnds {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Boolean {
     /// A body with no combination.
-    NewBody {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    NewBody,
     /// The result combines with existing bodies.
     Apply {
         /// The combination.
@@ -265,21 +274,28 @@ pub enum Boolean {
 )]
 pub enum BooleanOp {
     /// Union.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Join,
     /// Subtraction.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Cut,
     /// Intersection.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Intersect,
     /// Adds a tool body by its own polarity. It occurs only in `Combine`.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Assemble,
     /// Sews the result into the sheets it meets. It occurs only in an
     /// output.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Sew,
     /// Joins with no material interaction. It occurs only in `Combine`.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Compound,
     /// Joins the target and the tool, then removes each piece of one operand
     /// that lies outside the other operand's material and that the other
     /// operand encloses in some plane.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     UnionTrim,
     /// A source combination whose meaning is not established.
     Native(NonBlankString),
@@ -291,7 +307,8 @@ pub enum BooleanOp {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Targets {
     /// Every body.
-    All {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    All,
     /// The selected bodies.
     Selected(SetSelection),
 }
@@ -383,6 +400,7 @@ pub enum SectionCondition {
         support: Option<Support>,
     },
     /// The source's explicit default.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Default,
     /// The surface leaves the section along a direction.
     Direction {
@@ -480,7 +498,8 @@ pub enum Support {
     /// The selected faces.
     Faces(SetSelection),
     /// An automatically computed support.
-    Computed {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Computed,
 }
 
 /// How a curve reaches a face.
@@ -494,8 +513,10 @@ pub enum Support {
 )]
 pub enum ProjectionDirection {
     /// Normal to the receiving surface.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     SurfaceNormal,
     /// Normal to the curve's sketch.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     SketchNormal,
     /// Along a constructed direction.
     Along(Construction<kinds::Direction>),

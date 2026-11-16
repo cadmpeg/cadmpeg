@@ -52,17 +52,19 @@
         }
       },
       "identity": {
-        "payload": "native",
+        "kind": "native",
         "target": "step:ap242-e3"
       },
       "losses": [
         {
           "code": {
-            "code": "target.source-dialect-displaced",
-            "kind": "source_dialect_displaced",
-            "namespace": "step",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "target.source-dialect-displaced",
+              "kind": "source_dialect_displaced",
+              "namespace": "step",
+              "strict_floor": "warning"
+            }
           },
           "message": "source dialect step:ap214 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
           "severity": "warning"
@@ -71,9 +73,9 @@
       "notes": [],
       "write_path": {
         "fidelity": {
-          "status": "not_provided"
+          "kind": "not_provided"
         },
-        "path": "synthesized"
+        "kind": "synthesized"
       }
     }
   },
@@ -130,16 +132,16 @@
         }
       },
       "identity": {
-        "payload": "native",
+        "kind": "native",
         "target": "step:ap214"
       },
       "losses": [],
       "notes": [],
       "write_path": {
         "fidelity": {
-          "status": "not_provided"
+          "kind": "not_provided"
         },
-        "path": "synthesized"
+        "kind": "synthesized"
       }
     }
   },
@@ -196,16 +198,16 @@
         }
       },
       "identity": {
-        "payload": "native",
+        "kind": "native",
         "target": "step:ap214"
       },
       "losses": [],
       "notes": [],
       "write_path": {
         "fidelity": {
-          "status": "not_provided"
+          "kind": "not_provided"
         },
-        "path": "synthesized"
+        "kind": "synthesized"
       }
     }
   }

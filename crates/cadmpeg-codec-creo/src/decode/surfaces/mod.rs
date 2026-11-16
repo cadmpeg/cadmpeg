@@ -324,7 +324,7 @@ pub(super) fn transfer_part_product(
     )?;
     ctx.charge_entities(1, "admit Creo model product_definitions")?;
     let mut bodies = Vec::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         let body_id = body.id.as_str().to_owned();
         bodies.push(
             cadmpeg_ir::ids::BodyId::mint(body_id).map_err(cadmpeg_core::CodecError::malformed)?,
@@ -581,7 +581,7 @@ pub(super) fn transfer_fc05_cap_circles(
             &crate::identity::VISIBGEOM_CURVE,
             circle.curve_id,
         )?;
-        if !ir.model.curves.iter().any(|curve| curve.id == id) {
+        if !ir.geometry.curves.iter().any(|curve| curve.id == id) {
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::from(center),
                 Vector3::from(axis),
@@ -632,7 +632,7 @@ pub(super) fn transfer_fc05_cap_circles(
             cylinder_id,
         )?;
         if ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id == surface_id)

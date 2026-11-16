@@ -9,6 +9,7 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::container::ContainerScan;
@@ -87,6 +88,7 @@ fn compose(
         .source
         .take()
         .ok_or_else(|| CodecError::malformed("F3Z root has no source metadata"))?;
+    fidelity.decode_digest = Sha256Digest::digest(scan.source_image);
     fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
     if let Some(drawing_root) = &session.omitted_drawing_root {

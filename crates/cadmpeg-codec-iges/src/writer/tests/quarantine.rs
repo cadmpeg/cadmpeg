@@ -81,7 +81,7 @@ fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(round_trip.ir().model.points.len(), 1);
+    assert_eq!(round_trip.ir().geometry.points.len(), 1);
     assert!(round_trip.ir().native.namespace("iges").unwrap().arenas()
         ["quarantined_directory_records"]
         .is_empty());

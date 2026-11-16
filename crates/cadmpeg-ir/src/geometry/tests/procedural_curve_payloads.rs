@@ -301,10 +301,10 @@ fn an_offset_side_states_its_carrier_and_denies_the_other_one() {
     });
 
     let normal_wire = serde_json::to_value(&normal).unwrap();
-    assert_eq!(normal_wire["side"]["side"], "plane_normal");
+    assert_eq!(normal_wire["side"]["kind"], "plane_normal");
     assert!(normal_wire["side"].get("direction").is_none());
     let direction_wire = serde_json::to_value(&direction).unwrap();
-    assert_eq!(direction_wire["side"]["side"], "direction");
+    assert_eq!(direction_wire["side"]["kind"], "direction");
     assert!(direction_wire["side"].get("normal").is_none());
     assert_eq!(
         serde_json::from_value::<ProceduralCurveDefinition>(normal_wire.clone()).unwrap(),

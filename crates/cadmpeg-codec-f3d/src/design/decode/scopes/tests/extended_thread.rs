@@ -187,6 +187,7 @@ fn the_extended_prefix_reads_its_class_designation_copy_and_sense() {
             external: true,
             modeled: false,
             full_length: Some(true),
+            right_handed: Some(true),
         }
     );
 
@@ -229,10 +230,11 @@ fn the_entry_count_and_the_tail_flag_state_a_modeled_thread() {
         construction.designation_offset,
         u64_from_index(34 + 16 + (4 + 4) + (4 + 14))
     );
-    let mut cases = Vec::new();
+    // A modeled thread whose scope has no result stores result flag 0.
     let mut unflagged = Fixture::modeled();
     unflagged.modeled_flag = 0;
-    cases.push(("entry without flag", unflagged));
+    assert!(extended(&unflagged.decode().expect("modeled thread without a result")).modeled);
+    let mut cases = Vec::new();
     let mut flagged = Fixture::cosmetic();
     flagged.modeled_flag = 1;
     cases.push(("flag without entry", flagged));
@@ -285,6 +287,7 @@ fn owner_marked_extended_thread_retains_sense_modeled_state_and_face_pairs() {
             class: "6H",
             copy,
             faces: 2,
+            entries: if modeled { 2 } else { 0 },
             ..if modeled {
                 Fixture::modeled()
             } else {
@@ -295,7 +298,7 @@ fn owner_marked_extended_thread_retains_sense_modeled_state_and_face_pairs() {
         assert_eq!(construction.form, DesignThreadForm::StandardExtended);
         assert_eq!(
             construction.designation_offset,
-            38 + u64::from(modeled) * 16 + 8 + 4 + copy_bytes
+            38 + u64::from(modeled) * 2 * 16 + 8 + 4 + copy_bytes
         );
         assert_eq!(construction.face_group_record_indices, [101, 105]);
         assert_eq!(
@@ -305,6 +308,7 @@ fn owner_marked_extended_thread_retains_sense_modeled_state_and_face_pairs() {
                 external: false,
                 modeled,
                 full_length: Some(true),
+                right_handed: Some(true),
             }
         );
     }

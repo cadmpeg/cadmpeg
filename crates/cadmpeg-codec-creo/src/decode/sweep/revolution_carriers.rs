@@ -448,7 +448,7 @@ pub(in crate::decode) fn native_solid_contains_feature(
         .filter(|row| row.feature_id == feature_id)
         .any(|row| {
             let Some(face) =
-                crate::decode::uniqueness::exactly_one(ir.model.faces.iter().filter(|face| {
+                crate::decode::uniqueness::exactly_one(ir.geometry.faces.iter().filter(|face| {
                     crate::identity::matches_numbered_identity(
                         face.id.as_str(),
                         "creo:visibgeom:face#",
@@ -459,7 +459,7 @@ pub(in crate::decode) fn native_solid_contains_feature(
                 return false;
             };
             let Some(shell) = crate::decode::uniqueness::exactly_one(
-                ir.model
+                ir.geometry
                     .shells
                     .iter()
                     .filter(|shell| shell.id == face.shell),
@@ -467,7 +467,7 @@ pub(in crate::decode) fn native_solid_contains_feature(
                 return false;
             };
             let Some(region) = crate::decode::uniqueness::exactly_one(
-                ir.model
+                ir.geometry
                     .regions
                     .iter()
                     .filter(|region| region.id == shell.region),
@@ -475,7 +475,10 @@ pub(in crate::decode) fn native_solid_contains_feature(
                 return false;
             };
             let Some(body) = crate::decode::uniqueness::exactly_one(
-                ir.model.bodies.iter().filter(|body| body.id == region.body),
+                ir.geometry
+                    .bodies
+                    .iter()
+                    .filter(|body| body.id == region.body),
             ) else {
                 return false;
             };

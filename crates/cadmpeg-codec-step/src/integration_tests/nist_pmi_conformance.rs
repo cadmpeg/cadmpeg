@@ -824,7 +824,7 @@ fn every_nist_step_preserves_its_source_faces_and_dimensions() {
             .count();
         assert!(faces > 0, "{name} contains no bounded faces");
         assert_eq!(
-            result.ir().model.faces.len(),
+            result.ir().geometry.faces.len(),
             faces,
             "{name} lost source faces"
         );

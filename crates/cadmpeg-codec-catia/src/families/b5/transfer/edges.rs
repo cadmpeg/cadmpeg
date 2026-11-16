@@ -402,7 +402,7 @@ pub(super) fn emit_edges(
         }
         let model_curve_id = curve_id.clone();
         admission.charge()?;
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: model_curve_id,
             geometry,
@@ -456,7 +456,7 @@ pub(super) fn emit_edges(
 
             let owner = curve_id.clone();
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve(&owner, procedural);
+            let _attached = ir.geometry.add_procedural_curve(&owner, procedural);
         }
         annotate(
             annotations,
@@ -487,7 +487,7 @@ pub(super) fn emit_edges(
             VertexId::mint,
         )?;
         admission.charge()?;
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)
                 .map_err(cadmpeg_core::CodecError::malformed)?,

@@ -557,7 +557,7 @@ pub(super) fn decode(
         }
     }
     let mut decoded_pcurves = BTreeSet::new();
-    for pcurve in &commit_session.document().model.pcurves {
+    for pcurve in &commit_session.document().geometry.pcurves {
         if let Some(id) = source_numeric_id(pcurve.id.as_str(), "pcurve") {
             decoded_pcurves.insert(id);
         }
@@ -805,17 +805,17 @@ pub(super) fn decode(
             result.claims.insert(id);
         }
     }
-    for face in &commit_session.document().model.faces {
+    for face in &commit_session.document().geometry.faces {
         if let Some(source) = source_numeric_id(face.id.as_str(), "face") {
             push_source_identity(&mut result.faces_by_source, source, face.id.clone());
         }
     }
-    for edge in &commit_session.document().model.edges {
+    for edge in &commit_session.document().geometry.edges {
         if let Some(source) = source_numeric_id(edge.id.as_str(), "edge") {
             push_source_identity(&mut result.edges_by_source, source, edge.id.clone());
         }
     }
-    for vertex in &commit_session.document().model.vertices {
+    for vertex in &commit_session.document().geometry.vertices {
         if let Some(source) = source_numeric_id(vertex.id.as_str(), "vertex") {
             push_source_identity(&mut result.vertices_by_source, source, vertex.id.clone());
         }
@@ -2181,7 +2181,7 @@ fn drop_committed_surfaces(
     session: &mut CommitSession<'_, &mut CadIr>,
 ) -> Result<(), CodecError> {
     let mut refusal = None;
-    draft.model_mut().surfaces.retain(|surface| {
+    draft.geometry_mut().surfaces.retain(|surface| {
         if refusal.is_some() {
             return true;
         }

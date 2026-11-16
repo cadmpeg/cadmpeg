@@ -709,13 +709,20 @@ fn extended_thread_prefix_checks_standard_owner_references_and_compact_tail() {
         let construction =
             exact_thread_construction(&bytes, &scope, &owners).expect("extended thread prefix");
         assert!(exact_thread_construction(&bytes, &scope, &[]).is_none());
-        let mut shifted = owners.clone();
-        let mut shifted_wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(shifted[0].clone());
-        shifted_wire.evaluated_value = 0.25;
-        shifted[0] =
-            crate::records::parameters::DesignParameterOwner::try_from(shifted_wire).unwrap();
-        assert!(exact_thread_construction(&bytes, &scope, &shifted).is_none());
+        // The extended standard form admits a positive offset; the compact form stores zero.
+        let shifted = |value: f64| {
+            let mut shifted = owners.clone();
+            let mut wire =
+                crate::records::parameters::DesignParameterOwnerWire::from(shifted[0].clone());
+            wire.evaluated_value = value;
+            shifted[0] = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
+            shifted
+        };
+        assert_eq!(
+            exact_thread_construction(&bytes, &scope, &shifted(0.25)).is_some(),
+            standard
+        );
+        assert!(exact_thread_construction(&bytes, &scope, &shifted(-0.25)).is_none());
         assert_eq!(construction.designation_offset, 46);
         assert_eq!(
             construction.form,

@@ -1,44 +1,61 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
+    "design": {},
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
-      "bodies": [],
-      "coedges": [],
+      "colliders": [],
       "configurations": [],
-      "curves": [],
+      "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
-      "loops": [],
+      "history_bodies": [],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
-      "points": [],
+      "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [],
+      "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -161,7 +178,8 @@
         "storage_property_members": [],
         "unknowns": [
           {
-            "id": "catia:payload:unknown#container"
+            "id": "catia:payload:unknown#container",
+            "links": []
           }
         ],
         "value_blocks": [],
@@ -175,25 +193,26 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
-      "attributes": {
-        "external_reference_count": "0",
-        "file_size": "389",
-        "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "389",
-        "preview_count": "0",
-        "stream_count": "1"
-      },
+      "attributes": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {},
             "dialect": "catia:inner-no-directory"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -201,7 +220,10 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
@@ -533,34 +555,41 @@
       "unresolved_unreferenced_relation_expression_count": 0
     },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {},
           "dialect": "catia:inner-no-directory"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.brep-not-transferred",
-          "kind": "geometry_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.brep-not-transferred",
+            "kind": "geometry_not_transferred",
+            "namespace": "catia",
+            "strict_floor": "warning"
+          }
         },
         "message": "No B-rep geometry was transferred. This file's storage variant is `catia:inner-no-directory` (nested V5_CFV2 with no BREP-body directory (contiguous inner body): freeform carrier decode supported); the applicable decoded record families transfer geometry in this codec.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "topology.graph-not-built",
-          "kind": "topology_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.graph-not-built",
+            "kind": "topology_not_transferred",
+            "namespace": "catia",
+            "strict_floor": "warning"
+          }
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
@@ -573,7 +602,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -581,7 +613,8 @@
       "exactness": {
         "catia:payload:unknown#container": {
           "entity": "unknown",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -592,15 +625,25 @@
         }
       }
     },
+    "decode_digest": "1f5b834258ba1b225430af34612b5fbdfa91fd727fa716ba01c93ab38f3f60f9",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#container": {
         "bytes": {
           "data": "VjVfQ0ZWMgAAAAGFAAAAAFY1X0NGVjIAAAAAjgAAAOeyAyRGBYIFCQqHDQAAAAAAAAAAAAAAAAAAJEAAAAAAAADQvwAAAAAAAAAAAAAAAAAAFEAAAAAAAAAAwAAAAAAAACRAAAAAAAAA0D+yAyQuBYIFCQsBAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAJEBDQVRJQV9WNSBDQjAwMDEAAAAAAAAAAAAAAAAAAAAAfk0AYQBpAG4ARABhAHQAYQBTAHQAcgBlAGEAbQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAEAAAAH4AAAB+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUwB1AHIAZgBhAGMAaQBjAFIAZQBwAHMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAACOAAAAAAAAAAAAAAAAAAAAAENCX19FTkQ=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": [
+          "model",
+          "design"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

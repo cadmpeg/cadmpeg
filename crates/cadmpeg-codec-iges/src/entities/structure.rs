@@ -1770,12 +1770,12 @@ fn plane_face_draft(
         let edge_id = edge.id.clone();
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
-        candidate.model_mut().edges.push(edge);
+        candidate.geometry_mut().edges.push(edge);
         let loop_id = crate::ids::r#loop(&stem.slot(boundary_index));
         let coedge_id = crate::ids::coedge(&stem.slot(boundary_index));
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
-        candidate.model_mut().coedges.push(Coedge {
+        candidate.geometry_mut().coedges.push(Coedge {
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -1790,7 +1790,7 @@ fn plane_face_draft(
         };
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
-        candidate.model_mut().loops.push(Loop {
+        candidate.geometry_mut().loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -1805,7 +1805,7 @@ fn plane_face_draft(
     };
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
-    candidate.model_mut().faces.push(Face {
+    candidate.geometry_mut().faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
         surface: crate::ids::surface(&crate::ids::Stem::directory(surface_sequence)),
@@ -1826,11 +1826,11 @@ fn plane_face_draft(
     .map_err(|_| LegacyPlaneError::Invalid("legacy plane shell is empty"))?;
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
-    candidate.model_mut().shells.push(shell);
+    candidate.geometry_mut().shells.push(shell);
     let region_shells = vec![shell_id];
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
-    candidate.model_mut().regions.push(Region {
+    candidate.geometry_mut().regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
         shells: region_shells,
@@ -1838,7 +1838,7 @@ fn plane_face_draft(
     let body_regions = vec![region_id];
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
-    candidate.model_mut().bodies.push(Body {
+    candidate.geometry_mut().bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
         regions: body_regions,

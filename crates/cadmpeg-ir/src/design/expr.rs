@@ -94,23 +94,32 @@ pub enum ExpressionToken<R> {
 )]
 pub enum ExpressionDialect {
     /// `SolidWorks` equations.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     SolidWorks,
     /// Fusion parameter expressions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Fusion,
     /// Fusion CAM expressions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     FusionCam,
     /// Inventor parameter expressions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Inventor,
     /// CATIA formulas and rules.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Catia,
     /// Creo relations.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Creo,
     /// NX expressions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Nx,
     /// `FreeCAD` expressions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     FreeCad,
     /// The workbook formula language: operators, functions, `&`, and cell
     /// references relative to the formula's own cell.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Spreadsheet,
     /// A source language that the vocabulary does not name.
     Native(NonBlankString),
@@ -147,6 +156,7 @@ pub enum Node<R> {
     Measure(Box<Measure>),
     /// The path parameter, dimensionless from 0 to 1, of a `Law::Expression`.
     /// It occurs only there.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     LawParameter,
     /// A value of the bend for which a bend-allowance expression is
     /// evaluated. It occurs only in an `AngleRange.value`.
@@ -377,18 +387,25 @@ pub struct Measure {
 )]
 pub enum MeasureKind {
     /// The length of edges or curves.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Length,
     /// The area of faces.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Area,
     /// The volume of bodies.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Volume,
     /// The mass of bodies, using each body's material in the configuration.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Mass,
     /// The distance between two picks.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Distance,
     /// The angle between two picks.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Angle,
     /// The radius of an arc or cylinder.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Radius,
     /// The coordinate of a point or frame origin along an axis of the owner's
     /// definition.
@@ -401,7 +418,8 @@ pub enum MeasureKind {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeasureTarget {
     /// The scope's whole current model.
-    Model {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Model,
     /// The selected geometry.
     Selection(OrderedSelection),
 }
@@ -495,6 +513,33 @@ impl<R: JsonSchema> JsonSchema for Neutral<R> {
 
 fn level() -> Result<read::Depth, ExprError> {
     Ok(read::enter(Ceiling::Expression)?)
+}
+
+/// The levels a left-associative chain (`or`, `and`, `+ -`, `* /`) holds
+/// while it is read or printed. Its tree is one level deeper for each operand
+/// past its second, so each such operand enters a level, held to the chain's
+/// end.
+struct Chain {
+    operands: usize,
+    levels: Vec<read::Depth>,
+}
+
+impl Chain {
+    const fn new() -> Self {
+        Self {
+            operands: 1,
+            levels: Vec::new(),
+        }
+    }
+
+    /// Enters the chain's next operand.
+    fn next(&mut self) -> Result<(), ExprError> {
+        self.operands += 1;
+        if self.operands > 2 {
+            self.levels.push(level()?);
+        }
+        Ok(())
+    }
 }
 
 cadmpeg_core::named_optional_field!(deserialize_cached, FiniteReal, "cached");

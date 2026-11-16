@@ -926,7 +926,7 @@ fn decode_retains_nx_arrangement_configurations() {
     );
     assert!(result.ir().model.configurations[0].active);
     assert!(result.ir().model.configurations[0].bodies.is_none());
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     for configuration in &result.ir().model.configurations {
         assert!(configuration.parameter_values.is_empty());
         assert!(configuration.parameter_overrides.is_empty());

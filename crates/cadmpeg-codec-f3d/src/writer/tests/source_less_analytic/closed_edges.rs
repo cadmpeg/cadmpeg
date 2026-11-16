@@ -24,14 +24,14 @@ fn generated_source_less_closed_circle_edge_without_range_spans_one_revolution()
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cylinder round trip");
-    let model = &round_trip.ir().model;
-    let circle_ranges = model
+    let geometry = &round_trip.ir().geometry;
+    let circle_ranges = geometry
         .edges
         .iter()
         .filter(|edge| edge.start == edge.end)
         .filter(|edge| {
             edge.curve().is_some_and(|curve_id| {
-                model.curves.iter().any(|curve| {
+                geometry.curves.iter().any(|curve| {
                     curve.id == *curve_id
                         && matches!(
                             curve.geometry.solved(),
@@ -53,7 +53,7 @@ fn generated_source_less_closed_circle_edge_without_range_spans_one_revolution()
 fn generated_source_less_closed_edge_off_its_carrier_start_without_range_is_refused() {
     let mut source_less = cadmpeg_test_support::solids::solid_cylinder();
     let bottom = source_less
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id.as_str().ends_with("#bottom"))

@@ -15,7 +15,7 @@ use crate::design::construction::{
     kinds, AnyConstruction, Construction, ConstructionInput, InputReference,
 };
 use crate::design::dimension::ParameterRef;
-use crate::design::expr::{Neutral, NeutralWire};
+use crate::design::expr::{self, BinaryOp, ExprError, Neutral, NeutralWire, Node};
 use crate::design::names::{NameEntry, TopoName};
 use crate::design::read::{self, Ceiling};
 use crate::design::selection::{PickDomain, Picked};
@@ -121,6 +121,95 @@ fn expression_text_nests_to_its_ceiling() {
             &negations(limit + 1),
         );
     }
+}
+
+/// Flat text of `operands` operands joined by `mark`: one level of text whose
+/// tree is a left-deep chain.
+fn chained(operand: &str, mark: &str, operands: u64) -> String {
+    let text = vec![operand; usize::try_from(operands).unwrap()].join(&format!(" {mark} "));
+    serde_json::to_string(&NeutralWire::<ParameterRef> {
+        text,
+        refs: Vec::new(),
+        measures: Vec::new(),
+    })
+    .unwrap()
+}
+
+const CHAINS: [(&str, &str); 6] = [
+    ("1", "+"),
+    ("1", "-"),
+    ("1", "*"),
+    ("1", "/"),
+    ("true", "and"),
+    ("true", "or"),
+];
+
+/// Each operand of a chain past its second nests one level, so a chain of
+/// `limit + 1` operands reaches the ceiling and one more is refused.
+#[test]
+fn a_long_chain_nests_to_the_expression_ceiling() {
+    for limits in policies() {
+        let limit = Ceiling::Expression.of(&limits);
+        for (operand, mark) in CHAINS {
+            admits_and_refuses::<Neutral<ParameterRef>>(
+                Ceiling::Expression,
+                &limits,
+                &chained(operand, mark, limit + 1),
+                &chained(operand, mark, limit + 2),
+            );
+        }
+    }
+}
+
+/// A chain far past the ceiling is refused with `ResourceLimit` before its
+/// tree is built, on a small stack.
+#[test]
+fn a_chain_far_past_the_ceiling_is_refused_without_overflow() {
+    std::thread::Builder::new()
+        .stack_size(256 << 10)
+        .spawn(|| {
+            for (operand, mark) in CHAINS {
+                let text = chained(operand, mark, 10_000);
+                let read =
+                    read::from_str::<Neutral<ParameterRef>>(&text, &ResourceLimits::desktop());
+                assert!(
+                    matches!(read, Err(CodecError::ResourceLimit(_))),
+                    "{mark}: {read:?}"
+                );
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// The printer charges the levels the parser charges, so it writes a chain at
+/// the ceiling and refuses one past it, without recursing down its spine.
+#[test]
+fn the_printer_refuses_a_chain_past_the_ceiling() {
+    let chain = |operands: u64| {
+        let one = || Node::<ParameterRef>::Boolean(true);
+        let mut node = one();
+        for _ in 1..operands {
+            node = Node::Binary {
+                op: BinaryOp::And,
+                left: Box::new(node),
+                right: Box::new(one()),
+            };
+        }
+        node
+    };
+    let limit = Ceiling::Expression.of(&ResourceLimits::default());
+    let at = expr::print(&chain(limit + 1)).unwrap();
+    assert_eq!(
+        at.text,
+        vec!["true"; usize::try_from(limit + 1).unwrap()].join(" and ")
+    );
+    assert!(matches!(
+        expr::print(&chain(limit + 2)),
+        Err(ExprError::ResourceLimit(refusal)) if refusal.limit == limit
+    ));
+    assert!(serde_json::to_string(&Neutral(chain(limit + 2))).is_err());
 }
 
 #[test]

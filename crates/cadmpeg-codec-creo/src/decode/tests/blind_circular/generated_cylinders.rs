@@ -213,7 +213,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             source_object: None,
         };
         let mut ir = CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             plane(31, 4.0, Vector3::new(0.0, 1.0, 0.0)),
             plane(32, -4.0, Vector3::new(0.0, -1.0, 0.0)),
             Surface {
@@ -288,7 +288,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         scan.surfaces
             .rows
             .push(row(34, crate::surface::SurfaceKind::Plane));
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -308,7 +308,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         scan.surfaces
             .rows
             .push(row(35, crate::surface::SurfaceKind::Cylinder));
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -325,10 +325,10 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             expected
         );
         scan.surfaces.rows.truncate(3);
-        ir.model.surfaces.truncate(3);
+        ir.geometry.surfaces.truncate(3);
 
         let mut untransferred_caps = ir.clone();
-        untransferred_caps.model.surfaces.retain(|surface| {
+        untransferred_caps.geometry.surfaces.retain(|surface| {
             surface.id
                 == SurfaceId::mint("creo:visibgeom:surface#33".to_string())
                     .expect("identity grammar")
@@ -475,8 +475,8 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             .filter(|row| row.id == 33)
             .cloned()
             .collect();
-        let model_surfaces = std::mem::take(&mut ir.model.surfaces);
-        ir.model.surfaces = model_surfaces
+        let model_surfaces = std::mem::take(&mut ir.geometry.surfaces);
+        ir.geometry.surfaces = model_surfaces
             .iter()
             .filter(|surface| {
                 surface.id == SurfaceId::mint("creo:visibgeom:surface#33").expect("valid identity")
@@ -495,7 +495,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             Some(ExtrusionSpan::new(0.0, 8.0).expect("valid span fixture"))
         );
         scan.surfaces.rows = surface_rows;
-        ir.model.surfaces = model_surfaces;
+        ir.geometry.surfaces = model_surfaces;
         let displaced = crate::placement::FeatureSectionTransform::new(
             transform.definition_id,
             transform.feature_id,
@@ -535,7 +535,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
 
         let mut oblique = ir.clone();
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-            &mut oblique.model.surfaces[0].geometry
+            &mut oblique.geometry.surfaces[0].geometry
         else {
             panic!("plane");
         };
@@ -625,7 +625,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         scan.surfaces.parameters.pop();
 
         let mut missing_transfer = ir.clone();
-        missing_transfer.model.surfaces.pop();
+        missing_transfer.geometry.surfaces.pop();
         assert!(generated_bounded_cylinder_extent(
             &scan,
             &missing_transfer,

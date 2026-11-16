@@ -34,7 +34,7 @@ fn reports(ir: &CadIr) {
 
 fn missing_body(ir: &mut CadIr) {
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id": "test:model:product#definition", "kind": "part", "bodies": ["test:model:body#missing"]
+        "id": "test:model:product#definition", "kind": "part", "bodies": ["test:model:body#missing"], "bom_properties": {}, "sketches": []
     })).unwrap());
 }
 
@@ -221,13 +221,13 @@ fn product_sketch_references_exist_and_have_one_definition() {
     let sketch = "test:model:sketch#one";
     ir.model.sketches.push(
         serde_json::from_value(serde_json::json!({
-            "id": sketch, "placement": {"kind": "unresolved"}
+            "id": sketch, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .unwrap(),
     );
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#one", "kind": "part", "sketches": [sketch]
+            "id": "test:model:product#one", "kind": "part", "sketches": [sketch], "bom_properties": {}, "bodies": []
         }))
         .unwrap(),
     );
@@ -237,7 +237,7 @@ fn product_sketch_references_exist_and_have_one_definition() {
     assert!(findings.is_empty());
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#two", "kind": "part", "sketches": [sketch]
+            "id": "test:model:product#two", "kind": "part", "sketches": [sketch], "bom_properties": {}, "bodies": []
         }))
         .unwrap(),
     );
@@ -260,13 +260,13 @@ fn product_sketch_reference_cannot_repeat_in_one_definition() {
     let sketch = "test:model:sketch#one";
     ir.model.sketches.push(
         serde_json::from_value(serde_json::json!({
-            "id": sketch, "placement": {"kind": "unresolved"}
+            "id": sketch, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .unwrap(),
     );
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#one", "kind": "part", "sketches": [sketch, sketch, sketch]
+            "id": "test:model:product#one", "kind": "part", "sketches": [sketch, sketch, sketch], "bom_properties": {}, "bodies": []
         }))
         .unwrap(),
     );
