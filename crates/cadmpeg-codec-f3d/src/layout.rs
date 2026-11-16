@@ -298,8 +298,8 @@ pub(crate) mod design_decal_placement_prefix {
     pub(crate) const LEN: usize = 36;
     /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
     pub(crate) const ZERO_RUN_10: usize = 11;
-    /// Offset of `mesh_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const MESH_REFERENCE: usize = 21;
+    /// Offset of `leading_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const LEADING_REFERENCE: usize = 21;
     /// Offset of `vertex_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const VERTEX_COUNT: usize = 32;
 }

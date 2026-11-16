@@ -6,13 +6,18 @@ use cadmpeg_core::decode::u64_from_index;
 use super::{identity::Located, references::DesignClassTag};
 use serde::{Deserialize, Serialize};
 
-/// Placement frame stored by the primary record of a Decal image asset.
+cadmpeg_core::named_optional_field!(deserialize_placement, DesignDecalPlacement, "placement");
+
+/// Largest deviation of the squared placement normal length from one.
+pub(crate) const PLACEMENT_UNIT_NORMAL_TOLERANCE: f64 = 1.0e-9;
+
+/// Placement frame stored by a Decal placement record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignDecalPlacement {
-    /// Byte offset of the primary image-asset record.
+    /// Byte offset of the placement record.
     pub(crate) byte_offset: u64,
-    /// Dynamic class tag of the primary image-asset record.
+    /// Dynamic class tag of the placement record.
     pub(crate) class_tag: String,
     /// Count of the (u, v) pairs, one for each display-mesh vertex of the target body.
     pub(crate) vertex_count: u32,
@@ -32,6 +37,34 @@ pub(crate) struct DesignDecalPlacement {
     pub(crate) image_name: String,
     /// Count of the covered-triangle vertex indices.
     pub(crate) triangle_index_count: u32,
+}
+
+impl DesignDecalPlacement {
+    /// Admit a frame that precedes the image-asset record at `asset_byte_offset`.
+    pub(crate) fn admit(&self, asset_byte_offset: u64) -> Result<(), String> {
+        if self.byte_offset >= asset_byte_offset {
+            return Err("placement byte_offset must precede the image-asset record".into());
+        }
+        if self.class_tag.is_empty() || !self.class_tag.bytes().all(|byte| byte.is_ascii_graphic())
+        {
+            return Err("placement class_tag must contain printable ASCII characters".into());
+        }
+        if self.image_name.is_empty() {
+            return Err("placement image_name must be nonempty".into());
+        }
+        if [self.u_axis, self.v_axis, self.normal, self.origin]
+            .iter()
+            .flatten()
+            .any(|value| !value.is_finite())
+        {
+            return Err("placement vectors must be finite".into());
+        }
+        let squared_length: f64 = self.normal.iter().map(|value| value * value).sum();
+        if (squared_length - 1.0).abs() > PLACEMENT_UNIT_NORMAL_TOLERANCE {
+            return Err("placement normal must have unit length".into());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,6 +202,9 @@ impl DesignDecalAsset {
     pub(crate) fn record_index(&self) -> u32 {
         self.record_index
     }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
     pub(crate) fn entity_suffix(&self) -> u32 {
         self.entity_suffix
     }
@@ -212,7 +248,7 @@ pub(crate) struct DesignDecalImage {
     layout: DesignDecalScopeLayout,
     /// Scope code byte between the image-asset and target-group references.
     pub(crate) scope_code: u8,
-    /// Placement frame of the primary image-asset record.
+    /// Frame of the Decal placement record.
     pub(crate) placement: Option<DesignDecalPlacement>,
     /// Target construction-group record index.
     pub(crate) target_group_record_index: u32,
@@ -330,8 +366,12 @@ struct DesignDecalImageWire {
     asset_name: String,
     /// Byte offset of the asset name's UTF-16LE code units.
     asset_name_offset: u64,
-    /// Placement frame of the primary image-asset record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Frame of the Decal placement record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_placement"
+    )]
     placement: Option<DesignDecalPlacement>,
 }
 
@@ -457,6 +497,9 @@ impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
             if declared != derived {
                 return Err(format!("{name} must match the Decal record layout"));
             }
+        }
+        if let Some(placement) = &wire.placement {
+            placement.admit(image.asset.byte_offset())?;
         }
         image.placement = wire.placement;
         Ok(image)

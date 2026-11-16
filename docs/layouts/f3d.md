@@ -308,7 +308,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The image-asset record index also names a Decal placement record |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Ten zero bytes occupy placement offsets 11 through 20 |
-| 21 | 11 | `mesh_reference` | `bytes[11]` | little | spec | a marked record reference occurs at offset 21 |
+| 21 | 11 | `leading_reference` | `bytes[11]` | little | spec | a marked record reference occurs at offset 21 |
 | 32 | 4 | `vertex_count` | `u32` | little | spec | A u32 vertex count at offset 32 |
 
 ## `design_decal_image_asset_record`

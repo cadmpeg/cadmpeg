@@ -850,7 +850,7 @@ source = "spec"
 anchor = "Ten zero bytes occupy placement offsets 11 through 20"
 
 [[record.field]]
-name = "mesh_reference"
+name = "leading_reference"
 offset = 21
 type = "bytes[11]"
 source = "spec"

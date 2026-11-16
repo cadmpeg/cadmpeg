@@ -195,3 +195,35 @@ fn decal_image_wire_refuses_an_asset_frame_of_another_layout() {
         .to_string();
     assert!(error.contains("asset_frame_length"));
 }
+
+#[test]
+fn decal_image_wire_admits_a_placement_frame_before_the_asset_record() {
+    let placement = serde_json::json!({
+        "byte_offset": 40, "class_tag": "267", "vertex_count": 3, "ordinal": 1,
+        "u_axis": [0.5, 0.0, 0.0], "v_axis": [0.0, -0.5, 0.0], "mirrored": false,
+        "normal": [0.0, 0.0, -1.0], "origin": [1.0, 2.0, 0.0], "image_name": "mark",
+        "triangle_index_count": 3
+    });
+    let mut value = decal_wire_fixture();
+    value["placement"] = placement.clone();
+    let image: crate::records::decal::DesignDecalImage =
+        serde_json::from_value(value.clone()).expect("Decal binding with a placement");
+    assert_eq!(serde_json::to_value(&image).expect("Decal wire"), value);
+    let asset_at = value["asset_byte_offset"].clone();
+    for (field, bad) in [
+        ("byte_offset", asset_at),
+        ("class_tag", serde_json::json!("")),
+        ("image_name", serde_json::json!("")),
+        ("normal", serde_json::json!([0.0, 0.0, 2.0])),
+    ] {
+        let mut refused = value.clone();
+        refused["placement"][field] = bad;
+        assert!(
+            serde_json::from_value::<crate::records::decal::DesignDecalImage>(refused).is_err(),
+            "{field}"
+        );
+    }
+    let mut null = value;
+    null["placement"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<crate::records::decal::DesignDecalImage>(null).is_err());
+}
