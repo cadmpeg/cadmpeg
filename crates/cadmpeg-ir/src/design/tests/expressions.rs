@@ -260,10 +260,10 @@ const BINARY_OPS: [BinaryOp; 13] = [
 ];
 
 /// A fixed sequence of choices, so the trees are the same on every run.
-struct Choices(u64);
+pub(super) struct Choices(pub(super) u64);
 
 impl Choices {
-    fn below(&mut self, count: usize) -> usize {
+    pub(super) fn below(&mut self, count: usize) -> usize {
         self.0 = self
             .0
             .wrapping_mul(6_364_136_223_846_793_005)
@@ -271,7 +271,7 @@ impl Choices {
         usize::try_from(self.0 >> 33).unwrap() % count
     }
 
-    fn pick<T: Clone>(&mut self, from: &[T]) -> T {
+    pub(super) fn pick<T: Clone>(&mut self, from: &[T]) -> T {
         from[self.below(from.len())].clone()
     }
 }
