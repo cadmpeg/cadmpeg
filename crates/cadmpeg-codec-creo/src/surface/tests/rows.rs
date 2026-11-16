@@ -276,7 +276,7 @@ fn packed_next_pointer_stops_at_the_frame_label() {
     let payload = b"srf_array\0\xf8\x01\x05\x22\x04\x01\x00\xc0\x4ecrv_array\0";
     let decoded = rows(payload);
     assert_eq!(decoded.len(), 1);
-    assert_ne!(decoded[0].next_surface, 0x4e63);
+    assert_eq!(decoded[0].next_surface, 0xc0);
 }
 
 #[test]
@@ -1650,7 +1650,7 @@ fn packed_reading_over_a_compact_row_is_reported() {
     assert_eq!(
         readings,
         vec![crate::surface::PackedRowReading {
-            frame_start: b"srf_array\0\xf8\x01".len(),
+            frame_start: Some(b"srf_array\0\xf8\x01".len()),
             replaced: 1,
         }]
     );
@@ -1668,7 +1668,7 @@ fn named_packed_field_stops_at_a_frame_label() {
         \xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\xc0\x4ecrv_array\0";
     let decoded = rows(payload);
     assert_eq!(decoded.len(), 1);
-    assert_ne!(decoded[0].next_surface, 0x4e63);
+    assert_eq!(decoded[0].next_surface, 0xc0);
 }
 
 #[test]
@@ -1679,5 +1679,70 @@ fn named_packed_field_stops_at_a_named_record_header() {
         \xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00";
     let decoded = rows(payload);
     assert_eq!(decoded.len(), 1);
-    assert_ne!(decoded[0].id, 0x05_e001);
+    assert_eq!(decoded[0].id, 0xc5);
+}
+
+#[test]
+fn packed_reading_that_loses_rows_to_duplicate_ids_keeps_the_compact_rows() {
+    // The packed feat_id c5 10 20 makes a second id 5, and both ids 5 drop.
+    let payload = b"srf_array\0\xf8\x01\x05\x22\x04\x01\x00\x00\x05\x22\xc5\x10\x20\x01\x00\x00";
+    let (decoded, readings) = crate::surface::rows_with_packed_readings(payload);
+    assert_eq!(
+        decoded
+            .iter()
+            .map(|row| (row.id, row.feature_id))
+            .collect::<Vec<_>>(),
+        vec![(5, 4)]
+    );
+    assert!(readings.is_empty());
+}
+
+#[test]
+fn one_overfilled_frame_keeps_the_compact_reading_of_every_frame() {
+    let payload = b"srf_array\0\xf8\x01\
+        \xc0\x4e\x05\x22\x04\x01\x00\x00\x07\x22\xc5\x10\x20\x01\x00\x00\
+        srf_array\0\xf8\x01\x05\x22\xc5\x10\x20\x01\x00\x00";
+    let (decoded, readings) = crate::surface::rows_with_packed_readings(payload);
+    assert_eq!(
+        decoded
+            .iter()
+            .map(|row| (row.id, row.offset))
+            .collect::<Vec<_>>(),
+        vec![(5, 14)]
+    );
+    assert!(readings.is_empty());
+}
+
+#[test]
+fn cross_section_packed_reading_that_loses_its_boundary_keeps_the_compact_row() {
+    // The packed feat_id c5 01 00 leaves boundary 01, which a cross section excludes.
+    let payload = b"srf_array\0\xf8\x01\x05\x22\xc5\x01\x00\x01\x01\x00";
+    let decoded = cross_section_rows(payload);
+    assert_eq!(
+        decoded
+            .iter()
+            .map(|row| (row.id, row.feature_id))
+            .collect::<Vec<_>>(),
+        vec![(5, 0xc5)]
+    );
+}
+
+#[test]
+fn packed_reading_outside_counted_frames_is_reported() {
+    let payload = b"\x05\x22\xc5\x01\x00\x01\x00\x00";
+    let (decoded, readings) = crate::surface::rows_with_packed_readings(payload);
+    assert_eq!(
+        decoded
+            .iter()
+            .map(|row| (row.feature_id, row.next_surface))
+            .collect::<Vec<_>>(),
+        vec![(0x5_0100, 0)]
+    );
+    assert_eq!(
+        readings,
+        vec![crate::surface::PackedRowReading {
+            frame_start: None,
+            replaced: 1,
+        }]
+    );
 }

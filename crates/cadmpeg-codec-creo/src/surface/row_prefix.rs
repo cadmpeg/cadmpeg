@@ -38,7 +38,10 @@ const PACKED_FIELD_LEN: usize = 3;
 pub(super) enum RowReading {
     /// The one-byte and two-byte tiers, and a lone control byte as its own value.
     Compact,
-    /// The packed `c0..df XX YY` tier first, then the compact reading.
+    /// The packed `c0..df XX YY` tier where it applies, then the compact
+    /// reading. A packed `geom_id` applies only at a frame start or after an
+    /// `e3`, where no one- or two-byte identifier ending at the same type byte
+    /// starts.
     Packed,
 }
 
@@ -84,8 +87,8 @@ fn named_record_header_at(payload: &[u8], offset: usize) -> bool {
         && payload.get(offset + 2).is_some_and(u8::is_ascii_alphabetic)
 }
 
-/// The value of a named row field at `offset`, bounded by the namespace end,
-/// the next frame label, and the next named-record header.
+/// The value of a named row field at `offset`. A packed value ends before the
+/// namespace end, the next frame label, and the next named-record header.
 pub(super) fn named_row_field(
     payload: &[u8],
     offset: usize,

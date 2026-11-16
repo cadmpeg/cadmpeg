@@ -3319,16 +3319,16 @@ pub(crate) fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize
 /// Discover rows from a DEPDB `Sld_Xsections` surface namespace.
 /// Named prototype rows use boundary type `00`; positional replays use `06`.
 pub(crate) fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
-    rows_with_boundaries(payload, &[BoundaryType::Code00, BoundaryType::Code06])
+    cross_section_rows_with_packed_readings(payload).0
 }
 
-/// A counted `srf_array` frame whose rows read the packed `c0..df XX YY`
-/// tier where the compact reading of the same frame also forms rows.
+/// Rows the packed `c0..df XX YY` reading replaces in one counted
+/// `srf_array` frame, or outside every counted frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PackedRowReading {
     /// Offset of the first byte after the frame count.
-    pub(crate) frame_start: usize,
-    /// Compact-reading rows the packed reading replaces.
+    pub(crate) frame_start: Option<usize>,
+    /// Rows of the one- and two-byte reading that the packed reading replaces.
     pub(crate) replaced: usize,
 }
 
@@ -3336,67 +3336,94 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
     rows_and_packed_readings(payload, boundary_types).0
 }
 
-/// Rows of every frame, and the frames whose packed reading replaces compact
-/// rows.
+/// The candidates each counted frame retains: every candidate of a frame whose
+/// count they do not exceed, or every candidate when no frame holds one. The
+/// count is the frame's slot extent: a slot can lack a materialized
+/// fixed-prefix header, and more headers than slots withhold the frame.
+fn framed_rows(candidates: Vec<SurfaceRow>, frames: &[SurfaceArrayFrame]) -> Vec<SurfaceRow> {
+    let mut framed = Vec::new();
+    let mut saw_framed_candidate = false;
+    for frame in frames {
+        let inside: Vec<&SurfaceRow> = candidates
+            .iter()
+            .filter(|row| row.offset >= frame.start && row.offset < frame.end)
+            .collect();
+        saw_framed_candidate |= !inside.is_empty();
+        if inside.len() <= frame.count {
+            framed.extend(inside.into_iter().cloned());
+        }
+    }
+    if saw_framed_candidate {
+        framed
+    } else {
+        candidates
+    }
+}
+
+/// Rows, and the rows the packed reading replaces.
 ///
-/// A frame keeps its packed reading when its rows fit the frame count, and
-/// otherwise its compact reading when those fit. The count is the frame's
-/// slot extent: a slot can lack a materialized fixed-prefix header, and more
-/// headers than slots withhold the frame.
+/// The payload keeps its packed reading when, in every counted frame and
+/// outside them, the packed candidates are at least as many as the one- and
+/// two-byte candidates, and a frame that keeps its one- and two-byte
+/// candidates also keeps its packed ones. Otherwise it keeps the one- and
+/// two-byte reading.
 fn rows_and_packed_readings(
     payload: &[u8],
     boundary_types: &[BoundaryType],
 ) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
     let packed = row_candidates(payload, boundary_types, row_prefix::RowReading::Packed);
-    let frames: Vec<SurfaceArrayFrame> = surface_array_frames(payload).collect();
-    if frames.is_empty() {
-        return (packed, Vec::new());
-    }
     let compact = row_candidates(payload, boundary_types, row_prefix::RowReading::Compact);
-    let in_frame = |rows: &[SurfaceRow], frame: &SurfaceArrayFrame| -> Vec<SurfaceRow> {
-        rows.iter()
-            .filter(|row| row.offset >= frame.start && row.offset < frame.end)
-            .cloned()
-            .collect()
+    let frames: Vec<SurfaceArrayFrame> = surface_array_frames(payload).collect();
+    let frame_of = |row: &SurfaceRow| {
+        frames
+            .iter()
+            .find(|frame| row.offset >= frame.start && row.offset < frame.end)
+            .map(|frame| frame.start)
     };
-    let mut framed = Vec::new();
-    let mut readings = Vec::new();
-    let mut saw_framed_candidate = false;
-    for frame in &frames {
-        let packed_rows = in_frame(&packed, frame);
-        let compact_rows = in_frame(&compact, frame);
-        saw_framed_candidate |= !packed_rows.is_empty() || !compact_rows.is_empty();
-        if packed_rows.len() <= frame.count {
-            let replaced = compact_rows
-                .iter()
-                .filter(|row| !packed_rows.contains(row))
-                .count();
-            if replaced != 0 && compact_rows.len() <= frame.count {
-                readings.push(PackedRowReading {
-                    frame_start: frame.start,
-                    replaced,
-                });
-            }
-            framed.extend(packed_rows);
-        } else if compact_rows.len() <= frame.count {
-            framed.extend(compact_rows);
-        }
+    let count_in = |rows: &[SurfaceRow], start: Option<usize>| {
+        rows.iter().filter(|row| frame_of(row) == start).count()
+    };
+    let packed_admissible = frames
+        .iter()
+        .map(|frame| (Some(frame.start), Some(frame.count)))
+        .chain(std::iter::once((None, None)))
+        .all(|(start, count)| {
+            let packed_count = count_in(&packed, start);
+            let compact_count = count_in(&compact, start);
+            packed_count >= compact_count
+                && count.is_none_or(|count| packed_count <= count || compact_count > count)
+        });
+    let compact_rows = framed_rows(compact, &frames);
+    if !packed_admissible {
+        return (compact_rows, Vec::new());
     }
-    if saw_framed_candidate {
-        framed.as_mut_slice().sort_by_key(|left| left.offset);
-        framed.dedup_by_key(|row| row.offset);
-        (framed, readings)
-    } else {
-        (packed, readings)
+    let packed_rows = framed_rows(packed, &frames);
+    let mut replaced = BTreeMap::<Option<usize>, usize>::new();
+    for row in compact_rows.iter().filter(|row| !packed_rows.contains(row)) {
+        *replaced.entry(frame_of(row)).or_default() += 1;
     }
+    let readings = replaced
+        .into_iter()
+        .map(|(frame_start, replaced)| PackedRowReading {
+            frame_start,
+            replaced,
+        })
+        .collect();
+    (packed_rows, readings)
 }
 
-/// Rows of every `srf_array` frame, and the frames whose packed reading
-/// replaces compact rows.
+/// Rows of every `srf_array` frame, and the rows the packed reading replaces.
 pub(crate) fn rows_with_packed_readings(
     payload: &[u8],
 ) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
     rows_and_packed_readings(payload, BOUNDARY_TYPES)
+}
+
+/// Cross-section rows, and the rows the packed reading replaces.
+pub(crate) fn cross_section_rows_with_packed_readings(
+    payload: &[u8],
+) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
+    rows_and_packed_readings(payload, &[BoundaryType::Code00, BoundaryType::Code06])
 }
 
 fn row_candidates(
