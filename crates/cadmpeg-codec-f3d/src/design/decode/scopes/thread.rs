@@ -351,7 +351,6 @@ pub(super) fn parse_thread_payload(
             _ => return None,
         };
         let modeled = match extended {
-            // The flag of a modeled thread is 0 while the scope has no result.
             Some(prefix) if stated_modeled && !prefix.modeled => return None,
             Some(prefix) => prefix.modeled,
             None => stated_modeled,

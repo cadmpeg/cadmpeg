@@ -1799,7 +1799,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Conflict.** None.
 
-**Note.** DR-143 tracks the Thread modeled state. The active-face proof requires topology and geometry preservation after the Thread result.
+**Note.** The active-face proof requires topology and geometry preservation after the Thread result.
 
 ### DR-244. Treatment edge proof without a transition
 

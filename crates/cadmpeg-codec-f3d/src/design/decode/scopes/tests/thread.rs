@@ -316,6 +316,11 @@ fn the_byte_at_marker_offset_21_states_the_modeled_flag_in_every_form() {
         (ThreadPrefix::Standard, [1, 1, 0, 0, 0], &[0, 0, 0, 1][..]),
         (ThreadPrefix::Compact, [1, 2, 0, 0, 0], &[0, 0, 0, 1][..]),
         (ThreadPrefix::Compact, [1, 1, 0, 0, 0], &[0, 0, 0, 1][..]),
+        (
+            ThreadPrefix::Compact,
+            [1, 2, 0, 0, 0],
+            &[1, 90, 0, 0, 0, 0, 0, 0, 0, 0, 0][..],
+        ),
     ];
     for (prefix, marker, trailer) in forms {
         for (flag, modeled) in [(0, false), (1, true)] {
@@ -333,14 +338,16 @@ fn the_byte_at_marker_offset_21_states_the_modeled_flag_in_every_form() {
             "{prefix:?} {marker:?} flag 2"
         );
     }
-    for (flag, modeled) in [(0, false), (1, true)] {
+    for (flag, modeled) in [(0, Some(false)), (1, Some(true)), (2, None)] {
         let mut bytes = standard_compact_thread_bytes(2, 612);
         let flag_at = bytes.len() - (2 + 1 + 4 + 1 + 4 + 4) - 8 - 8 - 1;
         bytes[flag_at] = flag;
-        let construction = parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![612])
-            .expect("standard-prefix compact-marker thread");
-        assert_eq!(construction.form, DesignThreadForm::StandardCompact);
-        assert_eq!(construction.modeled, modeled);
+        let construction = parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![612]);
+        assert_eq!(
+            construction.map(|construction| (construction.form, construction.modeled)),
+            modeled.map(|modeled| (DesignThreadForm::StandardCompact, modeled)),
+            "modeled flag {flag}"
+        );
     }
 }
 
@@ -784,6 +791,14 @@ fn extended_thread_prefix_checks_standard_owner_references_and_compact_tail() {
             let mut mutated = bytes.clone();
             mutated[offset] = 9;
             assert!(exact_thread_construction(&mutated, &scope, &owners).is_none());
+        }
+        for flag in [1, 2] {
+            let mut flagged = bytes.clone();
+            flagged[trailer - 17] = flag;
+            assert!(
+                exact_thread_construction(&flagged, &scope, &owners).is_none(),
+                "modeled flag {flag} with no prefix entry"
+            );
         }
         if !standard {
             for offset in [

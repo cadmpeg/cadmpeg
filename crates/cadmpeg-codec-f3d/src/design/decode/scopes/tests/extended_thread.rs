@@ -246,6 +246,9 @@ fn the_entry_count_and_the_tail_flag_state_a_modeled_thread() {
     let mut two = Fixture::modeled();
     two.entries = 2;
     cases.push(("two entries", two));
+    let mut invalid = Fixture::modeled();
+    invalid.modeled_flag = 2;
+    cases.push(("flag 2", invalid));
     for (name, fixture) in cases {
         assert!(fixture.decode().is_none(), "{name}");
     }
