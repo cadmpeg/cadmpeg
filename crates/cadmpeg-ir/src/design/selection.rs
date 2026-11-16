@@ -51,19 +51,31 @@ impl MemberOrder for Unordered {
     const SORTED: bool = true;
 }
 
-/// A list of members that are distinct by identity. A member type's `Ord`
-/// is its identity key, so distinctness and order read only that key.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+/// A member of a [`Members`] list, distinct from the list's other members by
+/// its identity key.
+pub trait Keyed {
+    /// The identity key, in the order of §2.5.
+    type Key<'a>: Ord
+    where
+        Self: 'a;
+
+    /// The member's identity key.
+    fn key(&self) -> Self::Key<'_>;
+}
+
+/// A list of members that are distinct by identity. Distinctness and order
+/// read only each member's identity key.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(
     try_from = "Vec<T>",
-    bound(deserialize = "T: Deserialize<'de> + Ord, O: MemberOrder")
+    bound(deserialize = "T: Deserialize<'de> + Keyed, O: MemberOrder")
 )]
 pub struct Members<T, O> {
     items: Vec<T>,
     order: PhantomData<O>,
 }
 
-impl<T: Ord, O: MemberOrder> Members<T, O> {
+impl<T: Keyed, O: MemberOrder> Members<T, O> {
     /// Admits a list of members that are distinct by identity. An
     /// `Unordered` list is sorted by identity key.
     ///
@@ -71,13 +83,16 @@ impl<T: Ord, O: MemberOrder> Members<T, O> {
     ///
     /// Refuses a list that states a member twice.
     pub fn new(mut items: Vec<T>) -> Result<Self, &'static str> {
-        let mut keys: Vec<&T> = items.iter().collect();
-        keys.sort();
-        if keys.windows(2).any(|pair| pair[0].cmp(pair[1]).is_eq()) {
+        let repeats = {
+            let mut keys: Vec<T::Key<'_>> = items.iter().map(T::key).collect();
+            keys.sort();
+            keys.windows(2).any(|pair| pair[0] == pair[1])
+        };
+        if repeats {
             return Err("a member list states a member twice");
         }
         if O::SORTED {
-            items.sort();
+            items.sort_by(|left, right| left.key().cmp(&right.key()));
         }
         Ok(Self {
             items,
@@ -100,7 +115,7 @@ impl<T: Serialize, O> Serialize for Members<T, O> {
     }
 }
 
-impl<T: Ord, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
+impl<T: Keyed, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
     type Error = &'static str;
 
     /// Admits a list of members that are distinct by identity.
@@ -234,30 +249,26 @@ pub struct Picked {
     pub resolved: Option<Vec<EntityRef>>,
 }
 
-impl Picked {
-    fn identity(
-        &self,
-    ) -> (
-        &PickTarget,
-        &Option<PickContext>,
-        &Option<NativeName>,
-        &Option<PickDomain>,
-    ) {
-        (&self.target, &self.context, &self.native, &self.domain)
-    }
+/// The identity key of a [`Picked`], `(target, context, native, domain)`, in
+/// the order of §2.5. Neither the witness nor `resolved` is part of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PickKey<'a> {
+    target: &'a PickTarget,
+    context: Option<&'a PickContext>,
+    native: Option<&'a NativeName>,
+    domain: Option<PickDomainKey<'a>>,
 }
 
-impl Eq for Picked {}
+impl Keyed for Picked {
+    type Key<'a> = PickKey<'a>;
 
-impl PartialOrd for Picked {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Picked {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.identity().cmp(&other.identity())
+    fn key(&self) -> PickKey<'_> {
+        PickKey {
+            target: &self.target,
+            context: self.context.as_ref(),
+            native: self.native.as_ref(),
+            domain: self.domain.as_ref().map(PickDomainKey),
+        }
     }
 }
 
@@ -677,41 +688,56 @@ fn by_value(left: f64, right: f64) -> Ordering {
     (left + 0.0).total_cmp(&(right + 0.0))
 }
 
-impl Eq for PickDomain {}
+/// The identity key of a [`PickDomain`]: its value, with each limiting pick
+/// compared by its own [`PickKey`].
+#[derive(Debug, Clone, Copy)]
+pub struct PickDomainKey<'a>(&'a PickDomain);
 
-impl PartialOrd for PickDomain {
+impl PartialEq for PickDomainKey<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for PickDomainKey<'_> {}
+
+impl PartialOrd for PickDomainKey<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for PickDomain {
+impl Ord for PickDomainKey<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
+        fn limit(pick: Option<&Picked>) -> Option<PickKey<'_>> {
+            pick.map(Picked::key)
+        }
+        match (self.0, other.0) {
             (
-                Self::EdgeInterval { start, end },
-                Self::EdgeInterval {
+                PickDomain::EdgeInterval { start, end },
+                PickDomain::EdgeInterval {
                     start: other_start,
                     end: other_end,
                 },
             ) => by_value(start.get(), other_start.get())
                 .then_with(|| by_value(end.get(), other_end.get())),
             (
-                Self::Limits { start, end },
-                Self::Limits {
+                PickDomain::Limits { start, end },
+                PickDomain::Limits {
                     start: other_start,
                     end: other_end,
                 },
-            ) => (start, end).cmp(&(other_start, other_end)),
-            (Self::Fragment(fragment), Self::Fragment(other_fragment)) => {
+            ) => (limit(start.as_deref()), limit(end.as_deref()))
+                .cmp(&(limit(other_start.as_deref()), limit(other_end.as_deref()))),
+            (PickDomain::Fragment(fragment), PickDomain::Fragment(other_fragment)) => {
                 fragment.cmp(other_fragment)
             }
-            (Self::Containing(point), Self::Containing(other_point)) => {
+            (PickDomain::Containing(point), PickDomain::Containing(other_point)) => {
                 by_value(point.x, other_point.x)
                     .then_with(|| by_value(point.y, other_point.y))
                     .then_with(|| by_value(point.z, other_point.z))
             }
-            _ => self.rank().cmp(&other.rank()),
+            (left, right) => left.rank().cmp(&right.rank()),
         }
     }
 }
