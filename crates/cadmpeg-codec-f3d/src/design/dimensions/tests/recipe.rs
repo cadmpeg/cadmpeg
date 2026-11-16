@@ -614,13 +614,16 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     )));
 
     // The native kind is the kind stem; the instance name is a native property.
-    for (source_kind, instance_name) in [
-        ("Linear Dimension-2", Some("Linear Dimension-2")),
-        ("Linear Dimension-3", Some("Linear Dimension-3")),
-        ("Linear Dimension", None),
-        ("Linear Dimension-", None),
-        ("Linear Dimension-2a", None),
+    for (source_kind, kind) in [
+        ("Linear Dimension-2", "Linear Dimension"),
+        ("Linear Dimension-3", "Linear Dimension"),
+        ("Linear Dimension-10", "Linear Dimension"),
+        ("Linear-Dimension-2", "Linear-Dimension"),
+        ("Linear Dimension", "Linear Dimension"),
+        ("Linear Dimension-", "Linear Dimension-"),
+        ("Linear Dimension-2a", "Linear Dimension-2a"),
     ] {
+        let instance_name = (kind != source_kind).then_some(source_kind);
         let mut instance = parameter.clone();
         instance
             .try_set_source(
@@ -660,14 +663,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         else {
             panic!("{source_kind}: native definition");
         };
-        assert_eq!(
-            native_kind.as_str(),
-            if instance_name.is_some() {
-                "Linear Dimension"
-            } else {
-                source_kind
-            }
-        );
+        assert_eq!(native_kind.as_str(), kind);
         assert_eq!(
             native_properties.get("instance_name").map(String::as_str),
             instance_name,
