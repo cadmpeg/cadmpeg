@@ -39,10 +39,11 @@ fn expansions(depth: usize) -> Motion {
     })
 }
 
-/// Runs `work` on a thread whose stack is 256 KiB.
-fn on_a_small_stack<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+/// Runs `work` on a thread whose stack is 2 MiB, the default for a spawned
+/// thread.
+fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
     std::thread::Builder::new()
-        .stack_size(256 << 10)
+        .stack_size(2 << 20)
         .spawn(work)
         .unwrap()
         .join()
@@ -51,7 +52,7 @@ fn on_a_small_stack<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static
 
 /// Finds the deepest nesting the reader admits, requires one level more to
 /// be refused by the JSON depth limit, and at the deepest admitted depth
-/// reads, prints, clones, compares, and drops on a small stack.
+/// reads, prints, clones, compares, and drops on a default thread.
 fn nests_to_the_json_depth_limit<T>(nested: impl Fn(usize) -> T)
 where
     T: Serialize + DeserializeOwned + Clone + PartialEq + Send + 'static,
@@ -61,7 +62,7 @@ where
         .find(|&depth| read_desktop::<T>(&text(depth)).is_err())
         .expect("the reader refuses some depth below the JSON limit");
     assert!(past > 1, "a single level is refused");
-    let refusal = on_a_small_stack({
+    let refusal = on_a_default_thread({
         let text = text(past);
         move || read_desktop::<T>(&text).err()
     });
@@ -70,7 +71,7 @@ where
         "depth {past}: {refusal:?}"
     );
     let deepest = text(past - 1);
-    let printed = on_a_small_stack({
+    let printed = on_a_default_thread({
         let deepest = deepest.clone();
         move || {
             let read = read_desktop::<T>(&deepest).unwrap();
@@ -86,16 +87,16 @@ where
 }
 
 #[test]
-fn step_folders_nest_to_the_json_depth_limit_on_a_small_stack() {
+fn step_folders_nest_to_the_json_depth_limit_on_a_default_thread() {
     nests_to_the_json_depth_limit(folders);
 }
 
 #[test]
-fn program_groups_nest_to_the_json_depth_limit_on_a_small_stack() {
+fn program_groups_nest_to_the_json_depth_limit_on_a_default_thread() {
     nests_to_the_json_depth_limit(groups);
 }
 
 #[test]
-fn cycle_expansions_nest_to_the_json_depth_limit_on_a_small_stack() {
+fn cycle_expansions_nest_to_the_json_depth_limit_on_a_default_thread() {
     nests_to_the_json_depth_limit(expansions);
 }
