@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use super::dimension::ParameterRef;
 use super::expr::{ExpressionDialect, ExpressionToken, Neutral};
 use super::ids::ParameterProgramId;
-use super::read::{self, Ceiling};
 use crate::features::FeatureId;
 use crate::ids::ProductDefinitionId;
 
@@ -105,16 +104,11 @@ pub enum ProgramBody {
 
 /// One neutral statement of a program.
 ///
-/// A program converts into an `if` expression per assigned parameter, so the
-/// nesting of its statements is bounded by the expression ceiling.
+/// Statement nesting has no ceiling of its own; the JSON depth limit bounds
+/// it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    rename_all = "snake_case",
-    deny_unknown_fields,
-    try_from = "StatementWire"
-)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Statement {
     /// Assigns a value to a parameter the program assigns.
     Assign {
@@ -132,71 +126,6 @@ pub enum Statement {
         /// The statements run where it does not.
         otherwise: Vec<Statement>,
     },
-}
-
-/// The reading form of [`Statement`]. Each statement nested in it has passed
-/// the expression ceiling; the conversion admits this one level above the
-/// deepest of them.
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum StatementWire {
-    /// Assigns a value to a parameter the program assigns.
-    Assign {
-        /// The assigned parameter.
-        target: ParameterRef,
-        /// The assigned value.
-        value: Neutral,
-    },
-    /// Runs one of two statement lists by a condition.
-    If {
-        /// The condition.
-        condition: Neutral,
-        /// The statements run where the condition holds.
-        then: Vec<Statement>,
-        /// The statements run where it does not.
-        otherwise: Vec<Statement>,
-    },
-}
-
-impl TryFrom<StatementWire> for Statement {
-    type Error = String;
-
-    /// Admits a statement nested no deeper than the expression ceiling.
-    fn try_from(wire: StatementWire) -> Result<Self, Self::Error> {
-        let statement = match wire {
-            StatementWire::Assign { target, value } => Self::Assign { target, value },
-            StatementWire::If {
-                condition,
-                then,
-                otherwise,
-            } => Self::If {
-                condition,
-                then,
-                otherwise,
-            },
-        };
-        read::within(Ceiling::Expression, statement.depth())?;
-        Ok(statement)
-    }
-}
-
-impl Statement {
-    /// The levels of this statement and the statements nested in it.
-    fn depth(&self) -> u64 {
-        let below = match self {
-            Self::Assign { .. } => 0,
-            Self::If {
-                then, otherwise, ..
-            } => then
-                .iter()
-                .chain(otherwise)
-                .map(Self::depth)
-                .max()
-                .unwrap_or(0),
-        };
-        below + 1
-    }
 }
 
 cadmpeg_core::named_optional_field!(deserialize_name<T>, T, "name");

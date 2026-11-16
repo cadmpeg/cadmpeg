@@ -3,7 +3,7 @@
 //! again; the wire forms §2.5 states for them; and the `design` home of a
 //! document.
 
-use cadmpeg_core::decode::{ArenaClass, ContentScope, ResourceDimension, ResourceLimits};
+use cadmpeg_core::decode::{ArenaClass, ContentScope};
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -20,7 +20,6 @@ use crate::design::feature::{
     FeatureDefinition, FeatureOperation, FuzzyTolerance, OperationFamily, StoredOrigin,
 };
 use crate::design::program::{ParameterProgram, ProgramBody, Statement};
-use crate::design::read::{self, Ceiling};
 use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::spreadsheet::Spreadsheet;
 use crate::document::{ArenaName, CadIr, Design, ScopeViolation};
@@ -347,41 +346,61 @@ fn diff_reports_design_arenas_and_names() {
     assert!(crate::diff::diff(&right, &right).is_empty());
 }
 
-/// A program's statements nest no deeper than the expression ceiling. Under
-/// the desktop ceiling the JSON depth limit refuses a nesting first.
+/// Runs `work` on a thread whose stack is 2 MiB, the default for a spawned
+/// thread.
+fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(work)
+        .unwrap()
+        .join()
+        .unwrap()
+}
+
+/// Statement nesting has no ceiling of its own; the JSON depth limit bounds
+/// it. One level past the deepest nesting the reader admits is refused by
+/// that limit, and the deepest reads, prints the same bytes, clones,
+/// compares, and drops on a default thread.
 #[test]
-fn statements_nest_to_the_expression_ceiling() {
-    fn nested(depth: u64) -> String {
+fn statements_nest_to_the_json_depth_limit_on_a_default_thread() {
+    fn nested(depth: usize) -> String {
         let condition = || Neutral(Node::Boolean(true));
-        let mut statement = Statement::If {
+        let leaf = Statement::If {
             condition: condition(),
             then: Vec::new(),
             otherwise: Vec::new(),
         };
-        for _ in 1..depth {
-            statement = Statement::If {
-                condition: condition(),
-                then: vec![statement],
-                otherwise: Vec::new(),
-            };
-        }
+        let statement = (1..depth).fold(leaf, |statement, _| Statement::If {
+            condition: condition(),
+            then: vec![statement],
+            otherwise: Vec::new(),
+        });
         serde_json::to_string(&statement).unwrap()
     }
-    let service = ResourceLimits::service();
-    let limit = Ceiling::Expression.of(&service);
-    if let Err(error) = read::from_str::<Statement>(&nested(limit), &service) {
-        panic!("a statement nested to the ceiling of {limit} is refused: {error}");
-    }
-    match read::from_str::<Statement>(&nested(limit + 1), &service) {
-        Err(CodecError::ResourceLimit(refusal)) => {
-            assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
-            assert_eq!(refusal.limit, limit);
-            assert_eq!(refusal.used, limit);
-            assert_eq!(refusal.additional, 1);
+    let past = (1..128)
+        .find(|&depth| read_desktop::<Statement>(&nested(depth)).is_err())
+        .expect("the reader refuses some depth below the JSON limit");
+    assert!(past > 1, "a single statement is refused");
+    let refusal = on_a_default_thread({
+        let text = nested(past);
+        move || read_desktop::<Statement>(&text).err()
+    });
+    assert!(
+        matches!(&refusal, Some(CodecError::Malformed(message)) if message.contains("recursion limit exceeded")),
+        "depth {past}: {refusal:?}"
+    );
+    let deepest = nested(past - 1);
+    let printed = on_a_default_thread({
+        let deepest = deepest.clone();
+        move || {
+            let read = read_desktop::<Statement>(&deepest).unwrap();
+            let printed = serde_json::to_string(&read).unwrap();
+            let cloned = read.clone();
+            assert!(cloned == read);
+            drop(cloned);
+            drop(read);
+            printed
         }
-        other => panic!("a statement one past the ceiling of {limit} gave {other:?}"),
-    }
-    let desktop = ResourceLimits::desktop();
-    let past = nested(Ceiling::Expression.of(&desktop) + 1);
-    assert!(read::from_str::<Statement>(&past, &desktop).is_err());
+    });
+    assert_eq!(printed, deepest);
 }
