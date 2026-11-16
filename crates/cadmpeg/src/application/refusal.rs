@@ -1005,6 +1005,7 @@ mod tests {
                 (ResourceFailure::AllocationFailed, "allocation_failed"),
             ] {
                 let limit = ResourceLimit {
+                    scope: cadmpeg_core::decode::LimitScope::for_dimension(dimension),
                     dimension,
                     reason,
                     limit: u64::MAX,
