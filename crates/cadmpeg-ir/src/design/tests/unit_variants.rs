@@ -62,7 +62,10 @@ fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
         if path.is_dir() {
-            if path.file_name().is_some_and(|name| name != "tests") {
+            if path
+                .file_name()
+                .is_some_and(|name| name != "tests" && name != "ops")
+            {
                 sources(&path, out);
             }
         } else if path.extension().is_some_and(|extension| extension == "rs") {

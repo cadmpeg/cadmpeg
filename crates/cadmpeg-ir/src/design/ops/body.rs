@@ -102,6 +102,7 @@ pub enum PatternSeeds {
 pub enum PatternMethod {
     /// Copies the seed's result, its intersections with the model included,
     /// to each instance.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Identical,
     /// Builds each instance at its placement and solves its terminations and
     /// intersections against the model.
@@ -455,6 +456,7 @@ pub enum SplitTool {
 )]
 pub enum SplitMethod {
     /// Tool surfaces cross the targets.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Intersect,
     /// A curve tool reaches the targets along a projection.
     Project(Box<ProjectionDirection>),
@@ -818,8 +820,10 @@ pub struct DeleteFaces {
 )]
 pub enum Heal {
     /// Leaves the gap open, so the result is a sheet.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Open,
     /// Closes the gap by extending the neighbouring faces.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Extend,
     /// Closes the gap with one new face bounded by the gap's edges.
     Fill {

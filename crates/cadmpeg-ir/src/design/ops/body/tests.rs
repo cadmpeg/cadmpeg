@@ -8,6 +8,7 @@ mod operations;
 mod patterns;
 #[cfg(feature = "schema")]
 mod schema;
+mod unit_variants;
 
 use std::collections::BTreeMap;
 use std::fmt::Debug;
