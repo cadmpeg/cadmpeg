@@ -643,7 +643,8 @@ impl CreoLossCode {
             | Self::PmiDatumLabelUnresolved
             | Self::PmiDatumTargetUnresolved
             | Self::PmiTargetNamespaceAmbiguous => LossTaxonomy::PmiOmitted,
-            Self::PmiLengthUnitAssumed
+            Self::PmiDimensionLimitFormAssumed
+            | Self::PmiLengthUnitAssumed
             | Self::PmiAttributeUnitAssumed
             | Self::PmiTextMagnitudeInferred
             | Self::PmiDatumIdentityInferred
@@ -654,8 +655,7 @@ impl CreoLossCode {
             | Self::PmiDatumTagBoundaryAssumed
             | Self::PmiDatumDefinitionSlotAssumed
             | Self::PmiDimensionKindInferred
-            | Self::PmiAngularUnitAssumed
-            | Self::PmiDimensionLimitFormAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiAngularUnitAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved

@@ -1644,20 +1644,23 @@ to establish their conversion and precedence over the model unit.
 
 ### PP-26. Limit attribute form of other releases
 
-**Question.** Which saving releases other than Creo 4 and Creo 10 or later
-store `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT` as absolute bounds, and
-which store them as deviations from the nominal?
+**Question.** Which saving releases other than Creo 4 and Creo 10 store
+`PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT` as absolute bounds, and which
+store them as deviations from the nominal? Which header form states the
+release of a Creo 4 save?
 
-**Known.** `creo_prt.md` states the absolute form for banner releases 10 and
-later and the deviation form for banner release 4. For another release, or a
-file without a `#Creo  TM` banner release before its first TOC, the decoder
-reads the attributes as deviations when both values lie nearer zero than the
-nominal and as absolute bounds otherwise. It charges
+**Known.** `creo_prt.md` states the absolute form for banner release 10 and
+the deviation form for banner release 4. For another release, or a file
+without a `#Creo  TM` banner release before its first TOC, the decoder reads
+the attributes as deviations when both values lie nearer zero than the
+nominal and as absolute bounds otherwise. When that form gives no valid
+tolerance and the other form does, the decoder uses the other form. It charges
 `pmi.dimension-limit-form-assumed` when the tolerance reads the limits.
 
-**Need.** Dimensions with known limits in saves from Creo 1 through 3 and
-Creo 5 through 9, and a Creo 4 save with a one-sided limit tolerance to show
-the sign of a deviation that is not symmetric.
+**Need.** Dimensions with known limits in saves from Creo 1 through 3 and from
+Creo 5 and later other than Creo 10, the header of a Creo 4 save, and a Creo 4
+one-sided limit tolerance to show the sign of a deviation that is not
+symmetric.
 
 ## 6. Assembly component table
 

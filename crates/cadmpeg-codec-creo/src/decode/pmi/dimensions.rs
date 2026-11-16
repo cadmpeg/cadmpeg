@@ -22,15 +22,24 @@ use super::elements::Element;
 const SYMMETRIC_LENGTH_LIMIT_ROUNDING_TOLERANCE_MM: f64 = 1.0e-9;
 const SYMMETRIC_ANGLE_LIMIT_ROUNDING_TOLERANCE_RAD: f64 = 1.0e-12;
 const DEVIATION_LIMIT_RELEASE: u32 = 4;
-const FIRST_ABSOLUTE_LIMIT_RELEASE: u32 = 10;
+const ABSOLUTE_LIMIT_RELEASE: u32 = 10;
 
 /// How `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT` state a dimension's bounds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LimitForm {
     /// The attributes are the lower and upper bounds.
     Absolute,
-    /// The attributes are unsigned deviations below and above the nominal.
+    /// The attributes are deviations below and above the nominal.
     Deviation,
+}
+
+impl LimitForm {
+    fn other(self) -> Self {
+        match self {
+            Self::Absolute => Self::Deviation,
+            Self::Deviation => Self::Absolute,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -116,7 +125,8 @@ pub(super) fn transfer(
     let mut edge_targets = 0usize;
     let mut conflicting = 0usize;
     let mut assumed_angular_units = 0usize;
-    let mut assumed_limit_forms = 0usize;
+    let mut assumed_deviation_limits = 0usize;
+    let mut assumed_absolute_limits = 0usize;
     for (owner, fields) in fields_by_owner {
         let Some(kind) = fields.kind else {
             unresolved += 1;
@@ -171,24 +181,42 @@ pub(super) fn transfer(
             },
             None => None,
         };
-        let (form, form_selected) = limit_form(source.release_major, &fields);
-        let (tolerance, unresolved_tolerance) =
+        let (mut form, form_selected) = limit_form(source.release_major, &fields);
+        let (mut dimension_tolerance, mut unresolved_tolerance) =
             tolerance(&fields, fields.nominal, form, quantity, length_scale);
-        let assumed_form = !form_selected && tolerance.is_some() && reads_limits(&fields);
-        unresolved += usize::from(unresolved_tolerance);
-        let definition = match PmiDimension::new(dimension_kind.clone(), nominal, tolerance) {
-            Ok(definition) => {
-                assumed_limit_forms += usize::from(assumed_form);
-                definition
-            }
-            Err(_) => {
-                unresolved += 1;
-                let Ok(definition) = PmiDimension::new(dimension_kind, nominal, None) else {
-                    continue;
-                };
-                definition
-            }
+        let admissible = |candidate: &Option<DimensionTolerance>| {
+            candidate.is_some()
+                && PmiDimension::new(dimension_kind.clone(), nominal, candidate.clone()).is_ok()
         };
+        if !form_selected && reads_limits(&fields) && !admissible(&dimension_tolerance) {
+            let other = form.other();
+            let retry = tolerance(&fields, fields.nominal, other, quantity, length_scale);
+            if admissible(&retry.0) {
+                (dimension_tolerance, unresolved_tolerance) = retry;
+                form = other;
+            }
+        }
+        let assumed_form = !form_selected && dimension_tolerance.is_some() && reads_limits(&fields);
+        unresolved += usize::from(unresolved_tolerance);
+        let definition =
+            match PmiDimension::new(dimension_kind.clone(), nominal, dimension_tolerance) {
+                Ok(definition) => {
+                    if assumed_form {
+                        match form {
+                            LimitForm::Deviation => assumed_deviation_limits += 1,
+                            LimitForm::Absolute => assumed_absolute_limits += 1,
+                        }
+                    }
+                    definition
+                }
+                Err(_) => {
+                    unresolved += 1;
+                    let Ok(definition) = PmiDimension::new(dimension_kind, nominal, None) else {
+                        continue;
+                    };
+                    definition
+                }
+            };
         if quantity == PmiQuantity::Length {
             length_dimensions += 1;
         }
@@ -292,9 +320,9 @@ pub(super) fn transfer(
             "{assumed_length_kinds} dimension(s) with an unknown kind use length values by assumption."
         )));
     }
-    if assumed_limit_forms != 0 {
+    if assumed_deviation_limits + assumed_absolute_limits != 0 {
         losses.push(CreoLossCode::PmiDimensionLimitFormAssumed.note(format!(
-            "{assumed_limit_forms} dimension(s) read their limit attributes as deviations from the nominal when both lie nearer zero than the nominal and as absolute bounds otherwise; the saving release does not select the form."
+            "{assumed_deviation_limits} dimension(s) read their limit attributes as deviations from the nominal and {assumed_absolute_limits} as absolute bounds; deviations are read when both values lie nearer zero than the nominal, or when only that form gives a valid tolerance."
         )));
     }
     if assumed_angular_units != 0 {
@@ -402,7 +430,7 @@ fn value_for(value: f64, quantity: PmiQuantity, length_scale: f64) -> Option<Pmi
 fn limit_form(release_major: Option<u32>, fields: &DimensionFields<'_>) -> (LimitForm, bool) {
     match release_major {
         Some(DEVIATION_LIMIT_RELEASE) => (LimitForm::Deviation, true),
-        Some(release) if release >= FIRST_ABSOLUTE_LIMIT_RELEASE => (LimitForm::Absolute, true),
+        Some(ABSOLUTE_LIMIT_RELEASE) => (LimitForm::Absolute, true),
         _ => {
             let nearer_zero = |value: f64, nominal: f64| (value - nominal).abs() > value.abs();
             let form = match (fields.nominal, fields.lower_limit, fields.upper_limit) {
@@ -878,6 +906,7 @@ mod tests {
             (None, 0.2, 0.2, 34.8, 35.2),
             (Some(7), 34.8, 35.2, 34.8, 35.2),
             (Some(3), 34.975, 34.991, 34.975, 34.991),
+            (Some(12), 34.8, 35.2, 34.8, 35.2),
             (None, 35.1, 35.3, 35.1, 35.3),
         ] {
             let (tolerance, losses) = transferred_tolerance(b"Limits", lower, upper, release, &[]);
@@ -919,5 +948,43 @@ mod tests {
         close(lower.value.get(), -0.05);
         close(upper.value.get(), 0.1);
         assert_eq!(limit_form_losses(&losses), 0);
+    }
+
+    #[test]
+    fn a_selecting_release_overrides_the_nearer_zero_rule() {
+        for (release, lower, upper, expected_lower, expected_upper) in
+            [(4, 30.0, 40.0, 5.0, 75.0), (10, 0.2, 0.3, 0.2, 0.3)]
+        {
+            let (tolerance, losses) =
+                transferred_tolerance(b"Limits", lower, upper, Some(release), &[]);
+            let Some(DimensionTolerance::Limits { lower, upper }) = tolerance else {
+                panic!("limit tolerance")
+            };
+            close(lower.value.get(), expected_lower);
+            close(upper.value.get(), expected_upper);
+            assert_eq!(limit_form_losses(&losses), 0);
+        }
+    }
+
+    #[test]
+    fn plus_minus_without_a_selecting_release_reads_nearer_zero_limits_as_deviations() {
+        let (tolerance, losses) = transferred_tolerance(b"Plus-Minus", 0.2, 0.2, None, &[]);
+        let Some(DimensionTolerance::PlusMinus { lower, upper }) = tolerance else {
+            panic!("plus-minus tolerance")
+        };
+        close(lower.value.get(), -0.2);
+        close(upper.value.get(), 0.2);
+        assert_eq!(limit_form_losses(&losses), 1);
+    }
+
+    #[test]
+    fn an_invalid_rule_reading_takes_the_other_limit_form() {
+        let (tolerance, losses) = transferred_tolerance(b"Limits", -0.3, 0.2, None, &[]);
+        let Some(DimensionTolerance::Limits { lower, upper }) = tolerance else {
+            panic!("limit tolerance")
+        };
+        close(lower.value.get(), -0.3);
+        close(upper.value.get(), 0.2);
+        assert_eq!(limit_form_losses(&losses), 1);
     }
 }
