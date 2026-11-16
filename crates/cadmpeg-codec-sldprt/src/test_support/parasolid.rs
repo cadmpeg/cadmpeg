@@ -3,6 +3,9 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod construction_curve;
+pub(crate) mod mesh;
+pub(crate) mod sequence;
+pub(crate) mod wide;
 
 /// A minimal Parasolid stream payload: `PS\0\0`, description, padding, a
 /// length-prefixed schema token, then the class-definition record `body`.
@@ -90,13 +93,14 @@ pub(crate) fn offset_surface_carrier(attr: u16, support: u16, distance: f64) -> 
     be16(&mut bytes, attr);
     be32(&mut bytes, 0);
     for _ in 0..5 {
-        be16(&mut bytes, 0);
+        be16(&mut bytes, 1);
     }
     bytes.push(0x2b);
     bytes.push(b'V');
     bytes.push(1);
     be16(&mut bytes, support);
     bef64(&mut bytes, distance);
+    bef64(&mut bytes, 1.0);
     bytes
 }
 
@@ -117,6 +121,62 @@ fn blend_surface_carrier(attr: u16, supports: [u16; 2], spine: u16, signed_radiu
         bef64(&mut bytes, value);
     }
     bytes
+}
+
+/// A compact type-67 surface swept along a unit direction.
+fn swept_surface_carrier(attr: u16, profile: u16, direction: [f64; 3]) -> Vec<u8> {
+    let mut bytes = vec![0x00, 0x43];
+    be16(&mut bytes, attr);
+    be32(&mut bytes, 0);
+    for _ in 0..5 {
+        be16(&mut bytes, 0);
+    }
+    bytes.push(0x2b);
+    be16(&mut bytes, profile);
+    for value in direction {
+        bef64(&mut bytes, value);
+    }
+    bytes
+}
+
+/// A face on a rolling-ball blend of radius 0.1 m between the floor `z = 0` and
+/// a wall `x = 0` that a line swept along `y` states, with the wall's own face
+/// when `wall_face` is set. `vertex_miss` lifts one face vertex off the blend,
+/// in metres.
+pub(crate) fn blend_on_swept_wall_body(wall_face: bool, vertex_miss: f64) -> Vec<u8> {
+    let (floor, wall, wall_profile, spine, blend) = (181, 190, 191, 183, 180);
+    let mut body = owned_triangle_on(
+        0,
+        500,
+        [[0.1, 0.0, 0.0], [0.0, 0.0, 0.1], [0.1, 1.0, -vertex_miss]],
+        blend,
+        1,
+    );
+    if wall_face {
+        body.extend(owned_triangle_on(
+            300,
+            700,
+            [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            wall,
+            1,
+        ));
+    }
+    body.extend(blend_surface_carrier(blend, [floor, wall], spine, 0.1));
+    body.extend(plane_carrier(
+        floor,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(swept_surface_carrier(wall, wall_profile, [0.0, 1.0, 0.0]));
+    body.extend(linear_nurbs_curve_carrier_through(
+        wall_profile,
+        200,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ));
+    body.extend(line_carrier(spine, [0.1, 0.0, 0.1], [0.0, 1.0, 0.0]));
+    body
 }
 
 /// A rolling-ball blend whose first support is a support pair.
@@ -164,7 +224,9 @@ pub(crate) fn line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8>
     b
 }
 
-fn prefixed_line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
+/// A compact analytic line carrier in Deltas framing: each reference is
+/// followed by a `01` status byte.
+pub(crate) fn prefixed_line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
     let mut b = vec![0x00, 0x1e];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -257,7 +319,7 @@ pub(crate) fn torus_carrier(
     b
 }
 
-fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
+pub(crate) fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
     let mut b = vec![0x00, 0x35];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -446,14 +508,30 @@ fn remove_array_type_markers(bytes: &mut Vec<u8>) {
     }
 }
 
+/// Bytes of a bare `00 86` `B_CURVE` record with short pointers, its tag
+/// and its body (`sldprt.md` §2).
+const B_CURVE_RECORD_LEN: usize = 2 + crate::layout::parasolid_b_curve_short::LEN;
+
+/// A bare `00 86` `B_CURVE` record `wrapper_attr` whose `nurbs` pointer names
+/// `descriptor_attr`: node identifier 1, null pointers, sense `+`.
+fn b_curve(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x86];
+    be16(&mut b, wrapper_attr);
+    be32(&mut b, 1);
+    for _ in 0..5 {
+        be16(&mut b, 1);
+    }
+    b.push(0x2b);
+    be16(&mut b, descriptor_attr);
+    be16(&mut b, 1);
+    b
+}
+
 pub(crate) fn nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
-    let mut b = vec![0x00, 0x86];
-    be16(&mut b, wrapper_attr);
-    be16(&mut b, descriptor_attr);
-    b.extend_from_slice(&[0u8; 8]);
+    let mut b = b_curve(wrapper_attr, descriptor_attr);
     b.extend_from_slice(&[0x00, 0x88]);
     be16(&mut b, descriptor_attr);
     be16(&mut b, 2);
@@ -477,7 +555,7 @@ pub(crate) fn nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Ve
 
 pub(crate) fn typed_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
     let mut bytes = nurbs_curve_carrier(wrapper_attr, descriptor_attr);
-    let descriptor = bytes.split_off(14);
+    let descriptor = bytes.split_off(B_CURVE_RECORD_LEN);
     bytes.truncate(4);
     be32(&mut bytes, 0x1a);
     for reference in [
@@ -500,10 +578,7 @@ fn rational_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
-    let mut bytes = vec![0x00, 0x86];
-    be16(&mut bytes, wrapper_attr);
-    be16(&mut bytes, descriptor_attr);
-    bytes.extend_from_slice(&[0u8; 8]);
+    let mut bytes = b_curve(wrapper_attr, descriptor_attr);
     bytes.extend_from_slice(&[0x00, 0x88]);
     be16(&mut bytes, descriptor_attr);
     be16(&mut bytes, 2);
@@ -511,7 +586,7 @@ fn rational_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<
     be16(&mut bytes, 4);
     be32(&mut bytes, 2);
     bytes.push(0);
-    be32(&mut bytes, 0);
+    be32(&mut bytes, 0x0000_0100);
     be16(&mut bytes, control_attr);
     be16(&mut bytes, mult_attr);
     be16(&mut bytes, knot_attr);
@@ -544,10 +619,7 @@ pub(crate) fn linear_nurbs_curve_carrier_through(
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
-    let mut b = vec![0x00, 0x86];
-    be16(&mut b, wrapper_attr);
-    be16(&mut b, descriptor_attr);
-    b.extend_from_slice(&[0u8; 8]);
+    let mut b = b_curve(wrapper_attr, descriptor_attr);
     b.extend_from_slice(&[0x00, 0x88]);
     be16(&mut b, descriptor_attr);
     be16(&mut b, 1);
@@ -578,6 +650,7 @@ pub(crate) fn rational_linear_nurbs_curve_carrier(
         .position(|window| window == [0x00, 0x88])
         .unwrap();
     bytes[descriptor + 10..descriptor + 12].copy_from_slice(&4u16.to_be_bytes());
+    bytes[descriptor + 19] = 1;
     let control = bytes
         .windows(3)
         .position(|window| window == [0x00, 0x2d, 0x2b])
@@ -975,7 +1048,7 @@ pub(crate) fn edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
 /// Bare edge-use `refs[0]` names the forward coedge that stores the edge
 /// direction. A zero canonical reference is reserved for compact fixtures
 /// whose unique forward coedge supplies the same relation.
-fn edge_use_with_canonical(
+pub(crate) fn edge_use_with_canonical(
     attr: u16,
     canonical_coedge: u16,
     curve_attr: u16,
@@ -1008,7 +1081,7 @@ fn prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     b
 }
 
-fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
+pub(crate) fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     let mut b = vec![0x00, 0x10];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -1297,7 +1370,10 @@ pub(crate) fn suffix_prefixed_edge_triangle_body() -> Vec<u8> {
 }
 
 fn typed_ref(bytes: &mut Vec<u8>, value: u32) {
-    assert!(value <= 0x7ffe, "synthetic typed reference must fit u16");
+    assert!(
+        value <= 0x7fff,
+        "synthetic typed reference must fit one cell"
+    );
     be16(bytes, u16::try_from(value).expect("value fits u16"));
 }
 
@@ -1309,7 +1385,7 @@ fn typed_prefix(bytes: &mut Vec<u8>, tag: [u8; 2], attr: u16, node_id: u32) {
 }
 
 /// Append one validated XT ownership graph for a compact face bridge.
-fn typed_single_face_ownership(
+pub(crate) fn typed_single_face_ownership(
     bytes: &mut Vec<u8>,
     body_attr: u16,
     shell_attr: u16,
@@ -1387,6 +1463,9 @@ fn typed_single_face_ownership(
         typed_ref(bytes, value);
     }
     bytes.push(0x2b);
+    for _ in 0..5 {
+        typed_ref(bytes, 1);
+    }
 }
 
 /// One triangular planar face: a plane carrier, a bridge, a loop, three coedges
@@ -1414,6 +1493,62 @@ pub(crate) fn triangle_body() -> Vec<u8> {
     b.extend(world_point(61, [1.0, 0.0, 0.0]));
     b.extend(world_point(62, [0.0, 1.0, 0.0]));
     typed_single_face_ownership(&mut b, 900, 901, 902, 10, 100, 1);
+    b
+}
+
+/// A bare `00 4f` KEY record naming an attribute family.
+pub(crate) fn attribute_name(node: u16, name: &str) -> Vec<u8> {
+    let mut b = vec![0x00, 0x4f];
+    b.extend(u32::try_from(name.len()).unwrap().to_be_bytes());
+    b.extend(node.to_be_bytes());
+    b.extend(name.as_bytes());
+    b
+}
+
+/// A bare `00 50` `ATTRIB_DEF` record named by KEY `identifier`.
+pub(crate) fn attribute_definition(node: u16, identifier: u16, fields: &[u8]) -> Vec<u8> {
+    let mut b = vec![0x00, 0x50];
+    b.extend(u32::try_from(fields.len()).unwrap().to_be_bytes());
+    b.extend(node.to_be_bytes());
+    b.extend(1_u16.to_be_bytes());
+    b.extend(identifier.to_be_bytes());
+    b.extend(9000_u32.to_be_bytes());
+    b.extend([0; 8]);
+    b.extend(1_u16.to_be_bytes());
+    b.extend([0; 14]);
+    b.extend(fields);
+    b
+}
+
+/// A bare `00 52` `INT_VALUES` record with one value.
+pub(crate) fn int_value(node: u16, value: u32) -> Vec<u8> {
+    let mut b = vec![0x00, 0x52];
+    b.extend(1_u32.to_be_bytes());
+    b.extend(node.to_be_bytes());
+    b.extend(value.to_be_bytes());
+    b
+}
+
+/// A bare `00 51` ATTRIBUTE whose one field names `INT_VALUES` node `value_node`.
+pub(crate) fn int_attribute(node: u16, definition: u16, owner: u16, value_node: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x51];
+    b.extend(1_u32.to_be_bytes());
+    b.extend(node.to_be_bytes());
+    b.extend(u32::from(node).to_be_bytes());
+    b.extend(definition.to_be_bytes());
+    b.extend(owner.to_be_bytes());
+    for reference in [1_u16, 1, 1, 1, value_node] {
+        b.extend(reference.to_be_bytes());
+    }
+    b
+}
+
+/// An `SWEntUnchanged` family and one instance carrying face key `key` on `face_attr`.
+pub(crate) fn face_key_attribute(face_attr: u16, key: u32) -> Vec<u8> {
+    let mut b = attribute_name(701, "SWEntUnchanged");
+    b.extend(attribute_definition(702, 701, &[1]));
+    b.extend(int_value(703, key));
+    b.extend(int_attribute(704, 702, face_attr, 703));
     b
 }
 
@@ -1460,14 +1595,27 @@ pub(crate) fn owned_triangle(base: u16, owner: u16, x: f64) -> Vec<u8> {
 }
 
 pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type: u8) -> Vec<u8> {
-    let mut b = Vec::new();
-    b.extend(plane_carrier(
+    let mut b = plane_carrier(base + 100, [x, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    b.extend(owned_triangle_on(
+        base,
+        owner,
+        [[x, 0.0, 0.0], [x + 1.0, 0.0, 0.0], [x, 1.0, 0.0]],
         base + 100,
-        [x, 0.0, 0.0],
-        [0.0, 0.0, 1.0],
-        [1.0, 0.0, 0.0],
+        body_type,
     ));
-    b.extend(bridge_owned(base + 10, base + 20, base + 100, owner));
+    b
+}
+
+/// One triangular face on the surface carrier `surface`, in a typed body of
+/// its own. The carrier is the caller's.
+pub(crate) fn owned_triangle_on(
+    base: u16,
+    owner: u16,
+    points: [[f64; 3]; 3],
+    surface: u16,
+    body_type: u8,
+) -> Vec<u8> {
+    let mut b = bridge_owned(base + 10, base + 20, surface, owner);
     b.extend(loop_head(base + 20, base + 30, base + 10));
     b.extend(coedge(
         base + 30,
@@ -1502,16 +1650,16 @@ pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type:
     b.extend(vertex_use(base + 50, base + 60));
     b.extend(vertex_use(base + 51, base + 61));
     b.extend(vertex_use(base + 52, base + 62));
-    b.extend(world_point(base + 60, [x, 0.0, 0.0]));
-    b.extend(world_point(base + 61, [x + 1.0, 0.0, 0.0]));
-    b.extend(world_point(base + 62, [x, 1.0, 0.0]));
+    b.extend(world_point(base + 60, points[0]));
+    b.extend(world_point(base + 61, points[1]));
+    b.extend(world_point(base + 62, points[2]));
     typed_single_face_ownership(
         &mut b,
         owner,
         base + 70,
         base + 80,
         base + 10,
-        base + 100,
+        surface,
         body_type,
     );
     b
@@ -1604,4 +1752,51 @@ pub(crate) fn nurbs_sketch_body(rational: bool) -> Vec<u8> {
     });
     body.extend(edge_use(40, 70));
     body
+}
+
+/// Link a void region and a faceless solid region after the single region of
+/// an owned-triangle body.
+pub(crate) fn append_void_and_faceless_regions(
+    bytes: &mut Vec<u8>,
+    body_attr: u16,
+    region_attr: u16,
+    void_attr: u16,
+    faceless_attr: u16,
+) {
+    let mut head = vec![0x00, 0x13, 0xff];
+    be16(&mut head, region_attr);
+    be32(&mut head, 300_000 + u32::from(region_attr));
+    let at = bytes
+        .windows(head.len())
+        .position(|window| window == head)
+        .expect("owned triangle region node");
+    let next_region = at + head.len() + 4;
+    bytes.splice(next_region..next_region + 2, void_attr.to_be_bytes());
+
+    typed_prefix(
+        bytes,
+        [0x00, 0x13],
+        void_attr,
+        300_000 + u32::from(void_attr),
+    );
+    for value in [
+        1,
+        u32::from(body_attr),
+        u32::from(faceless_attr),
+        u32::from(region_attr),
+        1,
+    ] {
+        typed_ref(bytes, value);
+    }
+    bytes.push(b'V');
+    typed_prefix(
+        bytes,
+        [0x00, 0x13],
+        faceless_attr,
+        300_000 + u32::from(faceless_attr),
+    );
+    for value in [1, u32::from(body_attr), 1, u32::from(void_attr), 1] {
+        typed_ref(bytes, value);
+    }
+    bytes.push(b'S');
 }

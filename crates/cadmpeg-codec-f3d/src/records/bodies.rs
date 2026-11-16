@@ -383,6 +383,10 @@ pub(crate) struct DesignBodyBinding {
     pub(crate) component_owner: Option<super::body_ownership::BodyOwnership>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) component_owner_unresolved: bool,
+    /// The pair's body is outside the current model: complete Body-container
+    /// memberships omit its entity and its browser node stores the hidden flag.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) history_only: bool,
 }
 
 #[cfg(test)]
@@ -407,6 +411,7 @@ impl Clone for DesignBodyBinding {
             body: self.body.clone(),
             component_owner: self.component_owner.clone(),
             component_owner_unresolved: self.component_owner_unresolved,
+            history_only: self.history_only,
         }
     }
 }
@@ -429,6 +434,8 @@ struct DesignBodyBindingWireRef<'a> {
     component_owner: Option<&'a super::body_ownership::BodyOwnership>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     component_owner_unresolved: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    history_only: bool,
 }
 
 impl Serialize for DesignBodyBinding {
@@ -447,6 +454,7 @@ impl Serialize for DesignBodyBinding {
             body: self.body.as_ref(),
             component_owner: self.component_owner.as_ref(),
             component_owner_unresolved: self.component_owner_unresolved,
+            history_only: self.history_only,
         }
         .serialize(serializer)
     }
@@ -490,6 +498,9 @@ pub(crate) struct DesignBodyBindingWire {
     pub(crate) component_owner: Option<super::body_ownership::BodyOwnership>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) component_owner_unresolved: bool,
+    /// The pair's body is outside the current model.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) history_only: bool,
 }
 
 impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
@@ -515,6 +526,13 @@ impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
         if wire.blob_name_offset <= entity_suffix_offset {
             return Err("blob_name_offset must follow entity_suffix_offset".into());
         }
+        if wire.history_only
+            && (wire.body.is_some()
+                || wire.component_owner.is_some()
+                || wire.component_owner_unresolved)
+        {
+            return Err("a history-only pair must name no solved body and no owner".into());
+        }
         let id =
             NativeRecordId::try_f3d_new(wire.id, "design-body-binding", wire.asm_body_key_offset)?;
         let stream = DesignBulkStreamPath::try_from(wire.stream)?;
@@ -534,6 +552,7 @@ impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
             body: wire.body,
             component_owner: wire.component_owner,
             component_owner_unresolved: wire.component_owner_unresolved,
+            history_only: wire.history_only,
         })
     }
 }
@@ -582,6 +601,7 @@ impl From<DesignBodyBinding> for DesignBodyBindingWire {
             body: value.body,
             component_owner: value.component_owner,
             component_owner_unresolved: value.component_owner_unresolved,
+            history_only: value.history_only,
         }
     }
 }

@@ -133,7 +133,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             continue;
         };
         let body_id: BodyId = circular_identity(feature_id, "body")?;
-        if ir.model.bodies.iter().any(|body| body.id == body_id) {
+        if ir.geometry.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
         let region_id: RegionId = circular_identity(feature_id, "region")?;
@@ -239,6 +239,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     id: cap_surface.clone(),
                     geometry: cap_surface_geometry,
                     source_object: None,
+                    native_ref: None,
                 },
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
@@ -262,6 +263,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     )),
                     source_object: None,
+                    native_ref: None,
                 },
             )?;
             let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
@@ -280,6 +282,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     id: vertex_id.clone(),
                     point: point_id,
                     tolerance: None,
+                    native_ref: None,
                 },
             )?;
             ctx.charge_entities(1, "admit Creo model edges")?;
@@ -293,13 +296,16 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                         Some([0.0, std::f64::consts::TAU]),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-                    start: vertex_id.clone(),
-                    end: vertex_id,
+                    ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                        vertex_id.clone(),
+                        vertex_id,
+                    )),
                     tolerance: None,
+                    native_ref: None,
                 },
             )?;
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ir.model.loops.push(IrLoop {
+            ir.geometry.loops.push(IrLoop {
                 id: cap_loop.clone(),
                 face: cap_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -309,6 +315,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
+                native_ref: None,
             });
             ctx.charge_entities(1, "admit Creo model coedges")?;
             source_carriers.admit_coedge(
@@ -330,6 +337,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                         parameter_range: None,
                     }),
                     use_curve: None,
+                    native_ref: None,
                 },
             )?;
             ctx.charge_entities(1, "admit Creo model faces")?;
@@ -348,6 +356,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     name: None,
                     color: None,
                     tolerance: None,
+                    native_ref: None,
                 },
             )?;
             face_ids.push(cap_face);
@@ -364,6 +373,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 id: side_surface.clone(),
                 geometry: side_surface_geometry,
                 source_object: None,
+                native_ref: None,
             },
         )?;
         for (side_index, ((side, _), (coedge, edge, pcurve))) in
@@ -371,13 +381,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         {
             let loop_id: LoopId = circular_identity(feature_id, format_args!("loop:side:{side}"))?;
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ir.model.loops.push(IrLoop {
+            ir.geometry.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face: side_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(circular_item(coedge.clone()), Vec::new())
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
+                native_ref: None,
             });
             ctx.charge_entities(1, "admit Creo model coedges")?;
             source_carriers.admit_coedge(
@@ -399,6 +410,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                         parameter_range: None,
                     }),
                     use_curve: None,
+                    native_ref: None,
                 },
             )?;
             side_loops.push(loop_id);
@@ -415,29 +427,20 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             },
         )?;
         face_ids.push(side_face);
         ctx.charge_entities(1, "admit Creo model shells")?;
-        ir.model.shells.push(
-            match Shell::new(
-                shell_id.clone(),
-                region_id.clone(),
-                face_ids,
-                Vec::new(),
-                Vec::new(),
-            ) {
-                Ok(shell) => shell,
-                Err(_) => {
-                    continue;
-                }
-            },
-        );
+        ir.geometry
+            .shells
+            .push(Shell::new(shell_id.clone(), region_id.clone()));
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.model.regions.push(Region {
+        ir.geometry.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: circular_item(shell_id),
+            native_ref: None,
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
@@ -445,11 +448,11 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             Body {
                 id: body_id,
                 kind: BodyKind::Solid,
-                regions: circular_item(region_id),
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             },
         )?;
         transferred += 1;

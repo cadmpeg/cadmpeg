@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::deltas_event_id;
-use crate::framing::xmt_reference::NonNullXmt;
-use crate::records::deltas::{Definition, Event, EventContent};
-use crate::records::instance::FieldValue;
-use crate::records::{positive, SchemaPlan};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
+use cadmpeg_parasolid::records::deltas::node::DeltasNode;
+use cadmpeg_parasolid::records::deltas::{Definition, Event, EventContent};
+use cadmpeg_parasolid::records::instance::FieldValue;
+use cadmpeg_parasolid::records::{positive, SchemaPlan};
+use cadmpeg_parasolid::xmt::NonNullXmt;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -143,21 +144,13 @@ impl ParasolidDeltasInstance {
         let EventContent::Instance(instance) = event.content() else {
             return Err(CodecError::Malformed("expected NX Deltas instance".into()));
         };
+        let node = DeltasNode::of_event(source, event)
+            .ok_or_else(|| CodecError::Malformed("expected NX Deltas instance".into()))?;
         let mut fields = Vec::new();
-        for (field, range) in instance
-            .definition()
-            .plan()
-            .fields
-            .iter()
-            .zip(instance.fields())
-        {
-            let mut view = View::over_retained(&source[range.clone()]);
-            let mut values = Vec::new();
-            while !view.is_empty() {
-                let value = FieldValue::read(field.data_type, &mut view)
-                    .ok_or_else(|| CodecError::Malformed("invalid owned NX Deltas field".into()))?;
-                values.push(value);
-            }
+        for (index, range) in instance.fields().iter().enumerate() {
+            let values = node
+                .values_at(index)
+                .ok_or_else(|| CodecError::Malformed("invalid owned NX Deltas field".into()))?;
             fields.push(FieldWire {
                 inflated_offset: u64_from_index(range.start),
                 byte_len: u64_from_index(range.len()),
@@ -191,11 +184,11 @@ impl ParasolidDeltasInstance {
     pub(super) fn project_record(
         &self,
         schema: &ParasolidDeltasSchema,
-    ) -> Option<crate::deltas::record_family::RecordFamily> {
-        use crate::deltas::record_family::RecordFamily;
+    ) -> Option<cadmpeg_parasolid::deltas::record_family::RecordFamily> {
+        use cadmpeg_parasolid::deltas::record_family::RecordFamily;
         let plan = &schema.definition;
-        let region =
-            plan.kind == 19 && crate::deltas::region::RegionLayout::from_schema(plan).is_some();
+        let region = plan.kind == 19
+            && cadmpeg_parasolid::deltas::region::RegionLayout::from_schema(plan).is_some();
         let group = plan.matches_base_with_pointer_tail(90, &[]);
         if !region && !group {
             return None;
@@ -214,18 +207,22 @@ impl ParasolidDeltasInstance {
                     references.push(target.get());
                     if descriptor.name.as_str() == "first_member" {
                         linked_status =
-                            crate::deltas::group::GroupReferenceStatus::try_from(u8::from(*status))
-                                .ok();
+                            cadmpeg_parasolid::deltas::group::GroupReferenceStatus::try_from(
+                                u8::from(*status),
+                            )
+                            .ok();
                     }
                 }
                 FieldValue::Integer(value) if descriptor.name.as_str() == "node_id" => {
                     node_id = Some(*value);
                 }
                 FieldValue::Byte(value) if group && descriptor.name.as_str() == "type" => {
-                    selector = crate::records::group::GroupSelector::try_from(*value).ok();
+                    selector =
+                        cadmpeg_parasolid::records::group::GroupSelector::try_from(*value).ok();
                 }
                 FieldValue::Char(value) if region && descriptor.name.as_str() == "type" => {
-                    region_type = crate::deltas::region::RegionType::try_from(*value).ok();
+                    region_type =
+                        cadmpeg_parasolid::deltas::region::RegionType::try_from(*value).ok();
                 }
                 _ => return None,
             }
@@ -240,7 +237,7 @@ impl ParasolidDeltasInstance {
                 })
             } else {
                 Some(RecordFamily::Region {
-                    fields: crate::deltas::region::RegionFields::from_wire(
+                    fields: cadmpeg_parasolid::deltas::region::RegionFields::from_wire(
                         node_id?,
                         references,
                         region_type?,
@@ -477,13 +474,15 @@ pub(in crate::native) fn admit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{owned_deltas, with_decode_context};
+    use crate::test_support::with_decode_context;
+    use cadmpeg_parasolid::test_support::owned_deltas;
 
     #[test]
     fn native_admission_rejects_missing_schema_wrong_cardinality_ranges_and_source_bytes() {
-        let bytes = crate::test_support::test_pmarks::complete(owned_deltas::body_stream(36));
+        let bytes =
+            cadmpeg_parasolid::test_support::test_pmarks::complete(owned_deltas::body_stream(36));
         with_decode_context(|_ctx| {
-            let owner = crate::records::DeltasRecords::read(&bytes).unwrap();
+            let owner = cadmpeg_parasolid::records::DeltasRecords::read(&bytes).unwrap();
             let schema = ParasolidDeltasSchema::from_owned(&bytes, 0, &owner.definitions()[2]);
             let instance =
                 ParasolidDeltasInstance::from_owned(&bytes, 0, &owner.events()[2], &schema)
@@ -530,10 +529,11 @@ mod tests {
     #[test]
     fn native_body_reals_preserve_nonfinite_bits_and_share_the_owner_plan() {
         for bits in [0x7ff8_1234_5678_9abcu64, 0x7ff0_0000_0000_0000, 1] {
-            let mut bytes =
-                crate::test_support::test_pmarks::complete(owned_deltas::body_stream(36));
+            let mut bytes = cadmpeg_parasolid::test_support::test_pmarks::complete(
+                owned_deltas::body_stream(36),
+            );
             let span = with_decode_context(|_ctx| {
-                let owner = crate::records::DeltasRecords::read(&bytes).unwrap();
+                let owner = cadmpeg_parasolid::records::DeltasRecords::read(&bytes).unwrap();
                 let EventContent::Instance(instance) = owner.events()[2].content() else {
                     panic!("BODY");
                 };
@@ -542,7 +542,7 @@ mod tests {
             assert_eq!(span.len(), 8);
             bytes[span].copy_from_slice(&bits.to_be_bytes());
             with_decode_context(|_ctx| {
-                let owner = crate::records::DeltasRecords::read(&bytes).unwrap();
+                let owner = cadmpeg_parasolid::records::DeltasRecords::read(&bytes).unwrap();
                 let definition = &owner.definitions()[2];
                 let schema = ParasolidDeltasSchema::from_owned(&bytes, 0, definition);
                 assert!(Rc::ptr_eq(&schema.definition, &definition.shared_plan()));
@@ -562,13 +562,13 @@ mod tests {
 
     #[test]
     fn custom_metadata_is_serialized_once_and_round_trips_with_its_plan() {
-        let mut bytes = crate::test_support::test_pmarks::prefix(1);
-        let maximum = crate::test_support::test_pmarks::header().len() - 6;
+        let mut bytes = cadmpeg_parasolid::test_support::test_pmarks::prefix(1);
+        let maximum = cadmpeg_parasolid::test_support::test_pmarks::header().len() - 6;
         bytes[maximum..maximum + 2].copy_from_slice(&500u16.to_be_bytes());
         bytes.extend(b"\0\xf0\x01\x07MY_KIND\x06custom\x05value\0\0\0\x01\x01d\0\x02\0\0\0\x07");
-        let bytes = crate::test_support::test_pmarks::complete(bytes);
+        let bytes = cadmpeg_parasolid::test_support::test_pmarks::complete(bytes);
         with_decode_context(|_ctx| {
-            let owner = crate::records::DeltasRecords::read(&bytes).unwrap();
+            let owner = cadmpeg_parasolid::records::DeltasRecords::read(&bytes).unwrap();
             let schema = ParasolidDeltasSchema::from_owned(&bytes, 0, &owner.definitions()[2]);
             let wire = serde_json::to_value(&schema).unwrap();
             assert_eq!(wire["custom_name"], "MY_KIND");

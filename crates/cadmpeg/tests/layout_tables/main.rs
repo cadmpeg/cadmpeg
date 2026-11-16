@@ -47,7 +47,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::generate::{emit_layout_rs, render, GENERATED_LAYOUT_RS};
+use crate::generate::{emit_layout_rs, external_layout_files, render, GENERATED_LAYOUT_RS};
 
 /// Every format directory the workspace ships a codec or spec for.
 const EXPECTED_FORMATS: &[&str] = &[
@@ -1364,6 +1364,39 @@ fn layout_validator_rejects_broken_tables() {
     }
 }
 
+fn write_if_changed(path: &Path, rendered: &str) -> std::io::Result<()> {
+    match std::fs::read(path) {
+        Ok(current) if current == rendered.as_bytes() => return Ok(()),
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    std::fs::write(path, rendered)
+}
+
+#[test]
+fn unchanged_layout_outputs_keep_their_modified_time() {
+    let directory = tempfile::tempdir().unwrap();
+    let target = directory.path().join("generated.rs");
+    write_if_changed(&target, "first").unwrap();
+    let fixed_time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1);
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&target)
+        .unwrap();
+    file.set_times(std::fs::FileTimes::new().set_modified(fixed_time))
+        .unwrap();
+    let before = std::fs::metadata(&target).unwrap().modified().unwrap();
+    write_if_changed(&target, "first").unwrap();
+    assert_eq!(
+        std::fs::metadata(&target).unwrap().modified().unwrap(),
+        before
+    );
+    assert_eq!(std::fs::read(&target).unwrap(), b"first");
+    write_if_changed(&target, "second").unwrap();
+    assert_eq!(std::fs::read(&target).unwrap(), b"second");
+}
+
 #[test]
 fn rendered_layout_pages_match_the_tables() {
     let root = repo_root();
@@ -1374,7 +1407,7 @@ fn rendered_layout_pages_match_the_tables() {
         let rendered = render(&file);
         let target = path.with_extension("md");
         if update {
-            std::fs::write(&target, &rendered).unwrap();
+            write_if_changed(&target, &rendered).unwrap();
             continue;
         }
         let current = read_text(&target).unwrap_or_default();
@@ -1440,31 +1473,47 @@ fn generated_layout_code_matches_the_tables() {
             "{}: format must match the mapping key",
             table.display()
         );
-        let rendered = match emit_layout_rs(&file, root.join(relative).parent().unwrap()) {
+        let mut rendered = match emit_layout_rs(&file, root.join(relative).parent().unwrap()) {
             Ok(rendered) => rendered,
             Err(errors) => {
                 emit_errors.extend(errors);
                 continue;
             }
         };
-        if *format == "sldprt" {
+        if *format == "asm" {
             assert!(
-                rendered.contains("`chart_00_28`"),
-                "sldprt layout.rs must list the discrepant chart record as omitted"
+                rendered.contains("`coedge`"),
+                "asm layout.rs must list the discrepant coedge record as omitted"
             );
             assert!(
-                !rendered.contains("mod chart_00_28"),
-                "sldprt layout.rs must not emit constants for a discrepant record"
+                !rendered.contains("mod coedge"),
+                "asm layout.rs must not emit constants for a discrepant record"
             );
         }
+        let external = match external_layout_files(format, &mut rendered) {
+            Ok(files) => files,
+            Err(error) => {
+                emit_errors.push(error);
+                continue;
+            }
+        };
         let target = root.join(relative);
-        if update {
-            std::fs::write(&target, &rendered).unwrap();
-            continue;
-        }
-        let current = read_text(&target).unwrap_or_default();
-        if current != rendered {
-            stale.push((*relative).to_string());
+        let mut outputs = vec![(target.clone(), rendered)];
+        outputs.extend(
+            external
+                .into_iter()
+                .map(|(path, body)| (target.parent().unwrap().join(path), body)),
+        );
+        for (target, rendered) in outputs {
+            if update {
+                std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+                write_if_changed(&target, &rendered).unwrap();
+                continue;
+            }
+            let current = read_text(&target).unwrap_or_default();
+            if current != rendered {
+                stale.push(target.strip_prefix(&root).unwrap().display().to_string());
+            }
         }
     }
     assert!(

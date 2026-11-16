@@ -239,6 +239,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     let binding = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
         component_owner: None,
         component_owner_unresolved: false,
+        history_only: false,
         id: format!("{stream}:design-body-binding#0"),
         stream: "Design/BulkStream.dat".into(),
         pair_count: 1,
@@ -404,6 +405,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
 
     let mut inconsistent = histories[0].clone();
     inconsistent.states_mut()[0].transition = Some(AsmHistoricalTransition {
+        geometry_unchanged: false,
         record_revisions: Vec::new(),
         rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(4),
@@ -889,6 +891,7 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
             selector: 1,
             selector_offset: 0,
             token: "1".into(),
+            token_integer: 0,
             token_offset: 0,
             design_reference: 1,
             design_reference_offset: 0,
@@ -896,6 +899,7 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
             candidate_edges: Vec::new(),
             alternate_selector_faces,
             alternate_selector_edges: Vec::new(),
+            operand_offset: None,
         }
     };
     assert_eq!(
@@ -1273,21 +1277,21 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     brep.bodies.push(Body {
         id: BodyId::mint(id(1)).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint(id(2)).expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     brep.regions.push(Region {
         id: RegionId::mint(id(2)).expect("identity grammar"),
         body: BodyId::mint(id(1)).expect("identity grammar"),
         shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
+        native_ref: None,
     });
-    brep.shells.push(Shell::with_face(
+    brep.shells.push(Shell::new(
         ShellId::mint(id(3)).expect("identity grammar"),
         RegionId::mint(id(2)).expect("identity grammar"),
-        FaceId::mint(id(4)).expect("identity grammar"),
     ));
     brep.faces.push(Face {
         id: FaceId::mint(id(4)).expect("identity grammar"),
@@ -1300,6 +1304,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     brep.loops.push(Loop {
         id: LoopId::mint(id(5)).expect("identity grammar"),
@@ -1311,6 +1316,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             )
             .expect("fixture ring admission"),
         ),
+        native_ref: None,
     });
     brep.coedges.push(Coedge {
         id: CoedgeId::mint(id(6)).expect("identity grammar"),
@@ -1320,21 +1326,26 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
+        native_ref: None,
     });
     brep.edges.push(Edge {
         id: EdgeId::mint(id(7)).expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
             CurveId::mint(id(21)).expect("identity grammar"),
         )),
-        start: VertexId::mint(id(8)).expect("identity grammar"),
-        end: VertexId::mint(id(9)).expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint(id(8)).expect("identity grammar"),
+            VertexId::mint(id(9)).expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     for slot in [8, 9] {
         brep.vertices.push(Vertex {
             id: VertexId::mint(id(slot)).expect("identity grammar"),
             point: PointId::mint(id(slot + 20)).expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -1505,6 +1516,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         selector: 1,
         selector_offset: 0,
         token: "1".into(),
+        token_integer: 0,
         token_offset: 0,
         design_reference: 1,
         design_reference_offset: 1,
@@ -1512,6 +1524,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     };
     let boundary_state = |state_id: i64, byte_offset: u64| AsmDeltaState {
         id: format!("f3d:test:asm-delta-state#{byte_offset:010}"),
@@ -1523,7 +1536,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     let mut face_boundaries = FaceBoundaryArena::default();
     let context = edge_recipe_reference_context(
         2,
-        &reference,
+        std::slice::from_ref(&reference),
         EdgeBoundaryContext {
             state: &result_state,
             topology: &topology,
@@ -1588,7 +1601,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     reference.alternate_selector_faces = vec![FaceId::mint(id(4)).expect("identity grammar")];
     let alternate_context = edge_recipe_reference_context(
         2,
-        &reference,
+        std::slice::from_ref(&reference),
         EdgeBoundaryContext {
             state: &result_state,
             topology: &topology,
@@ -1614,7 +1627,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(alternate_context.changed_reference_edge_slots, [7]);
     let support_only_context = edge_recipe_reference_context(
         2,
-        &reference,
+        std::slice::from_ref(&reference),
         EdgeBoundaryContext {
             state: &result_state,
             topology: &topology,

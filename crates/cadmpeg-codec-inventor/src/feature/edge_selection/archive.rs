@@ -10,6 +10,23 @@ use cadmpeg_core::{
 
 const DELTA_NAME: &[u8] = b"\x0d\x0bdelta_state";
 
+/// The name chain `End-of-ASM-History-Section` that wraps the first retained
+/// topology snapshot record.
+const SNAPSHOT_WRAPPER: &[u8] = b"\x0e\x03End\x0e\x02of\x0e\x03ASM\x0e\x07History\x0d\x07Section";
+
+/// Whether the archive begins with a snapshot record wrapped by the
+/// `End-of-ASM-History-Section` name chain: the stored bytes carry the chain
+/// and the first record is a body, edge, or face.
+fn wrapped_snapshot(bytes: &[u8], start: usize, first: Option<&sab::Record>) -> bool {
+    bytes
+        .get(start..)
+        .is_some_and(|tail| tail.starts_with(SNAPSHOT_WRAPPER))
+        && first.is_some_and(|record| {
+            matches!(record.head(), "body" | "edge" | "face")
+                && matches!(record.tokens.first(), Some(sab::Token::Ident(name)) if name == record.head())
+        })
+}
+
 fn tagged(view: &mut View<'_>, tag: u8, width: RefWidth) -> Result<i64, CodecError> {
     if view.req_u8()? != tag {
         return Err(CodecError::malformed("Inventor ASM history tag"));
@@ -96,7 +113,7 @@ pub(super) fn records(
         record.name == "End-of-ASM-History-Section"
             || (record.name == "edge"
                 && matches!(record.tokens.first(), Some(sab::Token::Ident(name)) if name == "edge"))
-    });
+    }) || wrapped_snapshot(bytes, start, archive.first());
     let ends_with_marker = archive
         .last()
         .is_some_and(|record| record.name == "End-of-ASM-data");
@@ -132,6 +149,41 @@ mod tests {
         }
         bytes.push(17);
         bytes
+    }
+
+    fn snapshot_record(head: &str) -> sab::Record {
+        sab::Record {
+            index: 0,
+            name: head.into(),
+            tokens: vec![sab::Token::Ident(head.into()), sab::Token::Ref(-1)].into(),
+            offset: 0,
+            len: 0,
+        }
+    }
+
+    #[test]
+    fn a_wrapped_body_edge_or_face_snapshot_starts_the_archive() {
+        let mut bytes = SNAPSHOT_WRAPPER.to_vec();
+        bytes.extend_from_slice(b"\x0d\x04face");
+        for head in ["body", "edge", "face"] {
+            assert!(wrapped_snapshot(&bytes, 0, Some(&snapshot_record(head))));
+        }
+        // Other entity heads are not a snapshot start.
+        assert!(!wrapped_snapshot(
+            &bytes,
+            0,
+            Some(&snapshot_record("coedge"))
+        ));
+        assert!(!wrapped_snapshot(&bytes, 0, None));
+        // The stored bytes carry the wrapper name chain.
+        let mut bare = vec![0x0d, 4];
+        bare.extend_from_slice(b"face");
+        assert!(!wrapped_snapshot(&bare, 0, Some(&snapshot_record("face"))));
+        assert!(!wrapped_snapshot(
+            &bytes,
+            bytes.len() + 1,
+            Some(&snapshot_record("face"))
+        ));
     }
 
     #[test]

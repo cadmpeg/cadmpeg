@@ -7,9 +7,11 @@ use cadmpeg_test_support::wire;
 use crate::native::DocumentFacts;
 use crate::test_support::test_archive::{archive, rewrite_schema_version, CORE_DESIGN_PRODUCT};
 use crate::FcstdCodec;
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
+use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -64,7 +66,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     };
     assert_eq!(
         serde_json::to_value(refusal).expect("serialize refusal")["refusal"],
-        serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "format": "step"}})
+        serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "value": "step"}})
     );
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
@@ -376,7 +378,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     let format = source.format().to_owned();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": format},
+            "identity": {"kind": "unclassified", "format": format},
             "attributes": source.attributes,
         }))
         .unwrap(),
@@ -464,6 +466,85 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
     }
 }
 
+fn decode_at(depth: DecodeDepth) -> cadmpeg_ir::DecodeResult {
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions {
+                depth,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("decode source")
+}
+
+fn recorded_digest(ir: &CadIr) -> Option<&String> {
+    ir.source
+        .as_ref()
+        .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
+}
+
+#[test]
+fn only_a_full_decode_records_the_digest() {
+    let full = decode_at(DecodeDepth::Full);
+    assert_eq!(full.ir().scope(), DecodeDepth::Full.scope());
+    assert!(recorded_digest(full.ir()).is_some());
+    for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
+        let decoded = decode_at(depth);
+        assert_eq!(decoded.ir().scope(), depth.scope());
+        assert_eq!(recorded_digest(decoded.ir()), None, "{depth}");
+    }
+}
+
+/// A document below `Full` has no digest to compare, so the depth gate must
+/// refuse it, edited or not, before the writer looks for a baseline.
+#[test]
+fn a_document_below_full_is_refused_by_depth_edited_or_not() {
+    for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
+        let decoded = decode_at(depth);
+        let mut edited = decoded.ir().clone();
+        edited
+            .source
+            .as_mut()
+            .expect("the fixture records a source")
+            .attributes
+            .insert(
+                cadmpeg_core::nonblank_const!("edited_since_decode"),
+                "yes".to_owned(),
+            );
+        for ir in [decoded.ir(), &edited] {
+            let Err(CodecError::InsufficientDepth {
+                needed, recorded, ..
+            }) = inherit(ir)
+            else {
+                panic!("a {depth} document must be refused for its depth");
+            };
+            assert_eq!(needed, DecodeDepth::Full);
+            assert_eq!(recorded, depth);
+        }
+    }
+}
+
+/// A `Full` document that lost its digest cannot prove that it is unedited.
+#[test]
+fn a_full_document_without_its_digest_is_refused() {
+    let decoded = decode_at(DecodeDepth::Full);
+    let mut stripped = decoded.ir().clone();
+    stripped
+        .source
+        .as_mut()
+        .expect("the fixture records a source")
+        .attributes
+        .remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
+    let Err(CodecError::NotImplemented(message)) = inherit(&stripped) else {
+        panic!("a document with no digest must be refused");
+    };
+    assert!(
+        message.contains(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+        "{message}"
+    );
+}
+
 /// The writer patches retained native records only, so a neutral edit has no
 /// serializer. It is refused rather than written as the unedited source.
 #[test]
@@ -486,7 +567,7 @@ fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
 
     let mut edited = decoded.ir().clone();
     let body = edited
-        .model
+        .geometry
         .bodies
         .first_mut()
         .expect("the fixture decodes a body");

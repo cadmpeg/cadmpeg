@@ -12,6 +12,7 @@
 //! [`model_curve_point_by_id`] resolves construction-backed curves whose
 //! parameterization is established by model entities.
 
+use crate::math::portable::Portable;
 use cadmpeg_core::convert::f64_from_index;
 use std::cmp::Ordering;
 
@@ -39,6 +40,13 @@ use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 use cadmpeg_core::CodecError;
+
+/// Whether evaluated curve endpoints meet within the topology tolerance.
+#[must_use]
+pub fn curve_endpoints_coincident(endpoints: [Point3; 2], tolerance: f64) -> bool {
+    let distance = endpoints[0].distance(endpoints[1]);
+    distance.is_finite() && distance <= tolerance
+}
 
 /// Resource policies for geometry evaluation.
 pub mod admission;
@@ -167,7 +175,7 @@ pub fn analytic_surface_parameters_solved(
             let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = NonZeroLength::from(cylinder_surface.radius());
             let (x, y, v) = components(origin, *axis, *ref_direction);
-            let angle = finite(y?).over(radius).atan2(finite(x?).over(radius));
+            let angle = ExtendedReal::atan2(finite(y?).over(radius), finite(x?).over(radius));
             Some(FinitePoint2::from_coordinates(angle, v?))
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
@@ -179,13 +187,14 @@ pub fn analytic_surface_parameters_solved(
             let half_angle = cone_surface.half_angle().get();
             let (x, y, v) = components(origin, *axis, *ref_direction);
             let (x, y, v) = (x?.get(), y?.get(), v?);
-            let local_radius = radius + v.get() * half_angle.tan();
+            let local_radius = radius + v.get() * half_angle.portable_tan();
             if local_radius == 0.0 {
                 return None;
             }
             // A section radius whose product with the ratio underflows to
             // zero leaves 0 / 0 at y = 0.
-            let angle = FiniteReal::new((y / (local_radius * ratio)).atan2(x / local_radius))?;
+            let angle =
+                FiniteReal::new((y / (local_radius * ratio)).portable_atan2(x / local_radius))?;
             Some(FinitePoint2::from_coordinates(angle, v))
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
@@ -195,8 +204,8 @@ pub fn analytic_surface_parameters_solved(
             let (x, y, z) = components(center, *axis, *ref_direction);
             let (x, y, z) = (x?, y?, z?);
             Some(FinitePoint2::from_coordinates(
-                y.atan2(x),
-                finite(z).atan2(ExtendedReal::hypot(x, y)),
+                FiniteReal::atan2(y, x),
+                ExtendedReal::atan2(finite(z), ExtendedReal::hypot(x, y)),
             ))
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
@@ -208,8 +217,9 @@ pub fn analytic_surface_parameters_solved(
             let (x, y, z) = components(center, *axis, *ref_direction);
             let (x, y, z) = (x?, y?, z?);
             Some(FinitePoint2::from_coordinates(
-                y.atan2(x),
-                finite(z).over(minor_radius).atan2(
+                FiniteReal::atan2(y, x),
+                ExtendedReal::atan2(
+                    finite(z).over(minor_radius),
                     ExtendedReal::hypot(x, y)
                         .minus(major_radius.into())
                         .over(minor_radius),
@@ -571,10 +581,10 @@ fn rational_patch_distance_bounds_with_budget(
                 0.0
             }
         })
-        .fold(0.0_f64, f64::hypot);
+        .fold(0.0_f64, f64::portable_hypot);
     let diameter = (0..3)
         .map(|axis| maximum[axis] - minimum[axis])
-        .fold(0.0_f64, f64::hypot);
+        .fold(0.0_f64, f64::portable_hypot);
     (lower.is_finite() && diameter.is_finite()).then_some((lower, diameter))
 }
 
@@ -591,6 +601,18 @@ fn split_rational_surface_patch(
     if !budget.charge() {
         return None;
     }
+    let domain = if split_u {
+        patch.u_domain
+    } else {
+        patch.v_domain
+    };
+    let (first_domain, second_domain) = domain.split_at_midpoint()?;
+    let [lower, upper] = domain.finite_endpoints();
+    let SegmentPosition::Within(fraction) =
+        first_domain.finite_endpoints()[1].segment_position(lower, upper)
+    else {
+        return None;
+    };
     let mut first_lines = Vec::new();
     let mut second_lines = Vec::new();
     for line in 0..line_count {
@@ -601,7 +623,7 @@ fn split_rational_surface_patch(
         } else {
             patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)].to_vec()
         };
-        let split = bezier::split_homogeneous_bezier_midpoint(&controls)?;
+        let split = bezier::split_homogeneous_bezier(&controls, fraction.get())?;
         let [first, second] = split.into_polygons();
 
         first_lines.push(first);
@@ -617,11 +639,9 @@ fn split_rational_surface_patch(
         }
     };
     let (first_u, second_u, first_v, second_v) = if split_u {
-        let (first_u, second_u) = patch.u_domain.split_at_midpoint()?;
-        (first_u, second_u, patch.v_domain, patch.v_domain)
+        (first_domain, second_domain, patch.v_domain, patch.v_domain)
     } else {
-        let (first_v, second_v) = patch.v_domain.split_at_midpoint()?;
-        (patch.u_domain, patch.u_domain, first_v, second_v)
+        (patch.u_domain, patch.u_domain, first_domain, second_domain)
     };
     Some([
         RationalBezierSurfacePatch {
@@ -806,8 +826,8 @@ fn complete_nurbs_surface_starts(
             ) => return Ok(None),
         };
         let distance = (position.x - point.x)
-            .hypot(position.y - point.y)
-            .hypot(position.z - point.z);
+            .portable_hypot(position.y - point.y)
+            .portable_hypot(position.z - point.z);
         Ok(distance.is_finite().then_some(distance))
     };
     let center = |patch: &RationalBezierSurfacePatch| {
@@ -880,7 +900,7 @@ fn complete_nurbs_surface_starts(
     }
     // A tolerance-bounded inverse needs a constructive fitting parameter, not
     // a proof of the global minimum. Every upper candidate is surface-evaluated.
-    if fit_tolerance.is_some() && best_distance <= distance_tolerance {
+    if fit_tolerance.is_some_and(|tolerance| best_distance <= tolerance) {
         return Ok((!best_upper_parameters.is_empty()).then_some(best_upper_parameters));
     }
     let mut queue = BinaryHeap::new();
@@ -919,7 +939,9 @@ fn complete_nurbs_surface_starts(
                 .abs()
                 .max(best_distance.abs())
                 .max(distance_tolerance);
-        if lower_bound > best_distance + comparison_tolerance {
+        if fit_tolerance.is_some_and(|tolerance| lower_bound > tolerance + comparison_tolerance)
+            || lower_bound > best_distance + comparison_tolerance
+        {
             break;
         }
         let parameters = center(&patch);
@@ -928,7 +950,7 @@ fn complete_nurbs_surface_starts(
         else {
             return Ok(None);
         };
-        if fit_tolerance.is_some() && center_distance <= distance_tolerance {
+        if fit_tolerance.is_some_and(|tolerance| center_distance <= tolerance) {
             return Ok(Some(vec![upper_parameters]));
         }
         let upper_tolerance = 128.0
@@ -944,13 +966,21 @@ fn complete_nurbs_surface_starts(
         if (center_distance - best_distance).abs() <= upper_tolerance {
             best_upper_parameters.push(upper_parameters);
         }
-        let indivisible = parameters.u == patch.u_domain.lower()
-            || parameters.u == patch.u_domain.upper()
-            || parameters.v == patch.v_domain.lower()
-            || parameters.v == patch.v_domain.upper();
-        if diameter <= distance_tolerance
-            || center_distance - lower_bound <= distance_tolerance
-            || indivisible
+        let u_divisible =
+            parameters.u != patch.u_domain.lower() && parameters.u != patch.u_domain.upper();
+        let v_divisible =
+            parameters.v != patch.v_domain.lower() && parameters.v != patch.v_domain.upper();
+        if !u_divisible && !v_divisible {
+            for u in patch.u_domain.finite_endpoints() {
+                for v in patch.v_domain.finite_endpoints() {
+                    terminal.push((FinitePoint2::from_coordinates(u, v), lower_bound));
+                }
+            }
+            continue;
+        }
+        if fit_tolerance.is_none()
+            && (diameter <= distance_tolerance
+                || center_distance - lower_bound <= distance_tolerance)
         {
             terminal.push((upper_parameters, lower_bound));
             continue;
@@ -970,7 +1000,7 @@ fn complete_nurbs_surface_starts(
                 let second = control(u + 1, v);
                 let variation = (0..3)
                     .map(|axis| second[axis] - first[axis])
-                    .fold(0.0_f64, f64::hypot);
+                    .fold(0.0_f64, f64::portable_hypot);
                 u_variation = u_variation.max(variation);
             }
         }
@@ -981,13 +1011,12 @@ fn complete_nurbs_surface_starts(
                 let second = control(u, v + 1);
                 let variation = (0..3)
                     .map(|axis| second[axis] - first[axis])
-                    .fold(0.0_f64, f64::hypot);
+                    .fold(0.0_f64, f64::portable_hypot);
                 v_variation = v_variation.max(variation);
             }
         }
-        let Some(children) =
-            split_rational_surface_patch(&patch, u_variation >= v_variation, budget)
-        else {
+        let split_u = u_divisible && (!v_divisible || u_variation >= v_variation);
+        let Some(children) = split_rational_surface_patch(&patch, split_u, budget) else {
             return Ok(None);
         };
         for patch in children {
@@ -1068,8 +1097,8 @@ fn solve_nurbs_surface_parameter(
             return Ok(None);
         };
         let distance = (position.x - point.x)
-            .hypot(position.y - point.y)
-            .hypot(position.z - point.z);
+            .portable_hypot(position.y - point.y)
+            .portable_hypot(position.z - point.z);
         if distance.is_finite() && distance <= tolerance {
             return Ok(Some((parameters, distance)));
         }
@@ -1090,8 +1119,8 @@ fn solve_nurbs_surface_parameter(
                 return Ok(None);
             };
             let distance = (position.x - point.x)
-                .hypot(position.y - point.y)
-                .hypot(position.z - point.z);
+                .portable_hypot(position.y - point.y)
+                .portable_hypot(position.z - point.z);
             if distance.is_finite() && distance <= tolerance {
                 return Ok(Some((refined, distance)));
             }
@@ -1105,6 +1134,7 @@ fn solve_nurbs_surface_parameter(
     let mut best = None;
     let mut best_distance = f64::INFINITY;
     let mut best_seed_distance = f64::INFINITY;
+    let mut best_fits = false;
     for &start in &starts {
         let Some(parameters) = refine_nurbs_surface_parameters(
             ctx, surface, point, start, u_domain, v_domain, budget,
@@ -1129,8 +1159,8 @@ fn solve_nurbs_surface_parameter(
             continue;
         };
         let distance = (position.x - point.x)
-            .hypot(position.y - point.y)
-            .hypot(position.z - point.z);
+            .portable_hypot(position.y - point.y)
+            .portable_hypot(position.z - point.z);
         if !distance.is_finite() {
             continue;
         }
@@ -1138,17 +1168,24 @@ fn solve_nurbs_surface_parameter(
         // parameters span the full finite range. Its common scale preserves order.
         let seed_distance = seed.map_or(
             parameters.u.abs() * 0.25 + parameters.v.abs() * 0.25,
-            |seed| (parameters.u * 0.25 - seed.u * 0.25).hypot(parameters.v * 0.25 - seed.v * 0.25),
+            |seed| {
+                (parameters.u * 0.25 - seed.u * 0.25)
+                    .portable_hypot(parameters.v * 0.25 - seed.v * 0.25)
+            },
         );
         let same_point = (distance - best_distance).abs()
             <= f64::EPSILON * 64.0 * distance.abs().max(best_distance.abs()).max(1.0);
+        let fits = fit_tolerance.is_some_and(|tolerance| distance <= tolerance);
         if best.is_none()
-            || distance < best_distance && !same_point
-            || same_point && seed_distance < best_seed_distance
+            || fits && !best_fits
+            || fits == best_fits
+                && (distance < best_distance && !same_point
+                    || same_point && seed_distance < best_seed_distance)
         {
             best = Some(parameters);
             best_distance = distance;
             best_seed_distance = seed_distance;
+            best_fits = fits;
         }
     }
     Ok(best.map(|parameters| (parameters, best_distance)))
@@ -2430,7 +2467,7 @@ pub fn nurbs_pcurve_contains_point(
             })
             .ok()
             .map(Point2::from)?;
-        let distance = (curve_uv.u - point.u).hypot(curve_uv.v - point.v);
+        let distance = (curve_uv.u - point.u).portable_hypot(curve_uv.v - point.v);
         if distance <= tolerance {
             return Some(true);
         }
@@ -3406,13 +3443,13 @@ fn curve_derivative_unsettled(
             let radius = circle_curve.radius().get();
             admit_derivative(vector_sum(&if second {
                 [
-                    (-radius * t.cos(), *ref_direction),
-                    (-radius * t.sin(), axis.cross(*ref_direction)),
+                    (-radius * t.portable_cos(), *ref_direction),
+                    (-radius * t.portable_sin(), axis.cross(*ref_direction)),
                 ]
             } else {
                 [
-                    (-radius * t.sin(), *ref_direction),
-                    (radius * t.cos(), axis.cross(*ref_direction)),
+                    (-radius * t.portable_sin(), *ref_direction),
+                    (radius * t.portable_cos(), axis.cross(*ref_direction)),
                 ]
             }))
         }
@@ -3423,13 +3460,19 @@ fn curve_derivative_unsettled(
             let minor_radius = ellipse_curve.minor_radius().get();
             admit_derivative(vector_sum(&if second {
                 [
-                    (-major_radius * t.cos(), *major_direction),
-                    (-minor_radius * t.sin(), axis.cross(*major_direction)),
+                    (-major_radius * t.portable_cos(), *major_direction),
+                    (
+                        -minor_radius * t.portable_sin(),
+                        axis.cross(*major_direction),
+                    ),
                 ]
             } else {
                 [
-                    (-major_radius * t.sin(), *major_direction),
-                    (minor_radius * t.cos(), axis.cross(*major_direction)),
+                    (-major_radius * t.portable_sin(), *major_direction),
+                    (
+                        minor_radius * t.portable_cos(),
+                        axis.cross(*major_direction),
+                    ),
                 ]
             }))
         }
@@ -3843,8 +3886,14 @@ fn helix_differential(
     let inverse_revolution = 1.0 / std::f64::consts::TAU;
     let revolution_fraction = parameter * inverse_revolution;
     let radial_scale = 1.0 + apex_factor * revolution_fraction;
-    let radial = vector_sum(&[(parameter.cos(), major), (parameter.sin(), minor)]);
-    let radial_first = vector_sum(&[(-parameter.sin(), major), (parameter.cos(), minor)]);
+    let radial = vector_sum(&[
+        (parameter.portable_cos(), major),
+        (parameter.portable_sin(), minor),
+    ]);
+    let radial_first = vector_sum(&[
+        (-parameter.portable_sin(), major),
+        (parameter.portable_cos(), minor),
+    ]);
     let point = offset(
         center,
         &[(radial_scale, radial), (revolution_fraction, pitch)],
@@ -4014,8 +4063,8 @@ fn unit_length_axis(direction: UnitVector3) -> Vector3 {
 }
 
 fn rotate_vector_about_axis(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
-    let cosine = angle.cos();
-    let sine = angle.sin();
+    let cosine = angle.portable_cos();
+    let sine = angle.portable_sin();
     vector_sum(&[
         (cosine, vector),
         (sine, axis.cross(vector)),
@@ -4229,7 +4278,7 @@ fn construction_curve_parameter(
     } else {
         let mut ranges = index
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .filter(|edge| edge.curve() == Some(directrix))
@@ -5225,7 +5274,7 @@ fn direct_curve_parameter_near_point(
                 let ref_direction = circle_curve.frame().reference().as_raw();
                 let radius = circle_curve.radius().get();
                 let (x, y, _) = components(center, *axis, *ref_direction);
-                let canonical = (y / radius).atan2(x / radius);
+                let canonical = (y / radius).portable_atan2(x / radius);
                 FiniteReal::new(
                     canonical
                         + ((seed.get() - canonical) / std::f64::consts::TAU).round()
@@ -5239,7 +5288,7 @@ fn direct_curve_parameter_near_point(
                 let major_radius = ellipse_curve.major_radius().get();
                 let minor_radius = ellipse_curve.minor_radius().get();
                 let (x, y, _) = components(center, *axis, *major_direction);
-                let canonical = (y / minor_radius).atan2(x / major_radius);
+                let canonical = (y / minor_radius).portable_atan2(x / major_radius);
                 FiniteReal::new(
                     canonical
                         + ((seed.get() - canonical) / std::f64::consts::TAU).round()
@@ -5264,7 +5313,7 @@ fn direct_curve_parameter_near_point(
                 let major_direction = hyperbola_curve.frame().reference().as_raw();
                 let minor_radius = hyperbola_curve.minor_radius().get();
                 let (_, transverse, _) = components(center, *axis, *major_direction);
-                FiniteReal::new((transverse / minor_radius).asinh())?
+                FiniteReal::new((transverse / minor_radius).portable_asinh())?
             }
             SolvedCurveGeometry::Nurbs(curve) => {
                 match nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
@@ -5310,8 +5359,8 @@ fn direct_curve_parameter_near_point(
             SolvedCurveGeometry::Degenerate(degenerate_curve) => {
                 let stored = degenerate_curve.point().get();
                 let error = (stored.x - point.x)
-                    .hypot(stored.y - point.y)
-                    .hypot(stored.z - point.z);
+                    .portable_hypot(stored.y - point.y)
+                    .portable_hypot(stored.z - point.z);
                 (error.is_finite() && error <= tolerance).then_some(seed)?
             }
             SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => {
@@ -5340,7 +5389,7 @@ fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, 
         .affine_rows()
         .iter()
         .flat_map(|row| &row[..3])
-        .fold(0.0_f64, |length, &value| length.hypot(value));
+        .fold(0.0_f64, |length, &value| length.portable_hypot(value));
     tolerance_scale
         .is_finite()
         .then_some((coordinates.get(), tolerance_scale))
@@ -5367,14 +5416,17 @@ fn polyline_parameter_near_point(
         let end = points[segment + 1].get();
         let direction = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
         let offset = Vector3::new(point.x - start.x, point.y - start.y, point.z - start.z);
-        let length = direction.x.hypot(direction.y).hypot(direction.z);
+        let length = direction
+            .x
+            .portable_hypot(direction.y)
+            .portable_hypot(direction.z);
         if !length.is_finite() {
             continue;
         }
         // A width or length that overflows leaves a NaN fraction, which has no
         // candidate.
         let fraction = if length == 0.0 {
-            if offset.x.hypot(offset.y).hypot(offset.z) > tolerance {
+            if offset.x.portable_hypot(offset.y).portable_hypot(offset.z) > tolerance {
                 continue;
             }
             ExtendedReal::new((seed.get() - parameter_start) / parameter_width)
@@ -5397,8 +5449,8 @@ fn polyline_parameter_near_point(
             start.z + fraction * direction.z,
         );
         let error = (mapped.x - point.x)
-            .hypot(mapped.y - point.y)
-            .hypot(mapped.z - point.z);
+            .portable_hypot(mapped.y - point.y)
+            .portable_hypot(mapped.z - point.z);
         if let Some(candidate) = FiniteReal::new(candidate) {
             if error.is_finite()
                 && error <= tolerance
@@ -5449,8 +5501,8 @@ fn curve_point_evaluation(
             admit_point(offset(
                 center,
                 &[
-                    (radius * t.cos(), *ref_direction),
-                    (radius * t.sin(), axis.cross(*ref_direction)),
+                    (radius * t.portable_cos(), *ref_direction),
+                    (radius * t.portable_sin(), axis.cross(*ref_direction)),
                 ],
             ))
         }
@@ -5464,8 +5516,11 @@ fn curve_point_evaluation(
             admit_point(offset(
                 center,
                 &[
-                    (major_radius * t.cos(), *major_direction),
-                    (minor_radius * t.sin(), axis.cross(*major_direction)),
+                    (major_radius * t.portable_cos(), *major_direction),
+                    (
+                        minor_radius * t.portable_sin(),
+                        axis.cross(*major_direction),
+                    ),
                 ],
             ))
         }
@@ -5633,13 +5688,64 @@ const ROLLING_BALL_JET_RADIUS_TOLERANCE: f64 = 1e-8;
 /// The interpolated limiting points then define the circular section whose
 /// fixed radius is taken from the first stored station.
 ///
-/// A definition that is not a quintic jet with triple interior knots, a
+/// A definition that is not a quintic jet with triple or sextuple interior knots, a
 /// parameter that is not finite or lies outside the jet, stations whose
 /// radii disagree, and a section whose first limiting direction vanishes or
-/// whose second is parallel to it have no point. A knot span, interpolated
+/// whose second is parallel to it have no point unless the rails coincide at
+/// zero opening. A knot span, interpolated
 /// channel or section direction that overflows reaches no coordinate; a
 /// point outside the finite range carries the point reached.
 pub fn rolling_ball_jet_point(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    if !(0.0..=1.0).contains(&s) {
+        return Err(EvaluationFailure::NoValue);
+    }
+    rolling_ball_jet_transverse_point(definition, t, s)
+}
+
+/// Measure the gap from an out-of-range transverse station to its nearest
+/// rolling-ball boundary, using the same interpolated section for both points.
+pub fn rolling_ball_jet_boundary_gap(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+) -> Result<f64, EvaluationFailure<Point3>> {
+    let outside = rolling_ball_jet_transverse_point(definition, t, s)?;
+    let boundary = rolling_ball_jet_point(definition, t, s.clamp(0.0, 1.0))?;
+    Ok(outside.distance(boundary.get()))
+}
+
+/// Evaluate a point on the circular section within a model-space extension
+/// of its stored transverse interval.
+pub fn rolling_ball_jet_extended_point(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+    max_gap_mm: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    const MAX_TRANSVERSE_EXTENSION: f64 = 0.01;
+    if !(-MAX_TRANSVERSE_EXTENSION..=1.0 + MAX_TRANSVERSE_EXTENSION).contains(&s)
+        || !max_gap_mm.is_finite()
+        || max_gap_mm < 0.0
+    {
+        return Err(EvaluationFailure::NoValue);
+    }
+    if (0.0..=1.0).contains(&s) {
+        return rolling_ball_jet_point(definition, t, s);
+    }
+    let outside = rolling_ball_jet_transverse_point(definition, t, s)?;
+    let boundary = rolling_ball_jet_point(definition, t, s.clamp(0.0, 1.0))?;
+    if outside.distance(boundary.get()) <= max_gap_mm {
+        Ok(outside)
+    } else {
+        Err(EvaluationFailure::NoValue)
+    }
+}
+
+fn rolling_ball_jet_transverse_point(
     definition: &ProceduralSurfaceDefinition,
     t: f64,
     s: f64,
@@ -5656,10 +5762,9 @@ pub fn rolling_ball_jet_point(
             .iter()
             .skip(1)
             .take(stations.len() - 2)
-            .any(|station| station.multiplicity != 3)
+            .any(|station| !matches!(station.multiplicity, 3 | 6))
         || !t.is_finite()
         || !s.is_finite()
-        || !(0.0..=1.0).contains(&s)
     {
         return Err(no_value);
     }
@@ -5760,6 +5865,11 @@ pub fn rolling_ball_jet_point(
     if first_direction_squared <= f64::EPSILON {
         return Err(no_value);
     }
+    if angle == 0.0
+        && first_limit.distance(second_limit) <= ROLLING_BALL_JET_RADIUS_TOLERANCE * radius
+    {
+        return admit_point(first_limit);
+    }
     let second_radius = second_limit.vector_from(center);
     let second_direction = FiniteVector3::new(
         second_radius
@@ -5768,8 +5878,8 @@ pub fn rolling_ball_jet_point(
     .ok_or(unreached)?
     .unit_nonzero()
     .ok_or(no_value)?;
-    let radial =
-        first_direction.scale((s * angle).cos()) + second_direction.scale((s * angle).sin());
+    let radial = first_direction.scale((s * angle).portable_cos())
+        + second_direction.scale((s * angle).portable_sin());
     admit_point(center.translated(radial, radius))
 }
 
@@ -5898,8 +6008,8 @@ fn analytic_surface_second_partials(
             let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
             let transverse = axis.cross(*ref_direction);
-            let cosine = u.cos();
-            let sine = u.sin();
+            let cosine = u.portable_cos();
+            let sine = u.portable_sin();
             Some(SurfaceSecondPartials {
                 point: offset(
                     origin,
@@ -5930,9 +6040,9 @@ fn analytic_surface_second_partials(
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
             let transverse = axis.cross(*ref_direction);
-            let cosine = u.cos();
-            let sine = u.sin();
-            let radial_slope = half_angle.tan();
+            let cosine = u.portable_cos();
+            let sine = u.portable_sin();
+            let radial_slope = half_angle.portable_tan();
             let local_radius = radius + v * radial_slope;
             Some(SurfaceSecondPartials {
                 point: offset(
@@ -5969,10 +6079,10 @@ fn analytic_surface_second_partials(
             let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
             let transverse = axis.cross(*ref_direction);
-            let u_cosine = u.cos();
-            let u_sine = u.sin();
-            let v_cosine = v.cos();
-            let v_sine = v.sin();
+            let u_cosine = u.portable_cos();
+            let u_sine = u.portable_sin();
+            let v_cosine = v.portable_cos();
+            let v_sine = v.portable_sin();
             Some(SurfaceSecondPartials {
                 point: offset(
                     center,
@@ -6013,10 +6123,10 @@ fn analytic_surface_second_partials(
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let transverse = axis.cross(*ref_direction);
-            let u_cosine = u.cos();
-            let u_sine = u.sin();
-            let v_cosine = v.cos();
-            let v_sine = v.sin();
+            let u_cosine = u.portable_cos();
+            let u_sine = u.portable_sin();
+            let v_cosine = v.portable_cos();
+            let v_sine = v.portable_sin();
             let ring = major_radius + minor_radius * v_cosine;
             Some(SurfaceSecondPartials {
                 point: offset(
@@ -6222,7 +6332,7 @@ pub fn model_surface_point(
 }
 
 /// Evaluate a surface carrier against the caller's index of its model.
-pub(super) fn model_surface_point_in_index(
+pub fn model_surface_point_in_index(
     admission: admission::EvaluationAdmission<'_, '_>,
     index: &crate::index::ModelIndex<'_>,
     geometry: &SurfaceGeometry,
@@ -7224,11 +7334,11 @@ fn minor_circular_arc_point(
     let angle = first_radius
         .cross(second_radius)
         .norm()
-        .atan2(first_radius.dot(second_radius));
+        .portable_atan2(first_radius.dot(second_radius));
     let section_angle = u * angle;
     let radial = vector_sum(&[
-        (section_angle.cos(), first_radius),
-        (section_angle.sin(), axis.cross(first_radius)),
+        (section_angle.portable_cos(), first_radius),
+        (section_angle.portable_sin(), axis.cross(first_radius)),
     ]);
     Ok(offset(center, &[(radius, radial)]))
 }
@@ -7640,9 +7750,9 @@ fn circular_arc_first_order(
     let cross = first_unit.finite_cross(second_unit);
     let sine = cross.get().norm();
     let axis = cross.unit_nonzero().ok_or(EvaluationFailure::NoValue)?;
-    let angle = sine.atan2(cosine);
+    let angle = sine.portable_atan2(cosine);
     let transverse = axis.cross(first_radius);
-    let (section_sine, section_cosine) = (u * angle).sin_cos();
+    let (section_sine, section_cosine) = (u * angle).portable_sin_cos();
     let radial = vector_sum(&[(section_cosine, first_radius), (section_sine, transverse)]);
     let angular_direction =
         vector_sum(&[(-section_sine, first_radius), (section_cosine, transverse)]);
@@ -8218,6 +8328,24 @@ fn subset_parameter(
     Some((start + derivative * parameter, derivative))
 }
 
+/// The point and first partials of a signed normal offset, from the
+/// support's point, first partials and second partials.
+pub fn offset_surface_partials(
+    support: SurfaceSecondPartials<FinitePoint3, FiniteVector3>,
+    distance: f64,
+) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    offset_surface_jet(
+        SurfaceJet {
+            point: support.point,
+            first: Ok([support.du, support.dv]),
+            second: Ok([support.duu, support.duv, support.dvv]),
+        },
+        distance,
+    )?
+    .first_order()
+    .partials()
+}
+
 /// The jet of the offset by `distance` along the unit normal of `base`, or
 /// why its point has none. The offset point reads the base's first partials,
 /// and its first partials read the base's second. A distance or normal
@@ -8398,7 +8526,7 @@ fn polar_angle_differential(
         });
     let [u, v] = point.coordinates();
     Ok(Some(PolarAngle {
-        angle: v.atan2(u),
+        angle: FiniteReal::atan2(v, u),
         first,
         second,
     }))
@@ -8638,7 +8766,7 @@ fn offset_pcurve_evaluation(
             return Some(PcurveEvaluation::refused(limit));
         }
     };
-    let speed = tangent.u.hypot(tangent.v);
+    let speed = tangent.u.portable_hypot(tangent.v);
     if speed == 0.0 {
         return None;
     }
@@ -8703,8 +8831,8 @@ fn pcurve_uv_unsettled(
             let x_axis = circle_pcurve.x_axis();
             let y_axis = circle_pcurve.y_axis();
             let radius = circle_pcurve.radius();
-            let cosine = t.cos();
-            let sine = t.sin();
+            let cosine = t.portable_cos();
+            let sine = t.portable_sin();
             (
                 offset2(
                     center.get(),
@@ -8729,8 +8857,8 @@ fn pcurve_uv_unsettled(
             let y_axis = ellipse_pcurve.y_axis();
             let major_radius = ellipse_pcurve.major_radius();
             let minor_radius = ellipse_pcurve.minor_radius();
-            let cosine = t.cos();
-            let sine = t.sin();
+            let cosine = t.portable_cos();
+            let sine = t.portable_sin();
             (
                 offset2(
                     center.get(),
@@ -8753,8 +8881,8 @@ fn pcurve_uv_unsettled(
             let center = harmonic_pcurve.center();
             let cosine = harmonic_pcurve.cosine();
             let sine = harmonic_pcurve.sine();
-            let cosine_parameter = t.cos();
-            let sine_parameter = t.sin();
+            let cosine_parameter = t.portable_cos();
+            let sine_parameter = t.portable_sin();
             (
                 offset2(
                     center.get(),
@@ -8865,8 +8993,8 @@ fn pcurve_uv_unsettled(
             let axial_origin = polar_harmonic_pcurve.axial_origin().get();
             let axial_cos = polar_harmonic_pcurve.axial_cos().get();
             let axial_sin = polar_harmonic_pcurve.axial_sin().get();
-            let cosine = t.cos();
-            let sine = t.sin();
+            let cosine = t.portable_cos();
+            let sine = t.portable_sin();
             let x = radial_center.u + radial_cos.u * cosine + radial_sin.u * sine;
             let y = radial_center.v + radial_cos.v * cosine + radial_sin.v * sine;
             let dx = -radial_cos.u * sine + radial_sin.u * cosine;
@@ -9082,8 +9210,8 @@ fn pcurve_uv_unsettled(
                 ));
             };
             let phase = azimuth.get() - plane_phase;
-            let cosine = phase.cos();
-            let sine = phase.sin();
+            let cosine = phase.portable_cos();
+            let sine = phase.portable_sin();
             let scale = plane_slope.abs().max(1.0);
             let slope = plane_slope / scale;
             // The chart and its derivatives are finite exactly when the phase

@@ -11,12 +11,18 @@ use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::decode::text::design_record_id;
 use crate::ids::{self, native_stream};
+use crate::layout::design_parameter_comment_discriminated_prefix as comment_prefix;
+use crate::layout::design_parameter_comment_expression_trailer as comment_trailer;
+use crate::layout::design_parameter_compact_null_owner_prefix as null_owner;
+use crate::layout::design_parameter_compact_owned_expression_trailer as compact_trailer;
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
-use crate::layout::design_parameter_legacy_287_tail as legacy_287_tail;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
 use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::design_parameter_owner_prefix as owner_prefix;
+use crate::layout::design_parameter_tail as parameter_tail;
 use crate::layout::design_parameter_typed_compact_owned_prefix as typed;
+use crate::layout::design_parameter_wide_discriminated_prefix as wide_prefix;
+use crate::layout::design_parameter_wide_expression_trailer as wide_trailer;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::typed_reference_companion_prefix as typed_companion;
@@ -57,8 +63,7 @@ pub(crate) fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRec
     Ok(out)
 }
 
-/// Typed compact parameter frames in one Design `BulkStream` that match no
-/// parameter grammar.
+/// Parameter frames in one Design `BulkStream` that match no parameter grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UnparsedParameterRecords {
     /// Design `BulkStream` entry name.
@@ -67,23 +72,38 @@ pub(crate) struct UnparsedParameterRecords {
     pub(crate) count: usize,
 }
 
-/// Decoded Design parameters and the typed parameter frames left unparsed.
+/// A count of decoded parameters in one Design `BulkStream`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StreamParameterCount {
+    /// Design `BulkStream` entry name.
+    pub(crate) stream: String,
+    /// Number of decoded parameters.
+    pub(crate) count: usize,
+}
+
+/// Decoded Design parameters and the parameter frames left unparsed.
 #[derive(Debug, Default)]
 pub(crate) struct DecodedParameters {
     /// Canonical parameter records, sorted by identity.
     pub(crate) parameters: Vec<DesignParameter>,
-    /// Per-stream counts of typed parameter frames that match no grammar.
+    /// Per-stream counts of parameter frames that match no grammar.
     pub(crate) unparsed: Vec<UnparsedParameterRecords>,
+    /// Per-stream counts of decoded parameters whose trailer byte 3 is set.
+    pub(crate) trailer_flags: Vec<StreamParameterCount>,
+    /// Per-stream counts of decoded compact null-owner parameters.
+    pub(crate) null_owners: Vec<StreamParameterCount>,
 }
 
 /// Decode every indexed parameter record in each Design `BulkStream`.
 ///
-/// A frame shaped as a typed compact parameter that matches no parameter
-/// grammar is counted per stream so the caller reports it instead of
-/// dropping it silently.
+/// A frame whose tail names the stream's parameter collection and that matches
+/// no parameter grammar is counted per stream so the caller reports it instead
+/// of dropping it silently.
 pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameters, CodecError> {
     let mut out = Vec::new();
     let mut unparsed = Vec::new();
+    let mut trailer_flags = Vec::new();
+    let mut null_owners = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -94,23 +114,14 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
         let mut position = 0usize;
         let mut emitted_record_indices = HashSet::new();
         let mut unparsed_count = 0usize;
+        let mut trailer_flag_count = 0usize;
+        let mut null_owner_count = 0usize;
         while let Some(at) = next_indexed_record_offset(bytes, position) {
             let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
             let frame = &bytes[at..end];
-            let registered_tail = frame
-                .get(indexed_header::LEN..DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET)
-                == Some(&[0; 11])
-                && plain_parameter_tail_target(frame)
-                    .is_some_and(|target| tail_targets.contains(&target));
-            // A fixed tail `00 01 xx` followed by nine zero bytes also reads as a
-            // plain reference to record `xx`. When that record is registered
-            // under the parameter-tail type the registered grammar applies
-            // first; a frame it refuses is read again with the fixed tail.
-            let mut parsed = parse_design_parameter_with_tail(frame, registered_tail)?;
-            if parsed.is_none() && registered_tail {
-                parsed = parse_design_parameter_with_tail(frame, false)?;
-            }
-            if let Some(parsed) = parsed {
+            let grammar = parse_design_parameter(frame)?;
+            let refused = grammar.is_some() && tail_targets.refuses(frame);
+            if let Some(parsed) = grammar.filter(|_| !refused) {
                 // The Design primary index exposes one live header for each
                 // logical record index. Keep the first serialized parameter
                 // frame so stale copies cannot create duplicate owner
@@ -120,20 +131,25 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                     continue;
                 }
 
-                emitted_record_indices.insert(parsed.record_index);
-
-                out.push(locate_design_parameter(parsed, &entry.name, at)?);
+                let record_index = parsed.record_index;
+                let compact_flag = parsed.compact_flag;
+                let compact_null_owner = parsed.compact_null_owner;
+                match locate_design_parameter(parsed, &entry.name, at) {
+                    Some(parameter) => {
+                        emitted_record_indices.insert(record_index);
+                        out.push(parameter);
+                        trailer_flag_count += usize::from(compact_flag);
+                        null_owner_count += usize::from(compact_null_owner);
+                    }
+                    None => unparsed_count = next_unparsed_count(unparsed_count)?,
+                }
                 position = end;
             } else {
-                if registered_tail
-                    || is_typed_parameter_frame(frame)
-                    || is_untyped_parameter_frame(frame)
+                if is_typed_parameter_frame(frame)
+                    || tail_targets.marks_parameter_frame(frame)
+                    || (refused && !tail_targets.collections.is_empty())
                 {
-                    unparsed_count = unparsed_count.checked_add(1).ok_or_else(|| {
-                        CodecError::malformed(
-                            "Fusion Design unparsed parameter count exceeds the platform range",
-                        )
-                    })?;
+                    unparsed_count = next_unparsed_count(unparsed_count)?;
                 }
                 position = at + 1;
             }
@@ -144,11 +160,25 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                 count: unparsed_count,
             });
         }
+        if trailer_flag_count != 0 {
+            trailer_flags.push(StreamParameterCount {
+                stream: entry.name.clone(),
+                count: trailer_flag_count,
+            });
+        }
+        if null_owner_count != 0 {
+            null_owners.push(StreamParameterCount {
+                stream: entry.name.clone(),
+                count: null_owner_count,
+            });
+        }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(DecodedParameters {
         parameters: out,
         unparsed,
+        trailer_flags,
+        null_owners,
     })
 }
 
@@ -158,6 +188,7 @@ pub(in crate::design) struct ParsedDesignParameter {
     record_index: u32,
     source_ordinal: u32,
     source_kind: String,
+    document: Option<bool>,
     owner_record_index: Option<u32>,
     family_discriminator: Option<crate::records::parameters::DesignParameterDiscriminator>,
     /// Frame-relative offset of the family discriminator.
@@ -170,6 +201,13 @@ pub(in crate::design) struct ParsedDesignParameter {
     name_offset: FrameRelative,
     evaluated_value: f64,
     evaluated_value_offset: FrameRelative,
+    comment: Option<ParsedParameterUnit>,
+    flags: crate::records::parameters::DesignParameterFlags,
+    text_value: Option<ParsedParameterUnit>,
+    /// Whether byte 3 of the five-byte compact expression trailer is `1`.
+    compact_flag: bool,
+    /// Whether the frame is the compact null-owner form.
+    compact_null_owner: bool,
 }
 
 /// Unit token parsed in frame-relative coordinates.
@@ -200,6 +238,20 @@ impl ParsedDesignParameter {
             }),
             None => None,
         };
+        let comment = match self.comment {
+            Some(comment) => Some(crate::records::identity::RecordedValue {
+                value: comment.value,
+                offset: comment.offset.absolute(frame_start)?,
+            }),
+            None => None,
+        };
+        let text_value = match self.text_value {
+            Some(text) => Some(crate::records::identity::RecordedValue {
+                value: text.value,
+                offset: text.offset.absolute(frame_start)?,
+            }),
+            None => None,
+        };
         crate::records::parameters::DesignParameter::try_from(
             crate::records::parameters::DesignParameterDraft {
                 id: ids::native_design_parameter_id(stream, frame_start),
@@ -207,10 +259,11 @@ impl ParsedDesignParameter {
                 class_tag: self.class_tag,
                 record_index: self.record_index,
                 source_ordinal: self.source_ordinal,
-                source: crate::records::parameters::DesignParameterSource::new(
+                source: crate::records::parameters::DesignParameterSource::from_document_flag(
                     self.source_kind,
                     self.owner_record_index,
                     family_discriminator,
+                    self.document,
                 )
                 .ok()?,
                 expression: self.expression,
@@ -223,6 +276,12 @@ impl ParsedDesignParameter {
                 evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
             },
         )
+        .ok()?
+        .with_flags(self.flags)
+        .ok()?
+        .with_comment(comment)
+        .ok()?
+        .with_text_value(text_value)
         .ok()
     }
 }
@@ -244,30 +303,24 @@ pub(in crate::design) fn parse_design_parameter_record(payload: &[u8]) -> Option
 #[cfg(test)]
 const TEST_PARAMETER_STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
 
-/// Locate one parsed parameter frame in its containing stream.
+/// Locate one parsed parameter frame in its containing stream. A frame that
+/// closes the grammar with fields no parameter record admits yields `None`.
 fn locate_design_parameter(
     parsed: ParsedDesignParameter,
     stream: &str,
     at: usize,
-) -> Result<DesignParameter, CodecError> {
-    let frame_start = u64::try_from(at).map_err(|_| {
-        CodecError::malformed("Fusion Design parameter frame offset exceeds the addressable stream")
-    })?;
-    parsed.into_record(stream, frame_start).ok_or_else(|| {
-        CodecError::malformed("Fusion Design parameter frame has invalid fields or offsets")
+) -> Option<DesignParameter> {
+    parsed.into_record(stream, u64::try_from(at).ok()?)
+}
+
+fn next_unparsed_count(count: usize) -> Result<usize, CodecError> {
+    count.checked_add(1).ok_or_else(|| {
+        CodecError::malformed("Fusion Design unparsed parameter count exceeds the platform range")
     })
 }
 
-#[cfg(test)]
 pub(in crate::design) fn parse_design_parameter(
     payload: &[u8],
-) -> Result<Option<ParsedDesignParameter>, CodecError> {
-    parse_design_parameter_with_tail(payload, false)
-}
-
-fn parse_design_parameter_with_tail(
-    payload: &[u8],
-    registered_tail: bool,
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
     let parsed = (|| {
         if View::u32_le_at(payload, 0) != Some(3) || payload.get(11..22) != Some(&[0; 11]) {
@@ -289,172 +342,46 @@ fn parse_design_parameter_with_tail(
             };
         }
         if class_tag.as_str() == "287" {
-            return match parse_legacy_287_design_parameter(payload, class_tag, record_index) {
-                Ok(value) => value.map(Ok),
-                Err(error) => Some(Err(error)),
-            };
+            match parse_legacy_287_design_parameter(payload, class_tag.clone(), record_index) {
+                Ok(Some(value)) => return Some(Ok(value)),
+                Err(error) => return Some(Err(error)),
+                Ok(None) => {}
+            }
         }
         let compact_owned = payload.get(11..26) == Some(&[0; 15])
             && payload.get(30) == Some(&1)
             && payload.get(35..41) == Some(&[0; 6]);
         let discriminated = !compact_owned && payload.get(30) == Some(&0);
-        let shift = if discriminated && wide_discriminated_parameter(payload) {
-            WIDE_DISCRIMINATED_SHIFT
+        let header = if compact_owned || discriminated {
+            parse_header_form(payload, class_tag.clone(), record_index, discriminated, 0).or_else(
+                || {
+                    wide_discriminated_parameter(payload).then(|| {
+                        parse_header_form(
+                            payload,
+                            class_tag.clone(),
+                            record_index,
+                            true,
+                            WIDE_DISCRIMINATED_SHIFT,
+                        )
+                    })?
+                },
+            )
         } else {
-            0
-        };
-        let discriminator_at = DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET + shift;
-        if !compact_owned && !discriminated {
-            return match parse_legacy_design_parameter(payload, class_tag, record_index) {
+            match parse_legacy_design_parameter(payload, class_tag.clone(), record_index) {
                 Ok(value) => value.map(Ok),
                 Err(error) => Some(Err(error)),
-            };
-        }
-        let (family_discriminator, source_ordinal, owner_record_index, expression_at, trailer_len) =
-            if discriminated {
-                let discriminator =
-                    crate::records::parameters::DesignParameterDiscriminator::try_from(
-                        View::u64_le_at(payload, discriminator_at)?,
-                    )
-                    .ok()?;
-                let owner = match payload.get(35 + shift)? {
-                    0 => (None, 36 + shift, 9),
-                    1 if payload.get(40 + shift..46 + shift) == Some(&[0; 6]) => {
-                        (Some(View::u32_le_at(payload, 36 + shift)?), 46 + shift, 9)
-                    }
-                    _ => return None,
-                };
-                (
-                    Some(discriminator),
-                    View::u32_le_at(payload, 31 + shift)?,
-                    owner.0,
-                    owner.1,
-                    owner.2,
-                )
-            } else if compact_owned {
-                (
-                    None,
-                    View::u32_le_at(payload, 26)?,
-                    Some(View::u32_le_at(payload, 31)?),
-                    41,
-                    5,
-                )
-            } else {
-                return None;
-            };
-        let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
-        let expression_trailer = payload.get(expression_end..expression_end + trailer_len)?;
-        let long_document_trailer = discriminated
-            && owner_record_index.is_none()
-            && payload.get(expression_end..expression_end + 10)
-                == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-        let valid_expression_trailer = if discriminated {
-            long_document_trailer || is_flagged_expression_trailer(expression_trailer)
-        } else {
-            expression_trailer.iter().all(|byte| *byte == 0)
-        };
-        if !valid_expression_trailer {
-            return None;
-        }
-        let prefixed_kind = if long_document_trailer
-            || (discriminated
-                && owner_record_index.is_some()
-                && payload.get(expression_end..expression_end + 10) == Some(&[0; 10]))
-        {
-            lp_utf16_bounded(payload, expression_end + 10, 1..=256)
-        } else {
-            None
-        };
-        let extended_owned_kind = if shift == WIDE_DISCRIMINATED_SHIFT
-            && family_discriminator.is_some_and(|value| value.code() == 6)
-            && owner_record_index.is_some()
-            && payload.get(expression_end..expression_end + 11) == Some(&[0; 11])
-        {
-            lp_utf16_bounded(payload, expression_end + 11, 1..=256)
-        } else {
-            None
-        };
-        let source_kind_at = if prefixed_kind.is_some() {
-            expression_end + 10
-        } else if extended_owned_kind.is_some() {
-            expression_end + 11
-        } else {
-            expression_end + trailer_len
-        };
-        let (source_kind, source_kind_end) = match prefixed_kind.or(extended_owned_kind) {
-            Some(value) => value,
-            None => parameter_text!(payload, source_kind_at, 1..=256),
-        };
-        if discriminated
-            && !long_document_trailer
-            && (expression_trailer[DOCUMENT_TRAILER_FLAG] == 1)
-                != (source_kind == TYPED_DOCUMENT_SOURCE_KIND)
-        {
-            return None;
-        }
-        let first_at = source_kind_end + usize::from(discriminated) * 4;
-        if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
-            return None;
-        }
-        let (unit, name, name_at, name_end) = if View::u32_le_at(payload, first_at) == Some(0) {
-            let name_at = first_at + 4;
-            let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
-            (None, name, name_at, name_end)
-        } else {
-            let (first, first_end) = parameter_text!(payload, first_at, 1..=256);
-            let second_field = lp_utf16_bounded(payload, first_end, 1..=256);
-            if let Some((second, second_end)) = second_field {
-                (
-                    Some(ParsedParameterUnit {
-                        value: first,
-                        offset: FrameRelative(i128::from(u64_from_index(first_at + 4))),
-                    }),
-                    second,
-                    first_end,
-                    second_end,
-                )
-            } else {
-                (None, first, first_at, first_end)
             }
         };
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
-        let tail = payload.get(name_end + 8..)?;
-        if tail.len() != legacy_287_tail::LEN
-            || tail[0..2] != [0, 1]
-            || (!registered_tail && tail[3..].iter().any(|byte| *byte != 0))
-            // A registered plain tail stores the target record identity
-            // where the fixed tail stores its family marker; it selects the
-            // `00 01 13` family of the discriminated form only.
-            || (source_kind_at == expression_end + 11 && (registered_tail || tail[2] != 16))
-            || !(if registered_tail {
-                family_discriminator.is_some()
-                    && (valid_design_parameter_family(family_discriminator, &source_kind, 19)
-                        || (family_discriminator.is_some_and(|value| value.code() == 6)
-                            && source_kind != TYPED_DOCUMENT_SOURCE_KIND))
-            } else {
-                valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
+        header
+            .or_else(|| {
+                parse_comment_discriminated_parameter(payload, class_tag.clone(), record_index)
             })
-            || source_kind.is_empty()
-        {
-            return None;
-        }
-        Some(Ok(ParsedDesignParameter {
-            class_tag,
-            record_index,
-            source_ordinal,
-            source_kind,
-            owner_record_index,
-            family_discriminator,
-            discriminator_offset: u64_from_index(discriminator_at),
-            expression,
-            expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
-            source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
-            unit,
-            name,
-            name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
-            evaluated_value,
-            evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
-        }))
+            .or_else(|| {
+                match parse_compact_null_owner_design_parameter(payload, class_tag, record_index) {
+                    Ok(value) => value.map(Ok),
+                    Err(error) => Some(Err(error)),
+                }
+            })
     })();
     parsed.transpose()
 }
@@ -470,26 +397,368 @@ fn is_flagged_expression_trailer(trailer: &[u8]) -> bool {
         && trailer[4..].iter().all(|byte| *byte <= 1)
 }
 
-/// Whether a discriminated parameter frame stores four further zero bytes
-/// before its discriminator: the discriminator at offset 22 is not one,
-/// offsets 11 through 25 are zero, a discriminator is at offset 26, and
-/// offset 34 is zero.
-fn wide_discriminated_parameter(payload: &[u8]) -> bool {
-    let discriminator = |at| {
-        View::u64_le_at(payload, at).is_some_and(|value| {
-            crate::records::parameters::DesignParameterDiscriminator::try_from(value).is_ok()
-        })
+fn trailer_flag(bytes: &[u8], at: usize) -> Option<bool> {
+    match bytes.get(at)? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+/// Flags of a wide expression trailer.
+#[derive(Clone, Copy)]
+struct WideTrailerFlags {
+    record: crate::records::parameters::DesignParameterFlags,
+    text: bool,
+    document: bool,
+}
+
+/// Flags of the wide expression trailer that starts `bytes`.
+fn wide_expression_trailer_flags(bytes: &[u8]) -> Option<WideTrailerFlags> {
+    if bytes.get(wide_trailer::ZERO_RUN_5..wide_trailer::DRIVEN) != Some(&[0; 5][..])
+        || bytes.get(wide_trailer::RESERVED_7) != Some(&wide_trailer::RESERVED_7_VALUE)
+        || bytes.get(wide_trailer::RESERVED_9) != Some(&wide_trailer::RESERVED_9_VALUE)
+    {
+        return None;
+    }
+    Some(WideTrailerFlags {
+        record: crate::records::parameters::DesignParameterFlags {
+            driven: trailer_flag(bytes, wide_trailer::DRIVEN)?,
+            favorite: trailer_flag(bytes, wide_trailer::FAVORITE)?,
+        },
+        text: trailer_flag(bytes, wide_trailer::TEXT)?,
+        document: trailer_flag(bytes, wide_trailer::DOCUMENT)?,
+    })
+}
+
+/// Driven flag of a compact owned expression trailer.
+fn compact_trailer_driven(trailer: &[u8]) -> Option<bool> {
+    if trailer.len() != compact_trailer::LEN
+        || trailer.get(compact_trailer::RESERVED_0) != Some(&compact_trailer::RESERVED_0_VALUE)
+        || trailer.get(compact_trailer::ZERO_RUN_3..) != Some(&[0; 3][..])
+    {
+        return None;
+    }
+    trailer_flag(trailer, compact_trailer::DRIVEN)
+}
+
+/// Parse the discriminated or ordinary compact owned form. `shift` counts the
+/// further zero bytes before the discriminator of the wide discriminated form.
+fn parse_header_form(
+    payload: &[u8],
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+    discriminated: bool,
+    shift: usize,
+) -> Option<Result<ParsedDesignParameter, CodecError>> {
+    let discriminator_at = DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET + shift;
+    let comment = if discriminated && shift == WIDE_DISCRIMINATED_SHIFT {
+        Some(wide_parameter_comment(payload)?)
+    } else {
+        None
     };
-    !discriminator(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET)
-        && payload.get(11..26) == Some(&[0; 15])
-        && discriminator(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET + WIDE_DISCRIMINATED_SHIFT)
-        && payload.get(34) == Some(&0)
+    let field_shift = shift
+        + comment
+            .as_ref()
+            .map_or(0, |(_, end)| end - wide_prefix::LEN);
+    let (family_discriminator, source_ordinal, owner_record_index, expression_at, trailer_len) =
+        if discriminated {
+            let discriminator = if comment.is_some() {
+                u64::from(View::u32_le_at(payload, wide_prefix::FAMILY_DISCRIMINATOR)?)
+            } else {
+                View::u64_le_at(payload, discriminator_at)?
+            };
+            let discriminator =
+                crate::records::parameters::DesignParameterDiscriminator::try_from(discriminator)
+                    .ok()?;
+            let owner = match payload.get(35 + field_shift)? {
+                0 => (None, 36 + field_shift, 9),
+                1 if payload.get(40 + field_shift..46 + field_shift) == Some(&[0; 6]) => (
+                    Some(View::u32_le_at(payload, 36 + field_shift)?),
+                    46 + field_shift,
+                    9,
+                ),
+                _ => return None,
+            };
+            (
+                Some(discriminator),
+                View::u32_le_at(payload, 31 + field_shift)?,
+                owner.0,
+                owner.1,
+                owner.2,
+            )
+        } else {
+            (
+                None,
+                View::u32_le_at(payload, 26)?,
+                Some(View::u32_le_at(payload, 31)?),
+                41,
+                compact_trailer::LEN,
+            )
+        };
+    let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
+    let expression_trailer = payload.get(expression_end..expression_end + trailer_len)?;
+    let long_document_trailer = discriminated
+        && owner_record_index.is_none()
+        && payload.get(expression_end..expression_end + 10)
+            == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+    let wide_flags = (shift == WIDE_DISCRIMINATED_SHIFT
+        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 5 | 6)))
+    .then(|| wide_expression_trailer_flags(payload.get(expression_end..)?))
+    .flatten()
+    .filter(|wide| wide.document == owner_record_index.is_none());
+    let compact_driven = if discriminated {
+        None
+    } else {
+        compact_trailer_driven(expression_trailer)
+    };
+    let valid_expression_trailer = if discriminated {
+        long_document_trailer
+            || wide_flags.is_some()
+            || is_flagged_expression_trailer(expression_trailer)
+    } else {
+        compact_driven.is_some()
+    };
+    if !valid_expression_trailer {
+        return None;
+    }
+    let prefixed_kind = if long_document_trailer
+        || (discriminated
+            && owner_record_index.is_some()
+            && payload.get(expression_end..expression_end + 10) == Some(&[0; 10]))
+    {
+        lp_utf16_bounded(payload, expression_end + 10, 1..=256)
+    } else {
+        None
+    };
+    let extended_kind = if wide_flags.is_some() {
+        lp_utf16_bounded(payload, expression_end + wide_trailer::LEN, 1..=256)
+    } else {
+        None
+    };
+    let wide_flags = wide_flags.filter(|_| extended_kind.is_some());
+    let source_kind_at = if prefixed_kind.is_some() {
+        expression_end + 10
+    } else if extended_kind.is_some() {
+        expression_end + wide_trailer::LEN
+    } else {
+        expression_end + trailer_len
+    };
+    let (source_kind, source_kind_end) = match prefixed_kind.or(extended_kind) {
+        Some(value) => value,
+        None => parameter_text!(payload, source_kind_at, 1..=256),
+    };
+    let document_flag = match wide_flags {
+        Some(wide) => wide.document,
+        None => expression_trailer.get(DOCUMENT_TRAILER_FLAG) == Some(&1),
+    };
+    if discriminated
+        && !long_document_trailer
+        && document_flag != crate::records::parameters::is_document_source_kind(&source_kind)
+    {
+        return None;
+    }
+    let flags = match (wide_flags, compact_driven) {
+        (Some(wide), _) => wide.record,
+        (None, Some(driven)) => crate::records::parameters::DesignParameterFlags {
+            driven,
+            favorite: false,
+        },
+        (None, None) => crate::records::parameters::DesignParameterFlags::default(),
+    };
+    let (text_value, first_at) = if discriminated {
+        lp_utf16_bounded(payload, source_kind_end, 0..=4096)?
+    } else {
+        (String::new(), source_kind_end)
+    };
+    let text = wide_flags.is_some_and(|wide| wide.text);
+    if !text && !text_value.is_empty() {
+        return None;
+    }
+    let (unit, name, name_at, name_end) = if View::u32_le_at(payload, first_at) == Some(0) {
+        let name_at = first_at + 4;
+        let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
+        (None, name, name_at, name_end)
+    } else {
+        let (first, first_end) = parameter_text!(payload, first_at, 1..=256);
+        let second_field = lp_utf16_bounded(payload, first_end, 1..=256);
+        if let Some((second, second_end)) = second_field {
+            (
+                Some(ParsedParameterUnit {
+                    value: first,
+                    offset: FrameRelative(i128::from(u64_from_index(first_at + 4))),
+                }),
+                second,
+                first_end,
+                second_end,
+            )
+        } else {
+            (None, first, first_at, first_end)
+        }
+    };
+    let evaluated_value = View::f64_le_at(payload, name_end)?;
+    if !is_parameter_tail(payload.get(name_end + 8..)?) || source_kind.is_empty() {
+        return None;
+    }
+    Some(Ok(ParsedDesignParameter {
+        class_tag,
+        record_index,
+        source_ordinal,
+        source_kind,
+        document: None,
+        owner_record_index,
+        family_discriminator,
+        discriminator_offset: u64_from_index(discriminator_at),
+        expression,
+        expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
+        source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
+        unit,
+        name,
+        name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
+        evaluated_value,
+        evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+        comment: comment
+            .filter(|(text, _)| !text.is_empty())
+            .map(|(value, _)| ParsedParameterUnit {
+                value,
+                offset: FrameRelative(i128::from(u64_from_index(wide_prefix::LEN))),
+            }),
+        flags,
+        text_value: text.then(|| ParsedParameterUnit {
+            value: text_value,
+            offset: FrameRelative(i128::from(u64_from_index(source_kind_end + 4))),
+        }),
+        compact_flag: false,
+        compact_null_owner: false,
+    }))
+}
+
+fn parse_comment_discriminated_parameter(
+    payload: &[u8],
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+) -> Option<Result<ParsedDesignParameter, CodecError>> {
+    if payload.get(comment_prefix::ZERO_RUN_11..comment_prefix::FAMILY_DISCRIMINATOR)
+        != Some(&[0; 11])
+    {
+        return None;
+    }
+    let discriminator = View::u32_le_at(payload, comment_prefix::FAMILY_DISCRIMINATOR)?;
+    let family_discriminator = crate::records::parameters::DesignParameterDiscriminator::try_from(
+        u64::from(discriminator),
+    )
+    .ok()?;
+    let (comment, comment_end) =
+        lp_utf16_bounded(payload, comment_prefix::COMMENT_LENGTH, 0..=4096)?;
+    let source_ordinal = View::u32_le_at(payload, comment_end)?;
+    let owner_at = comment_end.checked_add(4)?;
+    let (owner_record_index, expression_at) = match payload.get(owner_at)? {
+        0 => (None, owner_at.checked_add(1)?),
+        1 => {
+            let index_at = owner_at.checked_add(1)?;
+            let zeros_at = index_at.checked_add(4)?;
+            let expression_at = zeros_at.checked_add(6)?;
+            if payload.get(zeros_at..expression_at) != Some(&[0; 6]) {
+                return None;
+            }
+            (Some(View::u32_le_at(payload, index_at)?), expression_at)
+        }
+        _ => return None,
+    };
+    let (expression, expression_end) = lp_utf16_bounded(payload, expression_at, 1..=256)?;
+    let source_kind_at = expression_end.checked_add(comment_trailer::LEN)?;
+    let trailer = payload.get(expression_end..source_kind_at)?;
+    if trailer.get(comment_trailer::RESERVED_1) != Some(&comment_trailer::RESERVED_1_VALUE)
+        || trailer.get(comment_trailer::RESERVED_3) != Some(&comment_trailer::RESERVED_3_VALUE)
+    {
+        return None;
+    }
+    let flags = crate::records::parameters::DesignParameterFlags {
+        driven: trailer_flag(trailer, comment_trailer::DRIVEN)?,
+        favorite: trailer_flag(trailer, comment_trailer::FAVORITE)?,
+    };
+    let document = trailer_flag(trailer, comment_trailer::DOCUMENT)?;
+    if document && owner_record_index.is_some() {
+        return None;
+    }
+    let (source_kind, first_at) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
+    let reading = |with_unit: bool| {
+        let (unit, name_at) = if with_unit {
+            let (value, end) = lp_utf16_bounded(payload, first_at, 0..=256)?;
+            (
+                (!value.is_empty()).then(|| ParsedParameterUnit {
+                    value,
+                    offset: FrameRelative(i128::from(u64_from_index(first_at + 4))),
+                }),
+                end,
+            )
+        } else {
+            (None, first_at)
+        };
+        let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
+        let evaluated_value = View::f64_le_at(payload, name_end)?;
+        if !is_parameter_tail(payload.get(name_end.checked_add(8)?..)?) {
+            return None;
+        }
+        Some((unit, name, name_at, name_end, evaluated_value))
+    };
+    let ((Some(value), None) | (None, Some(value))) = (reading(true), reading(false)) else {
+        return None;
+    };
+    let (unit, name, name_at, name_end, evaluated_value) = value;
+    Some(Ok(ParsedDesignParameter {
+        class_tag,
+        record_index,
+        source_ordinal,
+        source_kind,
+        document: Some(document),
+        owner_record_index,
+        family_discriminator: Some(family_discriminator),
+        discriminator_offset: u64_from_index(comment_prefix::FAMILY_DISCRIMINATOR),
+        expression,
+        expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
+        source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
+        unit,
+        name,
+        name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
+        evaluated_value,
+        evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+        comment: (!comment.is_empty()).then(|| ParsedParameterUnit {
+            value: comment,
+            offset: FrameRelative(i128::from(u64_from_index(comment_prefix::LEN))),
+        }),
+        flags,
+        text_value: None,
+        compact_flag: false,
+        compact_null_owner: false,
+    }))
+}
+
+/// Whether a discriminated parameter frame can store four further zero bytes
+/// before its discriminator: offsets 11 through 25 are zero, a discriminator is
+/// at offset 26, and a parameter comment follows. Discriminator 0 leaves offsets
+/// 22 through 29 zero, which also read as a discriminator at offset 22.
+fn wide_discriminated_parameter(payload: &[u8]) -> bool {
+    payload.get(wide_prefix::ZERO_RUN_15..wide_prefix::FAMILY_DISCRIMINATOR) == Some(&[0; 15])
+        && View::u32_le_at(payload, wide_prefix::FAMILY_DISCRIMINATOR).is_some_and(|value| {
+            crate::records::parameters::DesignParameterDiscriminator::try_from(u64::from(value))
+                .is_ok()
+        })
+        && wide_parameter_comment(payload).is_some()
+}
+
+/// The LP-UTF16 comment of a wide discriminated parameter and the offset after it.
+fn wide_parameter_comment(payload: &[u8]) -> Option<(String, usize)> {
+    if *payload.get(wide_prefix::RESERVED_30)? != wide_prefix::RESERVED_30_VALUE {
+        return None;
+    }
+    lp_utf16_bounded(payload, wide_prefix::COMMENT_LENGTH, 0..=4096)
 }
 
 /// Parse the class-287 owned parameter family.
 ///
-/// This family uses the compact-owned prefix and a class-specific `0xAF` tail.
-/// Its expression is followed by one of the two fixed five-byte trailers.
+/// This family uses the compact-owned prefix. Its expression is followed by one
+/// of the two fixed five-byte trailers.
 fn parse_legacy_287_design_parameter(
     payload: &[u8],
     class_tag: crate::records::references::DesignClassTag,
@@ -504,104 +773,205 @@ fn parse_legacy_287_design_parameter(
         }
         let source_ordinal = View::u32_le_at(payload, legacy_287::SOURCE_ORDINAL)?;
         let owner_record_index = View::u32_le_at(payload, legacy_287::OWNER_RECORD_INDEX)?;
-        let (expression, expression_end) =
-            parameter_text!(payload, legacy_287::EXPRESSION_LENGTH, 1..=256);
-        let expression_trailer_end =
-            expression_end.checked_add(CLASS_287_EXPRESSION_TRAILER_LEN)?;
-        let expression_trailer = payload.get(expression_end..expression_trailer_end)?;
-        if !matches!(expression_trailer, [0, 0, 0, 0 | 1, 0]) {
-            return None;
-        }
-        let source_kind_at = expression_trailer_end;
-        let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
-        let (unit, name, name_at, name_end) =
-            if View::u32_le_at(payload, source_kind_end) == Some(0) {
-                let name_at = source_kind_end.checked_add(4)?;
-                let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
-                (None, name, name_at, name_end)
-            } else {
-                let (unit, unit_end) = parameter_text!(payload, source_kind_end, 1..=64);
-                let (name, name_end) = parameter_text!(payload, unit_end, 1..=256);
-                let unit_offset = source_kind_end.checked_add(4)?;
-                (
-                    Some(ParsedParameterUnit {
-                        value: unit,
-                        offset: FrameRelative(i128::try_from(unit_offset).ok()?),
-                    }),
-                    name,
-                    unit_end,
-                    name_end,
-                )
-            };
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
-        let tail_start = name_end.checked_add(8)?;
-        let tail = payload.get(tail_start..)?;
-        if tail.len() != legacy_287_tail::LEN
-            || tail[..2] != legacy_287_tail::TAIL_PREFIX_VALUE
-            || tail[legacy_287_tail::FAMILY_MARKER] != legacy_287_tail::FAMILY_MARKER_VALUE
-            || tail[legacy_287_tail::ZERO_RUN_9..]
-                .iter()
-                .any(|byte| *byte != 0)
-            || source_kind.is_empty()
-        {
-            return None;
-        }
-        Some(Ok(ParsedDesignParameter {
+        compact_trailer_parameter(
+            payload,
             class_tag,
             record_index,
             source_ordinal,
-            source_kind,
-            owner_record_index: Some(owner_record_index),
-            family_discriminator: None,
-            discriminator_offset: 0,
-            expression,
-            expression_offset: FrameRelative(
-                i128::try_from(legacy_287::EXPRESSION_LENGTH + 4).ok()?,
-            ),
-            source_kind_offset: FrameRelative(i128::try_from(source_kind_at.checked_add(4)?).ok()?),
-            unit,
-            name,
-            name_offset: FrameRelative(i128::try_from(name_at.checked_add(4)?).ok()?),
-            evaluated_value,
-            evaluated_value_offset: FrameRelative(i128::try_from(name_end).ok()?),
-        }))
+            Some(owner_record_index),
+            legacy_287::EXPRESSION_LENGTH,
+        )
     })();
     parsed.transpose()
 }
 
+/// Read a class-372 frame in the compact prefix with the null owner.
+fn parse_compact_null_owner_design_parameter(
+    payload: &[u8],
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+) -> Result<Option<ParsedDesignParameter>, CodecError> {
+    let parsed = (|| {
+        if class_tag.as_str() != COMPACT_NULL_OWNER_CLASS_TAG
+            || payload.get(null_owner::ZERO_RUN_15..null_owner::SOURCE_ORDINAL) != Some(&[0; 15])
+            || payload.get(null_owner::OWNER_MARKER) != Some(&null_owner::OWNER_MARKER_VALUE)
+        {
+            return None;
+        }
+        let source_ordinal = View::u32_le_at(payload, null_owner::SOURCE_ORDINAL)?;
+        compact_trailer_parameter(
+            payload,
+            class_tag,
+            record_index,
+            source_ordinal,
+            None,
+            null_owner::EXPRESSION_LENGTH,
+        )
+    })();
+    parsed.transpose()
+}
+
+/// The remainder shared by the class-287 and compact null-owner forms: the
+/// LP-UTF16 expression at `expression_at`, the five-byte expression trailer,
+/// `source_kind`, the optional unit, the name, the f64 evaluated scalar, and
+/// the twelve-byte parameter tail at the frame end.
+fn compact_trailer_parameter(
+    payload: &[u8],
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+    source_ordinal: u32,
+    owner_record_index: Option<u32>,
+    expression_at: usize,
+) -> Option<Result<ParsedDesignParameter, CodecError>> {
+    let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
+    let expression_trailer_end = expression_end.checked_add(CLASS_287_EXPRESSION_TRAILER_LEN)?;
+    let expression_trailer = payload.get(expression_end..expression_trailer_end)?;
+    let compact_flag = match expression_trailer {
+        [0, 0, 0, flag @ (0 | 1), 0] => *flag == 1,
+        _ => return None,
+    };
+    let source_kind_at = expression_trailer_end;
+    let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
+    let (unit, name, name_at, name_end) = if View::u32_le_at(payload, source_kind_end) == Some(0) {
+        let name_at = source_kind_end.checked_add(4)?;
+        let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
+        (None, name, name_at, name_end)
+    } else {
+        let (unit, unit_end) = parameter_text!(payload, source_kind_end, 1..=64);
+        let (name, name_end) = parameter_text!(payload, unit_end, 1..=256);
+        let unit_offset = source_kind_end.checked_add(4)?;
+        (
+            Some(ParsedParameterUnit {
+                value: unit,
+                offset: FrameRelative(i128::try_from(unit_offset).ok()?),
+            }),
+            name,
+            unit_end,
+            name_end,
+        )
+    };
+    let evaluated_value = View::f64_le_at(payload, name_end)?;
+    let tail_start = name_end.checked_add(8)?;
+    if !is_parameter_tail(payload.get(tail_start..)?) || source_kind.is_empty() {
+        return None;
+    }
+    Some(Ok(ParsedDesignParameter {
+        class_tag,
+        record_index,
+        source_ordinal,
+        source_kind,
+        document: None,
+        owner_record_index,
+        family_discriminator: None,
+        discriminator_offset: 0,
+        expression,
+        expression_offset: FrameRelative(i128::try_from(expression_at.checked_add(4)?).ok()?),
+        source_kind_offset: FrameRelative(i128::try_from(source_kind_at.checked_add(4)?).ok()?),
+        unit,
+        name,
+        name_offset: FrameRelative(i128::try_from(name_at.checked_add(4)?).ok()?),
+        evaluated_value,
+        evaluated_value_offset: FrameRelative(i128::try_from(name_end).ok()?),
+        comment: None,
+        flags: crate::records::parameters::DesignParameterFlags::default(),
+        text_value: None,
+        compact_flag,
+        compact_null_owner: owner_record_index.is_none(),
+    }))
+}
+
 const CLASS_287_EXPRESSION_TRAILER_LEN: usize = 5;
 
+/// Class tag of the compact null-owner parameter form.
+const COMPACT_NULL_OWNER_CLASS_TAG: &str = "372";
+
+/// Design type of a parameter collection, which every parameter tail names.
 const PARAMETER_TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
 
-/// Byte length of the typed parameter tail: `u8 0` plus a typed local reference.
-const TYPED_PARAMETER_TAIL_LEN: usize = 52;
+/// Records that the paired Design `MetaStream` registers for one `BulkStream`.
+struct ParameterTailTargets {
+    /// Records registered to the parameter-collection type.
+    collections: HashSet<u64>,
+    /// Records registered to every other type.
+    others: HashSet<u64>,
+}
 
-fn parameter_tail_targets(scan: &ContainerScan, stream: &str) -> Result<HashSet<u64>, CodecError> {
-    let mut targets = HashSet::new();
+impl ParameterTailTargets {
+    /// Whether `frame` is shaped as a parameter record by its parameter tail.
+    fn marks_parameter_frame(&self, frame: &[u8]) -> bool {
+        parameter_tail_collection(frame).is_some_and(|target| {
+            let target = u64::from(target);
+            if self.collections.is_empty() {
+                frame.get(indexed_header::LEN..DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET)
+                    == Some(&[0; 11])
+                    && !self.others.contains(&target)
+            } else {
+                self.collections.contains(&target)
+            }
+        })
+    }
+
+    /// Whether the twelve-byte tail of `frame` names a record that cannot be
+    /// its parameter collection.
+    fn refuses(&self, frame: &[u8]) -> bool {
+        parameter_tail_collection(frame).is_some_and(|target| {
+            let target = u64::from(target);
+            if self.collections.is_empty() {
+                self.others.contains(&target)
+            } else {
+                !self.collections.contains(&target)
+            }
+        })
+    }
+}
+
+fn parameter_tail_targets(
+    scan: &ContainerScan,
+    stream: &str,
+) -> Result<ParameterTailTargets, CodecError> {
+    let mut targets = ParameterTailTargets {
+        collections: HashSet::new(),
+        others: HashSet::new(),
+    };
     if let Some(meta) = super::meta::metadata_for_bulk_stream(scan, stream)? {
         for ty in &meta.types {
-            if ty
+            let records = if ty
                 .type_guid
                 .as_str()
                 .eq_ignore_ascii_case(PARAMETER_TAIL_TYPE_GUID)
             {
-                targets.extend(ty.entities.values().copied());
-            }
+                &mut targets.collections
+            } else {
+                &mut targets.others
+            };
+            records.extend(ty.entities.values().copied());
         }
     }
     Ok(targets)
 }
 
-fn plain_parameter_tail_target(payload: &[u8]) -> Option<u64> {
-    let start = payload.len().checked_sub(legacy_287_tail::LEN)?;
-    if payload.get(start) != Some(&0) {
+/// The parameter collection named by the twelve-byte parameter tail that ends
+/// `frame`.
+fn parameter_tail_collection(frame: &[u8]) -> Option<u32> {
+    let tail = frame.get(frame.len().checked_sub(parameter_tail::LEN)?..)?;
+    if tail[parameter_tail::SEPARATOR] != parameter_tail::SEPARATOR_VALUE
+        || tail[parameter_tail::COLLECTION_MARKER] != parameter_tail::COLLECTION_MARKER_VALUE
+        || tail[parameter_tail::ZERO_RUN_6..]
+            .iter()
+            .any(|byte| *byte != 0)
+    {
         return None;
     }
-    let mut cursor = start + 1;
-    let reference = crate::bytes::take_reference(payload, &mut cursor)?;
-    let (target, guid) = reference.local()?;
-    (guid.is_none() && cursor == payload.len()).then_some(target)
+    View::u32_le_at(tail, parameter_tail::COLLECTION_RECORD_INDEX).filter(|target| *target != 0)
 }
+
+/// Whether `tail` is exactly one twelve-byte parameter tail.
+fn is_parameter_tail(tail: &[u8]) -> bool {
+    tail.len() == parameter_tail::LEN && parameter_tail_collection(tail).is_some()
+}
+
+/// Byte length of the typed parameter tail: `u8 0` plus a typed local reference.
+const TYPED_PARAMETER_TAIL_LEN: usize = 52;
 
 /// Expression offset after an owner reference without an inline type GUID.
 const PLAIN_OWNER_EXPRESSION_LENGTH: usize = typed::OWNER_MARKER + 11;
@@ -609,16 +979,13 @@ const PLAIN_OWNER_EXPRESSION_LENGTH: usize = typed::OWNER_MARKER + 11;
 /// Expression trailer of a typed compact owned parameter.
 const TYPED_OWNED_EXPRESSION_TRAILER: [u8; 5] = [0; 5];
 
-/// Source kind of a document parameter.
-const TYPED_DOCUMENT_SOURCE_KIND: &str = "User Parameter";
-
 /// Expression trailer of a typed compact document parameter.
 const TYPED_DOCUMENT_EXPRESSION_TRAILER: [u8; 5] = [0, 0, 0, 0, 1];
 
 /// Start of the typed parameter tail when `payload` ends with one.
 ///
 /// The tail is `u8 0` and a typed local reference whose target type GUID is
-/// the parameter-tail type; it ends the frame exactly.
+/// the parameter-collection type; it ends the frame exactly.
 fn typed_parameter_tail_start(payload: &[u8]) -> Option<usize> {
     let start = payload.len().checked_sub(TYPED_PARAMETER_TAIL_LEN)?;
     if payload.get(start) != Some(&0) {
@@ -635,25 +1002,6 @@ fn typed_parameter_tail_start(payload: &[u8]) -> Option<usize> {
 pub(in crate::design) fn is_typed_parameter_frame(payload: &[u8]) -> bool {
     payload.get(typed::ZERO_RUN_15..typed::SOURCE_ORDINAL) == Some(&[0; 15])
         && typed_parameter_tail_start(payload).is_some()
-}
-
-/// Third byte of the twelve-byte parameter tail `00 01 xx` and nine zero
-/// bytes in the container generations without typed references.
-const UNTYPED_PARAMETER_TAIL_MARKERS: [u8; 4] = [0x10, 0x11, 0x12, 0x13];
-
-/// Whether `payload` is shaped as a parameter frame of a generation without
-/// typed references: at least eleven zero bytes after the indexed header and
-/// the twelve-byte parameter tail.
-fn is_untyped_parameter_frame(payload: &[u8]) -> bool {
-    let Some(tail_start) = payload.len().checked_sub(12) else {
-        return false;
-    };
-    payload.get(11..22) == Some(&[0; 11])
-        && payload.get(tail_start..tail_start + 2) == Some(&[0, 1])
-        && payload
-            .get(tail_start + 2)
-            .is_some_and(|marker| UNTYPED_PARAMETER_TAIL_MARKERS.contains(marker))
-        && payload.get(tail_start + 3..) == Some(&[0; 9])
 }
 
 /// Parse the typed compact parameter form.
@@ -725,7 +1073,8 @@ fn parse_typed_compact_design_parameter(
         // The null owner reference denotes a document parameter; an ownerless
         // feature input or dimension has no admitted typed form.
         if source_kind.is_empty()
-            || owner_record_index.is_none() != (source_kind == TYPED_DOCUMENT_SOURCE_KIND)
+            || owner_record_index.is_none()
+                != crate::records::parameters::is_document_source_kind(&source_kind)
         {
             return None;
         }
@@ -734,6 +1083,7 @@ fn parse_typed_compact_design_parameter(
             record_index,
             source_ordinal,
             source_kind,
+            document: None,
             owner_record_index,
             family_discriminator: None,
             discriminator_offset: 0,
@@ -745,6 +1095,11 @@ fn parse_typed_compact_design_parameter(
             name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+            comment: None,
+            flags: crate::records::parameters::DesignParameterFlags::default(),
+            text_value: None,
+            compact_flag: false,
+            compact_null_owner: false,
         }))
     })();
     parsed.transpose()
@@ -776,8 +1131,7 @@ fn parse_legacy_design_parameter(
         let name_at = unit_end;
         let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
         let evaluated_value = View::f64_le_at(payload, name_end)?;
-        let tail = payload.get(name_end + 8..)?;
-        if tail != [0, 1, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0] || source_kind.is_empty() {
+        if !is_parameter_tail(payload.get(name_end + 8..)?) || source_kind.is_empty() {
             return None;
         }
         Some(Ok(ParsedDesignParameter {
@@ -785,6 +1139,7 @@ fn parse_legacy_design_parameter(
             record_index,
             source_ordinal,
             source_kind,
+            document: None,
             owner_record_index: Some(owner_record_index),
             family_discriminator: None,
             discriminator_offset: 0,
@@ -799,6 +1154,11 @@ fn parse_legacy_design_parameter(
             name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+            comment: None,
+            flags: crate::records::parameters::DesignParameterFlags::default(),
+            text_value: None,
+            compact_flag: false,
+            compact_null_owner: false,
         }))
     })();
     parsed.transpose()
@@ -830,28 +1190,6 @@ pub(crate) fn is_legacy_parameter_owner_88_class(class_tag: &str) -> bool {
     matches!(class_tag, "284" | "282" | "336" | "325" | "297")
 }
 
-fn valid_design_parameter_family(
-    discriminator: Option<crate::records::parameters::DesignParameterDiscriminator>,
-    source_kind: &str,
-    tail: u8,
-) -> bool {
-    use crate::records::parameters::DesignParameterDiscriminator::{
-        Code0, Code1, Code2, Code3, Code4, Code5, Code6,
-    };
-    match tail {
-        16 | 17 => matches!(discriminator, Some(Code5 | Code6)),
-        18 => discriminator.is_none_or(|value| {
-            matches!(value, Code0 | Code3 | Code4)
-                || (value == Code6 && source_kind == "TangencyWeight")
-        }),
-        19 => discriminator.is_none_or(|value| {
-            matches!(value, Code0 | Code1 | Code2 | Code3 | Code4 | Code5)
-                || (value == Code6 && source_kind == "TangencyWeight")
-        }),
-        _ => false,
-    }
-}
-
 /// Decoded owner bindings and parameters with an unsupported owner frame.
 #[derive(Debug, Default)]
 pub(crate) struct DecodedParameterOwners {
@@ -859,6 +1197,8 @@ pub(crate) struct DecodedParameterOwners {
     pub(crate) owners: Vec<DesignParameterOwner>,
     /// Native identities of parameters with an unsupported owner frame.
     pub(crate) unparsed: Vec<String>,
+    /// Per-stream counts of owners whose compact trailer sets its final flag byte.
+    pub(crate) trailer_flags: Vec<StreamParameterCount>,
 }
 
 /// Keep parameters with unsupported owner frames in native storage only.
@@ -958,6 +1298,7 @@ pub(crate) fn decode_parameter_owners(
         }
     }
     let mut unparsed = Vec::new();
+    let mut trailer_flag_counts = HashMap::<String, usize>::new();
     for parameter in parameters {
         let Some(owner_index) = parameter.owner_record_index() else {
             continue;
@@ -1007,27 +1348,32 @@ pub(crate) fn decode_parameter_owners(
             value: parameter.evaluated_value().get(),
             offset: parameter.evaluated_value_offset(),
         };
-        let parsed = parse_parameter_owner(frame)
-            .or_else(|| {
-                parse_admitted_legacy_parameter_owner_68(
-                    frame,
-                    evaluated,
-                    header.byte_offset,
-                    owner_typed.contains(&at),
-                )
-            })
-            .or_else(|| {
-                parse_admitted_legacy_parameter_owner_88(
-                    frame,
-                    evaluated,
-                    header.byte_offset,
-                    owner_typed.contains(&at),
-                )
-            });
+        let parsed = if let Some(text) = parameter.text_value() {
+            parse_text_parameter_owner(frame, text, evaluated, header.byte_offset)
+        } else {
+            parse_parameter_owner(frame)
+                .or_else(|| {
+                    parse_admitted_legacy_parameter_owner_68(
+                        frame,
+                        evaluated,
+                        header.byte_offset,
+                        owner_typed.contains(&at),
+                    )
+                })
+                .or_else(|| {
+                    parse_admitted_legacy_parameter_owner_88(
+                        frame,
+                        evaluated,
+                        header.byte_offset,
+                        owner_typed.contains(&at),
+                    )
+                })
+        };
         let Some(parsed) = parsed else {
             unparsed.push(parameter.id.clone());
             continue;
         };
+        let trailer_flag = parsed.trailer_flag;
         let owner = parsed
             .into_record(&entry.name, header.byte_offset)
             .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
@@ -1037,12 +1383,21 @@ pub(crate) fn decode_parameter_owners(
             return Err(malformed("does not link back to its referencing parameter"));
         }
 
+        if trailer_flag {
+            *trailer_flag_counts.entry(entry.name.clone()).or_default() += 1;
+        }
         out.push(owner);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
+    let mut trailer_flags = trailer_flag_counts
+        .into_iter()
+        .map(|(stream, count)| StreamParameterCount { stream, count })
+        .collect::<Vec<_>>();
+    trailer_flags.sort_by(|a, b| a.stream.cmp(&b.stream));
     Ok(DecodedParameterOwners {
         owners: out,
         unparsed,
+        trailer_flags,
     })
 }
 
@@ -1156,6 +1511,11 @@ pub(in crate::design) struct ParsedParameterOwner {
     pub(super) owned_ordinal: u32,
     variant: Option<u8>,
     pub(super) companion_record_index: u32,
+    /// Text of a text parameter's owner and the offset of its code units.
+    text_value: Option<(String, FrameRelative)>,
+    /// Whether the compact trailer before the companion reference stores
+    /// `00 01` in place of `00 00`.
+    pub(super) trailer_flag: bool,
 }
 
 impl ParsedParameterOwner {
@@ -1165,30 +1525,70 @@ impl ParsedParameterOwner {
         stream: &str,
         frame_start: u64,
     ) -> Option<DesignParameterOwner> {
-        crate::records::parameters::DesignParameterOwner::from_parts(
-            crate::records::parameters::DesignParameterOwnerWire {
-                id: ids::native_design_parameter_owner_id(stream, frame_start),
-                byte_offset: frame_start,
-                frame_length: self.frame_length,
-                class_tag: self.class_tag,
-                record_index: self.record_index,
-                scope_record_index: self.scope_record_index,
-                local_ordinal: self.local_ordinal,
-                evaluated_value: self.evaluated_value,
-                evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
-                parameter_record_index: self.parameter_record_index,
-                owned_ordinal: self.owned_ordinal,
-                variant: self.variant,
-                companion_record_index: self.companion_record_index,
-            },
-        )
+        let wire = crate::records::parameters::DesignParameterOwnerWire {
+            id: ids::native_design_parameter_owner_id(stream, frame_start),
+            byte_offset: frame_start,
+            frame_length: self.frame_length,
+            class_tag: self.class_tag,
+            record_index: self.record_index,
+            scope_record_index: self.scope_record_index,
+            local_ordinal: self.local_ordinal,
+            evaluated_value: self.evaluated_value,
+            evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
+            parameter_record_index: self.parameter_record_index,
+            owned_ordinal: self.owned_ordinal,
+            variant: self.variant,
+            companion_record_index: self.companion_record_index,
+        };
+        match self.text_value {
+            Some((value, offset)) => DesignParameterOwner::from_text_parts(
+                wire,
+                crate::records::identity::RecordedValue {
+                    value,
+                    offset: offset.absolute(frame_start)?,
+                },
+            ),
+            None => DesignParameterOwner::from_parts(wire),
+        }
         .ok()
     }
 }
 
 pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
-    parse_parameter_owner_with(frame, OwnerReferenceForm::Plain)
-        .or_else(|| parse_parameter_owner_with(frame, OwnerReferenceForm::Typed))
+    parse_parameter_owner_with(frame, OwnerReferenceForm::Plain, OwnerScalar::Numeric).or_else(
+        || parse_parameter_owner_with(frame, OwnerReferenceForm::Typed, OwnerScalar::Numeric),
+    )
+}
+
+/// Parse the owner of a text parameter, whose scalar envelope is `00` +
+/// LP-UTF16 `text` and whose evaluated scalar is the parameter's.
+fn parse_text_parameter_owner(
+    frame: &[u8],
+    text: &str,
+    evaluated: crate::records::identity::Located<f64>,
+    frame_start: u64,
+) -> Option<ParsedParameterOwner> {
+    let scalar = OwnerScalar::Text {
+        text,
+        evaluated,
+        frame_start,
+    };
+    parse_parameter_owner_with(frame, OwnerReferenceForm::Plain, scalar)
+        .or_else(|| parse_parameter_owner_with(frame, OwnerReferenceForm::Typed, scalar))
+}
+
+/// Scalar envelope that an ordinary parameter-owner frame stores.
+#[derive(Clone, Copy)]
+enum OwnerScalar<'a> {
+    /// One of the numeric envelopes.
+    Numeric,
+    /// `00` + LP-UTF16 `text`. The text and its length select this envelope:
+    /// a two-code-unit text has the length of `00 + f64`.
+    Text {
+        text: &'a str,
+        evaluated: crate::records::identity::Located<f64>,
+        frame_start: u64,
+    },
 }
 
 /// Same-segment reference spelling inside an ordinary parameter-owner frame.
@@ -1242,6 +1642,7 @@ const _: () = {
 fn parse_parameter_owner_with(
     frame: &[u8],
     form: OwnerReferenceForm,
+    expected_scalar: OwnerScalar<'_>,
 ) -> Option<ParsedParameterOwner> {
     let width = form.width();
     let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
@@ -1286,16 +1687,27 @@ fn parse_parameter_owner_with(
         (repeated_scope(at) && frame.get(at + width) == Some(&1) && variant <= 1)
             .then_some((at, Some(variant)))
     });
-    if [without_variant, with_variant, with_compact_variant]
-        .into_iter()
-        .flatten()
-        .count()
+    let with_flagged_trailer = companion_marker.checked_sub(width + 2).and_then(|at| {
+        (repeated_scope(at) && frame.get(at + width..companion_marker) == Some(&[0, 1]))
+            .then_some((at, None))
+    });
+    if [
+        without_variant,
+        with_variant,
+        with_compact_variant,
+        with_flagged_trailer,
+    ]
+    .into_iter()
+    .flatten()
+    .count()
         != 1
     {
         return None;
     }
-    let (repeated_scope_marker, variant) =
-        without_variant.or(with_variant).or(with_compact_variant)?;
+    let (repeated_scope_marker, variant) = without_variant
+        .or(with_variant)
+        .or(with_compact_variant)
+        .or(with_flagged_trailer)?;
 
     let owned_ordinal_offset = repeated_scope_marker.checked_sub(8)?;
     let parameter_marker = owned_ordinal_offset.checked_sub(width)?;
@@ -1305,22 +1717,49 @@ fn parse_parameter_owner_with(
     let parameter_record_index = form.target_at(frame, parameter_marker)?;
 
     let scalar = frame.get(scalar_start..parameter_marker)?;
-    let (evaluated_value, evaluated_value_offset) = match scalar.len() {
-        9 if scalar.first() == Some(&0) => {
-            (View::f64_le_at(frame, scalar_start + 1)?, scalar_start + 1)
+    let (evaluated_value, evaluated_value_offset, text_value) = match expected_scalar {
+        OwnerScalar::Numeric => {
+            let (value, offset) = match scalar.len() {
+                9 if scalar.first() == Some(&0) => {
+                    (View::f64_le_at(frame, scalar_start + 1)?, scalar_start + 1)
+                }
+                6 if matches!(scalar.get(..2), Some([0, 0 | 1])) => (
+                    f64::from(View::u32_le_at(frame, scalar_start + 2)?),
+                    scalar_start + 2,
+                ),
+                5 if scalar.first() == Some(&0) && variant.is_none() => (
+                    f64::from(View::u32_le_at(frame, scalar_start + 1)?),
+                    scalar_start + 1,
+                ),
+                13 if scalar.first() == Some(&1) && scalar.get(1..5) == Some(&[0; 4]) => {
+                    (View::f64_le_at(frame, scalar_start + 5)?, scalar_start + 5)
+                }
+                _ => return None,
+            };
+            (
+                value,
+                FrameRelative(i128::from(u64_from_index(offset))),
+                None,
+            )
         }
-        6 if matches!(scalar.get(..2), Some([0, 0 | 1])) => (
-            f64::from(View::u32_le_at(frame, scalar_start + 2)?),
-            scalar_start + 2,
-        ),
-        5 if scalar.first() == Some(&0) && variant.is_none() => (
-            f64::from(View::u32_le_at(frame, scalar_start + 1)?),
-            scalar_start + 1,
-        ),
-        13 if scalar.first() == Some(&1) && scalar.get(1..5) == Some(&[0; 4]) => {
-            (View::f64_le_at(frame, scalar_start + 5)?, scalar_start + 5)
+        OwnerScalar::Text {
+            text,
+            evaluated,
+            frame_start,
+        } => {
+            let (stored, end) = lp_utf16_bounded(frame, scalar_start + 1, 0..=4096)?;
+            if scalar.first() != Some(&0) || end != parameter_marker || stored != text {
+                return None;
+            }
+            (
+                evaluated.value,
+                FrameRelative::between(evaluated.offset, frame_start),
+                Some((
+                    stored,
+                    FrameRelative(i128::from(u64_from_index(scalar_start + 5))),
+                )),
+            )
         }
-        _ => return None,
     };
     let evaluated_value = FiniteReal::new(evaluated_value)?;
     let consecutive = |first: u32, second: u32, third: u32| {
@@ -1340,11 +1779,13 @@ fn parse_parameter_owner_with(
         scope_record_index,
         local_ordinal: View::u32_le_at(frame, local_ordinal_offset)?,
         evaluated_value,
-        evaluated_value_offset: FrameRelative(i128::from(u64_from_index(evaluated_value_offset))),
+        evaluated_value_offset,
         parameter_record_index,
         owned_ordinal: View::u32_le_at(frame, owned_ordinal_offset)?,
         variant,
         companion_record_index,
+        text_value,
+        trailer_flag: with_flagged_trailer.is_some(),
     })
 }
 
@@ -1361,6 +1802,19 @@ fn parse_legacy_parameter_owner_68(
     parse_admitted_legacy_parameter_owner_68(frame, evaluated, frame_start, false)
 }
 
+/// Whether the scalar lane of a legacy 68-byte owner is zero or stores the
+/// linked parameter's evaluated scalar.
+fn legacy_owner_68_scalar_lane(frame: &[u8], evaluated: f64) -> bool {
+    let Some(lane) = frame.get(legacy_owner_68::SCALAR_MARKER..legacy_owner_68::PARAMETER_MARKER)
+    else {
+        return false;
+    };
+    lane == [0; 9]
+        || (lane[0] == legacy_owner_68::SCALAR_MARKER_VALUE
+            && View::f64_le_at(frame, legacy_owner_68::SCALAR)
+                .is_some_and(|scalar| scalar.to_bits() == evaluated.to_bits()))
+}
+
 /// The legacy 68-byte owner grammar, admitted when the frame has the
 /// parameter-owner type (`owner_typed`) or one of the listed class tags.
 fn parse_admitted_legacy_parameter_owner_68(
@@ -1375,12 +1829,17 @@ fn parse_admitted_legacy_parameter_owner_68(
         || after_tag != indexed_header::RECORD_INDEX
         || frame.get(legacy_owner_68::ZERO_RUN_8..legacy_owner_68::FIRST_MARKER) != Some(&[0; 8])
         || frame.get(legacy_owner_68::FIRST_MARKER) != Some(&1)
-        || frame.get(legacy_owner_68::ZERO_RUN_13..legacy_owner_68::PARAMETER_MARKER)
-            != Some(&[0; 13])
+        || frame.get(legacy_owner_68::ZERO_RUN_4..legacy_owner_68::SCALAR_MARKER) != Some(&[0; 4])
+        || !legacy_owner_68_scalar_lane(frame, evaluated.value)
         || frame.get(legacy_owner_68::PARAMETER_MARKER) != Some(&1)
         || frame.get(legacy_owner_68::ZERO_RUN_6..legacy_owner_68::OWNED_ORDINAL) != Some(&[0; 6])
-        || frame.get(legacy_owner_68::ZERO_RUN_7..legacy_owner_68::COMPANION_MARKER)
-            != Some(&[0; 7])
+        || frame.get(legacy_owner_68::ZERO_RUN_5..legacy_owner_68::FIRST_FLAG) != Some(&[0; 5])
+        || frame
+            .get(legacy_owner_68::FIRST_FLAG)
+            .is_none_or(|flag| *flag > 1)
+        || frame
+            .get(legacy_owner_68::SECOND_FLAG)
+            .is_none_or(|flag| *flag > 1)
         || frame.get(legacy_owner_68::COMPANION_MARKER) != Some(&1)
         || frame.get(legacy_owner_68::ZERO_RUN_8_TAIL..legacy_owner_68::LEN) != Some(&[0; 8])
     {
@@ -1408,6 +1867,8 @@ fn parse_admitted_legacy_parameter_owner_68(
         owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
+        text_value: None,
+        trailer_flag: false,
     })
 }
 
@@ -1481,6 +1942,8 @@ fn parse_admitted_legacy_parameter_owner_88(
         owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
+        text_value: None,
+        trailer_flag: false,
     })
 }
 

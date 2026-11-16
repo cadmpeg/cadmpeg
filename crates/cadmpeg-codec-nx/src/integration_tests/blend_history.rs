@@ -118,7 +118,7 @@ fn historical_blends_share_a_body_without_inheriting_its_carriers() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("four historical body writers");
     let ir = result.ir();
-    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.geometry.bodies.len(), 1);
     let initial_body = ir
         .model
         .features
@@ -127,7 +127,7 @@ fn historical_blends_share_a_body_without_inheriting_its_carriers() {
         .expect("one retained-history body input");
     assert_eq!(
         initial_body.evaluation.outputs(),
-        &[ir.model.bodies[0].id.clone()]
+        &[ir.geometry.bodies[0].id.clone()]
     );
     let historical = ir
         .model
@@ -136,12 +136,9 @@ fn historical_blends_share_a_body_without_inheriting_its_carriers() {
         .filter(|feature| feature.id != initial_body.id)
         .collect::<Vec<_>>();
     assert_eq!(historical.len(), 4);
-    assert!(!ir.model.procedural_surfaces.is_empty());
+    assert!(!ir.geometry.procedural_surfaces.is_empty());
     for feature in historical {
-        assert_eq!(
-            feature.evaluation.outputs(),
-            initial_body.evaluation.outputs()
-        );
+        assert!(feature.evaluation.outputs().is_empty());
         assert!(!feature
             .source_properties
             .keys()
@@ -162,7 +159,9 @@ fn historical_blends_share_a_body_without_inheriting_its_carriers() {
     }
     let native = ir.native.namespace("nx").unwrap();
     let arenas = native.arenas();
-    assert_eq!(arenas["feature_body_write_group_partition_uses"].len(), 4);
+    assert!(arenas
+        .get("feature_body_write_group_partition_uses")
+        .is_none_or(Vec::is_empty));
     let integers = serde_json::to_value(&arenas["parasolid_entity_52_integer_records"]).unwrap();
     for key in [709, 624, 464, 565] {
         assert!(integers

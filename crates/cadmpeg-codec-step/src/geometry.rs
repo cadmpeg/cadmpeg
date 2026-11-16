@@ -6,6 +6,8 @@
 //! counterparts. NURBS carriers use `*_WITH_KNOTS`, with complex instances for
 //! rational geometry.
 
+use std::f64::consts::PI;
+
 use cadmpeg_ir::geometry::{
     analytic::ConeSurface,
     nurbs::{NurbsCurve, NurbsSurface},
@@ -370,16 +372,73 @@ pub(crate) fn pcurve_placement_bakes(geometry: &PcurveGeometry) -> bool {
         || bake::placed_pcurve(Transform2::identity(), geometry).is_some()
 }
 
-/// Emit a pcurve in the reversed parameter chart of a negative-angle cone.
-/// The half-turn maps each `(u, v)` to `(-u, -v)` without changing the curve's
-/// own parameter or sense.
-pub(crate) fn pcurve_on_reversed_cone(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
-    let reversal = bake::half_turn()?;
-    if let Some(placed) = bake::placed_pcurve(reversal, geometry) {
+/// The map from a signed carrier's parameters to those of the STEP record
+/// [`surface`] writes for it. Each coordinate maps to `sign * value + offset`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct WrittenChart {
+    sign: [f64; 2],
+    offset: [f64; 2],
+}
+
+impl WrittenChart {
+    /// The chart of the record written for `basis`, when the record states a
+    /// radius or angle of `basis` by its magnitude.
+    ///
+    /// A negative-angle cone is written with its axis reversed, at `(-u, -v)`.
+    /// A negative-radius sphere is written with the magnitude, at `(u + π, -v)`.
+    /// A negative-minor torus is written with the magnitude, at `(u, v + π)`.
+    pub(crate) fn of(basis: &SolvedSurfaceGeometry) -> Option<Self> {
+        let (sign, offset) = match basis {
+            SolvedSurfaceGeometry::Cone(cone) if cone.half_angle().get() < 0.0 => {
+                ([-1.0, -1.0], [0.0, 0.0])
+            }
+            SolvedSurfaceGeometry::Sphere(sphere) if sphere.radius().get() < 0.0 => {
+                ([1.0, -1.0], [PI, 0.0])
+            }
+            SolvedSurfaceGeometry::Torus(torus) if torus.minor_radius().get() < 0.0 => {
+                ([1.0, 1.0], [0.0, PI])
+            }
+            _ => return None,
+        };
+        Some(Self { sign, offset })
+    }
+
+    /// Whether the map reverses the parameter plane, so that the written
+    /// record's `Su × Sv` opposes the carrier's.
+    pub(crate) fn reverses_normal(self) -> bool {
+        self.sign[0] * self.sign[1] < 0.0
+    }
+
+    /// The parameter interval of `axis` in the written chart, and whether its
+    /// direction is reversed.
+    pub(crate) fn range(self, axis: usize, range: [f64; 2]) -> ([f64; 2], bool) {
+        (
+            range.map(|value| self.sign[axis] * value + self.offset[axis]),
+            self.sign[axis] < 0.0,
+        )
+    }
+
+    fn transform(self) -> Option<Transform2> {
+        Transform2::affine([
+            [self.sign[0], 0.0, self.offset[0]],
+            [0.0, self.sign[1], self.offset[1]],
+        ])
+    }
+}
+
+/// Emit a pcurve in the written chart of its surface, without changing the
+/// curve's own parameter or sense.
+pub(crate) fn pcurve_in_chart(
+    e: &mut Emitter,
+    chart: WrittenChart,
+    geometry: &PcurveGeometry,
+) -> Option<Ref> {
+    let map = chart.transform()?;
+    if let Some(placed) = bake::placed_pcurve(map, geometry) {
         return pcurve(e, &placed);
     }
     let basis = pcurve(e, geometry)?;
-    let operator = transformation_operator_2d(e, reversal)?;
+    let operator = transformation_operator_2d(e, map)?;
     Some(e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}")))
 }
 

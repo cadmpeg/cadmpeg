@@ -8,9 +8,13 @@ use super::{
 use crate::ids::OccurrenceId;
 use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
 use crate::units::UnitVector3;
+use curve_driven::CurveDrivenPatternParameters;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+#[doc = "Independently decoded curve-driven pattern parameters."]
+pub mod curve_driven;
 
 /// One geometric selection repeated or reflected by a pattern operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,6 +26,8 @@ use serde::{Deserialize, Serialize};
     deny_unknown_fields
 )]
 pub enum PatternSeed {
+    #[doc = "Source-native seed selection whose entity kind remains unresolved."]
+    Native(String),
     /// Complete result of a preceding construction-history feature.
     Feature(FeatureId),
     /// Selected faces, including faces in an intermediate regenerated result.
@@ -196,6 +202,15 @@ impl<C: CompositeStages> PatternKind<C> {
                     ));
                 }
             }
+            PatternTransform::CurveDrivenPartial { parameters } => {
+                for length in [&mut parameters.spacing, &mut parameters.distance]
+                    .into_iter()
+                    .flatten()
+                {
+                    edit(PatternLengthField::PositiveLength(length))
+                        .map_err(PatternLengthEditError::Field)?;
+                }
+            }
             PatternTransform::CurveDriven { spacing, .. } => {
                 edit(PatternLengthField::PositiveLength(spacing))
                     .map_err(PatternLengthEditError::Field)?;
@@ -310,6 +325,12 @@ impl<C> PatternKind<C> {
             PatternTransform::CurveDriven { count, .. } => {
                 require(*count > 0, "pattern count must be positive")?;
             }
+            PatternTransform::CurveDrivenPartial { parameters } => {
+                require(
+                    parameters.count != Some(0),
+                    "pattern count must be positive",
+                )?;
+            }
             PatternTransform::Mirror { .. } => {}
             PatternTransform::MirrorReference {
                 plane: FaceSelection::Native(reference),
@@ -352,6 +373,9 @@ impl<C> PatternKind<C> {
             PatternTransform::Circular { count, .. }
             | PatternTransform::CurveDriven { count, .. }
             | PatternTransform::Scale { count, .. } => usize::try_from(*count).ok(),
+            PatternTransform::CurveDrivenPartial { parameters } => parameters
+                .count
+                .and_then(|count| usize::try_from(count).ok()),
             PatternTransform::CircularAngles { angles, .. } => Some(angles.len()),
             PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => Some(2),
             PatternTransform::Unresolved { .. } => None,
@@ -380,13 +404,17 @@ impl<C> PatternKind<C> {
     pub fn curve_path_mut(&mut self) -> Option<&mut Option<PathRef>> {
         match &mut self.0 {
             PatternTransform::CurveDriven { path, .. } => Some(path),
+            PatternTransform::CurveDrivenPartial { parameters } => Some(&mut parameters.path),
             _ => None,
         }
     }
 
     /// Returns whether the pattern form lacks its required operands.
     pub const fn is_unresolved(&self) -> bool {
-        matches!(self.0, PatternTransform::Unresolved { .. })
+        matches!(
+            self.0,
+            PatternTransform::Unresolved { .. } | PatternTransform::CurveDrivenPartial { .. }
+        )
     }
 }
 
@@ -395,6 +423,9 @@ impl PatternTransform<NoNestedComposite> {
     #[must_use]
     pub fn widen<C>(self) -> PatternTransform<C> {
         match self {
+            Self::CurveDrivenPartial { parameters } => {
+                PatternTransform::CurveDrivenPartial { parameters }
+            }
             Self::Unresolved { form } => PatternTransform::Unresolved { form },
             Self::Linear {
                 direction,
@@ -402,12 +433,14 @@ impl PatternTransform<NoNestedComposite> {
                 count,
                 second,
                 omitted_instances,
+                symmetric,
             } => PatternTransform::Linear {
                 direction,
                 spacing,
                 count,
                 second,
                 omitted_instances,
+                symmetric,
             },
             Self::LinearOffsets { direction, offsets } => {
                 PatternTransform::LinearOffsets { direction, offsets }
@@ -496,6 +529,11 @@ pub enum PatternForm {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PatternTransform<C = CompositePattern> {
+    #[doc = "Curve-driven pattern with independently retained placement parameters."]
+    CurveDrivenPartial {
+        #[doc = "Decoded parameters and controls, including unresolved slots."]
+        parameters: CurveDrivenPatternParameters,
+    },
     /// Pattern construction that is not resolved; `form` names it when the
     /// source identified one.
     Unresolved {
@@ -528,8 +566,14 @@ pub enum PatternTransform<C = CompositePattern> {
         )]
         second: Option<LinearPatternDirection>,
         /// Zero-based positions omitted from the two-direction grid.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         omitted_instances: Vec<[u32; 2]>,
+        /// Whether the first-direction instances lie on both sides of the
+        /// original. `count` includes the original. Grid coordinate `0` is
+        /// the original, an odd coordinate `k` lies `(k + 1) / 2` spacings
+        /// along `direction`, and an even coordinate `k > 0` lies `k / 2`
+        /// spacings against it. An even `count` places `count / 2` instances
+        /// along `direction` and `count / 2 - 1` against it.
+        symmetric: bool,
     },
     /// Repeats seeds at explicitly located distances along a straight direction.
     LinearOffsets {
@@ -726,6 +770,9 @@ fn composite_composition_is_valid(stages: &[crate::features::patterns::PatternSt
 
 fn primary_occurrence_count<C>(pattern: &PatternTransform<C>) -> Option<usize> {
     match pattern {
+        PatternTransform::CurveDrivenPartial { parameters } => parameters
+            .count
+            .and_then(|count| usize::try_from(count).ok()),
         PatternTransform::Linear { count, .. }
         | PatternTransform::Circular { count, .. }
         | PatternTransform::CurveDriven { count, .. }
@@ -757,6 +804,7 @@ fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
 #[serde(deny_unknown_fields)]
 pub enum PatternScaleCenter {
     /// Volume centroid of the first seed feature.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     FirstSeedCentroid,
     /// Explicit model-space point.
     Point(FinitePoint3),
@@ -798,6 +846,9 @@ pub struct LinearPatternDirection {
     pub spacing: PositiveLength,
     /// Nominal grid size along this direction, including the original.
     pub count: u32,
+    /// Whether the instances lie on both sides of the original, distributed
+    /// as for a symmetric first direction.
+    pub symmetric: bool,
 }
 
 // Each optional key below names itself in whatever it refuses.

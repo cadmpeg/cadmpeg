@@ -192,7 +192,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
             Some((
                 table_index,
                 [color.r(), color.g(), color.b()]
-                    .map(|value| truncate_f64_to_u8(f64::from((value * 255.0).round())).unwrap()),
+                    .map(|value| truncate_f64_to_u8((value * 255.0).round()).unwrap()),
             ))
         })
         .collect::<Vec<_>>();
@@ -200,7 +200,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
     colors.into_iter().map(|(_, color)| color).collect()
 }
 
-const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+const EPS_COLOR_COMPONENT: f64 = 1.0e-6;
 
 #[test]
 fn packed_rgb_uses_low_to_high_red_green_blue_bytes() {
@@ -277,7 +277,7 @@ fn unresolved_history_and_display_state_do_not_bind_feature_appearances() {
         (44, 20, [239, 0, 0]),
         (51, 30, [7, 255, 43]),
     ];
-    let expected: Vec<[u8; 3]> = Vec::new();
+    let expected = vec![[128; 3]; faces.len()];
     assert_eq!(
         display_colors(display_fixture([128; 3], &faces, &[], &features)),
         expected
@@ -285,7 +285,7 @@ fn unresolved_history_and_display_state_do_not_bind_feature_appearances() {
 }
 
 #[test]
-fn unresolved_feature_scope_withholds_display_fallback() {
+fn unresolved_feature_scope_keeps_source_bound_display_colour() {
     let source = display_fixture(
         [128; 3],
         &[vec![("moFromSktEntSurfIdRep_c", 36, 1)]],
@@ -295,14 +295,40 @@ fn unresolved_feature_scope_withholds_display_fallback() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(
-        !result.ir().model.appearance_bindings.iter().any(|binding| {
+    let binding = result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| {
             matches!(
                 binding.target,
                 cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
             )
         })
+        .unwrap();
+    let appearance = result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == binding.appearance)
+        .unwrap();
+    assert_eq!(
+        appearance.base_color,
+        Some(cadmpeg_ir::topology::Color::from_rgba8(128, 128, 128, 255))
     );
+    assert_eq!(
+        binding.channels.get("packed_color_hex").map(String::as_str),
+        Some("00808080")
+    );
+    assert_eq!(binding.object_type.as_deref(), Some("DisplayFace"));
+    assert!(result
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .all(|face| face.color.is_none()));
 }
 
 #[test]
@@ -325,7 +351,7 @@ fn face_local_wins_and_conflicting_or_missing_feature_sources_do_not_guess() {
             &[(0, [0, 0, 255])],
             &[(36, 10, [255, 0, 0]), (44, 20, [0, 255, 0])],
         )),
-        [[0, 0, 255]]
+        [[0, 0, 255], [128; 3], [128; 3]]
     );
 }
 
@@ -338,7 +364,7 @@ fn decode_retains_visual_property_without_fabricating_body_ownership() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.ir().model.bodies[0].color.is_none());
+    assert!(result.ir().geometry.bodies[0].color.is_none());
     let color = result.ir().model.appearances[0].base_color.unwrap();
     assert!((color.r() - 32.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.g() - 64.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
@@ -366,13 +392,13 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
     assert!(result.ir().model.appearance_bindings.is_empty());
     assert!(result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .all(|body| body.color.is_none() && body.name.is_none()));
 
-    let moved = result.ir_mut().model.points[0].position().get();
-    result.ir_mut().model.points[0].set_position(
+    let moved = result.ir_mut().geometry.points[0].position().get();
+    result.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,

@@ -65,6 +65,16 @@ pub(crate) enum CatiaLossCode {
     SourceCatalogScanBounded,
     /// Verbatim vertex points and analytic surface carriers were decoded.
     GeometryCarrierSummary,
+    /// A sheet fit extends a rolling section past its stored transverse interval.
+    GeometryRollingSheetExtended,
+    /// Corroborated affine stations replace disagreeing fitted vertex positions.
+    TopologyAffineVertexReconciled,
+    /// A planar shared-edge lift uses a native parameter-map fit tolerance.
+    GeometryParameterMapAccuracyInferred,
+    /// A sheet face uses a fitted surface carrier.
+    GeometrySheetSurfaceFitted,
+    /// A transferred rolling-ball fit uses adjusted rail points.
+    GeometryRollingBallRailsAdjusted,
     /// Transferred model retains unresolved curve or surface carriers.
     GeometryUnresolvedCarriers,
     /// No B-rep geometry was transferred for this storage variant.
@@ -77,6 +87,8 @@ pub(crate) enum CatiaLossCode {
     GeometryParameterRangeInvalid,
     /// Equivalent support charts produce non-finite pcurve coordinates.
     GeometryPcurveRechartNonFinite,
+    /// Binary32 coordinate uncertainty widened derived vertex tolerances.
+    GeometryVertexToleranceWidened,
     /// Face-local free-form carriers retain identity without aliased geometry.
     GeometryFaceLocalFreeformNotTransferred,
     /// Revolution carriers retain profile identity without bound directrices.
@@ -89,6 +101,8 @@ pub(crate) enum CatiaLossCode {
     TopologyFbbRowsWithheld,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotBuilt,
+    /// Closed sketch components and sheet bodies were inferred from a Fill boundary.
+    TopologySheetComponentsInferred,
     /// A standard-family topology evidence search reached its local work bound.
     TopologyStandardSearchBounded,
     /// A planar face stated too many boundary points to classify its loops.
@@ -101,6 +115,20 @@ pub(crate) enum CatiaLossCode {
     TopologyObjectStreamWorkSliceExhausted,
     /// Object-stream and NURBS carriers decoded, but the B5 graph did not close.
     TopologyB5GraphUnclosed,
+    /// Fitted face subsets represent only part of a native body.
+    TopologyOwnedPatchSubset,
+    /// Non-rolling-ball face sense uses inferred roster and chart parity.
+    TopologyOwnedPatchSenseInferred,
+    /// An endpoint station admits both first-scalar and final-scalar tag readings.
+    TopologyEndpointStationReadingInferred,
+    /// Disagreeing native shared boundaries were reconciled for sheet transfer.
+    TopologySharedBoundaryReconciled,
+    /// Two-edge pcurve binding and face sense use inferred relations.
+    TopologyTwoEdgeBindingInferred,
+    /// A bounded sheet search skipped later candidates.
+    TopologySheetPatchSearchBounded,
+    /// A B5 face's carrier sense or loop orientation withheld the topology plan.
+    TopologyB5FacesWithheld,
     /// B5 topology runs were read without the isolated geometry they reference.
     TopologyB5PopulationBounded,
     /// Zero-entity support runs retain face-local occurrences without closed topology.
@@ -123,6 +151,8 @@ pub(crate) enum CatiaLossCode {
     HistoryConfigurationRowOrderBounded,
     /// Relations kept no parameter dependencies at their allowance.
     HistoryRelationDependenciesBounded,
+    /// Typed two-definition value chains stay native without a neutral parameter.
+    HistoryDefinitionChainsRetained,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
@@ -140,24 +170,38 @@ impl CatiaLossCode {
         Self::SourceAnnotationCollision,
         Self::SourceCatalogScanBounded,
         Self::GeometryCarrierSummary,
+        Self::GeometryRollingSheetExtended,
+        Self::TopologyAffineVertexReconciled,
+        Self::GeometryParameterMapAccuracyInferred,
+        Self::GeometrySheetSurfaceFitted,
+        Self::GeometryRollingBallRailsAdjusted,
         Self::GeometryUnresolvedCarriers,
         Self::GeometryBrepNotTransferred,
         Self::GeometryPlaneParametersInvalid,
         Self::GeometryAnalyticPayloadInvalid,
         Self::GeometryParameterRangeInvalid,
         Self::GeometryPcurveRechartNonFinite,
+        Self::GeometryVertexToleranceWidened,
         Self::GeometryFaceLocalFreeformNotTransferred,
         Self::GeometryRevolutionProfileUnbound,
         Self::GeometryLineProfileNotTransferred,
         Self::TopologyBoundaryGraphNotEmitted,
         Self::TopologyFbbRowsWithheld,
         Self::TopologyGraphNotBuilt,
+        Self::TopologySheetComponentsInferred,
         Self::TopologyStandardSearchBounded,
         Self::TopologyPlanarBoundaryBounded,
         Self::TopologyE5GraphUnclosed,
         Self::TopologyB5GaugeSubstituted,
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
+        Self::TopologyOwnedPatchSubset,
+        Self::TopologyOwnedPatchSenseInferred,
+        Self::TopologyEndpointStationReadingInferred,
+        Self::TopologySharedBoundaryReconciled,
+        Self::TopologyTwoEdgeBindingInferred,
+        Self::TopologySheetPatchSearchBounded,
+        Self::TopologyB5FacesWithheld,
         Self::TopologyB5PopulationBounded,
         Self::TopologyZeroEntitySupportsRetained,
         Self::TopologyZeroEntityCandidatesBounded,
@@ -169,6 +213,7 @@ impl CatiaLossCode {
         Self::HistoryLegacyRunsUnresolved,
         Self::HistoryConfigurationRowOrderBounded,
         Self::HistoryRelationDependenciesBounded,
+        Self::HistoryDefinitionChainsRetained,
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesVisualizationUnbound,
@@ -185,12 +230,20 @@ impl CatiaLossCode {
             Self::SourceAnnotationCollision => "source.annotation-identity-collision",
             Self::SourceCatalogScanBounded => "source.catalog-scan-bounded",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
+            Self::GeometryRollingSheetExtended => "geometry.rolling-sheet-extended",
+            Self::TopologyAffineVertexReconciled => "topology.affine-vertex-reconciled",
+            Self::GeometryParameterMapAccuracyInferred => {
+                "geometry.parameter-map-accuracy-inferred"
+            }
+            Self::GeometrySheetSurfaceFitted => "geometry.sheet-surface-fitted",
+            Self::GeometryRollingBallRailsAdjusted => "geometry.rolling-ball-rails-adjusted",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
             Self::GeometryPlaneParametersInvalid => "geometry.plane-parameters-invalid",
             Self::GeometryAnalyticPayloadInvalid => "geometry.analytic-payload-invalid",
             Self::GeometryParameterRangeInvalid => "geometry.parameter-range-invalid",
             Self::GeometryPcurveRechartNonFinite => "geometry.pcurve-rechart-non-finite",
+            Self::GeometryVertexToleranceWidened => "geometry.vertex-tolerance-widened",
             Self::GeometryFaceLocalFreeformNotTransferred => {
                 "geometry.face-local-freeform-not-transferred"
             }
@@ -199,12 +252,22 @@ impl CatiaLossCode {
             Self::TopologyBoundaryGraphNotEmitted => "topology.boundary-graph-not-emitted",
             Self::TopologyFbbRowsWithheld => "topology.fbb-rows-withheld",
             Self::TopologyGraphNotBuilt => "topology.graph-not-built",
+            Self::TopologySheetComponentsInferred => "topology.sheet-components-inferred",
             Self::TopologyE5GraphUnclosed => "topology.e5-graph-unclosed",
             Self::TopologyB5GaugeSubstituted => "topology.b5-gauge-substituted",
             Self::TopologyObjectStreamWorkSliceExhausted => {
                 "topology.object-stream-work-slice-exhausted"
             }
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
+            Self::TopologyOwnedPatchSubset => "topology.owned-patch-subset",
+            Self::TopologyOwnedPatchSenseInferred => "topology.owned-patch-sense-inferred",
+            Self::TopologyEndpointStationReadingInferred => {
+                "topology.endpoint-station-reading-inferred"
+            }
+            Self::TopologySharedBoundaryReconciled => "topology.shared-boundary-reconciled",
+            Self::TopologyTwoEdgeBindingInferred => "topology.two-edge-binding-inferred",
+            Self::TopologySheetPatchSearchBounded => "topology.sheet-patch-search-bounded",
+            Self::TopologyB5FacesWithheld => "topology.b5-faces-withheld",
             Self::TopologyB5PopulationBounded => "topology.b5-population-bounded",
             Self::TopologyZeroEntitySupportsRetained => "topology.zero-entity-supports-retained",
             Self::TopologyZeroEntityCandidatesBounded => "topology.zero-entity-candidates-bounded",
@@ -216,6 +279,7 @@ impl CatiaLossCode {
             Self::HistoryLegacyRunsUnresolved => "history.legacy-runs-unresolved",
             Self::HistoryConfigurationRowOrderBounded => "history.configuration-row-order-bounded",
             Self::HistoryRelationDependenciesBounded => "history.relation-dependencies-bounded",
+            Self::HistoryDefinitionChainsRetained => "history.definition-chains-retained",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
             }
@@ -254,8 +318,14 @@ impl CatiaLossCode {
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceRouteFellThrough
             | Self::SourceAnnotationCollision
-            | Self::SourceCatalogScanBounded => LossTaxonomy::DecodeDiagnostic,
+            | Self::SourceCatalogScanBounded
+            | Self::GeometryVertexToleranceWidened
+            | Self::TopologySheetComponentsInferred => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
+            Self::GeometryRollingSheetExtended
+            | Self::GeometryParameterMapAccuracyInferred
+            | Self::GeometrySheetSurfaceFitted
+            | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
@@ -274,12 +344,20 @@ impl CatiaLossCode {
             | Self::TopologyB5GaugeSubstituted
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
+            | Self::TopologyOwnedPatchSubset
+            | Self::TopologySheetPatchSearchBounded
+            | Self::TopologyB5FacesWithheld
             | Self::TopologyB5PopulationBounded
             | Self::TopologyZeroEntityCandidatesBounded
             | Self::TopologyZeroEntitySupportsRetained
             | Self::TopologyZeroEntityNotTransferred
             | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
-            Self::TopologyZeroEntityGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::TopologyZeroEntityGaugeSubstituted
+            | Self::TopologyAffineVertexReconciled
+            | Self::TopologyOwnedPatchSenseInferred
+            | Self::TopologyEndpointStationReadingInferred
+            | Self::TopologySharedBoundaryReconciled
+            | Self::TopologyTwoEdgeBindingInferred => LossTaxonomy::TopologyGaugeSubstituted,
             Self::AttributesMaterialsMetadataNotTransferred
             | Self::AttributesDimensionQuantityUnresolved
             | Self::AttributesVisualizationUnbound => LossTaxonomy::AttributesNotTransferred,
@@ -287,7 +365,8 @@ impl CatiaLossCode {
             | Self::HistoryObjectRecordsUnresolved
             | Self::HistoryLegacyRunsUnresolved
             | Self::HistoryConfigurationRowOrderBounded
-            | Self::HistoryRelationDependenciesBounded => LossTaxonomy::FeatureHistoryRetained,
+            | Self::HistoryRelationDependenciesBounded
+            | Self::HistoryDefinitionChainsRetained => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -333,24 +412,38 @@ mod tests {
                 "source.annotation-identity-collision",
                 "source.catalog-scan-bounded",
                 "geometry.carrier-summary",
+                "geometry.rolling-sheet-extended",
+                "topology.affine-vertex-reconciled",
+                "geometry.parameter-map-accuracy-inferred",
+                "geometry.sheet-surface-fitted",
+                "geometry.rolling-ball-rails-adjusted",
                 "geometry.unresolved-carriers",
                 "geometry.brep-not-transferred",
                 "geometry.plane-parameters-invalid",
                 "geometry.analytic-payload-invalid",
                 "geometry.parameter-range-invalid",
                 "geometry.pcurve-rechart-non-finite",
+                "geometry.vertex-tolerance-widened",
                 "geometry.face-local-freeform-not-transferred",
                 "geometry.revolution-profile-unbound",
                 "geometry.line-profile-not-transferred",
                 "topology.boundary-graph-not-emitted",
                 "topology.fbb-rows-withheld",
                 "topology.graph-not-built",
+                "topology.sheet-components-inferred",
                 "topology.standard-search-bounded",
                 "topology.planar-boundary-bounded",
                 "topology.e5-graph-unclosed",
                 "topology.b5-gauge-substituted",
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
+                "topology.owned-patch-subset",
+                "topology.owned-patch-sense-inferred",
+                "topology.endpoint-station-reading-inferred",
+                "topology.shared-boundary-reconciled",
+                "topology.two-edge-binding-inferred",
+                "topology.sheet-patch-search-bounded",
+                "topology.b5-faces-withheld",
                 "topology.b5-population-bounded",
                 "topology.zero-entity-supports-retained",
                 "topology.zero-entity-candidates-bounded",
@@ -362,6 +455,7 @@ mod tests {
                 "history.legacy-runs-unresolved",
                 "history.configuration-row-order-bounded",
                 "history.relation-dependencies-bounded",
+                "history.definition-chains-retained",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.visualization-unbound",

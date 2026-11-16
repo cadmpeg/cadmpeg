@@ -36,7 +36,9 @@ fn a_planar_mate_is_an_opposed_plane_coincidence_on_two_faces() {
         let [face] = connector.operand.subelements.as_slice() else {
             panic!("one face");
         };
-        assert!(model
+        assert!(result
+            .ir()
+            .geometry
             .faces
             .iter()
             .any(|candidate| candidate.id.as_str() == face));

@@ -8,8 +8,9 @@ a branch adds with the upstream tip and with the rest of the file, and names
 the next free number for each collision.
 
 Run as a program, it checks every open-items document of the tree for a repeated
-ID and reads no Git history. CI runs this form on the merge commit, so two
-queued pull requests that take one ID fail the merge queue.
+ID and reads no Git history. CI runs this form on each PR merge commit and
+on main. Two pull requests that take one ID both pass and merge, and the
+main run then reports the duplicate.
 """
 
 from __future__ import annotations

@@ -776,6 +776,43 @@ fn single_pair_offsets_require_the_offset_bit_and_a_shared_center() {
 }
 
 #[test]
+fn midpoint_relation_resolves_a_point_at_the_middle_angle_of_an_arc() {
+    use crate::design::dimensions::{midpoint_constraint, MidpointCarrier};
+
+    let arc = offset_test_entity(
+        "generated:test:arc#carrier",
+        SketchGeometryDefinition::Arc {
+            center: Point2::new(61.0, -15.0),
+            radius: Length::new(5.0).unwrap(),
+            start_angle: Angle::new(std::f64::consts::PI).unwrap(),
+            end_angle: Angle::new(2.0 * std::f64::consts::PI).unwrap(),
+        },
+    );
+    let point = |id: &str, u: f64, v: f64| {
+        offset_test_entity(
+            id,
+            SketchGeometryDefinition::Point {
+                position: Point2::new(u, v),
+            },
+        )
+    };
+    let middle = point("generated:test:point#middle", 61.0, -20.0);
+    let Some(SketchConstraintDefinitionInput::Midpoint {
+        point: locus,
+        entity,
+    }) = midpoint_constraint(&[&middle, &arc], MidpointCarrier::LineOrArc)
+    else {
+        panic!("expected an arc midpoint constraint")
+    };
+    assert_eq!(locus, SketchLocus::Entity(middle.id().clone()));
+    assert_eq!(entity, arc.id().clone());
+
+    let end = point("generated:test:point#end", 66.0, -15.0);
+    assert!(midpoint_constraint(&[&arc, &end], MidpointCarrier::LineOrArc).is_none());
+    assert!(midpoint_constraint(&[&arc, &middle], MidpointCarrier::Line).is_none());
+}
+
+#[test]
 fn single_curve_annotation_projects_parameterized_offset() {
     let stream = "f3d:Design/BulkStream.dat";
     let sketch = SketchId::mint("generated:test:sketch#offset").unwrap();
@@ -785,6 +822,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         id,
         record_index,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
@@ -793,6 +831,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         secondary_id,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     };
     let source_curve = curve(source_curve_id.clone(), 10, 20, 0);
     let result_curve = curve(result_curve_id.clone(), 11, 21, 7);
@@ -873,6 +912,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
                 },
             ],
             entity_genesis: Some(0x80),
+            metadata_absent: false,
             annotation_bytes: Vec::new(),
             annotation_byte_offset: 111,
             governing_owner_record_index: 13,
@@ -1144,6 +1184,7 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
 fn counted_angular_group_projects_unique_point_selected_line() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
@@ -1272,6 +1313,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         id: format!("{stream}:sketch-point#40"),
         record_index: 40,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 0,
@@ -1296,6 +1338,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             id: format!("{stream}:sketch-curve#{record_index}"),
             record_index,
             owner_reference: Some(100),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                 .unwrap(),
             byte_offset: 0,
@@ -1313,6 +1356,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
                 .unwrap(),
             ),
             planar_z_noise: None,
+            tail_marker: None,
         }
     };
     let explicit = curve(41, Point2::new(0.0, 0.0), Point2::new(2.0, 0.0));

@@ -24,6 +24,31 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+/// A sketch constraint governed by a dimension parameter.
+fn dimension_constraint(
+    id: cadmpeg_ir::sketches::SketchConstraintId,
+    sketch: cadmpeg_ir::sketches::SketchId,
+    definition: cadmpeg_ir::sketches::SketchConstraintDefinition,
+    parameter: &DesignParameter,
+    native_ref: String,
+) -> cadmpeg_ir::sketches::SketchConstraint {
+    cadmpeg_ir::sketches::SketchConstraint {
+        id,
+        sketch,
+        definition,
+        name: None,
+        driving: parameter.driving(),
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: Some(native_ref),
+    }
+}
+
 fn dimension_entity_ids_distinct(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
     let mut unique = HashSet::new();
     for entity in entities {
@@ -226,7 +251,7 @@ fn project_all_dimension_constraints(
     linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     use cadmpeg_ir::sketches::{
-        SketchConstraint, SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
         SketchNativeOperand,
     };
 
@@ -328,14 +353,23 @@ fn project_all_dimension_constraints(
         let parameter = *parameters.get(&(scope, record_index))?;
         Some((parameter, crate::ids::neutral_parameter_id(parameter)))
     };
-    let presentation_for_owner = |scope: &str, owner_record_index: u32| {
-        let mut matches = presentation_frames.iter().filter(|frame| {
-            native_stream(&frame.id) == Some(scope)
-                && frame.governing_owner_record_index == owner_record_index
-        });
-        let frame = matches.next()?;
-        matches.next().is_none().then_some(frame)
-    };
+    let owner_presentation_definition =
+        |scope: &str,
+         owner_record_index: u32,
+         parameter: &DesignParameter,
+         parameter_id: &cadmpeg_ir::features::ParameterId| {
+            governing_presentation_definition(
+                presentation_frames.iter().filter(|frame| {
+                    native_stream(&frame.id) == Some(scope)
+                        && frame.governing_owner_record_index == owner_record_index
+                }),
+                scope,
+                &projected,
+                parameter,
+                parameter_id,
+                linear_tolerance,
+            )
+        };
     let sketch_for_geometry =
         |scope: &str, indices: &[u32]| -> Option<cadmpeg_ir::sketches::SketchId> {
             let projected_sketch = indices
@@ -787,21 +821,13 @@ fn project_all_dimension_constraints(
             let definition =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?;
             let native_ref = group.id.clone();
-            Some(SketchConstraint {
-                id: crate::ids::neutral_sketch_constraint_id(&group.id, group.record_index),
+            Some(dimension_constraint(
+                crate::ids::neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(native_ref),
-            })
+                parameter,
+                native_ref,
+            ))
         })();
         if let Some(result) = projected {
             group_constraints.push(result);
@@ -865,21 +891,13 @@ fn project_all_dimension_constraints(
         else {
             continue;
         };
-        pair_constraints.push(SketchConstraint {
-            id: constraint_id,
+        pair_constraints.push(dimension_constraint(
+            constraint_id,
             sketch,
             definition,
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: Some(pair.id.clone()),
-        });
+            parameter,
+            pair.id.clone(),
+        ));
     }
     let combined = pair_constraints
         .into_iter()
@@ -898,16 +916,31 @@ fn project_all_dimension_constraints(
             let constraint_id =
                 crate::ids::neutral_dimension_constraint_id(&parameter_id, "annotation");
             let copied = parameter_id.clone();
-            let exact = exact_definition(scope, parameter, &indices, copied).or_else(|| {
-                annotation_offset_dimension_definition(
-                    frame,
-                    (parameter, &parameter_id),
-                    scope,
-                    curves,
-                    &projected,
-                    linear_tolerance,
-                )
-            });
+            let exact = exact_definition(scope, parameter, &indices, copied)
+                .or_else(|| {
+                    annotation_offset_dimension_definition(
+                        frame,
+                        (parameter, &parameter_id),
+                        scope,
+                        curves,
+                        &projected,
+                        linear_tolerance,
+                    )
+                })
+                .or_else(|| {
+                    let [first, second] = indices.as_slice() else {
+                        return None;
+                    };
+                    oriented_annotation_point_dimension(
+                        frame,
+                        [
+                            projected.get(&(scope, *first)).copied()?,
+                            projected.get(&(scope, *second)).copied()?,
+                        ],
+                        (parameter, &parameter_id),
+                        linear_tolerance,
+                    )
+                });
             let definition = if let Some(definition) = exact {
                 definition
             } else {
@@ -954,21 +987,13 @@ fn project_all_dimension_constraints(
                 return None;
             };
             let native_ref = frame.id.clone();
-            Some(SketchConstraint {
-                id: constraint_id,
+            Some(dimension_constraint(
+                constraint_id,
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(native_ref),
-            })
+                parameter,
+                native_ref,
+            ))
         }))
         .chain(null_pairs.iter().filter_map(|pair| {
             let scope = native_stream(&pair.id)?;
@@ -998,21 +1023,13 @@ fn project_all_dimension_constraints(
                             cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                                 .ok()?;
                         let native_ref = pair.id.clone();
-                        return Some(SketchConstraint {
-                            id: constraint_id,
+                        return Some(dimension_constraint(
+                            constraint_id,
                             sketch,
                             definition,
-                            name: None,
-                            driving: None,
-                            active: None,
-                            virtual_space: None,
-                            visible: None,
-                            orientation: None,
-                            label_distance: None,
-                            label_position: None,
-                            metadata: None,
-                            native_ref: Some(native_ref),
-                        });
+                            parameter,
+                            native_ref,
+                        ));
                     }
                 }
             }
@@ -1052,21 +1069,13 @@ fn project_all_dimension_constraints(
             else {
                 return None;
             };
-            Some(SketchConstraint {
-                id: constraint_id,
+            Some(dimension_constraint(
+                constraint_id,
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(pair.id.clone()),
-            })
+                parameter,
+                pair.id.clone(),
+            ))
         }));
     let mut constraints = Vec::new();
     for projected in combined {
@@ -1143,7 +1152,11 @@ fn project_all_dimension_constraints(
             &parameter_id,
             linear_tolerance,
         );
-        let definition = if let Some(radial) = radial {
+        let presentation =
+            owner_presentation_definition(scope, owner.record_index(), parameter, &parameter_id);
+        let definition = if let Some(presentation) = presentation {
+            presentation
+        } else if let Some(radial) = radial {
             radial
         } else if linear_candidates.len() == 1 {
             let Some(definition) = linear_candidates.into_iter().next() else {
@@ -1185,21 +1198,13 @@ fn project_all_dimension_constraints(
             continue;
         };
         let native_ref = companion.id().to_owned();
-        constraints.push(SketchConstraint {
-            id: constraint_id,
+        constraints.push(dimension_constraint(
+            constraint_id,
             sketch,
             definition,
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: Some(native_ref),
-        });
+            parameter,
+            native_ref,
+        ));
     }
     let mut projected_parameters = HashSet::new();
     for constraint in &constraints {
@@ -1348,17 +1353,12 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )
             });
-            let presentation_definition = presentation_for_owner(scope, owner.record_index())
-                .and_then(|frame| {
-                    presentation_dimension_definition(
-                        scope,
-                        frame,
-                        &projected,
-                        parameter,
-                        &parameter_id,
-                        linear_tolerance,
-                    )
-                });
+            let presentation_definition = owner_presentation_definition(
+                scope,
+                owner.record_index(),
+                parameter,
+                &parameter_id,
+            );
             let exact_definition = presentation_definition
                 .or(parallel_axis_angle)
                 .or(owner_scoped_definition);
@@ -1395,21 +1395,13 @@ fn project_all_dimension_constraints(
             let definition =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?;
             let native_ref = companion.id().to_owned();
-            Some(SketchConstraint {
-                id: crate::ids::neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
+            Some(dimension_constraint(
+                crate::ids::neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(native_ref),
-            })
+                parameter,
+                native_ref,
+            ))
         })();
         if let Some(result) = projected {
             constraints.push(result);
@@ -1423,6 +1415,30 @@ fn project_all_dimension_constraints(
 /// measures the parameter value. Presentation operands are authoritative for
 /// selection, while the geometric check prevents a presentation record from
 /// assigning a nearby entity with the same source sketch.
+/// The definition of the one presentation frame among `frames` whose operand
+/// measurement equals the parameter.
+fn governing_presentation_definition<'a>(
+    frames: impl Iterator<Item = &'a crate::records::dimensions::DesignDimensionPresentationFrame>,
+    scope: &str,
+    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    let mut definitions = frames.filter_map(|frame| {
+        presentation_dimension_definition(
+            scope,
+            frame,
+            projected,
+            parameter,
+            parameter_id,
+            linear_tolerance,
+        )
+    });
+    let definition = definitions.next()?;
+    definitions.next().is_none().then_some(definition)
+}
+
 fn presentation_dimension_definition(
     scope: &str,
     frame: &crate::records::dimensions::DesignDimensionPresentationFrame,
@@ -4353,7 +4369,7 @@ pub(super) fn exact_atomic_constraint(
         }
         SketchConstraintKind::Parallel => match lines() {
             Some((first, second)) => Some(Definition::Parallel { first, second }),
-            None => midpoint_constraint(entities),
+            None => midpoint_constraint(entities, MidpointCarrier::Line),
         },
         SketchConstraintKind::Perpendicular => {
             lines().map(|(first, second)| Definition::Perpendicular { first, second })
@@ -4414,7 +4430,7 @@ pub(super) fn exact_atomic_constraint(
         SketchConstraintKind::Curvature => {
             curves().map(|(first, second)| Definition::Curvature { first, second })
         }
-        SketchConstraintKind::Midpoint => midpoint_constraint(entities),
+        SketchConstraintKind::Midpoint => midpoint_constraint(entities, MidpointCarrier::LineOrArc),
         SketchConstraintKind::Equal => {
             equal_size_entities().map(|(first, second)| Definition::Equal { first, second })
         }
@@ -4519,8 +4535,16 @@ pub(super) fn exact_coincident_loci(
     Ok(unique_solution.map(|loci| Definition::CoincidentLoci { loci }))
 }
 
+/// Bounded curves whose midpoint a relation bit can name.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MidpointCarrier {
+    Line,
+    LineOrArc,
+}
+
 fn midpoint_constraint(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    carrier: MidpointCarrier,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
@@ -4530,17 +4554,30 @@ fn midpoint_constraint(
     let [first, second] = entities else {
         return None;
     };
-    let (line, point, start, end, position) =
-        match (first.geometry.definition(), second.geometry.definition()) {
-            (Geometry::Line { start, end }, Geometry::Point { position }) => {
-                (*first, *second, start, end, position)
-            }
-            (Geometry::Point { position }, Geometry::Line { start, end }) => {
-                (*second, *first, start, end, position)
-            }
-            _ => return None,
-        };
-    let midpoint = Point2::new(start.u.midpoint(end.u), start.v.midpoint(end.v));
+    let (curve, point, position) = match (first.geometry.definition(), second.geometry.definition())
+    {
+        (_, Geometry::Point { position }) => (*first, *second, position),
+        (Geometry::Point { position }, _) => (*second, *first, position),
+        _ => return None,
+    };
+    let midpoint = match curve.geometry.definition() {
+        Geometry::Line { start, end } => {
+            Point2::new(start.u.midpoint(end.u), start.v.midpoint(end.v))
+        }
+        Geometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } if carrier == MidpointCarrier::LineOrArc => {
+            let angle = start_angle.get().midpoint(end_angle.get());
+            Point2::new(
+                center.u + radius.get() * angle.cos(),
+                center.v + radius.get() * angle.sin(),
+            )
+        }
+        _ => return None,
+    };
     if (position.u - midpoint.u).abs() > EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9
         || (position.v - midpoint.v).abs() > EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9
     {
@@ -4548,7 +4585,7 @@ fn midpoint_constraint(
     }
     Some(Definition::Midpoint {
         point: SketchLocus::Entity(point.id().clone()),
-        entity: line.id().clone(),
+        entity: curve.id().clone(),
     })
 }
 
@@ -4623,6 +4660,80 @@ fn indirect_angular_lines(
     })();
     let (first, second) = pair?;
     Some((first.clone(), second.clone()))
+}
+
+/// The directional distance of a two-point `Linear Dimension*` annotation
+/// frame whose horizontal and vertical point distances both equal the
+/// parameter, selected by the coordinate the two annotation payload points
+/// share.
+fn oriented_annotation_point_dimension(
+    frame: &DesignDimensionAnnotationFrame,
+    [first, second]: [&cadmpeg_ir::sketches::SketchEntity; 2],
+    (parameter, parameter_id): (&DesignParameter, &cadmpeg_ir::features::ParameterId),
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    use crate::layout::dimension_annotation_payload_points as payload_points;
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
+    };
+
+    if !parameter.source_kind_str().starts_with("Linear Dimension")
+        || !design_dimension_unit(parameter)
+        || first.id() == second.id()
+    {
+        return None;
+    }
+    let (
+        SketchGeometryDefinition::Point {
+            position: first_position,
+        },
+        SketchGeometryDefinition::Point {
+            position: second_position,
+        },
+    ) = (first.geometry.definition(), second.geometry.definition())
+    else {
+        return None;
+    };
+    let expected = parameter.evaluated_value().get() * 10.0;
+    if !linear_measurement_matches(
+        first_position.u - second_position.u,
+        expected,
+        linear_tolerance,
+    ) || !linear_measurement_matches(
+        first_position.v - second_position.v,
+        expected,
+        linear_tolerance,
+    ) {
+        return None;
+    }
+    let payload = frame.annotation_bytes().get(..payload_points::LEN)?;
+    let first_point = crate::bytes::f64s_at::<3>(payload, payload_points::FIRST_POINT)?;
+    let second_point = crate::bytes::f64s_at::<3>(payload, payload_points::SECOND_POINT)?;
+    if !first_point
+        .iter()
+        .chain(&second_point)
+        .all(|value| value.is_finite())
+    {
+        return None;
+    }
+    let [first_u, first_v, _] = first_point;
+    let [second_u, second_v, _] = second_point;
+    let first_locus = SketchLocus::Entity(first.id().clone());
+    let second_locus = SketchLocus::Entity(second.id().clone());
+    let parameter = parameter_id.clone();
+    match (first_u == second_u, first_v == second_v) {
+        (false, true) => Some(Definition::HorizontalDistance {
+            first: first_locus,
+            second: second_locus,
+            parameter,
+        }),
+        (true, false) => Some(Definition::VerticalDistance {
+            first: first_locus,
+            second: second_locus,
+            parameter,
+        }),
+        (true, true) | (false, false) => None,
+    }
 }
 
 fn directional_point_dimension(

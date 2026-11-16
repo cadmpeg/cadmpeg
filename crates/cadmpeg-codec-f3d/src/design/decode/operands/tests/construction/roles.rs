@@ -48,9 +48,8 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
+        scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::LegacyShifted {
@@ -113,6 +112,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     crate::design::decode::operands::assign_extrude_face_roles(
         &scope,
         std::slice::from_mut(&mut group),
+        None,
     );
     assert_eq!(
         group.extrude_role(),

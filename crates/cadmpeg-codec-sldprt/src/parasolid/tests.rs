@@ -472,9 +472,10 @@ fn direct_parasolid_decode_route_emits_bodies() {
     let decoded = crate::SldprtCodec
         .decode(&mut Cursor::new(&source), &options)
         .unwrap();
-    assert!(!decoded.ir().model.bodies.is_empty());
+    assert!(!decoded.ir().geometry.bodies.is_empty());
 }
 
+mod weldment;
 #[test]
 fn stream_header_states_no_stream_for_truncated_framing() {
     let valid = parasolid_payload("partition body", "SCH_SW_33103_11000");

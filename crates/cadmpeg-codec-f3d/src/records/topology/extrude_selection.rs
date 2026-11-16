@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::num::NonZeroU32;
 
-/// Longest tail of an extended selection member, in bytes.
+/// Longest extended selection-member tail that a following record ends, in bytes.
 const EXTENDED_TAIL_MAX: u64 = 1024;
 
 /// Counted selection group owned by an Extrude or Emboss parameter scope.
@@ -413,6 +413,8 @@ impl DesignOperandRole {
     pub(crate) const PROFILE: Self = Self(0x0000_0041_0000_0000);
     /// Extrude face operand run.
     pub(crate) const FACES: Self = Self(0x0000_0011_0000_0000);
+    /// Pattern seed carried by occurrence paths instead of members.
+    pub(crate) const PATH_SEED: Self = Self(0x0000_0100_0000_0000);
 
     // These codes have scope-dependent meanings and no single semantic name.
     /// Scope-dependent role code 0x5.
@@ -595,6 +597,7 @@ impl DesignExtrudeSelectionMember {
         let frame_length_valid = match draft.scope_tail {
             Some(_) => frame_length == 240 && !draft.tail_slot_present,
             None if frame_length == 204 => draft.tail_slot_present,
+            None if draft.next_record_index == 0 => frame_length >= 190 && frame_length != 240,
             None => (190..=190 + EXTENDED_TAIL_MAX).contains(&frame_length) && frame_length != 240,
         };
         if !frame_length_valid {

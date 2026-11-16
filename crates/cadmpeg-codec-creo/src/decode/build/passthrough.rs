@@ -4,6 +4,7 @@
 use crate::container::SectionRole;
 
 use crate::decode::native::CreoArena;
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -11,6 +12,7 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use serde::Serialize;
+use std::collections::BTreeSet;
 
 use crate::container::{self, ContainerScan};
 
@@ -18,7 +20,10 @@ use super::super::native::annotate;
 use super::super::native::emit_arena;
 use cadmpeg_ir::unknown::UnknownRecord;
 
-/// Retain PSB geometry, thumbnail payloads, and every failed expansion.
+/// Retain PSB geometry, opaque metadata, thumbnails, and failed expansions,
+/// each with the arena classes its undecoded bytes can hold: a section whose
+/// compressed payload would not expand can hold model or design content, and
+/// every other retained section holds model content.
 ///
 /// A section whose declared extent runs past the scanned buffer is a refusal
 /// naming the section, its declared end, and the buffer length. The declared
@@ -28,11 +33,21 @@ pub(super) fn preserve_passthrough_sections(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut AnnotationBuilder,
-) -> Result<Vec<UnknownRecord>, CodecError> {
+) -> Result<Vec<(UnknownRecord, BTreeSet<ArenaClass>)>, CodecError> {
     let mut unknowns = Vec::new();
     for section in scan.framing.sections.iter().filter(|section| {
         section.role() == SectionRole::PsbGeometry
             || section.role() == SectionRole::Thumbnail
+            || section.name() == "NeuPrtSld"
+            || scan
+                .references
+                .unresolved_conic_sections
+                .contains(&section.offset())
+            || (section.name() == "DEPDB_DATA"
+                && scan
+                    .framing
+                    .unowned_physical_geometry
+                    .contains(&section.offset()))
             || scan
                 .framing
                 .expansion_losses
@@ -67,6 +82,30 @@ pub(super) fn preserve_passthrough_sections(
                 section.offset(),
                 "unexpanded_compressed_section",
                 Exactness::Unknown,
+            )
+        } else if section.name() == "DEPDB_DATA"
+            && scan
+                .framing
+                .unowned_physical_geometry
+                .contains(&section.offset())
+        {
+            (
+                section_bytes,
+                section.offset(),
+                "unowned_physical_geometry_section",
+                Exactness::ByteExact,
+            )
+        } else if section.name() == "NeuPrtSld"
+            || scan
+                .references
+                .unresolved_conic_sections
+                .contains(&section.offset())
+        {
+            (
+                section_bytes,
+                section.offset(),
+                "opaque_metadata_section",
+                Exactness::ByteExact,
             )
         } else if section.role() == SectionRole::Thumbnail {
             if raw_is_compressed {
@@ -130,11 +169,19 @@ pub(super) fn preserve_passthrough_sections(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             "retain Creo passthrough section",
         )?;
-        unknowns.push(UnknownRecord::retained(
-            id,
-            cadmpeg_core::decode::u64_from_index(offset),
-            bytes.to_vec(),
-            Vec::new(),
+        let classes = if expansion_failed {
+            BTreeSet::from([ArenaClass::Model, ArenaClass::Design])
+        } else {
+            BTreeSet::from([ArenaClass::Model])
+        };
+        unknowns.push((
+            UnknownRecord::retained(
+                id,
+                cadmpeg_core::decode::u64_from_index(offset),
+                bytes.to_vec(),
+                Vec::new(),
+            ),
+            classes,
         ));
     }
     Ok(unknowns)
@@ -331,6 +378,39 @@ mod tests {
         })
         .expect("preserve the passthrough sections");
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].id().as_str(), "creo:VisibGeom:section#0");
+        assert_eq!(records[0].0.id().as_str(), "creo:VisibGeom:section#0");
+        assert_eq!(
+            records[0].1,
+            std::collections::BTreeSet::from([cadmpeg_core::decode::ArenaClass::Model])
+        );
+    }
+
+    #[test]
+    fn a_section_that_would_not_expand_can_hold_model_or_design_content() {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.data = vec![0u8; 48].into();
+        scan.framing.sections.push(
+            crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 0, 48, None, &[0u8; 48])
+                .expect("section extent")
+                .section,
+        );
+        scan.framing
+            .expansion_losses
+            .push(crate::container::SectionExpansionLoss {
+                section_offset: 0,
+                message: "truncated compressed payload".to_owned(),
+            });
+        let records = crate::decode::with_service_context(|ctx| {
+            preserve_passthrough_sections(ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
+        })
+        .expect("preserve the passthrough sections");
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0].1,
+            std::collections::BTreeSet::from([
+                cadmpeg_core::decode::ArenaClass::Model,
+                cadmpeg_core::decode::ArenaClass::Design
+            ])
+        );
     }
 }

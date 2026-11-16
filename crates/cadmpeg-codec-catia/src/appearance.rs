@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId};
+use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, FaceId};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 
@@ -64,7 +64,7 @@ impl SourcedPacket {
     }
 }
 
-/// Transfers presentation packets belonging to the selected modeling graph.
+/// Retains presentation packets and binds eligible packets to model topology.
 ///
 /// `01 R G B` stores opaque RGB and `03 R G B A` stores RGBA.
 /// A packet population joins the standard FBB face colors only when its
@@ -83,13 +83,13 @@ pub(crate) fn transfer(
     let initial_assets = ir.model.appearances.len();
     let initial_bindings = ir.model.appearance_bindings.len();
     let mut packets = Vec::new();
-    for block in native.value_blocks.iter().filter(|block| {
-        graph_scope.is_unscoped()
+    let mut source_packets = Vec::new();
+    for block in &native.value_blocks {
+        let in_modeling_scope = graph_scope.is_unscoped()
             || block
                 .object_graph
                 .as_ref()
-                .is_some_and(|graph| graph_scope.contains(graph))
-    }) {
+                .is_some_and(|graph| graph_scope.contains(graph));
         for (ordinal, field) in crate::value_block::tokenize(&block.payload)
             .into_iter()
             .enumerate()
@@ -101,10 +101,20 @@ pub(crate) fn transfer(
                 continue;
             };
             let source_id = format!("{}:field#{offset:010}:{ordinal:06}", block.id);
-            packets.push(SourcedPacket { packet, source_id });
+            let packet = SourcedPacket { packet, source_id };
+            if in_modeling_scope {
+                packets.push(packet);
+            } else {
+                source_packets.push(packet);
+            }
         }
     }
     let mut result = TransferResult::default();
+    for packet in &source_packets {
+        insert_appearance(ctx, ir, packet.rgba())?;
+        insert_source_binding(ctx, ir, packet)?;
+    }
+    result.unresolved_packets = source_packets.len();
 
     let mut all_faces = Vec::new();
     let mut body = Vec::new();
@@ -127,8 +137,10 @@ pub(crate) fn transfer(
         Some(bytes) => standard_face_colors(ctx, bytes)?,
         None => None,
     };
-    let positional_colors = positional_colors.filter(|colors| colors.len() == ir.model.faces.len());
-    if let Some(colors) = positional_colors {
+    let positional_bindings = positional_colors
+        .filter(|colors| colors.len() == ir.geometry.faces.len())
+        .and_then(|colors| Some((standard_faces_in_row_order(ir)?, colors)));
+    if let Some((faces, colors)) = positional_bindings {
         let compatible = match all_faces.as_slice() {
             [] => body.len() > 1 && colors.as_slice() == body.as_slice(),
             [base] => {
@@ -140,7 +152,6 @@ pub(crate) fn transfer(
             }
             _ => false,
         };
-        let faces = copy_face_ids(ir);
         for (index, (face, rgba)) in faces.into_iter().zip(colors).enumerate() {
             let appearance = insert_appearance(ctx, ir, rgba)?;
             insert_binding(ctx, ir, &appearance, AppearanceTarget::Face(face), index)?;
@@ -156,7 +167,7 @@ pub(crate) fn transfer(
             result.unresolved_packets += packets.len();
         }
     } else {
-        if all_faces.len() == 1 && !ir.model.faces.is_empty() {
+        if all_faces.len() == 1 && !ir.geometry.faces.is_empty() {
             let appearance = insert_appearance(ctx, ir, all_faces[0])?;
             let faces = copy_face_ids(ir);
             for (index, face) in faces.into_iter().enumerate() {
@@ -171,9 +182,9 @@ pub(crate) fn transfer(
         }
 
         match body.as_slice() {
-            [rgba] if all_faces.is_empty() && ir.model.bodies.len() == 1 => {
+            [rgba] if all_faces.is_empty() && ir.geometry.bodies.len() == 1 => {
                 let appearance = insert_appearance(ctx, ir, *rgba)?;
-                let target = AppearanceTarget::Body(ir.model.bodies[0].id.clone());
+                let target = AppearanceTarget::Body(ir.geometry.bodies[0].id.clone());
                 insert_binding(ctx, ir, &appearance, target, 0)?;
                 result.transferred_packets += 1;
             }
@@ -190,9 +201,27 @@ pub(crate) fn transfer(
     Ok(result)
 }
 
-fn copy_face_ids(ir: &CadIr) -> Vec<cadmpeg_ir::ids::FaceId> {
+fn standard_faces_in_row_order(ir: &CadIr) -> Option<Vec<FaceId>> {
+    let mut faces = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|face| {
+            let row = face.id.as_str().strip_prefix("catia:standard:face#")?;
+            Some((row.parse::<usize>().ok()?, &face.id))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    faces.sort_unstable_by_key(|(row, _)| *row);
+    faces
+        .into_iter()
+        .enumerate()
+        .map(|(expected, (row, id))| (row == expected).then(|| id.clone()))
+        .collect()
+}
+
+fn copy_face_ids(ir: &CadIr) -> Vec<FaceId> {
     let mut faces = Vec::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         let id = face.id.clone();
         faces.push(id);
     }
@@ -383,19 +412,18 @@ mod tests {
 
     fn model(face_count: usize) -> CadIr {
         let mut ir = CadIr::empty();
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id: BodyId::mint("catia:test:body#body").expect("identity grammar"),
             kind: BodyKind::Solid,
-            regions: vec![],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         for index in 0..face_count {
-            ir.model.faces.push(Face {
-                id: FaceId::mint(format!("catia:test:face#face-{index}"))
-                    .expect("identity grammar"),
+            ir.geometry.faces.push(Face {
+                id: FaceId::mint(format!("catia:standard:face#{index}")).expect("identity grammar"),
                 shell: ShellId::mint("catia:test:shell#shell").expect("identity grammar"),
                 surface: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
                     .expect("identity grammar"),
@@ -404,6 +432,7 @@ mod tests {
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             });
         }
         ir
@@ -489,8 +518,8 @@ mod tests {
                 for face_count in [0, 2] {
                     for body_count in 0..=2 {
                         let mut ir = model(face_count);
-                        let body = ir.model.bodies[0].clone();
-                        ir.model.bodies = (0..body_count)
+                        let body = ir.geometry.bodies[0].clone();
+                        ir.geometry.bodies = (0..body_count)
                             .map(|index| Body {
                                 id: BodyId::compose(
                                     &cadmpeg_ir::identity_namespace!("catia", "test", "body"),
@@ -810,6 +839,36 @@ mod tests {
     }
 
     #[test]
+    fn positional_colors_follow_fbb_rows_after_face_arena_sorting() {
+        let mut ir = model(12);
+        ir.geometry.faces.sort_by(|a, b| a.id.cmp(&b.id));
+        let brep = (0..12)
+            .flat_map(|row| [0xb0, 4, 4, 0xff, 0xff, 0, 0, row])
+            .collect::<Vec<_>>();
+        let result = crate::test_support::with_service_context(|ctx| {
+            transfer(
+                ctx,
+                &mut ir,
+                &CatiaNative::default(),
+                &crate::decode::ModelingGraphScope::Unscoped,
+                Some(&brep),
+            )
+        })
+        .expect("transfer the appearance");
+        assert_eq!(result.emitted_bindings, 12);
+        for (row, binding) in ir.model.appearance_bindings.iter().enumerate() {
+            let AppearanceTarget::Face(id) = &binding.target else {
+                panic!("FBB row binds to a standard face");
+            };
+            assert_eq!(id.as_str(), format!("catia:standard:face#{row}"));
+            assert!(binding
+                .appearance
+                .as_str()
+                .ends_with(&format!("{row:02x}0000ff")));
+        }
+    }
+
+    #[test]
     fn positional_population_supersedes_but_still_accounts_for_all_faces_packet() {
         let rgba = [0xd1, 0x1a, 0x1f, 0x99];
         let mut fields = vec![inline(&[1, 0xd1, 0x1a, 0x1f])];
@@ -1032,5 +1091,137 @@ mod tests {
         })
         .expect("transfer the appearance");
         assert_eq!(admitted.decoded_packets(), 1);
+    }
+    #[test]
+    fn presentation_sources_survive_unresolved_modeling_scope_without_topology_binding() {
+        let mut ir = model(1);
+        let mut native = native(vec![inline(&[0x03, 0, 0, 0, 0x7f])]);
+        native.value_blocks[0].object_graph = Some("presentation-graph".to_string());
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("bounded synthetic presentation source");
+        let result = transfer(
+            &ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unresolved,
+            None,
+        )
+        .expect("retain presentation source");
+        assert_eq!(result.decoded_packets(), 1);
+        assert_eq!(result.transferred_packets(), 0);
+        assert_eq!(result.unresolved_packets(), 1);
+        assert_eq!(ir.model.appearances.len(), 1);
+        assert_eq!(ir.model.appearance_bindings.len(), 1);
+        assert!(matches!(
+            ir.model.appearance_bindings[0].target,
+            AppearanceTarget::Source { .. }
+        ));
+    }
+
+    #[test]
+    fn out_of_scope_presentation_packets_do_not_enter_model_color_populations() {
+        let mut ir = model(1);
+        let mut native = native(vec![inline(&[0x01, 10, 20, 30])]);
+        native.value_blocks[0].object_graph = Some("part-graph".to_string());
+        let mut source = native.value_blocks[0].clone();
+        source.id = "presentation-values".to_string();
+        source.object_graph = Some("presentation-graph".to_string());
+        source.payload = vec![0x8e, 0xec, 0x84, 0x03, 0, 0, 0, 0x7f];
+        native.value_blocks.push(source);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("bounded synthetic presentation sources");
+        let result = transfer(
+            &ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Scoped("part-graph".to_string()),
+            None,
+        )
+        .expect("separate topology and presentation targets");
+        assert_eq!(result.decoded_packets(), 2);
+        assert_eq!(result.transferred_packets(), 1);
+        assert_eq!(result.unresolved_packets(), 1);
+        assert_eq!(
+            ir.model
+                .appearance_bindings
+                .iter()
+                .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+                .count(),
+            1
+        );
+        assert_eq!(
+            ir.model
+                .appearance_bindings
+                .iter()
+                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
+                .count(),
+            1
+        );
+        assert!(ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .all(|binding| binding.appearance.as_str().ends_with("0a141eff")));
+    }
+
+    #[test]
+    fn source_only_colors_preserve_independent_fbb_face_colors() {
+        for owner in [None, Some("presentation-graph".to_string())] {
+            let mut ir = model(2);
+            let mut native = native(vec![
+                inline(&[0x03, 0, 0, 0, 0x7f]),
+                inline(&[0x03, 0, 0, 0, 0x7f]),
+            ]);
+            native.value_blocks[0].object_graph = owner;
+            let fbb = [0x30, 4, 4, 0xff, 0xff, 0xff, 0xd2, 0xd2].repeat(2);
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("bounded independent source packets");
+            let result = transfer(
+                &ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unresolved,
+                Some(&fbb),
+            )
+            .expect("independent FBB and source presentations");
+            assert_eq!(result.decoded_packets(), 2);
+            assert_eq!(result.transferred_packets(), 0);
+            assert_eq!(result.unresolved_packets(), 2);
+            assert_eq!(ir.model.appearances.len(), 2);
+            assert_eq!(ir.model.appearance_bindings.len(), 4);
+            let faces = ir
+                .model
+                .appearance_bindings
+                .iter()
+                .filter(|b| matches!(b.target, AppearanceTarget::Face(_)))
+                .collect::<Vec<_>>();
+            assert_eq!(faces.len(), 2);
+            assert!(faces
+                .iter()
+                .all(|b| b.appearance.as_str().ends_with("d2d2ffff")));
+            let sources = ir
+                .model
+                .appearance_bindings
+                .iter()
+                .filter(|b| matches!(b.target, AppearanceTarget::Source { .. }))
+                .collect::<Vec<_>>();
+            assert_eq!(sources.len(), 2);
+            assert!(sources
+                .iter()
+                .all(|b| b.appearance.as_str().ends_with("0000007f")));
+            assert!(!ir
+                .model
+                .appearance_bindings
+                .iter()
+                .any(|b| matches!(b.target, AppearanceTarget::Body(_))));
+        }
     }
 }

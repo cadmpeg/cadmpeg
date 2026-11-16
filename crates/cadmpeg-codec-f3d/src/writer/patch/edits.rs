@@ -13,7 +13,7 @@ use crate::records::{
     sketch_geometry::SketchCurveGeometry,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::{PcurveGeometry, PcurveNurbs},
@@ -235,7 +235,7 @@ pub(super) fn validate_edge_ownership_edits(
         }
         let owner = if let Some(owner) = &after.owner_coedge {
             let coedge = target
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *owner)
@@ -305,7 +305,7 @@ pub(super) fn validate_vertex_ownership_edits(
             continue;
         }
         let edge = target
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id == after.owning_edge)
@@ -316,8 +316,8 @@ pub(super) fn validate_vertex_ownership_edits(
                 ))
             })?;
         let valid = match after.endpoint_index {
-            EndpointSlot::Start => edge.start == after.vertex,
-            EndpointSlot::End => edge.end == after.vertex,
+            EndpointSlot::Start => edge.start() == Some(&after.vertex),
+            EndpointSlot::End => edge.end() == Some(&after.vertex),
         };
         if !valid {
             return Err(CodecError::malformed(format_args!(
@@ -398,13 +398,13 @@ pub(super) fn validate_tolerant_vertex_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<usize, (f64, [f64; 2])>, CodecError> {
     let baseline_vertices = baseline
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| (vertex.id.as_str(), vertex))
         .collect::<BTreeMap<_, _>>();
     let target_vertices = target
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| (vertex.id.as_str(), vertex))
@@ -540,13 +540,13 @@ pub(super) fn validate_tolerant_edge_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<usize, f64>, CodecError> {
     let baseline_edges = baseline
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<BTreeMap<_, _>>();
     let target_edges = target
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
@@ -612,13 +612,13 @@ pub(super) fn validate_tolerant_coedge_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<usize, [f64; 2]>, CodecError> {
     let baseline_coedges = baseline
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| (coedge.id.as_str(), coedge))
         .collect::<BTreeMap<_, _>>();
     let target_coedges = target
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| (coedge.id.as_str(), coedge))
@@ -741,7 +741,8 @@ pub(super) enum PcurveEdit {
         periodic: Option<bool>,
         wrapper_reversed: Option<bool>,
         native_tail_flags: Option<[bool; 4]>,
-        parameter_range: Option<[f64; 2]>,
+        uv_offset: Option<[f64; 2]>,
+        stored_uv_offset: [f64; 2],
         fit_tolerance: Option<f64>,
     },
     Ref {
@@ -749,7 +750,8 @@ pub(super) enum PcurveEdit {
         support: String,
         native_geometry: PcurveNurbs,
         periodic: Option<bool>,
-        parameter_range: Option<[f64; 2]>,
+        uv_offset: Option<[f64; 2]>,
+        stored_uv_offset: [f64; 2],
     },
 }
 
@@ -758,6 +760,17 @@ impl PcurveEdit {
     pub(super) fn support(&self) -> &str {
         match self {
             Self::Inline { support, .. } | Self::Ref { support, .. } => support,
+        }
+    }
+
+    pub(super) fn stored_uv_offset(&self) -> [f64; 2] {
+        match self {
+            Self::Inline {
+                stored_uv_offset, ..
+            }
+            | Self::Ref {
+                stored_uv_offset, ..
+            } => *stored_uv_offset,
         }
     }
 
@@ -1670,6 +1683,11 @@ pub(super) fn validate_configuration_edits(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
+        if before.active_row() != after.active_row() {
+            return Err(CodecError::NotImplemented(format!(
+                "retained F3D configuration edit changes the Design root record: {name}"
+            )));
+        }
         if before != after {
             edits.insert(
                 name.to_owned(),
@@ -1836,13 +1854,13 @@ pub(super) fn validate_body_visibility_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<(u64, bool)>>, CodecError> {
     let baseline_bodies = baseline
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| (&body.id, body))
         .collect::<BTreeMap<_, _>>();
     let target_bodies = target
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| (&body.id, body))
@@ -2872,8 +2890,8 @@ pub(super) fn validate_face_sense_edits(
     baseline_ir: &CadIr,
     target_ir: &CadIr,
 ) -> Result<BTreeMap<String, Sense>, CodecError> {
-    let baseline = &baseline_ir.model.faces;
-    let target = &target_ir.model.faces;
+    let baseline = &baseline_ir.geometry.faces;
+    let target = &target_ir.geometry.faces;
     let native_senses = native
         .baseline
         .map(|native| {
@@ -3094,15 +3112,15 @@ pub(super) fn validate_curve_edits(
 }
 
 pub(super) fn validate_pcurve_edits(
-    baseline_model: &Model,
-    target_model: &Model,
+    baseline_geometry: &Topology,
+    target_geometry: &Topology,
 ) -> Result<BTreeMap<String, PcurveEdit>, CodecError> {
-    let baseline = baseline_model
+    let baseline = baseline_geometry
         .pcurves
         .iter()
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
         .collect::<BTreeMap<_, _>>();
-    let target = target_model
+    let target = target_geometry
         .pcurves
         .iter()
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
@@ -3116,11 +3134,11 @@ pub(super) fn validate_pcurve_edits(
     for (id, before) in baseline {
         let after = target[id];
         let before_native = native_support_pcurve(
-            pcurve_support_geometry(baseline_model, &before.id)?,
+            pcurve_support_geometry(baseline_geometry, &before.id)?,
             &before.geometry,
         )?;
         let after_native = native_support_pcurve(
-            pcurve_support_geometry(target_model, &after.id)?,
+            pcurve_support_geometry(target_geometry, &after.id)?,
             &after.geometry,
         )?;
         if before == after && before_native == after_native {
@@ -3150,11 +3168,9 @@ pub(super) fn validate_pcurve_edits(
         let contract_valid = before.wrapper_reversed().is_some()
             == after.wrapper_reversed().is_some()
             && before.native_tail_flags().is_some() == after.native_tail_flags().is_some()
-            && before.parameter_range().is_some() == after.parameter_range().is_some()
-            && before.fit_tolerance().is_some() == after.fit_tolerance().is_some()
-            && after
-                .parameter_range()
-                .is_none_or(|range| range[0] <= range[1]);
+            && before.uv_offset().is_some() == after.uv_offset().is_some()
+            && before.parameter_range() == after.parameter_range()
+            && before.fit_tolerance().is_some() == after.fit_tolerance().is_some();
         if !valid || !contract_valid {
             return Err(CodecError::NotImplemented(format!(
                 "F3D pcurve edit changes fixed cache structure: {id}"
@@ -3162,10 +3178,10 @@ pub(super) fn validate_pcurve_edits(
         }
         let periodic =
             (before_nurbs.periodic() != after_nurbs.periodic()).then_some(after_nurbs.periodic());
-        let parameter_range = (before.parameter_range() != after.parameter_range())
-            .then_some(after.parameter_range())
+        let uv_offset = (before.uv_offset() != after.uv_offset())
+            .then_some(after.uv_offset())
             .flatten();
-        let support = pcurve_support_surface(target_model, &after.id)?
+        let support = pcurve_support_surface(target_geometry, &after.id)?
             .as_str()
             .to_owned();
         let edit = match &before.metadata {
@@ -3176,7 +3192,10 @@ pub(super) fn validate_pcurve_edits(
                     support,
                     native_geometry: after_native,
                     periodic,
-                    parameter_range: parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
+                    uv_offset: uv_offset.map(cadmpeg_ir::units::FiniteVector::get),
+                    stored_uv_offset: after
+                        .uv_offset()
+                        .map_or([0.0, 0.0], cadmpeg_ir::units::FiniteVector::get),
                 }
             }
             cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { .. }
@@ -3190,7 +3209,10 @@ pub(super) fn validate_pcurve_edits(
                 native_tail_flags: (before.native_tail_flags() != after.native_tail_flags())
                     .then_some(after.native_tail_flags())
                     .flatten(),
-                parameter_range: parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
+                uv_offset: uv_offset.map(cadmpeg_ir::units::FiniteVector::get),
+                stored_uv_offset: after
+                    .uv_offset()
+                    .map_or([0.0, 0.0], cadmpeg_ir::units::FiniteVector::get),
                 fit_tolerance: (before.fit_tolerance() != after.fit_tolerance())
                     .then_some(after.fit_tolerance())
                     .flatten()
@@ -3345,13 +3367,13 @@ pub(super) fn validate_procedural_surface_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<String, ProceduralSurfaceEdit>, CodecError> {
     let baseline = baseline
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .map(|surface| (surface.id.as_str(), surface))
         .collect::<BTreeMap<_, _>>();
     let target = target
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .map(|surface| (surface.id.as_str(), surface))
@@ -3455,13 +3477,13 @@ pub(super) fn validate_procedural_surface_fit_edits(
     target: &CadIr,
 ) -> Result<BTreeMap<String, f64>, CodecError> {
     let baseline = baseline
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .map(|surface| (surface.id.as_str(), surface))
         .collect::<BTreeMap<_, _>>();
     let target = target
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .map(|surface| (surface.id.as_str(), surface))
@@ -3830,6 +3852,7 @@ mod tests {
             id: CurveId::mint(id).expect("identity grammar"),
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         }]
     }
 
@@ -3838,6 +3861,7 @@ mod tests {
             id: SurfaceId::mint(id).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         }]
     }
 

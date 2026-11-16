@@ -20,6 +20,34 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
+fn configuration_property_carrier_facts_do_not_create_swobjects_semantics() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "docProps/Config-3-Properties.xml",
+        br#"<ConfigProperties xmlns="http://www.solidworks.com/config-properties" xmlns:v="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><propertySection xmlns="" fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"><property name="Designer" pid="3" IsEquation="False"><v:lpstr>Merlin</v:lpstr></property></propertySection></ConfigProperties>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .filter(|attribute| crate::metadata::is_saved_property_attribute(attribute))
+            .count(),
+        1
+    );
+    let source = decoded.ir().source.as_ref().unwrap();
+    assert!(!source
+        .attributes
+        .keys()
+        .any(|key| key.as_str().starts_with("sldprt_swobjects_")));
+}
+
+#[test]
 fn decode_preserves_unresolved_active_configuration() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -93,7 +121,7 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         Some(
             decoded
                 .ir()
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .map(|body| body.id.clone())
@@ -116,7 +144,7 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         Some(
             round_trip
                 .ir()
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .map(|body| body.id.clone())
@@ -154,7 +182,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
         Some(
             decoded
                 .ir()
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .map(|body| body.id.clone())
@@ -164,8 +192,8 @@ fn decode_synthesizes_sparse_partition_configuration() {
     );
 
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let moved = edited.model.points[0].position().get();
-    edited.model.points[0].set_position(
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
@@ -193,30 +221,30 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.faces.len(), 2);
+    assert_eq!(result.ir().geometry.faces.len(), 2);
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.position().get().x == 0.0));
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.position().get().x == 10_000.0));
     let ids: std::collections::HashSet<_> = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .map(|point| &point.id)
         .collect();
-    assert_eq!(ids.len(), result.ir().model.points.len());
+    assert_eq!(ids.len(), result.ir().geometry.points.len());
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .all(|point| point.id.as_str().contains("@block@")));
@@ -260,7 +288,7 @@ fn decode_does_not_infer_a_source_header_for_unresolved_partition_sites() {
     assert!(!attributes.contains_key("parasolid_description"));
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .all(|point| point.id.as_str().contains("@block@")));
@@ -286,7 +314,7 @@ fn decode_uses_the_active_configuration_source_site() {
 
     let active_points = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .filter(|point| !point.id.as_str().contains("@block@"))
@@ -317,7 +345,7 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
     source.extend(make_block(
         0x43,
         "Contents/Features",
-        br#"<?xml version="1.0"?><swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First" swConfigurationId="0"/><swModel id="model-1" swConfigurationName="Second" swConfigurationId="1"/><swConfigurationList><swConfiguration swID="0" swModelRef="model-0" swMostRecentConfiguration="NO"/><swConfiguration swID="1" swModelRef="model-1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#,
+        br#"<?xml version="1.0"?><swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First" swConfigurationId="0"/><swModel id="model-1" swConfigurationName="Second" swConfigurationId="1"/><swConfigurationList><swConfiguration swName="First" swID="0" swModelRef="model-0" swMostRecentConfiguration="NO" swConfigurationNeedsUpdate="NO"/><swConfiguration swName="Second" swID="1" swModelRef="model-1" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swConfigurationList></swSolidWorks>"#,
     ));
 
     let result = SldprtCodec
@@ -357,6 +385,96 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
         .contains("active configuration identity is unresolved")));
 }
 
+#[test]
+fn multiple_model_names_without_manifest_rows_do_not_mark_the_first_active() {
+    let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="First"/><Configuration Name="Second"/></Keywords>"#,
+    ));
+    source.extend(make_block(0x43, "Contents/Features", br#"<swSolidWorks><swModel swConfigurationName="First"/><swModel swConfigurationName="Second"/></swSolidWorks>"#));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(!decoded
+        .ir()
+        .source
+        .as_ref()
+        .unwrap()
+        .attributes
+        .contains_key("sw_configuration_name"));
+    assert!(decoded.ir().model.configurations.iter().all(|c| !c.active));
+}
+
+#[test]
+fn decode_preserves_saved_manifest_name_and_body_without_keywords_or_fresh_design_claim() {
+    for needs_update in ["YES", "NO"] {
+        let mut source = sldprt_with_body(&triangle_body());
+        let xml = format!(
+            r#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="m" swConfigurationName="Saved" swConfigurationId="0"/><swConfiguration swName="Saved" swID="0" swModelRef="m" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="{needs_update}"/></swSolidWorks>"#
+        );
+        source.extend(make_block(0x43, "Contents/Features", xml.as_bytes()));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let configurations = &decoded.ir().model.configurations;
+        assert_eq!(configurations.len(), 1);
+        let configuration = &configurations[0];
+        assert_eq!(configuration.name.as_deref(), Some("Saved"));
+        assert_eq!(configuration.source_index, Some(0));
+        assert!(configuration.active);
+        assert!(configuration.native_ref.is_none());
+        assert!(configuration.feature_states.is_empty());
+        assert_eq!(
+            configuration.bodies.as_deref(),
+            Some(
+                decoded
+                    .ir()
+                    .geometry
+                    .bodies
+                    .iter()
+                    .map(|body| body.id.clone())
+                    .collect::<Vec<_>>()
+                    .as_slice()
+            )
+        );
+        assert_eq!(
+            decoded.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
+            "Contents/Config-0-Partition"
+        );
+        assert_eq!(
+            decoded.ir().source.as_ref().unwrap().attributes["sw_configuration_name"],
+            "Saved"
+        );
+    }
+}
+
+#[test]
+fn a_single_saved_inactive_manifest_does_not_become_active_from_body_count() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x43, "Contents/Features", br#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="m" swConfigurationName="Saved" swConfigurationId="0"/><swConfiguration swName="Saved" swID="0" swModelRef="m" swMostRecentConfiguration="NO" swConfigurationNeedsUpdate="YES"/></swSolidWorks>"#));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.configurations.len(), 1);
+    let configuration = &decoded.ir().model.configurations[0];
+    assert_eq!(configuration.name.as_deref(), Some("Saved"));
+    assert_eq!(configuration.source_index, Some(0));
+    assert!(!configuration.active);
+    assert!(configuration.bodies.is_some());
+    assert!(configuration.native_ref.is_none());
+    assert!(configuration.feature_states.is_empty());
+    let attributes = &decoded.ir().source.as_ref().unwrap().attributes;
+    assert_eq!(
+        attributes
+            .get("sldprt_active_partition_unresolved")
+            .map(String::as_str),
+        Some("true")
+    );
+    assert!(!attributes.contains_key("active_parasolid_block"));
+    assert!(!attributes.contains_key("sw_configuration_name"));
+}
 /// A `Config-<configuration>-FeatureBodies/LocalBodies` block with one
 /// Imported feature per plain stream body (spec §3.3).
 fn local_bodies_block(configuration: usize, bodies: &[Vec<u8>]) -> Vec<u8> {
@@ -398,11 +516,11 @@ fn an_empty_partition_takes_the_bodies_of_its_imported_features() {
     let decoded = decode(source);
 
     assert!(decoded.report().geometry_transferred());
-    assert_eq!(decoded.ir().model.bodies.len(), 2);
-    assert_eq!(decoded.ir().model.faces.len(), 2);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 2);
+    assert_eq!(decoded.ir().geometry.faces.len(), 2);
     let ids: std::collections::BTreeSet<_> = decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.as_str())
@@ -426,8 +544,24 @@ fn an_imported_body_whose_faces_store_a_tolerance_decodes() {
 
     let decoded = decode(source);
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+}
+
+#[test]
+fn a_partition_face_with_a_stored_tolerance_decodes() {
+    let mut body = triangle_body();
+    let face = body.windows(2).position(|tag| tag == [0, 0x0e]).unwrap();
+    let tolerance = face + 2 + crate::layout::face_bare::TOLERANCE;
+    body[tolerance..tolerance + 8].copy_from_slice(&1.0e-8_f64.to_be_bytes());
+    let decoded = decode(sldprt_with_body(&body));
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.loops.len(), 1);
+    assert_eq!(decoded.ir().geometry.coedges.len(), 3);
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .unwrap()
+        .is_ok());
 }
 
 #[test]
@@ -439,10 +573,13 @@ fn a_partition_with_geometry_keeps_its_own_bodies() {
     let decoded = decode(source);
 
     assert_eq!(
-        decoded.ir().model.bodies.len(),
-        alone.ir().model.bodies.len()
+        decoded.ir().geometry.bodies.len(),
+        alone.ir().geometry.bodies.len()
     );
-    assert_eq!(decoded.ir().model.faces.len(), alone.ir().model.faces.len());
+    assert_eq!(
+        decoded.ir().geometry.faces.len(),
+        alone.ir().geometry.faces.len()
+    );
 }
 
 /// One block with an empty partition/deltas model, named `section`.
@@ -471,8 +608,8 @@ fn imported_bodies_stay_out_while_another_site_has_geometry() {
     let decoded = decode(source);
 
     assert_eq!(
-        decoded.ir().model.bodies.len(),
-        alone.ir().model.bodies.len()
+        decoded.ir().geometry.bodies.len(),
+        alone.ir().geometry.bodies.len()
     );
 }
 
@@ -484,7 +621,7 @@ fn imported_bodies_need_a_configuration() {
 
     let decoded = decode(source);
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
 }
 
 #[test]
@@ -494,7 +631,7 @@ fn imported_bodies_of_another_configuration_are_not_taken() {
 
     let decoded = decode(source);
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
 }
 
 #[test]
@@ -509,4 +646,31 @@ fn imported_body_streams_that_do_not_decode_are_reported() {
         loss.message,
         "1 of 2 imported body stream(s) do not decode."
     );
+}
+
+#[test]
+fn imported_body_topology_preserves_wide_node_references() {
+    for base in [0x7ff0, 0xffe0, 0x17ee0, 0x17f00, 0x17fe0, 0x12b00, 0x12d00] {
+        let body = crate::test_support::parasolid::wide::triangle(base);
+        let mut source = sldprt_with_partition_and_deltas(&[], &[]);
+        source.extend(local_bodies_block(0, &[body]));
+        let decoded = decode(source);
+        let geometry = &decoded.ir().geometry;
+        assert_eq!(geometry.bodies.len(), 1);
+        assert_eq!(geometry.faces.len(), 1);
+        assert_eq!(geometry.loops.len(), 1);
+        assert_eq!(geometry.coedges.len(), 3);
+        assert_eq!(geometry.vertices.len(), 3);
+        assert!(geometry
+            .points
+            .iter()
+            .any(|point| point.position().get().x == 1.0));
+        assert!(geometry
+            .points
+            .iter()
+            .any(|point| point.position().get().y == 1.0));
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
+    }
 }

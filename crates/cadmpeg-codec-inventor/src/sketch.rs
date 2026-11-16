@@ -28,8 +28,11 @@ use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
+pub(crate) mod box_member;
+pub(crate) mod circle_parameter;
 pub(crate) mod curve;
 pub(crate) mod point_tail;
+pub(crate) mod text;
 
 use point_tail::PointPairedAssociation;
 
@@ -41,19 +44,158 @@ const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1.0e-10;
 const EPS_SKETCH_ARC_END_ON_CIRCLE_CM: f64 = 1.0e-6;
 /// First save version whose midpoint relation ends with a u32 value.
 const MIDPOINT_VALUE_VERSION: u8 = 20;
-/// Entity-flag bits that the curves of profile wire bodies carry. A curve
-/// with another bit set has a construction state this decoder does not
-/// resolve.
-const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000 | 0x8_0000;
-const SPLINE_PROFILE_CURVE_FLAGS: u32 = PROFILE_CURVE_FLAGS | 0x4;
+/// Entity-flag bits that every planar curve form carries on curves of profile
+/// wire bodies.
+const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000;
+/// Additional profile-wire flag bit of circles, ellipses, and splines.
+const NON_LINE_PROFILE_FLAG: u32 = 0x8_0000;
+/// Additional profile-wire flag bit of lines and circles.
+const LINE_CIRCLE_PROFILE_FLAG: u32 = 0x200;
 /// Entity-flag bit of a line that a distance dimension measures as an axis:
 /// the dimension parameter is twice the distance between the operands.
+/// Profile wire bodies also use lines with this bit.
 const AXIS_LINE_FLAG: u32 = 0x8000;
+/// Additional profile-wire flag bit of splines.
+const SPLINE_PROFILE_FLAG: u32 = 0x4;
+/// Entity-flag bits that mark a line as construction geometry. No line with
+/// one of these bits bounds a profile loop.
+const LINE_CONSTRUCTION_FLAGS: u32 = 0x8_0000 | 0x20_0000;
+
+/// Entity-flag bits whose meaning is resolved for the curve form of `entity`:
+/// the bits that profile wire bodies carry and the construction bits.
+fn resolved_curve_flags(entity: &PmDcSketchEntity) -> u32 {
+    match entity.kind {
+        PmDcSketchEntityKind::Line { .. } => {
+            PROFILE_CURVE_FLAGS
+                | LINE_CIRCLE_PROFILE_FLAG
+                | AXIS_LINE_FLAG
+                | LINE_CONSTRUCTION_FLAGS
+        }
+        PmDcSketchEntityKind::Circle { .. } => {
+            PROFILE_CURVE_FLAGS | NON_LINE_PROFILE_FLAG | LINE_CIRCLE_PROFILE_FLAG
+        }
+        PmDcSketchEntityKind::Spline { .. } => {
+            PROFILE_CURVE_FLAGS | NON_LINE_PROFILE_FLAG | SPLINE_PROFILE_FLAG
+        }
+        _ => PROFILE_CURVE_FLAGS | NON_LINE_PROFILE_FLAG,
+    }
+}
+
+/// Whether the record is a line whose entity flags carry a construction bit.
+/// The projection and the validator share this predicate.
+pub(crate) fn marks_construction(entity: &PmDcSketchEntity) -> bool {
+    matches!(entity.kind, PmDcSketchEntityKind::Line { .. })
+        && entity.entity_flags & LINE_CONSTRUCTION_FLAGS != 0
+}
+
+/// Whether the record is a construction line whose stored carrier and
+/// resolved endpoints disagree. Which of the two is authoritative is not
+/// known, so such a line projects no neutral geometry. A zero-length segment
+/// or a zero carrier direction is not a carrier conflict. `point` resolves a
+/// point reference of the entity's segment to its position.
+pub(crate) fn construction_carrier_conflict(
+    entity: &PmDcSketchEntity,
+    point: impl Fn(&str, u32) -> Option<[FiniteReal; 2]>,
+) -> bool {
+    let PmDcSketchEntityKind::Line {
+        points,
+        origin,
+        direction,
+        ..
+    } = &entity.kind
+    else {
+        return false;
+    };
+    if !marks_construction(entity) {
+        return false;
+    }
+    let [start, end, ..] = points.references() else {
+        return false;
+    };
+    let token = entity.identity.segment_token.as_str();
+    let (Some(start), Some(end)) = (point(token, start.index()), point(token, end.index())) else {
+        return false;
+    };
+    let [start, end] = [start, end].map(|point| point.map(FiniteReal::get));
+    let direction = direction.map(FiniteReal::get);
+    if same_position(start, end) || direction == [0.0, 0.0] {
+        return false;
+    }
+    !line_carrier_matches(origin.map(FiniteReal::get), direction, start, end)
+}
+
+/// Largest per-axis difference between two stored positions that still counts
+/// as one position, in units of the machine epsilon times the larger
+/// coordinate magnitude of the pair. Positions are converted between unit
+/// systems in binary floating point, so two records of one point can differ
+/// by a few units in the last place.
+const SAME_POSITION_ULPS: f64 = 4.0;
+
+/// Whether two stored positions are one position up to floating-point
+/// rounding of their coordinates.
+fn same_position(first: [f64; 2], second: [f64; 2]) -> bool {
+    first
+        .iter()
+        .zip(&second)
+        .all(|(a, b)| (a - b).abs() <= SAME_POSITION_ULPS * f64::EPSILON * a.abs().max(b.abs()))
+}
+
+/// Whether the record is a line whose first two point references resolve to
+/// one position. The span has no length, so the line has no neutral geometry
+/// and bounds no profile; the stored carrier does not define a segment. `point`
+/// resolves a point reference of the entity's segment to its position.
+pub(crate) fn degenerate_line(
+    entity: &PmDcSketchEntity,
+    point: impl Fn(&str, u32) -> Option<[FiniteReal; 2]>,
+) -> bool {
+    line_endpoints(entity, point).is_some_and(|(start, end)| same_position(start, end))
+}
+
+/// Whether the record is a degenerate line whose endpoints are one position
+/// only under the reading that their difference is rounding.
+pub(crate) fn rounded_degenerate_line(
+    entity: &PmDcSketchEntity,
+    point: impl Fn(&str, u32) -> Option<[FiniteReal; 2]>,
+) -> bool {
+    line_endpoints(entity, point)
+        .is_some_and(|(start, end)| start != end && same_position(start, end))
+}
+
+/// The stored positions of the first two point references of a line.
+fn line_endpoints(
+    entity: &PmDcSketchEntity,
+    point: impl Fn(&str, u32) -> Option<[FiniteReal; 2]>,
+) -> Option<([f64; 2], [f64; 2])> {
+    let PmDcSketchEntityKind::Line { points, .. } = &entity.kind else {
+        return None;
+    };
+    let [start, end, ..] = points.references() else {
+        return None;
+    };
+    let token = entity.identity.segment_token.as_str();
+    let start = point(token, start.index())?;
+    let end = point(token, end.index())?;
+    Some((start.map(FiniteReal::get), end.map(FiniteReal::get)))
+}
+
+/// Whether the record is a curve whose entity flags carry a bit with an
+/// unresolved construction meaning.
+fn has_unresolved_flags(entity: &PmDcSketchEntity) -> bool {
+    matches!(
+        entity.kind,
+        PmDcSketchEntityKind::Line { .. }
+            | PmDcSketchEntityKind::Circle { .. }
+            | PmDcSketchEntityKind::Ellipse { .. }
+            | PmDcSketchEntityKind::Spline { .. }
+    ) && entity.entity_flags & !resolved_curve_flags(entity) != 0
+}
+
 /// Largest departure of a block-instance placement from a rigid motion.
 const EPS_SKETCH_BLOCK_PLACEMENT_RIGID: f64 = 1.0e-9;
 const CIRCLE_STATE_ARC: u8 = 0;
 const CIRCLE_STATE_FULL: u8 = 1;
 
+pub(crate) mod member_curve;
 pub(crate) mod spline;
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
@@ -80,6 +222,7 @@ const VERTICAL_DISTANCE_TYPE: [u8; 16] = [
 const RADIUS_TYPE: [u8; 16] = [
     0x00, 0xb7, 0x1b, 0x67, 0xd1, 0x11, 0x68, 0xe0, 0x80, 0x00, 0x66, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
+const CIRCLE_PARAMETER_TYPE: [u8; 16] = circle_parameter::TYPE;
 const DIAMETER_TYPE: [u8; 16] = [
     0xe0, 0x96, 0xdf, 0x74, 0xd1, 0x11, 0x69, 0xe0, 0x80, 0x00, 0x66, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
@@ -109,6 +252,9 @@ const POLYGON_TYPE: [u8; 16] = [
 ];
 const POLYGON_RELATION_TYPE: [u8; 16] = [
     0x1f, 0x89, 0xdb, 0xfb, 0xd8, 0x47, 0x78, 0xb6, 0xb0, 0x96, 0x72, 0x85, 0xc7, 0xec, 0x8b, 0xb9,
+];
+const POLYGON_CONTROL_TYPE: [u8; 16] = [
+    0x84, 0x5c, 0x3b, 0xbf, 0xd2, 0x11, 0x2a, 0xe9, 0x60, 0x00, 0x4b, 0xb3, 0x89, 0x32, 0xed, 0xb0,
 ];
 const DISTANCE_TYPE: [u8; 16] = [
     0x58, 0x85, 0x05, 0x11, 0xd2, 0x11, 0xe3, 0x95, 0x60, 0x00, 0x0c, 0xb3, 0x89, 0x32, 0xed, 0xb0,
@@ -148,6 +294,8 @@ pub(crate) struct SketchInventory {
     pub(crate) transforms: Vec<PmDcTransform>,
     pub(crate) directions: Vec<PmDcDirection>,
     pub(crate) constraints: Vec<PmDcSketchConstraint>,
+    /// Text and box member records. They store no curve and close their sketch.
+    pub(crate) text_members: Vec<text::TextMember>,
     pub(crate) issues: Vec<RecordIssue>,
 }
 
@@ -235,6 +383,13 @@ pub(crate) enum PmDcSketchConstraintKind {
         entity: PmDcReference,
         values: [u32; 4],
     },
+    /// A parameter bound to one circular entity. The record uses the radius
+    /// layout, and its parameter role is unresolved.
+    CircleParameter {
+        state: u32,
+        entity: PmDcReference,
+        values: [u32; 4],
+    },
     CircleCenter {
         entity: PmDcReference,
         center: PmDcReference,
@@ -298,6 +453,15 @@ pub(crate) enum PmDcSketchConstraintKind {
     BlockGroup {
         members: PmDcReferenceList,
     },
+    /// The polygon control relation: it names the polygon's reference entity
+    /// and first vertex point and holds a parameter reference in its header.
+    PolygonControl {
+        value: u32,
+        reference: PmDcReference,
+        vertex: [PmDcReference; 2],
+        position: [FiniteReal; 2],
+        flags: cadmpeg_ir::native::bytes::NativeBytes<[u8; 3]>,
+    },
     EqualDistance {
         first: [PmDcReference; 2],
         second: [PmDcReference; 2],
@@ -316,6 +480,13 @@ pub(crate) struct SketchProjection {
     pub(crate) unresolved_construction: usize,
     /// Distance dimensions measured to an axis line; they stay native.
     pub(crate) native_axis_distances: usize,
+    /// Construction lines whose carrier and endpoints disagree; they stay
+    /// native.
+    pub(crate) native_carrier_conflicts: usize,
+    /// Lines whose endpoints coincide; they stay native.
+    pub(crate) native_degenerate_lines: usize,
+    /// Those lines whose endpoints coincide only up to rounding.
+    pub(crate) native_rounded_lines: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -399,12 +570,16 @@ pub(crate) enum PmDcSketchEntityKind {
         instances: PmDcReferenceList,
         member: PmDcReference,
     },
+    MemberCurve {
+        data: Box<member_curve::MemberCurveRecord>,
+    },
 }
 
 impl PmDcSketchEntityKind {
     pub(crate) fn record_type_id(&self) -> [u8; 16] {
         match self {
             Self::Spline { .. } => spline::TYPE,
+            Self::MemberCurve { .. } => member_curve::TYPE,
             Self::Point { .. } => POINT_TYPE,
             Self::Line { .. } => LINE_TYPE,
             Self::Circle { .. } => CIRCLE_TYPE,
@@ -625,6 +800,7 @@ pub(crate) fn inventory(
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     for segment in &document.segments {
@@ -644,6 +820,32 @@ pub(crate) fn inventory(
             continue;
         };
         for record in &table.records {
+            if text::is_text_member_type(record.type_id) {
+                ctx.charge_entities(1, "admit Inventor PmDc sketch text member")?;
+                inventory.text_members.push(text::TextMember {
+                    segment_token: segment.pair.token.key().clone(),
+                    record_ordinal: record.ordinal,
+                    box_member: None,
+                    role_failures: Vec::new(),
+                });
+                continue;
+            }
+            if box_member::is_box_member_type(record.type_id) {
+                match box_member::admit(record.type_id, record.payload, version) {
+                    Ok(member) => {
+                        ctx.charge_entities(1, "admit Inventor PmDc sketch box member")?;
+                        inventory.text_members.push(text::TextMember {
+                            segment_token: segment.pair.token.key().clone(),
+                            record_ordinal: record.ordinal,
+                            box_member: Some(member),
+                            role_failures: Vec::new(),
+                        });
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => {}
+                }
+                continue;
+            }
             let Some(tag) = SketchRecordTag::from_type_id(record.type_id) else {
                 continue;
             };
@@ -674,6 +876,21 @@ pub(crate) fn inventory(
                     Err(CodecError::NotImplemented(_)) => continue,
                     Err(error) => Err(error),
                 },
+                SketchRecordTag::MemberCurve => {
+                    match member_curve::parse(ctx, record.payload, version) {
+                        Ok(value) => push_record(
+                            ctx,
+                            &mut inventory.entities,
+                            value,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc rational curve record",
+                        ),
+                        Err(CodecError::NotImplemented(_)) => continue,
+                        Err(error) => Err(error),
+                    }
+                }
                 SketchRecordTag::Entity(entity) => parse_entity(entity, record.payload, version)
                     .and_then(|value| {
                         push_record(
@@ -742,6 +959,7 @@ pub(crate) fn inventory(
             }
         }
     }
+    box_member::check_roles(&mut inventory);
     Ok(inventory)
 }
 
@@ -809,6 +1027,7 @@ enum SketchConstraintTag {
     VerticalDistance,
     Radius,
     Diameter,
+    CircleParameter,
     CircleCenter,
     EqualRadius,
     EqualLength,
@@ -821,6 +1040,7 @@ enum SketchConstraintTag {
     Collinear,
     Symmetric,
     PolygonRelation,
+    PolygonControl,
     BlockGroup,
     EqualDistance,
     SplinePoint,
@@ -840,6 +1060,7 @@ impl SketchConstraintTag {
             VERTICAL_DISTANCE_TYPE => Some(Self::VerticalDistance),
             RADIUS_TYPE => Some(Self::Radius),
             DIAMETER_TYPE => Some(Self::Diameter),
+            CIRCLE_PARAMETER_TYPE => Some(Self::CircleParameter),
             CIRCLE_CENTER_TYPE => Some(Self::CircleCenter),
             EQUAL_RADIUS_TYPE => Some(Self::EqualRadius),
             EQUAL_LENGTH_TYPE => Some(Self::EqualLength),
@@ -852,6 +1073,7 @@ impl SketchConstraintTag {
             COLLINEAR_TYPE => Some(Self::Collinear),
             SYMMETRIC_TYPE => Some(Self::Symmetric),
             POLYGON_RELATION_TYPE => Some(Self::PolygonRelation),
+            POLYGON_CONTROL_TYPE => Some(Self::PolygonControl),
             BLOCK_GROUP_TYPE => Some(Self::BlockGroup),
             EQUAL_DISTANCE_TYPE => Some(Self::EqualDistance),
             _ => None,
@@ -862,6 +1084,7 @@ impl SketchConstraintTag {
 #[derive(Clone, Copy)]
 enum SketchRecordTag {
     Spline,
+    MemberCurve,
     Sketch,
     Transform,
     Direction,
@@ -873,6 +1096,7 @@ impl SketchRecordTag {
     fn from_type_id(type_id: [u8; 16]) -> Option<Self> {
         match type_id {
             spline::TYPE => Some(Self::Spline),
+            member_curve::TYPE => Some(Self::MemberCurve),
             SKETCH_TYPE => Some(Self::Sketch),
             TRANSFORM_TYPE => Some(Self::Transform),
             DIRECTION_TYPE => Some(Self::Direction),
@@ -1294,6 +1518,11 @@ fn parse_constraint(
             entity: cursor.reference("diameter constraint entity reference")?,
             values: cursor.u32_array::<4>("diameter constraint values")?,
         },
+        SketchConstraintTag::CircleParameter => PmDcSketchConstraintKind::CircleParameter {
+            state: cursor.u32("circle parameter state")?,
+            entity: cursor.reference("circle parameter entity reference")?,
+            values: cursor.u32_array::<4>("circle parameter values")?,
+        },
         SketchConstraintTag::CircleCenter => PmDcSketchConstraintKind::CircleCenter {
             entity: cursor.reference("circle-center constraint entity reference")?,
             center: cursor.reference("circle-center constraint center reference")?,
@@ -1360,6 +1589,25 @@ fn parse_constraint(
         SketchConstraintTag::BlockGroup => PmDcSketchConstraintKind::BlockGroup {
             members: reference_list(&mut cursor, 2, "block group member list")?,
         },
+        SketchConstraintTag::PolygonControl => {
+            let value = cursor.u32("polygon control value")?;
+            let reference = cursor.reference("polygon control reference entity")?;
+            let vertex = [
+                cursor.reference("polygon control vertex reference")?,
+                cursor.reference("polygon control second vertex reference")?,
+            ];
+            PmDcSketchConstraintKind::PolygonControl {
+                value,
+                reference,
+                vertex,
+                position: f64_array(&mut cursor, "polygon control vertex position")?,
+                flags: cadmpeg_ir::native::bytes::NativeBytes::new([
+                    cursor.u8("polygon control first flag")?,
+                    cursor.u8("polygon control second flag")?,
+                    cursor.u8("polygon control third flag")?,
+                ]),
+            }
+        }
         SketchConstraintTag::PolygonRelation => PmDcSketchConstraintKind::PolygonRelation {
             first: cursor.reference("polygon relation first reference")?,
             second: cursor.reference("polygon relation second reference")?,
@@ -1457,6 +1705,66 @@ pub(crate) fn project(
             record,
         )
     }));
+    let line_keys = |matches: &dyn Fn(&PmDcSketchEntity) -> bool| {
+        inventory
+            .entities
+            .iter()
+            .filter(|entity| matches(entity))
+            .map(|entity| {
+                (
+                    entity.identity.segment_token.as_str(),
+                    entity.identity.record_ordinal,
+                )
+            })
+            .collect::<HashSet<_>>()
+    };
+    let conflicted_lines = line_keys(&|entity| {
+        construction_carrier_conflict(entity, |token, reference| {
+            resolve_point(token, reference, &raw_entities)
+        })
+    });
+    let degenerate_lines = line_keys(&|entity| {
+        degenerate_line(entity, |token, reference| {
+            resolve_point(token, reference, &raw_entities)
+        })
+    });
+    let rounded_lines = line_keys(&|entity| {
+        rounded_degenerate_line(entity, |token, reference| {
+            resolve_point(token, reference, &raw_entities)
+        })
+    });
+    let native_lines = conflicted_lines
+        .union(&degenerate_lines)
+        .copied()
+        .collect::<HashSet<_>>();
+    let native_constraint_keys = raw_constraints
+        .iter()
+        .filter_map(|(key, source)| {
+            let source = source.as_ref()?;
+            curve::relation_stays_native(source, |reference| {
+                reference
+                    .record_ordinal()
+                    .and_then(|ordinal| {
+                        raw_entities.get(&(source.identity.segment_token.as_str(), ordinal))
+                    })
+                    .and_then(Option::as_ref)
+                    .is_some_and(|entity| {
+                        curve::is_non_geometric(entity)
+                            || native_lines.contains(&(
+                                entity.identity.segment_token.as_str(),
+                                entity.identity.record_ordinal,
+                            ))
+                    })
+            })
+            .then_some(*key)
+        })
+        .collect::<HashSet<_>>();
+    let circle_parameter_keys = circle_parameter::admitted_keys(inventory);
+    let text_keys = inventory
+        .text_members
+        .iter()
+        .map(|member| (member.segment_token.as_str(), member.record_ordinal))
+        .collect::<HashSet<_>>();
     let mut parameter_index = HashMap::new();
     for parameter in parameters {
         if let Some(native) = &parameter.native_ref {
@@ -1466,7 +1774,11 @@ pub(crate) fn project(
     }
 
     let mut projected_entities = Vec::new();
+    let mut block_curves = Vec::new();
     let mut unresolved_entities = 0usize;
+    let mut carrier_conflicts = Vec::new();
+    let mut degenerate = Vec::new();
+    let mut rounded = Vec::new();
     for entity in &inventory.entities {
         let key = (
             entity.identity.segment_token.as_str(),
@@ -1497,6 +1809,35 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         }
+        if curve::is_non_geometric(entity) {
+            unresolved_entities += 1;
+            if let Some(id) = sketch_id(sketch) {
+                let count = block_definition_curves(entity, &inventory.entities).len();
+                ctx.charge_entities(
+                    u64::try_from(count).map_err(CodecError::malformed)?,
+                    "project Inventor sketch block curves",
+                )?;
+                if let Some(placed) = place_block_curves(entity, &id, inventory, &raw_entities) {
+                    block_curves.push(placed);
+                }
+            }
+            continue;
+        }
+        if native_lines.contains(&key) {
+            // The line stays native: no neutral geometry and no guessed line.
+            unresolved_entities += 1;
+            if let Some(id) = sketch_id(sketch) {
+                if degenerate_lines.contains(&key) {
+                    if rounded_lines.contains(&key) {
+                        rounded.push(id.clone());
+                    }
+                    degenerate.push(id);
+                } else {
+                    carrier_conflicts.push(id);
+                }
+            }
+            continue;
+        }
         let Some(geometry) = project_geometry(entity, &raw_entities) else {
             unresolved_entities += 1;
             continue;
@@ -1508,32 +1849,12 @@ pub(crate) fn project(
         ctx.charge_entities(1, "project Inventor sketch entity")?;
         projected_entities.push(
             SketchEntity::new(entity_id, sketch_id, geometry)
+                .with_construction(marks_construction(entity))
                 .with_native_ref(Some(entity.id()))
                 .with_endpoint_refs(entity_endpoint_refs(entity, &raw_entities)),
         );
     }
 
-    // Placed block curves stay out of the native-keyed indexes: two instances
-    // of one definition place copies of the same curve records.
-    let mut block_curves = Vec::new();
-    for entity in &projected_entities {
-        let Some(instance) = entity.native_ref.as_deref().and_then(|native| {
-            inventory.entities.iter().find(|raw| {
-                matches!(raw.kind, PmDcSketchEntityKind::BlockInstance { .. }) && raw.id() == native
-            })
-        }) else {
-            continue;
-        };
-        let count = block_definition_curves(instance, &inventory.entities).len();
-        ctx.charge_entities(
-            u64::try_from(count).map_err(CodecError::malformed)?,
-            "project Inventor sketch block curves",
-        )?;
-        if let Some(placed) = place_block_curves(instance, &entity.sketch, inventory, &raw_entities)
-        {
-            block_curves.push(placed);
-        }
-    }
     let projected_by_native = projected_entities
         .iter()
         .filter_map(|entity| entity.native_ref.as_deref().map(|native| (native, entity)))
@@ -1541,20 +1862,7 @@ pub(crate) fn project(
     let construction_unresolved = inventory
         .entities
         .iter()
-        .filter(|entity| {
-            let profile_flags = if matches!(entity.kind, PmDcSketchEntityKind::Spline { .. }) {
-                SPLINE_PROFILE_CURVE_FLAGS
-            } else {
-                PROFILE_CURVE_FLAGS
-            };
-            matches!(
-                entity.kind,
-                PmDcSketchEntityKind::Line { .. }
-                    | PmDcSketchEntityKind::Circle { .. }
-                    | PmDcSketchEntityKind::Ellipse { .. }
-                    | PmDcSketchEntityKind::Spline { .. }
-            ) && entity.entity_flags & !profile_flags != 0
-        })
+        .filter(|entity| has_unresolved_flags(entity))
         .map(Located::id)
         .collect::<HashSet<_>>();
     let mut sketches = Vec::new();
@@ -1576,7 +1884,14 @@ pub(crate) fn project(
                     .and_then(Option::as_ref)
                     .copied()
             }) {
-                raw_referenced_entities.push(raw);
+                if !curve::is_non_geometric(raw)
+                    && !native_lines.contains(&(
+                        raw.identity.segment_token.as_str(),
+                        raw.identity.record_ordinal,
+                    ))
+                {
+                    raw_referenced_entities.push(raw);
+                }
             }
         }
         let mut referenced_entities = Vec::new();
@@ -1674,6 +1989,12 @@ pub(crate) fn project(
     let mut constraints = Vec::new();
     let mut projected_constraint_keys = HashSet::new();
     for constraint in &inventory.constraints {
+        if native_constraint_keys.contains(&(
+            constraint.identity.segment_token.as_str(),
+            constraint.identity.record_ordinal,
+        )) {
+            continue;
+        }
         if raw_constraints
             .get(&(
                 constraint.identity.segment_token.as_str(),
@@ -1742,7 +2063,16 @@ pub(crate) fn project(
                 return false;
             }
             let key = (raw.identity.segment_token.as_str(), ordinal);
-            projected_entity_keys.contains(&key) || projected_constraint_keys.contains(&key)
+            projected_entity_keys.contains(&key)
+                || projected_constraint_keys.contains(&key)
+                || raw_entities
+                    .get(&key)
+                    .and_then(Option::as_ref)
+                    .is_some_and(|source| curve::is_non_geometric(source))
+                || native_lines.contains(&key)
+                || native_constraint_keys.contains(&key)
+                || circle_parameter_keys.contains(&key)
+                || text_keys.contains(&key)
         })
     });
     unresolved_sketches =
@@ -1803,6 +2133,18 @@ pub(crate) fn project(
         previous_constraint_count,
         constraints.len(),
     )?;
+    let native_carrier_conflicts = carrier_conflicts
+        .iter()
+        .filter(|sketch| closed_sketch_ids.contains(sketch))
+        .count();
+    let native_degenerate_lines = degenerate
+        .iter()
+        .filter(|sketch| closed_sketch_ids.contains(sketch))
+        .count();
+    let native_rounded_lines = rounded
+        .iter()
+        .filter(|sketch| closed_sketch_ids.contains(sketch))
+        .count();
     let unresolved_construction = projected_entities
         .iter()
         .filter(|entity| {
@@ -1821,6 +2163,73 @@ pub(crate) fn project(
         unresolved_constraints,
         unresolved_construction,
         native_axis_distances,
+        native_carrier_conflicts,
+        native_degenerate_lines,
+        native_rounded_lines,
+    })
+}
+
+/// The loss for construction lines whose stored carrier and endpoints
+/// disagree.
+pub(crate) fn carrier_conflict_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchConstructionCarrierConflict.note(format!(
+            "Retained {count} Inventor construction line(s) natively: the stored carrier and the endpoint positions disagree, and neither is applied. Construction lines bound no profile."
+        ))
+    })
+}
+
+/// The loss for lines whose endpoints coincide.
+pub(crate) fn degenerate_line_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchDegenerateLineNative.note(format!(
+            "Retained {count} Inventor line(s) natively: the endpoints share one position, so the record stores no segment, and a zero-length line bounds no profile."
+        ))
+    })
+}
+
+/// The loss for lines whose endpoints differ and are read as one position.
+pub(crate) fn rounded_line_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchLineEndpointsRoundingAssumed.note(format!(
+            "{count} Inventor line(s) have distinct stored endpoints within rounding; the reader assumes that the difference is rounding and reads one position."
+        ))
+    })
+}
+
+pub(crate) fn graph_loss(
+    sketches: usize,
+    entities: usize,
+    constraints: usize,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (sketches != 0 || entities != 0 || constraints != 0).then(|| {
+        crate::loss::InventorLossCode::SketchGraphOpen.note(format!(
+            "Retained {sketches} Inventor sketch record(s), {entities} sketch-entity record(s), and {constraints} sketch-constraint record(s) whose neutral graph is not closed."
+        ))
+    })
+}
+
+/// The loss for polygon control relations whose two vertex references differ.
+/// The relation repeats one vertex reference in every record that shows the
+/// pattern, but that reading is not proven, so a relation with two different
+/// vertices is kept native without it. The relation defines no geometry, so
+/// the sketch still closes.
+pub(crate) fn polygon_control_vertex_loss(
+    constraints: &[PmDcSketchConstraint],
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let count = constraints
+        .iter()
+        .filter(|constraint| {
+            matches!(
+                constraint.kind,
+                PmDcSketchConstraintKind::PolygonControl { vertex, .. } if vertex[0] != vertex[1]
+            )
+        })
+        .count();
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchPolygonControlVerticesDiffer.note(format!(
+            "Retained {count} Inventor polygon control relation(s) with two different vertex references natively: the reading that the relation repeats one vertex reference is not proven and is not applied."
+        ))
     })
 }
 
@@ -2252,73 +2661,10 @@ fn project_constraint(
                 first,
             )
         }
-        PmDcSketchConstraintKind::BlockGroup { ref members } => {
-            let entities = members
-                .references()
-                .iter()
-                .map(|member| resolve(*member))
-                .collect::<Option<Vec<_>>>()?;
-            let (first, rest) = entities.split_first()?;
-            if rest.iter().any(|entity| entity.sketch != first.sketch) {
-                return None;
-            }
-            (
-                SketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sketch_block")?,
-                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
-                    native_flags: Some(u64::from(constraint.header.content.flags)),
-                    native_properties: std::collections::BTreeMap::new(),
-                    entities: entities.iter().map(|entity| entity.id().clone()).collect(),
-                    parameter: None,
-                    operands: members
-                        .references()
-                        .iter()
-                        .map(|member| {
-                            native_operand(
-                                constraint,
-                                cadmpeg_core::nonblank_literal!("member"),
-                                *member,
-                            )
-                        })
-                        .collect(),
-                },
-                None,
-                [*first, *first],
-            )
-        }
-        PmDcSketchConstraintKind::PolygonRelation {
-            first,
-            second,
-            reference,
-            polygon,
-            ..
-        } => {
-            let members = [resolve(first)?, resolve(second)?];
-            let [polygon, repeated] = polygon;
-            if polygon != repeated {
-                return None;
-            }
-            let (reference, polygon) = (resolve(reference)?, resolve(polygon)?);
-            if [reference, polygon]
-                .iter()
-                .any(|entity| entity.sketch != members[0].sketch)
-            {
-                return None;
-            }
-            (
-                SketchConstraintDefinitionInput::Polygon {
-                    polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(
-                        [members[0], members[1], reference, polygon]
-                            .iter()
-                            .map(|entity| entity.id().clone())
-                            .collect(),
-                    )
-                    .ok()?,
-                },
-                None,
-                members,
-            )
-        }
+        PmDcSketchConstraintKind::BlockGroup { .. }
+        | PmDcSketchConstraintKind::CircleParameter { .. }
+        | PmDcSketchConstraintKind::PolygonControl { .. }
+        | PmDcSketchConstraintKind::PolygonRelation { .. } => return None,
         PmDcSketchConstraintKind::Symmetric {
             first,
             second,
@@ -2365,20 +2711,21 @@ fn project_constraint(
     }))
 }
 
-/// Largest unqualified reference-map value of a tangent relation's solver
-/// hint: 0, 1, or 2.
-const TANGENT_HINT_MAX_CODE: u32 = 2;
+/// Largest unqualified reference-map value of a tangent or perpendicular
+/// relation's solver hint: 0, 1, or 2.
+const CURVE_END_HINT_MAX_CODE: u32 = 2;
 
 /// Whether the constraint maps hold only the relation's solver hint: in each
 /// map, at most one entry for each of its two operands. Reference-map values
-/// are null; a tangent relation's values can also be the unqualified codes 1
-/// and 2.
+/// are null; a tangent or perpendicular relation's values can also be the
+/// unqualified codes 1 and 2.
 fn solver_hint(constraint: &PmDcSketchConstraint) -> bool {
     let (operands, max_code) = match constraint.kind {
         PmDcSketchConstraintKind::Coincident { first, second }
         | PmDcSketchConstraintKind::Distance { first, second, .. } => ([first, second], 0),
-        PmDcSketchConstraintKind::Tangent { first, second, .. } => {
-            ([first, second], TANGENT_HINT_MAX_CODE)
+        PmDcSketchConstraintKind::Tangent { first, second, .. }
+        | PmDcSketchConstraintKind::Perpendicular { first, second, .. } => {
+            ([first, second], CURVE_END_HINT_MAX_CODE)
         }
         PmDcSketchConstraintKind::CircleCenter { entity, center } => ([entity, center], 0),
         PmDcSketchConstraintKind::Midpoint { entity, point, .. } => ([entity, point], 0),
@@ -2488,6 +2835,9 @@ fn project_placed_geometry(
                 .ok()?;
             Some(SketchGeometry::nurbs(curve))
         }
+        PmDcSketchEntityKind::MemberCurve { .. } => Some(SketchGeometry::native(
+            cadmpeg_core::nonblank_literal!("member_curve"),
+        )),
         PmDcSketchEntityKind::Point { position, .. } => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: neutral_point(placement.point(*position)?),
@@ -2594,15 +2944,9 @@ fn project_placed_geometry(
                 .ok()?,
             )
         }
-        PmDcSketchEntityKind::BlockInstance { .. } => Some(SketchGeometry::native(
-            cadmpeg_core::nonblank_literal!("sketch_block_instance"),
-        )),
-        PmDcSketchEntityKind::BlockMember { .. } => Some(SketchGeometry::native(
-            cadmpeg_core::nonblank_literal!("sketch_block_member"),
-        )),
-        PmDcSketchEntityKind::Polygon { .. } => Some(SketchGeometry::native(
-            cadmpeg_core::nonblank_literal!("polygon"),
-        )),
+        PmDcSketchEntityKind::BlockInstance { .. }
+        | PmDcSketchEntityKind::BlockMember { .. }
+        | PmDcSketchEntityKind::Polygon { .. } => None,
     }
 }
 
@@ -3132,6 +3476,7 @@ fn place_block_curves(
                     sketch.clone(),
                     project_placed_geometry(curve, entities, &placement)?,
                 )
+                .with_construction(marks_construction(curve))
                 .with_native_ref(Some(curve.id()))
                 .with_endpoint_refs(placed_endpoint_refs(curve, entities, &placement)),
             )
@@ -3311,6 +3656,7 @@ mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
@@ -3356,6 +3702,7 @@ mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
@@ -3406,6 +3753,7 @@ mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
@@ -3471,6 +3819,7 @@ mod tests {
                 1,
             )],
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
@@ -4259,6 +4608,7 @@ mod tests {
             transforms: vec![transform],
             directions: vec![direction],
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         (inventory, sketch)
@@ -4273,7 +4623,7 @@ mod tests {
             .position(|entity| matches!(entity.kind, PmDcSketchEntityKind::Line { .. }))
             .expect("square side");
         let mut payload = PmDcSketchEntityPayload::clone(&inventory.entities[line]);
-        payload.entity_flags = 0x8000;
+        payload.entity_flags = 0x100;
         let identity = inventory.entities[line].identity.clone();
         inventory.entities[line] = Located::new(
             payload,
@@ -5157,6 +5507,15 @@ mod tests {
     }
 
     mod axis_distance;
+    mod box_member;
+    mod carrier_conflict;
+    mod circle_parameter;
+    mod construction_flags;
+    mod degenerate_line;
+    mod member_curve;
+    mod non_geometric;
     mod point_tail_projection;
     mod serialization;
+    mod solver_hint;
+    mod text_member;
 }

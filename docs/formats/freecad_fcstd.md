@@ -382,9 +382,9 @@ retain their serialized root order as an occurrence discriminator; they do not s
 region, shell, face, loop, coedge, edge, vertex, or point identity.
 A body's kind is its topology's dimension. An edge occurrence in a shell is an edge shape at the
 location identity of its composed face, wire, and edge use locations, so one edge shape at two
-location identities is two occurrences. Each use of an edge occurrence by a face's wire is
+location identities is two occurrences. Each boundary use of an edge occurrence by a face's wire is
 forward or reversed by the composed orientation of its face, wire, and edge uses. A shell is
-closed when each non-degenerate edge occurrence of its faces' wires has as many forward as
+closed when each non-degenerate boundary edge occurrence has as many forward as
 reversed uses, and at least one of each. The closed flag (the fifth of the `free,
 modified, checked, orientable, closed, infinite, convex` flags) does not determine closure. A
 `Solid` whose children are all closed shells is a solid body. A `Solid` whose children are all
@@ -392,6 +392,14 @@ shells, with at least one open shell, is a sheet body. A `Solid` with no child o
 that is not a shell is a general body. A `Shell` or `Face` is a sheet and a `Wire` or `Edge` a
 wire. A `Compound` or `CompSolid` has the kind its member shapes share, so a compound that holds
 one closed solid is a solid body; members of different kinds make it a general body.
+
+`Forward` and `Reversed` wire and edge uses supply the face boundary incidence.
+An `Internal` or `External` use supplies non-boundary topology. A wire can contain both
+boundary and non-boundary edge uses. A seam can use the same edge twice with opposite orientations.
+CADIR decision: non-boundary edges transfer as shell wire geometry. An edge that also has boundary
+uses retains its boundary ownership. Repeated non-boundary uses share one shell wire edge. Their
+face incidence and native orientation remain in the native shape record, with
+`fcstd/topology.non-boundary-incidence-retained`.
 
 An edge endpoint accessor visits the edge's direct child uses in serialized order. Its endpoint
 incidence has exactly one `Forward` vertex use and exactly one `Reversed` vertex use: `Forward`
@@ -576,6 +584,11 @@ identity, expression-engine identity, and dependencies on other decoded paramete
 or same-owner identifiers resolve unambiguously. Unresolved symbols remain expression text and do
 not create fabricated parameter identities.
 
+`Placement.Base.x`, `.y`, and `.z` identify the translation components of a
+`PropertyPlacement`; each component is a length in millimetres. An expression target
+`.Placement.Base.<axis>` binds the matching component of the owning object. A qualified
+object-name reference `object.Placement.Base.<axis>` identifies the named object's component.
+
 Spreadsheet sheets are equation-tree nodes. Every persisted used cell becomes an ordered design
 parameter whose identity includes its sheet and address. Address and alias remain separate;
 content, display unit, alignment, style, colors, and spans are retained independently. A cell's
@@ -725,11 +738,16 @@ collapsed array, element `i` uses `PlacementList[i]` and `ScaleList[i]` when eac
 placement is the identity relative to the scalar link placement; an absent scale is `(1, 1, 1)`.
 Entries beyond the active count do not create occurrences. Inactive carriers remain document data.
 Visibility bits do not determine array cardinality. A missing visibility bit means visible; a scalar
-link does not apply the per-element visibility list. A member with runtime `App::LinkElement` and
-an absent or zero `_LinkOwner` acquires the containing link's persistent object ID at restoration.
-A nonzero `_LinkOwner` retains that owner; another containing list does not replace it. Owned link
-elements do not create independent root occurrences. A member of another runtime remains an
-independent object; membership alone does not make an ordinary `App::Link` an owned element. For an active array, the transform order is
+link does not apply the per-element visibility list. During restoration, a listed `App::LinkElement`
+with an absent or zero `_LinkOwner` acquires the containing link's persistent object ID. A nonzero
+different `_LinkOwner` leaves that owner in place and skips synchronization of the element's
+`LinkedObject` and `LinkTransform` properties. Membership in an `App::Link.ElementList` identifies a
+`LinkElement` as a member of that link, independently of `_LinkOwner`. An unlisted `LinkElement`
+is an independent object, including when `_LinkOwner` identifies an existing object. Each `App::Link`
+uses its own ordered `ElementList` when expanding an array. If several lists contain one `LinkElement`, its
+singular group accessor returns the first containing link in incoming-link order. An `ElementList`
+entry with another runtime type remains an independent object; an ordinary `App::Link` entry remains
+an occurrence. For an active array, the transform order is
 scalar placement, scalar scale, element placement, element scale, and the linked prototype placement
 when `LinkTransform` enables it. A scalar link applies scalar placement and scalar scale before the
 linked prototype placement. Nonuniform scale does not commute with rotation or translation.
@@ -800,9 +818,8 @@ independent-body semantics. A profile uses one scalar `PropertyLink` or `Propert
 from the `Profile`, `Sketch`, `Base`, or `Source` compatibility names. A link-list carrier,
 multiple targets, or more than one populated compatibility name is not resolved by source order;
 a linkless profile remains the native profile property. Object dependency links establish
-construction dependencies, and a feature's cached shape property links its neutral operation to
-every transferred result body from that payload. PartDesign body containers are structural
-history nodes: the current `Group` or legacy `Model` is one `App::PropertyLinkList` membership
+construction dependencies. A feature's `Shape` property holds its result shape. PartDesign body
+containers are structural history nodes: the current `Group` or legacy `Model` is one `App::PropertyLinkList` membership
 carrier, and both aliases are malformed. Its scalar `App::PropertyLink` `Tip` has at most one
 local target; a link-list runtime type, multiple targets, or an unresolved non-null target retains
 the body natively instead of selecting a source-order value. A valid tip identifies one owned
@@ -885,7 +902,8 @@ Part `Revolution` uses `Symmetric` and `Solid`; PartDesign `Revolution` and `Gro
 `Midplane`, `Reversed`, and `AllowMultiFace`. These are `App::PropertyBool` values with direct
 `Bool` values `false` and `true` and absent defaults `false`. `Symmetric` and `Midplane` select a
 symmetric angular extent, `Solid` selects solid construction, `Reversed` reverses the resolved
-axis, and `AllowMultiFace` permits multiple profile faces. A present carrier with another runtime
+axis, and `AllowMultiFace` permits multiple profile faces. A PartDesign `Revolution` with `Reversed`
+`false` turns `Angle` right-handed about the resolved axis and turns `Angle2` the opposite way. A present carrier with another runtime
 type, without exactly one direct `Bool`, or with any other value does not select a neutral
 revolution or groove; the operation remains native.
 Part and PartDesign thickness and Part offset `Mode` carriers use indices `0`, `1`, and `2` for
@@ -967,9 +985,10 @@ A face or edge selection of a shell, draft, fillet, or chamfer names indexed sub
 `Edge5`, or a mapped name ending in one) of each linked object. The index counts that object's
 stored `Shape` in its own face or edge order, so a selection whose every subelement names exactly
 one transferred face or edge of the linked object's stored shape resolves to those faces or edges,
-with its native property kept beside them. Any other selection, including one that names an
-external document, a whole object, or an index the stored shape does not have, remains the native
-property.
+with its native property kept beside them. `Part::Fillet` and `Part::Chamfer` use the object
+linked by `Base` and the ordered `edgeid` values in their `Edges` side entry for this selection.
+Any other selection, including one that names an external document, a whole object without indexed
+edges, or an index the stored shape does not have, remains the native property.
 
 Decode loss reporting is attributable at the native record boundary. Each design operation or
 sketch geometry family that remains only in the native lane produces its own blocking note carrying
@@ -1670,6 +1689,10 @@ PartDesign additive or subtractive pipes retain the profile plus the complete na
 property, including its ordered subelement selectors. Standalone sweeps distinguish surface from
 solid results through their persisted solid flag; PartDesign pipes are solid and explicitly join
 or cut. Cached result shapes remain outputs and do not replace these construction operands.
+Profile links identify the sketch or wire feature that supplies a section. A spine link with
+ordered `Edge` selectors identifies the corresponding edges of its linked shape in that order.
+Face and edge selectors identify subelements of their linked shapes. A mirror source link
+identifies the shape to reflect.
 
 Loft `Ruled` and `Closed` are exact `App::PropertyBool` carriers with absent defaults `false`.
 Standalone loft `Solid` is an exact `App::PropertyBool` carrier with absent default `true`;
@@ -2022,8 +2045,9 @@ transforms, CSS, elliptical arcs, other path commands, and positioned text spans
 are outside the normalized grammar. Stylesheets and scripts can change peer
 geometry and prevent static normalization of the whole template.
 
-Text has explicit X/Y baseline coordinates and a positive `font-size` in viewport
-units, hence millimetres. Plain text and unpositioned `tspan` children form one
+Text has explicit X/Y baseline coordinates. A `font-size` in viewport units gives
+the positive em height in millimetres; an absent `font-size` uses the user agent's
+medium size. Plain text and unpositioned `tspan` children form one
 string. Each `EditableTexts` key replaces the content of a `text` element whose
 `freecad:editable` attribute equals that key. The attribute namespace is
 `http://www.freecadweb.org/wiki/index.php?title=Svg_Namespace`. Replacement text

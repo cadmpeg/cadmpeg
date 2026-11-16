@@ -5,11 +5,37 @@ use super::{
     header_previous_state_id, history_state_pair, transition_or_header_previous_state_id,
     AsmHistory,
 };
+use crate::history_records::AsmHistoricalEntityDelta;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 pub(super) struct OutputChain {
     pub(super) history: usize,
     pub(super) states: Vec<i64>,
+    transient: BTreeSet<i64>,
+}
+
+/// Body slots whose first change in the interval is an insertion and whose
+/// last change is a deletion.
+fn transient_bodies<'a>(
+    oldest_first: impl Iterator<Item = &'a AsmHistoricalEntityDelta>,
+) -> BTreeSet<i64> {
+    let mut first_inserted = HashMap::new();
+    let mut last_deleted = HashMap::new();
+    for delta in oldest_first {
+        for &slot in &delta.deleted {
+            first_inserted.entry(slot).or_insert(false);
+            last_deleted.insert(slot, true);
+        }
+        for &slot in &delta.inserted {
+            first_inserted.entry(slot).or_insert(true);
+            last_deleted.insert(slot, false);
+        }
+    }
+    first_inserted
+        .into_iter()
+        .filter(|&(slot, inserted)| inserted && last_deleted.get(&slot) == Some(&true))
+        .map(|(slot, _)| slot)
+        .collect()
 }
 
 impl OutputChain {
@@ -39,18 +65,21 @@ impl OutputChain {
             return None;
         }
         let mut states = Vec::new();
+        let mut body_deltas = Vec::new();
         let mut visited = HashSet::new();
         while state.state_id != previous {
             if !visited.insert(state.state_id) {
                 return None;
             }
-            let predecessor = state.transition.as_ref()?.previous_state_id?;
+            let transition = state.transition.as_ref()?;
+            let predecessor = transition.previous_state_id?;
             if header_previous_state_id(history, state) != Some(predecessor)
                 || transition_or_header_previous_state_id(history, state) != Some(predecessor)
             {
                 return None;
             }
             states.push(state.state_id);
+            body_deltas.push(&transition.topology.bodies);
             let mut predecessors = history
                 .states()
                 .iter()
@@ -63,6 +92,7 @@ impl OutputChain {
         Some(Self {
             history: index,
             states,
+            transient: transient_bodies(body_deltas.into_iter().rev()),
         })
     }
 
@@ -74,7 +104,7 @@ impl OutputChain {
         for state in &self.states {
             outputs.extend(states.get(&(self.history, *state))?.as_ref()?);
         }
-        Some(outputs.into_iter().collect())
+        Some(outputs.difference(&self.transient).copied().collect())
     }
 }
 

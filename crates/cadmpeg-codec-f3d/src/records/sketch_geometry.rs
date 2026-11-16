@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_anchor, Point2, "anchor");
 cadmpeg_core::named_optional_field!(deserialize_planar_z_noise, [f64; 3], "planar_z_noise");
+cadmpeg_core::named_optional_field!(deserialize_tail_marker, u8, "tail_marker");
 cadmpeg_core::named_optional_field!(deserialize_base_id, u64, "base_id");
 cadmpeg_core::named_optional_field!(deserialize_closure, SketchPointClosureSerde, "closure");
 cadmpeg_core::named_optional_field!(deserialize_entity_genesis, u64, "entity_genesis");
@@ -28,6 +29,7 @@ cadmpeg_core::named_optional_field!(
     "horizontal_alignment"
 );
 cadmpeg_core::named_optional_field!(deserialize_owner_reference, u32, "owner_reference");
+cadmpeg_core::named_optional_field!(deserialize_geometry_group, u32, "geometry_group");
 cadmpeg_core::named_optional_field!(deserialize_persistent_id, u64, "persistent_id");
 cadmpeg_core::named_optional_field!(deserialize_rotation, f64, "rotation");
 cadmpeg_core::named_optional_field!(deserialize_second_reference, u32, "second_reference");
@@ -431,6 +433,7 @@ pub(crate) enum SketchPointClosure {
     Selector0State0,
     Selector0State1,
     Selector1State0,
+    Selector1State1,
     Selector2State1,
     Selector4State0,
     Selector4State1,
@@ -440,7 +443,7 @@ impl SketchPointClosure {
     pub(crate) fn selector(self) -> u64 {
         match self {
             Self::Selector0State0 | Self::Selector0State1 => 0,
-            Self::Selector1State0 => 1,
+            Self::Selector1State0 | Self::Selector1State1 => 1,
             Self::Selector2State1 => 2,
             Self::Selector4State0 | Self::Selector4State1 => 4,
         }
@@ -449,7 +452,10 @@ impl SketchPointClosure {
     pub(crate) fn state(self) -> u8 {
         match self {
             Self::Selector0State0 | Self::Selector1State0 | Self::Selector4State0 => 0,
-            Self::Selector0State1 | Self::Selector2State1 | Self::Selector4State1 => 1,
+            Self::Selector0State1
+            | Self::Selector1State1
+            | Self::Selector2State1
+            | Self::Selector4State1 => 1,
         }
     }
 
@@ -458,6 +464,7 @@ impl SketchPointClosure {
             (0, 0) => Some(Self::Selector0State0),
             (0, 1) => Some(Self::Selector0State1),
             (1, 0) => Some(Self::Selector1State0),
+            (1, 1) => Some(Self::Selector1State1),
             (2, 1) => Some(Self::Selector2State1),
             (4, 0) => Some(Self::Selector4State0),
             (4, 1) => Some(Self::Selector4State1),
@@ -921,6 +928,8 @@ pub(crate) struct SketchPoint {
     /// Resolved owning-sketch reference from a direct backlink, typed relation,
     /// or sketch-container member run.
     pub(crate) owner_reference: Option<u32>,
+    /// Record index of the sketch geometry group that the direct owner backlink names.
+    pub(crate) geometry_group: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
     pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
@@ -949,6 +958,7 @@ impl Clone for SketchPoint {
             id: self.id.clone(),
             record_index: self.record_index,
             owner_reference: self.owner_reference,
+            geometry_group: self.geometry_group,
             class_tag: self.class_tag.clone(),
             byte_offset: self.byte_offset,
             coordinate_offset: self.coordinate_offset,
@@ -972,6 +982,8 @@ impl Serialize for SketchPoint {
             record_index: u32,
             #[serde(skip_serializing_if = "Option::is_none")]
             owner_reference: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            geometry_group: Option<u32>,
             class_tag: &'a str,
             byte_offset: u64,
             coordinate_offset: u32,
@@ -1019,6 +1031,7 @@ impl Serialize for SketchPoint {
             id: &self.id,
             record_index: self.record_index,
             owner_reference: self.owner_reference,
+            geometry_group: self.geometry_group,
             class_tag: self.class_tag.as_str(),
             byte_offset: self.byte_offset,
             coordinate_offset: self.coordinate_offset,
@@ -1047,6 +1060,8 @@ pub(crate) struct SketchPointDraft {
     /// Resolved owning-sketch reference from a direct backlink, typed relation,
     /// or sketch-container member run.
     pub(crate) owner_reference: Option<u32>,
+    /// Record index of the sketch geometry group that the direct owner backlink names.
+    pub(crate) geometry_group: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
     pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
@@ -1083,6 +1098,7 @@ impl SketchPoint {
             id: draft.id,
             record_index: draft.record_index,
             owner_reference: draft.owner_reference,
+            geometry_group: draft.geometry_group,
             class_tag: draft.class_tag,
             byte_offset: draft.byte_offset,
             coordinate_offset: draft.coordinate_offset,
@@ -1242,6 +1258,12 @@ pub(super) struct SketchPointSerde {
         deserialize_with = "deserialize_owner_reference"
     )]
     owner_reference: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_geometry_group"
+    )]
+    geometry_group: Option<u32>,
     class_tag: String,
     byte_offset: u64,
     coordinate_offset: u32,
@@ -1408,6 +1430,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             id: wire.id,
             record_index: wire.record_index,
             owner_reference: wire.owner_reference,
+            geometry_group: wire.geometry_group,
             class_tag: wire.class_tag.try_into()?,
             byte_offset: wire.byte_offset,
             coordinate_offset: wire.coordinate_offset,
@@ -1460,6 +1483,7 @@ impl From<SketchPoint> for SketchPointSerde {
             id: point.id,
             record_index: point.record_index,
             owner_reference: point.owner_reference,
+            geometry_group: point.geometry_group,
             class_tag: point.class_tag.into(),
             byte_offset: point.byte_offset,
             coordinate_offset: point.coordinate_offset,
@@ -1483,13 +1507,21 @@ pub(crate) struct SketchCurveIdentity {
     pub(crate) id: String,
     /// Index of this identity record within the `BulkStream` tree.
     pub(crate) record_index: u32,
-    /// Direct owning-sketch backlink when the curve record form carries one.
+    /// Resolved owning-sketch reference from a direct backlink, typed relation,
+    /// or sketch-container member run.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_owner_reference"
     )]
     pub(crate) owner_reference: Option<u32>,
+    /// Record index of the sketch geometry group that the direct owner backlink names.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_geometry_group"
+    )]
+    pub(crate) geometry_group: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
     pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
@@ -1525,6 +1557,24 @@ pub(crate) struct SketchCurveIdentity {
         deserialize_with = "deserialize_planar_z_noise"
     )]
     pub(crate) planar_z_noise: Option<[f64; 3]>,
+    /// Fourth opaque byte of the planar analytic tail. Value `1` marks a
+    /// curve that a counted region member list does not name.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_marker"
+    )]
+    pub(crate) tail_marker: Option<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct SketchGeometryGroup {
+    pub(crate) id: String,
+    pub(crate) record_index: u32,
+    pub(crate) byte_offset: u64,
+    pub(crate) ordinal: u32,
+    pub(crate) members: Vec<u32>,
+    pub(crate) sketch_reference: u32,
 }
 
 /// One persistent tensor-product surface owned by a spatial Fusion sketch.
@@ -2469,6 +2519,38 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn point_closure_preserves_selector_one_state_one() {
+        use super::{SketchPointClosure, SketchPointClosure10, SketchPointClosure10Inline};
+
+        let closure = SketchPointClosure::from_pair(1, 1).unwrap();
+        assert_eq!(closure, SketchPointClosure::Selector1State1);
+        assert_eq!(closure.selector(), 1);
+        assert_eq!(closure.state(), 1);
+        assert!(SketchPointClosure10::from_closure(closure).is_none());
+        assert!(SketchPointClosure10Inline::from_closure(closure).is_none());
+        for kind in ["version11", "version11_inline_typed"] {
+            let mut wire = native_point_wire(&json!({"kind": kind}));
+            wire["closure"] = json!({"selector": 1, "state": 1});
+            wire["flags"] = json!("0000000000000000");
+            wire["record_form"]["padded_paired_reference"] = json!(false);
+            wire["record_form"]["trailing_reference"] = json!(17);
+            let point: SketchPoint = serde_json::from_value(wire).unwrap();
+            let serialized = serde_json::to_value(&point).unwrap();
+            assert_eq!(serialized["closure"], json!({"selector": 1, "state": 1}));
+            let restored: SketchPoint = serde_json::from_value(serialized.clone()).unwrap();
+            assert_eq!(restored, point);
+            let mut version_ten = serialized;
+            version_ten["record_form"]["kind"] = json!(if kind == "version11" {
+                "version10"
+            } else {
+                "version10_inline_typed"
+            });
+            let error = serde_json::from_value::<SketchPoint>(version_ten).unwrap_err();
+            assert!(error.to_string().contains("version-10"));
+        }
+    }
+
+    #[test]
     fn sketch_geometry_constructors_preserve_standard_values() {
         use super::{SketchNurbsGeometry, SketchNurbsPoles, SketchSurfaceGeometry};
         use cadmpeg_ir::features::FinitePoint3;
@@ -2644,6 +2726,55 @@ mod tests {
                 serde_json::to_vec(&owned).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn sketch_geometry_group_backlink_reads_back() {
+        let mut wire = native_point_wire(&json!({
+            "kind": "version11", "padded_paired_reference": false,
+            "companion_prefix_present_zero": false
+        }));
+        wire["owner_reference"] = json!(17);
+        wire["geometry_group"] = json!(50);
+        let point: SketchPoint = serde_json::from_value(wire).unwrap();
+        assert_eq!(point.owner_reference, Some(17));
+        assert_eq!(point.geometry_group, Some(50));
+        let written = serde_json::to_value(&point).unwrap();
+        assert_eq!(written["geometry_group"], json!(50));
+        let owned = super::SketchPointSerde::from(point.clone());
+        assert_eq!(
+            serde_json::to_vec(&point).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+        let curve: super::SketchCurveIdentity = serde_json::from_value(json!({
+            "id": "f3d:stream:sketch-curve#7", "record_index": 7,
+            "class_tag": "000", "byte_offset": 0, "geometry_offset": 0,
+            "owner_reference": 17, "geometry_group": 50,
+            "primary_id": 1, "secondary_id": 0
+        }))
+        .unwrap();
+        assert_eq!(curve.owner_reference, Some(17));
+        assert_eq!(curve.geometry_group, Some(50));
+        assert_eq!(
+            serde_json::to_value(&curve).unwrap()["geometry_group"],
+            json!(50)
+        );
+    }
+
+    #[test]
+    fn sketch_geometry_group_wire_reads_back() {
+        let wire = json!({
+            "id": "f3d:stream:sketch-geometry-group#120", "record_index": 50,
+            "byte_offset": 120, "ordinal": 3, "members": [41, 60],
+            "sketch_reference": 17
+        });
+        let group: super::SketchGeometryGroup = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(group.record_index, 50);
+        assert_eq!(group.byte_offset, 120);
+        assert_eq!(group.ordinal, 3);
+        assert_eq!(group.members, [41, 60]);
+        assert_eq!(group.sketch_reference, 17);
+        assert_eq!(serde_json::to_value(&group).unwrap(), wire);
     }
 
     #[test]

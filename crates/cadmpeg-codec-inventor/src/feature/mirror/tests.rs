@@ -4,7 +4,7 @@ use super::*;
 use crate::feature::tests::{reference, segment};
 use crate::feature::{parse_pattern_feature, MIRROR_FEATURE_TYPE, WORK_PLANE_TYPE};
 use crate::record_identity::{Located, RecordTypeId};
-use crate::test_support::mirror::{pattern, property, seed, Fixture};
+use crate::test_support::mirror::{pattern, property, seed, supplied_form, Fixture};
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
 #[test]
@@ -51,7 +51,7 @@ fn mirrors_keep_ordered_feature_seeds_and_reflect_about_the_offset_plane() {
 }
 
 #[test]
-fn body_mirrors_select_the_native_input_collection() {
+fn body_mirrors_select_the_listed_body_wrappers_under_the_input_collection() {
     let fixture = Fixture::new(true);
     let source = pattern(19, true, &[], &[]);
     let resolved = fixture
@@ -64,9 +64,10 @@ fn body_mirrors_select_the_native_input_collection() {
     };
     assert_eq!(
         seeds,
-        vec![PatternSeed::Bodies(BodySelection::Native(
-            fixture.properties[2].id()
-        ))]
+        vec![PatternSeed::Bodies(
+            BodySelection::local(vec![fixture.properties[3].id()], fixture.properties[2].id())
+                .expect("local selection")
+        )]
     );
     assert_eq!(resolved.result_native, fixture.properties[2].id());
 }
@@ -170,7 +171,7 @@ fn mirror_projection_keeps_resource_refusals() {
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        fixture.index().project(&ctx, &source, &fixture.label, seed),
+        fixture.index().project(&ctx, &source, &fixture.label, seed, |_| {}),
         Some(Err(CodecError::ResourceLimit(limit)))
             if limit.dimension == ResourceDimension::Entities
     ));
@@ -279,7 +280,7 @@ fn generated_instance_maps_remain_native() {
             None
         })
         .is_none());
-    let losses = native_losses(&[pattern(25, true, &[], &[(8, 150)])], &[]);
+    let losses = native_losses(&[pattern(25, true, &[], &[(8, 150)])], &[], &[]);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code.local_code(),
@@ -330,22 +331,33 @@ fn native_validation_compares_the_reflection_seeds_and_result_identity() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let (mut feature, mut result) = fixture
         .index()
-        .project(&ctx, &source, &fixture.label, seed)
+        .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
-    assert!(fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, seed));
+    assert!(fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        seed
+    ));
     result.native_ref = Some(source.id());
-    assert!(!fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, seed));
+    assert!(!fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        seed
+    ));
     result.native_ref = Some(fixture.properties[2].id());
     assert!(!fixture.index().matches_projection(
         &source,
         &fixture.label,
         &feature,
         &result,
+        false,
         |_| seed(4)
     ));
     feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
@@ -358,9 +370,14 @@ fn native_validation_compares_the_reflection_seeds_and_result_identity() {
             .expect("reflection"),
         }),
     );
-    assert!(!fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, seed));
+    assert!(!fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        seed
+    ));
 }
 
 #[test]
@@ -372,7 +389,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let (feature, result) = fixture
         .index()
-        .project(&ctx, &source, &fixture.label, seed)
+        .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
     let mut changed_result = result.clone();
@@ -385,6 +402,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         &fixture.label,
         &feature,
         &changed_result,
+        false,
         seed
     ));
     let mut changed_feature = feature.clone();
@@ -396,6 +414,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         &fixture.label,
         &changed_feature,
         &changed_result,
+        false,
         seed
     ));
     let mut changed_feature = feature.clone();
@@ -405,6 +424,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         &fixture.label,
         &changed_feature,
         &result,
+        false,
         seed
     ));
 }
@@ -495,21 +515,113 @@ fn mirrors_refuse_nonzero_variables_and_boolean_options() {
 #[test]
 fn every_unresolved_mirror_operand_has_a_pinned_loss() {
     for (name, fixture, source) in crate::test_support::mirror::refusal_cases() {
+        let mut refusal = None;
         assert!(
             fixture
                 .index()
-                .resolve(&source, &fixture.label, seed)
+                .resolve_with_refusal(&source, &fixture.label, seed, |value| refusal = Some(value))
                 .is_none(),
             "{name}"
         );
-        let losses = native_losses(&[source], &[]);
+        let losses = native_losses(&[source], &[], &[refusal]);
         assert_eq!(losses.len(), 1, "{name}");
         assert_eq!(
             losses[0].code.local_code(),
-            "feature.mirror-operands-native",
+            crate::test_support::mirror::refusal_code(&name),
             "{name}"
         );
     }
+}
+
+#[test]
+fn mirror_boolean_losses_report_the_first_failed_control() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    for version in [19, 21, 29] {
+        for (slot7, slot11, first) in [
+            (true, None, 7),
+            (true, Some(false), 7),
+            (true, Some(true), 7),
+            (false, Some(true), 11),
+        ] {
+            let (fixture, source) =
+                crate::test_support::mirror::body_boolean_form(version, slot7, slot11);
+            let mut refusal = None;
+            assert!(fixture
+                .index()
+                .project(&ctx, &source, &fixture.label, seed, |value| {
+                    assert!(refusal.is_none());
+                    refusal = Some(value);
+                })
+                .is_none());
+            let losses = native_losses(&[source], &[], &[refusal]);
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.local_code(), "feature.mirror-boolean-native");
+            assert_eq!(
+                losses[0].message,
+                format!(
+                    "Mirror slot {first} has a true Boolean with an unresolved construction role."
+                )
+            );
+        }
+        let (fixture, source) =
+            crate::test_support::mirror::body_boolean_form(version, false, Some(false));
+        let mut refusal = None;
+        let (feature, _) = fixture
+            .index()
+            .project(&ctx, &source, &fixture.label, seed, |value| {
+                refusal = Some(value);
+            })
+            .expect("false controls")
+            .expect("body projection");
+        assert!(refusal.is_none());
+        assert!(native_losses(&[source], &[feature], &[refusal]).is_empty());
+    }
+    let (mut fixture, source) =
+        crate::test_support::mirror::body_boolean_form(19, true, Some(true));
+    fixture.properties[7] = property(
+        112,
+        PmDcFeaturePropertyKind::Mirror {
+            definition: Property::Options {
+                bytes: [1; 9].into(),
+            },
+        },
+    );
+    let mut refusal = None;
+    assert!(fixture
+        .index()
+        .project(&ctx, &source, &fixture.label, seed, |value| {
+            refusal = Some(value);
+        })
+        .is_none());
+    assert!(refusal.is_none());
+    let losses = native_losses(&[source], &[], &[refusal]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.mirror-operands-native"
+    );
+}
+
+#[test]
+fn mirror_refusal_indices_include_other_pattern_families() {
+    let source = pattern(19, true, &[], &[]);
+    let mut payload = (*source).clone();
+    payload.family = PmDcPatternFamily::Rectangular;
+    let rectangular = Located::new(
+        payload,
+        RecordTypeId::from_bytes(crate::feature::RECTANGULAR_PATTERN_FEATURE_TYPE),
+        segment(),
+        19,
+    );
+    let losses = native_losses(&[rectangular, source], &[], &[None, Some(Refusal::Slot11)]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "feature.mirror-boolean-native");
+    assert_eq!(
+        losses[0].message,
+        "Mirror slot 11 has a true Boolean with an unresolved construction role."
+    );
 }
 
 #[test]
@@ -589,10 +701,10 @@ fn a_neutral_mirror_has_no_native_operand_loss() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let (feature, _) = fixture
         .index()
-        .project(&ctx, &source, &fixture.label, seed)
+        .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
-    assert!(native_losses(&[source], &[feature]).is_empty());
+    assert!(native_losses(&[source], &[feature], &[]).is_empty());
 }
 
 #[test]
@@ -633,7 +745,7 @@ fn an_unknown_selection_tail_stays_native_with_the_pinned_mirror_loss() {
         .index()
         .resolve(&source, &fixture.label, seed)
         .is_none());
-    let losses = native_losses(&[source], &[]);
+    let losses = native_losses(&[source], &[], &[]);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code.local_code(),
@@ -651,7 +763,7 @@ fn multi_operation_sheet_metal_parent_seeds_keep_the_pinned_native_loss() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let (feature, result) = fixture
         .index()
-        .project(&ctx, &source, &fixture.label, seed)
+        .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
     let mut history = History::default();
@@ -682,22 +794,154 @@ fn multi_operation_sheet_metal_parent_seeds_keep_the_pinned_native_loss() {
         };
         assert!(fixture
             .index()
-            .project(&ctx, &source, &fixture.label, |_| seed_feature_id(
-                &history, 20, &parent
-            ))
+            .project(
+                &ctx,
+                &source,
+                &fixture.label,
+                |_| seed_feature_id(&history, 20, &parent),
+                |_| {},
+            )
             .is_none());
         assert!(!fixture.index().matches_projection(
             &source,
             &fixture.label,
             &feature,
             &result,
+            false,
             |_| seed_feature_id(&history, 20, &parent)
         ));
-        let losses = native_losses(std::slice::from_ref(&source), &[]);
+        let losses = native_losses(std::slice::from_ref(&source), &[], &[]);
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code.local_code(),
             "feature.mirror-operands-native"
+        );
+    }
+}
+
+fn mirror_plane_reference(
+    fixture: &Fixture,
+    source: &PmDcPatternFeature,
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let resolved = fixture
+        .index()
+        .resolve(source, &fixture.label, |_| None)
+        .expect("body mirror");
+    let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+        plane_reference, ..
+    }) = resolved.definition
+    else {
+        panic!("mirror shape")
+    };
+    plane_reference
+}
+
+#[test]
+fn a_plane_supplied_by_a_work_plane_keeps_the_native_reference_until_history() {
+    let (plain, source) = crate::test_support::mirror::replacement_form();
+    let native = Some(cadmpeg_ir::features::FaceSelection::Native(
+        plain.planes[0].id(),
+    ));
+    assert_eq!(mirror_plane_reference(&plain, &source), native);
+    let (fixture, source) = supplied_form();
+    assert_eq!(mirror_plane_reference(&fixture, &source), native);
+    assert_eq!(
+        fixture.index().supplying_plane("generated", 103),
+        Some(Fixture::SUPPLIER)
+    );
+}
+
+#[test]
+fn a_plane_supplied_by_a_work_plane_keeps_the_stored_reflection() {
+    let (plain, source) = crate::test_support::mirror::replacement_form();
+    let (supplied, _) = supplied_form();
+    let frame = |fixture: &Fixture| {
+        let resolved = fixture
+            .index()
+            .resolve(&source, &fixture.label, |_| None)
+            .expect("body mirror");
+        let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+            plane_origin,
+            plane_normal,
+            ..
+        }) = resolved.definition
+        else {
+            panic!("mirror shape")
+        };
+        (plane_origin, plane_normal)
+    };
+    assert_eq!(frame(&plain), frame(&supplied));
+}
+
+fn with_supplier(
+    change: impl FnOnce(&mut crate::feature::PmDcWorkPlanePayload),
+) -> (Fixture, PmDcPatternFeature) {
+    let (mut fixture, source) = supplied_form();
+    let mut payload = (*fixture.planes[1]).clone();
+    change(&mut payload);
+    fixture.planes[1] = Located::new(
+        payload,
+        fixture.planes[1].identity.type_id.clone(),
+        segment(),
+        Fixture::SUPPLIER,
+    );
+    (fixture, source)
+}
+
+#[test]
+fn a_plane_reference_that_does_not_prove_the_plane_stays_native() {
+    let real = |value: f64| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite");
+    let mut cases = vec![
+        (
+            "offset supplier",
+            with_supplier(|plane| plane.origin[0] = real(2.5)),
+        ),
+        (
+            "tilted supplier",
+            with_supplier(|plane| plane.u_axis[0] = real(1.0e-6)),
+        ),
+    ];
+    let (mut fixture, source) = supplied_form();
+    fixture.planes[1] = Located::new(
+        (*fixture.planes[1]).clone(),
+        RecordTypeId::from_bytes(crate::feature::SURFACE_TYPE),
+        segment(),
+        Fixture::SUPPLIER,
+    );
+    cases.push(("supplier of another record type", (fixture, source)));
+    for (name, owner, target) in [
+        ("record owned by another plane", 106, Fixture::SUPPLIER + 1),
+        ("record targeting its owner", 104, 104),
+    ] {
+        let (mut fixture, source) = supplied_form();
+        let last = fixture.properties.len() - 1;
+        fixture.properties[last] = property(
+            109,
+            PmDcFeaturePropertyKind::Mirror {
+                definition: Property::PlaneReference {
+                    owner: reference(owner),
+                    target: reference(target),
+                    role: 4,
+                },
+            },
+        );
+        cases.push((name, (fixture, source)));
+    }
+    let (mut fixture, source) = supplied_form();
+    fixture.planes.pop();
+    cases.push(("missing supplier", (fixture, source)));
+    for (name, (fixture, source)) in cases {
+        assert_eq!(
+            mirror_plane_reference(&fixture, &source),
+            Some(cadmpeg_ir::features::FaceSelection::Native(
+                fixture.planes[0].id()
+            )),
+            "{name}"
+        );
+        assert_eq!(
+            fixture.index().supplying_plane("generated", 103),
+            None,
+            "{name}"
         );
     }
 }

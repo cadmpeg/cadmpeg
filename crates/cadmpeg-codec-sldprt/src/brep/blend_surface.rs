@@ -109,14 +109,21 @@ pub(super) fn edge_samples(
     Ok(points)
 }
 
+/// A cache solved from the blend's own data.
+pub(super) struct SolvedBlend {
+    pub(super) cache: BlendCache,
+    /// Whether every face vertex lies on the cache within its fit tolerance
+    /// and the linear resolution.
+    pub(super) holds: bool,
+}
+
 /// Solve the cache of one blend over the stretch of spine its face covers.
 /// `None` when the blend's data does not define a section along that
-/// stretch, when no fit within `MAX_PATCHES` reaches the tolerance, or when
-/// a face vertex is off the cache.
+/// stretch, or when no fit within `MAX_PATCHES` reaches the tolerance.
 pub(super) fn solve(
     ctx: &DecodeContext<'_>,
     inputs: &BlendInputs<'_>,
-) -> Result<Option<BlendCache>, CodecError> {
+) -> Result<Option<SolvedBlend>, CodecError> {
     if !(inputs.radius.is_finite() && inputs.radius > 0.0) || inputs.boundary.is_empty() {
         return Ok(None);
     }
@@ -141,7 +148,7 @@ pub(super) fn solve(
     for stretch in [widened, extent] {
         if let Some(cache) = solve_over(ctx, inputs, &spine, stretch)? {
             let holds = passes_through(ctx, &cache, &spine, stretch, inputs.vertices)?;
-            return Ok(holds.then_some(cache));
+            return Ok(Some(SolvedBlend { cache, holds }));
         }
         if widened == extent {
             break;

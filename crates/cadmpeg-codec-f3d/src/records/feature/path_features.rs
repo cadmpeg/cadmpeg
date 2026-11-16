@@ -23,6 +23,11 @@ cadmpeg_core::named_optional_field!(
     DesignRevolveSecondSideWire,
     "second_side"
 );
+cadmpeg_core::named_optional_field!(deserialize_solid, bool, "solid");
+cadmpeg_core::named_optional_field!(deserialize_angle, f64, "angle");
+cadmpeg_core::named_optional_field!(deserialize_targets, DesignRevolveTargets, "targets");
+cadmpeg_core::named_optional_field!(deserialize_side_two, Located<u32>, "side_two");
+cadmpeg_core::named_optional_field!(deserialize_reference_target, u64, "reference_target");
 /// Exact construction carried by a Revolve, Loft, Sweep, or Pipe scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -48,11 +53,12 @@ pub(crate) struct DesignRevolveConstruction {
     pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
     pub(crate) operation_offset: u64,
-    /// Positive angular travel in radians.
-    pub(crate) angle: PositiveAngle,
-    /// Referenced angular-travel scalar record.
+    /// Angular travel, or the target groups that end the travel.
+    pub(crate) travel: DesignRevolveTravel,
+    /// Referenced travel owner: the angular-travel scalar record, or the
+    /// zero-valued owner of a to-object scope.
     pub(crate) angle_record_index: u32,
-    /// Byte offset of the angular-travel scalar.
+    /// Byte offset of the travel owner's scalar.
     pub(crate) angle_offset: u64,
     /// Zero-valued opposite-side angle scalar record, when serialized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -61,6 +67,37 @@ pub(crate) struct DesignRevolveConstruction {
     /// both sides of the profile plane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) second_side: Option<DesignRevolveSecondSide>,
+    /// Solid flag of a referenced-angle form: `true` for a solid body and
+    /// `false` for a surface body.
+    pub(crate) solid: Option<bool>,
+    /// Whether the stored angle is negative, so that the profile turns toward
+    /// the negative normal of its sketch plane.
+    pub(crate) reversed: bool,
+}
+
+/// Travel of a `Revolve` scope.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum DesignRevolveTravel {
+    /// Positive angular travel in radians.
+    Angle(PositiveAngle),
+    /// Travel that ends at selected target groups.
+    ToTargets(DesignRevolveTargets),
+}
+
+/// Target groups of a to-object `Revolve` scope. Each value is a role
+/// `0x0000000500000000` construction-group record and each offset is the byte
+/// offset of its marked record index.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignRevolveTargets {
+    /// Side-one target group.
+    pub(crate) side_one: Located<u32>,
+    /// Side-two target group of a two-sided scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_side_two"
+    )]
+    pub(crate) side_two: Option<Located<u32>>,
 }
 
 /// Opposite-side travel of a Symmetric or Two Sides `Revolve` scope.
@@ -92,10 +129,22 @@ struct DesignRevolveConstructionWire {
     /// Byte offset of the operation u32.
     operation_offset: u64,
     /// Positive angular travel in radians.
-    angle: f64,
-    /// Referenced angular-travel scalar record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_angle"
+    )]
+    angle: Option<f64>,
+    /// Target groups of a to-object scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_targets"
+    )]
+    targets: Option<DesignRevolveTargets>,
+    /// Referenced travel-owner record.
     angle_record_index: u32,
-    /// Byte offset of the angular-travel scalar.
+    /// Byte offset of the travel owner's scalar.
     angle_offset: u64,
     /// Zero-valued opposite-side angle scalar record, when serialized.
     #[serde(
@@ -118,14 +167,29 @@ struct DesignRevolveConstructionWire {
         deserialize_with = "deserialize_second_side"
     )]
     second_side: Option<DesignRevolveSecondSideWire>,
+    /// Solid flag of a referenced-angle form.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_solid"
+    )]
+    solid: Option<bool>,
+    /// Whether the stored angle is negative.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    reversed: bool,
 }
 
 impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
     fn from(value: DesignRevolveConstruction) -> Self {
+        let (angle, targets) = match value.travel {
+            DesignRevolveTravel::Angle(angle) => (Some(angle.get()), None),
+            DesignRevolveTravel::ToTargets(targets) => (None, Some(targets)),
+        };
         Self {
             operation: value.operation,
             operation_offset: value.operation_offset,
-            angle: value.angle.get(),
+            angle,
+            targets,
             angle_record_index: value.angle_record_index,
             angle_offset: value.angle_offset,
             opposite_angle_record_index: value.opposite_angle.map(|located| located.value),
@@ -136,6 +200,8 @@ impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
                 angle_record_index: side.angle_record_index,
                 angle_offset: side.angle_offset,
             }),
+            solid: value.solid,
+            reversed: value.reversed,
         }
     }
 }
@@ -143,10 +209,28 @@ impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
 impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
     type Error = String;
     fn try_from(value: DesignRevolveConstructionWire) -> Result<Self, Self::Error> {
+        let travel = match (value.angle, value.targets) {
+            (Some(angle), None) => DesignRevolveTravel::Angle(
+                PositiveAngle::new(angle).ok_or("angle must be positive and finite")?,
+            ),
+            (None, Some(targets)) => {
+                if value.opposite_angle_record_index.is_some()
+                    || value.second_side.is_some()
+                    || value.reversed
+                {
+                    return Err(
+                        "a to-object Revolve has no opposite angle, second-side angle, or reversal"
+                            .into(),
+                    );
+                }
+                DesignRevolveTravel::ToTargets(targets)
+            }
+            _ => return Err("exactly one of angle and targets must occur".into()),
+        };
         Ok(Self {
             operation: value.operation,
             operation_offset: value.operation_offset,
-            angle: PositiveAngle::new(value.angle).ok_or("angle must be positive and finite")?,
+            travel,
             angle_record_index: value.angle_record_index,
             angle_offset: value.angle_offset,
             opposite_angle: match (
@@ -174,6 +258,8 @@ impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
                     })
                 })
                 .transpose()?,
+            solid: value.solid,
+            reversed: value.reversed,
         })
     }
 }
@@ -185,6 +271,17 @@ pub(crate) struct DesignLoftConstruction {
     pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
     pub(crate) operation_offset: u64,
+    /// Target of the non-null marked reference at standard-prefix offset 33.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_reference_target"
+    )]
+    pub(crate) reference_target: Option<u64>,
+    /// Section records of the scope body's section list, in section order.
+    pub(crate) section_records: Vec<u32>,
+    /// Construction-operand groups of the scope body's rail list, in rail order.
+    pub(crate) rail_groups: Vec<u32>,
 }
 
 /// Fixed construction of a `Sweep` scope.
@@ -229,7 +326,53 @@ pub(crate) struct DesignPipeConstruction {
     /// Optional native point-selection pair.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) point_selection: Option<DesignPipePointSelection>,
+    /// Section shape read from the section frame after the prefix.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) section: Option<DesignPipeSection>,
 }
+
+/// Section-shape u32 of a `Pipe` and its offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignPipeSection {
+    /// Stored section-shape value.
+    pub(crate) shape_value: u32,
+    /// Byte offset of the section-shape u32.
+    pub(crate) shape_offset: u64,
+}
+
+impl DesignPipeSection {
+    /// The shape the stored value names.
+    pub(crate) const fn shape(self) -> Option<DesignPipeSectionShape> {
+        DesignPipeSectionShape::from_stored(self.shape_value)
+    }
+}
+
+/// Section shape stored by a `Pipe` scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignPipeSectionShape {
+    /// Stored value `0`.
+    Circular,
+    /// Stored value `1`.
+    Square,
+    /// Stored value `2`.
+    Triangular,
+}
+
+impl DesignPipeSectionShape {
+    /// The shape a stored u32 names.
+    pub(crate) const fn from_stored(value: u32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Circular),
+            1 => Some(Self::Square),
+            2 => Some(Self::Triangular),
+            _ => None,
+        }
+    }
+}
+
+cadmpeg_core::named_optional_field!(deserialize_pipe_section, DesignPipeSection, "section");
 
 /// Point-data record and its recipe-selection input named by a `Pipe` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -259,6 +402,8 @@ struct DesignPipeConstructionWire {
     record_indexes: [u32; 4],
     #[serde(default, deserialize_with = "deserialize_pipe_point_selection")]
     point_selection: Option<DesignPipePointSelection>,
+    #[serde(default, deserialize_with = "deserialize_pipe_section")]
+    section: Option<DesignPipeSection>,
 }
 
 impl TryFrom<DesignPipeConstructionWire> for DesignPipeConstruction {
@@ -284,6 +429,7 @@ impl TryFrom<DesignPipeConstructionWire> for DesignPipeConstruction {
             opaque_post_operation_offset: value.opaque_post_operation_offset,
             record_indexes: value.record_indexes,
             point_selection: value.point_selection,
+            section: value.section,
         })
     }
 }
@@ -308,6 +454,20 @@ impl DesignPipeConstruction {
                     && selection
                         .prefix_reference_offset
                         .checked_add(10)
+                        .is_some_and(|end| end <= table)
+            })
+            && self.section.is_none_or(|section| {
+                self.point_selection.is_none()
+                    && prefix_end
+                        .and_then(|end| {
+                            end.checked_add(u64_from_index(
+                                crate::layout::pipe_section_frame::SHAPE,
+                            ))
+                        })
+                        .is_some_and(|at| at == section.shape_offset)
+                    && section
+                        .shape_offset
+                        .checked_add(4)
                         .is_some_and(|end| end <= table)
             })
     }

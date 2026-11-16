@@ -684,6 +684,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 id: "f3d:generated:sketch-point#0".into(),
                 record_index: 100,
                 owner_reference: Some(277),
+                geometry_group: None,
                 class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned())
                     .unwrap(),
                 byte_offset: 0,
@@ -707,6 +708,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "f3d:generated:sketch-curve#0".into(),
             record_index: 600,
             owner_reference: Some(277),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
                 .unwrap(),
             byte_offset: 0,
@@ -724,11 +726,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .unwrap(),
             ),
             planar_z_noise: None,
+            tail_marker: None,
         },
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#1".into(),
             record_index: 601,
             owner_reference: Some(277),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("260".to_owned())
                 .unwrap(),
             byte_offset: 0,
@@ -748,11 +752,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .unwrap(),
             ),
             planar_z_noise: None,
+            tail_marker: None,
         },
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#2".into(),
             record_index: 602,
             owner_reference: Some(277),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
                 .unwrap(),
             byte_offset: 0,
@@ -782,6 +788,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .unwrap(),
             )),
             planar_z_noise: None,
+            tail_marker: None,
         },
     ];
     native.sketch_relations =

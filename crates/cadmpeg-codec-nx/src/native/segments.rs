@@ -36,6 +36,7 @@ fn classify_om_schema_role(section: &crate::om::Section<'_>) -> OmSchemaRole {
         ("UGS::FEATURE_RECORD", OmSchemaRole::FeatureHistory),
         ("UGS::EXP_expression", OmSchemaRole::Expressions),
         ("UGS::Solid::Topol", OmSchemaRole::Model),
+        ("UGS::OCC_instance", OmSchemaRole::Assembly),
     ]
     .into_iter()
     .filter_map(|(name, role)| has(name).then_some(role));
@@ -321,6 +322,15 @@ fn terminal_feature_body_indices(
         bindings,
         inputs,
     } = body_lineage_inputs;
+
+    if labels.iter().any(|label| {
+        label.value == "DELETE"
+            && !references
+                .iter()
+                .any(|reference| reference.operation_label == label.id)
+    }) {
+        return None;
+    }
 
     let offset_store_references = data_block_uses
         .iter()
@@ -897,7 +907,7 @@ mod tests {
             flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
         encoder.write_all(&expanded).unwrap();
         let member = encoder.finish().unwrap();
-        for (fixed_len, code, version) in [(33, 37_u32, 4_u16), (45, 45, 5)] {
+        for (fixed_len, code, version) in [(33, 37_u32, 4_u16), (45, 45, 5), (57, 61, 4)] {
             let mut payload = vec![0; 32 + fixed_len + 4];
             for (at, word) in [(0, 32_u32), (4, 9), (8, 11), (12, 1), (16, 1), (20, 24)] {
                 payload[at..at + 4].copy_from_slice(&word.to_le_bytes());
@@ -1080,6 +1090,34 @@ mod tests {
     }
 
     #[test]
+    fn decode_binds_plain_body_through_version_four_57_byte_wrapper() {
+        let mut payload = segment_body_binding_payload("plain");
+        let compressed = payload.split_off(72);
+        payload[64..68].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+        payload.extend_from_slice(&61_u32.to_le_bytes());
+        payload.extend_from_slice(&4_u16.to_le_bytes());
+        payload.resize(64 + 57, 0);
+        payload.extend_from_slice(&compressed);
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let namespace = result.ir().native.namespace("nx").unwrap();
+        let links = namespace
+            .arena_as::<super::SegmentStreamLink>("segment_stream_links")
+            .unwrap();
+        let bindings = namespace
+            .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].wrapper_byte_len, 57);
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].body_object_index, 94);
+        assert_eq!(bindings[0].body_alias_object_index, 150);
+        assert_eq!(bindings[0].stream_role, 19);
+    }
+
+    #[test]
     fn decode_assigns_distinct_binding_ids_to_repeated_stream_links() {
         let file = prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
@@ -1236,6 +1274,55 @@ mod tests {
             .expect("required invariant");
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].schema_role, OmSchemaRole::FeatureHistory);
+    }
+
+    #[test]
+    fn decode_classifies_assembly_registry_with_common_audit_class() {
+        let mut section = size_framed_om_section();
+        let old = b"UGS::FEATURE_RECORD";
+        let instance = b"UGS::OCC_instance";
+        let start = section
+            .windows(old.len())
+            .position(|window| window == old)
+            .unwrap();
+        section[start - 1] = u8::try_from(instance.len() + 1).unwrap();
+        section.splice(start..start + old.len(), instance.iter().copied());
+        let insertion = section
+            .windows(b"m_target".len())
+            .position(|w| w == b"m_target")
+            .unwrap()
+            - 1;
+        let audit = b"UGS::OM::SaveAuditTrail";
+        let mut declaration = vec![u8::try_from(audit.len() + 1).unwrap()];
+        declaration.extend_from_slice(audit);
+        declaration.push(0xa1);
+        section.splice(insertion..insertion, declaration);
+        let payload_len = u32::try_from(section.len() - 16).unwrap();
+        section[8..12].copy_from_slice(&payload_len.to_be_bytes());
+        let sections = crate::om::sections(&section).unwrap();
+        for name in ["UGS::OCC_instance", "UGS::OM::SaveAuditTrail"] {
+            assert!(sections[0].types.iter().any(|class| class.name == name));
+        }
+
+        let mut payload = Vec::new();
+        for word in [32u32, 9, 11, 1, 1, 24] {
+            payload.extend_from_slice(&word.to_le_bytes());
+        }
+        payload.resize(32, 0);
+        payload.extend(section);
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let links = result
+            .ir()
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::SegmentOmLink>("segment_om_links")
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].schema_role, OmSchemaRole::Assembly);
     }
 
     #[test]
@@ -1590,6 +1677,20 @@ mod tests {
             source_offset: u64::from(ordinal),
         };
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
+
+        assert!(
+            super::segment_body_lineage_statuses(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &[],
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &[],
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[],
+            })
+            .is_none()
+        );
 
         let statuses = {
             super::segment_body_lineage_statuses(&super::BodyLineageInputs {

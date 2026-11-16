@@ -8,7 +8,11 @@ use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
+use crate::support::fixture;
+#[cfg(all(feature = "creo", feature = "step"))]
+use crate::support::geometryless_creo;
+#[cfg(feature = "rhino")]
+use crate::support::minimal_rhino_archive;
 
 #[test]
 fn garbage_reports_supported_formats() {
@@ -42,8 +46,9 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
         .code(2);
 
     let mut invalid = unit_cube().expect("unit cube fixture is admitted");
-    invalid.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
-        .expect("valid identity for an absent surface");
+    invalid.geometry.faces[0].surface =
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
+            .expect("valid identity for an absent surface");
     let invalid = fixture(dir.path(), "invalid.json", &invalid);
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -52,6 +57,7 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
         .code(1);
 }
 
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
     let dir = tempdir().unwrap();
@@ -95,6 +101,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
         .success();
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
     let dir = tempdir().unwrap();
@@ -128,12 +135,13 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .unwrap()
             .iter()
             .any(|loss| {
-                loss["code"]["namespace"] == "rhino"
-                    && loss["code"]["code"] == "source.dialect-unverified"
+                loss["code"]["value"]["namespace"] == "rhino"
+                    && loss["code"]["value"]["code"] == "source.dialect-unverified"
             }));
     }
 }
 
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn convert_writes_when_native_decode_has_no_geometry() {
     let dir = tempdir().unwrap();
@@ -157,10 +165,11 @@ fn convert_writes_when_native_decode_has_no_geometry() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| { loss["code"]["code"] == "export.no-geometry-written" }));
+        .any(|loss| { loss["code"]["value"]["code"] == "export.no-geometry-written" }));
 }
 
 /// A container-only document is shallower than a geometry encoder plans from.
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn convert_refuses_container_only_geometry_at_its_depth() {
     let dir = tempdir().unwrap();
@@ -196,6 +205,7 @@ fn convert_refuses_container_only_geometry_at_its_depth() {
 /// be, so it fails against an absent path as a typed plan refusal. A dialect
 /// token is admitted by the selected encoder's catalog at the same static
 /// boundary.
+#[cfg(all(feature = "catia", feature = "iges", feature = "step"))]
 #[test]
 fn an_unwritable_output_format_refuses_before_reading_input() {
     let dir = tempdir().unwrap();
@@ -297,6 +307,7 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
 /// This is the whole error surface the deleted `--iges-target requires IGES
 /// output` strings used to hand-write. The catalog in the message comes from
 /// `Encoder::targets()`, so it reflects the build's own feature set.
+#[cfg(all(feature = "iges", feature = "step"))]
 #[test]
 fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
     let dir = tempdir().unwrap();
@@ -435,6 +446,7 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
 }
 
 /// Archive word 5 is a read-only dialect, not shorthand for archive 50.
+#[cfg(feature = "rhino")]
 #[test]
 fn rhino_word_5_is_refused_with_the_encoder_catalog() {
     let dir = tempdir().unwrap();
@@ -475,6 +487,7 @@ fn rhino_word_5_is_refused_with_the_encoder_catalog() {
 /// exit 1 rather than 2. A file that loses nothing is written under every
 /// scope, which is what proves the scope is a predicate and not a switch that
 /// refuses on sight.
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn reject_lossy_scopes_select_which_losses_refuse() {
     let dir = tempdir().unwrap();
@@ -519,12 +532,12 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         serde_json::from_slice(&fs::read(export_report).unwrap()).unwrap();
     assert_eq!(report["refusal"]["code"], "export_loss_rejected");
     assert!(report["export"].is_object());
-    assert_eq!(report["export"]["identity"]["payload"], "native");
+    assert_eq!(report["export"]["identity"]["kind"], "native");
     let losses = report["export"]["losses"].as_array().unwrap();
     assert_eq!(losses.len(), 2);
     assert!(losses
         .iter()
-        .any(|loss| loss["code"]["code"] == "export.no-geometry-written"));
+        .any(|loss| loss["code"]["value"]["code"] == "export.no-geometry-written"));
 
     let lossless = fixture(
         dir.path(),

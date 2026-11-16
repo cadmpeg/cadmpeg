@@ -66,7 +66,7 @@ pub(super) fn native_tolerant_coedge_extension(
             ..
         }) => {
             let model_coedge = target
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|candidate| candidate.id == *coedge)
@@ -75,7 +75,7 @@ pub(super) fn native_tolerant_coedge_extension(
                 CodecError::malformed(format_args!("tolerant coedge {coedge} has no use curve"))
             })?;
             let curve = target
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == use_curve.curve)
@@ -143,11 +143,12 @@ pub(super) fn encode_design_bulkstream(
                 edge_identity_operands: &native.design_edge_identity_operands,
                 edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
                 entity_selection_operands: &native.design_entity_selection_operands,
+                design_types: &native.design_types,
                 curve_identities: &native.sketch_curve_identities,
                 face_operands: &native.design_face_operands,
                 body_recipe_operands: &native.design_body_recipe_operands,
-                legacy_loft_body_carriers: &native.design_loft_legacy_body_carriers,
                 placements: &native.design_sketch_placements,
+                placement_constructions: &native.design_placement_constructions,
                 body_bindings: &native.design_body_bindings,
                 component_naming_spaces: &native.design_component_naming_spaces,
                 histories: &native.asm_histories,
@@ -182,7 +183,7 @@ pub(super) fn encode_design_bulkstream(
         ));
     }
     let has_body_visibility = target
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| body.visible.is_some());
@@ -455,6 +456,7 @@ pub(super) fn encode_document_parameters(
         }
         let crate::records::parameters::DesignParameterSource::User {
             family_discriminator: Some(family_discriminator),
+            ..
         } = parameter.source()
         else {
             return Err(CodecError::NotImplemented(

@@ -3,11 +3,11 @@
 
 use cadmpeg_core::decode::unique_index;
 use cadmpeg_ir::{
-    document::Model,
     features::{
         FeatureDefinition, FeatureOperation, LoftSection, ParameterValue, PlanarProfileRef,
         ProfileRef,
     },
+    CadIr,
 };
 use std::collections::HashMap;
 
@@ -23,7 +23,7 @@ use crate::{
 };
 
 pub(crate) struct ValidationIndex<'a> {
-    model: &'a Model,
+    ir: &'a CadIr,
     raw: HashMap<String, Option<&'a PmDcSketch>>,
     sketches: HashMap<&'a str, Option<&'a cadmpeg_ir::sketches::Sketch>>,
     profiles: ProfileIndex<'a>,
@@ -31,17 +31,17 @@ pub(crate) struct ValidationIndex<'a> {
 
 impl<'a> ValidationIndex<'a> {
     pub(crate) fn new(
-        model: &'a Model,
+        ir: &'a CadIr,
         raw_sketches: &'a [PmDcSketch],
         kernel_links: &'a [PmDcKernelEntityLink],
         entity_links: &'a [PmDcEntityStyleLink],
         raw_entities: &'a [PmDcSketchEntity],
     ) -> Self {
         Self {
-            model,
+            ir,
             raw: unique_index(raw_sketches.iter().map(|sketch| (sketch.id(), sketch))),
             sketches: unique_index(
-                model
+                ir.model
                     .sketches
                     .iter()
                     .map(|sketch| (sketch.id.as_str(), sketch)),
@@ -51,7 +51,7 @@ impl<'a> ValidationIndex<'a> {
                 kernel_links,
                 entity_links,
                 raw_entities,
-                &model.sketch_entities,
+                &ir.model.sketch_entities,
             ),
         }
     }
@@ -105,20 +105,21 @@ impl<'a> ValidationIndex<'a> {
         let [first, last] = selected.as_slice() else {
             return false;
         };
-        evidence::loft(
-            self.model,
+        evidence::loft_result(
+            self.ir,
             source.header.source_index,
             [first.0.header.source_index, last.0.header.source_index],
-            |section, name| {
-                selected.get(section).is_some_and(|(raw, sketch, profile)| {
-                    self.profiles.contains_curve_name(
-                        token,
-                        raw.identity.record_ordinal,
-                        sketch,
-                        profile,
-                        name,
-                    )
-                })
+            |section| {
+                selected
+                    .get(section)
+                    .map_or_else(Vec::new, |(raw, sketch, profile)| {
+                        self.profiles.curve_names(
+                            token,
+                            raw.identity.record_ordinal,
+                            sketch,
+                            profile,
+                        )
+                    })
             },
         )
         .is_some()

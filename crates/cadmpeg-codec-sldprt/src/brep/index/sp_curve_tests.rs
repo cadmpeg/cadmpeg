@@ -100,3 +100,15 @@ fn a_two_dimensional_descriptor_marked_rational_is_not_read() {
     bytes.extend(sp_curve_records(180, [[0.0; 3], [0.001, 0.002, 0.0]]));
     assert!(scan(&bytes).sp_curve(70).is_none());
 }
+
+#[test]
+fn an_excluded_b_curve_reads_no_sp_curve() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let bytes = plane_stream([0.001, 0.002, 0.0]);
+    let exclude = std::collections::HashSet::from([60]);
+    let carriers =
+        super::scan_carriers_with_framing(&ctx, &bytes, super::Framing::Scan(None), &exclude)
+            .expect("carrier scan");
+    assert!(carriers.sp_curve(70).is_none());
+    assert!(carriers.surface_curve(75).is_none());
+}

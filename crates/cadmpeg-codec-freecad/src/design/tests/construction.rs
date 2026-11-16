@@ -1794,13 +1794,11 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             faces: cadmpeg_ir::features::FaceSelection::Native(faces),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: cadmpeg_ir::features::FaceSelection::Native(plane),
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: pull_direction,
-                    plane: None,
-                }),
+                pull: Some(cadmpeg_ir::features::DraftPull { direction: pull_direction, plane: None, frame: None }),
             },
             angle: Some(angle),
             outward: Some(true),
+            second_side: None,
         }) if faces.ends_with(":Base")
             && plane.ends_with(":NeutralPlane")
             && (pull_direction.x - 0.0).abs() < 1.0e-12
@@ -1956,6 +1954,7 @@ So 1001000 +2 0 *
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("subelement selections");
     let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let operation = |name: &str| match model
         .features
         .iter()
@@ -1974,7 +1973,7 @@ So 1001000 +2 0 *
         panic!("resolved faces: {removed_faces:?}");
     };
     assert_eq!(faces.len(), 1);
-    assert!(model.faces.iter().any(|face| face.id == faces[0]));
+    assert!(geometry.faces.iter().any(|face| face.id == faces[0]));
     assert_eq!(native, "fcstd:native:property#Thickness:Base");
     let FeatureOperation::Fillet { groups, .. } = operation("Fillet") else {
         panic!("fillet");
@@ -1983,7 +1982,7 @@ So 1001000 +2 0 *
         panic!("resolved edges: {:?}", groups[0].edges);
     };
     assert_eq!(edges.len(), 1);
-    assert!(model.edges.iter().any(|edge| edge.id == edges[0]));
+    assert!(geometry.edges.iter().any(|edge| edge.id == edges[0]));
     // Edge3 does not exist, so the whole selection stays native.
     let FeatureOperation::Chamfer { groups, .. } = operation("Chamfer") else {
         panic!("chamfer");

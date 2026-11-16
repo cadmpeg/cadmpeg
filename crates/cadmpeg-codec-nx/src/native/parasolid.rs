@@ -3,19 +3,19 @@
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::name_references::NameReferences;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::topology::offset_surface_state::OffsetSurfaceState;
 use cadmpeg_core::CodecError;
+use cadmpeg_parasolid::xmt::XmtTarget;
 use serde::{Deserialize, Serialize};
 
-use crate::deltas::record_family::RecordFamily;
 use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
-use crate::records::deltas::EventContent;
-use crate::records::DeltasRecords;
+use cadmpeg_parasolid::deltas::record_family::RecordFamily;
+use cadmpeg_parasolid::records::deltas::EventContent;
+use cadmpeg_parasolid::records::DeltasRecords;
 use std::num::NonZeroU32;
 
 pub(super) mod structured_value_kind;
@@ -31,7 +31,7 @@ mod entity51_wire;
 use crate::parasolid::counted_values::CountedValues;
 use crate::parasolid::entity_references::{EntityReferences, FieldPosition};
 use crate::parasolid::unicode_value::UnicodeValue;
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 use entity51_wire::Entity51Wire;
 pub(super) mod named_fields;
 use named_fields::NamedField;
@@ -44,21 +44,21 @@ use deltas_metadata::ParasolidDeltasMetadata;
 mod chart_wire;
 mod support_uv_wire;
 mod transmit_header_wire;
-use crate::deltas::partition_prefix::PartitionPrefixState;
-use crate::deltas::transmit_state::TransmitState;
-use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_parasolid::deltas::partition_prefix::PartitionPrefixState;
+use cadmpeg_parasolid::deltas::transmit_state::TransmitState;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 use transmit_header_wire::TransmitHeaderWire;
 pub(super) mod group_member;
 mod group_state;
 use group_member::GroupMemberTarget;
 pub(super) mod group_record;
-use crate::deltas::group::GroupReferenceStatus;
-use crate::records::group::GroupSelector;
+use cadmpeg_parasolid::deltas::group::GroupReferenceStatus;
+use cadmpeg_parasolid::records::group::GroupSelector;
 use group_record::GroupOrigin;
 
 use super::substrate::{ParsedStreams, StreamView};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One complete Parasolid GROUP record with its primary or Deltas source scope.
 #[derive(Debug, PartialEq, Eq, Deserialize)]
@@ -181,7 +181,8 @@ pub(super) fn parasolid_groups(
             continue;
         };
 
-        let Some(primary) = crate::records::PrimaryRecords::read(&stream.inflated)? else {
+        let Some(primary) = cadmpeg_parasolid::records::PrimaryRecords::read(&stream.inflated)?
+        else {
             continue;
         };
         for record in primary.groups() {
@@ -214,7 +215,7 @@ pub(super) fn parasolid_groups(
         current.append_members(stream_ordinal_u32, &mut members);
     }
     for record in &deltas.records {
-        let crate::deltas::record_family::RecordFamily::Group {
+        let cadmpeg_parasolid::deltas::record_family::RecordFamily::Group {
             node_id,
             selector,
             linked_reference_status,
@@ -273,7 +274,7 @@ pub(super) struct ParasolidDeltasRecord {
     /// Zero-based source stream ordinal.
     pub(super) stream_ordinal: u32,
     /// Source projection derived from the owned generic instance.
-    pub(super) family: crate::deltas::record_family::RecordFamily,
+    pub(super) family: cadmpeg_parasolid::deltas::record_family::RecordFamily,
     /// Stream-local XMT identity.
     pub(super) xmt: u32,
     /// Exact serialized record length.
@@ -284,7 +285,7 @@ pub(super) struct ParasolidDeltasRecord {
 
 impl Serialize for ParasolidDeltasRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use crate::deltas::record_family::RecordFamilyReferences;
+        use cadmpeg_parasolid::deltas::record_family::RecordFamilyReferences;
         use serde::ser::SerializeStruct;
 
         let region_type = match &self.family {
@@ -342,7 +343,7 @@ struct ParasolidDeltasRecordWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_region_type"
     )]
-    region_type: Option<crate::deltas::region::RegionType>,
+    region_type: Option<cadmpeg_parasolid::deltas::region::RegionType>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -377,7 +378,7 @@ impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
             wire.group_linked_reference_status,
         ) {
             (19, "REGION", Some(region_type), None, None) => RecordFamily::Region {
-                fields: crate::deltas::region::RegionFields::from_wire(
+                fields: cadmpeg_parasolid::deltas::region::RegionFields::from_wire(
                     wire.node_id,
                     wire.references,
                     region_type,
@@ -928,7 +929,8 @@ pub(super) struct ParasolidTermUseRecord {
     pub(super) stream_ordinal: u32,
     /// Cross-reference index of the endpoint.
     xmt: NonNullXmt,
-    /// Two-byte endpoint-form discriminator as printable ASCII.
+    /// Endpoint-form discriminator as printable ASCII: the limit type and, when
+    /// the schema inserts it, the `term_use` byte.
     form: crate::intersection::TermUseForm,
     /// Complete count-selected physical hvec storage.
     data: crate::intersection::limit_state::LimitState,
@@ -976,7 +978,8 @@ struct ParasolidTermUseRecordWire {
     xmt: NonNullXmt,
     /// Serialized leading count.
     count: u32,
-    /// Two-byte endpoint-form discriminator as printable ASCII.
+    /// Endpoint-form discriminator as printable ASCII: the limit type and, when
+    /// the schema inserts it, the `term_use` byte.
     form: crate::intersection::TermUseForm,
     /// Complete count-selected physical hvec storage.
     data: crate::intersection::limit_state::LimitState,
@@ -1104,7 +1107,7 @@ pub(super) fn parasolid_term_use_records(
         let Some(point_layout) = subtype.chart_point_layout() else {
             continue;
         };
-        let rows = crate::intersection::term_use_records(&stream.inflated, point_layout);
+        let rows = crate::intersection::stream_term_use_records(&stream.inflated, point_layout)?;
         if rows.is_empty() {
             continue;
         }
@@ -1274,11 +1277,11 @@ impl ParasolidStreamRecords for ParasolidIntersectionRecord {
             xmt: row.xmt,
             header_references: row
                 .header_references
-                .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+                .map(cadmpeg_parasolid::xmt::XmtTarget::to_wire),
             sense: row.sense,
             construction_references: row
                 .references
-                .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+                .map(cadmpeg_parasolid::xmt::XmtTarget::to_wire),
             inflated_offset: cadmpeg_core::decode::u64_from_index(row.pos),
         }
     }
@@ -2175,7 +2178,7 @@ pub(super) fn parasolid_attribute_definitions(
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
         for definition in crate::parasolid::attribute_definitions(&stream.inflated) {
             let name = definition.name.as_str().to_owned();
-            let name = crate::printable_string::PrintableString::new(name)
+            let name = cadmpeg_core::printable::PrintableString::new(name)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
             let id = parasolid_record_id(
                 stream_ordinal,
@@ -2416,6 +2419,27 @@ pub(super) fn parasolid_topology_attribute_list_references(
     Ok(references)
 }
 
+/// The `(stream ordinal, XMT)` of every type-81 record that a stream frames
+/// and the decoder omits.
+pub(super) fn parasolid_omitted_entity_51_xmts(
+    streams: &[Stream],
+) -> Result<BTreeSet<(u32, u32)>, CodecError> {
+    let mut omitted = BTreeSet::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind().is_parasolid() || stream.kind() == StreamKind::Deltas {
+            continue;
+        }
+        let ordinal = u32::try_from(stream_ordinal)
+            .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
+        omitted.extend(
+            crate::parasolid::omitted_entity_51_xmts(&stream.inflated)
+                .into_iter()
+                .map(|xmt| (ordinal, xmt)),
+        );
+    }
+    Ok(omitted)
+}
+
 /// Decode every framed type-81 entity/attribute-list record.
 pub(super) fn parasolid_entity_51_records(
     streams: &[Stream],
@@ -2470,11 +2494,7 @@ pub(super) fn parasolid_entity_value_records(
         if !matches!(stream.kind(), StreamKind::Partition | StreamKind::Plain) {
             continue;
         }
-        let owned_offsets = crate::parasolid::referenced_value_record_offsets(&stream.inflated);
-        let values = crate::parasolid::value_records::entity_value_records_at(
-            &stream.inflated,
-            owned_offsets,
-        )?;
+        let values = crate::parasolid::referenced_value_records(&stream.inflated)?;
         for record in values.integers {
             let id = parasolid_offset_record_id(
                 stream_ordinal,
@@ -2515,7 +2535,7 @@ pub(super) fn parasolid_entity_value_records(
                 record.offset,
             );
             let text = record.value.as_str().to_owned();
-            let value = crate::printable_string::PrintableString::new(text)
+            let value = cadmpeg_core::printable::PrintableString::new(text)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
             records.strings.push(ParasolidEntity54StringRecord {
                 id,
@@ -3203,13 +3223,70 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
     })
 }
 
+/// Count the topology attribute-list references whose attributes did not
+/// transfer: the `next` chain from the list head reaches an omitted or
+/// duplicated type-81 record, or a type-81 record that the topology owns has
+/// no unique type-80 class.
+pub(super) fn parasolid_unresolved_topology_attribute_lists(
+    references: &[ParasolidTopologyAttributeListReference],
+    entities: &[ParasolidEntity51Record],
+    class_uses: &[ParasolidAttributeClassUse],
+    omitted: &BTreeSet<(u32, u32)>,
+) -> usize {
+    let mut entities_by_identity = BTreeMap::<(u32, u32), Option<&ParasolidEntity51Record>>::new();
+    let mut entities_by_owner = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
+    for entity in entities {
+        insert_unique_value(
+            &mut entities_by_identity,
+            (entity.stream_ordinal, u32::from(entity.xmt)),
+            entity,
+        );
+        entities_by_owner
+            .entry((entity.stream_ordinal, entity.leading_references[0]))
+            .or_default()
+            .push(entity);
+    }
+    let mut class_use_counts = BTreeMap::<&str, usize>::new();
+    for class_use in class_uses {
+        *class_use_counts
+            .entry(class_use.entity_51_record.as_str())
+            .or_default() += 1;
+    }
+    let classified =
+        |entity: &ParasolidEntity51Record| class_use_counts.get(entity.id.as_str()) == Some(&1);
+    references
+        .iter()
+        .filter(|reference| {
+            let stream = reference.stream_ordinal;
+            let owned_unclassified = entities_by_owner
+                .get(&(stream, reference.topology_xmt))
+                .is_some_and(|owned| owned.iter().any(|entity| !classified(entity)));
+            if owned_unclassified {
+                return true;
+            }
+            let mut visited = BTreeSet::new();
+            let mut xmt = reference.attribute_list_xmt;
+            while xmt > 1 && visited.insert(xmt) {
+                match entities_by_identity.get(&(stream, xmt)) {
+                    Some(Some(entity)) if classified(entity) => {
+                        xmt = entity.leading_references[1];
+                    }
+                    Some(_) => return true,
+                    None => return omitted.contains(&(stream, xmt)),
+                }
+            }
+            false
+        })
+        .count()
+}
+
 #[cfg(test)]
 mod tests;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(
     deserialize_region_type,
-    crate::deltas::region::RegionType,
+    cadmpeg_parasolid::deltas::region::RegionType,
     "region_type"
 );
 cadmpeg_core::named_optional_field!(deserialize_group_selector, GroupSelector, "group_selector");

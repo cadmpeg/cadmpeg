@@ -28,6 +28,14 @@ relation applies when its explicit node key does not match a partition node?
 **Need.** Establish the deletion grammar in PS-28 and the target's partition
 and pmark scope before applying any unmatched key.
 
+**Conflict.** A six-byte deletion-shaped run can be a status/reference tuple
+inside a complete FACE. That pattern does not establish a separate deletion
+or justify an alternative target join.
+
+**Note.** Complete schema-bound BODY lengths and full enclosing-record
+ownership precede target lookup. Preserve unmatched keys without assigning a
+node or family fallback.
+
 ### PS-02. Terminal procedural-intersection branches
 
 **Question.** How does a terminal type-38 procedural intersection select a finite branch when it has no usable support-parameter lane or paired FIN-carried `SP_CURVE` witnesses?
@@ -50,9 +58,16 @@ and pmark scope before applying any unmatched key.
 
 **Question.** How does correction select terminal folds and multiple corrected branches for a degenerate support-0 array or a sentinel-truncated marker-4 plane-support array?
 
-**Known.** `siemens_nx.md` §6.3 "When independent support inversion still leaves a procedural support lane incomplete" and `siemens_nx.md` §6.3 "Each CHART_s point first maps independently through one support carrier's inverse parameterization." define predictor inversion and correction for complete supported procedural curves.
+**Known.** `siemens_nx.md` §6.3 "When independent support inversion still leaves a procedural support lane incomplete" and `siemens_nx.md` §6.3 "Each CHART_s point first maps independently through one support carrier's inverse parameterization." define predictor inversion and correction for complete supported procedural curves. The paragraph beginning "When completing a support lane" defines complete serialized-lane precedence and structural refusal of a constant pcurve for spatially distinct chart points.
 
 **Need.** We must know the correction rule to construct these curves without an arbitrary branch choice.
+
+**Conflict.** A loose cache tolerance can accept repeated UV samples at
+distinct chart points. That numerical acceptance does not supply a branch
+selector or certify the collapsed curve.
+
+**Note.** Retain raw values and established support associations. An unresolved
+inverse or indistinguishable corrected branches remain unassigned.
 
 ### PS-05. NURBS-offset spine support identity
 
@@ -70,15 +85,31 @@ and pmark scope before applying any unmatched key.
 
 **Need.** We must know each grammar to delimit and transfer the remaining deltas records as typed data.
 
+### PS-10. Compact NURBS descriptor roles and alias ownership
+
+**Question.** Which compact-header fields establish a control array's rational layout, and which declaration owns repeated descriptor identities?
+
+**Known.** Complete status-reference descriptors declare vertex dimension and rational state. Non-rational UV and XYZ use dimensions two and three; rational UVW and XYZW use three and four. Positive weights and the declared count product constrain each control grouping.
+
+**Need.** Establish the compact-field grammar and a shared declaration owner before treating compact and explicit descriptors as equivalent.
+
+**Conflict.** Unknown compact metadata does not equal an explicit rational state. Equal XMT values alone do not resolve repeated declaration ownership.
+
+**Note.** Retain raw descriptors and control arrays; withhold a typed selection when their declared roles cannot be reconciled.
+
 ### PS-13. Deltas type 90 `GROUP`
 
-**Question.** What change-state role does the final reference status of a status-framed type-90 GROUP carry?
+**Question.** What change-state role does the final reference status of a status-framed type-90 GROUP carry, and what semantic role does the integer in a type-91 MEMBER_OF_GROUP carry?
 
 **Known.** `siemens_nx.md` §4.2 defines the GROUP's five pointer roles, member-family enum 1 through 10, and separate primary and supported Deltas field framing. A primary GROUP ends after `first_member` without a status byte. Its source boundary follows the effective schema cursor.
 
-**Need.** Establish the reference-status semantics for section-owned GROUP instances. Determine whether a GROUP membership update addresses an XMT alone or a typed identity, and whether BODY revision boundaries limit its lifetime. Establish the Deltas MEMBER_OF_GROUP label and status roles independently of the primary grammar.
+**Need.** Establish the reference-status semantics for section-owned GROUP instances. Determine whether a GROUP membership update addresses an XMT alone or a typed identity, and whether BODY revision boundaries limit its lifetime. Establish the change-state meaning of Deltas MEMBER_OF_GROUP reference statuses independently of its four-byte integer field and the primary grammar. Establish whether that integer is a label, state, or another control; its storage width does not assign its role.
 
 **Conflict.** Primary GROUP and MEMBER_OF_GROUP records have schema-owned boundaries and distinct member and entity chains. Those primary relations do not establish a Deltas update's identity key or revision lifetime. All Deltas selection is unresolved. GROUP membership remains the primary relation; no numerical BODY scope or typed-key replay applies Deltas updates.
+
+**Note.** Valid pointer domains alone do not establish a Deltas record start
+or update lifetime. Preserve unsupported layouts and unassigned status roles
+until their enclosing sequence is established.
 
 ### PS-18. Deltas tagged-reference lanes
 
@@ -90,11 +121,11 @@ and pmark scope before applying any unmatched key.
 
 ### PS-19. Deltas reference/type maps
 
-**Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what does its terminal word mean?
+**Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what field structure and meaning do its four terminal bytes have?
 
-**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT and zero slot, the terminal word, and transactional section closure. The terminal word is below `0x8000`. Its value is not a section-node count. Section order does not assign a map's history edge or action.
+**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT, the four terminal bytes, and transactional section closure. Section order does not assign a map's history edge or action. Terminal bytes `00 03 69 e7` and `00 00 b8 60` frame under a single big-endian u32, under two big-endian u16 fields, and under an opaque four-byte field. The reader retains the four bytes in stream order.
 
-**Need.** Establish the preceding and succeeding state relation, the exact typed create/modify/delete key sets, the terminal word's namespace, and the encoding width for terminal words with the high bit set before applying a map to entities.
+**Need.** Establish whether the terminal bytes are one 32-bit value, two 16-bit fields, or another structure, and their namespace. Establish the preceding and succeeding state relation and the exact typed create/modify/delete key sets before applying a map to entities.
 
 ### PS-25. Inline type-12 `BODY` instance state
 
@@ -116,6 +147,10 @@ extended deletion forms. Keep bounded rival interpretations separate from a
 certified deletion grammar. Neither six-byte nor eight-byte extent follows
 from the apparent tag and XMT alone.
 
+**Note.** Shape-only deletion admission is withheld; raw history remains
+retained in the exact suffix. This refusal does not supply the missing
+deletion grammar.
+
 ### PS-29. Aggregate pmark-edge selection
 
 **Question.** How does an aggregate deltas transmit bind each change's source
@@ -123,10 +158,33 @@ and target pmarks to the owning partition's current state?
 
 **Known.** `siemens_nx.md` §7.2 "A delta contains a unidirectional change between two adjacent pmarks." defines a delta edge separately from the aggregate. `siemens_nx.md` §7.2 "The WORLD `body` pointer identifies the head of the current BODY chain." defines the current BODY and pmark roots. `highest_node_id` bounds kernel node identifiers; physical BODY order, XMT 3, and numerical resets do not identify a revision interval. The general PMARK predecessor, following, sibling, initial, and current relations are defined in §4.2. They do not bind aggregate node sections to constituent deltas.
 
+The NIST CTC-03 current body does not depend on this selection: its one
+partition solid equals the solid of the revision C STEP export in face
+count, surface kinds, area, volume, and vertex box, and the ten plain-stream
+sheets have no counterpart in that export.
+
 **Need.** Identify each constituent delta's complete enclosing frame, delta-key
 association, direction, source pmark, target pmark, and partition ownership. Apply only edges that lead to
 the selected current state, including branches, undone changes, and multiple
 bodies. Keep an unestablished edge selection unresolved. This includes repeated type-38 intersection states: first-use and subsequent record spelling must not select their chart or carrier relations.
+
+**Conflict.** First or last BODY blocks, XMT 3, monotonic bounds, physical
+pairing, and repeated carrier spellings cannot select an aggregate change.
+In the NIST CTC-03 delta stream, four GROUP instances share XMT 2437 and
+type 90 across separate PMARK and map sections. A lookup by stream, XMT,
+and type merges those revisions. The current PMARK 5892 has delta key 2481
+and names PMARK 5898 as its predecessor; that PMARK has delta key 2429. The
+map after PMARK 5898 names GROUP 2562.
+That GROUP instance precedes the PMARK section. The map key leaves the
+instance revision and the action on its members unresolved.
+The counts of map entries and typed PMARK-section instances can differ from
+the adjacent PMARK's new-node and deleted-node counts in closed sections.
+
+**Note.** The reader withholds unselected history across topology, semantic
+residuals, GROUP updates and derived appearance or operation-result bindings.
+It preserves the saved images and raw history separately. This resolves an
+unsafe replay fallback, not the unknown constituent grammar, pmark ownership,
+or regenerated current-design selection.
 
 ### PS-33. MESH FILE chart layout
 
@@ -150,7 +208,7 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 
 **Question.** Which NX releases, SPLMSSTR container versions, UGII payload versions, and Parasolid schema tokens does the decoder accept, and which does it reject?
 
-**Known.** `siemens_nx.md` §2 admits only container version tag `0x06`; `container.rs` rejects every other version byte. `siemens_nx.md` §2.4 retains the UGII version byte at `0x08`; its values are unlisted. `siemens_nx.md` §3.1 names base schemas `11004` and `13006` with embedded-schema edits. `dialect.rs` declares `VERIFIED_PARASOLID_GRAMMARS` empty; unverified kernel carriers report `source.kernel-dialect-unverified`.
+**Known.** `siemens_nx.md` §2 admits only container version tag `0x06`; `container.rs` rejects every other version byte. `siemens_nx.md` §2.4 retains the UGII version byte at `0x08`; its values are unlisted. `parasolid.md` §1 "`SCH_<modeller>_<schema>_<base>` selects embedded schema edits" names base schema `13006`; the shared reader admits base schemas `11004` and `13006`. `dialect.rs` declares `VERIFIED_PARASOLID_GRAMMARS` empty; unverified kernel carriers report `source.kernel-dialect-unverified`.
 
 **Need.** We must record the envelope to distinguish an out-of-support release from a malformed file, and to assign each embedded schema token a verified grammar or a residual recovery.
 
@@ -162,13 +220,47 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 
 **Need.** We must know the value domains to preserve release or complexity signals and to detect header corruption from the bytes.
 
+### PS-40. Clear and text-wrapped sections in one payload
+
+**Question.** Can one `UG_PART/UG_PART` payload hold both clear sections and text-wrapped sections, and where does a clear section end when a text-wrapped section follows it?
+
+**Known.** `siemens_nx.md` §2.4 "The sections after the UGII prefix are clear sections or text-wrapped sections." defines both forms. A clear section ends at the next complete transmit header or at the stream boundary. The decoder reads the text-wrapped sections of a payload only when the payload holds no clear section.
+
+**Need.** We must know the section boundary to extract every stream of a payload that holds both forms without one section's bytes containing another.
+
+### PS-41. Status-prefixed type-81 references outside a terminated sequence
+
+**Question.** Does a partition or plain stream without a terminated node sequence carry type-81 references as binary-status-prefixed XMT values followed by a binary terminal?
+
+**Known.** `siemens_nx.md` §9.4 "In a terminated node sequence, type-81 references" gives the consecutive form in a terminated node sequence.
+
+**Need.** We must know the form to frame type-81 records in a stream that the shared node reader does not frame to its terminator.
+
+**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`. A consecutive reference whose index cell starts with `01` then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
+
+### PS-42. Control values outside a terminated sequence
+
+**Question.** In a stream that the shared node reader does not frame to its terminator, where does the type-45 node that a type-126 or type-136 `bspline_vertices` field names begin? What is the width and encoding of `bspline_vertices` in the compact type-136 and short type-126 layouts?
+
+**Known.** `siemens_nx.md` §6.2 "Types 45, 125, 126, 135, and 136 may place" gives the `bspline_vertices` reference. A terminated node sequence resolves that reference to a framed node. In an unterminated stream the decoder reads the count, XMT, and values at a fixed offset after a type-125 or type-135 node, and admits the values only when that XMT equals the descriptor's `bspline_vertices` reference. The status-framed type-136 and type-126 layouts and the long type-126 layout encode `bspline_vertices` as an XMT. In the compact type-136 layout the field starts at `+21`, and the multiplicity reference starts at `+23`. In the short type-126 layout the field starts at `+34`, and the U multiplicity reference starts at `+36`. The decoder reports a compact or short carrier with `carrier.controls-unresolved`.
+
+**Need.** We must know the node boundary to decode a B-spline carrier whose type-45 node does not follow its type-125 or type-135 node. We must know the compact and short `bspline_vertices` field width and encoding to resolve the control values of a compact or short carrier.
+
+### PS-43. TORUS with a negative major radius
+
+**Question.** Can an NX TORUS record store a negative major radius, and what surface and face sense does it then describe?
+
+**Known.** `siemens_nx.md` §6.1 "Validity gates: CIRCLE, ELLIPSE, CYLINDER, and SPHERE radii are positive." gives positive TORUS radii. `sldprt.md` §7.1 gives a negative major radius for SLDPRT that reverses the surface parameter frame. The NX decoder omits a TORUS record with a negative major radius and reports `carrier.torus-negative-major-unresolved`.
+
+**Need.** We must know the surface and its face sense before an NX TORUS with a negative major radius can transfer as exact geometry.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization
 
 **Question.** What value-record grammar and semantic role does each declared NX OM member use?
 
-**Known.** `siemens_nx.md` §3.3 "Class and member declarations before the boundary array use" defines registry token widths and values. `siemens_nx.md` §3.3 "Registry owner tokens are one-based class ordinals." defines the same-section class join. `siemens_nx.md` §3.3 "A storage code does not identify one member." defines declaration identity independently of storage codes and repeated names. `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the reference, class, and member regions. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines selected typed value records.
+**Known.** `siemens_nx.md` §3.3 "Class and member declarations before the boundary array use" defines registry token widths and values. `siemens_nx.md` §3.3 "Registry owner tokens are one-based class ordinals." defines the same-section class join. `siemens_nx.md` §3.3 "A storage code does not identify one member." defines declaration identity independently of storage codes and repeated names. `siemens_nx.md` §7.1 "The bytes at `oid_end` begin" defines the reference, class, and member regions. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines selected typed value records.
 
 **Need.** We must identify the remaining value-record boundaries, field types,
 and semantic roles for feature history, constraints, attributes, and material
@@ -478,11 +570,11 @@ assigns control geometry, continuity, or terminal semantics.
 
 ### OM-38. `SWP104` logical construction roles
 
-**Question.** Which logical fields assign authored construction roles to the four scalars, counted column sequence, and independent state lane?
+**Question.** Which logical fields assign authored construction roles and policy controls to the four scalars, counted column sequence, and independent state lane?
 
-**Known.** `siemens_nx.md` §7.1 "A bounded `SWP104` payload begins with one construction branch" defines one-based parameter and profile class indices. §7.1 "Member and successor references are non-null canonical payload object indices." defines the consecutive physical column sequence. Its block boundaries do not delimit logical fields. The witness count is independent of the member count.
+**Known.** `siemens_nx.md` §7.1 "A bounded `SWP104` payload begins with one construction branch" defines one-based parameter and profile class indices. §7.1 "Member and successor references are non-null canonical payload object indices." defines the consecutive physical column sequence. Its block boundaries do not delimit logical fields. The witness count is independent of the member count. The parameter classes distinguish revolved, swept, and cable constructions; the shared operation label does not select a sweep by itself.
 
-**Need.** Decode the logical rows across column boundaries and join their native endpoints to the profile, path, result mode, orientation, transition, transformation, twist, and scale fields required for a neutral feature.
+**Need.** Decode the logical rows across column boundaries and join their native endpoints to the profile, path, result mode, orientation, transition, transformation, tangent propagation, simplification, twist, and scale fields required for a neutral feature.
 
 **Conflict.** Parameter-class identity, physical adjacency, and equal scalar values do not identify the authored operands or distinguish dormant construction policies.
 
@@ -738,6 +830,18 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Need.** We must keep an inventory of skipped tests so a passing suite reads as a bounded proof.
 
+### OM-66. Current body set beside plain cached-body images
+
+**Question.** Which serialized relation selects the current bodies of a part whose partition and plain cached-body streams both carry bodies?
+
+**Known.** `siemens_nx.md` §7.2 "A complex part contains current body images and historical or tool bodies" names plain cached tool bodies and requires feature-history operand bindings when `RMFastLoad` membership does not select the current images. When membership selects no body, the decoder withholds the plain-stream bodies of a part that also has partition-stream bodies and charges `history.plain-images-withheld`. The terminal-lineage selector then selects among the remaining bodies; `history.sub-body-composition-unresolved` remains when it does not resolve them.
+
+In the NIST CTC-03 part, the one partition solid equals the solid of the revision C STEP export in face count, surface kinds, area, volume, and vertex box, and the ten plain-stream sheets have no counterpart in that export. Three parts with NX-written STEP exports contain one partition body and two to five plain-stream bodies; each export contains only the partition body. In ten NIST parts with same-revision STEP exports, no plain-stream body has an export body of the same kind and face count; one plain-stream plane has no vertices and is not compared.
+
+**Need.** Identify the serialized state that marks a body image as current, and the rule for parts with several partition streams.
+
+**Conflict.** The terminal-lineage statuses mark plain-stream bodies as terminal in five parts, including the three parts whose NX-written STEP exports omit them. §7.2 states that historical and tool bodies can own partition streams, so a partition stream does not by itself mark a body as current.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
@@ -776,15 +880,25 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must know the row roles to relate each indexed value to the correct display object or segment.
 
-### AM-05. Assembly occurrence placement
+### AM-05. Assembly placement parent, prototype, and unit selectors
 
-**Question.** Which serialized relation binds each placement frame to one child occurrence, and which field defines its translation unit?
+**Question.** Which serialized relation binds a placement to its parent component and to its prototype when one placement UUID covers several prototypes, and which field selects the length unit of an assembly part?
 
-**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order.
+**Known.** `siemens_nx.md` §2.3 "The matrix maps the child part frame into the frame of the assembly part" defines the pose, and "A placement UUID that occurs once in the FastLoad UUID table" defines the single-prototype UUID binding. The decoder emits placements bound by that rule when every numeric length expression of the part declares millimetres, and charges `assembly.placement-unit-from-expressions`. It withholds the other placements with `assembly.placement-frame-unresolved`. The decoder attaches every emitted placement to the assembly root and charges `assembly.placement-parent-assumed`. In the three flat assemblies with STEP exports, every STEP occurrence is a direct child of the root, and the root-attached placements give the STEP positions. All 36 MTC placement owners have zero recognized `RecordOrdinal16` parent edges under the bounded same-section ordinal parser; unrecognized reference encodings remain possible.
 
-**Need.** We must identify the child occurrence and translation unit to apply the matrix to external child geometry.
+The first trailer byte descends from `0x3f` to `0x1c` in MTC placement-record order. In another assembly, the first trailer byte plus the placement's record ordinal in its record directory is 65 for all 22 placements.
 
-**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. The five-byte trailer has no established instance or unit role.
+The third trailer byte has one value for all placements of one child part and distinct values for distinct child parts, also inside one UUID group. Its values increase in the order of the first placement of each child part. Most values are even. Placements whose trailer second byte is not `f0` carry other values in that position.
+
+Numeric expressions declare their own unit. OM length values of drafting preferences take inch values in parts with inch expressions and millimetre values in parts with millimetre expressions. These values do not select a unit.
+
+**Need.** Identify the serialized parent relation of a placement, and confirm the root reading on an assembly with a nested subassembly. Identify the record that the third trailer byte addresses and its relation to a FastLoad prototype or external reference. Identify the serialized part-unit selector, including for parts without length expressions.
+
+**Conflict.** The third trailer byte does not equal the FastLoad prototype ordinal, the FastLoad or UG_PART external-reference ordinal, or the half of either ordinal. Read as a reversed record ordinal in the placement record directory, it selects records that are not part objects. Positional pairing of the OM object-UUID values of a FastLoad object group with the occurrences of that group assigns wrong prototypes to more than half of the placements in a mixed UUID group.
+
+No byte of the SPLMSSTR header, the `hostglobalvariables` name table, or the streams `/Root/FastLoad/Structure`, `/Root/FastLoad/RMFastLoad`, `/Root/UG_PART/UG_PART`, `/Root/part/attrs`, and both `ExternalReferences` streams has one constant value for inch parts and another constant value for millimetre parts at a fixed position after a shared class or member name. No binary64 or placement-atom form of 25.4, 0.0254, 1/0.0254, 0.001, or 1000 occurs in every part of one unit and in no part of the other unit.
+
+**Note.** Matrix equality between an NX placement and a STEP occurrence written by another system is not a pose test: the child parts can use different frames. Compare placed child geometry.
 
 ### AM-06. Assembly pattern dimensions
 

@@ -394,6 +394,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         id: format!("{stream}:sketch-curve#{record_index}"),
         record_index,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset,
         geometry_offset: 0,
@@ -410,6 +411,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             .unwrap(),
         ),
         planar_z_noise: None,
+        tail_marker: None,
     };
     let curves = vec![
         curve(10, 10, 0.0),
@@ -422,6 +424,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             id: format!("{stream}:sketch-point#{record_index}"),
             record_index,
             owner_reference: Some(100),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),
             byte_offset,

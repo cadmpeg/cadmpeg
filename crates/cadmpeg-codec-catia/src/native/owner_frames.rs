@@ -37,6 +37,9 @@ pub(super) fn face_node(
             crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
                 CatiaFaceNodeTargetEncoding::Compact
             }
+            crate::families::b2::records::B2FaceNode5fTargetEncoding::OwnedChild => {
+                CatiaFaceNodeTargetEncoding::OwnedChild
+            }
             crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
                 CatiaFaceNodeTargetEncoding::TaggedU16Strong
             }
@@ -55,6 +58,12 @@ pub(super) fn valid_face_node(node: &CatiaFaceNodeRelation) -> bool {
     let parsed = if payload.get(at) == Some(&0x0a) {
         persistent_ref(payload, &mut at)
             .map(|value| (CatiaFaceNodeTargetEncoding::TaggedU16Strong, value))
+    } else if node.target_encoding == CatiaFaceNodeTargetEncoding::OwnedChild {
+        allocation_reference(payload, &mut at)
+            .filter(|reference| {
+                reference.encoding == crate::wire::bytes::AllocationReferenceEncoding::OwnedChild
+            })
+            .map(|reference| (CatiaFaceNodeTargetEncoding::OwnedChild, reference.value))
     } else {
         compact_int(payload, &mut at).map(|value| (CatiaFaceNodeTargetEncoding::Compact, value))
     };
@@ -95,6 +104,7 @@ pub(super) fn valid_owner_packet(packet: &CatiaConsolidatedOwnerPacket) -> bool 
                 references,
                 reference_encodings,
                 tail,
+                numeric_bounds,
             },
             None,
         ) => {
@@ -116,6 +126,7 @@ pub(super) fn valid_owner_packet(packet: &CatiaConsolidatedOwnerPacket) -> bool 
                     })
                 })
                 && payload.get(at..) == Some(tail.as_slice())
+                && *numeric_bounds == tail.numeric_bounds(references.len())
         }
         _ => false,
     };
@@ -125,10 +136,28 @@ pub(super) fn valid_owner_packet(packet: &CatiaConsolidatedOwnerPacket) -> bool 
                 + u64::from(u8::from(node.frame.width()))
                 + u64_from_index(node.frame.payload.len());
             let dialect = match &packet.payload {
-                CatiaOwnerPacketPayload::Counted { references, .. } => {
+                CatiaOwnerPacketPayload::Counted {
+                    references,
+                    reference_encodings,
+                    ..
+                } => {
                     references.len() >= 5
                         && references.len() % 2 == 1
-                        && node.terminal.as_slice() == [0x03, 0x05]
+                        && (node.terminal.as_slice() == [0x03, 0x05]
+                            || node.terminal.as_slice() == [0x03, 0x03]
+                                && node.target_encoding == CatiaFaceNodeTargetEncoding::Compact
+                                && reference_encodings.last()
+                                    == Some(&super::CatiaAllocationReferenceEncoding::WidthCoded)
+                            || node.target_encoding == CatiaFaceNodeTargetEncoding::OwnedChild
+                                && node.terminal[0] % 4 == 3
+                                && node.terminal[1] == 0x03
+                                && node.target.checked_add(1)
+                                    == Some(u32::from(node.terminal[0] >> 2))
+                                && references.last() == Some(&1)
+                                && reference_encodings.last()
+                                    == Some(
+                                        &super::CatiaAllocationReferenceEncoding::BackwardDistance,
+                                    ))
                 }
                 CatiaOwnerPacketPayload::FixedNine {
                     reference_encoding, ..
@@ -138,10 +167,13 @@ pub(super) fn valid_owner_packet(packet: &CatiaConsolidatedOwnerPacket) -> bool 
                             && *reference_encoding == super::CatiaOwnerReferenceEncoding::AllCompact
                 }
             };
-            valid_face_node(node)
-                && dialect
-                && node.source_offset.checked_add(length) == Some(packet.source_offset)
-                && node.target.checked_add(1) == packet.payload.final_reference()
+            let adjacent = node.source_offset.checked_add(length) == Some(packet.source_offset)
+                && node.target.checked_add(1) == packet.payload.final_reference();
+            let owned = node.target_encoding == CatiaFaceNodeTargetEncoding::OwnedChild
+                && node.terminal[0] % 4 == 3
+                && node.terminal[1] == 0x03
+                && node.source_offset < packet.source_offset;
+            valid_face_node(node) && dialect && (adjacent || owned)
         })
 }
 

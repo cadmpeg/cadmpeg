@@ -19,15 +19,17 @@ use crate::design::decode::text::design_record_id;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
+use crate::loss::F3dLossCode;
 use crate::records::{
     decal::DesignRecordHeader,
     entity_header::{DesignEntityHeader, DESIGN_MODULE_SKETCH},
     feature::scope::DesignParameterScope,
     references::{LostEdgeReference, PersistentReference, PersistentReferenceKind},
     sketch_geometry::{
-        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchPointClosure,
-        SketchPointCompanion, SketchPointCompanionReferenceEncoding, SketchPointRecordForm,
-        SketchSurface, SketchSurfaceGeometry, SketchText, SketchTextAlignment, SketchTextLayout,
+        SketchCurveGeometry, SketchCurveIdentity, SketchGeometryGroup, SketchPoint,
+        SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
+        SketchPointRecordForm, SketchSurface, SketchSurfaceGeometry, SketchText,
+        SketchTextAlignment, SketchTextLayout,
     },
     sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
     sketch_relations::{SketchGlyphTransform, SketchRelation, SketchRelationOperand},
@@ -37,11 +39,12 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, NonNegativeReal, PositiveLength};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::meta::{
     decode_types, design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag,
@@ -75,11 +78,16 @@ impl IndexedRecordOffsets {
             .map_or(&[], Vec::as_slice)
     }
 
-    /// Record indexes and their ascending header offsets.
+    /// Record indexes and their ascending header offsets, in ascending record
+    /// index order, so that output built from them does not vary between runs.
     pub(in crate::design) fn records(&self) -> impl Iterator<Item = (u32, &[usize])> {
-        self.by_record_index
+        let mut records = self
+            .by_record_index
             .iter()
             .map(|(record_index, offsets)| (*record_index, offsets.as_slice()))
+            .collect::<Vec<_>>();
+        records.sort_unstable_by_key(|(record_index, _)| *record_index);
+        records.into_iter()
     }
 
     /// The first header at or after `position` that carries `record_index`.
@@ -144,6 +152,7 @@ pub(crate) fn decode_sketch_placements(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     entities: &[DesignEntityHeader],
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
     let mut record_offsets = HashMap::new();
@@ -157,6 +166,7 @@ pub(crate) fn decode_sketch_placements(
         record_offsets.insert(scope, IndexedRecordOffsets::build(bytes));
     }
     let mut visibilities = HashMap::new();
+    let mut display_names = HashMap::new();
     for entry in scan
         .entries
         .iter()
@@ -170,7 +180,9 @@ pub(crate) fn decode_sketch_placements(
         let Some((key, _)) = record_offsets.get_key_value(&scope) else {
             continue;
         };
-        for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(bytes, &metadata)? {
+        for (entity_suffix, visibility, display_name) in
+            decode_sketch_visibilities_in_stream(bytes, &metadata, losses)?
+        {
             if visibilities.contains_key(&(key.as_str(), entity_suffix)) {
                 return Err(crate::design::text::malformed_design(format_args!(
                     "F3D Design stream {} repeats sketch visibility for entity {entity_suffix}",
@@ -179,6 +191,9 @@ pub(crate) fn decode_sketch_placements(
             }
 
             visibilities.insert((key.as_str(), entity_suffix), visibility);
+            if let Some(name) = display_name {
+                display_names.insert((key.as_str(), entity_suffix), name);
+            }
         }
     }
     for scope in scopes
@@ -313,6 +328,9 @@ pub(crate) fn decode_sketch_placements(
         placement.visibility = visibilities
             .get(&(stream, placement.entity_id.suffix()))
             .copied();
+        placement.display_name = display_names
+            .get(&(stream, placement.entity_id.suffix()))
+            .cloned();
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -329,7 +347,8 @@ const SKETCH_CONTAINER_MEMBER_VERSION: u32 = 4;
 fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
-) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<(u64, DesignSketchVisibility, Option<String>)>, CodecError> {
     let mut out = Vec::new();
     for frame in super::meta::typed_primary_frames(
         bytes,
@@ -362,10 +381,11 @@ fn decode_sketch_visibilities_in_stream(
             None => parse_genesis_entity_header(&bytes[..frame.end], frame.start),
         })
         else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} has an invalid entity header",
+            losses.push(F3dLossCode::SketchContainerHeaderUnrecognized.note(format!(
+                "sketch container {} has an entity header of no recognised form; its visibility and name stay unread",
                 frame.entity_id
             )));
+            continue;
         };
         let entity_suffix = entity_id.suffix();
         if entity_suffix != frame.entity_id {
@@ -420,17 +440,18 @@ fn decode_sketch_visibilities_in_stream(
             )));
         };
 
-        out.push((entity_suffix, visibility));
+        let display_name = decode_sketch_member_display_name(&bytes[..frame.end], member_at);
+
+        out.push((entity_suffix, visibility, display_name));
     }
     if out.is_empty() {
         return Ok(out);
     }
     let visibilities = out
         .iter()
-        .copied()
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut listed = std::collections::HashSet::new();
-    let mut collections = std::collections::HashSet::new();
+        .map(|&(suffix, vis, _)| (suffix, vis))
+        .collect::<HashMap<_, _>>();
+    let mut collections = std::collections::BTreeMap::new();
     for frame in super::meta::typed_primary_frames(
         bytes,
         metadata,
@@ -457,39 +478,177 @@ fn decode_sketch_visibilities_in_stream(
                 frame.entity_id
             )));
         };
-        collections.insert(frame.entity_id);
-        for target in members {
-            if !listed.insert(target)
-                || !visibilities.get(&target).is_some_and(|visibility| {
-                    visibility.ordinal_collection.map(std::num::NonZeroU64::get)
-                        == Some(frame.entity_id)
-                })
-            {
-                return Err(crate::design::text::malformed_design(format_args!(
-                    "F3D sketch ordinal collection {} has an invalid sketch member {target}",
-                    frame.entity_id
-                )));
+        collections.insert(frame.entity_id, members);
+    }
+    let mut folders = std::collections::BTreeMap::new();
+    for frame in super::meta::typed_primary_frames(
+        bytes,
+        metadata,
+        "45B3FDEA-5EBA-4B33-ADF8-47041CAC3602",
+        "sketch folder",
+    )? {
+        let folder = (frame.design_type.version == 1
+            && frame.design_type.module == "Geometry"
+            && frame
+                .design_type
+                .base_type_guid
+                .value()
+                .is_some_and(|base| {
+                    base.as_str()
+                        .eq_ignore_ascii_case("A193F53F-86D7-4F45-A01C-51F5ECEEFC0E")
+                }))
+        .then(|| parse_sketch_folder(&bytes[frame.start..frame.end]))
+        .flatten();
+        let Some(folder) = folder else {
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D sketch folder {} has an invalid frame",
+                frame.entity_id
+            )));
+        };
+        losses.push(F3dLossCode::SketchFolderUnprojected.note(format!(
+            "Sketch folder {} (number {}, {} members) grouping is dropped; its sketches remain in the parent collection.",
+            if folder.name.is_empty() { "unnamed" } else { &folder.name }, folder.number, folder.members.len()
+        )));
+        losses.push(F3dLossCode::SketchFolderClosingReference.note(format!(
+            "Sketch folder {} closing reference to record {} has an unresolved role and is not decoded.",
+            frame.entity_id, folder.closing
+        )));
+        folders.insert(frame.entity_id, folder);
+    }
+    let mut listed = std::collections::HashSet::new();
+    let mut invalid = std::collections::BTreeMap::<u64, u64>::new();
+    for (&container, members) in &collections {
+        for target in members
+            .chunks_exact(crate::layout::sketch_geometry_ordinal_collection_reference::LEN)
+            .filter_map(|reference| {
+                View::u64_le_at(
+                    reference,
+                    crate::layout::sketch_geometry_ordinal_collection_reference::TARGET,
+                )
+            })
+        {
+            let valid = visibilities.get(&target).is_some_and(|visibility| {
+                visibility.ordinal_collection.map(std::num::NonZeroU64::get) == Some(container)
+            }) || folders
+                .get(&target)
+                .is_some_and(|folder| folder.parent == container);
+            if !listed.insert(target) || !valid {
+                invalid.insert(target, container);
             }
         }
     }
-    for (entity, visibility) in &out {
-        let collection_valid = match visibility.ordinal_collection {
-            Some(collection) => collections.contains(&collection.get()) && listed.contains(entity),
-            None => !listed.contains(entity),
-        };
-        if !collection_valid {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity} has an invalid ordinal collection"
+    for (&container, folder) in &folders {
+        for target in folder.members.iter().copied() {
+            let valid = visibilities.get(&target).is_some_and(|visibility| {
+                visibility.ordinal_collection.map(std::num::NonZeroU64::get) == Some(container)
+            });
+            if !listed.insert(target) || !valid {
+                invalid.insert(target, container);
+            }
+        }
+    }
+    for (entity, visibility, _) in &mut out {
+        let direct = visibility.ordinal_collection.map(std::num::NonZeroU64::get);
+        let root = direct.and_then(|id| {
+            if collections.contains_key(&id) {
+                Some(id)
+            } else {
+                folders
+                    .get(&id)
+                    .map(|folder| folder.parent)
+                    .filter(|parent| collections.contains_key(parent))
+            }
+        });
+        let bad_container = invalid
+            .get(entity)
+            .copied()
+            .or_else(|| direct.and_then(|id| invalid.get(&id).copied()));
+        if let Some(container) = bad_container {
+            losses.push(F3dLossCode::SketchMembershipConflict.note(format!(
+                "Sketch {entity} has a repeated or conflicting member-run entry in container {container}; its Geometry-member reference selects its container."
+            )));
+        }
+        if let Some(id) = direct.filter(|_| root.is_none()) {
+            losses.push(F3dLossCode::SketchOwnerUnresolved.note(format!(
+                "Sketch {entity} names container {id}, which does not resolve to a collection; its collection binding is dropped."
+            )));
+        }
+        visibility.ordinal_collection = root.and_then(std::num::NonZeroU64::new);
+    }
+    for (target, container) in invalid {
+        if !visibilities.contains_key(&target) && !folders.contains_key(&target) {
+            losses.push(F3dLossCode::SketchOwnerUnresolved.note(format!(
+                "Sketch {target} listed by container {container} does not resolve; its collection binding is dropped."
             )));
         }
     }
     Ok(out)
 }
 
-fn ordinal_collection_members(
-    bytes: &[u8],
-    version: u32,
-) -> Option<impl Iterator<Item = u64> + '_> {
+struct SketchFolder {
+    name: String,
+    number: u32,
+    members: Vec<u64>,
+    parent: u64,
+    closing: u64,
+}
+
+fn parse_sketch_folder(bytes: &[u8]) -> Option<SketchFolder> {
+    use crate::layout::sketch_folder_prefix as folder;
+    if bytes.get(folder::ZERO_RUN..folder::MARKER)? != [0; 9]
+        || bytes.get(folder::MARKER) != Some(&1)
+        || bytes.get(folder::ZERO_RUN_2..folder::FLAG)? != [0; 5]
+        || !matches!(bytes.get(folder::FLAG), Some(0 | 1))
+        || bytes.get(folder::ZERO_RUN_3..folder::LEN)? != [0; 5]
+    {
+        return None;
+    }
+    let (name, mut cursor) = lp_utf16_bounded(bytes, folder::LEN, 0..=bytes.len() / 2)?;
+    let number = View::u32_le_at(bytes, cursor)?;
+    if number == 0 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let count = View::u32_le_at(bytes, cursor)?;
+    cursor = cursor.checked_add(4)?;
+    let count = cadmpeg_core::decode::bounded_len(
+        u64::from(count),
+        crate::layout::sketch_geometry_ordinal_collection_reference::LEN,
+        bytes.len().checked_sub(cursor)?,
+    )?;
+    let mut members = Vec::new();
+    for _ in 0..count {
+        let (target, None) = take_reference(bytes, &mut cursor)?.local()? else {
+            return None;
+        };
+        if target == 0 {
+            return None;
+        }
+        members.push(target);
+    }
+    let (parent, None) = take_reference(bytes, &mut cursor)?.local()? else {
+        return None;
+    };
+    if parent == 0 {
+        return None;
+    }
+    while bytes.get(cursor) == Some(&0) {
+        cursor += 1;
+    }
+    let closing = take_reference(bytes, &mut cursor)?.target()?;
+    if cursor != bytes.len() {
+        return None;
+    }
+    Some(SketchFolder {
+        name,
+        number,
+        members,
+        parent,
+        closing,
+    })
+}
+
+fn ordinal_collection_members(bytes: &[u8], version: u32) -> Option<&[u8]> {
     use crate::layout::sketch_geometry_ordinal_collection_reference as reference;
     use crate::layout::sketch_ordinal_collection_prefix as collection;
     if bytes.get(collection::ZERO_RUN..collection::LEN)? != [0; 9] {
@@ -521,10 +680,7 @@ fn ordinal_collection_members(
             return None;
         }
     }
-    Some(
-        run.chunks_exact(reference::LEN)
-            .filter_map(|member| View::u64_le_at(member, reference::TARGET)),
-    )
+    Some(run)
 }
 
 fn decode_sketch_visibility_member(
@@ -548,9 +704,11 @@ fn decode_sketch_visibility_member(
         return None;
     }
     let stream_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, cursor)?)?;
-    if bytes.get(member_at + visibility_member::RESERVED_ZERO) != Some(&0) {
-        return None;
-    }
+    let sketch_flag = match bytes.get(member_at + visibility_member::SKETCH_FLAG) {
+        Some(0) => false,
+        Some(1) => true,
+        _ => return None,
+    };
     let stream_ordinal_offset = cursor;
     let visible_offset = member_at + visibility_member::VISIBLE;
     let visible = match bytes.get(visible_offset) {
@@ -564,6 +722,7 @@ fn decode_sketch_visibility_member(
         visible,
     )
     .ok()?;
+    visibility.sketch_flag = sketch_flag;
     let mut collection_at = member_at + visibility_member::TAIL_MARKER;
     let reference = take_reference(bytes, &mut collection_at)?;
     if matches!(reference, Reference::Null) {
@@ -574,6 +733,21 @@ fn decode_sketch_visibility_member(
     };
     visibility.ordinal_collection = Some(std::num::NonZeroU64::new(target)?);
     Some(visibility)
+}
+
+pub(super) fn decode_sketch_member_display_name(bytes: &[u8], member_at: usize) -> Option<String> {
+    let mut collection_at = member_at + visibility_member::TAIL_MARKER;
+    let reference = take_reference(bytes, &mut collection_at)?;
+    match reference {
+        Reference::Null => {}
+        Reference::Local {
+            target,
+            inline_type_guid: None,
+        } if target != 0 => {}
+        _ => return None,
+    }
+    let (name, _) = lp_utf16_bounded(bytes, collection_at, 1..=256)?;
+    (!name.trim().is_empty() && !name.chars().any(char::is_control)).then_some(name)
 }
 
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
@@ -713,6 +887,7 @@ fn parse_member_run_head_placement(
         id: String::new(),
         scope_record_index: None,
         entity_id: entity_id.clone(),
+        display_name: None,
         visibility: None,
         frame,
         class_tag,
@@ -834,6 +1009,7 @@ fn parse_sketch_placement_candidates(
             id: String::new(),
             scope_record_index: Some(scope_record_index),
             entity_id: entity_id.clone(),
+            display_name: None,
             visibility: None,
             frame,
             class_tag,
@@ -1079,10 +1255,14 @@ pub(super) struct NamedEntityHeader {
 
 /// Parse the `EntityGenesis` entity-header layout at `start`: the u32 record
 /// index doubles as the entity suffix and is followed by a zero run, a
-/// `0x01`-marked u32 1, the `EntityGenesis` and `IntrinsicMetaTypeuint64`
-/// key strings, the u64 origin bitfield, and the UTF-16LE entity id whose
-/// numeric suffix equals the record index.
+/// `0x01`-marked u32 key count, that many key entries, the UTF-16LE entity id
+/// whose numeric suffix equals the record index. A key entry is a counted
+/// ASCII key, a counted ASCII type string, and a value. The
+/// `IntrinsicMetaTypeuint64` value is a u64; the `IntrinsicMetaTypeHString`
+/// value is a zero u32 (empty string). Exactly one entry is the
+/// `EntityGenesis` key with the u64 type.
 pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
+    const GENESIS_KEY_ENTRY_LIMIT: u32 = 16;
     let entity_suffix = View::u32_le_at(bytes, start + 7).map(u64::from)?;
     if entity_suffix == 0 {
         return None;
@@ -1091,21 +1271,44 @@ pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<
     while bytes.get(cursor) == Some(&0) && cursor < start + 35 {
         cursor += 1;
     }
-    if cursor == start + 11
-        || bytes.get(cursor) != Some(&1)
-        || View::u32_le_at(bytes, cursor + 1) != Some(1)
-    {
+    if cursor == start + 11 || bytes.get(cursor) != Some(&1) {
         return None;
     }
-    let after_key = lp_ascii_matches(bytes, cursor + 5, b"EntityGenesis")?;
-    let after_type = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64")?;
-    let (entity_id, end) = lp_utf16_bounded(bytes, after_type + 8, 1..=256)?;
+    let key_count = View::u32_le_at(bytes, cursor + 1)?;
+    if !(1..=GENESIS_KEY_ENTRY_LIMIT).contains(&key_count) {
+        return None;
+    }
+    let mut at = cursor + 5;
+    let mut genesis_entries = 0usize;
+    for _ in 0..key_count {
+        let (key, after_key) =
+            lp_ascii_filtered_view(bytes, at, 1..=64, u8::is_ascii_alphanumeric)?;
+        if let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") {
+            if key == "EntityGenesis" {
+                genesis_entries += 1;
+            }
+            at = after_type + 8;
+        } else {
+            let after_type = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeHString")?;
+            if key == "EntityGenesis" || View::u32_le_at(bytes, after_type)? != 0 {
+                return None;
+            }
+            at = after_type + 4;
+        }
+        if at > bytes.len() {
+            return None;
+        }
+    }
+    if genesis_entries != 1 {
+        return None;
+    }
+    let (entity_id, end) = lp_utf16_bounded(bytes, at, 1..=256)?;
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
         return None;
     };
     (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
         entity_id,
-        entity_id_offset: after_type + 12,
+        entity_id_offset: at + 4,
         optional_slot_present: false,
         end,
     })
@@ -1123,10 +1326,9 @@ fn lp_ascii_matches(bytes: &[u8], at: usize, expected: &[u8]) -> Option<usize> {
 
 /// Parse the counted member-record run of the paired same-index container
 /// record that follows an `EntityGenesis`-form sketch entity header: the u32
-/// member count at paired-record offset 52, the marked reference to the
-/// sketch's base-point record, and `count` entries of `0x01 + u32
-/// record_index + six zero bytes` naming the sketch's owned records. The
-/// base-point reference is returned as the first member.
+/// member count at paired-record offset 52 followed by `count` entries of
+/// `0x01 + u32 record_index + six zero bytes`. The first entry references the
+/// sketch's base-point record and the others name its owned records.
 fn parse_sketch_member_run(
     bytes: &[u8],
     from: usize,
@@ -1139,23 +1341,20 @@ fn parse_sketch_member_run(
     if View::u32_le_at(bytes, paired + 7).map(u64::from) != Some(entity_suffix) {
         return empty;
     }
+    if let Some(members) = parse_typed_sketch_member_run(bytes, paired) {
+        return members;
+    }
     let Some(count) =
         View::u32_le_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
     else {
         return empty;
     };
-    if count == 0
-        || bytes.get(paired + 56) != Some(&1)
-        || bytes.get(paired + 61..paired + 67) != Some(&[0u8; 6][..])
-    {
+    if count == 0 {
         return empty;
     }
-    let Some(base_point_index) = View::u32_le_at(bytes, paired + 57) else {
-        return empty;
-    };
     let Some(run_end) = count
         .checked_mul(11)
-        .and_then(|length| paired.checked_add(67)?.checked_add(length))
+        .and_then(|length| paired.checked_add(56)?.checked_add(length))
     else {
         return empty;
     };
@@ -1164,12 +1363,8 @@ fn parse_sketch_member_run(
     }
 
     let mut members = Vec::new();
-    members.push(crate::records::identity::Located {
-        value: base_point_index,
-        offset: u64_from_index(paired + 57),
-    });
     for ordinal in 0..count {
-        let marker = paired + 67 + ordinal * 11;
+        let marker = paired + 56 + ordinal * 11;
         if bytes.get(marker) != Some(&1)
             || bytes.get(marker + 5..marker + 11) != Some(&[0u8; 6][..])
         {
@@ -1184,6 +1379,63 @@ fn parse_sketch_member_run(
         });
     }
     members
+}
+
+/// Offset of the u32 sketch ordinal in a typed member-run record: the
+/// 51-byte head-placement reference at offset 19 ends here.
+const TYPED_RUN_ORDINAL: usize = 19 + crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+/// Offset of the u32 character count of the sketch name in a typed
+/// member-run record.
+const TYPED_RUN_NAME_LENGTH: usize = TYPED_RUN_ORDINAL + 6;
+/// Offset of the first UTF-16LE code unit of the sketch name.
+const TYPED_RUN_NAME: usize = TYPED_RUN_NAME_LENGTH + 4;
+/// Largest sketch name, in UTF-16 code units, that a typed member-run record
+/// stores.
+const TYPED_RUN_NAME_LIMIT: usize = 1024;
+
+/// Parse the counted member-reference run of a typed-reference sketch
+/// container's paired record. The paired record stores eight zero bytes after
+/// its header and the head-placement typed reference at offset 19. A u32
+/// sketch ordinal, two state bytes, and a u32 count of name code units follow
+/// that reference. The UTF-16LE name, one zero byte, and the u32 member count
+/// follow them. Each counted member is a 51-byte typed local reference.
+/// `None` when the record is not in this form.
+fn parse_typed_sketch_member_run(
+    bytes: &[u8],
+    paired: usize,
+) -> Option<Vec<crate::records::identity::Located<u32>>> {
+    use crate::bytes::{typed_local_reference_target, TYPED_LOCAL_REFERENCE_LEN};
+    if bytes.get(paired + 11..paired + 19) != Some(&[0u8; 8][..])
+        || typed_local_reference_target(bytes, paired + 19).is_none()
+    {
+        return None;
+    }
+    let name_units =
+        usize::try_from(View::u32_le_at(bytes, paired + TYPED_RUN_NAME_LENGTH)?).ok()?;
+    if name_units > TYPED_RUN_NAME_LIMIT {
+        return None;
+    }
+    let terminator = paired
+        .checked_add(TYPED_RUN_NAME)?
+        .checked_add(name_units.checked_mul(2)?)?;
+    if bytes.get(terminator) != Some(&0) {
+        return None;
+    }
+    let count_at = terminator.checked_add(1)?;
+    let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+    let first = count_at.checked_add(4)?;
+    if bytes.len() < first.checked_add(count.checked_mul(TYPED_LOCAL_REFERENCE_LEN)?)? {
+        return None;
+    }
+    (0..count)
+        .map(|ordinal| {
+            let marker = first + ordinal * TYPED_LOCAL_REFERENCE_LEN;
+            Some(crate::records::identity::Located {
+                value: typed_local_reference_target(bytes, marker)?,
+                offset: u64_from_index(marker + 1),
+            })
+        })
+        .collect()
 }
 
 /// Parse the counted member-record run of a legacy sketch container's paired
@@ -1244,7 +1496,16 @@ fn parse_legacy_sketch_member_run_with(
         {
             return None;
         }
-        let count_at = paired_at + 19 + width + 11;
+        let count_at = if typed {
+            // The sketch name sits between the ordinal and the count.
+            let units = usize::try_from(View::u32_le_at(bytes, paired_at + TYPED_RUN_NAME_LENGTH)?)
+                .ok()
+                .filter(|units| *units <= TYPED_RUN_NAME_LIMIT)?;
+            let terminator = paired_at + TYPED_RUN_NAME + units * 2;
+            (bytes.get(terminator) == Some(&0)).then_some(terminator + 1)?
+        } else {
+            paired_at + 19 + width + 11
+        };
         let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
         if count == 0 {
             return None;
@@ -1304,7 +1565,8 @@ pub(crate) fn decode_entity_headers(
                 insert_entity_module(&mut entity_modules, stream, entity_id, &design_type.module);
             }
         }
-        if design_type.module == DESIGN_MODULE_SKETCH {
+        if design_type.module == DESIGN_MODULE_SKETCH && !is_sketch_geometry_group_type(design_type)
+        {
             let Some(stream) = native_stream(design_type.id()) else {
                 continue;
             };
@@ -1576,7 +1838,31 @@ fn decode_headers_for_indices(
     }) {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
+        let first = out.len();
         decode_headers_for_indices_from_stream(&entry.name, &scope, bytes, wanted, &mut out);
+        if let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? {
+            if let Ok(frames) = design_primary_frames(bytes, &meta) {
+                let by_index: HashMap<_, _> = frames
+                    .into_iter()
+                    .filter_map(|frame| {
+                        u32::try_from(frame.entity_id)
+                            .ok()
+                            .map(|index| (index, frame))
+                    })
+                    .collect();
+                for header in &mut out[first..] {
+                    if let Some(frame) = by_index.get(&header.record_index) {
+                        header.byte_offset = u64_from_index(frame.start);
+                        header.class_tag = frame.class_tag.clone();
+                        header.id = design_record_id(
+                            &entry.name,
+                            ":design-record-header#",
+                            header.byte_offset,
+                        );
+                    }
+                }
+            }
+        }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -1947,6 +2233,7 @@ fn decode_sketch_points_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchPoint>, CodecError> {
     let frames = design_primary_frames(bytes, meta)?;
     let mut frames_by_entity = HashMap::new();
@@ -1965,6 +2252,8 @@ fn decode_sketch_points_from_stream(
             ),
         );
     }
+    let groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames)?;
+    let mut unlisted = Vec::new();
     let mut out = Vec::new();
     for frame in &frames {
         let derived = is_derived_sketch_point_type(frame.design_type);
@@ -1979,60 +2268,67 @@ fn decode_sketch_points_from_stream(
         {
             continue;
         }
-        let payload = &bytes[frame.start..frame.end];
-        let record_index = u32::try_from(frame.entity_id)
-            .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let decoded = if derived {
-            decode_derived_sketch_point_record(bytes, meta, frame)
-        } else {
-            decode_sketch_point_record(payload, frame.design_type.version)
-        }
-        .ok_or_else(|| {
-            crate::design::text::malformed_design(format_args!(
-                "F3D sketch point {record_index} has an invalid version-{} member sequence",
-                frame.design_type.version
-            ))
-        })?;
-        let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
-        if !point_target_has_guid(
-            &types_by_entity,
-            decoded.trailing_reference(),
-            SKETCH_CONTAINER_TYPE_GUID,
-        ) {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch point {record_index} has an invalid trailing container reference"
-            )));
-        }
-        let (record_form, companion) = frames_by_entity
-            .get(&decoded.paired_reference)
-            .filter(|companion_frame| {
-                let design_type = companion_frame.design_type;
-                design_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
-                    && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
-                    && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
-            })
-            .and_then(|companion_frame| {
-                decode_sketch_point_companion(
-                    &bytes[companion_frame.start..companion_frame.end],
-                    record_index,
-                    decoded.record_form.clone(),
-                    &types_by_entity,
-                )
-            })
+        let result: Result<_, CodecError> = (|| {
+            let payload = &bytes[frame.start..frame.end];
+            let record_index = u32::try_from(frame.entity_id).map_err(|_| {
+                CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into())
+            })?;
+            let decoded = if derived {
+                decode_derived_sketch_point_record(bytes, meta, frame)
+            } else {
+                decode_sketch_point_record(payload, frame.design_type.version)
+            }
             .ok_or_else(|| {
                 crate::design::text::malformed_design(format_args!(
-                    "F3D sketch point {record_index} has no valid inverse companion"
+                    "F3D sketch point {record_index} has an invalid version-{} member sequence",
+                    frame.design_type.version
                 ))
             })?;
+            let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
+            let backlink = decoded
+                .owner_reference
+                .map(|target| SketchBacklink::resolve(&groups, record_index, target));
+            if backlink.is_none_or(|backlink| backlink.geometry_group.is_none())
+                && !point_target_has_guid(
+                    &types_by_entity,
+                    decoded.trailing_reference(),
+                    SKETCH_CONTAINER_TYPE_GUID,
+                )
+            {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch point {record_index} has an invalid trailing container reference"
+                )));
+            }
+            let (record_form, companion) = frames_by_entity
+                .get(&decoded.paired_reference)
+                .filter(|companion_frame| {
+                    let design_type = companion_frame.design_type;
+                    design_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
+                        && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
+                        && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
+                })
+                .and_then(|companion_frame| {
+                    decode_sketch_point_companion(
+                        &bytes[companion_frame.start..companion_frame.end],
+                        record_index,
+                        decoded.record_form.clone(),
+                        &types_by_entity,
+                    )
+                })
+                .ok_or_else(|| {
+                    crate::design::text::malformed_design(format_args!(
+                        "F3D sketch point {record_index} has no valid inverse companion"
+                    ))
+                })?;
 
-        out.push(
-            SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
                 id: design_record_id(stream, ":sketch-point#", u64_from_index(frame.start)),
                 record_index,
-                owner_reference: decoded.owner_reference,
+                owner_reference: backlink.map(|backlink| backlink.owner),
+                geometry_group: backlink.and_then(|backlink| backlink.geometry_group),
                 class_tag: frame.class_tag.clone(),
                 byte_offset: u64_from_index(frame.start),
                 coordinate_offset: decoded.coordinate_offset,
@@ -2041,9 +2337,23 @@ fn decode_sketch_points_from_stream(
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
             })
-            .map_err(CodecError::Malformed)?,
-        );
+            .map_err(CodecError::Malformed)?;
+            Ok((point, backlink.is_some_and(|backlink| backlink.unlisted)))
+        })();
+        match result {
+            Ok((point, is_unlisted)) => {
+                if is_unlisted {
+                    unlisted.push(point.record_index);
+                }
+                out.push(point);
+            }
+            Err(error) => losses.push(F3dLossCode::SketchPointUndecoded.note(format!(
+                "Sketch point record {} version {} in {stream} was dropped: {error}",
+                frame.entity_id, frame.design_type.version
+            ))),
+        }
     }
+    push_unlisted_group_member_loss(losses, stream, "point", &unlisted);
     Ok(out)
 }
 
@@ -2052,10 +2362,15 @@ fn decode_sketch_points_from_stream(
 /// closure, trailing reference, and paired reverse curve-incidence record,
 /// converted centimetre→millimetre. Class version 0 supplies `(u,v)` and no
 /// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
-/// point record with a malformed or non-finite member sequence makes the
-/// stream malformed.
-pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_points_from_stream)
+/// point record with a malformed or non-finite member sequence adds a bounded
+/// `sketch.point-undecoded` loss; the remaining points continue decoding.
+pub(crate) fn decode_sketch_points(
+    scan: &ContainerScan,
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<SketchPoint>, CodecError> {
+    decode_sketch_streams(scan, |bytes, meta, stream| {
+        decode_sketch_points_from_stream(bytes, meta, stream, losses)
+    })
 }
 
 struct SketchProperty<'a> {
@@ -2290,30 +2605,38 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
         *component = value;
     }
     *cursor = view.position();
-    let [r, g, b, a] = components;
+    let [r, g, b, a] = components.map(f64::from);
     Color::new(r, g, b, a)
 }
 
+/// Placement a frame-text record's 4×4 transform describes.
+enum FrameTextPlacement {
+    /// A planar rigid placement: an anchor in millimetres and a rotation.
+    Planar(TextPlacement<FinitePoint2>),
+    /// The sketch plane turned over: the text is mirrored in the sketch.
+    Mirrored,
+}
+
 /// Read the row-major 4×4 f64 placement transform a frame-text record stores,
-/// advancing `cursor` past it, and reduce it to the anchor point in millimetres
-/// and the rotation about that point in radians.
+/// advancing `cursor` past it.
 ///
-/// The transform is a planar rigid placement: its third row and column are the
-/// identity's, its bottom row is `(0, 0, 0, 1)`, its translation lives in the
-/// last column, and its 2×2 basis is a rotation of unit determinant carrying no
-/// scale or shear. A run failing any of that is not a placement, so the record
-/// is misframed.
-fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlacement<FinitePoint2>> {
+/// The transform is a rigid placement with the bottom row `(0, 0, 0, 1)` and
+/// its translation in the last column. Its third row is `(0, 0, 1, 0)` with a
+/// 2×2 rotation basis of determinant `+1`, or `(0, 0, -1, 0)` with a 2×2
+/// reflection basis of determinant `-1`. A run failing that is not a
+/// placement, so the record is misframed.
+fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<FrameTextPlacement> {
     let elements = f64s_at::<16>(payload, *cursor)?;
     *cursor = cursor.checked_add(128)?;
     let at = |row: usize, column: usize| elements[row * 4 + column];
     let constant = |value: f64, expected: f64| (value - expected).abs() <= TEXT_PLACEMENT_TOLERANCE;
+    let normal = at(2, 2);
+    let mirrored = constant(normal, -1.0);
     let planar = [
         (0, 2, 0.0),
         (1, 2, 0.0),
         (2, 0, 0.0),
         (2, 1, 0.0),
-        (2, 2, 1.0),
         (2, 3, 0.0),
         (3, 0, 0.0),
         (3, 1, 0.0),
@@ -2323,13 +2646,17 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlaceme
     .into_iter()
     .all(|(row, column, expected)| constant(at(row, column), expected));
     let determinant = at(0, 0) * at(1, 1) - at(0, 1) * at(1, 0);
-    (planar && constant(determinant, 1.0)).then_some(())?;
+    (planar && (mirrored || constant(normal, 1.0)) && constant(determinant, normal))
+        .then_some(())?;
+    if mirrored {
+        return Some(FrameTextPlacement::Mirrored);
+    }
     let anchor = Point2::new(at(0, 3) * 10.0, at(1, 3) * 10.0);
     let anchor = FinitePoint2::new(anchor)?;
-    Some(TextPlacement {
+    Some(FrameTextPlacement::Planar(TextPlacement {
         anchor,
         rotation: Angle::new(at(1, 0).atan2(at(0, 0)))?,
-    })
+    }))
 }
 
 /// The record index a reference names, absent when the reference is null.
@@ -2556,9 +2883,12 @@ fn decode_sketch_text_tail(
         let text_type = View::u32_le_at(payload, cursor)?;
         (u32::from(*payload.get(cursor.checked_add(4)?)?) == text_type).then_some(())?;
         cursor = cursor.checked_add(5)?;
-        let placement = match text_type {
-            0 => Some(read_text_placement(payload, &mut cursor)?),
-            1 => None,
+        let (placement, mirrored) = match text_type {
+            0 => match read_text_placement(payload, &mut cursor)? {
+                FrameTextPlacement::Planar(placement) => (Some(placement), false),
+                FrameTextPlacement::Mirrored => (None, true),
+            },
+            1 => (None, false),
             _ => return None,
         };
         cursor = cursor.checked_add(SKETCH_TEXT_TRAILING_RUN)?;
@@ -2578,7 +2908,7 @@ fn decode_sketch_text_tail(
             text,
             font_weight,
             owner_reference: reference_index(&owner)?,
-            neutral_orientation: horizontal_neutral && vertical_neutral,
+            neutral_orientation: horizontal_neutral && vertical_neutral && !mirrored,
         }))
     })()
     .transpose()
@@ -3349,6 +3679,256 @@ fn decode_sketch_point_companion(
     parsed
 }
 
+const SKETCH_GEOMETRY_GROUP_TYPE: (&str, u32, &str) =
+    ("67F4EECB-EB2C-48E6-8A25-1751E9924EAE", 0, "MSketch");
+const SKETCH_GEOMETRY_GROUP_BASE_TYPE: (&str, u32, &str) =
+    ("0F551F3B-B195-4486-93D0-711CB83482CE", 0, "Geometry");
+
+fn matches_sketch_type(
+    data: &crate::records::entity_header::SegmentTypeData,
+    expected: (&str, u32, &str),
+) -> bool {
+    data.type_guid.as_str().eq_ignore_ascii_case(expected.0)
+        && data.version == expected.1
+        && data.module == expected.2
+}
+
+fn is_sketch_geometry_group_type(data: &crate::records::entity_header::SegmentTypeData) -> bool {
+    matches_sketch_type(data, SKETCH_GEOMETRY_GROUP_TYPE)
+}
+
+#[derive(Debug)]
+struct ParsedSketchGeometryGroup {
+    ordinal: u32,
+    members: Vec<u32>,
+    sketch: u32,
+}
+
+fn parse_sketch_geometry_group(payload: &[u8]) -> Option<ParsedSketchGeometryGroup> {
+    use crate::layout::{
+        sketch_geometry_group_prefix as group, sketch_geometry_group_short_tail as short_tail,
+        sketch_geometry_group_tail as long_tail,
+    };
+    let field = |offset, len| {
+        let mut view = View::over_retained(payload);
+        view.skip(offset)?;
+        view.take(len)
+    };
+    let ordinal = View::u32_le_at(payload, group::ORDINAL)?;
+    if indexed_record_header_at(payload, 0).is_none()
+        || field(group::ZERO_RUN, group::ORDINAL - group::ZERO_RUN)? != [0; 10]
+        || View::u32_le_at(payload, group::CONSTANT_ONE) != Some(group::CONSTANT_ONE_VALUE)
+        || field(group::ZERO_BYTE, 1)? != [group::ZERO_BYTE_VALUE]
+        || indexed_record_header_at(payload, group::NESTED_HEADER).is_none()
+        || field(
+            group::NESTED_ZERO_RUN,
+            group::MARKER - group::NESTED_ZERO_RUN,
+        )? != [0; 8]
+        || field(group::MARKER, 1)? != [group::MARKER_VALUE]
+        || field(
+            group::NESTED_ZERO_RUN_2,
+            group::SCALE_A - group::NESTED_ZERO_RUN_2,
+        )? != [0; 12]
+        || View::f32_le_at(payload, group::SCALE_A) != Some(1.0)
+        || View::f32_le_at(payload, group::SCALE_B) != Some(1.0)
+        || field(group::ZERO_BYTE_2, 1)? != [group::ZERO_BYTE_2_VALUE]
+    {
+        return None;
+    }
+    let count = View::u32_le_at(payload, group::MEMBER_COUNT)?;
+    let count = cadmpeg_core::decode::bounded_len(
+        u64::from(count),
+        11,
+        payload.len().checked_sub(group::LEN)?,
+    )?;
+    let mut cursor = group::LEN;
+    let mut members = Vec::with_capacity(count);
+    for _ in 0..count {
+        let member = take_same_segment_sketch_reference(payload, &mut cursor)?;
+        if members.last().is_some_and(|&last| member <= last) {
+            return None;
+        }
+        members.push(member);
+    }
+    let mut tail = View::over_retained(payload);
+    tail.skip(cursor)?;
+    if tail.u8()? != short_tail::OWNER_MARKER_VALUE {
+        let mut zero_run = View::over_retained(payload);
+        zero_run.skip(cursor)?;
+        if zero_run.take(long_tail::OWNER_MARKER - long_tail::ZERO_RUN)?
+            != [0; long_tail::OWNER_MARKER - long_tail::ZERO_RUN]
+        {
+            return None;
+        }
+        cursor = cursor.checked_add(long_tail::OWNER_MARKER)?;
+    }
+    let sketch = take_same_segment_sketch_reference(payload, &mut cursor)?;
+    (cursor == payload.len()).then_some(ParsedSketchGeometryGroup {
+        ordinal,
+        members,
+        sketch,
+    })
+}
+
+fn collect_sketch_geometry_groups(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+    frames: &[super::meta::DesignPrimaryFrame<'_>],
+) -> Result<HashMap<u32, SketchGeometryGroup>, CodecError> {
+    let mut groups = HashMap::new();
+    for frame in frames
+        .iter()
+        .filter(|frame| is_sketch_geometry_group_type(frame.design_type))
+    {
+        let index = u32::try_from(frame.entity_id)
+            .map_err(|_| CodecError::malformed("F3D sketch geometry group index exceeds u32"))?;
+        let Some(payload) = bytes.get(frame.start..frame.end) else {
+            continue;
+        };
+        let parsed = (|| {
+            let group = parse_sketch_geometry_group(payload)?;
+            let nested = indexed_record_header_at(
+                payload,
+                crate::layout::sketch_geometry_group_prefix::NESTED_HEADER,
+            )?;
+            let (_, base) = super::meta::dynamic_type(meta, &nested.class_tag)?;
+            if nested.record_index != index
+                || !matches_sketch_type(base, SKETCH_GEOMETRY_GROUP_BASE_TYPE)
+                || !frames.iter().any(|owner| {
+                    owner.entity_id == u64::from(group.sketch)
+                        && owner
+                            .design_type
+                            .type_guid
+                            .as_str()
+                            .eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID)
+                })
+            {
+                return None;
+            }
+            Some(group)
+        })()
+        .ok_or_else(|| {
+            crate::design::text::malformed_design(format_args!(
+                "F3D sketch geometry group {index} has an invalid member sequence"
+            ))
+        })?;
+        groups.insert(
+            index,
+            SketchGeometryGroup {
+                id: design_record_id(
+                    stream,
+                    ":sketch-geometry-group#",
+                    u64_from_index(frame.start),
+                ),
+                record_index: index,
+                byte_offset: u64_from_index(frame.start),
+                ordinal: parsed.ordinal,
+                members: parsed.members,
+                sketch_reference: parsed.sketch,
+            },
+        );
+    }
+    Ok(groups)
+}
+
+pub(crate) fn decode_sketch_geometry_groups(
+    scan: &ContainerScan,
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<SketchGeometryGroup>, CodecError> {
+    decode_sketch_streams(scan, |bytes, meta, stream| {
+        decode_sketch_geometry_groups_from_stream(bytes, meta, stream, points, curves, losses)
+    })
+}
+
+fn decode_sketch_geometry_groups_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<SketchGeometryGroup>, CodecError> {
+    let frames = design_primary_frames(bytes, meta)?;
+    let mut groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames)?
+        .into_values()
+        .collect::<Vec<_>>();
+    if groups.is_empty() {
+        return Ok(groups);
+    }
+    groups.sort_by_key(|group| group.record_index);
+    let scope = ids::native_scope(stream);
+    let backlinks = points
+        .iter()
+        .map(|point| (&point.id, point.geometry_group, point.record_index))
+        .chain(
+            curves
+                .iter()
+                .map(|curve| (&curve.id, curve.geometry_group, curve.record_index)),
+        )
+        .filter(|(id, _, _)| native_stream(id) == Some(scope.as_str()))
+        .filter_map(|(_, group, record)| Some((group?, record)))
+        .collect::<HashSet<_>>();
+    let unbacklinked = groups
+        .iter()
+        .flat_map(|group| {
+            group
+                .members
+                .iter()
+                .map(|&member| (group.record_index, member))
+        })
+        .filter(|member| !backlinks.contains(member))
+        .collect::<Vec<_>>();
+    if let Some(&(group, member)) = unbacklinked.first() {
+        losses.push(F3dLossCode::SketchGeometryGroupMemberUnbacklinked.note(format!(
+            "{} sketch geometry group member reference(s) in {stream}, first group {group} member {member}, name a record without a decoded backlink to the group; `sketch_geometry_groups` keeps the member run, and the group assigns no owner to the record.",
+            unbacklinked.len()
+        )));
+    }
+    Ok(groups)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SketchBacklink {
+    owner: u32,
+    geometry_group: Option<u32>,
+    unlisted: bool,
+}
+
+impl SketchBacklink {
+    fn resolve(groups: &HashMap<u32, SketchGeometryGroup>, record: u32, target: u32) -> Self {
+        match groups.get(&target) {
+            Some(group) => Self {
+                owner: group.sketch_reference,
+                geometry_group: Some(target),
+                unlisted: group.members.binary_search(&record).is_err(),
+            },
+            None => Self {
+                owner: target,
+                geometry_group: None,
+                unlisted: false,
+            },
+        }
+    }
+}
+
+fn push_unlisted_group_member_loss(
+    losses: &mut Vec<LossNote>,
+    stream: &str,
+    kind: &str,
+    unlisted: &[u32],
+) {
+    let Some(first) = unlisted.first() else {
+        return;
+    };
+    losses.push(F3dLossCode::SketchGeometryGroupMemberUnlisted.note(format!(
+        "{} sketch {kind} record(s) in {stream}, first record {first}, backlink to a sketch geometry group whose member run omits the record; each record is assigned to the sketch that the group names.",
+        unlisted.len()
+    )));
+}
+
 const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
 pub(crate) const CURRENT_SKETCH_POINT_TYPE: (&str, u32, &str) =
     (SKETCH_POINT_TYPE_GUID, 11, "Geometry");
@@ -3424,9 +4004,13 @@ fn decode_sketch_curve_identities_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
+    let frames = design_primary_frames(bytes, meta)?;
+    let groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames)?;
+    let mut unlisted = Vec::new();
     let mut out = Vec::new();
-    for frame in design_primary_frames(bytes, meta)? {
+    for frame in frames {
         let payload = &bytes[frame.start..frame.end];
         let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
             decode_sketch_curve_identity(payload)
@@ -3463,6 +4047,15 @@ fn decode_sketch_curve_identities_from_stream(
                 )
             });
 
+        let tail_marker = geometry
+            .as_ref()
+            .filter(|geometry| !matches!(geometry, SketchCurveGeometry::Nurbs { .. }))
+            .and_then(|_| planar_tail_marker(payload, geometry_offset));
+        let backlink = trailing_sketch_owner_reference(payload)
+            .map(|target| SketchBacklink::resolve(&groups, record_index, target));
+        if backlink.is_some_and(|backlink| backlink.unlisted) {
+            unlisted.push(record_index);
+        }
         out.push(SketchCurveIdentity {
             id: design_record_id(
                 stream,
@@ -3470,7 +4063,8 @@ fn decode_sketch_curve_identities_from_stream(
                 u64_from_index(frame.start),
             ),
             record_index,
-            owner_reference: trailing_sketch_owner_reference(payload),
+            owner_reference: backlink.map(|backlink| backlink.owner),
+            geometry_group: backlink.and_then(|backlink| backlink.geometry_group),
             class_tag: frame.class_tag,
             byte_offset: u64_from_index(frame.start),
             geometry_offset: u32::try_from(geometry_offset).map_err(|_| {
@@ -3481,8 +4075,10 @@ fn decode_sketch_curve_identities_from_stream(
             secondary_id,
             geometry,
             planar_z_noise,
+            tail_marker,
         });
     }
+    push_unlisted_group_member_loss(losses, stream, "curve", &unlisted);
     Ok(out)
 }
 
@@ -3492,8 +4088,11 @@ fn decode_sketch_curve_identities_from_stream(
 /// arc, line, or referenced analytic geometry.
 pub(crate) fn decode_sketch_curve_identities(
     scan: &ContainerScan,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_curve_identities_from_stream)
+    decode_sketch_streams(scan, |bytes, meta, stream| {
+        decode_sketch_curve_identities_from_stream(bytes, meta, stream, losses)
+    })
 }
 
 #[derive(Debug)]
@@ -3927,6 +4526,40 @@ fn decode_sketch_curve_identity_variant(
     ))
 }
 
+/// Bytes of the planar analytic payload that precede the reference run.
+const PLANAR_ANALYTIC_PAYLOAD_LEN: usize = 96;
+/// Bytes of the planar tail that the reference run, pad, and marker occupy.
+const PLANAR_TAIL_WINDOW_LEN: usize = 80;
+
+/// The fourth opaque byte of the planar analytic tail that follows the
+/// payload at `geometry_offset`: `N` (1 to 3) marked references, `P` zero pad
+/// bytes, then three opaque bytes and the marker. `None` for a tail of another shape.
+fn planar_tail_marker(payload: &[u8], geometry_offset: usize) -> Option<u8> {
+    let start = geometry_offset.checked_add(PLANAR_ANALYTIC_PAYLOAD_LEN)?;
+    let end = start
+        .checked_add(PLANAR_TAIL_WINDOW_LEN)?
+        .min(payload.len());
+    let tail = payload.get(start..end)?;
+    let mut references = 0usize;
+    let mut cursor = 0usize;
+    while tail.get(cursor) == Some(&1) && tail.get(cursor + 5..cursor + 11) == Some(&[0; 6][..]) {
+        references += 1;
+        cursor += 11;
+    }
+    if !(1..=3).contains(&references) {
+        return None;
+    }
+    let pad = if references == 1 { 5 } else { 3 };
+    if tail
+        .get(cursor..cursor + pad)?
+        .iter()
+        .any(|&byte| byte != 0)
+    {
+        return None;
+    }
+    tail.get(cursor + pad + 3).copied()
+}
+
 struct DecodedSketchCurveGeometry {
     geometry: SketchCurveGeometry,
     geometry_offset: usize,
@@ -4350,10 +4983,14 @@ fn decode_compact_planar_line(
     decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0), record_at)
 }
 
+/// Largest z noise of a planar vector, in units of `f64::EPSILON` times the
+/// vector's own largest planar coordinate (floored at 1 cm).
+const PLANAR_Z_NOISE_ULPS: f64 = 1024.0;
+
 /// Whether `z` is zero for a planar vector `(x, y, z)` stored in centimetres:
-/// exactly zero, or at most `f64::EPSILON * max(|x|, |y|, 1 cm)`.
+/// exactly zero, or at most `PLANAR_Z_NOISE_ULPS * f64::EPSILON * max(|x|, |y|, 1 cm)`.
 pub(in crate::design) fn planar_z_is_zero(x: f64, y: f64, z: f64) -> bool {
-    z == 0.0 || z.abs() <= f64::EPSILON * x.abs().max(y.abs()).max(1.0)
+    z == 0.0 || z.abs() <= PLANAR_Z_NOISE_ULPS * f64::EPSILON * x.abs().max(y.abs()).max(1.0)
 }
 
 /// Raw z components of a compact planar line at `payload` offset 133 when
@@ -5096,7 +5733,7 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 
 fn decode_sketch_streams<T>(
     scan: &ContainerScan,
-    decode: impl Fn(&[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
+    mut decode: impl FnMut(&[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
     for entry in scan

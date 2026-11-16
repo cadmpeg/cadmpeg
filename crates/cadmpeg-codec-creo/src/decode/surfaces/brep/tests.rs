@@ -21,6 +21,7 @@ use super::{
 };
 
 mod body_index;
+mod chart_hole_order;
 mod component_topology;
 mod eligible_index;
 mod face_references;
@@ -72,13 +73,14 @@ fn brep_edge_indexes_preserve_model_curve_multiplicity() {
         id: CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 10),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     };
-    ir.model.curves.push(curve.clone());
+    ir.geometry.curves.push(curve.clone());
     let one = { BrepEdgeIndexes::from_rows(&rows, &native_vertices, &solved_vertices, &ir) };
     assert_eq!(one.edge_vertices[&10], [1, 2]);
     assert_eq!(one.model_curve_counts[&10], 1);
     assert_eq!(one.admitted_edge_curves, BTreeSet::from([10]));
-    ir.model.curves.push(curve);
+    ir.geometry.curves.push(curve);
     let duplicate = { BrepEdgeIndexes::from_rows(&rows, &native_vertices, &solved_vertices, &ir) };
     assert_eq!(duplicate.model_curve_counts[&10], 2);
     assert!(duplicate.admitted_edge_curves.is_empty());
@@ -94,6 +96,17 @@ fn face_candidate_scan() -> crate::container::ContainerScan<'static> {
             side: crate::topology::Side::Zero,
         }],
     ));
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 10,
+            type_byte: 0,
+            feature_id: 1,
+            directions: [1, 0xf6],
+            faces: [std::num::NonZeroU32::new(5), None],
+            next_edges: [10, 0],
+            offset: 0,
+        });
     scan
 }
 
@@ -168,8 +181,11 @@ fn typed_curve_id_fixture() -> CadIr {
             .expect("fixture circle"),
         )),
         source_object: None,
+        native_ref: None,
     };
-    ir.model.curves.extend([circle(10), circle(10), circle(20)]);
+    ir.geometry
+        .curves
+        .extend([circle(10), circle(10), circle(20)]);
     ir
 }
 
@@ -343,11 +359,11 @@ fn explicit_single_body_merges_disconnected_components() {
     let merged = {
         merge_body_components(vec![
             NeutralShellSpec {
-                faces: vec![1, 2],
+                faces: vec![1.into(), 2.into()],
                 wire_curves: BTreeSet::from([10]),
             },
             NeutralShellSpec {
-                faces: vec![3],
+                faces: vec![3.into()],
                 wire_curves: BTreeSet::from([11, 12]),
             },
         ])
@@ -356,7 +372,7 @@ fn explicit_single_body_merges_disconnected_components() {
     assert_eq!(
         merged,
         vec![NeutralShellSpec {
-            faces: vec![1, 2, 3],
+            faces: vec![1.into(), 2.into(), 3.into()],
             wire_curves: BTreeSet::from([10, 11, 12])
         }]
     );
@@ -507,16 +523,16 @@ fn legacy_brep_admission_excludes_nonvisible_face_references() {
 
 #[test]
 fn partitions_face_shells_and_retains_unattached_wire_curves() {
-    let faces = [1, 2, 3];
+    let faces = [1.into(), 2.into(), 3.into()];
     let face_adjacency = BTreeMap::from([
-        (1, BTreeSet::from([2])),
-        (2, BTreeSet::from([1])),
-        (3, BTreeSet::new()),
+        (1.into(), BTreeSet::from([2.into()])),
+        (2.into(), BTreeSet::from([1.into()])),
+        (3.into(), BTreeSet::new()),
     ]);
     let face_vertices = BTreeMap::from([
-        (1, BTreeSet::from([10, 11])),
-        (2, BTreeSet::from([11, 12])),
-        (3, BTreeSet::from([30, 31])),
+        (1.into(), BTreeSet::from([10, 11])),
+        (2.into(), BTreeSet::from([11, 12])),
+        (3.into(), BTreeSet::from([30, 31])),
     ]);
     let edge_vertices = BTreeMap::from([(100, [11, 12]), (101, [40, 41])]);
 
@@ -534,11 +550,11 @@ fn partitions_face_shells_and_retains_unattached_wire_curves() {
         shells,
         vec![
             NeutralShellSpec {
-                faces: vec![1, 2],
+                faces: vec![1.into(), 2.into()],
                 wire_curves: BTreeSet::from([100]),
             },
             NeutralShellSpec {
-                faces: vec![3],
+                faces: vec![3.into()],
                 wire_curves: BTreeSet::new(),
             },
             NeutralShellSpec {
@@ -551,10 +567,12 @@ fn partitions_face_shells_and_retains_unattached_wire_curves() {
 
 #[test]
 fn retains_wire_curve_when_shell_attachment_is_ambiguous() {
-    let faces = [1, 2];
-    let face_adjacency = BTreeMap::from([(1, BTreeSet::new()), (2, BTreeSet::new())]);
-    let face_vertices =
-        BTreeMap::from([(1, BTreeSet::from([10, 11])), (2, BTreeSet::from([20, 21]))]);
+    let faces = [1.into(), 2.into()];
+    let face_adjacency = BTreeMap::from([(1.into(), BTreeSet::new()), (2.into(), BTreeSet::new())]);
+    let face_vertices = BTreeMap::from([
+        (1.into(), BTreeSet::from([10, 11])),
+        (2.into(), BTreeSet::from([20, 21])),
+    ]);
     let edge_vertices = BTreeMap::from([(100, [10, 20])]);
 
     assert_eq!(
@@ -567,11 +585,11 @@ fn retains_wire_curve_when_shell_attachment_is_ambiguous() {
         ),
         vec![
             NeutralShellSpec {
-                faces: vec![1],
+                faces: vec![1.into()],
                 wire_curves: BTreeSet::new(),
             },
             NeutralShellSpec {
-                faces: vec![2],
+                faces: vec![2.into()],
                 wire_curves: BTreeSet::new(),
             },
             NeutralShellSpec {
@@ -632,7 +650,7 @@ fn closed_component_counts_two_uses_of_one_face() {
             },
         ]),
         &half_edges,
-        &[5],
+        &[5.into()],
     ));
     assert!(!component_is_closed(
         &BTreeSet::from([7]),
@@ -641,7 +659,7 @@ fn closed_component_counts_two_uses_of_one_face() {
             side: crate::topology::Side::Zero,
         }]),
         &half_edges,
-        &[5],
+        &[5.into()],
     ));
 }
 
@@ -814,6 +832,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
             .expect("valid CircleCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let model_curves = vec![
         circle(10, 2.0),
@@ -993,7 +1012,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         .collect();
 
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1004,6 +1023,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     for (id, origin, direction) in [
         (10, Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
@@ -1025,8 +1045,9 @@ fn native_brep_rejects_ambiguous_model_carriers() {
                 .expect("valid LineCurve fixture"),
             )),
             source_object: None,
+            native_ref: None,
         };
-        ir.model.curves.extend([curve.clone(), curve]);
+        ir.geometry.curves.extend([curve.clone(), curve]);
     }
 
     let counts = crate::decode::with_service_context(|ctx| {
@@ -1048,7 +1069,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     assert_eq!(counts.topological_point_count, 3);
     assert_eq!(counts.native_topological_edge_count, 0);
     assert_eq!(
-        ir.model
+        ir.geometry
             .points
             .iter()
             .map(|point| point.id.to_string())
@@ -1060,7 +1081,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         ])
     );
     assert_eq!(
-        ir.model
+        ir.geometry
             .points
             .iter()
             .map(|point| {
@@ -1074,16 +1095,16 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             ("creo", "topology:vertex#3"),
         ]
     );
-    assert!(ir.model.vertices.is_empty());
-    assert!(ir.model.edges.is_empty());
-    assert!(ir.model.faces.is_empty());
-    assert!(ir.model.loops.is_empty());
-    assert!(ir.model.coedges.is_empty());
-    assert!(ir.model.bodies.is_empty());
-    assert!(ir.model.regions.is_empty());
-    assert!(ir.model.shells.is_empty());
+    assert!(ir.geometry.vertices.is_empty());
+    assert!(ir.geometry.edges.is_empty());
+    assert!(ir.geometry.faces.is_empty());
+    assert!(ir.geometry.loops.is_empty());
+    assert!(ir.geometry.coedges.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
+    assert!(ir.geometry.regions.is_empty());
+    assert!(ir.geometry.shells.is_empty());
 
-    ir.model.curves.clear();
+    ir.geometry.curves.clear();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,
@@ -1097,7 +1118,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         pcurve.faces = [5, 6].map(std::num::NonZeroU32::new);
         pcurve.face_1_endpoints = pcurve.face_0_endpoints;
     }
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1108,8 +1129,9 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1120,6 +1142,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     let counts = crate::decode::with_service_context(|ctx| {
@@ -1140,13 +1163,33 @@ fn native_brep_rejects_ambiguous_model_carriers() {
 
     assert_eq!(counts.topological_point_count, 3);
     assert_eq!(counts.native_topological_edge_count, 3);
-    assert!(ir.model.faces.is_empty());
-    assert!(ir.model.loops.is_empty());
-    assert!(ir.model.coedges.is_empty());
-    assert_eq!(ir.model.edges.len(), 3);
-    assert_eq!(ir.model.bodies.len(), 1);
-    assert_eq!(ir.model.shells.len(), 1);
-    assert_eq!(ir.model.shells[0].wire_edges().len(), 3);
+    assert!(ir.geometry.faces.is_empty());
+    assert!(ir.geometry.loops.is_empty());
+    assert!(ir.geometry.coedges.is_empty());
+    assert_eq!(ir.geometry.edges.len(), 3);
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.shells.len(), 1);
+    assert_eq!(ir.geometry.shells[0].wire_edges().count(), 3);
+}
+#[test]
+fn brep_face_candidate_keeps_a_closed_loop_beside_rows_outside_it() {
+    for next_edges in [[0, 0], [99, 0]] {
+        let mut scan = face_candidate_scan();
+        scan.curves
+            .topology_rows
+            .push(crate::curve::CurveTopologyRow {
+                id: 11,
+                type_byte: 1,
+                feature_id: 1,
+                directions: [1, 0xf6],
+                faces: [std::num::NonZeroU32::new(5), std::num::NonZeroU32::new(6)],
+                next_edges,
+                offset: 0,
+            });
+        let indexes =
+            BrepFaceCandidateIndexes::from_scan(&scan, &NativeSurfaceNamespaces::new(&scan));
+        assert!(indexes.loops_by_face.contains_key(&5));
+    }
 }
 
 #[test]
@@ -1195,6 +1238,7 @@ fn compact_rotation_cylinder_caps_order_disjoint_circular_holes() {
                     )
                     .expect("line"),
                 )),
+                native_ref: None,
             });
         }
         for (id, center) in [(5, -2.0), (6, -2.0), (7, second_center), (8, second_center)] {
@@ -1211,6 +1255,7 @@ fn compact_rotation_cylinder_caps_order_disjoint_circular_holes() {
                     )
                     .expect("circle"),
                 )),
+                native_ref: None,
             });
         }
         let polygons = [
@@ -1238,30 +1283,28 @@ fn compact_rotation_cylinder_caps_order_disjoint_circular_holes() {
 #[test]
 fn bounded_circle_arcs_prove_disjoint_cap_holes() {
     let mut native = CadIr::empty();
-    native.model.bodies.push(
+    native.geometry.bodies.push(
         serde_json::from_value(serde_json::json!({
-            "id": "creo:visibgeom:body#2", "kind": "solid", "regions": ["creo:visibgeom:region#3"]
+            "id": "creo:visibgeom:body#2", "kind": "solid"
         }))
         .expect("native body"),
     );
-    native.model.regions.push(
+    native.geometry.regions.push(
         serde_json::from_value(serde_json::json!({
             "id": "creo:visibgeom:region#3", "body": "creo:visibgeom:body#2", "shells": ["creo:visibgeom:shell#6"]
         }))
         .expect("native region"),
     );
-    native.model.shells.push(
+    native.geometry.shells.push(
         serde_json::from_value(serde_json::json!({
-            "id": "creo:visibgeom:shell#6", "region": "creo:visibgeom:region#3", "members": [
-                {"kind": "face", "id": "creo:visibgeom:face#1"}
-            ]
+            "id": "creo:visibgeom:shell#6", "region": "creo:visibgeom:region#3", "members": []
         }))
         .expect("native shell"),
     );
-    native.model.faces.push(
+    native.geometry.faces.push(
         serde_json::from_value(serde_json::json!({
             "id": "creo:visibgeom:face#1", "shell": "creo:visibgeom:shell#6", "surface": "creo:visibgeom:surface#1",
-            "sense": "forward", "loops": {"classification": "unspecified", "loops": ["creo:visibgeom:loop#1"]}
+            "sense": "forward", "loops": {"kind": "unspecified", "loops": ["creo:visibgeom:loop#1"]}
         }))
         .expect("native face"),
     );
@@ -1285,7 +1328,7 @@ fn bounded_circle_arcs_prove_disjoint_cap_holes() {
             &source, &native, 5
         )
     );
-    native.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+    native.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
     assert!(
         !crate::decode::sweep::revolution_carriers::native_solid_contains_feature(
             &source, &native, 4
@@ -1343,6 +1386,7 @@ fn bounded_circle_arcs_prove_disjoint_cap_holes() {
                     )
                     .expect("line"),
                 )),
+                native_ref: None,
             });
         }
         for (id, center) in [(5, -2.0), (6, -2.0), (7, second_center), (8, second_center)] {
@@ -1381,6 +1425,7 @@ fn bounded_circle_arcs_prove_disjoint_cap_holes() {
                     )
                     .expect("circle"),
                 )),
+                native_ref: None,
             });
         }
         let polygons = [

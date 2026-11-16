@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::compare::floats_agree;
+use cadmpeg_ir::math::portable::Portable;
 
 use super::circular_cone_normal_curvature;
 
@@ -26,7 +27,7 @@ fn a_circular_cone_parallel_uses_the_section_radius() {
 fn a_circular_cone_apex_has_no_finite_parallel_curvature() {
     let radius = 2.0_f64;
     let half_angle = 0.5_f64;
-    let apex = -radius / half_angle.tan();
+    let apex = -radius / half_angle.portable_tan();
     assert_eq!(
         circular_cone_normal_curvature(0, apex, radius, half_angle),
         None
@@ -42,7 +43,7 @@ fn a_cone_apex_has_no_normal_even_when_its_parameter_rounds() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let surface = &mut ir.model.surfaces[0];
+    let surface = &mut ir.geometry.surfaces[0];
     surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),

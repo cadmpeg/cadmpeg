@@ -118,6 +118,7 @@ fn unique_positional_frame_fixture() -> (SurfaceParameterRecord, SurfaceRow) {
         ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 11,
     };
     let row = SurfaceRow {
@@ -200,6 +201,7 @@ fn derives_plane_from_auxiliary_corner_frame() {
         ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 11,
     };
     let row = SurfaceRow {
@@ -475,6 +477,7 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         body,
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 11,
     };
     let row = SurfaceRow {
@@ -664,6 +667,35 @@ fn compact_plane_scalar_suffix_requires_one_complete_nine_slot_frame() {
         &scalar::ScalarCache::default()
     )
     .is_none());
+}
+
+#[test]
+fn compact_plane_scalar_suffix_corners_take_signed_world_coordinates() {
+    let world = |prefix: u8, ieee: f64| {
+        let mut token = ieee.to_be_bytes();
+        token[0] = prefix;
+        token
+    };
+    let body = [
+        &[0x32, 0xbe, 0xe4][..],
+        &world(0x2d, 2.0),
+        &[0xe4],
+        &world(0x2d, 4.0),
+        &world(0x46, 8.0),
+        &[0xe4],
+        &world(0x46, 4.0),
+        &world(0x2d, 8.0),
+        &[0x0f],
+    ]
+    .concat();
+    let slots =
+        service_complete_plane_compact_scalar_suffix(&body, &scalar::ScalarCache::default())
+            .expect("unique compact scalar suffix");
+
+    assert_eq!(
+        slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
+        [1.0, -2.0, 1.0, 4.0, -8.0, 1.0, -4.0, 8.0, 0.0].map(Some)
+    );
 }
 
 #[test]
@@ -1781,4 +1813,60 @@ fn reference_terminated_plane_envelope_keeps_its_signed_coordinate_stream() {
     assert!(crate::surface::positional_frame_planes(&parameters, &rows(&payload)).is_empty());
     payload.insert(payload.len() - 3, 0x18);
     assert!(plane_envelopes(&payload).is_empty());
+}
+
+#[test]
+fn ambiguous_rotation_assignments_withhold_the_frame_and_record_loss() {
+    let envelope = [0x10, 0x10, 0x0f, 0x0f, 0x10, 0x10, 0x18, 0x0f, 0x0f, 0x18];
+    let mut body = vec![0x41];
+    body.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
+    body.extend_from_slice(&[0x18, 0x18, 0x18, 0x41]);
+    body.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
+    body.extend_from_slice(&[0x18, 0x18, 0x18, 0x0f, 0x18, 0x18, 0x18]);
+    let mut losses = Vec::new();
+    let result = crate::surface::plane_frame_by_envelope(
+        None,
+        &envelope,
+        &body,
+        (7, 0),
+        &scalar::ScalarCache::default(),
+        &mut losses,
+    );
+    assert!(result.is_none());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.kind()
+    );
+}
+
+#[test]
+fn plane_local_system_withholds_symmetric_ambiguous_rotation() {
+    let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+    payload.extend_from_slice(&[
+        0x10, 0x10, 0x0f, 0x0f, 0x10, 0x10, 0x18, 0x0f, 0x0f, 0x18, 0xe3,
+    ]);
+    payload.extend_from_slice(&[0x41]);
+    payload.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
+    payload.extend_from_slice(&[0x18, 0x18, 0x18, 0x41]);
+    payload.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
+    payload.extend_from_slice(&[0x18, 0x18, 0x18, 0x0f, 0x18, 0x18, 0x18, 0xe3]);
+
+    let mut losses = Vec::new();
+    let systems = super::with_decode_ctx(&payload, |ctx| {
+        crate::surface::plane_local_systems(ctx, &payload, &mut losses)
+    });
+
+    assert_eq!(systems.len(), 1);
+    assert_eq!(systems[0].layout, None);
+    assert_eq!(systems[0].slots, [None; 12]);
+    assert_eq!(systems[0].frame().normal(), None);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.kind()
+    );
+    assert!(losses[0]
+        .message
+        .contains("multiple angular rotation sign assignments reproduce the envelope extrema"));
 }

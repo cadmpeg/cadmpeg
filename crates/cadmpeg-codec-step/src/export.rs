@@ -20,7 +20,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
-    PmiQuantity, PmiTarget,
+    PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
@@ -28,7 +28,8 @@ use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
+    Body, BodyKind, ChildLists, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell,
+    Vertex,
 };
 use cadmpeg_ir::CadIr;
 
@@ -37,6 +38,8 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
+mod closed_surfaces;
+mod edge_split;
 mod implicit_outer;
 mod non_manifold;
 mod ownership;
@@ -111,7 +114,7 @@ pub(crate) fn write_step_outcome(
             "STEP cannot write {missing_definitions} occurrence record(s) whose local product definition is missing"
         )));
     }
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         match surface.geometry.solved().and_then(unwritable_cone) {
             Some(UnwritableCone::SemiAngle(half_angle)) => {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
@@ -131,6 +134,9 @@ pub(crate) fn write_step_outcome(
     let mut b = Builder::new(ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
     b.build();
+    if let Some(error) = b.edge_split_error.take() {
+        return Err(error);
+    }
     if let Some(limit) = b.approximations.resource_limit() {
         return Err(limit.into());
     }
@@ -259,7 +265,7 @@ enum WrittenAnalyticSurface<'a> {
 #[derive(Clone, Copy)]
 struct WrittenSurface {
     reference: Ref,
-    reversed_chart: bool,
+    chart: Option<geometry::WrittenChart>,
     /// The written record's natural normal is opposite the carrier's
     /// oriented normal.
     reversed_normal: bool,
@@ -290,6 +296,7 @@ pub(crate) struct Builder<'a> {
     points: HashMap<&'a str, &'a Point>,
     bodies: HashMap<&'a str, &'a Body>,
     shells: HashMap<&'a str, &'a Shell>,
+    children: ChildLists<'a>,
     faces: HashMap<&'a str, &'a Face>,
     loops: HashMap<&'a str, &'a Loop>,
     vertices: HashMap<&'a str, &'a Vertex>,
@@ -305,14 +312,17 @@ pub(crate) struct Builder<'a> {
 
     surface_refs: HashMap<String, WrittenSurface>,
     curve_refs: HashMap<String, Ref>,
-    edge_refs: HashMap<String, Ref>,
+    edge_refs: HashMap<String, Vec<Ref>>,
+    edge_midpoints: HashMap<String, Ref>,
+    edge_split_index: cadmpeg_ir::index::ModelIndex<'a>,
+    edge_split_error: Option<cadmpeg_core::CodecError>,
     /// Written edge occurrence of each coedge whose edge a closed shell uses
     /// more than twice. A STEP closed shell admits two uses per edge, so each
     /// forward and reversed use pair gets its own `EDGE_CURVE`.
     coedge_edge_occurrences: HashMap<&'a str, usize>,
     /// Pcurve uses of each split edge occurrence.
     edge_occurrence_pcurves: HashMap<(&'a str, usize), Vec<PcurveUse<'a>>>,
-    edge_occurrence_refs: HashMap<(&'a str, usize), Ref>,
+    edge_occurrence_refs: HashMap<(&'a str, usize), Vec<Ref>>,
     split_edges: BTreeSet<&'a str>,
     vertex_refs: HashMap<String, Ref>,
     point_refs: HashMap<String, Ref>,
@@ -449,7 +459,7 @@ impl<'a> Builder<'a> {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let construction_supports = ownership::construction_supports(ir)?;
         let loop_faces = ir
-            .model
+            .geometry
             .faces
             .iter()
             .flat_map(|face| {
@@ -459,7 +469,7 @@ impl<'a> Builder<'a> {
             })
             .collect::<HashMap<_, _>>();
         let coedge_faces: HashMap<&str, (&str, &str)> =
-            ir.model
+            ir.geometry
                 .loops
                 .iter()
                 .filter_map(|loop_| loop_faces.get(loop_.id.as_str()).map(|face| (loop_, *face)))
@@ -470,7 +480,7 @@ impl<'a> Builder<'a> {
                 })
                 .collect();
         let mut edge_coedges = HashMap::<&str, Vec<PcurveUse<'_>>>::new();
-        for coedge in &ir.model.coedges {
+        for coedge in &ir.geometry.coedges {
             let Some((surface, face)) = coedge_faces.get(coedge.id.as_str()) else {
                 continue;
             };
@@ -494,74 +504,93 @@ impl<'a> Builder<'a> {
             model_name: "cadmpeg_model",
             emitter: Emitter::for_schema(schema),
             losses: Vec::new(),
-            points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
+            points: ir
+                .geometry
+                .points
+                .iter()
+                .map(|p| (p.id.as_str(), p))
+                .collect(),
             bodies: ir
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .map(|body| (body.id.as_str(), body))
                 .collect(),
             shells: ir
-                .model
+                .geometry
                 .shells
                 .iter()
                 .map(|shell| (shell.id.as_str(), shell))
                 .collect(),
+            children: ir.geometry.child_lists(),
             faces: ir
-                .model
+                .geometry
                 .faces
                 .iter()
                 .map(|face| (face.id.as_str(), face))
                 .collect(),
             loops: ir
-                .model
+                .geometry
                 .loops
                 .iter()
                 .map(|loop_| (loop_.id.as_str(), loop_))
                 .collect(),
             vertices: ir
-                .model
+                .geometry
                 .vertices
                 .iter()
                 .map(|v| (v.id.as_str(), v))
                 .collect(),
-            edges: ir.model.edges.iter().map(|e| (e.id.as_str(), e)).collect(),
+            edges: ir
+                .geometry
+                .edges
+                .iter()
+                .map(|e| (e.id.as_str(), e))
+                .collect(),
             coedges: ir
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .map(|c| (c.id.as_str(), c))
                 .collect(),
             surfaces: ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .map(|s| (s.id.as_str(), s))
                 .collect(),
-            curves: ir.model.curves.iter().map(|c| (c.id.as_str(), c)).collect(),
+            curves: ir
+                .geometry
+                .curves
+                .iter()
+                .map(|c| (c.id.as_str(), c))
+                .collect(),
             pcurves: ir
-                .model
+                .geometry
                 .pcurves
                 .iter()
                 .map(|p| (p.id.as_str(), p))
                 .collect(),
             procedural_surfaces: ir
-                .model
+                .geometry
                 .procedural_surfaces
                 .iter()
                 .filter_map(|surface| {
                     Some((
-                        ir.model.procedural_surface_owner(&surface.id)?.as_str(),
+                        ir.geometry.procedural_surface_owner(&surface.id)?.as_str(),
                         surface,
                     ))
                 })
                 .collect(),
             procedural_curves: ir
-                .model
+                .geometry
                 .procedural_curves
                 .iter()
                 .filter_map(|curve| {
-                    Some((ir.model.procedural_curve_owner(&curve.id)?.as_str(), curve))
+                    Some((
+                        ir.geometry.procedural_curve_owner(&curve.id)?.as_str(),
+                        curve,
+                    ))
                 })
                 .collect(),
             edge_coedges,
@@ -569,6 +598,9 @@ impl<'a> Builder<'a> {
             surface_refs: HashMap::new(),
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),
+            edge_midpoints: HashMap::new(),
+            edge_split_index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
+            edge_split_error: None,
             coedge_edge_occurrences: HashMap::new(),
             edge_occurrence_pcurves: HashMap::new(),
             edge_occurrence_refs: HashMap::new(),
@@ -650,15 +682,16 @@ impl<'a> Builder<'a> {
     pub(crate) fn build(&mut self) {
         let surface_regions = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| matches!(body.kind, BodyKind::Solid | BodyKind::Sheet))
-            .flat_map(|body| &body.regions)
+            .flat_map(|body| self.children.body_regions(&body.id))
+            .map(|region| &region.id)
             .collect::<BTreeSet<_>>();
         let mut wire_edges = BTreeSet::new();
         let mut free_vertices = BTreeSet::new();
-        for shell in &self.ir.model.shells {
+        for shell in &self.ir.geometry.shells {
             if surface_regions.contains(&shell.region) {
                 wire_edges.extend(shell.wire_edges());
                 free_vertices.extend(shell.free_vertices());
@@ -706,7 +739,7 @@ impl<'a> Builder<'a> {
         self.emit_visibility();
         self.emit_tessellations(context);
         if !has_model_items && self.tessellation_step_refs.is_empty() {
-            if !self.ir.model.bodies.is_empty() {
+            if !self.ir.geometry.bodies.is_empty() {
                 self.loss(
                     StepLossCode::NoExportableSolids,
                     "no body geometry could be placed in a STEP representation".to_string(),
@@ -846,7 +879,7 @@ impl<'a> Builder<'a> {
             .extend(conflicted_binding_ids);
         self.appearance_binding_target_conflicts
             .extend(target_conflicts);
-        for body in &ir.model.bodies {
+        for body in &ir.geometry.bodies {
             if !conflicting_body_targets.contains(body.id.as_str()) {
                 if let Some(color) = body.color {
                     body_colors.entry(body.id.as_str()).or_insert(ColorSpec {
@@ -857,7 +890,7 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        for face in &ir.model.faces {
+        for face in &ir.geometry.faces {
             if !conflicting_face_targets.contains(face.id.as_str()) {
                 if let Some(color) = face.color {
                     face_colors.entry(face.id.as_str()).or_insert(ColorSpec {
@@ -870,14 +903,14 @@ impl<'a> Builder<'a> {
         }
 
         let mut face_body: HashMap<&str, &str> = HashMap::new();
-        for region in &ir.model.regions {
+        for region in &ir.geometry.regions {
             let body = region.body.as_str();
             for shell_id in &region.shells {
                 let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
                     continue;
                 };
-                for face in shell.faces() {
-                    face_body.insert(face.as_str(), body);
+                for face in self.children.shell_faces(&shell.id) {
+                    face_body.insert(face.id.as_str(), body);
                 }
             }
         }
@@ -956,9 +989,13 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Curve(id) => {
                     (self.curve_refs.get(id.as_str()).copied(), StyleKind::Curve)
                 }
-                AppearanceTarget::Edge(id) => {
-                    (self.edge_refs.get(id.as_str()).copied(), StyleKind::Curve)
-                }
+                AppearanceTarget::Edge(id) => (
+                    self.edge_refs
+                        .get(id.as_str())
+                        .and_then(|edges| edges.first())
+                        .copied(),
+                    StyleKind::Curve,
+                ),
                 AppearanceTarget::Point(id) => {
                     (self.point_refs.get(id.as_str()).copied(), StyleKind::Point)
                 }
@@ -996,13 +1033,21 @@ impl<'a> Builder<'a> {
                 StyleKind::Point => self.point_style(color, name, &mut style_refs),
             };
             self.written_appearance_bindings.insert(binding.id.clone());
-            styled.push(self.emit_styled_item(
-                style,
-                target,
-                hidden_binding_ids.contains(binding.id.as_str()),
-            ));
+            let targets = match &binding.target {
+                AppearanceTarget::Edge(id) => {
+                    self.edge_refs.get(id.as_str()).cloned().unwrap_or_default()
+                }
+                _ => vec![target],
+            };
+            for target in targets {
+                styled.push(self.emit_styled_item(
+                    style,
+                    target,
+                    hidden_binding_ids.contains(binding.id.as_str()),
+                ));
+            }
         }
-        for body in &ir.model.bodies {
+        for body in &ir.geometry.bodies {
             let body_id = body.id.as_str();
             let Some(spec) = body_colors.get(body_id) else {
                 continue;
@@ -1094,9 +1139,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(f64::from(color.r())),
-            self.emitter.real(f64::from(color.g())),
-            self.emitter.real(f64::from(color.b()))
+            self.emitter.real(color.r()),
+            self.emitter.real(color.g()),
+            self.emitter.real(color.b())
         );
         let key = format!("surface:{name}:{rgb}:{}", color.a().to_bits());
         if let Some(style) = cache.get(&key) {
@@ -1118,7 +1163,7 @@ impl<'a> Builder<'a> {
         if color.a() < 1.0 {
             let transparency = self.emitter.emit(
                 "SURFACE_STYLE_TRANSPARENT",
-                &self.emitter.real(1.0 - f64::from(color.a())),
+                &self.emitter.real(1.0 - color.a()),
             );
             let rendering = self.emitter.emit(
                 "SURFACE_STYLE_RENDERING_WITH_PROPERTIES",
@@ -1147,9 +1192,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(f64::from(color.r())),
-            self.emitter.real(f64::from(color.g())),
-            self.emitter.real(f64::from(color.b()))
+            self.emitter.real(color.r()),
+            self.emitter.real(color.g()),
+            self.emitter.real(color.b())
         );
         let key = format!("curve:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -1180,9 +1225,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(f64::from(color.r())),
-            self.emitter.real(f64::from(color.g())),
-            self.emitter.real(f64::from(color.b()))
+            self.emitter.real(color.r()),
+            self.emitter.real(color.g()),
+            self.emitter.real(color.b())
         );
         let key = format!("point:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -1229,9 +1274,8 @@ impl<'a> Builder<'a> {
                     PresentationItem::Edge { edge } => self
                         .edge_refs
                         .get(edge.as_str())
-                        .copied()
-                        .into_iter()
-                        .collect(),
+                        .cloned()
+                        .unwrap_or_default(),
                     PresentationItem::Vertex { vertex } => self
                         .vertex_refs
                         .get(vertex.as_str())
@@ -1411,10 +1455,55 @@ impl<'a> Builder<'a> {
             .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
             .filter_map(|occurrence| occurrence_products.get(&occurrence.id))
             .collect::<BTreeSet<_>>();
+        let root_product_count = root_products.len();
         let root_product = match root_products.len() {
             1 => root_products.pop_first(),
             _ => None,
         };
+        let emitted_product_definitions = products
+            .iter()
+            .map(|product| product.id.clone())
+            .collect::<HashSet<_>>();
+        let mut root_definition_counts = BTreeMap::<ProductDefinitionId, usize>::new();
+        for occurrence in occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+        {
+            if let Some(definition) = occurrence_products
+                .get(&occurrence.id)
+                .filter(|definition| emitted_product_definitions.contains(*definition))
+            {
+                *root_definition_counts
+                    .entry(definition.clone())
+                    .or_default() += 1;
+            }
+        }
+        let repeated_root_occurrence_ids = occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .filter_map(|occurrence| {
+                let definition = occurrence_products.get(&occurrence.id)?;
+                (root_definition_counts
+                    .get(definition)
+                    .copied()
+                    .unwrap_or_default()
+                    > 1)
+                .then(|| occurrence.id.clone())
+            })
+            .collect::<HashSet<_>>();
+        let repeated_root_definition_has_children = occurrences.iter().any(|occurrence| {
+            matches!(
+                &occurrence.parent,
+                OccurrenceParent::Occurrence { occurrence: parent }
+                    if repeated_root_occurrence_ids.contains(parent)
+            ) && occurrence_products
+                .get(&occurrence.id)
+                .is_some_and(|definition| emitted_product_definitions.contains(definition))
+                && occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) == [1.0; 3]
+                && occurrence
+                    .effective_transform()
+                    .is_ok_and(|transform| transform.is_proper_rigid())
+        });
         // A rigid root placement of a local product needs a parent product to carry it.
         let placed_root = |occurrence: &cadmpeg_ir::products::Occurrence| {
             matches!(occurrence.parent, OccurrenceParent::Root {})
@@ -1424,12 +1513,21 @@ impl<'a> Builder<'a> {
                     .effective_transform()
                     .is_ok_and(|transform| transform.is_proper_rigid())
         };
-        let assembly_root = occurrences.iter().any(|occurrence| {
-            placed_root(occurrence)
-                && occurrence
-                    .effective_transform()
-                    .is_ok_and(|transform| !is_identity(&transform.rows()))
-        });
+        let mut has_placed_root = false;
+        let mut has_non_identity_placed_root = false;
+        for occurrence in occurrences
+            .iter()
+            .filter(|occurrence| placed_root(occurrence))
+        {
+            has_placed_root = true;
+            has_non_identity_placed_root |= occurrence
+                .effective_transform()
+                .is_ok_and(|transform| !is_identity(&transform.rows()));
+        }
+        let assembly_root = has_non_identity_placed_root
+            || (has_placed_root
+                && root_product_count > 1
+                && !repeated_root_definition_has_children);
         let product_names = distinct_names(
             &products
                 .iter()
@@ -1602,7 +1700,12 @@ impl<'a> Builder<'a> {
             });
         self.emit_unclaimed_body_representation(context, root_representation);
 
-        for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
+        let mut emission_order = occurrences
+            .iter()
+            .zip(&occurrence_names)
+            .collect::<Vec<_>>();
+        emission_order.sort_by_key(|(occurrence, _)| occurrence.ordinal);
+        for (occurrence, &occurrence_name) in emission_order {
             let parent = match (&occurrence.parent, assembly_root) {
                 (OccurrenceParent::Occurrence { occurrence: parent }, _) => {
                     let Some(parent_occurrence) = graph.occurrence(parent) else {
@@ -1776,7 +1879,7 @@ impl<'a> Builder<'a> {
             .collect::<BTreeSet<_>>();
         let bodies = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| !owned.contains(&body.id))
@@ -1885,7 +1988,7 @@ impl<'a> Builder<'a> {
     fn emit_shape_items(&mut self, context: Ref) -> Vec<Ref> {
         let mut items = Vec::new();
         let ir = self.ir;
-        for region in &ir.model.regions {
+        for region in &ir.geometry.regions {
             let body_kind = self
                 .bodies
                 .get(region.body.as_str())
@@ -1893,12 +1996,12 @@ impl<'a> Builder<'a> {
             let has_surface_topology = region.shells.iter().any(|shell_id| {
                 self.shells
                     .get(shell_id.as_str())
-                    .is_some_and(|shell| !shell.faces().is_empty())
+                    .is_some_and(|shell| !self.children.shell_faces(&shell.id).is_empty())
             });
             let has_wire_topology = region.shells.iter().any(|shell_id| {
-                self.shells.get(shell_id.as_str()).is_some_and(|shell| {
-                    !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty()
-                })
+                self.shells
+                    .get(shell_id.as_str())
+                    .is_some_and(|shell| !shell.members.is_empty())
             });
             let mixed_wire = body_kind == BodyKind::General && has_wire_topology;
             if body_kind == BodyKind::Wire
@@ -2066,7 +2169,7 @@ impl<'a> Builder<'a> {
             let Some(shell) = self.shells.get(shell_id.as_str()) else {
                 continue;
             };
-            missing.extend(shell.free_vertices().iter().cloned());
+            missing.extend(shell.free_vertices().cloned());
             for edge_id in shell.wire_edges() {
                 if let Some(edge) = self.edges.get(edge_id.as_str()) {
                     let vertices = if wire_written && self.edge_refs.contains_key(edge_id.as_str())
@@ -2077,13 +2180,11 @@ impl<'a> Builder<'a> {
                         missing_edges.insert(edge_id.clone());
                         &mut missing
                     };
-                    vertices.extend([edge.start.clone(), edge.end.clone()]);
+                    vertices.extend(edge.vertices().cloned());
                 }
             }
-            for face_id in shell.faces() {
-                let Some(face) = self.faces.get(face_id.as_str()) else {
-                    continue;
-                };
+            for face in self.children.shell_faces(&shell.id) {
+                let face_id = &face.id;
                 for loop_id in &face.loops {
                     let Some(lp) = self.loops.get(loop_id.as_str()) else {
                         continue;
@@ -2108,7 +2209,7 @@ impl<'a> Builder<'a> {
                             } else {
                                 missing_edges.insert(edge.id.clone());
                             }
-                            vertices.extend([edge.start.clone(), edge.end.clone()]);
+                            vertices.extend(edge.vertices().cloned());
                         }
                     }
                 }
@@ -2123,8 +2224,8 @@ impl<'a> Builder<'a> {
                 continue;
             }
             if let Some(reference) = self.emit_edge(edge_id.as_str()) {
-                retained.extend([edge.start.clone(), edge.end.clone()]);
-                edges.push((reference, edge));
+                retained.extend(edge.vertices().cloned());
+                edges.extend(reference.into_iter().map(|reference| (reference, edge)));
             }
         }
         if !edges.is_empty() {
@@ -2263,7 +2364,7 @@ impl<'a> Builder<'a> {
         if !self.schema.supports_visibility() {
             let hidden = self
                 .ir
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .filter(|body| body.visible == Some(false))
@@ -2282,7 +2383,7 @@ impl<'a> Builder<'a> {
         }
         let mut hidden = Vec::new();
         let mut hidden_without_items = Vec::new();
-        for body in &self.ir.model.bodies {
+        for body in &self.ir.geometry.bodies {
             if body.visible != Some(false) {
                 continue;
             }
@@ -2373,22 +2474,24 @@ impl<'a> Builder<'a> {
         }
         let mut connected_sets = Vec::new();
         for shell in shells {
-            if !shell.free_vertices().is_empty() {
+            if shell.free_vertices().next().is_some() {
                 self.loss(
                     StepLossCode::WireShellFreeVertices,
                     format!(
                         "wire shell '{}' has {} free vertex/vertices without an edge-based STEP carrier",
                         shell.id,
-                        shell.free_vertices().len()
+                        shell.free_vertices().count()
                     ),
                 );
             }
             let edges = shell
                 .wire_edges()
-                .iter()
-                .filter_map(|id| {
-                    let emitted = self.emit_edge(id.as_str())?;
-                    self.edges.get(id.as_str()).map(|edge| (emitted, *edge))
+                .flat_map(|id| {
+                    let emitted = self.emit_edge(id.as_str()).unwrap_or_default();
+                    let edge = self.edges.get(id.as_str()).copied();
+                    emitted
+                        .into_iter()
+                        .filter_map(move |reference| edge.map(|edge| (reference, edge)))
                 })
                 .collect::<Vec<_>>();
             for component in wire::connected_components(&edges) {
@@ -2412,21 +2515,21 @@ impl<'a> Builder<'a> {
         // emission. A failed face must never expose its full support as a root.
         let owned_surfaces: BTreeSet<_> = self
             .ir
-            .model
+            .geometry
             .faces
             .iter()
             .map(|face| face.surface.as_str())
             .collect();
         let owned_curves: BTreeSet<_> = self
             .ir
-            .model
+            .geometry
             .edges
             .iter()
             .filter_map(|edge| edge.carrier.curve())
             .map(cadmpeg_ir::ids::CurveId::as_str)
             .chain(
                 self.ir
-                    .model
+                    .geometry
                     .coedges
                     .iter()
                     .filter_map(|coedge| coedge.use_curve.as_ref())
@@ -2435,12 +2538,12 @@ impl<'a> Builder<'a> {
             .collect();
         let owned_points: BTreeSet<_> = self
             .ir
-            .model
+            .geometry
             .vertices
             .iter()
             .map(|vertex| vertex.point.as_str())
             .collect();
-        for surface in &self.ir.model.surfaces {
+        for surface in &self.ir.geometry.surfaces {
             if !self.surface_refs.contains_key(surface.id.as_str())
                 && (owned_surfaces.contains(surface.id.as_str())
                     || ownership::is_support(
@@ -2453,7 +2556,7 @@ impl<'a> Builder<'a> {
                     .insert(surface.id.as_str().to_owned());
             }
         }
-        for curve in &self.ir.model.curves {
+        for curve in &self.ir.geometry.curves {
             if !self.curve_refs.contains_key(curve.id.as_str())
                 && !self.point_loop_curves.contains(curve.id.as_str())
                 && (owned_curves.contains(curve.id.as_str())
@@ -2467,7 +2570,7 @@ impl<'a> Builder<'a> {
                     .insert(curve.id.as_str().to_owned());
             }
         }
-        for point in &self.ir.model.points {
+        for point in &self.ir.geometry.points {
             if !self.point_refs.contains_key(point.id.as_str())
                 && !self.point_loop_points.contains(point.id.as_str())
                 && (owned_points.contains(point.id.as_str())
@@ -2483,7 +2586,7 @@ impl<'a> Builder<'a> {
         }
         let surface_ids = self
             .ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .filter(|surface| {
@@ -2520,7 +2623,7 @@ impl<'a> Builder<'a> {
                         reference,
                         ranges,
                         [true, true],
-                        self.surface_chart_reversed(&surface_id),
+                        self.surface_chart(&surface_id),
                     ),
                     None => reference,
                 };
@@ -2532,7 +2635,7 @@ impl<'a> Builder<'a> {
         }
         let curve_ids = self
             .ir
-            .model
+            .geometry
             .curves
             .iter()
             .filter(|curve| {
@@ -2565,7 +2668,7 @@ impl<'a> Builder<'a> {
         }
         let point_ids = self
             .ir
-            .model
+            .geometry
             .points
             .iter()
             .filter(|point| {
@@ -2827,10 +2930,7 @@ impl<'a> Builder<'a> {
             let Some(shell) = self.shells.get(shell.as_str()).copied() else {
                 continue;
             };
-            for face in shell.faces() {
-                let Some(face) = self.faces.get(face.as_str()).copied() else {
-                    continue;
-                };
+            for face in self.children.shell_faces(&shell.id).to_vec() {
                 for loop_id in &face.loops {
                     let Some(lp) = self.loops.get(loop_id.as_str()).copied() else {
                         continue;
@@ -2873,10 +2973,11 @@ impl<'a> Builder<'a> {
 
     fn emit_shell(&mut self, shell_id: &str, closed: bool, reversed: bool) -> Option<(Ref, bool)> {
         let shell = self.shells.get(shell_id).copied()?;
-        let face_ids: Vec<String> = shell
-            .faces()
+        let face_ids: Vec<String> = self
+            .children
+            .shell_faces(&shell.id)
             .iter()
-            .map(|f| f.as_str().to_owned())
+            .map(|f| f.id.as_str().to_owned())
             .collect();
         let mut face_refs = Vec::new();
         let prior_losses = self.topology_relation_losses.len();
@@ -2917,10 +3018,8 @@ impl<'a> Builder<'a> {
 
     fn shell_is_closed(&self, shell: &Shell) -> bool {
         let mut uses: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
-        for face_id in shell.faces() {
-            let Some(face) = self.faces.get(face_id.as_str()) else {
-                return false;
-            };
+        let shell_faces = self.children.shell_faces(&shell.id);
+        for face in shell_faces {
             for loop_id in &face.loops {
                 let Some(lp) = self.loops.get(loop_id.as_str()) else {
                     return false;
@@ -2932,7 +3031,7 @@ impl<'a> Builder<'a> {
                     let Some(edge) = self.edges.get(coedge.edge.as_str()) else {
                         return false;
                     };
-                    let degenerate = edge.start == edge.end
+                    let degenerate = single_vertex(edge).is_some()
                         && (self
                             .collapsed_curveless_coedges
                             .contains(coedge_id.as_str())
@@ -2952,7 +3051,13 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        !uses.is_empty() && uses.values().all(|[forward, reversed]| forward == reversed)
+        (!uses.is_empty()
+            || (shell_faces.len() == 1
+                && self
+                    .implicit_outer_bounds
+                    .get(shell_faces[0].id.as_str())
+                    .is_some_and(|bound| matches!(bound, implicit_outer::OuterBound::Closed(_)))))
+            && uses.values().all(|[forward, reversed]| forward == reversed)
     }
 
     /// Writes the face use, or its reverse when `reversed` is set: the
@@ -2965,6 +3070,7 @@ impl<'a> Builder<'a> {
         let rectangle = match self.implicit_outer_bounds.get(face_id).cloned() {
             None => None,
             Some(implicit_outer::OuterBound::Rectangle(rectangle)) => Some(*rectangle),
+            Some(implicit_outer::OuterBound::Closed(_)) => None,
             Some(implicit_outer::OuterBound::Unwritable(reason)) => {
                 self.implicit_outer_loss(face_id, reason);
                 return None;
@@ -2973,12 +3079,29 @@ impl<'a> Builder<'a> {
 
         // Surface emission admits either a writable construction or a solved
         // carrier. An absent or opaque solved cache cannot veto a construction.
-        let Some(surf_ref) = self.emit_surface(surface_id) else {
+        let spindle = match self.implicit_outer_bounds.get(face_id).cloned() {
+            Some(implicit_outer::OuterBound::Closed(bound)) => match *bound {
+                closed_surfaces::ClosedBound::Spindle(spindle) => Some(spindle),
+                _ => None,
+            },
+            _ => None,
+        };
+        let surface = if let Some(spindle) = spindle {
+            self.emit_spindle_surface(surface_id, &spindle)
+        } else {
+            self.emit_surface(surface_id)
+        };
+        let Some(surf_ref) = surface else {
             self.unknown_surface_faces.insert(face_id.to_string());
             return None;
         };
 
-        let mut bound_refs = Vec::new();
+        let mut bound_refs = match self.implicit_outer_bounds.get(face_id).cloned() {
+            Some(implicit_outer::OuterBound::Closed(bound)) => {
+                self.emit_closed_bound(*bound, surf_ref, bound_flag)?
+            }
+            _ => Vec::new(),
+        };
         if let Some(rectangle) = rectangle {
             let Some(bound) = self.emit_parameter_rectangle(rectangle, surf_ref, bound_flag) else {
                 self.implicit_outer_loss(
@@ -3130,7 +3253,7 @@ impl<'a> Builder<'a> {
                 return None;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
-            let Some(edge_ref) = self.emit_coedge_edge(coedge) else {
+            let Some(mut edge_refs) = self.emit_coedge_edge(coedge) else {
                 self.topology_relation_loss(
                     format!("loop:{loop_id}:edge:{}", coedge.edge),
                     StepLossCode::LoopEdgeNotWritable,
@@ -3142,10 +3265,15 @@ impl<'a> Builder<'a> {
                 return None;
             };
             let flag = if orientation { ".T." } else { ".F." };
-            let oe = self
-                .emitter
-                .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"));
-            oe_refs.push(oe);
+            if !orientation {
+                edge_refs.reverse();
+            }
+            for edge_ref in edge_refs {
+                let oe = self
+                    .emitter
+                    .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"));
+                oe_refs.push(oe);
+            }
         }
         if oe_refs.is_empty() {
             self.topology_relation_loss(
@@ -3174,16 +3302,15 @@ impl<'a> Builder<'a> {
             }
             let edge = self.edges.get(coedge.edge.as_str()).copied()?;
             let curve = self.curves.get(edge.curve()?.as_str()).copied()?;
-            if edge.start != edge.end
-                || !matches!(
-                    curve.geometry,
-                    CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
-                )
-                || vertex.is_some_and(|vertex| vertex != &edge.start)
+            let start = single_vertex(edge)?;
+            if !matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+            ) || vertex.is_some_and(|vertex| vertex != start)
             {
                 return None;
             }
-            vertex = Some(&edge.start);
+            vertex = Some(start);
             curves.push(curve.id.as_str());
         }
         Some((vertex?, curves))
@@ -3217,7 +3344,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             if edge.curve().is_none()
-                && edge.start == edge.end
+                && single_vertex(edge).is_some()
                 && self.pcurves_collapse_to(coedge, edge)?
             {
                 collapsed.insert(*coedge_id);
@@ -3254,12 +3381,13 @@ impl<'a> Builder<'a> {
                     Some(SolvedCurveGeometry::Degenerate(_))
                 )
             });
-            let collapsed = edge.start == edge.end
+            let pole = single_vertex(edge);
+            let collapsed = pole.is_some()
                 && (degenerate
                     || (edge.curve().is_none() && self.pcurves_collapse_to(coedge, edge)?));
-            if collapsed {
-                if !poles.contains(&&edge.start) {
-                    poles.push(&edge.start);
+            if let (true, Some(pole)) = (collapsed, pole) {
+                if !poles.contains(&pole) {
+                    poles.push(pole);
                 }
             } else {
                 let count = uses.entry(edge.id.as_str()).or_default();
@@ -3302,9 +3430,9 @@ impl<'a> Builder<'a> {
         else {
             return Ok(false);
         };
-        let Some(vertex) = self
-            .vertices
-            .get(edge.start.as_str())
+        let Some(vertex) = edge
+            .start()
+            .and_then(|start| self.vertices.get(start.as_str()))
             .and_then(|vertex| self.points.get(vertex.point.as_str()))
             .map(|point| point.position().get())
         else {
@@ -3368,7 +3496,7 @@ impl<'a> Builder<'a> {
                 .get(coedge_id.as_str())
                 .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
                 .is_some_and(|edge| {
-                    edge.start != edge.end
+                    single_vertex(edge).is_none()
                         || edge
                             .curve()
                             .and_then(|curve_id| self.curves.get(curve_id.as_str()))
@@ -3449,20 +3577,21 @@ impl<'a> Builder<'a> {
             if matches!(
                 curve.geometry.solved(),
                 Some(SolvedCurveGeometry::Degenerate(_))
-            ) && edge.start == edge.end
+            ) && single_vertex(edge).is_some()
                 && has_extent
             {
                 self.point_loop_curves.insert(curve.id.as_str().to_owned());
                 continue;
             }
-            let (start_vertex, end_vertex) = match coedge.sense {
-                Sense::Forward => (&edge.start, &edge.end),
-                Sense::Reversed => (&edge.end, &edge.start),
+            let (start_vertex, end_vertex) = match (&edge.ends, coedge.sense) {
+                (None, _) => (edge.id.as_str(), edge.id.as_str()),
+                (Some(ends), Sense::Forward) => (ends.start.as_str(), ends.end.as_str()),
+                (Some(ends), Sense::Reversed) => (ends.end.as_str(), ends.start.as_str()),
             };
             segments.push(LoopSegment {
                 coedge_id: coedge_id.as_str().to_owned(),
-                start_vertex: start_vertex.as_str().to_owned(),
-                end_vertex: end_vertex.as_str().to_owned(),
+                start_vertex: start_vertex.to_owned(),
+                end_vertex: end_vertex.to_owned(),
             });
         }
 
@@ -3559,14 +3688,14 @@ impl<'a> Builder<'a> {
 
     /// The written edge a coedge uses: its own use pair's edge when its edge
     /// was split, else the edge shared by all its uses.
-    fn emit_coedge_edge(&mut self, coedge: &'a Coedge) -> Option<Ref> {
+    fn emit_coedge_edge(&mut self, coedge: &'a Coedge) -> Option<Vec<Ref>> {
         let edge_id = coedge.edge.as_str();
         let Some(occurrence) = self.coedge_edge_occurrences.get(coedge.id.as_str()) else {
             return self.emit_edge(edge_id);
         };
         let key = (edge_id, *occurrence);
         if let Some(r) = self.edge_occurrence_refs.get(&key) {
-            return Some(*r);
+            return Some(r.clone());
         }
         let associated = self
             .edge_occurrence_pcurves
@@ -3574,22 +3703,28 @@ impl<'a> Builder<'a> {
             .cloned()
             .unwrap_or_default();
         let r = self.emit_edge_curve(edge_id, associated)?;
-        self.edge_occurrence_refs.insert(key, r);
-        self.edge_refs.entry(edge_id.to_owned()).or_insert(r);
+        self.edge_occurrence_refs.insert(key, r.clone());
+        self.edge_refs
+            .entry(edge_id.to_owned())
+            .or_insert_with(|| r.clone());
         Some(r)
     }
 
-    fn emit_edge(&mut self, edge_id: &str) -> Option<Ref> {
+    fn emit_edge(&mut self, edge_id: &str) -> Option<Vec<Ref>> {
         if let Some(r) = self.edge_refs.get(edge_id) {
-            return Some(*r);
+            return Some(r.clone());
         }
         let associated = self.edge_coedges.get(edge_id).cloned().unwrap_or_default();
         let r = self.emit_edge_curve(edge_id, associated)?;
-        self.edge_refs.insert(edge_id.to_string(), r);
+        self.edge_refs.insert(edge_id.to_string(), r.clone());
         Some(r)
     }
 
-    fn emit_edge_curve(&mut self, edge_id: &str, associated: Vec<PcurveUse<'a>>) -> Option<Ref> {
+    fn emit_edge_curve(
+        &mut self,
+        edge_id: &str,
+        associated: Vec<PcurveUse<'a>>,
+    ) -> Option<Vec<Ref>> {
         let Some(edge) = self.edges.get(edge_id).copied() else {
             self.topology_relation_loss(
                 format!("edge:{edge_id}:record"),
@@ -3598,24 +3733,32 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        let Some(v1) = self.emit_vertex(edge.start.as_str()) else {
+        let Some(ends) = &edge.ends else {
             self.topology_relation_loss(
-                format!("edge:{edge_id}:start-vertex:{}", edge.start),
+                format!("edge:{edge_id}:vertices"),
+                StepLossCode::EdgeNoVertex,
+                format!("edge {edge_id} was omitted because it has no vertex"),
+            );
+            return None;
+        };
+        let Some(v1) = self.emit_vertex(ends.start.as_str()) else {
+            self.topology_relation_loss(
+                format!("edge:{edge_id}:start-vertex:{}", ends.start),
                 StepLossCode::EdgeStartVertexMissing,
                 format!(
                     "edge {edge_id} was omitted because start vertex {} is missing",
-                    edge.start
+                    ends.start
                 ),
             );
             return None;
         };
-        let Some(v2) = self.emit_vertex(edge.end.as_str()) else {
+        let Some(v2) = self.emit_vertex(ends.end.as_str()) else {
             self.topology_relation_loss(
-                format!("edge:{edge_id}:end-vertex:{}", edge.end),
+                format!("edge:{edge_id}:end-vertex:{}", ends.end),
                 StepLossCode::EdgeEndVertexMissing,
                 format!(
                     "edge {edge_id} was omitted because end vertex {} is missing",
-                    edge.end
+                    ends.end
                 ),
             );
             return None;
@@ -3660,11 +3803,11 @@ impl<'a> Builder<'a> {
                 pcurve_refs.push(pcurve);
             } else if self.surface_is_fitted_helix(surface_id) {
                 self.fitted_surface_pcurves.insert(pcurve_id.to_string());
-            } else if self.surface_chart_reversed(surface_id) {
+            } else if self.surface_chart(surface_id).is_some() {
                 self.loss(
                     StepLossCode::PcurveCarrierUnwritable,
                     format!(
-                        "face {face_id} pcurve {pcurve_id} was omitted because its geometry or surface reference could not be mapped to the reversed cone chart"
+                        "face {face_id} pcurve {pcurve_id} was omitted because its geometry or surface reference could not be mapped to the written chart of its normalized surface"
                     ),
                 );
             } else if self.pcurves.contains_key(pcurve_id) {
@@ -3679,12 +3822,42 @@ impl<'a> Builder<'a> {
                 &format!("'',{basis_curve},{},.CURVE_3D.", refs(&pcurve_refs)),
             )
         };
-        // same_sense = .T.: the edge runs start→end along the curve's own
-        // parameterization, the convention IR curves follow.
-        Some(
-            self.emitter
-                .emit("EDGE_CURVE", &format!("'',{v1},{v2},{curve_ref},.T.")),
-        )
+        let midpoint = if let Some(vertex) = self.edge_midpoints.get(edge_id) {
+            Some(*vertex)
+        } else {
+            match edge_split::midpoint(&self.edge_split_index, edge) {
+                Ok(Some(point)) => {
+                    let point = geometry::point(&mut self.emitter, point);
+                    let vertex = self.emitter.emit("VERTEX_POINT", &format!("'',{point}"));
+                    self.edge_midpoints.insert(edge_id.to_owned(), vertex);
+                    Some(vertex)
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    self.edge_split_error.get_or_insert(error);
+                    return None;
+                }
+            }
+        };
+        Some(self.emit_edge_segments([v1, v2], curve_ref, midpoint))
+    }
+
+    fn emit_edge_segments(
+        &mut self,
+        [start, end]: [Ref; 2],
+        curve: Ref,
+        midpoint: Option<Ref>,
+    ) -> Vec<Ref> {
+        let ends = match midpoint {
+            Some(middle) => vec![[start, middle], [middle, end]],
+            None => vec![[start, end]],
+        };
+        ends.into_iter()
+            .map(|[start, end]| {
+                self.emitter
+                    .emit("EDGE_CURVE", &format!("'',{start},{end},{curve},.T."))
+            })
+            .collect()
     }
 
     fn emit_pcurve(&mut self, use_: PcurveUse<'a>, edge: &Edge) -> Option<Ref> {
@@ -3724,6 +3897,20 @@ impl<'a> Builder<'a> {
                 edge,
             )?),
         };
+        let active_trim = if range.is_some()
+            && (matches!(aligned, std::borrow::Cow::Owned(_)) || pcurves::ranges_match(range, edge))
+            && edge.tolerance.is_some_and(|edge_tolerance| {
+                edge.vertices().into_iter().any(|id| {
+                    self.vertices
+                        .get(id.as_str())
+                        .and_then(|vertex| vertex.tolerance)
+                        .is_some_and(|tolerance| tolerance > edge_tolerance)
+                })
+            }) {
+            pcurves::bounded_spline_use(aligned.as_ref(), edge)
+        } else {
+            None
+        };
         let shift = self
             .pcurve_period_shifts
             .get(use_.coedge)
@@ -3733,11 +3920,21 @@ impl<'a> Builder<'a> {
             Some(moved) if shift != [0.0, 0.0] => std::borrow::Cow::Owned(moved),
             _ => aligned,
         };
-        let reversed_cone = self.surface_chart_reversed(surface_id);
-        let curve = if reversed_cone {
-            geometry::pcurve_on_reversed_cone(&mut self.emitter, &aligned)?
+        let curve = match self.surface_chart(surface_id) {
+            Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &aligned)?,
+            None => geometry::pcurve(&mut self.emitter, &aligned)?,
+        };
+        let curve = if let Some([start, end]) = active_trim {
+            self.emitter.emit(
+                "TRIMMED_CURVE",
+                &format!(
+                    "'',{curve},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
+                    self.emitter.real(start),
+                    self.emitter.real(end),
+                ),
+            )
         } else {
-            geometry::pcurve(&mut self.emitter, &aligned)?
+            curve
         };
         let context = self.pcurve_context();
         let representation = self.emitter.emit(
@@ -3888,8 +4085,8 @@ impl<'a> Builder<'a> {
         };
         let (Some(surface), Some(start), Some(end)) = (
             self.surfaces.get(surface),
-            position(&edge.start),
-            position(&edge.end),
+            edge.start().and_then(position),
+            edge.end().and_then(position),
         ) else {
             return Ok(None);
         };
@@ -3960,23 +4157,26 @@ impl<'a> Builder<'a> {
             let solved = surf.geometry.solved();
             let emitted = procedural.and_then(|(id, definition)| {
                 let reference = self.emit_procedural_surface(solved, &definition)?;
-                let reversed = match &definition {
+                let chart = match &definition {
                     ProceduralSurfaceDefinition::ParallelOffset(payload) => {
-                        self.surface_chart_reversed(payload.support().as_str())
+                        self.surface_chart(payload.support().as_str())
                     }
                     // The emitted trim maps its support ranges; its own local
                     // chart remains unchanged.
-                    ProceduralSurfaceDefinition::Subset(_) => false,
+                    ProceduralSurfaceDefinition::Subset(_) => None,
                     ProceduralSurfaceDefinition::Replica { source, .. } => {
-                        self.surface_chart_reversed(source.as_str())
+                        self.surface_chart(source.as_str())
                     }
-                    _ => false,
+                    ProceduralSurfaceDefinition::DegenerateTorus { .. } => {
+                        solved.and_then(geometry::WrittenChart::of)
+                    }
+                    _ => None,
                 };
-                Some((id, reference, reversed))
+                Some((id, reference, chart))
             });
-            let (r, reversed, reversed_normal) = if let Some((id, reference, reversed)) = emitted {
+            let (r, chart, reversed_normal) = if let Some((id, reference, chart)) = emitted {
                 self.written_procedural_surfaces.insert(id);
-                (reference, reversed, false)
+                (reference, chart, false)
             } else if let Some((id, helix)) = self.unsolved_helix_surface(surface_id) {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
@@ -3992,7 +4192,7 @@ impl<'a> Builder<'a> {
                 let reference =
                     geometry::surface(&mut self.emitter, &SolvedSurfaceGeometry::Nurbs(fitted))?;
                 self.fitted_helix_surfaces.insert(id.to_owned());
-                (reference, false, false)
+                (reference, None, false)
             } else if let Some(solved) =
                 solved.filter(|solved| geometry::surface_is_supported(solved))
             {
@@ -4002,27 +4202,27 @@ impl<'a> Builder<'a> {
                 let reference = geometry::surface(&mut self.emitter, solved)?;
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::Carrier(basis));
-                let reversed = matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.half_angle().get() < 0.0);
-                let reversed_normal =
-                    matches!(basis, SolvedSurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed());
-                (reference, reversed, reversed_normal)
+                let chart = geometry::WrittenChart::of(basis);
+                let reversed_normal = chart.is_some_and(geometry::WrittenChart::reverses_normal)
+                    || matches!(basis, SolvedSurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed());
+                (reference, chart, reversed_normal)
             } else {
                 let procedural = self.procedural_surfaces.get(surface_id)?.id.to_string();
                 let surface = self.approximations.surface(surface_id)?;
                 let reference = geometry::surface(&mut self.emitter, &surface)?;
                 self.sampled_surfaces.insert(procedural);
-                (reference, false, false)
+                (reference, None, false)
             };
-            Some((r, reversed, reversed_normal))
+            Some((r, chart, reversed_normal))
         })();
         self.active_surfaces.remove(surface_id);
         self.geometry_emission_depth -= 1;
-        if let Some((r, reversed, reversed_normal)) = result {
+        if let Some((r, chart, reversed_normal)) = result {
             self.surface_refs.insert(
                 surface_id.to_string(),
                 WrittenSurface {
                     reference: r,
-                    reversed_chart: reversed,
+                    chart,
                     reversed_normal,
                 },
             );
@@ -4037,10 +4237,10 @@ impl<'a> Builder<'a> {
             .is_some_and(|surface| surface.reversed_normal)
     }
 
-    fn surface_chart_reversed(&self, surface_id: &str) -> bool {
+    fn surface_chart(&self, surface_id: &str) -> Option<geometry::WrittenChart> {
         self.surface_refs
             .get(surface_id)
-            .is_some_and(|surface| surface.reversed_chart)
+            .and_then(|surface| surface.chart)
     }
 
     fn emit_procedural_surface(
@@ -4107,12 +4307,12 @@ impl<'a> Builder<'a> {
                 let u_sense = payload.u_sense().as_ref()?;
                 let v_sense = payload.v_sense().as_ref()?;
                 let support = self.emit_surface(support.as_str())?;
-                let reverse_chart = self.surface_chart_reversed(payload.support().as_str());
+                let chart = self.surface_chart(payload.support().as_str());
                 Some(self.emit_rectangular_trim(
                     support,
                     parameter_ranges,
                     [*u_sense, *v_sense],
-                    reverse_chart,
+                    chart,
                 ))
             }
             ProceduralSurfaceDefinition::Replica { source, transform } => {
@@ -4155,12 +4355,12 @@ impl<'a> Builder<'a> {
         support: Ref,
         mut ranges: [[f64; 2]; 2],
         senses: [bool; 2],
-        reverse_chart: bool,
+        chart: Option<geometry::WrittenChart>,
     ) -> Ref {
-        if reverse_chart {
-            for range in &mut ranges {
-                range[0] = -range[0];
-                range[1] = -range[1];
+        let mut reversed = [false; 2];
+        if let Some(chart) = chart {
+            for axis in 0..2 {
+                (ranges[axis], reversed[axis]) = chart.range(axis, ranges[axis]);
             }
         }
         self.emitter.emit(
@@ -4171,12 +4371,12 @@ impl<'a> Builder<'a> {
                 self.emitter.real(ranges[0][1]),
                 self.emitter.real(ranges[1][0]),
                 self.emitter.real(ranges[1][1]),
-                if senses[0] == reverse_chart {
+                if senses[0] == reversed[0] {
                     ".F."
                 } else {
                     ".T."
                 },
-                if senses[1] == reverse_chart {
+                if senses[1] == reversed[1] {
                     ".F."
                 } else {
                     ".T."
@@ -4410,22 +4610,30 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn pmi_target_ref(&self, target: &PmiTarget) -> Option<Ref> {
-        match target {
+    fn pmi_target_refs(&self, target: &PmiTarget) -> Vec<Ref> {
+        if let PmiTarget::Edge { edge } = target {
+            return self
+                .edge_refs
+                .get(edge.as_str())
+                .cloned()
+                .unwrap_or_default();
+        }
+        let reference = match target {
             PmiTarget::Body { body } => self
                 .body_step_refs
                 .get(body.as_str())
                 .copied()
                 .or_else(|| self.body_shape_refs.get(body.as_str()).copied()),
             PmiTarget::Face { face } => self.face_step_refs.get(face.as_str()).copied(),
-            PmiTarget::Edge { edge } => self.edge_refs.get(edge.as_str()).copied(),
+            PmiTarget::Edge { .. } => None,
             PmiTarget::Vertex { vertex } => self.vertex_refs.get(vertex.as_str()).copied(),
             PmiTarget::Point { point } => self.point_refs.get(point.as_str()).copied(),
             PmiTarget::Curve { curve } => self.curve_refs.get(curve.as_str()).copied(),
             PmiTarget::Product { .. }
             | PmiTarget::Occurrence { .. }
             | PmiTarget::ShapeAspect { .. } => None,
-        }
+        };
+        reference.into_iter().collect()
     }
 
     fn emit_datum_target(
@@ -4477,7 +4685,16 @@ impl<'a> Builder<'a> {
             }
         }
         for annotation in &annotations {
-            for target in &annotation.targets {
+            let zone_targets = match &annotation.definition {
+                PmiDefinition::GeometricTolerance { constraints, .. } => constraints
+                    .zones
+                    .iter()
+                    .flat_map(|zone| &zone.projections)
+                    .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+            for target in annotation.targets.iter().chain(zone_targets) {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
@@ -4554,7 +4771,7 @@ impl<'a> Builder<'a> {
         let fallback_aspect = self
             .emitter
             .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."));
-        let target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
+        let source_target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
             annotation
                 .targets
                 .iter()
@@ -4573,7 +4790,7 @@ impl<'a> Builder<'a> {
                 continue;
             }
             for target in &annotation.targets {
-                if let Some(target_ref) = self.pmi_target_ref(target) {
+                for target_ref in self.pmi_target_refs(target) {
                     if !target_items.contains(&target_ref) {
                         target_items.push(target_ref);
                     }
@@ -4586,28 +4803,101 @@ impl<'a> Builder<'a> {
                 &format!("'PMI geometric targets',{},{context}", refs(&target_items)),
             )
         });
+        let mut annotation_aspects = HashMap::new();
+        let mut all_around_annotations = HashSet::new();
+        let mut unsupported_all_around = HashSet::new();
+        for annotation in &annotations {
+            let modifiers = match &annotation.definition {
+                PmiDefinition::GeometricTolerance { modifiers, .. } => modifiers.as_slice(),
+                PmiDefinition::Dimension(_) => &[],
+                _ => continue,
+            };
+            let mut components = Vec::new();
+            let mut seen = HashSet::new();
+            for target in &annotation.targets {
+                for item in self.pmi_target_refs(target) {
+                    if seen.insert(item) {
+                        components.push(item);
+                    }
+                }
+            }
+            if modifiers
+                .iter()
+                .any(|modifier| modifier.eq_ignore_ascii_case("all_around"))
+            {
+                all_around_annotations.insert(annotation.id.clone());
+                let Some(representation) = target_representation.filter(|_| components.len() >= 2)
+                else {
+                    unsupported_all_around.insert(annotation.id.clone());
+                    self.loss(StepLossCode::PmiAllAroundComponentsUnresolved, format!(
+                        "all-around tolerance '{}' has fewer than two distinct writable geometric components",
+                        annotation.id,
+                    ));
+                    continue;
+                };
+                let scope = self.emitter.emit(
+                    "ALL_AROUND_SHAPE_ASPECT",
+                    &format!(
+                        "{},'',{pds},.T.",
+                        string(annotation.name.as_deref().unwrap_or(""))
+                    ),
+                );
+                for item in components {
+                    let member = self
+                        .emitter
+                        .emit("SHAPE_ASPECT", &format!("'','',{pds},.T."));
+                    self.emitter.emit(
+                        "SHAPE_ASPECT_RELATIONSHIP",
+                        &format!("'','',{scope},{member}"),
+                    );
+                    self.emitter.emit(
+                        "GEOMETRIC_ITEM_SPECIFIC_USAGE",
+                        &format!("'','',{member},{representation},{item}"),
+                    );
+                }
+                annotation_aspects.insert(annotation.id.clone(), scope);
+            } else if !components.is_empty() && source_target_ref(annotation).is_none() {
+                let aspect = self.emitter.emit(
+                    "SHAPE_ASPECT",
+                    &format!(
+                        "{},'',{pds},.T.",
+                        string(annotation.name.as_deref().unwrap_or(""))
+                    ),
+                );
+                annotation_aspects.insert(annotation.id.clone(), aspect);
+            }
+        }
+        let target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
+            annotation_aspects
+                .get(&annotation.id)
+                .copied()
+                .or_else(|| source_target_ref(annotation))
+        };
         let mut targets_exact_by_annotation = HashMap::new();
         for annotation in &annotations {
             let semantic = !matches!(&annotation.definition, PmiDefinition::Presentation { .. });
             let definition = target_ref(annotation).unwrap_or(fallback_aspect);
             let mut exact = true;
             for target in &annotation.targets {
-                let Some(identified_item) = self.pmi_target_ref(target) else {
+                let identified_items = self.pmi_target_refs(target);
+                if identified_items.is_empty() {
                     if !matches!(target, PmiTarget::ShapeAspect { .. }) {
                         exact = false;
                     }
                     continue;
-                };
+                }
                 let Some(used_representation) = target_representation else {
                     exact = false;
                     continue;
                 };
-                if semantic {
-                    self.emitter.emit(
-                        "GEOMETRIC_ITEM_SPECIFIC_USAGE",
-                        &format!("'','',{definition},{used_representation},{identified_item}"),
-                    );
-                } else {
+                if semantic && !all_around_annotations.contains(&annotation.id) {
+                    for identified_item in identified_items {
+                        self.emitter.emit(
+                            "GEOMETRIC_ITEM_SPECIFIC_USAGE",
+                            &format!("'','',{definition},{used_representation},{identified_item}"),
+                        );
+                    }
+                } else if !semantic {
                     exact = false;
                 }
             }
@@ -4723,14 +5013,17 @@ impl<'a> Builder<'a> {
                         // DIMENSIONAL_SIZE whose name identifies the size
                         // category; DIAMETER_SIZE and RADIUS_SIZE are not
                         // entity types.
-                        DimensionKind::Diameter | DimensionKind::Radius => {
-                            ("DIMENSIONAL_SIZE", true)
-                        }
+                        DimensionKind::Diameter
+                        | DimensionKind::Radius
+                        | DimensionKind::SphericalDiameter
+                        | DimensionKind::SphericalRadius => ("DIMENSIONAL_SIZE", true),
                         DimensionKind::Other(_) => ("DIMENSIONAL_SIZE", false),
                     };
                     let characteristic_name = match dimension {
                         DimensionKind::Diameter => "diameter",
                         DimensionKind::Radius => "radius",
+                        DimensionKind::SphericalDiameter => "spherical diameter",
+                        DimensionKind::SphericalRadius => "spherical radius",
                         _ => name,
                     };
                     let parameters = match dimension {
@@ -4743,11 +5036,48 @@ impl<'a> Builder<'a> {
                         _ => format!("{aspect},{}", string(characteristic_name)),
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
-                    if let Some(value) = nominal {
-                        let measure = self.emit_pmi_measure_representation_item(*value, name);
+                    let mut items = if let Some(DimensionTolerance::Limits { lower, upper }) =
+                        tolerance
+                    {
+                        let mut items = Vec::new();
+                        if let Some(value) = nominal {
+                            items.push(
+                                self.emit_pmi_measure_representation_item(*value, "nominal value"),
+                            );
+                        }
+                        items
+                            .push(self.emit_pmi_measure_representation_item(*lower, "lower limit"));
+                        items
+                            .push(self.emit_pmi_measure_representation_item(*upper, "upper limit"));
+                        items
+                    } else {
+                        nominal
+                            .map(|value| self.emit_pmi_measure_representation_item(*value, name))
+                            .into_iter()
+                            .collect()
+                    };
+                    let mut secondary_modifiers = Vec::new();
+                    for modifier in relation.modifiers() {
+                        let item = self.emitter.emit(
+                            "DESCRIPTIVE_REPRESENTATION_ITEM",
+                            &format!("'dimensional note',{}", string(modifier)),
+                        );
+                        if matches!(modifier.as_str(), "auxiliary" | "theoretical") {
+                            items.push(item);
+                        } else {
+                            secondary_modifiers.push(item);
+                        }
+                    }
+                    if !secondary_modifiers.is_empty() {
+                        items.push(self.emitter.emit(
+                            "COMPOUND_REPRESENTATION_ITEM",
+                            &format!("'dimensional note',{}", refs(&secondary_modifiers)),
+                        ));
+                    }
+                    if !items.is_empty() {
                         let representation = self.emitter.emit(
                             "SHAPE_DIMENSION_REPRESENTATION",
-                            &format!("'',({measure}),{context}"),
+                            &format!("'',{},{context}", refs(&items)),
                         );
                         self.emitter.emit(
                             "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION",
@@ -4798,7 +5128,17 @@ impl<'a> Builder<'a> {
                     defined_area_second_unit,
                     datum_system,
                     modifiers,
+                    constraints,
                 } => {
+                    if unsupported_all_around.contains(&annotation.id) {
+                        continue;
+                    }
+                    if constraints.zones.iter().flat_map(|zone| &zone.projections)
+                        .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
+                        .any(|target| !matches!(target, PmiTarget::ShapeAspect { source_id } if aspects.contains_key(source_id.as_str())))
+                    {
+                        continue;
+                    }
                     let kind_exact = !matches!(tolerance, GeometricToleranceKind::Other(value) if value != "geometric_tolerance");
                     let entity = match tolerance {
                         GeometricToleranceKind::Straightness => "STRAIGHTNESS_TOLERANCE",
@@ -4820,7 +5160,10 @@ impl<'a> Builder<'a> {
                     };
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
                     let modifier_values = Self::emit_geometric_tolerance_modifiers(modifiers);
-                    if !modifiers.is_empty() && modifier_values.is_none() {
+                    let has_modifiers = modifiers
+                        .iter()
+                        .any(|modifier| !modifier.eq_ignore_ascii_case("all_around"));
+                    if has_modifiers && modifier_values.is_none() {
                         continue;
                     }
                     let area_unit =
@@ -4838,9 +5181,11 @@ impl<'a> Builder<'a> {
                     }
                     let measure = self.emit_pmi_measure(magnitude.get());
                     let tolerance_ref = if datum_ref.is_none()
-                        && modifiers.is_empty()
+                        && !has_modifiers
                         && defined_unit.is_none()
                         && area_unit.is_none()
+                        && constraints.displacement.is_none()
+                        && constraints.maximum.is_none()
                     {
                         self.emitter.emit(
                             entity,
@@ -4882,11 +5227,71 @@ impl<'a> Builder<'a> {
                             parts
                                 .push(format!("GEOMETRIC_TOLERANCE_WITH_MODIFIERS(({modifiers}))"));
                         }
+                        if let Some(displacement) = constraints.displacement {
+                            let value = self.emit_pmi_measure(PmiValue::from_parts(
+                                displacement.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            parts.push(format!("UNEQUALLY_DISPOSED_GEOMETRIC_TOLERANCE({value})"));
+                        }
+                        if let Some(maximum) = constraints.maximum {
+                            let value = self.emit_pmi_measure(PmiValue::from_parts(
+                                maximum.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            parts.push(format!(
+                                "GEOMETRIC_TOLERANCE_WITH_MAXIMUM_TOLERANCE({value})"
+                            ));
+                        }
                         parts.push(format!("{entity}()"));
+                        parts.sort();
                         self.emitter
                             .emit_raw("GEOMETRIC_TOLERANCE", &format!("({})", parts.join(" ")))
                     };
                     annotation_refs.insert(annotation.id.clone(), tolerance_ref);
+                    for zone in &constraints.zones {
+                        let form = self
+                            .emitter
+                            .emit("TOLERANCE_ZONE_FORM", &string(zone.form.as_str()));
+                        let zone_ref = self.emitter.emit(
+                            "TOLERANCE_ZONE",
+                            &format!("'','',{pds},.F.,({tolerance_ref}),{form}"),
+                        );
+                        for projection in &zone.projections {
+                            let aspect = |target: &PmiTarget| match target {
+                                PmiTarget::ShapeAspect { source_id } => {
+                                    aspects.get(source_id.as_str()).copied()
+                                }
+                                _ => None,
+                            };
+                            let Some(end) = aspect(&projection.end) else {
+                                continue;
+                            };
+                            let boundaries = projection
+                                .boundaries
+                                .iter()
+                                .filter_map(aspect)
+                                .collect::<Vec<_>>();
+                            let length = self.emit_pmi_measure(PmiValue::from_parts(
+                                projection.length.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            let mut args =
+                                format!("{zone_ref},{},{end},{length}", refs(&boundaries));
+                            let entity = if let Some(offset) = projection.offset {
+                                let offset = self.emit_pmi_measure(PmiValue::from_parts(
+                                    offset.magnitude(),
+                                    PmiQuantity::Length,
+                                ));
+                                args.push(',');
+                                args.push_str(&offset.to_string());
+                                "PROJECTED_ZONE_DEFINITION_WITH_OFFSET"
+                            } else {
+                                "PROJECTED_ZONE_DEFINITION"
+                            };
+                            self.emitter.emit(entity, &args);
+                        }
+                    }
                     self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
                 }
                 PmiDefinition::Datum { .. }
@@ -5126,6 +5531,7 @@ impl<'a> Builder<'a> {
         ];
         source
             .iter()
+            .filter(|modifier| !modifier.eq_ignore_ascii_case("all_around"))
             .map(|modifier| {
                 let normalized = modifier.to_ascii_lowercase();
                 SUPPORTED
@@ -5133,7 +5539,7 @@ impl<'a> Builder<'a> {
                     .then(|| format!(".{}.", normalized.to_ascii_uppercase()))
             })
             .collect::<Option<Vec<_>>>()
-            .map(|modifiers| modifiers.join(","))
+            .and_then(|modifiers| (!modifiers.is_empty()).then(|| modifiers.join(",")))
     }
 
     fn emit_geometric_tolerance_area_unit(source: Option<&str>) -> Option<String> {
@@ -5192,7 +5598,7 @@ impl<'a> Builder<'a> {
         let mut referenced_coedges = BTreeSet::new();
         let mut referenced_edges = BTreeSet::new();
         let mut referenced_vertices = BTreeSet::new();
-        for region in &self.ir.model.regions {
+        for region in &self.ir.geometry.regions {
             for shell_id in &region.shells {
                 if !referenced_shells.insert(shell_id.as_str()) {
                     continue;
@@ -5203,23 +5609,16 @@ impl<'a> Builder<'a> {
                 for edge_id in shell.wire_edges() {
                     referenced_edges.insert(edge_id.as_str());
                     if let Some(edge) = self.edges.get(edge_id.as_str()).copied() {
-                        referenced_vertices.insert(edge.start.as_str());
-                        referenced_vertices.insert(edge.end.as_str());
+                        referenced_vertices
+                            .extend(edge.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
                     }
                 }
-                referenced_vertices.extend(
-                    shell
-                        .free_vertices()
-                        .iter()
-                        .map(cadmpeg_ir::ids::VertexId::as_str),
-                );
-                for face_id in shell.faces() {
-                    if !referenced_faces.insert(face_id.as_str()) {
+                referenced_vertices
+                    .extend(shell.free_vertices().map(cadmpeg_ir::ids::VertexId::as_str));
+                for face in self.children.shell_faces(&shell.id) {
+                    if !referenced_faces.insert(face.id.as_str()) {
                         continue;
                     }
-                    let Some(face) = self.faces.get(face_id.as_str()).copied() else {
-                        continue;
-                    };
                     for loop_id in &face.loops {
                         if !referenced_loops.insert(loop_id.as_str()) {
                             continue;
@@ -5241,8 +5640,8 @@ impl<'a> Builder<'a> {
                             };
                             referenced_edges.insert(coedge.edge.as_str());
                             if let Some(edge) = self.edges.get(coedge.edge.as_str()).copied() {
-                                referenced_vertices.insert(edge.start.as_str());
-                                referenced_vertices.insert(edge.end.as_str());
+                                referenced_vertices
+                                    .extend(edge.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
                             }
                         }
                     }
@@ -5251,49 +5650,49 @@ impl<'a> Builder<'a> {
         }
         let omitted_bodies = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| !self.body_shape_refs.contains_key(body.id.as_str()))
             .count();
         let omitted_shells = self
             .ir
-            .model
+            .geometry
             .shells
             .iter()
             .filter(|shell| !referenced_shells.contains(shell.id.as_str()))
             .count();
         let omitted_faces = self
             .ir
-            .model
+            .geometry
             .faces
             .iter()
             .filter(|face| !referenced_faces.contains(face.id.as_str()))
             .count();
         let omitted_loops = self
             .ir
-            .model
+            .geometry
             .loops
             .iter()
             .filter(|loop_| !referenced_loops.contains(loop_.id.as_str()))
             .count();
         let omitted_coedges = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| !referenced_coedges.contains(coedge.id.as_str()))
             .count();
         let omitted_edges = self
             .ir
-            .model
+            .geometry
             .edges
             .iter()
             .filter(|edge| !referenced_edges.contains(edge.id.as_str()))
             .count();
         let omitted_vertices = self
             .ir
-            .model
+            .geometry
             .vertices
             .iter()
             .filter(|vertex| !referenced_vertices.contains(vertex.id.as_str()))
@@ -5557,7 +5956,7 @@ impl<'a> Builder<'a> {
         }
         let missing_pcurve_count = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter()
             .flat_map(|coedge| &coedge.pcurves)
@@ -5573,7 +5972,7 @@ impl<'a> Builder<'a> {
         }
         let reduced_pcurve_count = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter()
             .flat_map(|coedge| &coedge.pcurves)
@@ -5582,6 +5981,7 @@ impl<'a> Builder<'a> {
                 pcurve.wrapper_reversed().is_some()
                     || pcurve.native_tail_flags().is_some()
                     || pcurve.parameter_range().is_some()
+                    || pcurve.uv_offset().is_some()
                     || pcurve.fit_tolerance().is_some()
             })
             .count();
@@ -5595,11 +5995,11 @@ impl<'a> Builder<'a> {
         }
         let pcurve_use_metadata_count = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter()
             .flat_map(|coedge| &coedge.pcurves)
-            .chain(self.ir.model.loops.iter().flat_map(Loop::vertex_pcurves))
+            .chain(self.ir.geometry.loops.iter().flat_map(Loop::vertex_pcurves))
             .filter(|use_| use_.isoparametric.is_some() || use_.parameter_range.is_some())
             .count();
         if pcurve_use_metadata_count > 0 {
@@ -5612,7 +6012,7 @@ impl<'a> Builder<'a> {
         }
         let coedge_use_curve_metadata_count = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| coedge.use_curve.is_some())
@@ -5639,7 +6039,7 @@ impl<'a> Builder<'a> {
                 "face tolerance",
                 census(
                     self.ir
-                        .model
+                        .geometry
                         .faces
                         .iter()
                         .filter_map(|face| face.tolerance)
@@ -5651,7 +6051,7 @@ impl<'a> Builder<'a> {
                 "edge tolerance",
                 census(
                     self.ir
-                        .model
+                        .geometry
                         .edges
                         .iter()
                         .filter_map(|edge| edge.tolerance)
@@ -5663,7 +6063,7 @@ impl<'a> Builder<'a> {
                 "vertex tolerance",
                 census(
                     self.ir
-                        .model
+                        .geometry
                         .vertices
                         .iter()
                         .filter_map(|vertex| vertex.tolerance)
@@ -5690,13 +6090,13 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.model.subds.is_empty() {
+        if !self.ir.geometry.subds.is_empty() {
             self.loss(
                 StepLossCode::SubdOmitted,
                 format!(
                     "{} subdivision surface(s) were omitted because this STEP writer \
                      does not encode SubD control cages",
-                    self.ir.model.subds.len()
+                    self.ir.geometry.subds.len()
                 ),
             );
         }
@@ -5919,7 +6319,7 @@ impl<'a> Builder<'a> {
         // codecs, which this writer cannot reproduce.
         let source_object_count = self
             .ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .filter(|surface| {
@@ -5931,7 +6331,7 @@ impl<'a> Builder<'a> {
             .count()
             + self
                 .ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .filter(|curve| {
@@ -5943,7 +6343,7 @@ impl<'a> Builder<'a> {
                 .count()
             + self
                 .ir
-                .model
+                .geometry
                 .subds
                 .iter()
                 .filter(|subd| {
@@ -5967,7 +6367,7 @@ impl<'a> Builder<'a> {
         let source_object_count = source_object_count
             + self
                 .ir
-                .model
+                .geometry
                 .points
                 .iter()
                 .filter(|point| {
@@ -6131,7 +6531,7 @@ impl<'a> Builder<'a> {
             .collect();
         let omitted_surface_count = self
             .ir
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .filter(|procedural| {
@@ -6146,7 +6546,7 @@ impl<'a> Builder<'a> {
             .count();
         let omitted_curve_count = self
             .ir
-            .model
+            .geometry
             .procedural_curves
             .iter()
             .filter(|procedural| {
@@ -6303,4 +6703,12 @@ fn helix_fit_failure(error: &cadmpeg_ir::eval::helix_nurbs::HelixNurbsError) -> 
         }
         cadmpeg_ir::eval::helix_nurbs::HelixNurbsError::Refused(_) => "with a refused evaluation",
     }
+}
+
+/// The one vertex an edge starts and ends at.
+fn single_vertex(edge: &Edge) -> Option<&cadmpeg_ir::ids::VertexId> {
+    edge.ends
+        .as_ref()
+        .filter(|ends| ends.start == ends.end)
+        .map(|ends| &ends.start)
 }

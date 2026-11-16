@@ -5,8 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::Model;
+use cadmpeg_ir::document::{Model, Topology};
 use cadmpeg_ir::ids::{BodyId, FaceId};
+use cadmpeg_ir::CadIr;
 
 use super::AppearanceDefinition;
 use crate::brep::attrib::NativeIdentity;
@@ -19,7 +20,7 @@ use crate::records::{FeatureHistory, FeatureInputLane};
 
 #[derive(Clone, Copy)]
 pub(crate) struct Inputs<'a> {
-    pub(crate) model: &'a Model,
+    pub(crate) ir: &'a CadIr,
     pub(crate) histories: &'a [FeatureHistory],
     pub(crate) lanes: &'a [FeatureInputLane],
     pub(crate) faces: &'a [NativeIdentity<FaceId>],
@@ -39,7 +40,6 @@ pub(crate) struct Plan {
     pub(crate) feature_sources: BTreeSet<FeatureSourceId>,
     pub(crate) unresolved: usize,
     pub(crate) unresolved_details: Vec<super::UnresolvedAppearanceBinding>,
-    pub(crate) blocked_display_rank: u8,
 }
 
 fn merge(choices: &mut BTreeMap<FaceId, Choice>, face: FaceId, incoming: Choice) {
@@ -145,20 +145,14 @@ fn selected_bodies(
         .map(|bodies| bodies.iter().cloned().collect()))
 }
 
-fn faces_of_bodies(model: &Model, bodies: &BTreeSet<BodyId>) -> BTreeSet<FaceId> {
-    let regions: BTreeSet<_> = model
-        .bodies
-        .iter()
-        .filter(|body| bodies.contains(&body.id))
-        .flat_map(|body| &body.regions)
-        .collect();
-    let shells: BTreeSet<_> = model
+fn faces_of_bodies(geometry: &Topology, bodies: &BTreeSet<BodyId>) -> BTreeSet<FaceId> {
+    let shells: BTreeSet<_> = geometry
         .regions
         .iter()
-        .filter(|region| regions.contains(&region.id))
+        .filter(|region| bodies.contains(&region.body))
         .flat_map(|region| &region.shells)
         .collect();
-    model
+    geometry
         .faces
         .iter()
         .filter(|face| shells.contains(&face.shell))
@@ -224,6 +218,7 @@ fn feature_faces(inputs: &Inputs<'_>, source: u32, timestamp: u32) -> Option<Fea
         return None;
     };
     let mut model_features = inputs
+        .ir
         .model
         .features
         .iter()
@@ -332,7 +327,7 @@ pub(crate) fn resolve(
     }) {
         let bytes = section.payload();
         let classes = crate::tessellation::class_intervals(bytes);
-        let Some(bodies) = selected_bodies(ctx, bytes, inputs.model)? else {
+        let Some(bodies) = selected_bodies(ctx, bytes, &inputs.ir.model)? else {
             plan.unresolved += 1;
             plan.unresolved_details
                 .push(super::UnresolvedAppearanceBinding {
@@ -347,26 +342,9 @@ pub(crate) fn resolve(
                     source_offset: 0,
                     packed_hex: None,
                 });
-            for class in &classes {
-                let rank = match class.name.as_str() {
-                    "moCompFeature_c" => 3,
-                    "moCompSolidBody_c" => 2,
-                    "moCompFace_c" => 4,
-                    name if name.ends_with("SurfIdRep_c") => 4,
-                    _ => 0,
-                };
-                let Some(last) = class.content.end().checked_sub(record::LEN - 1) else {
-                    continue;
-                };
-                if (class.content.start()..last)
-                    .any(|at| record_definition(section, bytes, at).is_some())
-                {
-                    plan.blocked_display_rank = plan.blocked_display_rank.max(rank);
-                }
-            }
             continue;
         };
-        let scope = faces_of_bodies(inputs.model, &bodies);
+        let scope = faces_of_bodies(&inputs.ir.geometry, &bodies);
         for (index, class) in classes.iter().enumerate() {
             if class.name == "moVisualProperties_c" {
                 let previous: Vec<_> = classes[..index]
@@ -449,7 +427,7 @@ pub(crate) fn resolve(
                                 .map(|identity| identity.target.clone())
                                 .collect();
                             (candidates.len() == 1)
-                                .then(|| faces_of_bodies(inputs.model, &candidates))
+                                .then(|| faces_of_bodies(&inputs.ir.geometry, &candidates))
                         }),
                     3 => {
                         let source = View::u32_le_at(bytes, at + record::FEATURE_SOURCE_ID);

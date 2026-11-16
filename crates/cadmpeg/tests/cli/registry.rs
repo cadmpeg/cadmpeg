@@ -11,6 +11,7 @@ use crate::support::{fixture, minimal_rhino_archive};
 ///
 /// Inventor, CATIA, Creo, NX, and SAT are read-only; a single column would
 /// have to lie about one half of every one of them.
+#[cfg(feature = "inventor")]
 #[test]
 fn formats_separates_reading_from_writing() {
     Command::cargo_bin("cadmpeg")
@@ -35,6 +36,7 @@ fn formats_separates_reading_from_writing() {
 /// `crates/cadmpeg-registry/docs/dialect-support.toml`, and the compiled `Encoder::targets()` catalog
 /// — so a row that reads correctly and writes correctly proves the join, not
 /// just the rendering.
+#[cfg(feature = "iges")]
 #[test]
 fn dialects_joins_identity_capability_and_the_compiled_catalog() {
     Command::cargo_bin("cadmpeg")
@@ -97,7 +99,7 @@ fn every_write_target_dialects_lists_is_a_to_value() {
     let listed = String::from_utf8(listing.stdout).unwrap();
 
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#listing").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),

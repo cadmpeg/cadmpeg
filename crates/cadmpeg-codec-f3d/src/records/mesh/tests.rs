@@ -43,6 +43,8 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 200
     });
     let body = serde_json::json!({
+        "scope_record_index":104, "scope_body_ordinal":0,
+        "body_words":{"form":"plain","body_word":0}, "body_words_offset":121,
         "body_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 575},
         "entry_name_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 62}, "guid_record": identity,
         "wrapper_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 40},
@@ -58,16 +60,17 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "entry_guid_reference_offset": 121, "guid_entry_reference_offset": 172,
         "scene_state_reference_offset": 133, "scene_auxiliary_reference_offset": 148
     });
+    let mut second_body = body.clone();
+    second_body["scope_body_ordinal"] = serde_json::json!(1);
     let base = serde_json::json!({
-        "id": "mesh-feature", "scope_record": identity, "scope_base_record": {"class_tag": "256", "record_index": 104, "byte_offset": 270, "frame_length": 30},
+        "id": "mesh-feature", "scopes": [{"scope_record": identity, "scope_base_record": {"class_tag": "256", "record_index": 104, "byte_offset": 270, "frame_length": 30}, "scope_owner_record_index":109, "scope_owner_reference_offset":289, "scope_body_count_offset":121}],
         "collection_record": {"class_tag": "256", "record_index": 104, "byte_offset": 0, "frame_length": 95}, "collection_base_record": {"class_tag": "256", "record_index": 104, "byte_offset": 38, "frame_length": 57},
-        "texture_table_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 29}, "body_count_offsets": [121, 21, 58],
+        "texture_table_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 29}, "body_count_offsets": [21, 58],
         "body_record_indices": [104, 104], "scope_body_reference_offsets": [125, 136],
         "collection_body_reference_offsets": [62, 73], "texture_table_reference_offset": 27,
         "collection_owner_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 273}, "collection_owner_reference_offset": 84,
-        "collection_owner_backlink_offset": 362, "scope_owner_record_index": 109,
-        "scope_owner_reference_offset": 289, "texture_flags_count_offset": 121,
-        "texture_filename_count_offset": 125, "bodies": [body, body], "textures": []
+        "collection_owner_backlink_offset": 362, "texture_flags_count_offset": 121,
+        "texture_filename_count_offset": 125, "bodies": [body, second_body], "textures": []
     });
     for count in 0..=2 {
         let mut value = base.clone();
@@ -126,9 +129,9 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         .to_string();
     assert!(error.contains("bodies count"));
     let mut short_scope = base.clone();
-    short_scope["scope_record"]["frame_length"] = serde_json::json!(76);
-    short_scope["scope_base_record"]["byte_offset"] = serde_json::json!(146);
-    short_scope["scope_owner_reference_offset"] = serde_json::json!(165);
+    short_scope["scopes"][0]["scope_record"]["frame_length"] = serde_json::json!(76);
+    short_scope["scopes"][0]["scope_base_record"]["byte_offset"] = serde_json::json!(146);
+    short_scope["scopes"][0]["scope_owner_reference_offset"] = serde_json::json!(165);
     let error = serde_json::from_value::<crate::records::mesh::DesignMeshFeature>(short_scope)
         .expect_err("body references overlap base")
         .to_string();
@@ -146,6 +149,8 @@ fn mesh_feature_wire_for_borrowed(count: usize, textures: bool) -> serde_json::V
         "class_tag":"256", "record_index":104, "byte_offset":100, "frame_length":200
     });
     let body = serde_json::json!({
+        "scope_record_index":104, "scope_body_ordinal":0,
+        "body_words":{"form":"plain","body_word":0}, "body_words_offset":121,
         "body_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":575},
         "entry_name_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":62},
         "guid_record":identity,"wrapper_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":40},
@@ -184,26 +189,71 @@ fn mesh_feature_wire_for_borrowed(count: usize, textures: bool) -> serde_json::V
     let body_indices = [104, 104];
     let scope_offsets = [125, 136];
     let collection_offsets = [62, 73];
-    let body_rows = [body.clone(), body];
+    let mut second_body = body.clone();
+    second_body["scope_body_ordinal"] = serde_json::json!(1);
+    let body_rows = [body, second_body];
     serde_json::json!({
-        "id":"f3d:native:mesh-feature#0", "scope_record":identity,
-        "scope_base_record":{"class_tag":"256","record_index":104,"byte_offset":270,"frame_length":30},
+        "id":"f3d:native:mesh-feature#0", "scopes":[{"scope_record":identity,
+        "scope_base_record":{"class_tag":"256","record_index":104,"byte_offset":270,"frame_length":30}, "scope_owner_record_index":109,"scope_owner_reference_offset":289,"scope_body_count_offset":121}],
         "collection_record":{"class_tag":"256","record_index":104,"byte_offset":0,"frame_length":73 + 11 * count},
         "collection_base_record":{"class_tag":"256","record_index":104,"byte_offset":38,"frame_length":35 + 11 * count},
         "texture_table_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":if textures {219} else {29}},
-        "body_count_offsets":[121,21,58],
+        "body_count_offsets":[21,58],
         "body_record_indices":&body_indices[..count],
         "scope_body_reference_offsets":&scope_offsets[..count],
         "collection_body_reference_offsets":&collection_offsets[..count],
         "texture_table_reference_offset":27,
         "collection_owner_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":273},
         "collection_owner_reference_offset":62 + 11 * count,
-        "collection_owner_backlink_offset":362,"scope_owner_record_index":109,
-        "scope_owner_reference_offset":289,
+        "collection_owner_backlink_offset":362,
         "texture_flags_count_offset":121,
         "texture_filename_count_offset":if textures {213} else {125},
         "bodies":&body_rows[..count], "textures":texture_rows
     })
+}
+
+#[test]
+fn mesh_feature_preserves_split_stream_descriptor() {
+    let mut wire = mesh_feature_wire_for_borrowed(1, false);
+    wire["bodies"][0]["split_streams"] = serde_json::json!([{"name":"v", "descriptor":"84a14403"}]);
+    let feature: super::DesignMeshFeature = serde_json::from_value(wire).unwrap();
+    assert_eq!(
+        serde_json::to_value(feature).unwrap()["bodies"][0]["split_streams"][0]["descriptor"],
+        "84a14403"
+    );
+}
+
+#[test]
+fn mesh_feature_preserves_history_stream_encoding() {
+    let mut wire = mesh_feature_wire_for_borrowed(1, false);
+    wire["bodies"][0]["history_streams"] =
+        serde_json::json!([{"name":"t", "encoding":"5d14", "decoded_length":1_048_577}]);
+    let feature: super::DesignMeshFeature = serde_json::from_value(wire).unwrap();
+    let output = serde_json::to_value(feature).unwrap();
+    assert_eq!(
+        output["bodies"][0]["history_streams"][0]["encoding"],
+        "5d14"
+    );
+    assert_eq!(
+        output["bodies"][0]["history_streams"][0]["decoded_length"],
+        1_048_577
+    );
+}
+
+#[test]
+fn mesh_feature_preserves_face_group_registry() {
+    let mut wire = mesh_feature_wire_for_borrowed(1, false);
+    wire["bodies"][0]["face_group_metadata"] = serde_json::json!({"declared_count":1, "entries":[{"key":0,"guid":"10000000-0000-4000-8000-000000000001"},{"key":2,"guid":"20000000-0000-4000-8000-000000000002"}]});
+    let feature: super::DesignMeshFeature = serde_json::from_value(wire).unwrap();
+    let output = serde_json::to_value(feature).unwrap();
+    assert_eq!(
+        output["bodies"][0]["face_group_metadata"]["declared_count"],
+        1
+    );
+    assert_eq!(
+        output["bodies"][0]["face_group_metadata"]["entries"][1]["key"],
+        2
+    );
 }
 
 #[test]
@@ -433,7 +483,8 @@ fn mesh_guid_record_requires_prefix_and_derives_join_offsets() {
             frame_length,
         )
         .unwrap();
-        let record = crate::records::mesh::DesignMeshGuid::new(identity, guid.clone()).unwrap();
+        let record =
+            crate::records::mesh::DesignMeshGuid::new(identity, guid.clone(), None).unwrap();
         assert_eq!(record.value_offset(), 236);
         assert_eq!(record.entry_reference_offset(), 272);
         assert_eq!(record.record().frame_length(), frame_length);
@@ -445,7 +496,25 @@ fn mesh_guid_record_requires_prefix_and_derives_join_offsets() {
         82,
     )
     .unwrap();
-    assert!(crate::records::mesh::DesignMeshGuid::new(short, guid).is_err());
+    assert!(crate::records::mesh::DesignMeshGuid::new(short, guid.clone(), None).is_err());
+    let identity = crate::records::mesh::DesignMeshRecordIdentity::new(
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        4,
+        200,
+        83,
+    )
+    .unwrap();
+    assert!(crate::records::mesh::DesignMeshGuid::new(
+        identity.clone(),
+        guid.clone(),
+        Some([0; 11])
+    )
+    .is_err());
+    let bytes = [
+        0x82, 0x8a, 0x25, 0xde, 0x59, 0x63, 0xf1, 0xc0, 0x00, 0x01, 0x00,
+    ];
+    let record = crate::records::mesh::DesignMeshGuid::new(identity, guid, Some(bytes)).unwrap();
+    assert_eq!(record.opaque_run(), Some(&bytes));
 }
 
 #[test]
@@ -522,8 +591,9 @@ fn mesh_placement_layout_requires_prefix_and_terminal_reference() {
     };
     for length in [575, 800] {
         let placement =
-            crate::records::mesh::DesignMeshPlacement::new(identity(length), transform).unwrap();
-        assert_eq!(placement.transform_offsets(), [142, 271]);
+            crate::records::mesh::DesignMeshPlacement::new(identity(length), transform, false)
+                .unwrap();
+        assert_eq!(placement.transform_offsets(), Some([142, 271]));
         assert_eq!(placement.scope_reference_offset(), 608);
         assert_eq!(placement.wrapper_reference_offset(), 619);
         assert_eq!(placement.owner_reference_offset(), 630);
@@ -531,7 +601,24 @@ fn mesh_placement_layout_requires_prefix_and_terminal_reference() {
         assert_eq!(placement.scene_node_reference_offset(), 653);
         assert_eq!(placement.collection_reference_offset(), 100 + length - 11);
     }
-    assert!(crate::records::mesh::DesignMeshPlacement::new(identity(574), transform).is_err());
+    assert!(
+        crate::records::mesh::DesignMeshPlacement::new(identity(574), transform, false).is_err()
+    );
+    for length in [579, 800] {
+        let placement =
+            crate::records::mesh::DesignMeshPlacement::new(identity(length), transform, true)
+                .unwrap();
+        assert_eq!(placement.transform_offsets(), Some([146, 275]));
+        assert_eq!(placement.scope_reference_offset(), 612);
+        assert_eq!(placement.wrapper_reference_offset(), 623);
+        assert_eq!(placement.owner_reference_offset(), 634);
+        assert_eq!(placement.guid_reference_offset(), 645);
+        assert_eq!(placement.scene_node_reference_offset(), 657);
+        assert_eq!(placement.collection_reference_offset(), 100 + length - 11);
+    }
+    assert!(
+        crate::records::mesh::DesignMeshPlacement::new(identity(578), transform, true).is_err()
+    );
 }
 
 #[test]
@@ -664,24 +751,50 @@ fn mesh_collection_owner_derives_fixed_and_terminal_backlinks() {
         (200, 189),
         (400, 389),
     ] {
-        let owner =
-            crate::records::mesh::DesignMeshCollectionOwner::new(identity(length), 100 + relative)
-                .unwrap();
+        let owner = crate::records::mesh::DesignMeshCollectionOwner::new(
+            identity(length),
+            100 + relative,
+            None,
+        )
+        .unwrap();
         assert_eq!(owner.backlink_offset(), 100 + relative);
         assert_eq!(owner.record(), &identity(length));
+        assert_eq!(owner.name_count(), None);
         assert_eq!(
             crate::records::mesh::DesignMeshCollectionOwner::new(
                 owner.record().clone(),
-                owner.backlink_offset()
+                owner.backlink_offset(),
+                owner.name_count(),
             )
             .unwrap(),
             owner
         );
     }
     for (length, offset) in [(250, 341), (272, 362), (400, 99), (400, 488)] {
-        assert!(
-            crate::records::mesh::DesignMeshCollectionOwner::new(identity(length), offset).is_err()
-        );
+        assert!(crate::records::mesh::DesignMeshCollectionOwner::new(
+            identity(length),
+            offset,
+            None
+        )
+        .is_err());
+    }
+    for (count, relative) in [(0, 266), (3, 272)] {
+        let owner = crate::records::mesh::DesignMeshCollectionOwner::new(
+            identity(400),
+            100 + relative,
+            Some(count),
+        )
+        .unwrap();
+        assert_eq!(owner.backlink_offset(), 100 + relative);
+        assert_eq!(owner.name_count(), Some(count));
+    }
+    for (length, count, offset) in [(400, 3, 362), (400, 3, 370), (282, 3, 372)] {
+        assert!(crate::records::mesh::DesignMeshCollectionOwner::new(
+            identity(length),
+            offset,
+            Some(count)
+        )
+        .is_err());
     }
 }
 
@@ -792,6 +905,7 @@ fn mesh_scope_constructs_only_same_index_closing_bases() {
         identity(104, 100, 200),
         identity(104, 270, 30),
         109,
+        None,
     )
     .expect("scope");
     assert_eq!(scope.base_record(), identity(104, 270, 30));
@@ -802,22 +916,76 @@ fn mesh_scope_constructs_only_same_index_closing_bases() {
         identity(104, 269, 30),
         identity(104, 270, 31),
     ] {
-        assert!(
-            crate::records::mesh::DesignMeshScope::new(identity(104, 100, 200), base, 109).is_err()
-        );
+        assert!(crate::records::mesh::DesignMeshScope::new(
+            identity(104, 100, 200),
+            base,
+            109,
+            None
+        )
+        .is_err());
     }
     assert!(crate::records::mesh::DesignMeshScope::new(
         identity(104, 100, 200),
         identity(104, 270, 30),
-        0
+        0,
+        None
     )
     .is_err());
     assert!(crate::records::mesh::DesignMeshScope::new(
         identity(104, 100, 54),
         identity(104, 124, 30),
-        109
+        109,
+        None
     )
     .is_err());
+}
+
+#[test]
+fn flagged_mesh_collection_extent_matches_its_entry_table() {
+    for (length, has_entries, valid) in [
+        (88, false, true),
+        (92, false, true),
+        (107, false, false),
+        (88, true, false),
+        (92, true, false),
+        (107, true, true),
+        (89, false, false),
+    ] {
+        let identity = |offset, size| {
+            super::DesignMeshRecordIdentity::new(
+                crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                104,
+                offset,
+                size,
+            )
+            .unwrap()
+        };
+        let entries = if has_entries {
+            vec![super::DesignMeshFlaggedEntry {
+                body_record_index: 105,
+                reference_offset: 181,
+                value: 1,
+                value_offset: 192,
+            }]
+        } else {
+            Vec::new()
+        };
+        let collection = super::DesignMeshCollection::new(
+            identity(100, length),
+            identity(142, length - 42),
+            1,
+            Some(super::DesignMeshFlaggedCollection {
+                word: 9,
+                word_offset: 125,
+                entries,
+            }),
+        );
+        assert_eq!(
+            collection.is_ok(),
+            valid,
+            "length={length}, entries={has_entries}"
+        );
+    }
 }
 
 #[test]
@@ -837,6 +1005,8 @@ fn mesh_collection_constructs_only_complete_nested_body_runs() {
         let collection = crate::records::mesh::DesignMeshCollection::new(
             identity(104, 100, length),
             identity(104, 138, length - 38),
+            u32::try_from(count).unwrap(),
+            None,
         )
         .expect("collection");
         assert_eq!(collection.base_record(), identity(104, 138, length - 38));
@@ -849,14 +1019,20 @@ fn mesh_collection_constructs_only_complete_nested_body_runs() {
         identity(104, 137, 57),
         identity(104, 138, 58),
     ] {
-        assert!(
-            crate::records::mesh::DesignMeshCollection::new(identity(104, 100, 95), base).is_err()
-        );
+        assert!(crate::records::mesh::DesignMeshCollection::new(
+            identity(104, 100, 95),
+            base,
+            2,
+            None
+        )
+        .is_err());
     }
     for length in [72, 74, 73 + 11 * (u64::from(u32::MAX) + 1)] {
         assert!(crate::records::mesh::DesignMeshCollection::new(
             identity(104, 100, length),
-            identity(104, 138, length - 38)
+            identity(104, 138, length - 38),
+            0,
+            None,
         )
         .is_err());
     }

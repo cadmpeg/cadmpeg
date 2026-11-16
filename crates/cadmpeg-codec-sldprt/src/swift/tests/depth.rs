@@ -211,16 +211,19 @@ fn swift_cycles_remain_absent_and_pattern_leaves_are_visited() {
     assert_eq!(index.caps(), WalkCaps::default());
     let leaf = entity("GdtCylinder");
     let index = FeatureIndex::new(BTreeMap::from([("leaf", &leaf)]));
+    let leaf_reference = reference("leaf", "GdtCylinder");
     let mut visits = Vec::new();
     assert_eq!(
         crate::swift::visit_expanded_feature_ids(
             &ctx,
-            "leaf",
+            &leaf_reference,
             &index,
             &mut WalkDepths::default(),
             MAX_DEPTH,
-            &mut |id| {
-                visits.push(id);
+            false,
+            &mut |reference, unresolved| {
+                assert!(!unresolved);
+                visits.push(reference.id.as_str());
                 Ok(true)
             }
         )

@@ -51,6 +51,7 @@
         "colliders": 0,
         "configurations": 0,
         "curves": 15,
+        "declared_measures": 0,
         "drawings": 0,
         "edges": 15,
         "faces": 8,
@@ -82,6 +83,7 @@
         "physical_materials": 0,
         "physics_scenes": 0,
         "pmi": 0,
+        "point_clouds": 0,
         "points": 10,
         "presentation_documents": 1,
         "presentation_layers": 0,
@@ -109,7 +111,7 @@
       }
     },
     "identity": {
-      "payload": "native",
+      "kind": "native",
       "target": "fcstd:schema-4"
     },
     "losses": [],
@@ -119,9 +121,9 @@
     ],
     "write_path": {
       "fidelity": {
-        "status": "not_consumed"
+        "kind": "not_consumed"
       },
-      "path": "patched"
+      "kind": "patched"
     }
   }
 }

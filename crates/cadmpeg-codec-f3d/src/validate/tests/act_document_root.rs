@@ -78,3 +78,26 @@ fn component_types_of_another_asset_folder_do_not_count() {
         308
     ));
 }
+
+#[test]
+fn inserted_document_roots_use_their_complete_asset_scope() {
+    let folders = [
+        "xref/role-a/reference-1/occurrence-0/Asset[Active]",
+        "xref/role-b/reference-2/occurrence-0/instance-parent/Asset[Active]",
+        "xref/role-b/reference-2/occurrence-0/instance-sibling/Asset[Active]",
+    ];
+    for folder in folders {
+        let stream = format!("f3d:{folder}/FusionACTSegmentType1/BulkStream.dat");
+        for other in folders.into_iter().filter(|other| *other != folder) {
+            let native = crate::native::F3dNative {
+                design_types: vec![
+                    component_type(folder, vec![203]),
+                    component_type(other, vec![3, 308]),
+                ],
+                ..Default::default()
+            };
+            assert!(act_link_is_document_root(&native, &stream, 203));
+            assert!(!act_link_is_document_root(&native, &stream, 308));
+        }
+    }
+}

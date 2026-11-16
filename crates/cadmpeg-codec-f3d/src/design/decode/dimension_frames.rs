@@ -7,10 +7,11 @@ use cadmpeg_core::decode::index_from_u32;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
-use crate::design::decode::meta::{decode_types, stream_types_by_entity};
+use crate::design::decode::meta::{decode_types, stream_types_by_class_tag};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
+use crate::layout::dimension_annotation_absent_metadata as annotation_absent_metadata;
 use crate::layout::dimension_annotation_genesis_metadata as annotation_genesis;
 use crate::layout::dimension_annotation_metadata_header as annotation_metadata;
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
@@ -262,6 +263,32 @@ pub(crate) fn decode_recipe_references(
     }
 }
 
+/// The operand start of each persistent name of a standard recipe prefix
+/// whose operands carry several names, keyed by the name's prefix offset.
+///
+/// The word at offset 18 counts the operands. Each operand opens with a word
+/// counting its names; the standard frame reads that word as the first name's
+/// selector. A prefix whose operands each carry one name, or whose counted
+/// operands do not end exactly at the reference suffix, has no such starts.
+fn counted_operand_starts(prefix: &[u8]) -> Option<HashMap<usize, usize>> {
+    let operand_count = View::u32_le_at(prefix, 18).map(index_from_u32)?;
+    let mut starts = HashMap::new();
+    let mut names_total = 0usize;
+    let mut at = 22usize;
+    for _ in 0..operand_count {
+        let names = View::u32_le_at(prefix, at)
+            .map(index_from_u32)
+            .filter(|names| *names != 0 && *names <= prefix.len() / 17)?;
+        let start = at;
+        for _ in 0..names {
+            starts.insert(at, start);
+            at = scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Either)?.next;
+        }
+        names_total = names_total.checked_add(names)?;
+    }
+    (names_total > operand_count && recipe_reference_suffix(prefix.get(at..)?)).then_some(starts)
+}
+
 fn decode_standard_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
@@ -269,6 +296,9 @@ fn decode_standard_recipe_references(
     if View::u32_le_at(prefix, 22).is_none_or(|value| value == 0) {
         return Vec::new();
     }
+    // A recipe operand may carry several persistent names; each keeps the
+    // operand's offset so the names share the program's operand ordinal.
+    let operand_starts = counted_operand_starts(prefix);
     let mut references = Vec::new();
     let mut at = 22usize;
     while prefix
@@ -279,6 +309,21 @@ fn decode_standard_recipe_references(
         if recipe_reference_suffix(&prefix[at..]) {
             return references;
         }
+        let operand_offset = match &operand_starts {
+            Some(starts) => {
+                let Some(start) = starts.get(&at) else {
+                    return Vec::new();
+                };
+                let Some(offset) = u64::try_from(*start)
+                    .ok()
+                    .and_then(|start| prefix_offset.checked_add(start))
+                else {
+                    return Vec::new();
+                };
+                Some(offset)
+            }
+            None => None,
+        };
         let Some(parsed) = decode_recipe_reference_operand(
             prefix,
             prefix_offset,
@@ -291,7 +336,10 @@ fn decode_standard_recipe_references(
             references: operand_references,
             next,
         } = parsed;
-        references.extend(operand_references);
+        references.extend(operand_references.into_iter().map(|mut reference| {
+            reference.operand_offset = operand_offset;
+            reference
+        }));
         at = next;
     }
     if prefix.get(at..) == Some(&[0, 0, 0, 0]) {
@@ -546,73 +594,98 @@ enum RecipeReferenceTokenFrame {
 struct ScannedRecipeReferenceOperand<'a> {
     selector: u32,
     token: &'a str,
+    token_integer: u32,
     token_at: usize,
     references_at: usize,
     reference_count: usize,
     next: usize,
 }
 
-fn scan_recipe_reference_operand(
-    prefix: &[u8],
+fn scan_recipe_reference_operand<'a>(
+    prefix: &'a [u8],
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
-) -> Option<ScannedRecipeReferenceOperand<'_>> {
+) -> Option<ScannedRecipeReferenceOperand<'a>> {
     let selector = View::u32_le_at(prefix, at).filter(|value| *value != 0)?;
     let token_encoding_at = at.checked_add(4)?;
-    let length_prefixed = (!matches!(token_frame, RecipeReferenceTokenFrame::Packed))
-        .then(|| {
+    let finish = |token: &'a str, token_at: usize, integer_at: usize| {
+        let token_integer = View::u32_le_at(prefix, integer_at)?;
+        let count_at = integer_at.checked_add(4)?;
+        let references_at = count_at.checked_add(4)?;
+        let reference_count = cadmpeg_core::decode::bounded_len(
+            u64::from(View::u32_le_at(prefix, count_at).filter(|value| *value != 0)?),
+            4,
+            prefix.len().checked_sub(references_at)?,
+        )?;
+        let references_end = references_at.checked_add(reference_count.checked_mul(4)?)?;
+        let next = match token_frame {
+            RecipeReferenceTokenFrame::Packed => references_end,
+            RecipeReferenceTokenFrame::Either | RecipeReferenceTokenFrame::LengthPrefixed => {
+                if View::u32_le_at(prefix, references_end) != Some(0) {
+                    return None;
+                }
+                references_end.checked_add(4)?
+            }
+        };
+        for ordinal in 0..reference_count {
+            let reference_at = references_at.checked_add(ordinal.checked_mul(4)?)?;
+            View::i32_le_at(prefix, reference_at).filter(|value| *value != 0)?;
+        }
+        Some(ScannedRecipeReferenceOperand {
+            selector,
+            token,
+            token_integer,
+            token_at,
+            references_at,
+            reference_count,
+            next,
+        })
+    };
+    if !matches!(token_frame, RecipeReferenceTokenFrame::Packed) {
+        if let Some((token, integer_at)) =
             lp_ascii_filtered_view(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic)
-                .and_then(|(token, marker_at)| {
-                    (is_decimal_integer_token(token.as_bytes())
-                        && View::u32_le_at(prefix, marker_at) == Some(0))
-                    .then_some((token, token_encoding_at + 4, marker_at + 4))
-                })
-        })
-        .flatten();
-    let packed = (!matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed))
-        .then(|| {
-            (1usize..=8).find_map(|length| {
-                let token =
-                    prefix.get(token_encoding_at..token_encoding_at.checked_add(length)?)?;
-                let zero_at = token_encoding_at.checked_add(length)?;
-                (is_decimal_integer_token(token)
-                    && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
-                .then(|| std::str::from_utf8(token).ok())
-                .flatten()
-                .map(|token| (token, token_encoding_at, zero_at + 4))
-            })
-        })
-        .flatten();
-    let (token, token_at, marker_at) = length_prefixed.or(packed)?;
-    let reference_count =
-        usize::try_from(View::u32_le_at(prefix, marker_at).filter(|value| *value != 0)?).ok()?;
-    let reference_bytes = reference_count.checked_mul(4)?;
-    let references_at = marker_at.checked_add(4)?;
-    if reference_bytes > prefix.len().checked_sub(references_at)? {
+                .filter(|(token, _)| is_decimal_integer_token(token.as_bytes()))
+        {
+            if let Some(operand) = finish(token, token_encoding_at + 4, integer_at) {
+                return Some(operand);
+            }
+        }
+    }
+    if matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed) {
         return None;
     }
-    let references_end = references_at.checked_add(reference_bytes)?;
-    let next = match token_frame {
-        RecipeReferenceTokenFrame::Packed => references_end,
-        RecipeReferenceTokenFrame::Either | RecipeReferenceTokenFrame::LengthPrefixed => {
-            if View::u32_le_at(prefix, references_end) != Some(0) {
-                return None;
-            }
-            references_end.checked_add(4)?
+    let mut candidate = None;
+    let mut ambiguous = false;
+    for length in 1usize..=8 {
+        let integer_at = token_encoding_at.checked_add(length)?;
+        let token = prefix.get(token_encoding_at..integer_at)?;
+        if token == b"-" {
+            continue;
         }
-    };
-    for reference_ordinal in 0..reference_count {
-        let design_reference_at = references_at.checked_add(reference_ordinal.checked_mul(4)?)?;
-        View::i32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+        if !is_decimal_integer_token(token) {
+            break;
+        }
+        let Some(operand) = finish(
+            std::str::from_utf8(token).ok()?,
+            token_encoding_at,
+            integer_at,
+        ) else {
+            continue;
+        };
+        if operand.token_integer == 0 {
+            return Some(operand);
+        }
+        if matches!(token_frame, RecipeReferenceTokenFrame::Packed) {
+            continue;
+        }
+        ambiguous |= candidate.is_some();
+        candidate = Some(operand);
     }
-    Some(ScannedRecipeReferenceOperand {
-        selector,
-        token,
-        token_at,
-        references_at,
-        reference_count,
-        next,
-    })
+    if ambiguous {
+        None
+    } else {
+        candidate
+    }
 }
 
 struct DecodedRecipeReferenceOperand {
@@ -643,6 +716,7 @@ fn decode_recipe_reference_operand(
             selector: i64::from(scanned.selector),
             selector_offset,
             token: token_copy,
+            token_integer: scanned.token_integer,
             token_offset,
             design_reference: i64::from(design_reference),
             design_reference_offset,
@@ -650,6 +724,7 @@ fn decode_recipe_reference_operand(
             candidate_edges: Vec::new(),
             alternate_selector_faces: Vec::new(),
             alternate_selector_edges: Vec::new(),
+            operand_offset: None,
         };
         references.push(reference);
     }
@@ -719,6 +794,7 @@ pub(crate) fn bind_recipe_reference_candidates(
     reference.alternate_selector_edges.clear();
     for tag in tags.iter().filter(|tag| {
         tag.token.as_str() == reference.token
+            && tag.token_integer == reference.token_integer
             && tag.design_references.contains(&reference.design_reference)
             && owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
     }) {
@@ -1426,12 +1502,16 @@ fn parse_dimension_annotation_frame(
         });
         position = position.checked_add(15)?;
     }
-    if bytes.get(position + annotation_metadata::PRESENT)
-        != Some(&annotation_metadata::PRESENT_VALUE)
-    {
-        return None;
-    }
-    let (entity_genesis, annotation_byte_offset) =
+    let metadata_absent = bytes.get(position + annotation_absent_metadata::PRESENT)
+        == Some(&annotation_absent_metadata::PRESENT_VALUE);
+    let (entity_genesis, annotation_byte_offset) = if metadata_absent {
+        (None, position.checked_add(annotation_absent_metadata::LEN)?)
+    } else {
+        if bytes.get(position + annotation_metadata::PRESENT)
+            != Some(&annotation_metadata::PRESENT_VALUE)
+        {
+            return None;
+        }
         match View::u32_le_at(bytes, position + annotation_metadata::ENTRY_COUNT)? {
             0 => (None, position.checked_add(annotation_metadata::LEN)?),
             annotation_genesis::ENTRY_COUNT_VALUE => {
@@ -1455,7 +1535,8 @@ fn parse_dimension_annotation_frame(
                 )
             }
             _ => return None,
-        };
+        }
+    };
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, paired_search)?;
@@ -1574,6 +1655,7 @@ fn parse_dimension_annotation_frame(
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         operands,
         entity_genesis,
+        metadata_absent,
         annotation_bytes,
         annotation_byte_offset: u64_from_index(annotation_byte_offset),
         governing_owner_record_index,
@@ -1597,6 +1679,14 @@ const DIMENSION_PRESENTATION_V3_TYPE_GUID: &str = "8C780195-72C0-4a56-A911-E43AB
 /// Stable `EntityTracking` type used by a dimension presentation's paired
 /// header.
 const DIMENSION_PRESENTATION_PAIR_TYPE_GUID: &str = "90055C05-546C-4EE7-B3C9-3DD922AD0C9C";
+/// Stable `Dimension` type used by a current dimension presentation's paired
+/// header.
+const DIMENSION_PRESENTATION_V3_PAIR_TYPE_GUID: &str = "855F0A64-6286-4FFC-B918-BC394F600107";
+
+fn is_dimension_presentation_pair_type(type_guid: &str) -> bool {
+    type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID)
+        || type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_V3_PAIR_TYPE_GUID)
+}
 
 fn is_dimension_presentation_type(type_guid: &str) -> bool {
     type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_TYPE_GUID)
@@ -1639,20 +1729,20 @@ pub(crate) fn decode_dimension_presentation_frames(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let stream = crate::ids::native_scope(&entry.name);
-        let stream_types = stream_types_by_entity(&types, &entry.name);
+        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let mut presentation_classes = HashMap::new();
-        for (class_tag, (type_guid, _version)) in &stream_types {
-            if is_dimension_presentation_type(type_guid) {
-                presentation_classes.insert(*class_tag, *type_guid);
+        for (class_tag, design_type) in &stream_types {
+            if is_dimension_presentation_type(design_type.type_guid.as_str()) {
+                presentation_classes.insert(*class_tag, design_type.type_guid.as_str());
             }
         }
         if presentation_classes.is_empty() {
             continue;
         }
         let mut paired_classes = HashSet::new();
-        for (class_tag, (type_guid, _version)) in &stream_types {
-            if type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID) {
-                paired_classes.insert(*class_tag);
+        for (class_tag, design_type) in &stream_types {
+            if is_dimension_presentation_pair_type(design_type.type_guid.as_str()) {
+                paired_classes.insert(u64::from(*class_tag));
             }
         }
         if paired_classes.is_empty() {
@@ -1672,9 +1762,7 @@ pub(crate) fn decode_dimension_presentation_frames(
         let bytes = scan.entry_bytes(&entry.name)?;
         for header in indexed_record_offsets(bytes) {
             let start = header.offset;
-            let Some(primary_type_guid) =
-                presentation_classes.get(&u64::from(header.class_tag.code()))
-            else {
+            let Some(primary_type_guid) = presentation_classes.get(&header.class_tag.code()) else {
                 continue;
             };
             let Some(parsed) = parse_dimension_presentation_frame(

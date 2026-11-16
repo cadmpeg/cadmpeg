@@ -8,10 +8,14 @@
 
 mod assembly;
 mod assembly_variable_reference;
+mod chamfer_sets;
 mod combine;
 mod component_pattern;
 mod copy_paste_bodies;
 mod derived_instance;
+mod draft_flags;
+mod extended_thread;
+mod fillet_sets;
 mod fixed_extrude_lanes;
 mod fixed_kind_operations;
 mod fixed_kind_tail;
@@ -21,16 +25,39 @@ mod history_admission;
 mod legacy_class_397;
 mod legacy_frames;
 mod legacy_work_planes;
+mod move_reference_forms;
 mod move_transform;
+mod named_delete_face;
 mod named_empty_label;
 mod named_variable_tail;
 mod offset_faces;
+mod point_direction_work_axes;
+mod referenced_revolve;
 mod remove_body_named_tail;
 mod scale;
+mod shell_wall_slots;
+mod surface_offset_groups;
 mod surfaces;
 mod thicken;
 mod thread;
+mod to_object_revolve;
 mod typed_references;
+mod unstitch;
 
 mod fixed_kind_path_operations;
 mod fixed_kind_tail_operations;
+
+fn move_transform_type(guid: &str, version: u32) -> crate::records::entity_header::SegmentType {
+    crate::records::entity_header::SegmentType::try_new(
+        "f3d:Design/MetaStream.dat:design-type#0".into(),
+        crate::design::test_support::design_type(guid, None, version, "Fusion", vec![]),
+    )
+    .unwrap()
+}
+
+fn move_transform_types<'a>(
+    row: &'a crate::records::entity_header::SegmentType,
+    tags: &[u32],
+) -> std::collections::HashMap<u32, &'a crate::records::entity_header::SegmentType> {
+    tags.iter().map(|&tag| (tag, row)).collect()
+}

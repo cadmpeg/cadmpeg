@@ -52,7 +52,7 @@ use crate::test_support::smbh_geometry_test::{
 use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::test_support::smbh_pcurves_test::{
     synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
-    synthetic_geometry_with_ref_pcurve_smbh,
+    synthetic_geometry_with_ref_pcurve_smbh, with_pcurve_uv_offset,
 };
 use crate::test_support::smbh_surfaces_test::{
     synthetic_comp_spl_sur_smbh, synthetic_cyl_spl_sur_smbh, synthetic_exact_spl_sur_smbh,
@@ -80,6 +80,12 @@ use cadmpeg_core::CodecError;
 #[allow(clippy::vec_init_then_push)]
 fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     vec![
+        (
+            "display_scene_poses",
+            crate::test_support::scene::archive(&crate::test_support::scene::override_row(&[
+                3, 17,
+            ])),
+        ),
         ("topology_base", f3d_with_smbh(&synthetic_geometry_smbh())),
         ("wire_body", f3d_with_smbh(&synthetic_wire_body_smbh())),
         (
@@ -159,15 +165,24 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ),
         (
             "pcurve_inline",
-            f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh()),
+            f3d_with_smbh(&with_pcurve_uv_offset(
+                synthetic_geometry_with_pcurve_smbh(),
+                [0.0, 0.0],
+            )),
         ),
         (
             "pcurve_ref",
-            f3d_with_smbh(&synthetic_geometry_with_ref_pcurve_smbh()),
+            f3d_with_smbh(&with_pcurve_uv_offset(
+                synthetic_geometry_with_ref_pcurve_smbh(),
+                [0.0, 0.0],
+            )),
         ),
         (
             "pcurve_rational",
-            f3d_with_smbh(&synthetic_geometry_with_rational_pcurve_smbh()),
+            f3d_with_smbh(&with_pcurve_uv_offset(
+                synthetic_geometry_with_rational_pcurve_smbh(),
+                [0.0, 0.0],
+            )),
         ),
         (
             "exact_curve",
@@ -311,11 +326,49 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             f3d_with_configuration(
                 &synthetic_geometry_smbh(),
                 "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg",
-                br#"{"configurations":{"wide":{"parameters":{"width":"25 mm"},"suppressed":["slot"]}},"active":"wide"}"#,
+                &golden_configuration_document(),
             ),
         ),
         ("generated_unit_cube", encoder_generated_unit_cube()),
     ]
+}
+
+/// A table whose parameter and feature columns name records that the
+/// geometry-only fixture lacks, beside a property column.
+fn golden_configuration_document() -> Vec<u8> {
+    use crate::test_support::configuration_table::{
+        bool_cell, expression_cell, object_target, property_target, string_cell, table_document,
+    };
+    serde_json::to_vec(&table_document(
+        "1",
+        &[
+            ("P", property_target("Part Number")),
+            ("W", object_target("71", "UserParameterValue")),
+            ("S", object_target("40", "DcFeature")),
+        ],
+        &[
+            (
+                "wide",
+                "Wide",
+                vec![
+                    ("P", string_cell("W-1")),
+                    ("W", expression_cell("25 mm", 2.5)),
+                    ("S", bool_cell(false)),
+                ],
+            ),
+            (
+                "narrow",
+                "Narrow",
+                vec![
+                    ("P", string_cell("N-1")),
+                    ("W", expression_cell("10 mm", 1.0)),
+                    ("S", bool_cell(true)),
+                ],
+            ),
+        ],
+        &["narrow", "wide"],
+    ))
+    .unwrap()
 }
 
 fn encoder_generated_unit_cube() -> Vec<u8> {
@@ -456,12 +509,12 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
 
 fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
-    if result.ir().model.points.is_empty() {
+    if result.ir().geometry.points.is_empty() {
         return None;
     }
     let mut edited = result.ir().clone();
-    let moved = edited.model.points[0].position().get();
-    edited.model.points[0].set_position(
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
@@ -822,14 +875,16 @@ const MUTATION_MM: f64 = 1.0;
 /// Fixtures whose measures the mutation lane compares across the patch
 /// writer: every fixture with a point except `design_copy_paste`, whose
 /// occurrences place its bodies.
-const MEASURED_FIXTURE_FLOOR: usize = 59;
+const MEASURED_FIXTURE_FLOOR: usize = 60;
 
 /// Fixtures with no point for the mutation lane to move.
 const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 
-/// Serializes the neutral model plus unit and tolerance declarations.
+/// Serializes the neutral geometry and model plus unit and tolerance
+/// declarations.
 fn neutral_document(ir: &CadIr) -> String {
     snapshot_text(&serde_json::json!({
+        "geometry": serde_json::to_value(&ir.geometry).expect("serialize geometry"),
         "model": serde_json::to_value(&ir.model).expect("serialize model"),
         "units": { "length": "millimeter" },
         "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
@@ -850,7 +905,7 @@ fn an_edit_survives_the_patch_writer() {
             &input,
             ExpectedWritePath::Patched,
             |ir| {
-                let Some(point) = ir.model.points.first_mut() else {
+                let Some(point) = ir.geometry.points.first_mut() else {
                     return false;
                 };
                 let moved = point.position().get();
@@ -869,8 +924,8 @@ fn an_edit_survives_the_patch_writer() {
                     let round_trip = decode_result(bytes).unwrap_or_else(|error| {
                         panic!("fixture `{name}`: patched output does not decode: {error}")
                     });
-                    let moved = edited.model.points[0].position().get().x;
-                    let returned = round_trip.ir().model.points[0].position().get().x;
+                    let moved = edited.geometry.points[0].position().get().x;
+                    let returned = round_trip.ir().geometry.points[0].position().get().x;
                     assert!(
                         (returned - moved).abs() <= 1.0e-9,
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \
@@ -962,7 +1017,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
 
     let mut with_inner_count = document;
     let mut touched = 0usize;
-    for surface in with_inner_count["model"]["procedural_surfaces"]
+    for surface in with_inner_count["geometry"]["procedural_surfaces"]
         .as_array_mut()
         .expect("procedural surfaces")
     {
@@ -979,8 +1034,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         .to_string();
     assert!(error.contains("inner_count"), "{error}");
 
-    let face_maker_object = serde_json::json!({
-        "definition": "extrude",
+    let face_maker_object = serde_json::json!({"kind": "extrude", "value": {
         "direction": {"kind": "explicit", "source": {"kind": "custom"},
                       "vector": {"x": 0.0, "y": 0.0, "z": 1.0}},
         "extent": {"kind": "symmetric",
@@ -991,7 +1045,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         "profile": {"kind": "native", "value": "fcstd:native:property#X:Base"},
         "solid": true,
         "start": {"kind": "profile_plane"},
-    });
+    }});
     assert!(serde_json::from_value::<FeatureDefinition>(face_maker_object.clone()).is_err());
     let error = serde_json::from_value::<cadmpeg_ir::features::FeatureOperation>(face_maker_object)
         .expect_err("the face maker is its class")
@@ -1039,7 +1093,7 @@ fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
 
     let mut restated = document;
     let mut touched = 0usize;
-    for surface in restated["model"]["procedural_surfaces"]
+    for surface in restated["geometry"]["procedural_surfaces"]
         .as_array_mut()
         .expect("procedural surfaces")
     {

@@ -84,19 +84,7 @@ impl<'a> Cursor<'a> {
         n.is_finite().then_some(n)
     }
     fn reference(&mut self) -> Option<u32> {
-        let r = self.short()?;
-        if r == 0 {
-            return None;
-        }
-        if r <= i16::MAX.cast_unsigned() {
-            return Some(u32::from(r));
-        }
-        let magnitude = u32::from((!r).checked_add(1)?);
-        let quotient = u32::from(self.short()?);
-        if quotient == 0 || quotient > 32767 || magnitude > 32767 {
-            return None;
-        }
-        quotient.checked_mul(32767)?.checked_add(magnitude)
+        cadmpeg_parasolid::pointer::read_at(self.bytes, &mut self.at).filter(|value| *value != 0)
     }
     fn string(&mut self) -> Option<&'a str> {
         let count = usize::from(self.byte()?);

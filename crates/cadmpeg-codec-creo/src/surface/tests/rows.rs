@@ -16,6 +16,7 @@ use crate::surface::cross_section_rows;
 use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
 use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
+use crate::surface::paired_short_second_coordinate;
 use crate::surface::plane_envelopes_for_rows;
 use crate::surface::positional_body_start;
 use crate::surface::prototype_count;
@@ -1012,6 +1013,60 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
 }
 
 #[test]
+fn short_second_coordinate_takes_ieee_byte_one_from_its_unique_frame_partner() {
+    const PARTNER_BYTE_1: u8 = 0xb9;
+    const SHARED_TAIL: [u8; 6] = [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
+    const SHORT_OPENER_OFFSET: usize = 8;
+    let frame_body = [
+        &[0x00, 0x0c, 0x9a][..],
+        &[0xd2, 0x21, 0x43, 0x65, 0x87, 0xa9, 0xcb],
+        &[0x2d, 0x1c, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60],
+        &[0xbc, 0x13, 0x57, 0x9b, 0xdf, 0x24, 0x68],
+        &[0xd0, 0x31, 0x75, 0xb9, 0xfd, 0x42, 0x86],
+        &[0x2d, 0x1d, 0x70, 0x60, 0x50, 0x40, 0x30, 0x20],
+        &[0x41, PARTNER_BYTE_1],
+        &SHARED_TAIL,
+    ]
+    .concat();
+    let (frame, _) = decode_tabulated_cylinder_frame(&frame_body, &scalar::ScalarCache::default())
+        .expect("complete tabulated-cylinder frame");
+    let point = [
+        &[0x2d, 0x3a, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x4d][..],
+        &SHARED_TAIL,
+    ]
+    .concat();
+    let mut paired_bytes = [0x3f, PARTNER_BYTE_1, 0, 0, 0, 0, 0, 0];
+    paired_bytes[2..].copy_from_slice(&SHARED_TAIL);
+    let paired = f64::from_be_bytes(paired_bytes);
+
+    assert_eq!(
+        paired_short_second_coordinate(&point, SHORT_OPENER_OFFSET, &frame),
+        Some((paired, point.len()))
+    );
+    let mut other_tail = point.clone();
+    *other_tail.last_mut().expect("tail byte") ^= 1;
+    assert_eq!(
+        paired_short_second_coordinate(&other_tail, SHORT_OPENER_OFFSET, &frame),
+        None
+    );
+    let mut unpaired_opener = point.clone();
+    unpaired_opener[SHORT_OPENER_OFFSET] = 0x4c;
+    assert_eq!(
+        paired_short_second_coordinate(&unpaired_opener, SHORT_OPENER_OFFSET, &frame),
+        None
+    );
+    let mut values = frame.values().get();
+    values[2] = paired;
+    let mut prefixes = frame.prefixes();
+    prefixes[2] = 0x41;
+    let repeated = TabulatedCylinderFrame::new(values, prefixes).expect("finite frame");
+    assert_eq!(
+        paired_short_second_coordinate(&point, SHORT_OPENER_OFFSET, &repeated),
+        None
+    );
+}
+
+#[test]
 fn tabulated_cylinder_zero_sweep_bound_does_not_consume_the_next_slot() {
     let body = [
         0x18, 0xe4, 0x0f, 0x00, 0x0c, 0x9a, 0x46, 0x15, 0x64, 0x7b, 0x0d, 0xc3, 0x21, 0xe2, 0x42,
@@ -1274,6 +1329,55 @@ fn a_refused_scalar_body_names_the_record_the_field_and_the_slot() {
         SurfaceNamedValue::ScalarArray(_)
     ));
     assert!(refusals.take_records().is_empty());
+}
+
+#[test]
+fn prototype_envelopes_use_the_frame_slot_lane_with_angular_literals() {
+    let cache = scalar::ScalarCache::default();
+    let family = SurfacePrototypeFamily::Cylinder;
+    let record = "creo surface prototype cylinder at offset 96";
+    let envelope = |body: &[u8]| {
+        let mut refusals = crate::lane_refusal::LaneRefusals::new();
+        let value =
+            super::named_surface_value(&family, "envlp", body, &cache, &record, &mut refusals);
+        assert!(refusals.take_records().is_empty(), "{body:02x?}");
+        let SurfaceNamedValue::ScalarArray(array) = value else {
+            panic!("envelope {body:02x?} decodes as scalars");
+        };
+        array.values().to_vec()
+    };
+    let pi = std::f64::consts::PI;
+
+    // `18` zero, `48 2e 00` and `2f 2e 00` lattice values, `11` pi.
+    assert_eq!(
+        envelope(&[0xf9, 0x02, 0x02, 0x18, 0x48, 0x2e, 0x00, 0x11, 0x2f, 0x2e, 0x00]),
+        [Some(0.0), Some(-15.0), Some(pi), Some(15.0)]
+    );
+    // `00 12 1a` replaces the low byte of pi/2; `01 13 28 a8` the two low
+    // bytes of 2*pi.
+    let mut half_pi = std::f64::consts::FRAC_PI_2.to_be_bytes();
+    half_pi[7] = 0x1a;
+    let mut tau = std::f64::consts::TAU.to_be_bytes();
+    tau[6..].copy_from_slice(&[0x28, 0xa8]);
+    assert_eq!(
+        envelope(&[
+            0xf9, 0x02, 0x02, 0x00, 0x12, 0x1a, 0x18, 0x01, 0x13, 0x28, 0xa8, 0x2f, 0x2e, 0x00
+        ]),
+        [
+            Some(f64::from_be_bytes(half_pi)),
+            Some(0.0),
+            Some(f64::from_be_bytes(tau)),
+            Some(15.0)
+        ]
+    );
+    // `e4` repeats the preceding slot, and `46` is a negative lattice value.
+    assert_eq!(
+        envelope(&[
+            0xf9, 0x02, 0x02, 0x46, 0x2e, 0, 0, 0, 0, 0, 0, 0x48, 0x2e, 0x00, 0x2f, 0x2e, 0x00,
+            0xe4
+        ]),
+        [Some(-15.0), Some(-15.0), Some(15.0), Some(15.0)]
+    );
 }
 
 /// The bounded spline scalar body obeys the rules of the bounded scalar body

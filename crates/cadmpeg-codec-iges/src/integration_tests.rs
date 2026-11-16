@@ -4,7 +4,9 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use super::IgesCodec;
+use super::{IgesCodec, IgesVersion};
+use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -50,6 +52,7 @@ use crate::test_support::test_surface_fixtures::{
 };
 
 mod measured_geometry;
+mod truncated_fixed_ascii;
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -76,17 +79,17 @@ enum ExpectedArena {
 
 fn arena_count(result: &EditableDecodeResult, arena: ExpectedArena) -> usize {
     match arena {
-        ExpectedArena::ModelBodies => result.ir().model.bodies.len(),
-        ExpectedArena::ModelCoedges => result.ir().model.coedges.len(),
-        ExpectedArena::ModelCurves => result.ir().model.curves.len(),
-        ExpectedArena::ModelLoops => result.ir().model.loops.len(),
-        ExpectedArena::ModelPoints => result.ir().model.points.len(),
-        ExpectedArena::ModelPcurves => result.ir().model.pcurves.len(),
-        ExpectedArena::ModelProceduralCurves => result.ir().model.procedural_curves.len(),
-        ExpectedArena::ModelProceduralSurfaces => result.ir().model.procedural_surfaces.len(),
-        ExpectedArena::ModelRegions => result.ir().model.regions.len(),
-        ExpectedArena::ModelShells => result.ir().model.shells.len(),
-        ExpectedArena::ModelSurfaces => result.ir().model.surfaces.len(),
+        ExpectedArena::ModelBodies => result.ir().geometry.bodies.len(),
+        ExpectedArena::ModelCoedges => result.ir().geometry.coedges.len(),
+        ExpectedArena::ModelCurves => result.ir().geometry.curves.len(),
+        ExpectedArena::ModelLoops => result.ir().geometry.loops.len(),
+        ExpectedArena::ModelPoints => result.ir().geometry.points.len(),
+        ExpectedArena::ModelPcurves => result.ir().geometry.pcurves.len(),
+        ExpectedArena::ModelProceduralCurves => result.ir().geometry.procedural_curves.len(),
+        ExpectedArena::ModelProceduralSurfaces => result.ir().geometry.procedural_surfaces.len(),
+        ExpectedArena::ModelRegions => result.ir().geometry.regions.len(),
+        ExpectedArena::ModelShells => result.ir().geometry.shells.len(),
+        ExpectedArena::ModelSurfaces => result.ir().geometry.surfaces.len(),
         ExpectedArena::Native(name) => result
             .ir()
             .native
@@ -100,77 +103,77 @@ fn arena_ids(result: &EditableDecodeResult, arena: ExpectedArena) -> Vec<&str> {
     match arena {
         ExpectedArena::ModelBodies => result
             .ir()
-            .model
+            .geometry
             .bodies
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelCoedges => result
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelCurves => result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelLoops => result
             .ir()
-            .model
+            .geometry
             .loops
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelPoints => result
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelPcurves => result
             .ir()
-            .model
+            .geometry
             .pcurves
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelProceduralCurves => result
             .ir()
-            .model
+            .geometry
             .procedural_curves
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelProceduralSurfaces => result
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelRegions => result
             .ir()
-            .model
+            .geometry
             .regions
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelShells => result
             .ir()
-            .model
+            .geometry
             .shells
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelSurfaces => result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .map(|item| item.id.as_str())
@@ -331,17 +334,17 @@ fn decode_matrix(
 
 fn matrix_destination(arena: ExpectedArena) -> &'static str {
     match arena {
-        ExpectedArena::ModelBodies => "model.bodies",
-        ExpectedArena::ModelCoedges => "model.coedges",
-        ExpectedArena::ModelCurves => "model.curves",
-        ExpectedArena::ModelLoops => "model.loops",
-        ExpectedArena::ModelPoints => "model.points",
-        ExpectedArena::ModelPcurves => "model.pcurves",
-        ExpectedArena::ModelProceduralCurves => "model.procedural_curves",
-        ExpectedArena::ModelProceduralSurfaces => "model.procedural_surfaces",
-        ExpectedArena::ModelRegions => "model.regions",
-        ExpectedArena::ModelShells => "model.shells",
-        ExpectedArena::ModelSurfaces => "model.surfaces",
+        ExpectedArena::ModelBodies => "geometry.bodies",
+        ExpectedArena::ModelCoedges => "geometry.coedges",
+        ExpectedArena::ModelCurves => "geometry.curves",
+        ExpectedArena::ModelLoops => "geometry.loops",
+        ExpectedArena::ModelPoints => "geometry.points",
+        ExpectedArena::ModelPcurves => "geometry.pcurves",
+        ExpectedArena::ModelProceduralCurves => "geometry.procedural_curves",
+        ExpectedArena::ModelProceduralSurfaces => "geometry.procedural_surfaces",
+        ExpectedArena::ModelRegions => "geometry.regions",
+        ExpectedArena::ModelShells => "geometry.shells",
+        ExpectedArena::ModelSurfaces => "geometry.surfaces",
         ExpectedArena::Native("directions") => "native.iges.entities",
         ExpectedArena::Native("units_data" | "properties") => "native.iges.properties",
         ExpectedArena::Native("primitive_solids" | "procedural_solids") => "native.iges.solids",
@@ -443,8 +446,8 @@ fn v4_outside_envelope_records_remain_native_without_neutral_projection() {
         global_v4,
     )));
 
-    assert!(result.ir().model.curves.is_empty());
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(result.ir().geometry.curves.is_empty());
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let native = result.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(result.report().losses.iter().any(|loss| {
@@ -985,4 +988,64 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
         .expect("validate the neutral model");
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
+}
+
+/// Fuzzer bytes whose first control byte selects IGES 5.2 with a digest-breaking
+/// source edit. The writer plans the parsed document, writes it, and decodes the
+/// output. Decode degrades the mutated cube to ownerless support geometry, so
+/// re-planning the decoded document with its source fidelity must stop at the
+/// specified empty-model refusal instead of an earlier native-echo refusal.
+const WRITER_REPLAY_CRASH: &[u8] = include_bytes!("test_support/fuzz_iges_writer_replay_crash.bin");
+
+#[test]
+fn writer_replay_of_degraded_decode_output_stops_at_the_empty_model_refusal() {
+    let (control, json) = WRITER_REPLAY_CRASH
+        .split_first()
+        .expect("fuzzer bytes carry a control byte");
+    assert_eq!(*control & 0x80, 0);
+    assert_ne!(*control & 0x40, 0);
+    let version = match control % 3 {
+        0 => IgesVersion::V5_1,
+        1 => IgesVersion::V5_2,
+        _ => IgesVersion::V5_3,
+    };
+    let text = std::str::from_utf8(json).expect("fuzzer bytes carry JSON");
+    let ir = cadmpeg_ir::document::CadIr::from_json(text).expect("fuzzer JSON parses");
+    let plan = Encoder::plan(
+        &IgesCodec,
+        EncodeInput::new(&ir, None),
+        TargetRequest::Explicit(version.descriptor().id.as_str()),
+    )
+    .expect("parsed document plans");
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded)
+        .expect("planned document writes");
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(encoded.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .expect("writer output decodes");
+    let (mut decoded_ir, _decode_report, source_fidelity) = decoded.into_parts();
+    decoded_ir
+        .source
+        .as_mut()
+        .expect("IGES decode supplies source metadata")
+        .attributes
+        .insert(
+            cadmpeg_core::nonblank_literal!("iges_fuzz_edit"),
+            "edited".into(),
+        );
+    let replay = Encoder::plan(
+        &IgesCodec,
+        EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
+        TargetRequest::Explicit(version.descriptor().id.as_str()),
+    );
+    let Err(error) = replay else {
+        panic!("degraded decode output re-planned without transferable content")
+    };
+    assert!(
+        error.to_string().contains("refuses an empty model"),
+        "{error}"
+    );
 }

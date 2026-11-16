@@ -33,6 +33,10 @@ pub(crate) fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
+    exact: impl FnOnce(
+        &[crate::records::FeatureInputLane],
+    )
+        -> Result<Option<crate::resolved_features::profiles::ExactProfiles>, CodecError>,
 ) -> Result<(), CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -113,7 +117,11 @@ pub(crate) fn prepare_configurations_for_write(
         }
     }
     if feature_states_changed || parameter_values_changed {
-        sync_configuration_design_state(ir, native, annotations)?;
+        let lanes = native
+            .as_ref()
+            .map_or(&[][..], |native| native.feature_input_lanes.as_slice());
+        let exact = exact(lanes)?;
+        sync_configuration_design_state(ir, native, annotations, exact.as_ref())?;
     }
     Ok(())
 }
@@ -122,7 +130,10 @@ fn sync_configuration_design_state(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
+    exact: Option<&crate::resolved_features::profiles::ExactProfiles>,
 ) -> Result<(), CodecError> {
+    let unbound = crate::resolved_features::profiles::ExactProfiles::default();
+    let profiles = exact.unwrap_or(&unbound);
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -214,6 +225,7 @@ fn sync_configuration_design_state(
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
+        profiles,
         &mut current_annotations,
     )?;
     if !projection_losses.is_empty() {
@@ -243,6 +255,13 @@ fn sync_configuration_design_state(
                 .is_some_and(|baseline| baseline != &current_feature_hash)
     });
     if native_design_state_changed {
+        if exact.is_none() {
+            return Err(CodecError::NotImplemented(
+                "SLDPRT configuration design-state edits need the retained source image to bind \
+                 sketch profiles"
+                    .into(),
+            ));
+        }
         return Err(CodecError::Malformed(
             "conflicting neutral and native SLDPRT configuration design-state edits".into(),
         ));
@@ -315,6 +334,7 @@ fn sync_configuration_design_state(
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,
+        profiles,
         &mut projected_annotations,
     )?;
     if !projection_losses.is_empty() {

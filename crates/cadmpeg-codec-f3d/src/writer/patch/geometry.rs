@@ -137,7 +137,7 @@ fn asm_pcurve_edit<'a>(
             periodic,
             wrapper_reversed,
             native_tail_flags,
-            parameter_range,
+            uv_offset,
             fit_tolerance,
             ..
         } => AsmPcurveEdit::Inline(InlinePcurveEdit::PcurveWrapper {
@@ -145,13 +145,11 @@ fn asm_pcurve_edit<'a>(
             periodic: *periodic,
             wrapper_reversed: *wrapper_reversed,
             native_tail_flags: *native_tail_flags,
-            parameter_range: *parameter_range,
+            uv_offset: *uv_offset,
             fit_tolerance: *fit_tolerance,
         }),
-        PcurveEdit::Ref {
-            parameter_range, ..
-        } => AsmPcurveEdit::Ref {
-            parameter_range: *parameter_range,
+        PcurveEdit::Ref { uv_offset, .. } => AsmPcurveEdit::Ref {
+            uv_offset: *uv_offset,
         },
     }
 }
@@ -245,10 +243,19 @@ fn patch_asm_geometry(
     let pcurve_geometry = pcurves
         .iter()
         .map(|(id, edit)| {
-            let geometry = match plane_charts.get(edit.support()) {
+            let mut geometry = match plane_charts.get(edit.support()) {
                 Some(chart) => retained_plane_pcurve(edit.native_geometry(), *chart)?,
                 None => edit.native_geometry().clone(),
             };
+            let offset = edit.stored_uv_offset();
+            geometry.try_map_control_points(|_, point| {
+                let point = point.get();
+                cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                    point.u - offset[0],
+                    point.v - offset[1],
+                ))
+                .ok_or_else(|| CodecError::malformed("pcurve UV offset subtraction overflows"))
+            })?;
             Ok((id.as_str(), geometry))
         })
         .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
@@ -397,11 +404,12 @@ fn patch_asm_geometry(
         if let Some((color, carrier)) = color_records.get(&record.index) {
             match carrier {
                 DirectColorCarrier::NormalizedRgb { fields } => {
-                    for (index, value) in fields.iter().copied().zip([
-                        f64::from(color.r()),
-                        f64::from(color.g()),
-                        f64::from(color.b()),
-                    ]) {
+                    for (index, value) in
+                        fields
+                            .iter()
+                            .copied()
+                            .zip([color.r(), color.g(), color.b()])
+                    {
                         let offset =
                             asm_edits.required_payload_field(bytes, record, index, 0x06)?;
                         AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
@@ -848,7 +856,7 @@ fn patch_asm_geometry(
 
 fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecError> {
     let channels = [color.r(), color.g(), color.b()];
-    let encoded = channels.map(|channel| truncate_f64_to_u8(f64::from((channel * 255.0).round())));
+    let encoded = channels.map(|channel| truncate_f64_to_u8((channel * 255.0).round()));
     let [Some(red), Some(green), Some(blue)] = encoded else {
         return Err(CodecError::NotImplemented(format!(
             "{} record {} requires exactly representable 8-bit RGB channels",
@@ -857,7 +865,7 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
         )));
     };
     let encoded = [red, green, blue];
-    let decoded = encoded.map(|channel| f32::from(channel) / 255.0);
+    let decoded = encoded.map(|channel| f64::from(channel) / 255.0);
     if decoded != channels {
         return Err(CodecError::NotImplemented(format!(
             "{} record {} requires exactly representable 8-bit RGB channels",

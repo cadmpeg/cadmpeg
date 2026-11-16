@@ -58,21 +58,25 @@ fn close(left: f64, right: f64) -> bool {
 /// a body.
 fn meshed_on_write(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
     let model = &result.ir().model;
-    model.bodies.iter().any(|body| {
+    let geometry = &result.ir().geometry;
+    geometry.bodies.iter().any(|body| {
         let tessellated = model
             .tessellations
             .iter()
             .any(|tessellation| tessellation.body.as_ref() == Some(&body.id));
         !tessellated
-            && model
+            && geometry
                 .shells
                 .iter()
-                .filter(|shell| body.regions.contains(&shell.region))
-                .flat_map(|shell| shell.faces().iter())
-                .filter_map(|face| model.faces.iter().find(|candidate| &candidate.id == face))
+                .filter(|shell| {
+                    geometry
+                        .body_regions(&body.id)
+                        .any(|region| region.id == shell.region)
+                })
+                .flat_map(|shell| geometry.shell_faces(&shell.id))
                 .any(|face| {
                     !face.loops.is_empty()
-                        || !model.surfaces.iter().any(|surface| {
+                        || !geometry.surfaces.iter().any(|surface| {
                             surface.id == face.surface
                                 && matches!(
                                     surface.geometry,
@@ -89,6 +93,7 @@ fn meshed_on_write(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
 /// no edge uses hold, in order.
 fn coordinates(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<f64> {
     let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let mut out = Vec::new();
     for tessellation in &model.tessellations {
         for vertex in tessellation.vertices() {
@@ -96,8 +101,8 @@ fn coordinates(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<f64> {
             out.extend([point.x, point.y, point.z]);
         }
     }
-    for curve in model.curves.iter().filter(|curve| {
-        !model
+    for curve in geometry.curves.iter().filter(|curve| {
+        !geometry
             .edges
             .iter()
             .any(|edge| edge.carrier.curve() == Some(&curve.id))
@@ -129,23 +134,24 @@ fn every_fixture_round_trips_its_geometry() {
         let second = decode(&written);
         let structure = |result: &cadmpeg_ir::codec::DecodeResult| {
             let model = &result.ir().model;
+            let geometry = &result.ir().geometry;
             (
                 model
                     .tessellations
                     .iter()
                     .map(cadmpeg_ir::tessellation::Tessellation::triangles)
                     .collect::<Vec<_>>(),
-                model
+                geometry
                     .curves
                     .iter()
                     .filter(|curve| {
-                        !model
+                        !geometry
                             .edges
                             .iter()
                             .any(|edge| edge.carrier.curve() == Some(&curve.id))
                     })
                     .count(),
-                model.surfaces.len(),
+                geometry.surfaces.len(),
                 model.occurrences.len(),
                 model.appearances.len(),
                 model.appearance_bindings.len(),
@@ -255,6 +261,39 @@ fn the_written_layer_is_stable_under_a_second_round_trip() {
         let (twice, _) = encode(decode(&once).ir());
         assert_eq!(rounded(&once), rounded(&twice), "{name}");
     }
+}
+
+/// Largest wall time for one small-layer round trip. The authored Plant
+/// fixture measured 8 s here before the tessellation fix and 0.02 s after
+/// it; the twisted-patch fuzzer input measured 16 s before the vertex cap
+/// and under a second after it.
+const ROUND_TRIP_WALL_TIME: std::time::Duration = std::time::Duration::from_secs(5);
+
+#[test]
+fn a_small_layer_round_trip_completes_within_its_time_budget() {
+    let (_, bytes) = fixtures()
+        .into_iter()
+        .find(|(name, _)| name == "openusd_authored")
+        .expect("authored Plant fixture");
+    let text = std::str::from_utf8(&bytes).expect("fixture is USDA text");
+    assert_round_trip_within_budget(text);
+    assert_round_trip_within_budget(TWISTED_PATCH);
+}
+
+/// Fuzzer bytes for a Plant layer whose twisted roof patch carries an
+/// interior singular parametrization.
+const TWISTED_PATCH: &str = include_str!("integration_tests/fuzz_usd_roundtrip_twisted_patch.usda");
+
+fn assert_round_trip_within_budget(text: &str) {
+    let start = std::time::Instant::now();
+    let first = decode(text);
+    let (written, _) = encode(first.ir());
+    let _ = decode(&written);
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < ROUND_TRIP_WALL_TIME,
+        "round trip took {elapsed:?}"
+    );
 }
 
 #[test]

@@ -3,6 +3,9 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+pub(super) mod arc_bounds;
+pub(super) mod cylindrical_arcs;
+
 use super::{
     annotate, cgm_source, circle_parameter_range_from_surface_branch, face_surface, ordered_range,
     point_on_nurbs_surface, rational_pcurve_arc, standard_id,
@@ -118,14 +121,25 @@ pub(super) fn standard_pcurve_geometry(
         let Some(center_uv) = analytic_surface_uv(surface, center) else {
             return Ok(None);
         };
-        let range = if start == end {
+        let (range, reversed) = if start == end {
             let angle = (uv[0].v - center_uv.v).atan2(uv[0].u - center_uv.u);
-            [angle, angle + std::f64::consts::TAU]
+            ([angle, angle + std::f64::consts::TAU], false)
         } else {
             let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
-            ordered_range([range[0], unwrap_angle(range[1], range[0])])
+            let short_end = unwrap_angle(range[1], range[0]);
+            let end = witness
+                .and_then(|point| analytic_surface_uv(surface, point.get()))
+                .and_then(|point| {
+                    let angle = (point.v - center_uv.v).atan2(point.u - center_uv.u);
+                    witness_arc_end(range[0], short_end, angle)
+                })
+                .unwrap_or(short_end);
+            (
+                ordered_range([range[0], end]),
+                witness.is_some() && end < range[0],
+            )
         };
-        let Some(geometry) = rational_pcurve_arc(
+        let Some(mut geometry) = rational_pcurve_arc(
             [center_uv.u, center_uv.v],
             radius,
             range,
@@ -134,6 +148,17 @@ pub(super) fn standard_pcurve_geometry(
         ) else {
             return Ok(None);
         };
+        if reversed {
+            let Some(reoriented) = crate::nurbs::reverse_pcurve_geometry(
+                &geometry,
+                range,
+                refusal,
+                "standard arc pcurve derived from its support",
+            ) else {
+                return Ok(None);
+            };
+            geometry = reoriented;
+        }
         return Ok(Some((geometry, range)));
     }
 
@@ -418,12 +443,12 @@ pub(super) fn standard_spline_line(
     let [Some(left), Some(right)] = surfaces else {
         return Ok(None);
     };
-    let Some(start_point) = ir.model.points.get(points[0]) else {
+    let Some(start_point) = ir.geometry.points.get(points[0]) else {
         return Ok(None);
     };
     let start = start_point.position().get();
     let Some(end) = ir
-        .model
+        .geometry
         .points
         .get(points[1])
         .map(|point| point.position().get())
@@ -554,7 +579,7 @@ pub(super) fn standard_spline_circle(
     let section_center = sphere_center.translated(axis, -signed_distance);
     let section_radius = section_radius_squared.sqrt();
     let Some(start) = ir
-        .model
+        .geometry
         .points
         .get(points[0])
         .map(|point| point.position().get())
@@ -562,7 +587,7 @@ pub(super) fn standard_spline_circle(
         return Ok(None);
     };
     let Some(end) = ir
-        .model
+        .geometry
         .points
         .get(points[1])
         .map(|point| point.position().get())
@@ -636,7 +661,7 @@ pub(super) fn standard_spline_cylinder_plane(
     }
     let center = cylinder_origin.translated(cylinder_axis, axis_parameter);
     let Some(start) = ir
-        .model
+        .geometry
         .points
         .get(points[0])
         .map(|point| point.position().get())
@@ -644,7 +669,7 @@ pub(super) fn standard_spline_cylinder_plane(
         return Ok(None);
     };
     let Some(end) = ir
-        .model
+        .geometry
         .points
         .get(points[1])
         .map(|point| point.position().get())
@@ -796,7 +821,7 @@ pub(super) fn standard_spline_perpendicular_cylinders(
         (first_center.z + second_center.z) * 0.5,
     );
     let Some(start) = ir
-        .model
+        .geometry
         .points
         .get(points[0])
         .map(|point| point.position().get())
@@ -804,7 +829,7 @@ pub(super) fn standard_spline_perpendicular_cylinders(
         return Ok(None);
     };
     let Some(end) = ir
-        .model
+        .geometry
         .points
         .get(points[1])
         .map(|point| point.position().get())
@@ -1073,6 +1098,8 @@ pub(super) struct BuildStandardEdgeCurveInputs<
     pub(super) bindings: &'input2 [(SurfaceId, bool, usize)],
     pub(super) surface_indices: &'input3 HashMap<SurfaceId, usize>,
     pub(super) brep: &'input4 [u8],
+    pub(super) face_bounds:
+        &'input4 [Option<crate::families::standard::records::StandardFaceBounds>],
     pub(super) support: &'input5 crate::families::standard::records::StandardCurveSupport,
     pub(super) points: [usize; 2],
     pub(super) native_support: Option<&'input6 StandardEdgeSupport>,
@@ -1105,6 +1132,7 @@ pub(super) fn build_standard_edge_curve(
         bindings,
         surface_indices,
         brep,
+        face_bounds,
         support,
         points,
         native_support,
@@ -1115,9 +1143,9 @@ pub(super) fn build_standard_edge_curve(
 
     let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
-            let start_point = &ir.model.points[points[0]];
+            let start_point = &ir.geometry.points[points[0]];
             let start = start_point.position().get();
-            let end = ir.model.points[points[1]].position().get();
+            let end = ir.geometry.points[points[1]].position().get();
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
             let length = delta.x.hypot(delta.y).hypot(delta.z);
             if !length.is_finite() || length == 0.0 {
@@ -1145,8 +1173,8 @@ pub(super) fn build_standard_edge_curve(
             let admitted_radius = *radius;
             let center = admitted_center.get();
             let radius = admitted_radius.get();
-            let start = ir.model.points[points[0]].position().get();
-            let end = ir.model.points[points[1]].position().get();
+            let start = ir.geometry.points[points[0]].position().get();
+            let end = ir.geometry.points[points[1]].position().get();
             let mut axes = support
                 .faces
                 .iter()
@@ -1203,48 +1231,62 @@ pub(super) fn build_standard_edge_curve(
                     }
                 }
                 Some(axis) => {
-                    let mut selected = None;
-                    let mut ambiguous = false;
-                    for candidate_axis in [axis, axis.reversed()] {
-                        let reference = cadmpeg_ir::geometry::derive_reference_direction(
-                            *candidate_axis.as_raw(),
-                        );
-                        let mut range = standard_circle_param_range(
-                            ctx,
-                            StandardCircleParamRangeInputs {
-                                ir,
-                                bindings,
-                                surface_indices,
-                                brep,
-                                support,
+                    let mut selected = native_support
+                        .is_none()
+                        .then(|| {
+                            arc_bounds::bounded_circle_branch(
                                 center,
                                 radius,
-                                axis: *candidate_axis.as_raw(),
-                                ref_direction: reference,
-                                start,
-                                end,
-                                refusal,
-                            },
-                        )?;
-                        if range.is_none() {
-                            if let Some(native) = native_support {
-                                range = native_support_circle_param_range(
-                                    ctx,
-                                    native,
+                                axis,
+                                [start, end],
+                                &arc_bounds::support_bounds(face_bounds, support),
+                            )
+                        })
+                        .flatten();
+                    let mut ambiguous = false;
+                    if selected.is_none() {
+                        for candidate_axis in [axis, axis.reversed()] {
+                            let reference = cadmpeg_ir::geometry::derive_reference_direction(
+                                *candidate_axis.as_raw(),
+                            );
+                            let mut range = standard_circle_param_range(
+                                ctx,
+                                StandardCircleParamRangeInputs {
+                                    ir,
+                                    bindings,
+                                    surface_indices,
+                                    brep,
+                                    support,
                                     center,
                                     radius,
-                                    *candidate_axis.as_raw(),
-                                    reference,
-                                    [start, end],
-                                )?;
+                                    axis: *candidate_axis.as_raw(),
+                                    ref_direction: reference,
+                                    start,
+                                    end,
+                                    refusal,
+                                },
+                            )?;
+                            if range.is_none() {
+                                if let Some(native) = native_support {
+                                    range = native_support_circle_param_range(
+                                        ctx,
+                                        native,
+                                        center,
+                                        radius,
+                                        *candidate_axis.as_raw(),
+                                        reference,
+                                        [start, end],
+                                    )?;
+                                }
                             }
-                        }
-                        if let Some(range) = range.and_then(crate::nurbs::canonical_periodic_range)
-                        {
-                            if selected.is_some() {
-                                ambiguous = true;
-                            } else {
-                                selected = Some((candidate_axis, reference, range));
+                            if let Some(range) =
+                                range.and_then(crate::nurbs::canonical_periodic_range)
+                            {
+                                if selected.is_some() {
+                                    ambiguous = true;
+                                } else {
+                                    selected = Some((candidate_axis, reference, range));
+                                }
                             }
                         }
                     }
@@ -1359,8 +1401,8 @@ pub(super) fn build_standard_edge_curve(
         )
     {
         let endpoints = [
-            ir.model.points[points[0]].position().get(),
-            ir.model.points[points[1]].position().get(),
+            ir.geometry.points[points[0]].position().get(),
+            ir.geometry.points[points[1]].position().get(),
         ];
         let witness = match native_support {
             Some(native) => standard_native_support_witness(ctx, native)?,
@@ -1384,7 +1426,7 @@ pub(super) fn build_standard_edge_curve(
                 match standard_oriented_native_support_pcurves(
                     ctx,
                     native,
-                    &ir.model.points,
+                    &ir.geometry.points,
                     points,
                     refusal,
                 )? {
@@ -1455,11 +1497,12 @@ pub(super) fn build_standard_edge_curve(
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     );
     admission.charge()?;
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: id.clone(),
         geometry,
         source_object: Some(cgm_source("edge-support", support.tag)?),
+        native_ref: None,
     });
     if matches!(
         &support.geometry,
@@ -1551,7 +1594,7 @@ pub(super) fn build_standard_edge_curve(
                         cache: None,
                     },
                 );
-                let _attached = ir.model.add_procedural_curve(&id.clone(), procedural);
+                let _attached = ir.geometry.add_procedural_curve(&id.clone(), procedural);
                 param_range = Some(curve_parameter_range);
             }
         }
@@ -1569,7 +1612,7 @@ pub(super) fn ensure_native_edge_support_surface(
     let source = cgm_source("surface", surface_object_id)?;
     let mut source_match = None::<&SurfaceId>;
     let mut source_ambiguous = false;
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         if surface.source_object.as_ref() == Some(&source) {
             if source_match.is_some_and(|id| id != &surface.id) {
                 source_ambiguous = true;
@@ -1587,7 +1630,7 @@ pub(super) fn ensure_native_edge_support_surface(
     if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
         let mut geometry_match = None::<&SurfaceId>;
         let mut geometry_ambiguous = false;
-        for surface in &ir.model.surfaces {
+        for surface in &ir.geometry.surfaces {
             if surface.geometry == *geometry {
                 if geometry_match.is_some_and(|id| id != &surface.id) {
                     geometry_ambiguous = true;
@@ -1636,10 +1679,11 @@ pub(super) fn ensure_native_edge_support_surface(
         "native_edge_support_surface",
         Exactness::ByteExact,
     )?;
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: id.clone(),
         geometry,
         source_object: Some(source),
+        native_ref: None,
     });
     if let (
         Some(procedural_id),
@@ -1660,7 +1704,7 @@ pub(super) fn ensure_native_edge_support_surface(
             Exactness::ByteExact,
         )?;
         admission.charge()?;
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             crate::families::b5::transfer::surfaces::copy_rolling_ball_definition(definition)?,
             None,
@@ -2004,7 +2048,7 @@ pub(super) fn attach_standard_circles(
             .iter()
             .filter_map(|face| bindings.get(*face))
             .filter_map(|(surface_id, _, _)| {
-                ir.model
+                ir.geometry
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == *surface_id)
@@ -2023,7 +2067,7 @@ pub(super) fn attach_standard_circles(
         {
             continue;
         }
-        let index = ir.model.curves.len();
+        let index = ir.geometry.curves.len();
         let id = standard_id("circle", format_args!("{index}"), CurveId::mint)?;
         let Some(ref_direction) = UnitVector3::new(
             cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()),
@@ -2048,11 +2092,12 @@ pub(super) fn attach_standard_circles(
         )?;
         annotations.derived(&id, "geometry.axis")?;
         admission.charge()?;
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
             source_object: Some(cgm_source("edge-support", support.tag)?),
+            native_ref: None,
         });
     }
     Ok(())
@@ -2251,7 +2296,7 @@ pub(super) fn attach_standard_lines(
         else {
             continue;
         };
-        let index = ir.model.curves.len();
+        let index = ir.geometry.curves.len();
         let id = standard_id("line", format_args!("{index}"), CurveId::mint)?;
         let Ok(payload) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction)
         else {
@@ -2268,11 +2313,12 @@ pub(super) fn attach_standard_lines(
         annotations.derived(&id, "geometry.origin")?;
         annotations.derived(&id, "geometry.direction")?;
         admission.charge()?;
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),
             source_object: Some(cgm_source("edge-support", support.tag)?),
+            native_ref: None,
         });
     }
     Ok(())
@@ -2313,7 +2359,7 @@ pub(super) fn plane_for_face(
 ) -> Option<(cadmpeg_ir::math::Point3, Vector3)> {
     let (surface_id, _, _) = bindings.get(face)?;
     let surface = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == *surface_id)?;

@@ -31,8 +31,10 @@ use super::support_uv::{
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
+use crate::geometry::SurfaceRefusal;
 use crate::grouping::group_pairs;
 use crate::loss::NxLossCode;
+use crate::parasolid::StreamKind;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::dialect::DialectLayers;
@@ -55,6 +57,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
+use cadmpeg_parasolid::geometry::Refusal;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn ordered_point_candidates(graph: &Graph) -> Vec<(FinitePoint3, &Node)> {
@@ -81,6 +84,37 @@ pub(super) fn ordered_curve_candidates(graph: &Graph) -> Vec<(CurveGeometry, &No
         [NodeKind::Line, NodeKind::Circle, NodeKind::Ellipse],
         Node::curve_geometry,
     )
+}
+
+/// One loss for each graph-owned CONE or TORUS record whose otherwise valid
+/// fields state a form that has no surface.
+fn surface_refusals(si: usize, graph: &Graph) -> Vec<LossNote> {
+    [(NodeKind::Cone, "CONE"), (NodeKind::Torus, "TORUS")]
+        .into_iter()
+        .flat_map(|(kind, name)| graph.of_kind(kind).map(move |node| (name, node)))
+        .filter_map(|(name, node)| {
+            let (code, cause) = match node.surface_refusal()? {
+                SurfaceRefusal::Analytic(Refusal::ConeHalfAngleSign) => (
+                    NxLossCode::CarrierConeHalfAngleSignUnresolved,
+                    "stores a negative half-angle sine or cosine",
+                ),
+                SurfaceRefusal::Analytic(Refusal::ConeHalfAngleIdentity) => (
+                    NxLossCode::CarrierConeHalfAngleIdentityRefused,
+                    "stores a half-angle sine and cosine whose squared sum differs from one \
+                     by more than 1e-9",
+                ),
+                SurfaceRefusal::NegativeMajorRadius => (
+                    NxLossCode::CarrierTorusNegativeMajorUnresolved,
+                    "stores a negative major radius",
+                ),
+                SurfaceRefusal::Analytic(Refusal::Fields) => return None,
+            };
+            Some(code.note(format!(
+                "parasolid#{si} {name} at byte {} {cause}; the surface is not emitted.",
+                node.pos()
+            )))
+        })
+        .collect()
 }
 
 fn ordered_fixed_candidates<T>(
@@ -117,7 +151,7 @@ pub(super) fn try_decode_geometry(
     let mut ir = CadIr::empty();
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
@@ -126,7 +160,7 @@ pub(super) fn try_decode_geometry(
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
-    let mut topology_losses: Vec<LossNote> = Vec::new();
+    let mut topology_losses = parsed.primary_losses();
     let mut native_losses: Vec<LossNote> = Vec::new();
     let rmfastload_ids = scan
         .container
@@ -147,13 +181,8 @@ pub(super) fn try_decode_geometry(
         && !rmfastload_selected.is_empty()
         && rmfastload_selected.len() < body_node_ids.len()
     {
-        rmfastload_stream_indices(&rmfastload_selected).map(|streams| {
-            (
-                rmfastload_selected,
-                streams,
-                "rmfastload_object_id_membership",
-            )
-        })
+        rmfastload_stream_indices(&rmfastload_selected)
+            .map(|streams| (rmfastload_selected, streams, RMFASTLOAD_MEMBERSHIP_SELECTOR))
     } else {
         None
     };
@@ -183,7 +212,11 @@ pub(super) fn try_decode_geometry(
         }),
         None => None,
     };
-    let preselection = rmfastload_preselection.or(terminal_preselection);
+    let preselection = body_preselection(
+        rmfastload_preselection,
+        terminal_preselection,
+        has_plain_beside_partition_streams(scan.streams.iter().map(crate::parasolid::Stream::kind)),
+    );
     let (chart_count, geometry_record_count) = scan
         .streams
         .iter()
@@ -268,6 +301,7 @@ pub(super) fn try_decode_geometry(
                 Some(stream.kind().label()),
             );
             annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+            scan.note_untyped(unknown.id(), [cadmpeg_core::decode::ArenaClass::Model]);
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
             continue;
@@ -277,14 +311,17 @@ pub(super) fn try_decode_geometry(
             curves: nurbs_curves,
             pcurves: nurbs_pcurves,
             refusals: nurbs_refusals,
+            unresolved_controls,
         } = parsed.parse_nurbs(si);
-        for refusal in nurbs_refusals {
-            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
-                "parasolid#{si} {} at byte {} states no carrier: {}",
-                refusal.family, refusal.pos, refusal.error
+        carrier_refusals.extend(nurbs_refusals.iter().map(|refusal| refusal.loss(si)));
+        for carrier in unresolved_controls {
+            carrier_refusals.push(NxLossCode::CarrierControlsUnresolved.note(format!(
+                "parasolid#{si} {} at byte {} names no control values that resolve to it",
+                carrier.family, carrier.pos
             )));
         }
         let view = parsed.stream(si);
+        carrier_refusals.extend(surface_refusals(si, &view.graph));
         let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
         let source_stream = StreamHandle::new(
             cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
@@ -294,6 +331,7 @@ pub(super) fn try_decode_geometry(
         let graph = &view.graph;
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
+        let mut reversed_analytic_surfaces = BTreeSet::new();
         let mut curves_by_xmt = BTreeMap::new();
         let mut pcurves_by_xmt = BTreeMap::new();
         let mut pcurve_supports_by_xmt: BTreeMap<u32, SurfaceId> = BTreeMap::new();
@@ -305,11 +343,11 @@ pub(super) fn try_decode_geometry(
         // surface. Later topology completion only fills absent pcurves, so
         // this provenance remains valid through the invalidation pass.
         let mut validated_support_uv_lanes = BTreeSet::new();
-        let first_surface = ir.model.surfaces.len();
-        let first_curve = ir.model.curves.len();
+        let first_surface = ir.geometry.surfaces.len();
+        let first_curve = ir.geometry.curves.len();
         // The model is accumulated across streams. Completion must not retry
         // unresolved curves that an earlier stream already admitted.
-        let procedural_start = ir.model.procedural_curves.len();
+        let procedural_start = ir.geometry.procedural_curves.len();
         for (pi, (position, node)) in ordered_point_candidates(graph).into_iter().enumerate() {
             let pid: PointId = scope.id_from_display(&cadmpeg_ir::identity_component!("pt"), pi)?;
             let vid: VertexId = scope.id_from_display(&cadmpeg_ir::identity_component!("v"), pi)?;
@@ -322,14 +360,15 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(pid.as_str(), "position")?;
 
-            ir.model
+            ir.geometry
                 .points
                 .push(Point::new(pid.clone(), position, None));
 
-            ir.model.vertices.push(Vertex {
+            ir.geometry.vertices.push(Vertex {
                 id: vid.clone(),
                 point: pid.clone(),
                 tolerance: None,
+                native_ref: None,
             });
             points_by_xmt.insert(node.xmt(), pid);
             counts.points += 1;
@@ -353,6 +392,12 @@ pub(super) fn try_decode_geometry(
             }
             let id: SurfaceId =
                 scope.id_from_display(&cadmpeg_ir::identity_component!("surf"), fi)?;
+            if node
+                .common_header()
+                .is_some_and(|(sense, _)| sense == cadmpeg_ir::topology::Sense::Reversed)
+            {
+                reversed_analytic_surfaces.insert(id.clone());
+            }
             annotate_node(
                 &mut annotations,
                 id.as_str(),
@@ -366,10 +411,11 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(id.as_str(), "geometry")?;
 
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
                 source_object: None,
+                native_ref: None,
             });
             surfaces_by_xmt.insert(node.xmt(), id);
         }
@@ -385,10 +431,11 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(id.as_str(), "geometry")?;
 
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: surf.geometry,
                 source_object: None,
+                native_ref: None,
             });
             if let Some(node) = graph.at_pos(surf.pos) {
                 surfaces_by_xmt.insert(node.xmt(), id);
@@ -423,7 +470,7 @@ pub(super) fn try_decode_geometry(
                     );
                     annotations.derived(surface_id.as_str(), "geometry")?;
 
-                    ir.model.surfaces.push(Surface {
+                    ir.geometry.surfaces.push(Surface {
                         id: surface_id.clone(),
                         geometry: SurfaceGeometry::Procedural {
                             construction: procedural_id.clone(),
@@ -447,6 +494,7 @@ pub(super) fn try_decode_geometry(
                             layer: None,
                             instance_path: Vec::new(),
                         }),
+                        native_ref: None,
                     });
                     (surface_id, None)
                 };
@@ -477,8 +525,11 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
-            let _attached =
-                procedural_admission.add_surface(&mut ir.model, &surface_id.clone(), procedural)?;
+            let _attached = procedural_admission.add_surface(
+                &mut ir.geometry,
+                &surface_id.clone(),
+                procedural,
+            )?;
 
             surfaces_by_xmt.insert(offset.xmt, surface_id);
             counts.offset_surfaces += 1;
@@ -497,7 +548,7 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(surface_id.as_str(), "geometry")?;
 
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
@@ -519,6 +570,7 @@ pub(super) fn try_decode_geometry(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             });
             annotations.note(
                 procedural_id.as_str(),
@@ -527,10 +579,10 @@ pub(super) fn try_decode_geometry(
                 Some("BLEND_SURF"),
             );
             annotations.derived(procedural_id.as_str(), "definition")?;
-            let procedural_index = ir.model.procedural_surfaces.len();
+            let procedural_index = ir.geometry.procedural_surfaces.len();
 
             let attached = procedural_admission.add_surface(
-                &mut ir.model,
+                &mut ir.geometry,
                 &surface_id.clone(),
                 ProceduralSurface::new(
                     procedural_id,
@@ -574,7 +626,7 @@ pub(super) fn try_decode_geometry(
                     })
             });
             let supports = [first, second];
-            let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
+            let Some(procedural) = ir.geometry.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
             procedural.edit_definition(|definition| {
@@ -613,11 +665,12 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(id.as_str(), "geometry")?;
 
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: id.clone(),
                 geometry,
                 source_object: None,
+                native_ref: None,
             });
             curves_by_xmt.insert(node.xmt(), id);
         }
@@ -633,11 +686,12 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(id.as_str(), "geometry")?;
 
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: id.clone(),
                 geometry: crv.geometry,
                 source_object: None,
+                native_ref: None,
             });
             if let Some(node) = graph.at_pos(crv.pos) {
                 curves_by_xmt.insert(node.xmt(), id);
@@ -655,10 +709,11 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(id.as_str(), "geometry")?;
 
-            ir.model.pcurves.push(Pcurve {
+            ir.geometry.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry: pcurve.geometry,
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+                native_ref: None,
             });
             if let Some(node) = graph.at_pos(pcurve.pos) {
                 pcurves_by_xmt.insert(node.xmt(), id);
@@ -825,7 +880,7 @@ pub(super) fn try_decode_geometry(
                 annotations.exactness(curve_id.as_str(), Exactness::Unknown);
             }
 
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: curve_id.clone(),
                 geometry: if let Some(charted) = charted {
@@ -865,6 +920,7 @@ pub(super) fn try_decode_geometry(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             });
             annotations.note(
                 procedural_id.as_str(),
@@ -949,7 +1005,7 @@ pub(super) fn try_decode_geometry(
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
             let _attached =
-                procedural_admission.add_curve(&mut ir.model, &curve_id.clone(), procedural)?;
+                procedural_admission.add_curve(&mut ir.geometry, &curve_id.clone(), procedural)?;
 
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
@@ -959,7 +1015,7 @@ pub(super) fn try_decode_geometry(
                 continue;
             };
             let spine = spine_ref.clone();
-            let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
+            let Some(procedural) = ir.geometry.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
             procedural.edit_definition(|definition| {
@@ -972,15 +1028,15 @@ pub(super) fn try_decode_geometry(
         let mut normalized_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
         let mut invalid_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
         let mut curve_indices: BTreeMap<CurveId, usize> = BTreeMap::new();
-        for (index, curve) in ir.model.curves.iter().enumerate() {
+        for (index, curve) in ir.geometry.curves.iter().enumerate() {
             curve_indices.insert(curve.id.clone(), index);
         }
         let mut surface_indices: BTreeMap<SurfaceId, usize> = BTreeMap::new();
-        for (index, surface) in ir.model.surfaces.iter().enumerate() {
+        for (index, surface) in ir.geometry.surfaces.iter().enumerate() {
             surface_indices.insert(surface.id.clone(), index);
         }
         let mut pcurve_indices: BTreeMap<PcurveId, usize> = BTreeMap::new();
-        for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
+        for (index, pcurve) in ir.geometry.pcurves.iter().enumerate() {
             pcurve_indices.insert(pcurve.id.clone(), index);
         }
         let surface_curves = &view.surface_curves;
@@ -991,7 +1047,7 @@ pub(super) fn try_decode_geometry(
                     let basis = basis_ref.clone();
                     let parameters = curve_indices
                         .get(&basis)
-                        .and_then(|index| ir.model.curves.get(*index))
+                        .and_then(|index| ir.geometry.curves.get(*index))
                         .and_then(|curve| {
                             canonical_trim_range(&curve.geometry, trim.state.parameters())
                         });
@@ -1017,13 +1073,13 @@ pub(super) fn try_decode_geometry(
                         let support = surfaces_by_xmt
                             .get(&surface_curve.state.surface())
                             .and_then(|id| surface_indices.get(id))
-                            .and_then(|index| ir.model.surfaces.get(*index))
+                            .and_then(|index| ir.geometry.surfaces.get(*index))
                             .map(|surface| &surface.geometry);
                         let normalized = if let (Some(support), Some(carrier)) = (
                             support,
                             pcurve_indices
                                 .get(&pcurve)
-                                .and_then(|index| ir.model.pcurves.get_mut(*index)),
+                                .and_then(|index| ir.geometry.pcurves.get_mut(*index)),
                         ) {
                             normalize_pcurve_parameters(&mut carrier.geometry, support).is_some()
                         } else {
@@ -1038,7 +1094,7 @@ pub(super) fn try_decode_geometry(
                     }
                     if let Some(carrier) = pcurve_indices
                         .get(&pcurve)
-                        .and_then(|index| ir.model.pcurves.get_mut(*index))
+                        .and_then(|index| ir.geometry.pcurves.get_mut(*index))
                     {
                         let fit_tolerance = decoded_tolerance(
                             surface_curve.state.tolerance().get(),
@@ -1080,7 +1136,7 @@ pub(super) fn try_decode_geometry(
             }
         }
         if !invalid_pcurves.is_empty() {
-            ir.model
+            ir.geometry
                 .pcurves
                 .retain(|candidate| !invalid_pcurves.contains(&candidate.id));
             intersection_index.reindex_pcurves_after_prune(&ir);
@@ -1098,11 +1154,11 @@ pub(super) fn try_decode_geometry(
             &mut annotations,
         )?;
         let intersection_starts = IntersectionEntityStarts {
-            loops: ir.model.loops.len(),
-            faces: ir.model.faces.len(),
-            edges: ir.model.edges.len(),
-            coedges: ir.model.coedges.len(),
-            pcurves: ir.model.pcurves.len(),
+            loops: ir.geometry.loops.len(),
+            faces: ir.geometry.faces.len(),
+            edges: ir.geometry.edges.len(),
+            coedges: ir.geometry.coedges.len(),
+            pcurves: ir.geometry.pcurves.len(),
             procedural_curves: procedural_start,
         };
         adaptive_geometry_budget.clear_blend_frame_cache();
@@ -1115,6 +1171,7 @@ pub(super) fn try_decode_geometry(
                 graph,
                 points: &points_by_xmt,
                 surfaces: &surfaces_by_xmt,
+                reversed_analytic_surfaces: &reversed_analytic_surfaces,
                 curves: &curves_by_xmt,
                 pcurves: &pcurves_by_xmt,
                 pcurve_supports: &pcurve_supports_by_xmt,
@@ -1206,10 +1263,10 @@ pub(super) fn try_decode_geometry(
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
         let mut unknown = unknown_stream_metadata(si, stream)?;
-        for surface in &ir.model.surfaces[first_surface..] {
+        for surface in &ir.geometry.surfaces[first_surface..] {
             unknown.links_mut().push(surface.id.as_str().to_owned());
         }
-        for curve in &ir.model.curves[first_curve..] {
+        for curve in &ir.geometry.curves[first_curve..] {
             unknown.links_mut().push(curve.id.as_str().to_owned());
         }
         annotations.note(
@@ -1219,6 +1276,7 @@ pub(super) fn try_decode_geometry(
             Some(stream.kind().label()),
         );
         annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+        scan.note_untyped(unknown.id(), [cadmpeg_core::decode::ArenaClass::Model]);
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
     }
@@ -1250,7 +1308,7 @@ pub(super) fn try_decode_geometry(
     ir.source = Some(source_meta(scan, dialects, Some(&parsed))?);
 
     ctx.admit_entities(
-        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+        cadmpeg_core::decode::u64_from_index(ir.entity_count()),
         admitted_entities,
         "admit NX entities",
     )?;
@@ -1263,16 +1321,32 @@ pub(super) fn try_decode_geometry(
         &mut parsed,
         terminal_lineage,
     )?;
-    let mut active_body_selection = if let Some((selected, _, source)) = &preselection {
+    let (mut active_body_selection, membership_selection) = if let Some((selected, _, source)) =
+        &preselection
+    {
         let selected_hits = selected
             .iter()
             .filter_map(|body| body_node_ids.get(body))
             .map(BTreeSet::len)
             .sum::<usize>();
-        apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits))
+        let applied =
+            apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits));
+        (
+            applied,
+            applied && *source == RMFASTLOAD_MEMBERSHIP_SELECTOR,
+        )
     } else {
-        select_active_body(&mut ir, &body_node_ids, rmfastload_ids)
+        let applied = select_active_body(&mut ir, &body_node_ids, rmfastload_ids);
+        (applied, applied)
     };
+    if !membership_selection {
+        let withheld = withhold_plain_history_images(&mut ir, &scan.streams);
+        if withheld != 0 {
+            native_losses.push(NxLossCode::PlainHistoryImagesWithheld.note(format!(
+                "Withheld {withheld} body image(s) of plain cached-body streams because the part also has partition-stream bodies and RMFastLoad membership selects no body. The plain streams remain retained source records."
+            )));
+        }
+    }
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
@@ -1292,12 +1366,12 @@ pub(super) fn try_decode_geometry(
     prune_unreferenced_unknown_carriers(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations)?;
     let mut referenced_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         for pcurve in &coedge.pcurves {
             referenced_pcurves.insert(pcurve.pcurve.clone());
         }
     }
-    ir.model
+    ir.geometry
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     retain_live_unknown_links(&ir, &mut unknowns, &mut annotations)?;
@@ -1332,8 +1406,8 @@ pub(super) fn try_decode_geometry(
         scan,
         &crate::decode::report::GeometryReportFacts {
             counts: &counts,
-            has_topology: !ir.model.faces.is_empty(),
-            has_unresolved_sub_bodies: ir.model.bodies.len() > 1 && !active_body_selection,
+            has_topology: !ir.geometry.faces.is_empty(),
+            has_unresolved_sub_bodies: ir.geometry.bodies.len() > 1 && !active_body_selection,
             tessellation_count: ir.model.tessellations.len(),
             completion_budget,
             adaptive_geometry_exhausted,
@@ -1373,19 +1447,19 @@ fn copy_endpoint_witnesses(target: &mut EndpointWitnesses, source: &EndpointWitn
 
 fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
     let mut used_surfaces: BTreeSet<SurfaceId> = BTreeSet::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         used_surfaces.insert(face.surface.clone());
     }
     let mut used_curves: BTreeSet<CurveId> = BTreeSet::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         if let Some(curve) = edge.curve() {
             used_curves.insert(curve.clone());
         }
     }
     loop {
         let previous = (used_surfaces.len(), used_curves.len());
-        for procedural in &ir.model.procedural_surfaces {
-            let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
+        for procedural in &ir.geometry.procedural_surfaces {
+            let Some(owner) = ir.geometry.procedural_surface_owner(&procedural.id) else {
                 continue;
             };
             if !used_surfaces.contains(owner) {
@@ -1410,8 +1484,8 @@ fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
                 _ => {}
             }
         }
-        for procedural in &ir.model.procedural_curves {
-            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+        for procedural in &ir.geometry.procedural_curves {
+            let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) else {
                 continue;
             };
             if !used_curves.contains(owner) {
@@ -1439,13 +1513,13 @@ fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             break;
         }
     }
-    ir.model.surfaces.retain(|surface| {
+    ir.geometry.surfaces.retain(|surface| {
         !matches!(
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
         ) || used_surfaces.contains(&surface.id)
     });
-    ir.model.curves.retain(|curve| {
+    ir.geometry.curves.retain(|curve| {
         !matches!(
             curve.geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
@@ -1467,20 +1541,20 @@ fn retain_live_annotations(
         };
     }
     add_ids!(
-        ir.model.bodies,
-        ir.model.regions,
-        ir.model.shells,
-        ir.model.faces,
-        ir.model.loops,
-        ir.model.coedges,
-        ir.model.edges,
-        ir.model.vertices,
-        ir.model.points,
-        ir.model.surfaces,
-        ir.model.curves,
-        ir.model.pcurves,
-        ir.model.procedural_surfaces,
-        ir.model.procedural_curves,
+        ir.geometry.bodies,
+        ir.geometry.regions,
+        ir.geometry.shells,
+        ir.geometry.faces,
+        ir.geometry.loops,
+        ir.geometry.coedges,
+        ir.geometry.edges,
+        ir.geometry.vertices,
+        ir.geometry.points,
+        ir.geometry.surfaces,
+        ir.geometry.curves,
+        ir.geometry.pcurves,
+        ir.geometry.procedural_surfaces,
+        ir.geometry.procedural_curves,
         ir.model.features,
     );
     for unknown in unknowns {
@@ -1521,19 +1595,19 @@ fn retain_live_unknown_links(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
-    for entity in &ir.model.surfaces {
+    for entity in &ir.geometry.surfaces {
         ids.insert(entity.id.as_str().to_owned());
     }
-    for entity in &ir.model.curves {
+    for entity in &ir.geometry.curves {
         ids.insert(entity.id.as_str().to_owned());
     }
-    for entity in &ir.model.pcurves {
+    for entity in &ir.geometry.pcurves {
         ids.insert(entity.id.as_str().to_owned());
     }
-    for entity in &ir.model.procedural_surfaces {
+    for entity in &ir.geometry.procedural_surfaces {
         ids.insert(entity.id.as_str().to_owned());
     }
-    for entity in &ir.model.procedural_curves {
+    for entity in &ir.geometry.procedural_curves {
         ids.insert(entity.id.as_str().to_owned());
     }
     for unknown in unknowns.iter_mut() {
@@ -1674,20 +1748,90 @@ pub(super) fn rmfastload_allows_terminal_lineage(
     body_count > 1 && rmfastload_selected.is_empty()
 }
 
+const RMFASTLOAD_MEMBERSHIP_SELECTOR: &str = "rmfastload_object_id_membership";
+
+fn body_stream_index(body: &BodyId) -> Option<usize> {
+    body.as_str()
+        .strip_prefix("nx:s")
+        .and_then(|text| text.split_once(':'))
+        .and_then(|(text, _)| text.parse().ok())
+}
+
 /// Return the stream ordinals that can contain selected body images. A
 /// malformed body identity disables preselection rather than guessing a
 /// stream owner.
 pub(super) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<BTreeSet<usize>> {
     let mut streams = BTreeSet::new();
     for body in selected {
-        let index = body
-            .as_str()
-            .strip_prefix("nx:s")
-            .and_then(|text| text.split_once(':'))
-            .and_then(|(text, _)| text.parse().ok())?;
-        streams.insert(index);
+        streams.insert(body_stream_index(body)?);
     }
     Some(streams)
+}
+
+/// Whether a part has both partition streams and plain cached-body streams.
+fn has_plain_beside_partition_streams(kinds: impl IntoIterator<Item = StreamKind>) -> bool {
+    let (mut partition, mut plain) = (false, false);
+    for kind in kinds {
+        match kind {
+            StreamKind::Partition => partition = true,
+            StreamKind::Plain => plain = true,
+            StreamKind::Deltas | StreamKind::Preview => {}
+        }
+    }
+    partition && plain
+}
+
+/// The stream-level preselection. Plain history images beside partition
+/// streams are withheld before terminal lineage selects, so terminal-lineage
+/// preselection runs only for a part without them.
+fn body_preselection<T>(
+    membership: Option<T>,
+    terminal_lineage: Option<T>,
+    plain_beside_partition: bool,
+) -> Option<T> {
+    if plain_beside_partition {
+        membership
+    } else {
+        membership.or(terminal_lineage)
+    }
+}
+
+/// The plain-stream bodies of a part that also has partition-stream bodies.
+/// A body identity without a known stream withholds nothing.
+fn plain_history_images<'a>(
+    stream_kind: impl Fn(usize) -> Option<StreamKind>,
+    bodies: impl IntoIterator<Item = &'a BodyId>,
+) -> Option<BTreeSet<BodyId>> {
+    let mut plain = BTreeSet::new();
+    let mut partition = false;
+    for body in bodies {
+        match stream_kind(body_stream_index(body)?)? {
+            StreamKind::Partition => partition = true,
+            StreamKind::Plain => {
+                plain.insert(body.clone());
+            }
+            StreamKind::Deltas | StreamKind::Preview => {}
+        }
+    }
+    (partition && !plain.is_empty()).then_some(plain)
+}
+
+/// Remove plain-stream history images and return their count.
+fn withhold_plain_history_images(ir: &mut CadIr, streams: &[crate::parasolid::Stream]) -> usize {
+    let Some(images) = plain_history_images(
+        |index| streams.get(index).map(crate::parasolid::Stream::kind),
+        ir.geometry.bodies.iter().map(|body| &body.id),
+    ) else {
+        return 0;
+    };
+    let mut kept = BTreeSet::new();
+    for body in &ir.geometry.bodies {
+        if !images.contains(&body.id) {
+            kept.insert(body.id.clone());
+        }
+    }
+    prune_inactive_topology(ir, &kept);
+    images.len()
 }
 
 fn apply_preselected_active_body_selection(
@@ -1700,7 +1844,7 @@ fn apply_preselected_active_body_selection(
         return false;
     }
     let mut emitted = BTreeSet::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         emitted.insert(body.id.clone());
     }
     if !selected.is_subset(&emitted) {
@@ -1714,7 +1858,7 @@ fn apply_preselected_active_body_selection(
             selector,
         );
         let (hit_attribute, count_attribute) = match selector {
-            "rmfastload_object_id_membership" => (
+            RMFASTLOAD_MEMBERSHIP_SELECTOR => (
                 Some(cadmpeg_core::nonblank_literal!("rmfastload_hits")),
                 cadmpeg_core::nonblank_literal!("rmfastload_active_body_count"),
             ),
@@ -1745,7 +1889,7 @@ pub(super) fn select_active_body(
     body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
     rmfastload_ids: &[u32],
 ) -> bool {
-    if rmfastload_ids.is_empty() || ir.model.bodies.len() <= 1 {
+    if rmfastload_ids.is_empty() || ir.geometry.bodies.len() <= 1 {
         return false;
     }
     let selected = rmfastload_selected_bodies(body_node_ids, rmfastload_ids);
@@ -1760,7 +1904,7 @@ pub(super) fn select_active_body(
     apply_preselected_active_body_selection(
         ir,
         &selected,
-        "rmfastload_object_id_membership",
+        RMFASTLOAD_MEMBERSHIP_SELECTOR,
         Some(selected_hits),
     )
 }
@@ -1769,11 +1913,11 @@ fn select_terminal_feature_bodies(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
 ) -> bool {
-    if ir.model.bodies.len() <= 1 {
+    if ir.geometry.bodies.len() <= 1 {
         return false;
     }
     let mut emitted = BTreeSet::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         emitted.insert(body.id.clone());
     }
     // A complete terminal mapping resolves composition even when every emitted
@@ -1790,78 +1934,85 @@ fn select_terminal_feature_bodies(
 }
 
 fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
-    ir.model.bodies.retain(|body| selected.contains(&body.id));
-    ir.model
+    ir.geometry
+        .bodies
+        .retain(|body| selected.contains(&body.id));
+    ir.geometry
         .regions
         .retain(|region| selected.contains(&region.body));
     let mut regions: BTreeSet<RegionId> = BTreeSet::new();
-    for region in &ir.model.regions {
+    for region in &ir.geometry.regions {
         regions.insert(region.id.clone());
     }
-    ir.model
+    ir.geometry
         .shells
         .retain(|shell| regions.contains(&shell.region));
     let mut shells: BTreeSet<ShellId> = BTreeSet::new();
-    for shell in &ir.model.shells {
+    for shell in &ir.geometry.shells {
         shells.insert(shell.id.clone());
     }
-    ir.model.faces.retain(|face| shells.contains(&face.shell));
+    ir.geometry
+        .faces
+        .retain(|face| shells.contains(&face.shell));
     let mut faces: BTreeSet<FaceId> = BTreeSet::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         faces.insert(face.id.clone());
     }
-    ir.model.loops.retain(|loop_| faces.contains(&loop_.face));
+    ir.geometry
+        .loops
+        .retain(|loop_| faces.contains(&loop_.face));
     let mut loops: BTreeSet<LoopId> = BTreeSet::new();
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         loops.insert(loop_.id.clone());
     }
-    ir.model
+    ir.geometry
         .coedges
         .retain(|coedge| loops.contains(&coedge.owner_loop));
     let mut edges: BTreeSet<EdgeId> = BTreeSet::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         edges.insert(coedge.edge.clone());
     }
-    for shell in &ir.model.shells {
+    for shell in &ir.geometry.shells {
         for edge in shell.wire_edges() {
             edges.insert(edge.clone());
         }
     }
-    ir.model.edges.retain(|edge| edges.contains(&edge.id));
+    ir.geometry.edges.retain(|edge| edges.contains(&edge.id));
     let mut vertices: BTreeSet<VertexId> = BTreeSet::new();
-    for edge in &ir.model.edges {
-        vertices.insert(edge.start.clone());
-        vertices.insert(edge.end.clone());
+    for edge in &ir.geometry.edges {
+        vertices.extend(edge.vertices().cloned());
     }
-    for shell in &ir.model.shells {
+    for shell in &ir.geometry.shells {
         for vertex in shell.free_vertices() {
             vertices.insert(vertex.clone());
         }
     }
-    ir.model
+    ir.geometry
         .vertices
         .retain(|vertex| vertices.contains(&vertex.id));
     let mut points: BTreeSet<PointId> = BTreeSet::new();
-    for vertex in &ir.model.vertices {
+    for vertex in &ir.geometry.vertices {
         points.insert(vertex.point.clone());
     }
-    ir.model.points.retain(|point| points.contains(&point.id));
+    ir.geometry
+        .points
+        .retain(|point| points.contains(&point.id));
     prune_inactive_geometry(ir);
 }
 
 fn prune_inactive_geometry(ir: &mut CadIr) {
     let mut surfaces: BTreeSet<SurfaceId> = BTreeSet::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         surfaces.insert(face.surface.clone());
     }
     let mut curves: BTreeSet<CurveId> = BTreeSet::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         if let Some(curve) = edge.curve() {
             curves.insert(curve.clone());
         }
     }
     let mut pcurves: BTreeSet<PcurveId> = BTreeSet::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         for pcurve in &coedge.pcurves {
             pcurves.insert(pcurve.pcurve.clone());
         }
@@ -1870,8 +2021,8 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
     loop {
         let old_surface_count = surfaces.len();
         let old_curve_count = curves.len();
-        for procedural in &ir.model.procedural_surfaces {
-            let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
+        for procedural in &ir.geometry.procedural_surfaces {
+            let Some(owner) = ir.geometry.procedural_surface_owner(&procedural.id) else {
                 continue;
             };
             if !surfaces.contains(owner) {
@@ -1896,8 +2047,8 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
                 _ => {}
             }
         }
-        for procedural in &ir.model.procedural_curves {
-            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+        for procedural in &ir.geometry.procedural_curves {
+            let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) else {
                 continue;
             };
             if !curves.contains(owner) {
@@ -1927,7 +2078,7 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
     }
 
     let mut surface_constructions: BTreeSet<ProceduralSurfaceId> = BTreeSet::new();
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         if surfaces.contains(&surface.id) {
             if let Some(construction) = surface.geometry.procedural_construction() {
                 surface_constructions.insert(construction.clone());
@@ -1935,24 +2086,26 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
         }
     }
     let mut curve_constructions: BTreeSet<ProceduralCurveId> = BTreeSet::new();
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         if curves.contains(&curve.id) {
             if let Some(construction) = curve.geometry.procedural_construction() {
                 curve_constructions.insert(construction.clone());
             }
         }
     }
-    ir.model
+    ir.geometry
         .procedural_surfaces
         .retain(|procedural| surface_constructions.contains(&procedural.id));
-    ir.model
+    ir.geometry
         .procedural_curves
         .retain(|procedural| curve_constructions.contains(&procedural.id));
-    ir.model
+    ir.geometry
         .surfaces
         .retain(|surface| surfaces.contains(&surface.id));
-    ir.model.curves.retain(|curve| curves.contains(&curve.id));
-    ir.model
+    ir.geometry
+        .curves
+        .retain(|curve| curves.contains(&curve.id));
+    ir.geometry
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
 }
@@ -1962,17 +2115,17 @@ fn finalize_point_topology(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
     let mut referenced_points: BTreeSet<PointId> = BTreeSet::new();
-    for vertex in &ir.model.vertices {
+    for vertex in &ir.geometry.vertices {
         referenced_points.insert(vertex.point.clone());
     }
-    if !ir.model.bodies.is_empty() {
-        ir.model
+    if !ir.geometry.bodies.is_empty() {
+        ir.geometry
             .points
             .retain(|point| referenced_points.contains(&point.id));
         return Ok(());
     }
 
-    if ir.model.points.is_empty() {
+    if ir.geometry.points.is_empty() {
         return Ok(());
     }
 
@@ -1991,7 +2144,7 @@ fn finalize_point_topology(
 
     let mut free_vertices = Vec::new();
 
-    for (index, point) in ir.model.points.iter().enumerate() {
+    for (index, point) in ir.geometry.points.iter().enumerate() {
         let vertex_id: VertexId =
             derived.id_from_display(&cadmpeg_ir::identity_component!("point-vertex"), index)?;
         annotations.note(
@@ -2001,80 +2154,76 @@ fn finalize_point_topology(
             Some("derived_point_topology"),
         );
         annotations.exactness(vertex_id.as_str(), Exactness::Inferred);
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point.id.clone(),
             tolerance: None,
+            native_ref: None,
         });
         free_vertices.push(vertex_id);
     }
+    if free_vertices.is_empty() {
+        return Ok(());
+    }
 
-    ir.model.shells.push(
-        match Shell::new(
-            shell_id.clone(),
-            region_id.clone(),
-            Vec::new(),
-            Vec::new(),
-            free_vertices,
-        ) {
-            Ok(shell) => shell,
-            Err(_) => {
-                return Ok(());
-            }
-        },
-    );
+    ir.geometry.shells.push(Shell::with_members(
+        shell_id.clone(),
+        region_id.clone(),
+        Vec::new(),
+        free_vertices,
+    ));
 
     let region_shells = vec![shell_id];
-    ir.model.regions.push(Region {
+    ir.geometry.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
         shells: region_shells,
+        native_ref: None,
     });
 
-    let body_regions = vec![region_id];
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::General,
-        regions: body_regions,
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     Ok(())
 }
 
 fn classify_body_kinds(ir: &mut CadIr) -> Result<(), CodecError> {
     let mut region_bodies: BTreeMap<RegionId, BodyId> = BTreeMap::new();
-    for region in &ir.model.regions {
+    for region in &ir.geometry.regions {
         region_bodies.insert(region.id.clone(), region.body.clone());
     }
     let mut shell_bodies: BTreeMap<ShellId, BodyId> = BTreeMap::new();
-    for shell in &ir.model.shells {
+    for shell in &ir.geometry.shells {
         if let Some(body) = region_bodies.get(&shell.region) {
             shell_bodies.insert(shell.id.clone(), body.clone());
         }
     }
     let mut face_bodies: BTreeMap<FaceId, BodyId> = BTreeMap::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         if let Some(body) = shell_bodies.get(&face.shell) {
             face_bodies.insert(face.id.clone(), body.clone());
         }
     }
     let mut loop_bodies: BTreeMap<LoopId, BodyId> = BTreeMap::new();
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         if let Some(body) = face_bodies.get(&loop_.face) {
             loop_bodies.insert(loop_.id.clone(), body.clone());
         }
     }
     let mut coedge_bodies: BTreeMap<CoedgeId, BodyId> = BTreeMap::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         if let Some(body) = loop_bodies.get(&coedge.owner_loop) {
             coedge_bodies.insert(coedge.id.clone(), body.clone());
         }
     }
     let mut edge_uses = BTreeMap::<BodyId, BTreeMap<EdgeId, usize>>::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         let Some(body) = coedge_bodies.get(&coedge.id) else {
             continue;
         };
@@ -2094,7 +2243,7 @@ fn classify_body_kinds(ir: &mut CadIr) -> Result<(), CodecError> {
         };
         *count += 1;
     }
-    for body in &mut ir.model.bodies {
+    for body in &mut ir.geometry.bodies {
         body.kind = if edge_uses
             .get(&body.id)
             .is_some_and(|uses| !uses.is_empty() && uses.values().all(|use_count| *use_count == 2))

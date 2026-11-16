@@ -74,21 +74,21 @@ pub(crate) fn plan(
     }
     let owned_points = input
         .ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| &vertex.point)
         .collect::<std::collections::BTreeSet<_>>();
     let owned_curves = input
         .ir
-        .model
+        .geometry
         .edges
         .iter()
         .filter_map(cadmpeg_ir::topology::Edge::curve)
         .collect::<std::collections::BTreeSet<_>>();
     let points = input
         .ir
-        .model
+        .geometry
         .points
         .iter()
         .filter(|point| {
@@ -97,7 +97,7 @@ pub(crate) fn plan(
         .count();
     let curves = input
         .ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -150,7 +150,7 @@ pub(crate) fn plan(
 /// `points` and `curves` are `Reported` because
 /// `WriterSupportGeometryWithheld` accounts for withheld support records.
 const COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Dropped, Omitted, Reported, Written};
+    use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -188,6 +188,8 @@ const COVERAGE: ArenaDispositions = {
         presentation_documents: Omitted,
         view_presentations: Omitted,
         tessellations: Written,
+        point_clouds: Omitted,
+        history_bodies: Ignored,
         appearances: Dropped,
         appearance_bindings: Dropped,
         attributes: Dropped,
@@ -200,5 +202,6 @@ const COVERAGE: ArenaDispositions = {
         articulations: Omitted,
         physics_scenes: Omitted,
         solver_settings: Omitted,
+        declared_measures: Omitted,
     }
 };

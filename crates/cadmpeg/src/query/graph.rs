@@ -6,6 +6,7 @@
 //! record. Multiple routes to the same record are separate results. A node
 //! already on the current path is not expanded.
 
+use cadmpeg_ir::reference_walk::visit_edges;
 use std::collections::VecDeque;
 
 use anyhow::{bail, Result};
@@ -24,8 +25,9 @@ const DEFAULT_MAX_PATHS: usize = 10_000;
 pub(crate) struct GraphArgs {
     /// JSON file, or `-` for standard input.
     file: std::path::PathBuf,
-    /// Arena address: `model.<arena>`, `native.<codec>.<arena>`, or bare
-    /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
+    /// Arena address: `<home>.<arena>` with home `geometry`, `model`,
+    /// `design`, or `process`, `native.<codec>.<arena>`, or bare `<arena>` as
+    /// shorthand for the arena in its home. Same dotted names as
     /// `query counts --json`.
     arena: String,
     /// Which records of the arena to walk from.
@@ -220,7 +222,13 @@ fn neighbors(
                     true
                 }
             };
-            if !visit_edges(rec, "", true, doc, &mut incoming) {
+            if !visit_edges(
+                rec,
+                "",
+                true,
+                &|id| doc.id_locations(id).unwrap_or_default().to_vec(),
+                &mut incoming,
+            ) {
                 break;
             }
         }
@@ -232,57 +240,15 @@ fn neighbors(
                 visit(field, to)
             }
         };
-        visit_edges(doc.record(node), "", true, doc, &mut outgoing);
+        visit_edges(
+            doc.record(node),
+            "",
+            true,
+            &|id| doc.id_locations(id).unwrap_or_default().to_vec(),
+            &mut outgoing,
+        );
     }
     edges
-}
-
-fn visit_edges(
-    value: &Value,
-    path: &str,
-    skip_top_id: bool,
-    doc: &CadirDocument,
-    visit: &mut impl FnMut(&str, RecordRef) -> bool,
-) -> bool {
-    match value {
-        Value::Object(map) => {
-            for (key, child) in map {
-                if skip_top_id && key == "id" {
-                    continue;
-                }
-                let child_path = if path.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{path}.{key}")
-                };
-                if !visit_edges(child, &child_path, false, doc, visit) {
-                    return false;
-                }
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                if !visit_edges(item, path, false, doc, visit) {
-                    return false;
-                }
-            }
-        }
-        Value::String(s) => {
-            if path.is_empty() {
-                return true;
-            }
-            let Some(hits) = doc.id_locations(s) else {
-                return true;
-            };
-            for &record in hits {
-                if !visit(path, record) {
-                    return false;
-                }
-            }
-        }
-        _ => {}
-    }
-    true
 }
 
 #[cfg(test)]
@@ -379,34 +345,34 @@ mod tests {
     #[test]
     fn graph_follows_array_of_ids() {
         let document = doc(&json!({
-            "model": {
-                "bodies": [{"id": "b1", "regions": ["r1", "r2"]}],
-                "regions": [{"id": "r1"}, {"id": "r2"}]
+            "geometry": {
+                "regions": [{"id": "r1", "shells": ["s1", "s2"]}],
+                "shells": [{"id": "s1"}, {"id": "s2"}]
             }
         }));
-        let results = walk_ids(&document, "bodies", &["b1"], 1, None, false);
+        let results = walk_ids(&document, "regions", &["r1"], 1, None, false);
         let mut ids = reached_ids(&results);
         ids.sort();
-        assert_eq!(ids, vec!["b1", "r1", "r2"]);
-        assert_eq!(paths_to(&results, "r1"), vec![vec!["regions"]]);
-        assert_eq!(paths_to(&results, "r2"), vec![vec!["regions"]]);
+        assert_eq!(ids, vec!["r1", "s1", "s2"]);
+        assert_eq!(paths_to(&results, "s1"), vec![vec!["shells"]]);
+        assert_eq!(paths_to(&results, "s2"), vec![vec!["shells"]]);
     }
 
     #[test]
     fn graph_hops_1_vs_2() {
         let document = doc(&json!({
-            "model": {
-                "bodies": [{"id": "b1", "regions": ["r1"]}],
-                "regions": [{"id": "r1", "shells": ["s1"]}],
-                "shells": [{"id": "s1"}]
+            "geometry": {
+                "faces": [{"id": "f1", "loops": ["l1"]}],
+                "loops": [{"id": "l1", "coedges": ["c1"]}],
+                "coedges": [{"id": "c1"}]
             }
         }));
-        let h1 = walk_ids(&document, "bodies", &["b1"], 1, None, false);
-        assert_eq!(reached_ids(&h1), vec!["b1", "r1"]);
-        let h2 = walk_ids(&document, "bodies", &["b1"], 2, None, false);
-        assert_eq!(reached_ids(&h2), vec!["b1", "r1", "s1"]);
-        let h0 = walk_ids(&document, "bodies", &["b1"], 0, None, false);
-        assert_eq!(reached_ids(&h0), vec!["b1"]);
+        let h1 = walk_ids(&document, "faces", &["f1"], 1, None, false);
+        assert_eq!(reached_ids(&h1), vec!["f1", "l1"]);
+        let h2 = walk_ids(&document, "faces", &["f1"], 2, None, false);
+        assert_eq!(reached_ids(&h2), vec!["f1", "l1", "c1"]);
+        let h0 = walk_ids(&document, "faces", &["f1"], 0, None, false);
+        assert_eq!(reached_ids(&h0), vec!["f1"]);
         assert!(h0[0]["path"].as_array().unwrap().is_empty());
     }
 
@@ -502,7 +468,7 @@ mod tests {
     #[test]
     fn graph_array_of_objects_uses_nested_path_without_indices() {
         let document = doc(&json!({
-            "model": {
+            "geometry": {
                 "faces": [{"id": "f1", "pcurves": [{"pcurve": "c1"}]}],
                 "curves": [{"id": "c1"}]
             }

@@ -842,6 +842,7 @@ fn loft_edge_profile_face_slot(
                 .filter(|candidate| {
                     candidate.selector == reference.selector
                         && candidate.token == reference.token
+                        && candidate.token_integer == reference.token_integer
                         && candidate.design_reference == reference.design_reference
                         && candidate.candidate_faces.len() == 1
                         && candidate.alternate_selector_faces.is_empty()
@@ -856,6 +857,7 @@ fn loft_edge_profile_face_slot(
                 != (
                     reference.selector,
                     &reference.token,
+                    reference.token_integer,
                     reference.design_reference,
                 )
             {
@@ -865,15 +867,17 @@ fn loft_edge_profile_face_slot(
             common_clause = Some((
                 reference.selector,
                 &reference.token,
+                reference.token_integer,
                 reference.design_reference,
             ));
         }
     }
-    let (selector, token, design_reference) = common_clause?;
+    let (selector, token, token_integer, design_reference) = common_clause?;
     let mut evidence = None;
     for operand in operands {
         let (candidate, slot, count) = (|| {
-            if operand.recipe_references.len() != operand.recipe_reference_contexts.len()
+            if crate::records::dimensions::reference_lanes(&operand.recipe_references).len()
+                != operand.recipe_reference_contexts.len()
                 || operand.candidate_faces.is_empty()
                 || operand.preceding_candidate_faces.is_empty()
                 || operand.result_candidate_faces.is_empty()
@@ -887,6 +891,7 @@ fn loft_edge_profile_face_slot(
                 .filter(|(_, reference)| {
                     reference.selector == selector
                         && reference.token == *token
+                        && reference.token_integer == token_integer
                         && reference.design_reference == design_reference
                         && reference.candidate_faces.len() == 1
                         && reference.alternate_selector_faces.is_empty()
@@ -970,7 +975,7 @@ fn loft_edge_profile_face_slot(
     Some(evidence?.1)
 }
 
-pub(super) fn resolved_historical_face_group(
+pub(crate) fn resolved_historical_face_group(
     scope: &DesignParameterScope,
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
@@ -1000,7 +1005,7 @@ fn historical_face_selection_in_state(
     historical_face_selection_with_native(scope, previous_state_id, faces, native)
 }
 
-fn historical_face_selection_with_native(
+pub(crate) fn historical_face_selection_with_native(
     scope: &DesignParameterScope,
     previous_state_id: i64,
     faces: Vec<i64>,
@@ -2048,7 +2053,7 @@ fn extrude_start_plane_geometry_candidates(
     Some(faces.iter().map(|face| face.id.clone()).collect())
 }
 
-fn extrude_profile_sketch_id(
+pub(crate) fn extrude_profile_sketch_id(
     profile: &cadmpeg_ir::features::ProfileRef,
 ) -> Option<&cadmpeg_ir::sketches::SketchId> {
     use cadmpeg_ir::features::ProfileRef;
@@ -2320,6 +2325,24 @@ fn extrude_target_plane_candidate(
     if matching_operands.next().is_some() {
         return None;
     }
+    let direct = face_operand_candidates(operand);
+    let referenced: HashSet<_> = operand
+        .recipe_references
+        .iter()
+        .flat_map(|reference| {
+            reference
+                .candidate_faces
+                .iter()
+                .chain(&reference.alternate_selector_faces)
+        })
+        .collect();
+    if !referenced.is_empty()
+        && direct
+            .iter()
+            .any(|candidate| !referenced.contains(candidate))
+    {
+        return None;
+    }
     let direction_length = sweep_direction.norm();
     let mut found = None;
     let mut ambiguous = false;
@@ -2356,7 +2379,6 @@ fn extrude_target_plane_candidate(
             }
         }
     };
-    let direct = face_operand_candidates(operand);
     if direct.is_empty() {
         if !has_nested_bounded_face_history_candidates(operand) {
             return None;
@@ -2496,7 +2518,7 @@ pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::sc
 /// frame is one of them: a sketch on the 5 mm top face of a Fusion screw head
 /// stores a translation of 0.5. The compact frame has no translation, and the
 /// 305/325 legacy frames keep the neutral unit.
-pub(super) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
+pub(crate) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
     use crate::records::sketch_placement::DesignSketchFrameForm;
     match placement.frame.form() {
         DesignSketchFrameForm::ScopeGenesisCompact
@@ -2885,6 +2907,7 @@ mod tests {
             selector: 1,
             selector_offset: 0,
             token: token.into(),
+            token_integer: 0,
             token_offset: 0,
             design_reference,
             design_reference_offset: 0,
@@ -2892,6 +2915,7 @@ mod tests {
             candidate_edges: Vec::new(),
             alternate_selector_faces: Vec::new(),
             alternate_selector_edges: Vec::new(),
+            operand_offset: None,
         }
     }
 
@@ -3273,7 +3297,7 @@ mod tests {
             Some(crate::records::topology::face::DesignFaceRecipeStructure {
                 root: 0,
                 prelude: [0, 2],
-                sides: [side.clone(), side],
+                sides: vec![side.clone(), side],
                 postlude_value: None,
             });
         operand
@@ -3499,6 +3523,7 @@ mod tests {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         }];
         (operand, group, faces)
     }

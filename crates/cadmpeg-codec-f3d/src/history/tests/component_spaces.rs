@@ -92,6 +92,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             crate::records::bodies::DesignBodyBindingWire {
                 component_owner: None,
                 component_owner_unresolved: false,
+                history_only: false,
                 id: crate::ids::native_design_body_binding_id(design_stream, at),
                 stream: design_stream.into(),
                 pair_count: 1,
@@ -179,6 +180,7 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
             entity_ref,
             selector,
             token: "rim".into(),
+            token_integer: 0,
             design_references: references,
             ordinal: 0,
         }
@@ -193,6 +195,7 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
         selector: 0x0100_0080,
         selector_offset: 0,
         token: "rim".into(),
+        token_integer: 0,
         token_offset: 4,
         design_reference: 301,
         design_reference_offset: 8,
@@ -203,6 +206,7 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     };
 
     {
@@ -241,6 +245,7 @@ fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
             selector: 0,
             selector_offset: 0,
             token: "face".into(),
+            token_integer: 0,
             token_offset: 0,
             design_reference,
             design_reference_offset: 0,
@@ -254,6 +259,7 @@ fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
             candidate_edges: Vec::new(),
             alternate_selector_faces: Vec::new(),
             alternate_selector_edges: Vec::new(),
+            operand_offset: None,
         };
     let references = [reference(203, &[8, 7]), reference(199, &[9])];
 
@@ -324,6 +330,7 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
             selector: 0,
             selector_offset: 0,
             token: token.into(),
+            token_integer: 0,
             token_offset: 0,
             design_reference: 301,
             design_reference_offset: 0,
@@ -337,6 +344,7 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
             candidate_edges: Vec::new(),
             alternate_selector_faces: Vec::new(),
             alternate_selector_edges: Vec::new(),
+            operand_offset: None,
         };
     let recipe = crate::records::feature::work_geometry::DesignVertexRecipe::try_new(
         crate::records::feature::work_geometry::DesignVertexRecipeDraft {

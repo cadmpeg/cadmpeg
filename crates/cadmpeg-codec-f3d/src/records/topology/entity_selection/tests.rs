@@ -44,6 +44,20 @@ fn entity_selection_borrowed_wire_matches_owned_wire_bytes() {
 }
 
 #[test]
+fn entity_selection_serialization_form_validates_wire() {
+    let mut wire = entity_selection_wire_for_borrowed();
+    let default: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(default).unwrap(), wire);
+
+    wire["serialization_form"] = 1.into();
+    let operand: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(operand).unwrap(), wire);
+
+    wire["serialization_form"] = 2.into();
+    assert!(serde_json::from_value::<DesignEntitySelectionOperand>(wire).is_err());
+}
+
+#[test]
 fn entity_selection_native_retained_limit_refuses_before_clone() {
     let record: DesignEntitySelectionOperand =
         serde_json::from_value(entity_selection_wire_for_borrowed()).unwrap();
@@ -159,7 +173,7 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
 }
 
 #[test]
-fn entity_selection_retains_primary_paired_and_class_338_forms() {
+fn entity_selection_retains_primary_paired_and_marked_forms() {
     let base = json!({
         "id": "operand", "scope_record_index": 1, "group_record_index": 2, "group_member_ordinal": 0,
         "record_index": 7, "byte_offset": 100, "class_tag": "338",
@@ -182,6 +196,29 @@ fn entity_selection_retains_primary_paired_and_class_338_forms() {
             wire["secondary_identity_offset"] = offset.into();
             wire["next_record_index"] = 11.into();
         }
+        rejects_changed_fields::<DesignEntitySelectionOperand>(
+            wire,
+            &[
+                "identity_record_index",
+                "primary_identity_offset",
+                "next_byte_offset",
+            ],
+        );
+    }
+}
+
+#[test]
+fn paired_entity_selection_retains_independent_successor_index() {
+    for next_record_index in [6u32, 11, 21, u32::MAX] {
+        let mut wire = entity_selection_wire_for_borrowed();
+        wire["primary_identity_offset"] = 329.into();
+        wire["secondary_identity"] = 2.into();
+        wire["secondary_identity_offset"] = 337.into();
+        wire["next_byte_offset"] = 345.into();
+        wire["next_record_index"] = next_record_index.into();
+        let operand: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(operand.next_record_index(), next_record_index);
+        assert_eq!(serde_json::to_value(&operand).unwrap(), wire);
         rejects_changed_fields::<DesignEntitySelectionOperand>(
             wire,
             &[

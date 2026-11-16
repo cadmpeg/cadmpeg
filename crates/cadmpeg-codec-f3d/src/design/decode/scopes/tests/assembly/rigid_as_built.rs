@@ -121,9 +121,11 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
         (67, (locator, 5)),
         (68, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
     ]);
-    let alignment = exact_assembly_alignment_with_types(&bytes, &records, &scope, &[], &types)
-        .unwrap()
-        .expect("rigid as-built alignment");
+    let alignment = crate::test_support::with_decode_context(|ctx| {
+        exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &[], &types)
+    })
+    .unwrap()
+    .expect("rigid as-built alignment");
     assert_eq!(alignment.angle(), 0.0);
     assert_eq!(alignment.offset(), [0.0; 3]);
     let frames = alignment
@@ -216,9 +218,11 @@ fn rigid_group_reads_every_member_after_its_first_two() {
             ]
         })
         .collect::<std::collections::HashMap<_, _>>();
-    let alignment = exact_assembly_alignment_with_types(&bytes, &records, &scope, &[], &types)
-        .unwrap()
-        .expect("rigid group alignment");
+    let alignment = crate::test_support::with_decode_context(|ctx| {
+        exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &[], &types)
+    })
+    .unwrap()
+    .expect("rigid group alignment");
     let paths = alignment
         .operand_path_refs()
         .expect("the first two members");
@@ -331,9 +335,11 @@ fn typed_rigid_group_closes_with_its_stored_count_and_reference_width() {
         })
         .collect();
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
-    let alignment = exact_assembly_alignment_with_types(&bytes, &records, &scope, &[], &types)
-        .unwrap()
-        .unwrap();
+    let alignment = crate::test_support::with_decode_context(|ctx| {
+        exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &[], &types)
+    })
+    .unwrap()
+    .unwrap();
     assert!(alignment.operand_path_refs().is_some());
     assert_eq!(alignment.additional_members.len(), 1);
     for at in [77, 81, 81 + 49, 588 - 196 + 19] {
@@ -416,9 +422,11 @@ fn rigid_group_lengths_and_dynamic_classes_do_not_select_owner_generations() {
                 ]
             })
             .collect();
-        let alignment = exact_assembly_alignment_with_types(&bytes, &records, &scope, &[], &types)
-            .unwrap()
-            .unwrap();
+        let alignment = crate::test_support::with_decode_context(|ctx| {
+            exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &[], &types)
+        })
+        .unwrap()
+        .unwrap();
         assert_eq!(alignment.angle(), 0.0);
         assert_eq!(alignment.offset(), [0.0; 3]);
         assert!(alignment.owners.is_empty());
@@ -529,16 +537,18 @@ fn ordinary_rigid_group_tail_checks_its_references_and_zero_fields() {
                 ]
             })
             .collect();
-        let alignment =
+        let alignment = crate::test_support::with_decode_context(|ctx| {
             crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types(
+                ctx,
                 &bytes,
                 &records,
                 &scope,
                 &[],
                 &types,
             )
-            .unwrap()
-            .unwrap();
+        })
+        .unwrap()
+        .unwrap();
         assert_eq!(
             alignment
                 .operand_path_refs()

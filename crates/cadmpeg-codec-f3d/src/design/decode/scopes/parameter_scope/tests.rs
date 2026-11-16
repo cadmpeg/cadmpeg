@@ -5,6 +5,184 @@ use super::named_parameter_scope_tail_is_valid;
 use super::reference_table_ends_at;
 use crate::test_support::lp_utf16;
 
+fn marked_named_combine(
+    label: &str,
+    associated: &[u32],
+    middle: Option<u32>,
+    closing: Option<u32>,
+) -> Vec<u8> {
+    use crate::test_support::{indexed_header, push_reference_u64};
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"300", 100);
+    bytes.resize(100, 0);
+    bytes.extend_from_slice(&4u32.to_le_bytes());
+    for member in [110, 111, 120, 121] {
+        push_reference_u64(&mut bytes, member);
+    }
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+    lp_utf16(&mut bytes, "Combine");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    lp_utf16(&mut bytes, label);
+    bytes.extend_from_slice(&u32::try_from(associated.len()).unwrap().to_le_bytes());
+    for &member in associated {
+        push_reference_u64(&mut bytes, u64::from(member));
+    }
+    bytes.extend_from_slice(&[0; 3]);
+    push_reference_u64(&mut bytes, 602);
+    if let Some(member) = middle {
+        push_reference_u64(&mut bytes, u64::from(member));
+    } else {
+        bytes.push(0);
+    }
+    bytes.extend_from_slice(&4u32.to_le_bytes());
+    bytes.extend_from_slice(&257u32.to_le_bytes());
+    bytes.extend_from_slice(&1.25f64.to_le_bytes());
+    bytes.extend_from_slice(&257u32.to_le_bytes());
+    push_reference_u64(&mut bytes, 601);
+    bytes.extend_from_slice(&[1, 0, 0]);
+    push_reference_u64(&mut bytes, 600);
+    if let Some(member) = closing {
+        push_reference_u64(&mut bytes, u64::from(member));
+    } else {
+        bytes.push(0);
+    }
+    bytes.push(0);
+    indexed_header(&mut bytes, *b"260", 100);
+    bytes
+}
+
+fn parse_marked_named_combine(bytes: &[u8]) -> Option<super::DesignParameterScope> {
+    super::parse_parameter_scope(
+        bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        100,
+        &"300".to_owned().try_into().unwrap(),
+        0,
+    )
+    .unwrap()
+}
+
+#[test]
+fn named_combine_preserves_middle_reference_and_scope_identity() {
+    let bytes = marked_named_combine("NewBody", &[], Some(900), None);
+    let scope = parse_marked_named_combine(&bytes).unwrap();
+    assert_eq!(scope.paired_byte_offset(), 272);
+    assert_eq!(scope.label.as_ref().unwrap().value, "NewBody");
+    assert_eq!(scope.label.as_ref().unwrap().offset, 182);
+    assert_eq!(scope.previous_history_state_id(), None);
+    assert_eq!(
+        scope
+            .reference_members()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [110, 111, 120, 121]
+    );
+    let tail = scope.combine_named_tail().unwrap();
+    assert!(tail.associated.is_empty());
+    assert_eq!(tail.middle.as_ref().unwrap().value, 900);
+    assert_eq!(tail.middle.as_ref().unwrap().offset, 215);
+    assert_eq!(tail.closing, None);
+    let wire = serde_json::to_value(&scope).unwrap();
+    let cloned_wire = serde_json::to_value(scope.clone()).unwrap();
+    assert_eq!(wire, cloned_wire);
+    let roundtrip: super::DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(roundtrip).unwrap(), wire);
+    let mut wrong_offset = wire.clone();
+    wrong_offset["combine_named_tail"]["middle"]["offset"] = serde_json::json!(214);
+    assert!(serde_json::from_value::<super::DesignParameterScope>(wrong_offset).is_err());
+    let mut wrong_kind = wire;
+    wrong_kind["kind"] = serde_json::json!("SplitFace");
+    assert!(serde_json::from_value::<super::DesignParameterScope>(wrong_kind).is_err());
+}
+
+#[test]
+fn named_combine_preserves_associated_and_closing_references_with_utf16_label() {
+    let bytes = marked_named_combine("A😀", &[701, 702], None, Some(800));
+    let scope = parse_marked_named_combine(&bytes).unwrap();
+    assert_eq!(scope.paired_byte_offset(), 286);
+    let tail = scope.combine_named_tail().unwrap();
+    assert_eq!(
+        tail.associated
+            .iter()
+            .map(|member| (member.value, member.offset))
+            .collect::<Vec<_>>(),
+        [(701, 193), (702, 204)]
+    );
+    assert_eq!(tail.middle, None);
+    assert_eq!(tail.closing.as_ref().unwrap().value, 800);
+    assert_eq!(tail.closing.as_ref().unwrap().offset, 275);
+    assert_eq!(tail.extra_bytes(), Some(32));
+}
+
+#[test]
+fn named_combine_admits_odd_tail_with_all_reference_lanes_present() {
+    let bytes = marked_named_combine("NewBody", &[701], Some(900), Some(800));
+    let scope = parse_marked_named_combine(&bytes).unwrap();
+    assert_eq!(scope.paired_byte_offset(), 293);
+    let tail = scope.combine_named_tail().unwrap();
+    assert_eq!(tail.associated[0].offset, 201);
+    assert_eq!(tail.middle.as_ref().unwrap().offset, 226);
+    assert_eq!(tail.closing.as_ref().unwrap().offset, 282);
+    assert_eq!(tail.extra_bytes(), Some(31));
+}
+
+#[test]
+fn unlabelled_combine_with_second_reference_keeps_the_unnamed_tail() {
+    let bytes = marked_named_combine("", &[], Some(900), None);
+    let scope = parse_marked_named_combine(&bytes).unwrap();
+    assert_eq!(scope.paired_byte_offset(), 258);
+    assert_eq!(scope.label, None);
+    assert_eq!(scope.combine_named_tail(), None);
+    assert_eq!(
+        scope
+            .reference_members()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [110, 111, 120, 121]
+    );
+}
+
+#[test]
+fn named_combine_rejects_incomplete_or_inconsistent_tail() {
+    let bytes = marked_named_combine("NewBody", &[], Some(900), None);
+    for (offset, value) in [
+        (174, 1),
+        (200, 1),
+        (203, 0),
+        (214, 2),
+        (220, 1),
+        (241, 2),
+        (245, 0),
+        (256, 0),
+        (258, 1),
+        (259, 0),
+        (270, 2),
+        (271, 1),
+    ] {
+        let mut broken = bytes.clone();
+        broken[offset] = value;
+        assert!(
+            parse_marked_named_combine(&broken).is_none(),
+            "offset {offset}"
+        );
+    }
+    let mut broken = bytes.clone();
+    broken[196..200].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(parse_marked_named_combine(&broken).is_none());
+    let mut broken = bytes.clone();
+    broken[215..219].copy_from_slice(&0u32.to_le_bytes());
+    assert!(parse_marked_named_combine(&broken).is_none());
+    let mut broken = bytes.clone();
+    broken[233..241].copy_from_slice(&f64::INFINITY.to_le_bytes());
+    assert!(parse_marked_named_combine(&broken).is_none());
+    let mut broken = bytes;
+    broken.insert(272, 0);
+    assert!(parse_marked_named_combine(&broken).is_none());
+}
+
 fn named_scope_tail(lane_value: u64) -> Vec<u8> {
     named_scope_tail_with_class_word(lane_value, 0xfc)
 }
@@ -324,7 +502,7 @@ fn thread_bound_hole_scope_requires_reciprocal_tail_and_history() {
         serde_json::from_str(&wire).unwrap();
     assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
     for offset in [
-        0, 4, 12, 17, 21, 28, 32, 38, 42, 46, 52, 69, 74, 78, 84, 87, 91, 98, 102, 108,
+        0, 4, 12, 17, 21, 28, 32, 38, 40, 42, 46, 52, 74, 78, 85, 87, 91, 98, 102, 108,
     ] {
         let mut invalid = tail;
         invalid[offset] ^= 1;
@@ -335,6 +513,148 @@ fn thread_bound_hole_scope_requires_reciprocal_tail_and_history() {
         invalid[61..69].copy_from_slice(&duration.to_le_bytes());
         assert!(parse(&invalid).is_none());
     }
+    let mut independent_epochs = tail;
+    independent_epochs[69..73].copy_from_slice(&3u32.to_le_bytes());
+    assert!(parse(&independent_epochs).is_some());
+    let mut suppressed = tail;
+    suppressed[39] = 1;
+    suppressed[84] = 1;
+    assert!(parse(&suppressed).is_some());
+    for (at, value) in [(39, 2), (84, 2)] {
+        let mut invalid = tail;
+        invalid[at] = value;
+        assert!(parse(&invalid).is_none(), "flag at {at}");
+    }
+}
+
+fn push_marked(out: &mut Vec<u8>, record_index: u32) {
+    out.push(1);
+    out.extend_from_slice(&record_index.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
+}
+
+/// A reciprocal Hole tail of scope 12 listing `members`, with or without the
+/// further reference after the first companion.
+fn reciprocal_hole_tail(members: &[u32], further: bool, suppressed: bool) -> Vec<u8> {
+    let first = members.get(1).map_or(99, |thread| thread - 1);
+    let mut tail = Vec::new();
+    tail.extend_from_slice(&1u32.to_le_bytes());
+    tail.extend_from_slice(&[0; 8]);
+    tail.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+    for member in members {
+        push_marked(&mut tail, *member);
+    }
+    tail.extend_from_slice(&[0, u8::from(suppressed), 0]);
+    push_marked(&mut tail, first);
+    if further {
+        push_marked(&mut tail, 5);
+    } else {
+        tail.push(0);
+    }
+    tail.extend_from_slice(&8u32.to_le_bytes());
+    tail.extend_from_slice(&6u32.to_le_bytes());
+    tail.extend_from_slice(&0.25f64.to_le_bytes());
+    tail.extend_from_slice(&4u32.to_le_bytes());
+    push_marked(&mut tail, first - 1);
+    tail.extend_from_slice(&[u8::from(suppressed), 0]);
+    push_marked(&mut tail, first - 2);
+    push_marked(&mut tail, 12);
+    tail.push(0);
+    tail
+}
+
+fn parse_hole_scope(tail: &[u8]) -> Option<crate::records::feature::scope::DesignParameterScope> {
+    parse_hole_scope_in_state(tail, 9)
+}
+
+fn parse_hole_scope_in_state(
+    tail: &[u8],
+    history_state: u32,
+) -> Option<crate::records::feature::scope::DesignParameterScope> {
+    use crate::design::test_support::indexed_record_offsets_for_test;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"300");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    push_marked(&mut bytes, 55);
+    push_marked(&mut bytes, 56);
+    bytes.extend_from_slice(&history_state.to_le_bytes());
+    lp_utf16(&mut bytes, "Hole");
+    bytes.extend_from_slice(tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"260");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    super::parse_parameter_scope(
+        &bytes,
+        &indexed_record_offsets_for_test(&bytes),
+        12,
+        &"300".to_owned().try_into().unwrap(),
+        0,
+    )
+    .unwrap()
+}
+
+#[test]
+fn reciprocal_hole_tail_length_follows_its_members_and_further_reference() {
+    for (members, further, length) in [
+        (&[12][..], false, 98),
+        (&[12][..], true, 108),
+        (&[12, 100][..], false, 109),
+        (&[12, 100][..], true, 119),
+    ] {
+        for suppressed in [false, true] {
+            let tail = reciprocal_hole_tail(members, further, suppressed);
+            assert_eq!(tail.len(), length);
+            let scope = parse_hole_scope(&tail).expect("reciprocal Hole tail");
+            assert_eq!(scope.history_state_id(), Some(9));
+            assert_eq!(scope.previous_history_state_id(), Some(8), "{length}");
+            let wire = serde_json::to_string(&scope).unwrap();
+            let decoded: crate::records::feature::scope::DesignParameterScope =
+                serde_json::from_str(&wire).unwrap();
+            assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+        }
+    }
+}
+
+#[test]
+fn reciprocal_hole_tail_needs_its_own_members_and_companion_chain() {
+    assert!(parse_hole_scope(&reciprocal_hole_tail(&[13], false, false)).is_none());
+    assert!(parse_hole_scope(&reciprocal_hole_tail(&[12, 12], false, false)).is_none());
+    assert!(parse_hole_scope(&reciprocal_hole_tail(&[12, 100, 101], false, false)).is_none());
+    let mut wrong_thread_companion = reciprocal_hole_tail(&[12, 100], false, false);
+    wrong_thread_companion[42..46].copy_from_slice(&101u32.to_le_bytes());
+    assert!(parse_hole_scope(&wrong_thread_companion).is_none());
+    let one_member = reciprocal_hole_tail(&[12], false, false);
+    for (at, value) in [
+        (27, 1),
+        (29, 1),
+        (30, 7),
+        (41, 2),
+        (62, 0),
+        (74, 1),
+        (75, 0),
+        (86, 0),
+        (97, 1),
+    ] {
+        let mut invalid = one_member.clone();
+        invalid[at] = value;
+        assert!(parse_hole_scope(&invalid).is_none(), "byte {at}");
+    }
+    let mut short = one_member.clone();
+    short.pop();
+    assert!(parse_hole_scope(&short).is_none());
+    let mut suppressed = reciprocal_hole_tail(&[12], false, true);
+    suppressed[42..46].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(parse_hole_scope_in_state(&suppressed, u32::MAX).is_some());
+    suppressed.extend_from_slice(&[0, 0]);
+    assert!(parse_hole_scope_in_state(&suppressed, u32::MAX).is_none());
+    let exact = reciprocal_hole_tail(&[12], false, false);
+    assert_eq!(super::reciprocal_hole_tail(&exact, 12), Some(42));
+    let mut long = exact;
+    long.extend_from_slice(&[0, 0]);
+    assert_eq!(super::reciprocal_hole_tail(&long, 12), None);
 }
 
 #[test]
@@ -436,39 +756,59 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
 }
 
 #[test]
-fn stored_family_name_takes_precedence_over_the_class_type_family() {
+fn listed_type_guid_family_wins_over_stored_name() {
     use crate::records::feature::scope::DesignFeatureKind;
 
-    let hole = Some(&DesignFeatureKind::Hole);
+    let fillet = Some(&DesignFeatureKind::Fillet);
     assert_eq!(
-        super::scope_feature_kind("Perçage", hole),
-        Some(DesignFeatureKind::Hole)
+        super::scope_feature_kind("Raccordo", fillet),
+        Some(DesignFeatureKind::Fillet)
     );
     assert_eq!(
-        super::scope_feature_kind("Congé", Some(&DesignFeatureKind::Fillet)),
-        Some(DesignFeatureKind::Conge)
+        super::scope_feature_kind("Thread", fillet),
+        Some(DesignFeatureKind::Fillet)
     );
     assert_eq!(
-        super::scope_feature_kind("Thread", hole),
+        super::scope_feature_kind("Congé", fillet),
+        Some(DesignFeatureKind::Fillet)
+    );
+    assert_eq!(
+        super::scope_feature_kind("Thread", None),
         Some(DesignFeatureKind::Thread)
     );
-    assert!(matches!(
+    assert_eq!(
         super::scope_feature_kind("Perçage", None),
-        Some(DesignFeatureKind::Native(_))
-    ));
+        DesignFeatureKind::try_from("Perçage".to_owned()).ok()
+    );
     for shared in [
         "D57B1A22-9D5A-4D7D-A909-E08C579612CA",
         "7AFA0A65-B53C-472C-ACA4-5C7C0A65001C",
     ] {
         assert_eq!(super::family::from_type_guid(shared), None);
-        assert!(matches!(
+        assert_eq!(
             super::scope_feature_kind("CutPaste", super::family::from_type_guid(shared).as_ref()),
-            Some(DesignFeatureKind::Native(_))
-        ));
+            DesignFeatureKind::try_from("CutPaste".to_owned()).ok()
+        );
     }
     assert_eq!(
         super::family::from_type_guid("1c037a07-4a15-43f6-abfc-bbf61b9038d4"),
         Some(DesignFeatureKind::Hole)
+    );
+}
+
+#[test]
+fn the_modify_class_guid_selects_the_modify_family() {
+    use crate::records::feature::scope::DesignFeatureKind;
+
+    let modify = super::family::from_type_guid("DDB7BC00-2E41-4BC1-8DA1-A0F104A67E71");
+    assert_eq!(modify, Some(DesignFeatureKind::Modify));
+    assert_eq!(
+        super::scope_feature_kind("Ändern", modify.as_ref()),
+        Some(DesignFeatureKind::Modify)
+    );
+    assert_eq!(
+        super::scope_feature_kind("Modify", None),
+        Some(DesignFeatureKind::Modify)
     );
 }
 
@@ -503,4 +843,20 @@ fn a_scanned_count_whose_table_overflows_is_rejected_not_fatal() {
     assert!(!reference_table_ends_at(usize::MAX - 2, 1, 11, 126));
     let wide = usize::MAX / 11 + 1;
     assert!(!reference_table_ends_at(100, wide, 11, 126));
+}
+
+#[test]
+fn only_the_class_guid_selects_the_path_pattern_family() {
+    use crate::records::feature::scope::DesignFeatureKind;
+
+    let path_pattern = super::family::from_type_guid("B0B3D9E5-1C25-47BC-ABCD-E723F193DF1B");
+    assert_eq!(path_pattern, Some(DesignFeatureKind::PathPattern));
+    assert_eq!(
+        super::scope_feature_kind("Rés. traj.", path_pattern.as_ref()),
+        Some(DesignFeatureKind::PathPattern)
+    );
+    assert_eq!(
+        super::scope_feature_kind("PathPattern", None),
+        Some(DesignFeatureKind::native("PathPattern"))
+    );
 }

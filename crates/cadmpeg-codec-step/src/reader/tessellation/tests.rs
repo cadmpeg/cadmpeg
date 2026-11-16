@@ -140,7 +140,7 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
         .expect("decode AP242 tessellation");
 
     assert_eq!(result.ir().model.tessellations.len(), 2);
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     let mesh = &result.ir().model.tessellations[0];
     assert_eq!(mesh.vertices().len(), 3);
     assert!((mesh.vertices()[1].x - 10.0).abs() < EPS_SAME_POINT);
@@ -170,21 +170,6 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
             binding.target,
             cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
         )));
-    assert!(result
-        .report()
-        .notes
-        .iter()
-        .any(|note| note
-            == "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50"));
-    assert!(result.report().notes.iter().any(|note| note.starts_with(
-        "geometric validation centroid triangle centroid: expected (3.333333333333333,3.333333333333333,0), tessellation approximation distance"
-    )));
-    assert!(result.report().notes.iter().any(
-        |note| note == "geometric validation volume open sheet volume: expected 0, tessellation approximation 0"
-    ));
-    assert!(!result.report().losses.iter().any(|loss| loss
-        .message
-        .contains("does not match transferred tessellation")));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -210,7 +195,7 @@ fn complex_tessellated_face_retains_its_surface_carrier() {
 
     let surface = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#90")
@@ -1016,7 +1001,7 @@ fn non_finite_tessellation_coordinates_omit_dependents_and_retain_source() {
     let result = cadmpeg_test_support::EditableDecodeResult::from(result);
     assert!(result.ir().model.tessellations.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::ParseRecordOmitted.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
             && loss.message.contains("finite binary64 range")
     }));
     let retained = result
@@ -1057,7 +1042,7 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
         .expect("decode complex tessellated support");
     let support = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#79")

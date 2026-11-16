@@ -182,14 +182,12 @@ fn validate_entry_name(name: &str) -> Result<(), CodecError> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write as _;
-
     use cadmpeg_container::compound::CompoundSnapshot;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_protein::{
         CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
     };
-    use zip::write::SimpleFileOptions;
+    use cadmpeg_test_support::zip_fixture;
 
     use super::{
         decode_instances_from, decode_instances_with_issue, parse_stream, validate_entry_name,
@@ -239,7 +237,7 @@ mod tests {
             );
             assert!(matches!(parse_stream(ctx, root), Ok(ParsedProtein::Empty)));
         });
-        let zip = zip_fixture("Schemas/ExampleSchema.xml");
+        let zip = zip_entries(&[("Schemas/ExampleSchema.xml", b"synthetic")]);
         let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
             .to_le_bytes()
             .to_vec();
@@ -273,7 +271,7 @@ mod tests {
             assert!(parse_stream(ctx, root).is_err());
         });
 
-        let zip = zip_fixture("../escape");
+        let zip = zip_entries(&[("../escape", b"synthetic")]);
         let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
             .to_le_bytes()
             .to_vec();
@@ -401,17 +399,16 @@ mod tests {
 
     #[test]
     fn protein_instance_past_the_zstd_window_allowance_is_an_issue_without_a_refusal() {
-        use cadmpeg_test_support::zip_fixture as raw_zip;
         let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
         // The instance stream is a streamed frame as a level-22 encoder writes it: a
         // 128 MiB window and no content size. Laid out by `zip_fixture`: `zip` is built
         // without its `zstd` feature.
-        let zip = raw_zip::archive(&[
-            raw_zip::RawEntry::stored("Schemas/SimpleSchema.xml", schema),
-            raw_zip::RawEntry::compressed(
+        let zip = zip_fixture::archive(&[
+            zip_fixture::RawEntry::stored("Schemas/SimpleSchema.xml", schema),
+            zip_fixture::RawEntry::compressed(
                 "AssetData/InstanceProperties.bin",
-                raw_zip::ZSTD,
-                &raw_zip::zstd_streamed_frame(27, b"instance"),
+                zip_fixture::ZSTD,
+                &zip_fixture::zstd_streamed_frame(27, b"instance"),
                 b"instance",
             ),
         ]);
@@ -532,22 +529,13 @@ mod tests {
         test(&ctx, root);
     }
 
-    fn zip_fixture(name: &str) -> Vec<u8> {
-        zip_entries(&[(name, b"synthetic")])
-    }
-
     fn zip_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        for (name, bytes) in entries {
-            writer
-                .start_file(
-                    *name,
-                    SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
-                )
-                .expect("start synthetic ZIP member");
-            writer.write_all(bytes).expect("write synthetic ZIP member");
-        }
-        writer.finish().expect("finish synthetic ZIP").into_inner()
+        zip_fixture::archive(
+            &entries
+                .iter()
+                .map(|(name, bytes)| zip_fixture::RawEntry::stored(name, bytes))
+                .collect::<Vec<_>>(),
+        )
     }
 
     fn push_lp(bytes: &mut Vec<u8>, value: &str) {

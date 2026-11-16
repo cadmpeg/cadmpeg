@@ -1,18 +1,79 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Convert: destination rules, format selection, and write-back fidelity.
 
+#[cfg(any(
+    feature = "creo",
+    feature = "fcstd",
+    feature = "iges",
+    feature = "rhino",
+    feature = "step",
+    all(feature = "f3d", feature = "sldprt")
+))]
 use std::fs;
-#[cfg(any(feature = "sldprt", feature = "rhino"))]
+#[cfg(feature = "rhino")]
 use std::io::Cursor;
 
 use assert_cmd::Command;
-#[cfg(any(feature = "sldprt", feature = "rhino"))]
+#[cfg(feature = "rhino")]
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::{predicate, PredicateBooleanExt};
+use predicates::prelude::predicate;
 use tempfile::tempdir;
 
-use crate::support::{fixture, geometryless_creo, sldprt_cube};
+use crate::support::fixture;
+#[cfg(feature = "creo")]
+use crate::support::geometryless_creo;
+#[cfg(feature = "sldprt")]
+use crate::support::sldprt_cube;
+
+#[cfg(all(feature = "catia", feature = "step"))]
+#[test]
+fn convert_native_owned_sheet_preserves_shared_edge_in_step() {
+    use std::io::Cursor;
+
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::topology::Sense;
+    use cadmpeg_test_support::catia::joined_planar_sheet;
+
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("joined.CATPart");
+    let output = dir.path().join("joined.step");
+    fs::write(&input, joined_planar_sheet(0x33, 0x01)).unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .arg("convert")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .assert()
+        .success();
+
+    let step = cadmpeg_codec_step::StepCodec::default()
+        .decode(
+            &mut Cursor::new(fs::read(output).unwrap()),
+            &DecodeOptions::default(),
+        )
+        .expect("read the exported STEP sheet");
+    let geometry = &step.ir().geometry;
+    assert_eq!(geometry.faces.len(), 2);
+    assert_eq!(geometry.edges.len(), 7);
+    assert!(geometry
+        .faces
+        .iter()
+        .all(|face| face.sense == Sense::Forward));
+    let shared: Vec<_> = geometry
+        .coedges
+        .iter()
+        .filter(|side| side.radial_next != side.id)
+        .collect();
+    let [first, second] = shared.as_slice() else {
+        panic!("one edge shared by two coedges");
+    };
+    assert_eq!(first.edge, second.edge);
+    assert_eq!(first.radial_next, second.id);
+    assert_eq!(second.radial_next, first.id);
+    assert_ne!(first.sense, second.sense);
+}
 
 #[cfg(feature = "fcstd")]
 #[test]
@@ -144,7 +205,7 @@ fn curveless_faces_keep_their_source_vertices_as_points() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|loss| loss["code"]["code"] == "topology.region-vertices-recovered"));
+            .any(|loss| loss["code"]["value"]["code"] == "topology.region-vertices-recovered"));
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
@@ -157,11 +218,11 @@ fn curveless_faces_keep_their_source_vertices_as_points() {
             .success();
         let decoded: serde_json::Value =
             serde_json::from_slice(&fs::read(decoded).unwrap()).unwrap();
-        let points = decoded["model"]["points"].as_array().unwrap();
+        let points = decoded["geometry"]["points"].as_array().unwrap();
         assert_eq!(points.len(), 3, "{name}");
         assert!(points.iter().any(|point| point["position"]["x"] == extent));
         assert!(points.iter().any(|point| point["position"]["y"] == extent));
-        assert!(decoded["model"]["faces"].as_array().unwrap().is_empty());
+        assert!(decoded["geometry"]["faces"].as_array().unwrap().is_empty());
     }
 }
 
@@ -202,13 +263,13 @@ fn pcurves_recover_edges_even_when_the_face_cannot_be_written() {
         assert_eq!(
             losses
                 .iter()
-                .filter(|loss| loss["code"]["code"] == "topology.edge-no-3d-curve")
+                .filter(|loss| loss["code"]["value"]["code"] == "topology.edge-no-3d-curve")
                 .count(),
             2
         );
         assert!(losses
             .iter()
-            .any(|loss| loss["code"]["code"] == "topology.region-edges-recovered"));
+            .any(|loss| loss["code"]["value"]["code"] == "topology.region-edges-recovered"));
         let text = fs::read_to_string(output).unwrap();
         assert!(text.contains("EDGE_BASED_WIREFRAME_MODEL("));
         assert!(text.contains("EDGE_CURVE("));
@@ -261,7 +322,7 @@ fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|loss| loss["code"]["code"].as_str().unwrap())
+            .map(|loss| loss["code"]["value"]["code"].as_str().unwrap())
             .collect();
         for code in [
             "topology.edge-no-3d-curve",
@@ -285,6 +346,7 @@ fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
 /// The decode report line names the depth the codec delivered. A codec with
 /// no geometry-depth cut delivers `full` for STEP's geometry request, with or
 /// without `--full-decode`, which excludes `--container-only`.
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn convert_reports_the_delivered_depth() {
     let dir = tempdir().unwrap();
@@ -318,7 +380,7 @@ fn convert_reports_the_delivered_depth() {
 
 /// A `FreeCAD` part converted to STEP decodes at geometry depth by default and
 /// writes the same bytes as a `--full-decode` conversion.
-#[cfg(feature = "fcstd")]
+#[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
 fn a_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
     assert_geometry_depth_step_writes_the_full_decode_bytes(
@@ -329,7 +391,7 @@ fn a_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
 
 /// An F3D design converted to STEP decodes at geometry depth by default and
 /// writes the same bytes as a `--full-decode` conversion.
-#[cfg(feature = "f3d")]
+#[cfg(all(feature = "f3d", feature = "step"))]
 #[test]
 fn an_f3d_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
     assert_geometry_depth_step_writes_the_full_decode_bytes(
@@ -343,7 +405,7 @@ fn an_f3d_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
 /// A loss policy judges the whole source, so every `--reject-lossy` scope
 /// decodes at full depth. A geometry-depth decode of this part holds none of
 /// its design history, so STEP export would report none of it lost.
-#[cfg(feature = "fcstd")]
+#[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
 fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
     let dir = tempdir().unwrap();
@@ -371,10 +433,10 @@ fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
             "parametric/design record(s) were not represented in STEP",
         ));
     let report: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
-    assert_eq!(report["decode_report"]["transfer"]["transfer"], "full");
+    assert_eq!(report["decode_report"]["transfer"]["kind"], "full");
 }
 
-#[cfg(any(feature = "fcstd", feature = "f3d"))]
+#[cfg(all(feature = "step", any(feature = "fcstd", feature = "f3d")))]
 fn assert_geometry_depth_step_writes_the_full_decode_bytes(name: &str, bytes: &[u8]) {
     let dir = tempdir().unwrap();
     let input = dir.path().join(name);
@@ -408,6 +470,7 @@ fn assert_geometry_depth_step_writes_the_full_decode_bytes(name: &str, bytes: &[
 /// `step:ap242-e3` is the registry id; `ap242e3` is the catalog alias. The
 /// alias is usable bare when the output extension names the format and after a
 /// format prefix. Every spelling must reach the same `FILE_SCHEMA`.
+#[cfg(feature = "step")]
 #[test]
 fn step_artifact_starts_with_step_header() {
     let dir = tempdir().unwrap();
@@ -496,7 +559,7 @@ fn source_less_sldprt_without_a_native_envelope_is_refused_prewrite() {
 fn source_less_ir_exports_to_decodable_rhino() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#cli").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -522,9 +585,9 @@ fn source_less_ir_exports_to_decodable_rhino() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().geometry.points.len(), 1);
     assert_eq!(
-        decoded.ir().model.points[0].position().get(),
+        decoded.ir().geometry.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
 }
@@ -534,11 +597,12 @@ fn source_less_ir_exports_to_decodable_rhino() {
 /// `rhino:archive-60` is the registry id, `3dm:archive-60` reaches the same row
 /// through the format alias. `60` is the catalog alias, usable bare because
 /// the output path names the format or after either format spelling.
+#[cfg(feature = "rhino")]
 #[test]
 fn rhino_output_version_is_selected_explicitly() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#version").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -582,12 +646,14 @@ fn rhino_output_version_is_selected_explicitly() {
     }
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn check_blocks_conversion_unless_overridden() {
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube().expect("unit cube fixture is admitted");
-    invalid.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
-        .expect("valid identity for an absent surface");
+    invalid.geometry.faces[0].surface =
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
+            .expect("valid identity for an absent surface");
     let input = fixture(dir.path(), "invalid.json", &invalid);
     let output = dir.path().join("blocked.step");
     Command::cargo_bin("cadmpeg")
@@ -625,6 +691,7 @@ fn check_blocks_conversion_unless_overridden() {
     assert!(output.exists());
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn output_cannot_replace_input_and_success_is_atomic() {
     let dir = tempdir().unwrap();
@@ -682,6 +749,7 @@ fn format_is_required_when_stdout_has_no_extension() {
         ));
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn existing_output_requires_force() {
     let dir = tempdir().unwrap();
@@ -724,8 +792,10 @@ fn existing_output_requires_force() {
     assert!(fs::read(&output).unwrap().starts_with(b"ISO-10303-21"));
 }
 
+#[cfg(all(feature = "iges", feature = "step"))]
 #[test]
 fn existing_output_is_refused_before_decode() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let input = dir.path().join("malformed.igs");
     let output = dir.path().join("existing.step");
@@ -751,6 +821,7 @@ fn existing_output_is_refused_before_decode() {
     assert_eq!(fs::read(output).unwrap(), b"keep");
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn input_named_tmp_survives_convert_and_temp_names_do_not_collide() {
     let dir = tempdir().unwrap();
@@ -791,6 +862,7 @@ fn input_named_tmp_survives_convert_and_temp_names_do_not_collide() {
     );
 }
 
+#[cfg(feature = "creo")]
 #[test]
 fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     let dir = tempdir().unwrap();
@@ -856,8 +928,10 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     assert!(!neutral_sidecar.exists());
 }
 
+#[cfg(all(feature = "f3d", feature = "sldprt"))]
 #[test]
 fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     for format in ["f3d", "sldprt"] {
         let native = dir.path().join(format!("source.{format}"));
@@ -955,6 +1029,7 @@ fn cadir_format_name_and_json_alias_both_work() {
     }
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn explicit_format_warns_when_known_extension_disagrees() {
     let dir = tempdir().unwrap();
@@ -981,8 +1056,10 @@ fn explicit_format_warns_when_known_extension_disagrees() {
         ));
 }
 
+#[cfg(all(feature = "rhino", feature = "sldprt", feature = "step"))]
 #[test]
 fn convert_refuses_binary_output_to_stdout() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = fixture(dir.path(), "cube.cadir.json", &ir);
@@ -1002,12 +1079,15 @@ fn convert_refuses_binary_output_to_stdout() {
     // With -o the write succeeds (Rhino is the binary writer that accepts a
     // source-less IR; the guard question is the destination, not the codec).
     let mut point_ir = cadmpeg_ir::CadIr::empty();
-    point_ir.model.points.push(cadmpeg_ir::topology::Point::new(
-        cadmpeg_ir::ids::PointId::mint("cadir:model:point#guard").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
-            .expect("a finite position is a point"),
-        None,
-    ));
+    point_ir
+        .geometry
+        .points
+        .push(cadmpeg_ir::topology::Point::new(
+            cadmpeg_ir::ids::PointId::mint("cadir:model:point#guard").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+                .expect("a finite position is a point"),
+            None,
+        ));
     let point = fixture(dir.path(), "point.cadir.json", &point_ir);
     let out = dir.path().join("point.3dm");
     Command::cargo_bin("cadmpeg")
@@ -1050,6 +1130,7 @@ fn convert_refuses_binary_output_to_stdout() {
         .stdout(predicate::str::starts_with("ISO-10303-21;"));
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn from_and_to_aliases_match_input_format_and_format() {
     let dir = tempdir().unwrap();
@@ -1094,7 +1175,7 @@ fn from_and_to_aliases_match_input_format_and_format() {
 fn a_same_format_convert_replays_a_non_default_iges_version() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#iges").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -1163,7 +1244,7 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
 fn a_to_that_names_only_the_format_still_inherits() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#bare").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),

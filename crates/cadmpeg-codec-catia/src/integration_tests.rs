@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end contracts over synthesized CATPart byte images.
+//! End-to-end CATPart decode contracts.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
@@ -25,6 +25,9 @@ use crate::test_support::test_e5::e5_catpart;
 use crate::test_support::test_topology::fbb_only_quad_unmatched_edge_topology_stream;
 use crate::variant::Variant;
 use crate::CatiaCodec;
+
+mod chart_domains;
+mod owned_sheet;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
     EditableDecodeResult::from(
@@ -69,8 +72,8 @@ fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.points.len(), 3);
-    assert_eq!(result.ir().model.surfaces.len(), 2);
+    assert_eq!(result.ir().geometry.points.len(), 3);
+    assert_eq!(result.ir().geometry.surfaces.len(), 2);
     assert!(result
         .source_fidelity()
         .retained_records()
@@ -82,11 +85,11 @@ fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
 #[test]
 fn standard_nested_pipeline_builds_a_valid_radial_topology_graph() {
     let result = decode(tetrahedron_topology_catpart());
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 4);
-    assert_eq!(result.ir().model.loops.len(), 4);
-    assert_eq!(result.ir().model.edges.len(), 6);
-    assert_eq!(result.ir().model.coedges.len(), 12);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 4);
+    assert_eq!(result.ir().geometry.loops.len(), 4);
+    assert_eq!(result.ir().geometry.edges.len(), 6);
+    assert_eq!(result.ir().geometry.coedges.len(), 12);
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -124,8 +127,8 @@ fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.surfaces.len(), 2);
-    assert!(result.ir().model.faces.is_empty());
+    assert_eq!(result.ir().geometry.surfaces.len(), 2);
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == LossCategory::Topology && loss.severity == Severity::Blocking
     }));
@@ -144,12 +147,12 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.points.len(), 4);
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.edges.len(), 4);
-    assert_eq!(result.ir().model.coedges.len(), 4);
+    assert_eq!(result.ir().geometry.points.len(), 4);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.edges.len(), 4);
+    assert_eq!(result.ir().geometry.coedges.len(), 4);
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -178,8 +181,8 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
 
     let result = decode(fbb_only_quad_unmatched_edge_catpart());
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.edges.len(), 4);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.edges.len(), 4);
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -252,7 +255,7 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result.ir().model.surfaces.iter().any(|surface| {
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| {
         matches!(
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
@@ -260,7 +263,7 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
     }));
     assert!(result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| { matches!(curve.geometry, CurveGeometry::Procedural { .. }) }));
@@ -286,7 +289,7 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result.ir().model.curves.iter().any(|curve| {
+    assert!(result.ir().geometry.curves.iter().any(|curve| {
         matches!(
             curve.geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
@@ -307,14 +310,14 @@ fn float_packed_pipeline_recovers_the_external_a8_control_grid() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result.ir().model.surfaces.iter().any(|surface| {
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| {
         matches!(
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs { .. })
         )
     }));
     assert_eq!(
-        result.ir().model.surfaces[0]
+        result.ir().geometry.surfaces[0]
             .source_object
             .as_ref()
             .map(|source| source.object_id.as_str()),
@@ -346,9 +349,9 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
         );
         assert!(result.report().container_only());
         assert!(!result.report().geometry_transferred());
-        assert!(result.ir().model.points.is_empty());
-        assert!(result.ir().model.surfaces.is_empty());
-        assert!(result.ir().model.faces.is_empty());
+        assert!(result.ir().geometry.points.is_empty());
+        assert!(result.ir().geometry.surfaces.is_empty());
+        assert!(result.ir().geometry.faces.is_empty());
         assert!(result.ir().source.is_some());
         assert!(result.ir().native.namespace("catia").is_some());
         assert_valid(&result);
@@ -716,7 +719,7 @@ fn operation_schema_buckets_stay_native_without_feature_ownership() {
 }
 
 #[test]
-fn parameters_without_feature_aggregation_stay_document_scoped() {
+fn scoped_standalone_definition_chains_stay_native() {
     use crate::test_support::test_container::outer_container_catpart;
     use crate::test_support::test_object_graph::{
         catalog_stream, entity_table_record, entity_table_record_with_definition_and_value,
@@ -758,21 +761,7 @@ fn parameters_without_feature_aggregation_stay_document_scoped() {
     let result = decode(outer_container_catpart(&stream).0);
     assert_eq!(result.ir().model.sketches.len(), 1);
     assert_eq!(result.ir().model.features.len(), 1);
-    assert_eq!(result.ir().model.parameters.len(), 1);
-    let parameter = &result.ir().model.parameters[0];
-    assert_eq!(parameter.name, "Angle");
-    assert_eq!(parameter.ordinal, 0);
-    assert!(
-        matches!(&parameter.value, Some(cadmpeg_ir::features::ParameterValue::Real(value)) if value.get() == 3.25)
-    );
-    assert!(
-        parameter.owner.is_none(),
-        "structural sketch ancestry does not declare parameter aggregation"
-    );
-    let native_ref = parameter
-        .native_ref
-        .as_deref()
-        .expect("parameter native identity");
+    assert!(result.ir().model.parameters.is_empty());
     let namespace = result
         .ir()
         .native
@@ -783,10 +772,19 @@ fn parameters_without_feature_aggregation_stay_document_scoped() {
         .expect("native entities");
     let entity = entities
         .iter()
-        .find(|entity| entity.id == native_ref)
-        .expect("native parameter entity");
-    assert_eq!(entity.entity_id, 3);
+        .find(|entity| entity.entity_id == 3)
+        .expect("native definition-chain entity");
     assert!(entity.definition_chain_value().is_some());
+    let retained = crate::loss::CatiaLossCode::HistoryDefinitionChainsRetained.kind();
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == retained)
+            .count(),
+        1
+    );
     assert_valid(&result);
 }
 
@@ -829,8 +827,17 @@ fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
     let reconstructed = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
+    assert_eq!(reconstructed.ir().geometry, expected.ir().geometry);
     assert_eq!(reconstructed.ir().model, expected.ir().model);
-    assert_eq!(reconstructed.ir().model.surfaces.len(), 1);
+    assert_eq!(reconstructed.ir().geometry.surfaces.len(), 1);
 }
 
 mod float_packed_fixtures;
+
+mod nist_ftc_07;
+
+mod selected_shell_plane;
+
+mod native_curved_face_orientation;
+
+mod endpoint_stations;

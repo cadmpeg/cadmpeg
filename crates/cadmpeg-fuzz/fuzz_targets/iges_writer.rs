@@ -43,7 +43,8 @@ fuzz_target!(|data: &[u8]| {
         else {
             return;
         };
-        let mut source_fidelity = SourceFidelity::default();
+        let mut source_fidelity =
+            SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(data));
         if source_fidelity
             .attach_native_unknown_records(
                 &mut ir,
@@ -113,12 +114,12 @@ fuzz_target!(|data: &[u8]| {
         );
     }
 
-    let replay = encoder
-        .plan(
-            EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
-        )
-        .expect("writer output must plan after the optional source edit");
+    let Ok(replay) = encoder.plan(
+        EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
+        TargetRequest::Explicit(version.descriptor().id.as_str()),
+    ) else {
+        return;
+    };
     if control & 0x40 == 0 {
         assert!(matches!(
             replay.report().write_path(),

@@ -8,8 +8,8 @@ use super::{
     FeatureDraftConstructionIdentityFrame, FeatureDraftConstructionIndexLane,
     FeatureDraftConstructionIndices, FeatureDraftConstructionTerminalLane,
 };
-use crate::iter_wire::IterWire;
 use crate::om::compact::RawCompactIndex;
+use cadmpeg_core::iter_wire::IterWire;
 use serde::ser::SerializeMap;
 use serde::Serialize;
 

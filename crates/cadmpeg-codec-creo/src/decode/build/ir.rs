@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container IR bootstrap and model-entity assembly.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -44,7 +44,7 @@ use crate::decode::source_carriers::SourceUnitCarriers;
 pub(in super::super) struct BuiltIr {
     pub(in super::super) ir: CadIr,
     pub(in super::super) annotations: cadmpeg_ir::Annotations,
-    pub(in super::super) unknowns: Vec<UnknownRecord>,
+    pub(in super::super) unknowns: Vec<(UnknownRecord, BTreeSet<cadmpeg_core::decode::ArenaClass>)>,
     pub(in super::super) coverage: cadmpeg_ir::report::decode::Coverage,
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
     pub(in super::super) transfer_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -117,7 +117,7 @@ pub(super) fn pattern_kind_has_unresolved_operands<
     pattern: &PatternKind<C>,
 ) -> bool {
     match pattern.definition() {
-        PatternTransform::Unresolved { .. } => true,
+        PatternTransform::Unresolved { .. } | PatternTransform::CurveDrivenPartial { .. } => true,
         PatternTransform::Linear { direction, .. }
         | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
         PatternTransform::CurveDriven { path, .. } => {
@@ -266,6 +266,7 @@ fn transfer_reference_lines(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -348,6 +349,7 @@ fn transfer_reference_circles(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -433,6 +435,7 @@ fn transfer_reference_ellipses(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -619,6 +622,7 @@ fn transfer_datum_plane_surfaces(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -628,6 +632,29 @@ fn transfer_datum_plane_surfaces(
 fn transfer_placed_plane_surfaces_into_ir(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
+) -> Result<(), CodecError> {
+    let prototype_frames =
+        super::super::surfaces::prototypes::first_instance_plane_frames(ctx, scan)?;
+    transfer_placed_planes(
+        ctx,
+        scan,
+        &prototype_frames,
+        ir,
+        annotations,
+        source_carriers,
+    )
+}
+
+/// Places the planes of positional and outline candidates. A complete
+/// first-instance prototype chart takes precedence over the neutral chart of
+/// an outline that places the same plane; the prototype stage places it.
+fn transfer_placed_planes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    prototype_frames: &BTreeMap<u32, super::super::surfaces::prototypes::PrototypeLocalFrame>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
@@ -654,22 +681,34 @@ fn transfer_placed_plane_surfaces_into_ir(
             &crate::identity::VISIBGEOM_SURFACE,
             surface_id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let tag = if scan
+        let positional = scan
             .planes
             .positional_frames
             .iter()
-            .any(|plane| plane.surface_id == surface_id && plane.offset == offset)
+            .any(|plane| plane.surface_id == surface_id && plane.offset == offset);
+        let outline = !positional
+            && scan
+                .planes
+                .outlines
+                .iter()
+                .any(|outline| outline.surface_id == surface_id && outline.offset == offset);
+        if outline
+            && prototype_frames.get(&surface_id).is_some_and(|frame| {
+                super::super::surfaces::prototypes::frame_places_plane(
+                    *frame,
+                    plane.origin,
+                    plane.normal,
+                )
+            })
         {
+            continue;
+        }
+        let tag = if positional {
             "plane_positional_corner_frame"
-        } else if scan
-            .planes
-            .outlines
-            .iter()
-            .any(|outline| outline.surface_id == surface_id && outline.offset == offset)
-        {
+        } else if outline {
             "plane_outline_held_coordinate"
         } else {
             "plane_local_system"
@@ -706,6 +745,7 @@ fn transfer_placed_plane_surfaces_into_ir(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -753,6 +793,16 @@ pub(in super::super) fn build_ir(
     )?;
     let geometry_generator_feature_count =
         emit_model_features(ctx, scan, &mut ir, &mut annotations, &source_carriers)?;
+    let dimension_targets =
+        super::super::pmi::transfer(ctx, scan, &mut ir, &mut annotations, &mut transfer_losses)?;
+    super::super::pmi::tags::transfer(
+        ctx,
+        scan,
+        &dimension_targets,
+        &mut ir,
+        &mut annotations,
+        &mut transfer_losses,
+    )?;
     let (feature_result_topology_count, feature_result_edge_count) = finish_feature_transfers(
         ctx,
         scan,

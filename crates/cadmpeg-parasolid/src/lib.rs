@@ -1,15 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared Parasolid stream identity and header primitives.
+//! Parasolid transmit-stream identity, pointers, schema, and record reading.
 //!
 //! Parasolid is an embedded modelling-kernel layer in both NX and SLDPRT.
 //! This crate owns the `parasolid:` dialect rows and the schema-token grammar
 //! so hosts cannot disagree about the identity of the same declaration.
+//! [`records`] reads the neutral-binary node sequence through the base and
+//! embedded schema field lists, [`deltas`] owns the Deltas-stream grammar, and
+//! [`xmt`] carries stream-local node identity.
+
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 
 use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, LayerInstance};
 
+/// Variable-width native node pointers.
+pub mod pointer;
+
 include!("registry_ids.rs");
+
+pub mod deltas;
+pub mod geometry;
+pub mod records;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
+pub mod xmt;
 
 /// Declared-key name for the source schema token.
 pub const DECLARED_SCHEMA: &str = "schema";
@@ -295,6 +310,13 @@ pub fn push_extras(
             Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected)) => {
                 collisions.push(format!(
                     "the container produced a duplicate {} dialect layer at carrier {carrier}; \
+                     the later classification was omitted",
+                    rejected.format()
+                ));
+            }
+            Err(cadmpeg_core::dialect::DialectLayerError::MissingInstance(rejected)) => {
+                collisions.push(format!(
+                    "the container produced an untagged {} dialect layer at carrier {carrier}; \
                      the later classification was omitted",
                     rejected.format()
                 ));

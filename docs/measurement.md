@@ -236,9 +236,9 @@ each other. Winding numbers use each loop's parameter-plane polyline,
 sampled until the deviation of each chord midpoint is at most `1e-3` of the
 loop's parameter-plane box diagonal.
 
-On a cylinder or a cone, a loop with zero net shift in `u` is contractible,
-and a loop that goes around the axis once is not. With `m` loops that go
-around the axis:
+On a cylinder, cone, or extrusion with a periodic directrix, a loop with zero
+net shift in `u` is contractible, and a loop that goes around the period once
+is not. With `m` loops that go around the period:
 
 | `m` | Region |
 | --- | --- |
@@ -246,8 +246,10 @@ around the axis:
 | 1 | On a cone, the part between the loop and the apex. The apex is a member of the region. |
 | 0 | The planar rule, with the winding numbers taken over lifts of each loop by whole turns. |
 
-Other configurations are `boundary.nesting-invalid`. A loop that meets the
-cone apex has a synthesized segment along the apex. When the loop has one
+Other configurations are `boundary.nesting-invalid`. A ring whose coedges are
+all degenerate at the cone apex bounds no area and is a vertex loop at the apex.
+It is valid only with `m` = 1, and the edge has length 0. A loop that meets the cone apex has a synthesized
+segment along the apex. When the loop has one
 such segment and the segment can close the loop without a full turn, the
 segment takes that length and the loop is contractible.
 
@@ -343,6 +345,16 @@ is `whole_surface`, or when a witness confirms its declared reading.
 Witnesses run over each shell that holds an unconfirmed face, so a face row
 reads the whole shell.
 
+- Owned pole (`owned_pole`). A resolved degenerate edge of a spherical face
+  places a source-owned point at a carrier pole. Exactly two opposite uses
+  of one edge in this face form a seam and can reach the pole. Every
+  non-seam edge outside that pole must have a line, circle, ellipse or
+  degenerate carrier whose analytic box clears the pole beyond the face
+  allowance, edge tolerance and box numeric error. Region membership
+  at the pole confirms the declared reading or reports an orientation
+  conflict. Synthesized singular crossings remain unconfirmed. The
+  orientation pass computes the edge boxes needed by this witness under
+  its existing work allowance.
 - Tangent edge. A non-seam edge used by exactly two coedges with opposite
   senses, one in the unconfirmed face and one in an established face, is a
   witness edge when the two oriented normals are parallel within
@@ -357,6 +369,15 @@ reads the whole shell.
   unconfirmed face, the shell volume is positive for an outer shell and
   negative for a void. When exactly one reading of that face gives the
   required sign beyond the volume error, that reading is the face's.
+- Shared sphere (`shared_sphere`). Unconfirmed faces whose spheres match within
+  their allowances are linked by a non-seam edge used by exactly two coedges
+  with opposite senses, when that edge's vote is `agree`. Linked faces lie on
+  opposite sides of the edge, so their readings flip together, and regions of
+  one sphere have disjoint interiors. Let `k` faces of total declared area `A`
+  be linked on a sphere of area `S`. The declared readings need `A ≤ S`; the
+  complements need `A ≥ (k − 1)S`. When exactly one holds beyond the area
+  errors, every linked face takes that reading: it is confirmed under the
+  declared reading and in conflict under the complement.
 
 Confirmed values have no reading and no candidate. A face in conflict by a
 witness has `consistent: false`; its values that depend on the reading are
@@ -366,11 +387,20 @@ as candidates.
 ### Procedural carriers
 
 A curve-bounded construction takes the canonical kind and chart of its
-support. An exact construction is measured on its solved cache. Another
-construction is measured on its solved cache when the cache states its fit
-tolerance, which enters the model uncertainty; its kind stays
-`procedural`. Every other procedural carrier is
-`carrier.procedural-unevaluated`.
+support. An extrusion of a solved NURBS directrix is evaluated from its
+construction when it has no separate carrier or directrix parameter
+interval and no revision form. Its chart maps `(u, v)` to the directrix
+point at `u` plus `v` times the extrusion vector. The directrix supplies
+the period when it is periodic. Bounded faces use the planar or periodic
+region rules, and area and flux use boundary quadrature on the evaluated
+point and partial derivatives. Numeric error and model uncertainty follow
+the rules for those integrals and their boundaries. The kind remains
+`procedural`; an unknown cache is not used as a solved carrier.
+
+An exact construction is measured on its solved cache. Another construction
+is measured on its solved cache when the cache states its fit tolerance,
+which enters the model uncertainty; its kind stays `procedural`. Every other
+procedural carrier is `carrier.procedural-unevaluated`.
 
 ## Extents
 
@@ -413,6 +443,8 @@ A face box is the box of the boundary pieces joined with the carrier's
 interior critical points that lie in the region. A plane or a cylinder has no
 interior critical point, and its box has the method `boundary_extremum`. On a
 cone the apex is the only one, and the box has the method `critical_points`.
+An extrusion is linear in `v`, so the box of a bounded face is the box of
+its boundary pieces, with the method `boundary_extremum`.
 On a sphere the candidates are the six points at the radius along the
 model axes; on a ring torus, the points where a model coordinate is
 stationary, four per axis. A candidate at a sphere pole is a member when the
@@ -526,6 +558,13 @@ lists its first 16 open edges, the open edge count, and the faces that
 reach natural edges (`natural_edge_faces`).
 
 ## Volume, centroid and closure
+
+A whole NURBS face has a closed domain when each parameter axis is periodic,
+joins its clamped boundary curves, or ends at two poles. Clamped boundary
+curves join when their corresponding positive weights are equal and their
+paired control points lie within the model tolerance. A clamped boundary
+collapses to a pole when its weights are positive and all its control points
+lie within the model tolerance of its first control point.
 
 Each face region gives five flux integrals over the face, with
 `N = S_u × S_v` and `d = P − P_ref`: `∫ d·N / 3` (volume), `∫ d_i² N_i / 2`
@@ -767,7 +806,7 @@ crate takes that module through the `test-support` feature of its
 ## Check findings
 
 `cadmpeg check`, and the check that `convert` runs, add the defects that
-measurement finds as `warning` findings, and one `info` finding when the
+the orientation measurement finds as `warning` findings, and one `info` finding when the
 pass does not check every item. These findings do not change the exit
 status or refuse a write. No decoder or export admission route reads these
 checks ([admissibility-routes.md](admissibility-routes.md)).
@@ -776,7 +815,7 @@ checks ([admissibility-routes.md](admissibility-routes.md)).
 | --- | --- | --- | --- |
 | `ring_order` | the loop | the face | The ring's coedges, listed, do not run end to start by oriented vertex identity: they form one closed traversal in another order (`reversed` or `other`), several closed traversals, or none. |
 | `pcurve_order` | the coedge | the face | The coedge's pcurve uses form their chain from its end to its start: the face caveat `boundary.pcurve-order`. |
-| `orientation` | the face | none | The face's sense disagrees with its loop winding, or its loops disagree with each other: a face of `inconsistent_faces` or `mixed_faces`. |
+| `orientation` | the face | the owned pole edge, when applicable | The face's sense disagrees with its loop winding, its loops disagree with each other, or its declared spherical region excludes a source-owned pole. |
 | `orientation` | the body | the faces or the shell the conflict names | Every shell of the body is closed, and the volume is unavailable with `volume.orientation-conflict` or `volume.closure-flux`. |
 | `measurement_incomplete` | none | none | Severity `info`. The findings allowance ran out before the pass checked every face, edge and closed body. The message states the number of faces and bodies not checked. |
 
@@ -787,7 +826,7 @@ volume and closure fluxes; its flux quadrature targets only those
 components. On a plane `d·N` is `h |N|` with `h = (o − P_ref)·n̂`
 constant, so the volume flux is `h A / 3` and the closure flux `n̂ A` for
 the face area `A`, with the area's numeric error scaled into each. The
-pass computes no carrier parameter, box, extent or edge box.
+pass computes edge boxes when an owned-pole witness needs boundary clearance.
 
 The pass has its own allowance,
 `max(FINDINGS_PASS_WORK_FLOOR, k × (faces + edges of the document))` units,
@@ -800,6 +839,35 @@ checked, and neither is a body that owns it; the pass then adds the
 `measurement_incomplete` finding. A session resource refusal refuses the
 check at the `check` stage.
 
+### Declared geometry quantities
+
+`cadmpeg check` and the check in `convert` compare `model.declared_measures`
+with measurements of their named bodies. Each declaration supplies a quantity,
+a part-definition or body-set target, and an optional label and source record.
+STEP supplies these records from geometric validation properties. CADIR keeps
+them when the model is saved.
+
+A scalar agrees when its absolute difference is at most the measured numeric
+error plus model uncertainty and the declaration's optional `source_error`.
+The source error is a nonnegative bound in the quantity's units. A centroid
+uses Euclidean distance and adds the same distance bound in millimetres. An
+absent source error contributes zero. A finding includes the declaration's
+label when it has one. A part's solid quantities cover its visible solid bodies; sheet
+quantities cover its visible sheet bodies. Volumes and areas add. Centroids
+use volume or area weights. Geometry-level targets use their listed bodies,
+including hidden bodies. Each body identity is counted once. Target selection
+does not use numerical agreement with the stated value.
+
+A disagreement from a `source_declaration` or `validation_property` adds a
+`declared_measure` error and makes the check fail. A `saved_cache`
+disagreement adds a `declared_measure` warning that remains visible in the
+report. An unresolved target, an empty geometry class, an assembly target, or
+an unavailable measurement adds a `declared_measure` warning with its reason.
+Wetted area on a body with void shells is unavailable because body area
+includes the void faces. No declared values are compared when the document
+has no declarations. This pass uses the regular measurement allowance and
+does not replace the orientation findings pass.
+
 ## Pass allowance
 
 One measurement pass owns a work allowance of
@@ -808,6 +876,13 @@ with `k` set by `--limits`. Each face and each edge draws a capped slice from
 it. A slice that runs out makes the item's remaining quantities
 `evaluation.work-exhausted`; the measurement continues. `document.work`
 states the allowance, the units used, and whether the pass ran out.
+
+Faces draw in ascending order of the curve poles of the coedges they invert
+onto a NURBS surface, and then in identity order. A coedge with a pcurve use
+and a face on an analytic carrier invert none. So a face whose boundary costs
+the most cannot take the allowance of a face whose boundary costs less. An
+inversion that its slice stops is `evaluation.work-exhausted`, not
+`boundary.inversion-failed`.
 
 ## Reader duties
 

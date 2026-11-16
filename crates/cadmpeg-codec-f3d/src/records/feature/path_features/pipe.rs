@@ -31,9 +31,6 @@ pub(crate) const PERSISTENT_GUID: &str = "5A1BF548-241F-46FD-9FB5-E4B05126EB9D";
 pub(crate) const RECIPE_GUID: &str = "5662F619-2281-4AD9-93DC-1FCFDA1062E7";
 pub(crate) const POINT_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
 
-/// Construction-group payload lengths from the opaque index to the paired header.
-const GROUP_TAIL_LENGTHS: [u64; 4] = [47, 48, 51, 52];
-
 fn has_type(data: &SegmentTypeData, guid: &str, base: &str, versions: &[u32]) -> bool {
     data.type_guid.as_str().eq_ignore_ascii_case(guid)
         && data
@@ -49,6 +46,10 @@ pub(crate) fn is_pipe(data: &SegmentTypeData) -> bool {
 
 pub(crate) fn is_scalar(data: &SegmentTypeData) -> bool {
     has_type(data, SCALAR_GUID, SCALAR_BASE, &[0])
+}
+
+pub(crate) fn is_settings(data: &SegmentTypeData) -> bool {
+    has_type(data, SETTINGS_GUID, SETTINGS_BASE, &[1])
 }
 
 pub(crate) fn is_point(data: &SegmentTypeData) -> bool {
@@ -247,10 +248,6 @@ impl<'a> PipeIndex<'a> {
                 || group.members().is_empty()
                 || group.extrude_role().is_some()
                 || group.paired_byte_offset <= group.role_offset()
-                || !GROUP_TAIL_LENGTHS.iter().any(|length| {
-                    group.frame.opaque_index_offset().checked_add(*length)
-                        == Some(group.paired_byte_offset)
-                })
                 || group
                     .byte_offset
                     .checked_add(21)

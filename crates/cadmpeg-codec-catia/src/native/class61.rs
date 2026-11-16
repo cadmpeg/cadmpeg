@@ -94,6 +94,21 @@ fn packed_roster(payload: &[u8]) -> Option<PackedRoster<'_>> {
     })
 }
 
+pub(crate) fn singleton_face_orientation_bit(
+    bytes: &[u8],
+    record: &ConsolidatedRecord,
+) -> Option<bool> {
+    if record.family() != ConsolidatedFamily::B
+        || record.class() != 0x61
+        || record.flag() != ConsolidatedFrameFlag::Flag03
+    {
+        return None;
+    }
+    let payload = bytes.get(record.payload()?)?;
+    let roster = packed_roster(payload)?;
+    (roster.count == 1 && roster.control() == 3).then(|| roster.member_bit(0))
+}
+
 fn valid_payload(record: &CatiaConsolidatedClass61Record) -> bool {
     if record.frame.flag != ConsolidatedFrameFlag::Flag03 {
         return false;

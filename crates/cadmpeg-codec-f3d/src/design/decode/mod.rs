@@ -3,15 +3,20 @@
 
 mod assembly;
 pub(crate) mod body;
+pub(crate) mod body_consumers;
 pub(crate) mod body_reference_tails;
 pub(crate) mod canvas;
 pub(crate) mod component_bodies;
 pub(crate) mod components;
+pub(crate) mod configuration_root;
 pub(crate) mod decal;
+pub(crate) mod deleted_members;
 pub(crate) mod dimension_frames;
+pub(crate) mod hidden_occurrences;
 mod image;
 pub(crate) mod joint_motion;
 pub(crate) mod mesh;
+pub(crate) mod mesh_operations;
 pub(crate) mod meta;
 pub(crate) mod operands;
 pub(crate) mod parameters;

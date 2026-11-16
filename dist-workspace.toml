@@ -31,3 +31,8 @@ github-custom-job-permissions = { "release-notes" = { contents = "write", pull-r
 
 [dist.github-action-commits]
 "actions/checkout" = "3d3c42e5aac5ba805825da76410c181273ba90b1" # v7.0.1
+
+# GitHub retired the macos-14 image that dist 0.32 picks for Apple Silicon by
+# default; jobs requesting it fail before they start.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"

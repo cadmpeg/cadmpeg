@@ -19,16 +19,16 @@ pub(super) fn validate_configuration_projection(
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
-    let mut projected =
-        crate::design::configurations::project_configurations(&native.design_configurations)?;
-    crate::design::configurations::bind_configuration_parameter_overrides(
-        &mut projected,
-        &target.model.parameters,
-    );
-    crate::design::configurations::bind_configuration_suppressed_features(
-        &mut projected,
-        &target.model.features,
-    );
+    let projected = crate::design::configurations::project_configurations(
+        &native.design_configurations,
+        &crate::design::configurations::ConfigurationTargets {
+            parameters: &native.design_parameters,
+            owners: &native.design_parameter_owners,
+            scopes: &native.design_parameter_scopes,
+            neutral_parameters: &target.model.parameters,
+            neutral_features: &target.model.features,
+        },
+    )?;
     if target.model.configurations != projected {
         return Err(CodecError::Malformed(
             "neutral F3D configurations must equal the projection of native configuration tables"
@@ -60,7 +60,7 @@ pub(crate) fn validate_assembly_projection(
         &native.xref_references,
     );
     inserts.bind_external_paths(&native.xref_references, &target.model.occurrences);
-    let projected = crate::design::assembly::project_assembly_joints_with_paths(
+    let mut projected = crate::design::assembly::project_assembly_joints_with_paths(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
         &inserts,
@@ -69,7 +69,13 @@ pub(crate) fn validate_assembly_projection(
             &native.design_component_occurrences,
             &native.xref_references,
             &target.model.occurrences,
+            &native.design_parameter_scopes,
         ),
+    );
+    crate::f3z::merge::rebind_standalone_projected_joints(
+        native,
+        &target.model.occurrences,
+        &mut projected.joints,
     );
     if target.model.assembly_joints != projected.joints {
         return Err(CodecError::NotImplemented(

@@ -47,7 +47,7 @@ pub(super) fn write_new(
     let has_native = loaded_native.is_some();
     let native = loaded_native.unwrap_or_default();
     let attributes = attributes::AttributeIndex::new(target, &native);
-    if !target.model.subds.is_empty() {
+    if !target.geometry.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support SubD surfaces".into(),
         ));
@@ -122,6 +122,12 @@ pub(super) fn write_new(
                     configuration.entry_name()
                 )));
             }
+            if configuration.active_row().is_some() {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D generation does not write the Design configuration root record"
+                        .into(),
+                ));
+            }
             let payload =
                 crate::records::configuration::encode_configuration_payload(configuration)?;
             archive
@@ -187,7 +193,7 @@ pub(super) fn write_new(
 /// and the remaining document arenas come only from native records, so the
 /// neutral arenas are not represented.
 fn coverage(has_native: bool) -> ArenaDispositions {
-    use ArenaDisposition::{Dropped, Omitted, Written};
+    use ArenaDisposition::{Dropped, Ignored, Omitted, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -225,6 +231,8 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         presentation_documents: Omitted,
         view_presentations: Omitted,
         tessellations: Dropped,
+        point_clouds: Omitted,
+        history_bodies: Ignored,
         appearances: Written,
         appearance_bindings: Omitted,
         attributes: Omitted,
@@ -237,5 +245,6 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         articulations: Omitted,
         physics_scenes: Omitted,
         solver_settings: Omitted,
+        declared_measures: Omitted,
     }
 }

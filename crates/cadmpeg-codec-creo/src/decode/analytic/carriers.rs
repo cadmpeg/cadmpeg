@@ -21,7 +21,6 @@ use crate::topology::HalfEdgeId;
 
 use super::super::native::annotate;
 use super::super::sketch_transfer::recipe::FeatureSchemaClasses;
-use super::super::surfaces::cylinders::rowless_round_cylinder_pairs;
 use super::super::surfaces::NativeSurfaceNamespaces;
 
 use super::super::uniqueness::{exactly_one, UniqueById};
@@ -91,9 +90,9 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
     for lp in &scan.topology.loops {
         face_loops.entry(lp.face_id()).or_default().push(lp);
     }
-    let model_curves = VisibleModelCurves::new(&ir.model.curves);
+    let model_curves = VisibleModelCurves::new(&ir.geometry.curves);
     let mut visible_surfaces = BTreeMap::<u32, Vec<usize>>::new();
-    for (index, surface) in ir.model.surfaces.iter().enumerate() {
+    for (index, surface) in ir.geometry.surfaces.iter().enumerate() {
         if let Some(face_id) =
             crate::identity::numbered_identity(surface.id.as_str(), "creo:visibgeom:surface#")
         {
@@ -118,7 +117,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             .flat_map(|lp| lp.half_edges().iter())
         {
             if unique_curve_ids.contains(&half_edge.curve_id) {
-                if let Some(curve) = model_curves.unique(&ir.model.curves, half_edge.curve_id) {
+                if let Some(curve) = model_curves.unique(&ir.geometry.curves, half_edge.curve_id) {
                     boundary_curves.push(source_carriers.curve_geometry(curve));
                 }
             }
@@ -140,7 +139,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         if existing_count != 0 {
             let conflict = existing_count != 1
                 || existing_plane_agrees_with_topology(
-                    source_carriers.surface_geometry(&ir.model.surfaces[existing[0]]),
+                    source_carriers.surface_geometry(&ir.geometry.surfaces[existing[0]]),
                     plane,
                 ) == Some(false);
             if !conflict {
@@ -148,7 +147,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             }
             source_carriers.remove_surface(&id);
             for &index in existing {
-                ir.model.surfaces[index].geometry =
+                ir.geometry.surfaces[index].geometry =
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: geometry_section_record(scan, row.offset)?,
                     });
@@ -175,6 +174,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         ) else {
             continue;
         };
+        source_carriers.mark_topology_bound_plane(id.clone());
         annotate(
             annotations,
             &id,
@@ -203,6 +203,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -249,7 +250,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
             };
             let id = crate::identity::compose_checked::<SurfaceId>(identity_namespace, row.id)?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
             annotate(
@@ -295,6 +296,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
         }
@@ -302,7 +304,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
     for row in crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id) {
         let id =
             crate::identity::compose_checked::<CurveId>(&crate::identity::VISIBGEOM_CURVE, row.id)?;
-        if ir.model.curves.iter().any(|curve| curve.id == id) {
+        if ir.geometry.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
         annotate(
@@ -336,6 +338,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -350,7 +353,7 @@ pub(in crate::decode) fn placed_carriers(
 ) -> Result<BTreeMap<u32, CarrierEquation>, cadmpeg_core::CodecError> {
     let mut carriers = BTreeMap::new();
     let namespaces = NativeSurfaceNamespaces::new(scan);
-    let model_surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
+    let model_surfaces = ModelSurfaceIndex::new(&ir.geometry.surfaces);
     for (id, plane) in placed_planes(scan)? {
         carriers.insert(id, CarrierEquation::Plane(plane));
     }
@@ -455,7 +458,7 @@ pub(in crate::decode) fn placed_carriers(
         }
     }
     let mut model_surfaces_by_id = BTreeMap::<u32, Vec<&Surface>>::new();
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         let Some(id) = surface
             .id
             .as_str()
@@ -638,7 +641,7 @@ fn projected_loop_polygon(
     valid_parameter_polygon(&polygon).then_some(polygon)
 }
 
-fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
+pub(in crate::decode) fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
     use cadmpeg_ir::math::{
         planar::{orientation, point_segment_distance},
         Point2,
@@ -699,7 +702,10 @@ fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> bool {
     cadmpeg_ir::math::planar::segments_intersect(a, b, c, d, EPS_AGREE * scale)
 }
 
-fn polygon_strictly_contains_polygon(outer: &[[f64; 2]], inner: &[[f64; 2]]) -> bool {
+pub(in crate::decode) fn polygon_strictly_contains_polygon(
+    outer: &[[f64; 2]],
+    inner: &[[f64; 2]],
+) -> bool {
     inner
         .iter()
         .copied()
@@ -713,7 +719,7 @@ fn polygon_strictly_contains_polygon(outer: &[[f64; 2]], inner: &[[f64; 2]]) -> 
         })
 }
 
-fn valid_parameter_polygon(polygon: &[[f64; 2]]) -> bool {
+pub(in crate::decode) fn valid_parameter_polygon(polygon: &[[f64; 2]]) -> bool {
     let Some(origin) = polygon.first() else {
         return false;
     };
@@ -830,32 +836,7 @@ pub(in crate::decode) fn ordered_face_loops<'a>(
     }
 }
 
-pub(in crate::decode) fn rowless_round_face_orientations(
-    round_feature_ids: &BTreeSet<u32>,
-    tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
-    available_surfaces: &BTreeSet<u32>,
-) -> BTreeMap<u32, bool> {
-    let mut orientations = BTreeMap::new();
-    for (rowless_id, sibling_id, _) in rowless_round_cylinder_pairs(round_feature_ids, tables, rows)
-    {
-        if !available_surfaces.contains(&rowless_id) {
-            continue;
-        }
-        let Some(reversed) =
-            crate::surface::unique_surface_row(rows, sibling_id).map(|row| row.reversed)
-        else {
-            continue;
-        };
-        orientations.insert(rowless_id, reversed);
-    }
-    orientations
-}
-
-pub(in crate::decode) fn native_face_orientations(
-    scan: &ContainerScan,
-    ir: &CadIr,
-) -> BTreeMap<u32, bool> {
+pub(in crate::decode) fn native_face_orientations(scan: &ContainerScan) -> BTreeMap<u32, bool> {
     let mut source_ids = BTreeSet::new();
     for row in scan
         .surfaces
@@ -891,41 +872,12 @@ pub(in crate::decode) fn native_face_orientations(
             orientations.insert(plane.row.id, plane.row.reversed);
         }
     }
-    let mut round_feature_ids = BTreeSet::new();
-    for row in scan
-        .features
-        .rows
-        .iter()
-        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
-    {
-        round_feature_ids.insert(row.feature_id);
-    }
-    let mut available_surfaces = BTreeSet::new();
-    for surface in &ir.model.surfaces {
-        if let Some(id) = surface
-            .id
-            .as_str()
-            .strip_prefix("creo:visibgeom:surface#")
-            .and_then(|suffix| suffix.parse::<u32>().ok())
-        {
-            available_surfaces.insert(id);
-        }
-    }
-    for (id, reversed) in rowless_round_face_orientations(
-        &round_feature_ids,
-        &scan.features.entity_tables,
-        &scan.surfaces.rows,
-        &available_surfaces,
-    ) {
-        orientations.insert(id, reversed);
-    }
     orientations
 }
 
 #[cfg(test)]
 mod namespace_tests {
     use super::native_face_orientations;
-    use cadmpeg_ir::document::CadIr;
 
     #[test]
     fn native_face_orientations_reads_nonvisible_rows() {
@@ -942,7 +894,7 @@ mod namespace_tests {
                 offset: 0,
             });
 
-        let orientations = { native_face_orientations(&scan, &CadIr::empty()) };
+        let orientations = { native_face_orientations(&scan) };
 
         assert_eq!(orientations.get(&17), Some(&true));
     }

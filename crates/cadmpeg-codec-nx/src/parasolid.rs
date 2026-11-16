@@ -5,7 +5,8 @@
 //! valid zlib headers. An inflated `PS 00 00` prologue identifies Parasolid
 //! neutral-binary data and supplies its subtype and optional `SCH_` schema token.
 //! Legacy CFB parts use [`extract_legacy_streams`] to split the same prologue
-//! from clear `UG_PART/UG_PART` bytes. Other inflated payloads are classified
+//! from clear `UG_PART/UG_PART` sections or inflate it from text-wrapped
+//! sections. Other inflated payloads are classified
 //! as [`StreamKind::Preview`].
 
 #![deny(clippy::disallowed_methods)]
@@ -26,11 +27,13 @@ use attribute_field::AttributeField;
 
 pub(crate) mod value_records;
 
+mod attribute_nodes;
+
 pub(crate) mod unicode_value;
 
 pub(crate) mod counted_values;
 
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 
 pub(crate) mod entity_references;
 pub(crate) mod name_references;
@@ -38,9 +41,10 @@ use entity_references::EntityReferences;
 use name_references::NameReferences;
 
 use crate::container::Container;
-use crate::framing::read_and_advance as read_xmt;
-use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 use crate::grouping::group_pairs;
+use cadmpeg_parasolid::pointer::read_at as read_xmt;
+use cadmpeg_parasolid::records::{node_type, PrimaryRecords};
+use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -136,15 +140,18 @@ impl StreamBody {
 pub(crate) struct Stream {
     /// Byte offset of the stream start in the source file.
     ///
-    /// Modern streams start at a zlib header. Legacy streams start at a clear
-    /// Parasolid transmit header.
+    /// Modern and text-wrapped legacy streams start at a zlib header. Clear
+    /// legacy streams start at a Parasolid transmit header.
     pub(crate) file_offset: usize,
     /// Source bytes consumed by the stream at `file_offset`.
     ///
-    /// For modern streams this is the compressed member length. For legacy
-    /// streams it is the clear section length. The physical extent
+    /// For a zlib member this is the compressed member length. For a clear
+    /// legacy section it is the section length. The physical extent
     /// `[file_offset, file_offset + consumed)` is source-owned.
     pub(crate) consumed: u64,
+    /// Whether `[file_offset, file_offset + consumed)` holds a zlib member;
+    /// otherwise it holds the stream bytes as stored.
+    pub(crate) compressed: bool,
     /// Inflated bytes.
     pub(crate) inflated: Vec<u8>,
     /// Payload classification.
@@ -268,29 +275,81 @@ pub(crate) struct FieldNamesRecord {
     pub(crate) name_xmts: NameReferences,
 }
 
+/// The node sequence of a stream that a terminator ends.
+fn terminated_nodes(bytes: &[u8]) -> Option<PrimaryRecords<'_>> {
+    PrimaryRecords::read(bytes)
+        .ok()
+        .flatten()
+        .filter(PrimaryRecords::is_terminated)
+}
+
+/// Decode unique snapshot values.
+pub(crate) fn referenced_value_records(
+    bytes: &[u8],
+) -> Result<value_records::EntityValueRecords<'_>, CodecError> {
+    let primary = terminated_nodes(bytes);
+    let offsets = value_offsets(bytes, primary.as_ref());
+    match primary {
+        Some(primary) => value_records::entity_value_records_of_nodes(
+            bytes,
+            &primary,
+            &offsets.into_iter().collect(),
+        ),
+        None => value_records::entity_value_records_at(bytes, offsets),
+    }
+}
+
 /// Locate unique snapshot values.
+#[cfg(test)]
+pub(crate) fn referenced_value_record_offsets(bytes: &[u8]) -> Vec<usize> {
+    value_offsets(bytes, terminated_nodes(bytes).as_ref())
+}
+
+/// Locate the value records that unique owners reference.
 ///
 /// An identity that frames more than one value record, or more than one
 /// owning record, is a historical sequence rather than a snapshot and names
 /// no value here.
-pub(crate) fn referenced_value_record_offsets(bytes: &[u8]) -> Vec<usize> {
-    let references = referenced_value_xmts(bytes);
-    let candidates = value_records::value_record_candidates(bytes, &references);
-    let mut offsets = Vec::new();
-
-    for positions in candidates.into_values() {
-        if positions.len() != 1 {
-            continue;
+fn value_offsets(bytes: &[u8], primary: Option<&PrimaryRecords<'_>>) -> Vec<usize> {
+    let references = referenced_value_xmts(bytes, primary);
+    let mut candidates = BTreeMap::<u32, Vec<usize>>::new();
+    match primary {
+        Some(primary) => {
+            for node in primary.nodes() {
+                if VALUE_NODE_TYPES.contains(&node.kind()) && references.contains(&node.index()) {
+                    candidates
+                        .entry(node.index())
+                        .or_default()
+                        .push(node.range().start);
+                }
+            }
         }
-        offsets.extend(positions);
+        None => candidates = value_records::value_record_candidates(bytes, &references),
     }
-    offsets
+    candidates
+        .into_values()
+        .filter(|positions| positions.len() == 1)
+        .flatten()
+        .collect()
 }
 
-fn referenced_value_xmts(bytes: &[u8]) -> BTreeSet<u32> {
+/// The node types of attribute values.
+const VALUE_NODE_TYPES: [u16; 9] = [
+    node_type::INT_VALUES,
+    node_type::REAL_VALUES,
+    node_type::CHAR_VALUES,
+    node_type::POINT_VALUES,
+    node_type::VECTOR_VALUES,
+    node_type::AXIS_VALUES,
+    node_type::TAG_VALUES,
+    node_type::DIRECTION_VALUES,
+    node_type::UNICODE_VALUES,
+];
+
+fn referenced_value_xmts(bytes: &[u8], primary: Option<&PrimaryRecords<'_>>) -> BTreeSet<u32> {
     let mut referenced = BTreeSet::new();
     let entities = group_pairs(
-        entity_51_records(bytes)
+        entity_51_records_in(bytes, primary)
             .into_iter()
             .map(|record| (u32::from(record.xmt), record)),
     );
@@ -303,12 +362,12 @@ fn referenced_value_xmts(bytes: &[u8]) -> BTreeSet<u32> {
         }
     }
     let field_names = group_pairs(
-        field_names_records(bytes)
+        field_names_records_in(bytes, primary)
             .into_iter()
             .map(|record| (u32::from(record.xmt), record)),
     );
     let definitions = group_pairs(
-        attribute_definitions(bytes)
+        attribute_definitions_in(bytes, primary)
             .into_iter()
             .map(|record| (u32::from(record.xmt), record)),
     );
@@ -342,6 +401,16 @@ fn referenced_value_xmts(bytes: &[u8]) -> BTreeSet<u32> {
 
 /// Decode counted type-99 attribute field-name records.
 pub(crate) fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
+    field_names_records_in(bytes, terminated_nodes(bytes).as_ref())
+}
+
+fn field_names_records_in(
+    bytes: &[u8],
+    primary: Option<&PrimaryRecords<'_>>,
+) -> Vec<FieldNamesRecord> {
+    if let Some(primary) = primary {
+        return attribute_nodes::field_names(primary);
+    }
     let mut records = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
@@ -380,6 +449,13 @@ fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord
 
 /// Decode framed type-81 entity/attribute-list records.
 pub(crate) fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
+    entity_51_records_in(bytes, terminated_nodes(bytes).as_ref())
+}
+
+fn entity_51_records_in(bytes: &[u8], primary: Option<&PrimaryRecords<'_>>) -> Vec<Entity51Record> {
+    if let Some(primary) = primary {
+        return attribute_nodes::attributes(primary);
+    }
     let mut records = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
@@ -398,6 +474,31 @@ pub(crate) fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
         }
     }
     records
+}
+
+/// The XMTs of type-81 records that the stream frames and the decoder omits.
+///
+/// In a terminated node sequence these are the `ATTRIBUTE` nodes without a
+/// decoded record. Elsewhere they are the type-81 headers whose references do
+/// not frame to a decoded record of that XMT.
+pub(crate) fn omitted_entity_51_xmts(bytes: &[u8]) -> BTreeSet<u32> {
+    let primary = terminated_nodes(bytes);
+    let decoded = entity_51_records_in(bytes, primary.as_ref())
+        .into_iter()
+        .map(|record| u32::from(record.xmt))
+        .collect::<BTreeSet<_>>();
+    let framed = match &primary {
+        Some(primary) => primary
+            .nodes()
+            .filter(|node| node.kind() == node_type::ATTRIBUTE)
+            .map(|node| node.index())
+            .collect::<BTreeSet<_>>(),
+        None => (0..bytes.len())
+            .filter_map(|offset| entity_51_header_at(bytes, offset))
+            .map(|header| u32::from(header.xmt))
+            .collect(),
+    };
+    framed.difference(&decoded).copied().collect()
 }
 
 #[derive(Clone, Copy)]
@@ -422,7 +523,16 @@ impl Entity51Frame {
     }
 }
 
-fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
+/// The fields of a type-81 record before its references.
+struct Entity51Header {
+    xmt: NonNullXmt,
+    sequence: NonZeroU32,
+    definition_xmt: u32,
+    references_at: usize,
+    reference_count: usize,
+}
+
+fn entity_51_header_at(bytes: &[u8], offset: usize) -> Option<Entity51Header> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0x00, 0x51])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -435,17 +545,27 @@ fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
     at += 4;
     let definition_xmt = read_xmt(bytes, &mut at)?;
     (1..=0x20).contains(&flags).then_some(())?;
-    let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
-    let references_at = at;
-    let (end, shared_terminal) = entity_51_reference_end(bytes, &mut at, reference_count)?;
-    Some(Entity51Frame {
-        offset,
-        end,
+    Some(Entity51Header {
         xmt,
         sequence,
         definition_xmt,
-        references_at,
-        reference_count,
+        references_at: at,
+        reference_count: usize::try_from(flags).ok()?.checked_add(5)?,
+    })
+}
+
+fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
+    let header = entity_51_header_at(bytes, offset)?;
+    let mut at = header.references_at;
+    let (end, shared_terminal) = entity_51_reference_end(bytes, &mut at, header.reference_count)?;
+    Some(Entity51Frame {
+        offset,
+        end,
+        xmt: header.xmt,
+        sequence: header.sequence,
+        definition_xmt: header.definition_xmt,
+        references_at: header.references_at,
+        reference_count: header.reference_count,
         shared_terminal,
     })
 }
@@ -548,6 +668,16 @@ fn attribute_identifiers(bytes: &[u8]) -> BTreeMap<u32, Option<AttributeIdentifi
 /// Candidate field codes overlap, but codes are 0 through 10 and a type-80 tag
 /// is `00 50`, so a field-code check stops before the next candidate's tag.
 pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
+    attribute_definitions_in(bytes, terminated_nodes(bytes).as_ref())
+}
+
+fn attribute_definitions_in<'a>(
+    bytes: &'a [u8],
+    primary: Option<&PrimaryRecords<'_>>,
+) -> Vec<AttributeDefinition<'a>> {
+    if let Some(primary) = primary {
+        return attribute_nodes::definitions(bytes, primary);
+    }
     let identifiers = attribute_identifiers(bytes);
     let mut records = Vec::new();
     for offset in 0..bytes.len() {
@@ -717,6 +847,7 @@ pub(crate) fn extract_streams<'a>(
             streams.push(Stream {
                 file_offset: start + offset,
                 consumed,
+                compressed: true,
                 inflated,
                 body,
             });
@@ -787,6 +918,7 @@ fn append_all_zlib_streams<'a>(
                     streams.push(Stream {
                         file_offset,
                         consumed,
+                        compressed: true,
                         inflated,
                         body,
                     });
@@ -814,20 +946,21 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> Result<bool
         return Ok(false);
     }
     if kind != StreamKind::Deltas {
-        return Ok(crate::records::PrimaryRecords::read(inflated)?
+        return Ok(cadmpeg_parasolid::records::PrimaryRecords::read(inflated)?
             .is_some_and(|primary| !primary.records().is_empty()));
     }
-    let owner = crate::records::DeltasRecords::read(inflated)?;
+    let owner = cadmpeg_parasolid::records::DeltasRecords::read(inflated)?;
     Ok(owner.events().iter().any(|event| {
         matches!(
             event.content(),
-            crate::records::deltas::EventContent::PartitionPrefix(_)
+            cadmpeg_parasolid::records::deltas::EventContent::PartitionPrefix(_)
         )
     }))
 }
 
-/// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`
-/// stream.
+/// Locate the Parasolid transmit sections in a legacy `UG_PART/UG_PART`
+/// stream: its clear sections, or, when it holds none, its text-wrapped
+/// sections.
 ///
 /// Legacy NX stores multiple self-describing Parasolid sections consecutively.
 /// A section begins with `PS`, its big-endian description length, and a
@@ -861,6 +994,7 @@ pub(crate) fn extract_legacy_streams<'a>(
         streams.push(Stream {
             file_offset,
             consumed,
+            compressed: false,
             inflated,
             body,
         });
@@ -869,7 +1003,80 @@ pub(crate) fn extract_legacy_streams<'a>(
         };
         search = next;
     }
+    if streams.is_empty() {
+        append_text_wrapped_streams(ctx, part, &mut streams)?;
+    }
     Ok(streams)
+}
+
+/// The text-header terminator of a text-wrapped transmit section.
+const TEXT_HEADER_END: &[u8] = b"**END_OF_HEADER";
+
+/// Inflate the text-wrapped transmit sections of a legacy part payload
+/// (spec §2.4): after `**END_OF_HEADER`, zero or more `*` to the line end,
+/// the newline, an optional `+`, and one zlib member. The search resumes
+/// after each inflated member.
+fn append_text_wrapped_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    part: View<'a>,
+    streams: &mut Vec<Stream>,
+) -> Result<(), CodecError> {
+    let bytes = part.window();
+    let mut search = 0;
+    while let Some(relative) = bytes
+        .get(search..)
+        .and_then(|rest| find(rest, TEXT_HEADER_END))
+    {
+        let Some(after) = search
+            .checked_add(relative)
+            .and_then(|at| at.checked_add(TEXT_HEADER_END.len()))
+        else {
+            break;
+        };
+        search = after;
+        let Some(rest) = bytes.get(after..) else {
+            break;
+        };
+        let stars = rest.iter().take_while(|byte| **byte == b'*').count();
+        if rest.get(stars) != Some(&b'\n') {
+            continue;
+        }
+        let mut start = after + stars + 1;
+        if bytes.get(start) == Some(&b'+') {
+            start += 1;
+        }
+        if !bytes
+            .get(start..start + 2)
+            .is_some_and(|header| is_zlib_header(header[0], header[1]))
+        {
+            continue;
+        }
+        let absolute = part.start().checked_add(start).ok_or_else(|| {
+            CodecError::Malformed("text-wrapped Parasolid member offset overflow".into())
+        })?;
+        let source = part.child(absolute, part.end()).ok_or_else(|| {
+            CodecError::Malformed("text-wrapped Parasolid member escapes payload".into())
+        })?;
+        let Some((inflated, consumed)) = inflate_stream(ctx, source)? else {
+            continue;
+        };
+        search = usize::try_from(consumed)
+            .ok()
+            .and_then(|length| start.checked_add(length))
+            .ok_or_else(|| {
+                CodecError::Malformed("text-wrapped Parasolid member length overflow".into())
+            })?;
+        let body = classify(&inflated);
+        ctx.charge_entities(1, "admit NX streams")?;
+        streams.push(Stream {
+            file_offset: absolute,
+            consumed,
+            compressed: true,
+            inflated,
+            body,
+        });
+    }
+    Ok(())
 }
 
 fn legacy_stream_start(bytes: &[u8], mut search: usize) -> Option<usize> {
@@ -966,7 +1173,7 @@ pub(crate) fn classify(inflated: &[u8]) -> StreamBody {
                 .iter()
                 .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
         });
-    let subtype = if description.is_some_and(crate::records::is_partition_description) {
+    let subtype = if description.is_some_and(cadmpeg_parasolid::records::is_partition_description) {
         ParasolidSubtype::Partition
     } else if description.is_some_and(|description| {
         description == b": TRANSMIT FILE (deltas)"

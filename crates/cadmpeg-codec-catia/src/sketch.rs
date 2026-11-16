@@ -2,6 +2,7 @@
 //! Transfer of source-closed CATIA sketch relations.
 
 pub(crate) mod frame;
+pub(crate) mod outer_sheet;
 
 use std::collections::{BTreeMap, HashSet};
 

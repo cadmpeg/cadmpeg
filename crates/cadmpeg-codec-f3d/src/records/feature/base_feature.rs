@@ -100,6 +100,12 @@ pub(crate) enum DesignBaseFeatureConstruction {
         metadata_record_offset: u64,
         /// Variant-width source field following the metadata record.
         metadata_field: NativeBytes<Vec<u8>>,
+        /// Byte offset of the flag byte of the marked null reference when the
+        /// flag is `1`.
+        null_reference_flag_offset: Option<u64>,
+        /// The ordinary repeated run holds the body suffixes in place of the
+        /// passive references.
+        repeats_body_suffixes: bool,
     },
     /// Direct-modeling body-reference envelope used by the class-365/class-262 and
     /// class-377/class-259 forms.
@@ -153,6 +159,50 @@ pub(crate) enum DesignBaseFeatureConstruction {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
     },
+    /// Result bodies of a scope that a timeline object owns.
+    TimelineOwnedBodies {
+        /// Parameter-body records in source order.
+        parameter_bodies: Vec<DesignBaseFeatureEntry<u64>>,
+        /// Design body entity suffixes in source order.
+        bodies: Vec<DesignBaseFeatureEntry<u64>>,
+        /// Timeline object that names this scope.
+        owner_record: u32,
+        /// Byte offset of the object's reference to this scope.
+        owner_reference_offset: u64,
+        /// Source body of each pasted copy, parallel to `bodies`, when the
+        /// owner is a paste object that keeps its sources and each source
+        /// GUID names one browser node; otherwise empty.
+        copy_sources: Vec<DesignPasteSource>,
+    },
+    /// Counted body, repeated body-suffix, metadata, and result runs without a
+    /// passive-reference run.
+    SuffixResultBodies {
+        /// Ordered Design body entity suffixes with their source fields.
+        bodies: Vec<DesignBaseFeatureEntry<u64>>,
+        /// Six-byte source fields of the repeated body-suffix run, parallel to
+        /// `bodies`.
+        repeated_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Result records with their source fields, parallel to `bodies`.
+        results: Vec<DesignBaseFeatureEntry<u32>>,
+        /// Shared metadata record.
+        metadata_record: u32,
+        /// Byte offset of the shared metadata record.
+        metadata_record_offset: u64,
+        /// Source field following the metadata record.
+        metadata_field: NativeBytes<Vec<u8>>,
+        /// Byte offset of the flag byte of the marked null reference when the
+        /// flag is `1`.
+        null_reference_flag_offset: Option<u64>,
+    },
+}
+
+/// Source body of one pasted copy, joined through its browser-node GUID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DesignPasteSource {
+    /// Design entity suffix that the source browser node names.
+    pub(crate) entity_suffix: u64,
+    /// Byte offset of the first code unit of the source browser-node GUID.
+    pub(crate) node_guid_offset: u64,
 }
 
 #[cfg(test)]
@@ -170,11 +220,15 @@ impl Clone for DesignBaseFeatureConstruction {
                 metadata_record,
                 metadata_record_offset,
                 metadata_field,
+                null_reference_flag_offset,
+                repeats_body_suffixes,
             } => Self::ResultBodies {
                 bodies: bodies.clone(),
                 metadata_record: *metadata_record,
                 metadata_record_offset: *metadata_record_offset,
                 metadata_field: metadata_field.clone(),
+                null_reference_flag_offset: *null_reference_flag_offset,
+                repeats_body_suffixes: *repeats_body_suffixes,
             },
             Self::BodyBasedOnFaces {
                 body,
@@ -227,6 +281,36 @@ impl Clone for DesignBaseFeatureConstruction {
                 auxiliary_record: *auxiliary_record,
                 auxiliary_record_offset: *auxiliary_record_offset,
             },
+            Self::TimelineOwnedBodies {
+                parameter_bodies,
+                bodies,
+                owner_record,
+                owner_reference_offset,
+                copy_sources,
+            } => Self::TimelineOwnedBodies {
+                parameter_bodies: parameter_bodies.clone(),
+                bodies: bodies.clone(),
+                owner_record: *owner_record,
+                owner_reference_offset: *owner_reference_offset,
+                copy_sources: copy_sources.clone(),
+            },
+            Self::SuffixResultBodies {
+                bodies,
+                repeated_fields,
+                results,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                null_reference_flag_offset,
+            } => Self::SuffixResultBodies {
+                bodies: bodies.clone(),
+                repeated_fields: repeated_fields.clone(),
+                results: results.clone(),
+                metadata_record: *metadata_record,
+                metadata_record_offset: *metadata_record_offset,
+                metadata_field: metadata_field.clone(),
+                null_reference_flag_offset: *null_reference_flag_offset,
+            },
         }
     }
 }
@@ -278,6 +362,10 @@ impl Serialize for DesignBaseFeatureConstruction {
                 result_records: ResultBodyColumn<'a, u32>,
                 result_record_offsets: ResultBodyColumn<'a, u64>,
                 result_fields: ResultBodyColumn<'a, NativeBytes<[u8; 6]>>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                null_reference_flag_offset: Option<u64>,
+                #[serde(skip_serializing_if = "std::ops::Not::not")]
+                repeats_body_suffixes: bool,
             },
             BodyBasedOnFaces {
                 body_entity_suffixes: [u64; 1],
@@ -328,6 +416,37 @@ impl Serialize for DesignBaseFeatureConstruction {
                 auxiliary_record: u32,
                 auxiliary_record_offset: u64,
             },
+            TimelineOwnedBodies {
+                parameter_body_records: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                parameter_body_record_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                parameter_body_fields:
+                    SliceColumn<'a, DesignBaseFeatureEntry<u64>, NativeBytes<[u8; 6]>>,
+                body_entity_suffixes: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                body_entity_suffix_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                body_entity_fields:
+                    SliceColumn<'a, DesignBaseFeatureEntry<u64>, NativeBytes<[u8; 6]>>,
+                owner_record: u32,
+                owner_reference_offset: u64,
+                #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+                copy_source_entity_suffixes: SliceColumn<'a, DesignPasteSource, u64>,
+                #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+                copy_source_node_guid_offsets: SliceColumn<'a, DesignPasteSource, u64>,
+            },
+            SuffixResultBodies {
+                body_entity_suffixes: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                body_entity_suffix_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                body_entity_fields:
+                    SliceColumn<'a, DesignBaseFeatureEntry<u64>, NativeBytes<[u8; 6]>>,
+                repeated_suffix_fields: SliceColumn<'a, NativeBytes<[u8; 6]>, NativeBytes<[u8; 6]>>,
+                metadata_record: u32,
+                metadata_record_offset: u64,
+                metadata_field: NativeBytes<&'a [u8]>,
+                result_records: SliceColumn<'a, DesignBaseFeatureEntry<u32>, u32>,
+                result_record_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u32>, u64>,
+                result_fields: SliceColumn<'a, DesignBaseFeatureEntry<u32>, NativeBytes<[u8; 6]>>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                null_reference_flag_offset: Option<u64>,
+            },
         }
         let wire = match self {
             Self::ResultBodies {
@@ -335,6 +454,8 @@ impl Serialize for DesignBaseFeatureConstruction {
                 metadata_record,
                 metadata_record_offset,
                 metadata_field,
+                null_reference_flag_offset,
+                repeats_body_suffixes,
             } => BorrowedWire::ResultBodies {
                 body_entity_suffixes: ResultBodyColumn {
                     bodies,
@@ -376,6 +497,8 @@ impl Serialize for DesignBaseFeatureConstruction {
                     bodies,
                     value: |row| row.result.field.into(),
                 },
+                null_reference_flag_offset: *null_reference_flag_offset,
+                repeats_body_suffixes: *repeats_body_suffixes,
             },
             Self::BodyBasedOnFaces {
                 body,
@@ -469,6 +592,49 @@ impl Serialize for DesignBaseFeatureConstruction {
                 auxiliary_record: *auxiliary_record,
                 auxiliary_record_offset: *auxiliary_record_offset,
             },
+            Self::TimelineOwnedBodies {
+                parameter_bodies,
+                bodies,
+                owner_record,
+                owner_reference_offset,
+                copy_sources,
+            } => BorrowedWire::TimelineOwnedBodies {
+                parameter_body_records: SliceColumn::new(parameter_bodies, |row| row.value),
+                parameter_body_record_offsets: SliceColumn::new(parameter_bodies, |row| row.offset),
+                parameter_body_fields: SliceColumn::new(parameter_bodies, |row| row.field.into()),
+                body_entity_suffixes: SliceColumn::new(bodies, |row| row.value),
+                body_entity_suffix_offsets: SliceColumn::new(bodies, |row| row.offset),
+                body_entity_fields: SliceColumn::new(bodies, |row| row.field.into()),
+                owner_record: *owner_record,
+                owner_reference_offset: *owner_reference_offset,
+                copy_source_entity_suffixes: SliceColumn::new(copy_sources, |row| {
+                    row.entity_suffix
+                }),
+                copy_source_node_guid_offsets: SliceColumn::new(copy_sources, |row| {
+                    row.node_guid_offset
+                }),
+            },
+            Self::SuffixResultBodies {
+                bodies,
+                repeated_fields,
+                results,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                null_reference_flag_offset,
+            } => BorrowedWire::SuffixResultBodies {
+                body_entity_suffixes: SliceColumn::new(bodies, |row| row.value),
+                body_entity_suffix_offsets: SliceColumn::new(bodies, |row| row.offset),
+                body_entity_fields: SliceColumn::new(bodies, |row| row.field.into()),
+                repeated_suffix_fields: SliceColumn::new(repeated_fields, |field| *field),
+                metadata_record: *metadata_record,
+                metadata_record_offset: *metadata_record_offset,
+                metadata_field: metadata_field.into(),
+                result_records: SliceColumn::new(results, |row| row.value),
+                result_record_offsets: SliceColumn::new(results, |row| row.offset),
+                result_fields: SliceColumn::new(results, |row| row.field.into()),
+                null_reference_flag_offset: *null_reference_flag_offset,
+            },
         };
         wire.serialize(serializer)
     }
@@ -558,6 +724,18 @@ enum DesignBaseFeatureConstructionWire {
         result_record_offsets: Vec<u64>,
         /// Six-byte source fields parallel to `result_records`.
         result_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Byte offset of the flag byte of the marked null reference when the
+        /// flag is `1`.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_null_reference_flag_offset"
+        )]
+        null_reference_flag_offset: Option<u64>,
+        /// The ordinary repeated run holds the body suffixes in place of the
+        /// passive references.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        repeats_body_suffixes: bool,
     },
     /// Direct-modeling body-reference envelope used by the class-365/class-262 and
     /// class-377/class-259 forms.
@@ -649,6 +827,92 @@ enum DesignBaseFeatureConstructionWire {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
     },
+    /// Result bodies of a scope that a timeline object owns.
+    TimelineOwnedBodies {
+        /// Parameter-body records in source order.
+        parameter_body_records: Vec<u64>,
+        /// Byte offsets parallel to `parameter_body_records`.
+        parameter_body_record_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `parameter_body_records`.
+        parameter_body_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Design body entity suffixes in source order.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_entity_suffixes`.
+        body_entity_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Timeline object that names this scope.
+        owner_record: u32,
+        /// Byte offset of the object's reference to this scope.
+        owner_reference_offset: u64,
+        /// Source body entity suffixes of a copy, parallel to `body_entity_suffixes`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        copy_source_entity_suffixes: Vec<u64>,
+        /// Byte offsets of the source browser-node GUIDs, parallel to
+        /// `copy_source_entity_suffixes`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        copy_source_node_guid_offsets: Vec<u64>,
+    },
+    /// Counted body, repeated body-suffix, metadata, and result runs without a
+    /// passive-reference run.
+    SuffixResultBodies {
+        /// Ordered Design body entity suffixes.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_entity_suffixes`.
+        body_entity_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Six-byte source fields of the repeated body-suffix run.
+        repeated_suffix_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Shared metadata record.
+        metadata_record: u32,
+        /// Byte offset of `metadata_record`.
+        metadata_record_offset: u64,
+        /// Source field following `metadata_record`.
+        metadata_field: NativeBytes<Vec<u8>>,
+        /// Result records parallel to `body_entity_suffixes`.
+        result_records: Vec<u32>,
+        /// Byte offsets parallel to `result_records`.
+        result_record_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `result_records`.
+        result_fields: Vec<NativeBytes<[u8; 6]>>,
+        /// Byte offset of the flag byte of the marked null reference when the
+        /// flag is `1`.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_null_reference_flag_offset"
+        )]
+        null_reference_flag_offset: Option<u64>,
+    },
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_null_reference_flag_offset,
+    u64,
+    "null_reference_flag_offset"
+);
+
+/// Join one column-wise run of 15-byte Base Feature references.
+fn entry_rows(
+    values: Vec<u64>,
+    offsets: Vec<u64>,
+    fields: Vec<NativeBytes<[u8; 6]>>,
+) -> Result<Vec<DesignBaseFeatureEntry<u64>>, String> {
+    if values.len() != offsets.len() || values.len() != fields.len() {
+        return Err("Base Feature reference columns must be parallel".into());
+    }
+    require_local_fields(&fields)?;
+    Ok(values
+        .into_iter()
+        .zip(offsets)
+        .zip(fields)
+        .map(|((value, offset), field)| DesignBaseFeatureEntry {
+            value,
+            offset,
+            field: *field,
+        })
+        .collect())
 }
 
 impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstruction {
@@ -670,6 +934,8 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                 result_records,
                 result_record_offsets,
                 result_fields,
+                null_reference_flag_offset,
+                repeats_body_suffixes,
             } => {
                 let count = body_entity_suffixes.len();
                 for (field, len) in [
@@ -742,6 +1008,8 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     metadata_record,
                     metadata_record_offset,
                     metadata_field,
+                    null_reference_flag_offset,
+                    repeats_body_suffixes,
                 }
             }
             DesignBaseFeatureConstructionWire::BodyBasedOnFaces {
@@ -916,6 +1184,111 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     auxiliary_record_offset,
                 }
             }
+            DesignBaseFeatureConstructionWire::TimelineOwnedBodies {
+                parameter_body_records,
+                parameter_body_record_offsets,
+                parameter_body_fields,
+                body_entity_suffixes,
+                body_entity_suffix_offsets,
+                body_entity_fields,
+                owner_record,
+                owner_reference_offset,
+                copy_source_entity_suffixes,
+                copy_source_node_guid_offsets,
+            } => {
+                if parameter_body_records.len() != body_entity_suffixes.len() {
+                    return Err(
+                        "parameter_body_records and body_entity_suffixes must be parallel".into(),
+                    );
+                }
+                if copy_source_entity_suffixes.len() != copy_source_node_guid_offsets.len()
+                    || !(copy_source_entity_suffixes.is_empty()
+                        || copy_source_entity_suffixes.len() == body_entity_suffixes.len())
+                {
+                    return Err(
+                        "copy source columns must be empty or parallel to body_entity_suffixes"
+                            .into(),
+                    );
+                }
+                let copy_sources = copy_source_entity_suffixes
+                    .into_iter()
+                    .zip(copy_source_node_guid_offsets)
+                    .map(|(entity_suffix, node_guid_offset)| DesignPasteSource {
+                        entity_suffix,
+                        node_guid_offset,
+                    })
+                    .collect();
+                Self::TimelineOwnedBodies {
+                    parameter_bodies: entry_rows(
+                        parameter_body_records,
+                        parameter_body_record_offsets,
+                        parameter_body_fields,
+                    )?,
+                    bodies: entry_rows(
+                        body_entity_suffixes,
+                        body_entity_suffix_offsets,
+                        body_entity_fields,
+                    )?,
+                    owner_record,
+                    owner_reference_offset,
+                    copy_sources,
+                }
+            }
+            DesignBaseFeatureConstructionWire::SuffixResultBodies {
+                body_entity_suffixes,
+                body_entity_suffix_offsets,
+                body_entity_fields,
+                repeated_suffix_fields,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                result_records,
+                result_record_offsets,
+                result_fields,
+                null_reference_flag_offset,
+            } => {
+                let count = body_entity_suffixes.len();
+                if count == 0
+                    || repeated_suffix_fields.len() != count
+                    || result_records.len() != count
+                    || result_record_offsets.len() != count
+                    || result_fields.len() != count
+                {
+                    return Err("suffix result-body columns must be nonempty and parallel".into());
+                }
+                if body_entity_suffixes
+                    .iter()
+                    .any(|suffix| *suffix == 0 || u32::try_from(*suffix).is_err())
+                    || metadata_field.len() != 6
+                {
+                    return Err(
+                        "suffix result-body frames repeat nonzero u32 body suffixes and store a six-byte metadata field"
+                            .into(),
+                    );
+                }
+                Self::SuffixResultBodies {
+                    bodies: entry_rows(
+                        body_entity_suffixes,
+                        body_entity_suffix_offsets,
+                        body_entity_fields,
+                    )?,
+                    repeated_fields: repeated_suffix_fields,
+                    results: result_records
+                        .into_iter()
+                        .zip(result_record_offsets)
+                        .zip(result_fields)
+                        .map(|((value, offset), field)| DesignBaseFeatureEntry {
+                            value,
+                            offset,
+                            field: *field,
+                        })
+                        .collect(),
+                    metadata_record,
+                    metadata_record_offset,
+                    metadata_field,
+                    null_reference_flag_offset,
+                }
+            }
         })
     }
 }
@@ -931,6 +1304,8 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                 metadata_record,
                 metadata_record_offset,
                 metadata_field,
+                null_reference_flag_offset,
+                repeats_body_suffixes,
             } => {
                 let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect();
                 let body_entity_suffix_offsets =
@@ -976,6 +1351,8 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                     result_records,
                     result_record_offsets,
                     result_fields,
+                    null_reference_flag_offset,
+                    repeats_body_suffixes,
                 }
             }
             DesignBaseFeatureConstruction::BodyBasedOnFaces {
@@ -1096,21 +1473,108 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                     auxiliary_record_offset,
                 }
             }
+            DesignBaseFeatureConstruction::TimelineOwnedBodies {
+                parameter_bodies,
+                bodies,
+                owner_record,
+                owner_reference_offset,
+                copy_sources,
+            } => Self::TimelineOwnedBodies {
+                parameter_body_records: parameter_bodies.iter().map(|row| row.value).collect(),
+                parameter_body_record_offsets: parameter_bodies
+                    .iter()
+                    .map(|row| row.offset)
+                    .collect(),
+                parameter_body_fields: parameter_bodies
+                    .iter()
+                    .map(|row| row.field.into())
+                    .collect(),
+                body_entity_suffixes: bodies.iter().map(|row| row.value).collect(),
+                body_entity_suffix_offsets: bodies.iter().map(|row| row.offset).collect(),
+                body_entity_fields: bodies.iter().map(|row| row.field.into()).collect(),
+                owner_record,
+                owner_reference_offset,
+                copy_source_entity_suffixes: copy_sources
+                    .iter()
+                    .map(|row| row.entity_suffix)
+                    .collect(),
+                copy_source_node_guid_offsets: copy_sources
+                    .iter()
+                    .map(|row| row.node_guid_offset)
+                    .collect(),
+            },
+            DesignBaseFeatureConstruction::SuffixResultBodies {
+                bodies,
+                repeated_fields,
+                results,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                null_reference_flag_offset,
+            } => Self::SuffixResultBodies {
+                body_entity_suffixes: bodies.iter().map(|row| row.value).collect(),
+                body_entity_suffix_offsets: bodies.iter().map(|row| row.offset).collect(),
+                body_entity_fields: bodies.iter().map(|row| row.field.into()).collect(),
+                repeated_suffix_fields: repeated_fields,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                result_records: results.iter().map(|row| row.value).collect(),
+                result_record_offsets: results.iter().map(|row| row.offset).collect(),
+                result_fields: results.iter().map(|row| row.field.into()).collect(),
+                null_reference_flag_offset,
+            },
         }
     }
 }
 
 impl DesignBaseFeatureConstruction {
+    /// Timeline object that gives this scope its authored position.
+    pub(crate) fn timeline_owner(&self) -> Option<u32> {
+        match self {
+            Self::TimelineOwnedBodies { owner_record, .. } => Some(*owner_record),
+            _ => None,
+        }
+    }
+
+    /// Source body suffix of each pasted copy, parallel to the body suffixes.
+    pub(crate) fn copy_source_suffixes(&self) -> impl ExactSizeIterator<Item = u64> + '_ {
+        let sources = match self {
+            Self::TimelineOwnedBodies { copy_sources, .. } => copy_sources.as_slice(),
+            _ => &[],
+        };
+        sources.iter().map(|source| source.entity_suffix)
+    }
+
+    /// Byte offset of a marked null reference flag that stores `1`.
+    pub(crate) fn null_reference_flag_offset(&self) -> Option<u64> {
+        match self {
+            Self::ResultBodies {
+                null_reference_flag_offset,
+                ..
+            }
+            | Self::SuffixResultBodies {
+                null_reference_flag_offset,
+                ..
+            } => *null_reference_flag_offset,
+            _ => None,
+        }
+    }
+
     /// Return the body suffixes in source order for any Base Feature form.
     pub(crate) fn body_entity_suffixes(&self) -> impl ExactSizeIterator<Item = u64> + '_ {
         let count = match self {
-            Self::BodySnapshot { bodies, .. } => bodies.len(),
+            Self::BodySnapshot { bodies, .. }
+            | Self::TimelineOwnedBodies { bodies, .. }
+            | Self::SuffixResultBodies { bodies, .. } => bodies.len(),
             Self::BodyBasedOnFaces { .. } => 1,
             Self::ResultBodies { bodies, .. } => bodies.iter().len(),
             Self::LegacyBodyBasedOnFaces { form, .. } => form.bodies().len(),
         };
         (0..count).map(move |index| match self {
-            Self::BodySnapshot { bodies, .. } => bodies[index].value,
+            Self::BodySnapshot { bodies, .. }
+            | Self::TimelineOwnedBodies { bodies, .. }
+            | Self::SuffixResultBodies { bodies, .. } => bodies[index].value,
             Self::BodyBasedOnFaces { body, .. } => u64::from(body.value),
             Self::ResultBodies { bodies, .. } => match bodies {
                 DesignBaseFeatureResults::WithoutRepeatedFields(bodies) => {
@@ -1135,7 +1599,9 @@ impl DesignBaseFeatureConstruction {
             Self::ResultBodies { bodies, .. } => (Some(bodies), &[][..], None),
             Self::LegacyBodyBasedOnFaces { form, .. } => (None, form.bodies(), None),
             Self::BodyBasedOnFaces { body, .. } => (None, &[][..], Some(body.value)),
-            Self::BodySnapshot { .. } => (None, &[][..], None),
+            Self::BodySnapshot { .. }
+            | Self::TimelineOwnedBodies { .. }
+            | Self::SuffixResultBodies { .. } => (None, &[][..], None),
         };
         results
             .into_iter()

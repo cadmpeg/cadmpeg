@@ -16,6 +16,47 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
+fn thicken_writer_refuses_result_and_chain_settings_it_cannot_encode() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SolidFeatureResult};
+
+    for chain in [false, true] {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Thicken Name="Wall" Type="Thicken" id="15" Faces="face:4" BothSides="false" Reverse="true"><Dimension Name="Thickness">2mm</Dimension></Thicken></Keywords>"#));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut decoded = EditableDecodeResult::from(decoded);
+        decoded.ir_mut().model.features[0]
+            .evaluation
+            .edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Thicken {
+                    result,
+                    tangent_chain,
+                    ..
+                }) = definition
+                else {
+                    panic!("Thicken");
+                };
+                if chain {
+                    *tangent_chain = Some(false);
+                } else {
+                    *result = Some(SolidFeatureResult::NewBody {});
+                }
+            });
+        let error = crate::test_support::plan_fixture_write_with_native_envelope(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&error, cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported thicken result or tangent-chain settings")),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_shell() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
@@ -100,8 +141,7 @@ fn semantic_writer_round_trips_typed_thicken() {
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Native(selection),
             thickness: Some(value),
-            side: Some(ThickenSide::Reverse),
-        }) if selection == "face:4" && (value.get() - 2.032).abs() < 1.0e-12
+            side: Some(ThickenSide::Reverse), .. }) if selection == "face:4" && (value.get() - 2.032).abs() < 1.0e-12
     ));
 
     {
@@ -111,6 +151,7 @@ fn semantic_writer_round_trips_typed_thicken() {
                 faces,
                 thickness,
                 side,
+                ..
             }) = definition
             else {
                 panic!("typed thicken feature");
@@ -175,8 +216,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Unresolved,
             thickness: Some(actual_thickness),
-            side: Some(ThickenSide::Forward),
-        }) if actual_thickness.get() == 6.0
+            side: Some(ThickenSide::Forward), .. }) if actual_thickness.get() == 6.0
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -592,13 +632,11 @@ fn semantic_writer_round_trips_typed_draft() {
             faces: FaceSelection::Native(faces),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Native(neutral_plane),
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: geometry_1,
-                    plane: None,
-                }),
+                pull: Some(cadmpeg_ir::features::DraftPull { direction: geometry_1, plane: None, frame: None }),
             },
             angle: Some(value),
             outward: Some(false),
+            second_side: None,
         }) if ( faces == "face:1,face:2"
             && neutral_plane == "face:3"
             && (value.get() - 3f64.to_radians()).abs() < 1.0e-12) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
@@ -670,6 +708,43 @@ fn semantic_writer_round_trips_typed_draft() {
 }
 
 #[test]
+fn semantic_writer_refuses_a_two_sided_draft() {
+    use cadmpeg_ir::features::{DraftSecondSide, FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Draft Name="Taper" Type="Draft" id="18" Faces="face:1,face:2" NeutralPlane="face:3" Direction="0,0,1" Outward="false"><Dimension Name="Angle">3deg</Dimension></Draft></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Draft { second_side, .. }) =
+                definition
+            else {
+                panic!("typed draft");
+            };
+            *second_side = Some(DraftSecondSide::Symmetric {});
+        });
+    }
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported draft semantics")),
+        "{error}"
+    );
+}
+
+#[test]
 fn semantic_writer_round_trips_draft_without_angle_or_outward() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::Vector3;
@@ -690,13 +765,11 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
             faces: FaceSelection::Native(faces),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Native(neutral_plane),
-                pull: Some(cadmpeg_ir::features::DraftPull {
-                    direction: geometry_1,
-                    plane: None,
-                }),
+                pull: Some(cadmpeg_ir::features::DraftPull { direction: geometry_1, plane: None, frame: None }),
             },
             angle: None,
             outward: None,
+            second_side: None,
         }) if ( faces == "face:1,face:2" && neutral_plane == "face:3") && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
@@ -858,6 +931,7 @@ fn semantic_writer_round_trips_typed_combine() {
             operands,
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
+            ..
         }) if matches!(
             (operands.target(), operands.tools()),
             (BodySelection::Native(target), BodySelection::Native(tools))
@@ -903,6 +977,7 @@ fn semantic_writer_round_trips_typed_combine() {
             operands,
             op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
+            ..
         }) if matches!(
             (operands.target(), operands.tools()),
             (BodySelection::Native(target), BodySelection::Native(tools))
@@ -1327,6 +1402,56 @@ fn semantic_writer_round_trips_all_move_face_forms() {
     assert_eq!(native[2].properties["Mode"], "Offset");
     assert_eq!(native[2].parameters["Distance"], "-1mm");
     assert!(!native[2].parameters.contains_key("Angle"));
+}
+
+#[test]
+fn semantic_writer_refuses_complete_face_motion_without_losing_a_component() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
+    use cadmpeg_ir::features::{FaceMotion, FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><MoveFace Name="Move" Type="MoveFace" id="21" Faces="face:1" Mode="Translate" Direction="1,0,0"><Dimension Name="Distance">3mm</Dimension></MoveFace></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    {
+        let mut edit = decoded.ir_mut();
+        edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::MoveFace { motion, .. }) =
+                definition
+            else {
+                panic!("expected face motion");
+            };
+            *motion = FaceMotion::Transform {
+                transform: cadmpeg_ir::transform::Transform::affine([
+                    [0., -1., 0., 2.5],
+                    [1., 0., 0., -5.],
+                    [0., 0., 1., 1.25],
+                ])
+                .unwrap(),
+            };
+        });
+    }
+    let error = crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let FeatureDefinition::Operation(FeatureOperation::MoveFace {
+        motion: FaceMotion::Transform { transform },
+        ..
+    }) = decoded.ir().model.features[0].evaluation.definition()
+    else {
+        panic!("expected preserved face motion");
+    };
+    assert!((transform.rows()[2][3] - 1.25).abs() <= 1.0e-12);
+    assert!((transform.rows()[1][0] - 1.).abs() <= 1.0e-12);
 }
 
 #[test]

@@ -370,3 +370,61 @@ fn chart_overflow_refuses_conversion_without_changing_the_pcurve() {
     assert!(chart.normalize(&mut pcurve).is_none());
     assert_eq!(pcurve, original);
 }
+
+#[test]
+fn native_uv_offsets_translate_cartesian_poles_before_chart_conversion() {
+    use cadmpeg_ir::units::FinitePoint2;
+    const UV_COORDINATE_TOLERANCE: f64 = 1.0e-12;
+    let offset = [2.0, -3.0];
+    for chart in [
+        SupportChart::Canonical,
+        SupportChart::plane(true, 2.5).expect("plane chart"),
+        SupportChart::cone(0.0, 1.0, 1.0, 2.0, true).expect("cone chart"),
+        SupportChart::sphere(-1.0, true),
+        SupportChart::torus(-2.0, -1.0, true),
+    ] {
+        for weights in [None, Some(vec![1.0, 0.5])] {
+            let native = PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.25, 0.5), Point2::new(0.75, 1.5)],
+                weights,
+                false,
+            )
+            .expect("native curve");
+            let mut expected = native.clone();
+            expected
+                .try_map_control_points(|_, point| {
+                    let point = point.get();
+                    FinitePoint2::new(Point2::new(point.u + offset[0], point.v + offset[1]))
+                        .ok_or(())
+                })
+                .expect("translated Cartesian poles");
+            chart
+                .normalize(&mut expected)
+                .expect("expected normalized poles");
+            let mut decoded = native.clone();
+            chart
+                .normalize_with_offset(&mut decoded, offset, true)
+                .expect("native offset");
+            assert_eq!(decoded, expected);
+            let mut normalized = native;
+            chart
+                .normalize(&mut normalized)
+                .expect("typed support curve");
+            chart
+                .normalize_with_offset(&mut normalized, offset, false)
+                .expect("typed offset");
+            for (actual, expected) in normalized
+                .pole_rows()
+                .raw_points()
+                .into_iter()
+                .zip(expected.pole_rows().raw_points())
+            {
+                assert!((actual.u - expected.u).abs() <= UV_COORDINATE_TOLERANCE);
+                assert!((actual.v - expected.v).abs() <= UV_COORDINATE_TOLERANCE);
+            }
+            assert_eq!(decoded.weights(), normalized.weights());
+        }
+    }
+}

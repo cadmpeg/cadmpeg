@@ -728,6 +728,23 @@ fn legacy_selectors_need_the_matching_key_generator_and_edge_owner() {
 }
 
 #[test]
+fn class_chain_matching_attributes_of_schema_43_read_like_schema_38() {
+    for schema in [38, 40, 42, 43] {
+        let records = legacy_records(i64::from(schema));
+        assert_eq!(matched(&records[1], schema), Some((150, 7, 140)));
+    }
+    // The stored schema equals the carrier schema.
+    assert_eq!(matched(&legacy_records(43)[1], 42), None);
+    // Other carrier schemas do not read the class-chain form.
+    for schema in [0, 37, 39, 41, 45] {
+        assert_eq!(matched(&legacy_records(i64::from(schema))[1], schema), None);
+    }
+    // Qualifier 1 names vertices, not the edge.
+    let vertex = legacy_attribute(133, 140, "NMx_Matched_Entity", 43, &[1, 150, -1, 7, 1]);
+    assert_eq!(matched(&vertex, 43), None);
+}
+
+#[test]
 fn the_selector_join_runs_for_legacy_carriers_only_with_a_flange() {
     assert!(names_joined(44, false));
     assert!(names_joined(44, true));
@@ -755,7 +772,7 @@ fn selector_bytes_without_qualifier() -> Vec<u8> {
 }
 
 #[test]
-fn only_version_19_selectors_omit_the_qualifier_word() {
+fn only_versions_19_to_21_omit_the_qualifier_word() {
     let expected = Selector {
         source: 150,
         generator: 115,
@@ -763,16 +780,18 @@ fn only_version_19_selectors_omit_the_qualifier_word() {
     };
     let without = selector_bytes_without_qualifier();
     assert_eq!(without.len() + 8, selector_bytes().len());
-    assert!(!selector_has_qualifier(19));
-    assert_eq!(
-        selector(View::over_retained(&without), 19).expect("version 19"),
-        Some(expected.clone())
-    );
+    for version in [19, 20, 21] {
+        assert!(!selector_has_qualifier(version));
+        assert_eq!(
+            selector(View::over_retained(&without), version).expect("no qualifier"),
+            Some(expected.clone())
+        );
+    }
     assert_eq!(
         selector(View::over_retained(&selector_bytes()), 29).expect("version 29"),
         Some(expected)
     );
-    for version in [20, 23, 29, 31] {
+    for version in [22, 23, 29, 31] {
         assert!(selector_has_qualifier(version));
     }
     // The other version's layout does not parse as a selector.

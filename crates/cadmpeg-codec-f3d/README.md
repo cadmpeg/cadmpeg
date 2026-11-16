@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for loss in &result.report().losses {
         eprintln!("{:?}: {}", loss.severity, loss.message);
     }
-    println!("{} bodies", result.ir().model.bodies.len());
+    println!("{} bodies", result.ir().geometry.bodies.len());
     Ok(())
 }
 ```
@@ -94,6 +94,35 @@ model archive length plus its inner directory's declared expanded lengths;
 it excludes parsed records and output. These deterministic estimates are not
 RSS bounds. Callers can gate later parallel decode by the working estimate plus
 retained result estimates.
+
+## Pipe source properties
+
+Pipe features project as neutral Sweeps. Existing circular projections keep
+their established section and extent readings. Other Pipes retain independently
+decoded operation, path, and bounded fractions. An explicit circular shape and
+valid dimensions supply a generated circular section independently of path and
+extent readiness. Other section constructions remain unresolved.
+
+For those partial projections, `source_properties["pipe:source"]` is JSON with
+`scopes`, `owners`, `groups`, `observation`, `section_shape`, and `parameters`.
+It retains complete decoded source records, ordered references, raw shape
+values, point inputs, offsets, and the original parameter expressions. Missing
+and duplicate joins retain their available candidates. The observation contains
+independent prefix fields, admitted owner candidates by ordinal, decoded point
+records, marked prefix references, and an independently framed section tag.
+Its indexes and offsets use source
+identity and source coordinates.
+
+The `pipe:forward-fraction`, `pipe:reverse-fraction`, `pipe:section-size-cm`,
+`pipe:section-thickness-cm`, and `pipe:is-hollow` properties expose uniquely
+decoded controls. Dimensions remain in centimetres, including inactive wall
+thickness. Each original source property remains available.
+
+`feature.pipe-path-parameterization-assumed` records the reading of forward and
+reverse values as neutral along and against fractions. Out-of-range values
+remain source properties and leave the neutral extent unresolved. Required
+`path_tangent` and `linearize` controls assume false with separate loss codes.
+DR-31 records the remaining placement and control questions.
 
 ## Encode
 
@@ -170,3 +199,9 @@ vendor. See the [clean-room and legal policy][legal].
 [repo]: https://github.com/cadmpeg/cadmpeg
 [spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d
+
+### Saved display poses
+
+The native `f3d.display_poses` arena retains root-design scene override rows. Each record has `stream`, `byte_offset` relative to that stream, an alternating component-definition/carrier `path`, a row-major 4×4 `transform` in millimetres, and `binding`. A bound row has `binding = {"state":"bound","occurrence":"…"}`. Ambiguous and unbound rows have their respective state and carry no occurrence id. Neutral occurrence transforms retain their stored-pose projection. Consumers can select either pose source.
+
+Binding runs after archive composition. Synthetic member roots can share the placing occurrence's path; their rows retain an ambiguous state. Member scene states remain separate from the root design's displayed state. The reader reports counted grammar refusals once per stream and counted ambiguous or unbound rows after binding.

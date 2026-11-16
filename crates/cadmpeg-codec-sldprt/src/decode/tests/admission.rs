@@ -4,6 +4,7 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::container::add_solidworks_version;
@@ -279,7 +280,7 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("decode triangle body");
-    let model_entities = decoded.ir().model.entity_count();
+    let model_entities = decoded.ir().entity_count();
     assert!(container_entities > 0);
     assert!(stream_entities > 0);
     assert!(model_entities > 0);
@@ -449,7 +450,77 @@ fn decoded_curve_carrier_is_copied() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.ir().model.curves.is_empty());
+    assert!(!decoded.ir().geometry.curves.is_empty());
 }
 
 mod surface_solver;
+
+#[test]
+fn an_embedded_document_body_is_not_an_active_body_stream() {
+    let body = crate::test_support::parasolid::triangle_body();
+    let mut fixture = sldprt_with_body(&body);
+    fixture.extend(make_block(
+        0x20,
+        "ImportedComp/Pin.SLDPRT",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &body),
+    ));
+    let scan = crate::test_support::container::scan(&fixture);
+    let streams = crate::decode::active_body_streams(&scan);
+    assert_eq!(streams.len(), 1);
+    assert_eq!(
+        streams[0].source_stream().as_str(),
+        "Contents/Config-0-Partition"
+    );
+}
+
+fn untyped_marks(
+    source: Vec<u8>,
+    depth: cadmpeg_core::decode::DecodeDepth,
+) -> Vec<(String, Vec<ArenaClass>)> {
+    let options = DecodeOptions {
+        depth,
+        ..DecodeOptions::default()
+    };
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .expect("decode");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(result);
+    decoded
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .filter(|(_, record)| !record.untyped().is_empty())
+        .map(|(id, record)| {
+            (
+                id.as_str().to_owned(),
+                record.untyped().iter().copied().collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_body_stream_kept_without_decoding_is_untyped_model_content() {
+    assert_eq!(
+        untyped_marks(
+            sldprt_with_body(&triangle_body()),
+            cadmpeg_core::decode::DecodeDepth::Container
+        ),
+        [("sldprt:file:block#8".to_owned(), vec![ArenaClass::Model])]
+    );
+}
+
+#[test]
+fn only_a_record_of_unknown_content_family_is_untyped_after_a_full_decode() {
+    let source = sldprt_with_body(&triangle_body());
+    assert!(untyped_marks(source.clone(), cadmpeg_core::decode::DecodeDepth::default()).is_empty());
+    let mut with_opaque = source;
+    with_opaque.extend(make_block(
+        0x41,
+        "Contents/Opaque",
+        b"\x01\x02 not a known payload",
+    ));
+    let marked = untyped_marks(with_opaque, cadmpeg_core::decode::DecodeDepth::default());
+    assert_eq!(marked.len(), 1, "{marked:?}");
+    assert_eq!(marked[0].1, [ArenaClass::Model, ArenaClass::Design]);
+}

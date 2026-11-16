@@ -4,9 +4,11 @@
 use crate::bytes::lp_utf16_bounded;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_compact_legacy_construction_tail as thread_compact_legacy_tail;
+use crate::layout::thread_compact_owned_scope_prefix as compact_owned;
 use crate::layout::thread_extended_compact_trailer as extended_compact;
 use crate::layout::thread_extended_scope_prefix as thread_extended;
 use crate::layout::thread_extended_standard_trailer as extended_standard;
+use crate::layout::thread_owner_extended_scope_prefix as owner_extended;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
 use crate::layout::thread_standard_construction_tail as thread_tail;
 use crate::layout::thread_standard_legacy_construction_tail as thread_standard_legacy_tail;
@@ -32,10 +34,11 @@ pub(super) fn exact_thread_construction(
     }
     let (prefix_form, designation_delta) = bytes.get(start..).and_then(exact_thread_prefix)?;
     let designation_at = start.checked_add(designation_delta)?;
+    let reference_count = scope.reference_members().len();
 
     let mut face_group_record_indices = Vec::new();
     match prefix_form {
-        ThreadPrefix::Standard | ThreadPrefix::ExtendedStandard => {
+        ThreadPrefix::Standard => {
             let first = scope.reference_members().values().next()?;
             face_group_record_indices.push(*first);
         }
@@ -43,37 +46,56 @@ pub(super) fn exact_thread_construction(
             face_group_record_indices
                 .extend(scope.reference_members().values().step_by(2).copied());
         }
-        ThreadPrefix::ExtendedCompact => {}
+        ThreadPrefix::Extended(_) | ThreadPrefix::CompactOwned => {}
     }
     let mut construction = parse_thread_payload(
         bytes,
         designation_at,
-        prefix_form,
+        &prefix_form,
         face_group_record_indices,
     )?;
-    if matches!(construction.form, DesignThreadForm::CompactExtended(_)) {
-        construction.face_group_record_indices = scope
-            .reference_members()
-            .values()
-            .skip(construction.form.face_reference_start())
-            .step_by(2)
-            .copied()
-            .collect();
-    }
     if matches!(
         construction.form,
-        DesignThreadForm::StandardExtended | DesignThreadForm::CompactExtended(_)
+        DesignThreadForm::CompactExtended(_)
+            | DesignThreadForm::CompactOwnersLeading
+            | DesignThreadForm::CompactOwnersTrailing
+    ) {
+        let references = scope
+            .reference_members()
+            .values()
+            .copied()
+            .collect::<Vec<_>>();
+        construction.face_group_record_indices = construction.form.face_groups(&references);
+    }
+    if construction.form == DesignThreadForm::StandardExtended {
+        let entries = match &prefix_form {
+            ThreadPrefix::Extended(prefix) => prefix.entry_count,
+            _ => return None,
+        };
+        construction.face_group_record_indices =
+            extended_standard_face_groups(bytes, scope, owners, designation_at, entries)?;
+    } else if matches!(
+        construction.form,
+        DesignThreadForm::CompactExtended(_)
+            | DesignThreadForm::CompactOwnersLeading
+            | DesignThreadForm::CompactOwnersTrailing
     ) {
         let (_, after_designation) = lp_utf16_bounded(bytes, designation_at, 1..=128)?;
         let (_, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
         let (_, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
         let trailer = after_profile.checked_add(thread_tail::STANDARD_TRAILER)?;
         let (length_at, offset_at, length_ordinal, offset_ordinal) = match construction.form {
-            DesignThreadForm::StandardExtended => (
+            DesignThreadForm::CompactOwnersTrailing => (
                 extended_standard::LENGTH_REFERENCE,
                 extended_standard::OFFSET_REFERENCE,
-                3,
-                2,
+                reference_count.checked_sub(1)?,
+                reference_count.checked_sub(2)?,
+            ),
+            DesignThreadForm::CompactOwnersLeading => (
+                extended_standard::LENGTH_REFERENCE,
+                extended_standard::OFFSET_REFERENCE,
+                1,
+                0,
             ),
             DesignThreadForm::CompactExtended(_) => (
                 extended_compact::LENGTH_REFERENCE,
@@ -115,13 +137,78 @@ pub(super) fn exact_thread_construction(
     Some(construction)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The face-selection groups of an extended standard scope.
+///
+/// The trailer's length and offset references each name one scope reference,
+/// the owner with local ordinal `1` and `0`. The other references are the
+/// ordered `(group, member)` pairs. A modeled prefix holds one entry for each
+/// pair.
+fn extended_standard_face_groups(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    owners: &[crate::records::parameters::DesignParameterOwner],
+    designation_at: usize,
+    entries: usize,
+) -> Option<Vec<u32>> {
+    let (_, after_designation) = lp_utf16_bounded(bytes, designation_at, 1..=128)?;
+    let (_, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
+    let (_, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
+    let trailer = after_profile.checked_add(thread_tail::STANDARD_TRAILER)?;
+    let references = scope
+        .reference_members()
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
+    let ordinal_of = |at: usize| {
+        let record =
+            super::shared_frames::marked_record_reference(bytes, trailer.checked_add(at)?)?;
+        let mut ordinals = references
+            .iter()
+            .enumerate()
+            .filter(|(_, reference)| **reference == record)
+            .map(|(ordinal, _)| ordinal);
+        let ordinal = ordinals.next()?;
+        ordinals.next().is_none().then_some(ordinal)
+    };
+    let length = ordinal_of(extended_standard::LENGTH_REFERENCE)?;
+    let offset = ordinal_of(extended_standard::OFFSET_REFERENCE)?;
+    if length == offset
+        || DesignThreadForm::StandardExtended.owner_ordinals(scope, owners)
+            != Some((offset, length))
+    {
+        return None;
+    }
+    let groups = DesignThreadForm::extended_standard_face_groups(&references, (offset, length));
+    (entries == 0 || entries == groups.len()).then_some(groups)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ThreadPrefix {
     Standard,
     Compact,
-    ExtendedStandard,
-    ExtendedCompact,
+    CompactOwned,
+    /// The extended prefix and the fields it states before the designation.
+    Extended(ExtendedThreadPrefix),
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ExtendedThreadPrefix {
+    external: bool,
+    modeled: bool,
+    /// Count of the 16-byte entries: one for each modeled face.
+    entry_count: usize,
+    class: String,
+    designation_copy: String,
+}
+
+/// Most 16-byte entries that an extended Thread prefix admits.
+const EXTENDED_PREFIX_ENTRY_LIMIT: usize = 4096;
+
+/// Byte length of each counted entry in an extended Thread prefix.
+const EXTENDED_PREFIX_ENTRY_LEN: usize = 16;
+
+/// Longest thread class, in UTF-16 code units, that the extended prefix admits.
+const THREAD_CLASS_UNITS: usize = 16;
 
 fn exact_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
     let direct = if bytes.get(thread_standard::ZERO_RUN_10..thread_standard::FIXED_SCALAR)?
@@ -147,29 +234,83 @@ fn exact_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
     } else {
         None
     };
-    let extended = if bytes.get(thread_extended::ZERO_RUN_10..thread_extended::FIXED_SCALAR)?
-        == [0; 10]
-        && View::f64_le_at(bytes, thread_extended::FIXED_SCALAR)?.to_bits() == 60.0f64.to_bits()
-        && View::u32_le_at(bytes, thread_extended::ZERO_VALUE)? == thread_extended::ZERO_VALUE_VALUE
-        && View::u32_le_at(bytes, thread_extended::FORM_MARKER)?
-            == thread_extended::FORM_MARKER_VALUE
-        && View::u32_le_at(bytes, thread_extended::TRAILING_ZERO)?
-            == thread_extended::TRAILING_ZERO_VALUE
-    {
-        match (
-            bytes.get(thread_extended::STANDARD_FLAG)?,
-            bytes.get(thread_extended::FORM_TOKEN..thread_extended::TRAILING_ZERO)?,
-        ) {
-            (1, [0x36, 0, 0x67, 0]) => Some((ThreadPrefix::ExtendedStandard, thread_extended::LEN)),
-            (0, [0x36, 0, 0x48, 0]) => Some((ThreadPrefix::ExtendedCompact, thread_extended::LEN)),
-            _ => None,
-        }
-    } else {
-        None
-    };
-    let mut candidates = [direct, owner_marked, extended].into_iter().flatten();
+    let compact_owned = owner_prologue(bytes)
+        .then(|| {
+            (View::u32_le_at(bytes, compact_owned::PREFIX_WORD) == Some(0)
+                && thread_form(bytes, compact_owned::FORM_MARKER, compact_owned::FORM_TOKEN)
+                    == Some(ThreadPrefix::Compact))
+            .then_some((ThreadPrefix::CompactOwned, compact_owned::LEN))
+        })
+        .flatten()
+        .filter(|(prefix, designation)| {
+            parse_thread_payload(bytes, *designation, prefix, Vec::new()).is_some()
+        });
+    let extended = extended_thread_prefix(bytes).filter(|(prefix, designation)| {
+        parse_thread_payload(bytes, *designation, prefix, Vec::new()).is_some()
+    });
+    let mut candidates = [direct, owner_marked, compact_owned, extended]
+        .into_iter()
+        .flatten();
     let prefix = candidates.next()?;
     candidates.next().is_none().then_some(prefix)
+}
+
+/// The extended prefix: the external flag, the counted entries, the LP-UTF16
+/// thread class, and the LP-UTF16 designation copy before the designation.
+fn extended_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
+    let (external_at, count_at, entries_at) = if owner_prologue(bytes) {
+        (
+            owner_extended::EXTERNAL_FLAG,
+            owner_extended::ENTRY_COUNT,
+            owner_extended::LEN,
+        )
+    } else if bytes.get(thread_extended::ZERO_RUN_10..thread_extended::FIXED_SCALAR)? == [0; 10]
+        && View::f64_le_at(bytes, thread_extended::FIXED_SCALAR)?.to_bits() == 60.0f64.to_bits()
+    {
+        (
+            thread_extended::EXTERNAL_FLAG,
+            thread_extended::ENTRY_COUNT,
+            thread_extended::LEN,
+        )
+    } else {
+        return None;
+    };
+    let external = match bytes.get(external_at)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let entry_count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+    if entry_count > EXTENDED_PREFIX_ENTRY_LIMIT {
+        return None;
+    }
+    let modeled = entry_count != 0;
+    let class_at = entries_at.checked_add(entry_count.checked_mul(EXTENDED_PREFIX_ENTRY_LEN)?)?;
+    let (class, copy_at) = lp_utf16_bounded(bytes, class_at, 1..=THREAD_CLASS_UNITS)?;
+    let (designation_copy, designation_at) = lp_utf16_bounded(bytes, copy_at, 0..=128)?;
+    if !designation_copy.is_empty()
+        && lp_utf16_bounded(bytes, designation_at, 1..=128)?.0 != designation_copy
+    {
+        return None;
+    }
+    Some((
+        ThreadPrefix::Extended(ExtendedThreadPrefix {
+            external,
+            modeled,
+            entry_count,
+            class,
+            designation_copy,
+        }),
+        designation_at,
+    ))
+}
+
+fn owner_prologue(bytes: &[u8]) -> bool {
+    bytes.get(thread_owner::ZERO_RUN_9..thread_owner::OWNER_MARKER) == Some(&[0; 9])
+        && View::u32_le_at(bytes, thread_owner::OWNER_MARKER) == Some(1)
+        && bytes.get(thread_owner::SEPARATOR) == Some(&0)
+        && View::f64_le_at(bytes, thread_owner::FIXED_SCALAR).map(f64::to_bits)
+            == Some(60.0f64.to_bits())
 }
 
 fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<ThreadPrefix> {
@@ -186,27 +327,60 @@ fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<Thread
 pub(super) fn parse_thread_payload(
     bytes: &[u8],
     designation_at: usize,
-    expected_form: ThreadPrefix,
+    expected_form: &ThreadPrefix,
     face_group_record_indices: Vec<u32>,
 ) -> Option<DesignThreadConstruction> {
     let (designation, after_designation) = lp_utf16_bounded(bytes, designation_at, 1..=128)?;
     let (nominal_size_text, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
     let (profile, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
     (|| {
-        let (pitch_marker, trailer_kind) =
+        let extended = match expected_form {
+            ThreadPrefix::Extended(prefix) => Some(prefix),
+            ThreadPrefix::Standard | ThreadPrefix::Compact | ThreadPrefix::CompactOwned => None,
+        };
+        if extended.is_some_and(|prefix| {
+            !prefix.designation_copy.is_empty() && prefix.designation_copy != designation
+        }) {
+            return None;
+        }
+        let zero_flag_trailer = bytes.get(after_profile + thread_tail::STANDARD_TRAILER)
+            == Some(&extended_standard::ZERO_FLAG_VALUE);
+        let (pitch_marker, trailer_kind, full_length) =
             match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
-                (ThreadPrefix::ExtendedStandard, [1, 1, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::ExtendedStandard)
+                (ThreadPrefix::Extended(prefix), [flag @ (0 | 1), 1 | 2, 0, 0, 0])
+                    if zero_flag_trailer =>
+                {
+                    // The modeled marker of a modeled thread is 0 while the scope has no result.
+                    let stated = *bytes.get(after_profile + thread_tail::PITCH_MARKER)?;
+                    if stated > u8::from(prefix.modeled) {
+                        return None;
+                    }
+                    (
+                        stated,
+                        ThreadTrailerKind::ExtendedStandard,
+                        Some(*flag == 1),
+                    )
                 }
-                (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (1, ThreadTrailerKind::Standard),
-                (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => (0, ThreadTrailerKind::StandardLegacy),
+                (ThreadPrefix::CompactOwned, [0, 1, 0, 0, 0]) => {
+                    (0, ThreadTrailerKind::CompactOwnersLeading, None)
+                }
+                (ThreadPrefix::CompactOwned, [0, 2, 0, 0, 0]) => {
+                    (0, ThreadTrailerKind::CompactOwnersTrailing, None)
+                }
+                (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (1, ThreadTrailerKind::Standard, None),
+                (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => {
+                    (0, ThreadTrailerKind::StandardLegacy, None)
+                }
                 (ThreadPrefix::Standard, [1, 2, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::StandardCompact)
+                    (0, ThreadTrailerKind::StandardCompact, None)
                 }
-                (ThreadPrefix::Compact | ThreadPrefix::ExtendedCompact, [1, 2, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::Compact)
+                (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => (0, ThreadTrailerKind::Compact, None),
+                (ThreadPrefix::Extended(prefix), [1, 2, 0, 0, 0]) if !prefix.modeled => {
+                    (0, ThreadTrailerKind::Compact, None)
                 }
-                (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => (0, ThreadTrailerKind::CompactLegacy),
+                (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => {
+                    (0, ThreadTrailerKind::CompactLegacy, None)
+                }
                 _ => return None,
             };
         let nominal_size = thread::DesignThreadNominalSize::try_from(nominal_size_text).ok()?;
@@ -220,19 +394,43 @@ pub(super) fn parse_thread_payload(
             ThreadTrailerKind::Compact => thread_compact_tail::COMPACT_TRAILER,
             ThreadTrailerKind::StandardLegacy => thread_standard_legacy_tail::LEGACY_TRAILER,
             ThreadTrailerKind::CompactLegacy => thread_compact_legacy_tail::LEGACY_TRAILER,
-            ThreadTrailerKind::StandardCompact | ThreadTrailerKind::ExtendedStandard => {
-                thread_tail::STANDARD_TRAILER
-            }
+            ThreadTrailerKind::StandardCompact
+            | ThreadTrailerKind::ExtendedStandard
+            | ThreadTrailerKind::CompactOwnersLeading
+            | ThreadTrailerKind::CompactOwnersTrailing => thread_tail::STANDARD_TRAILER,
         };
         let trailer_offset = after_profile.checked_add(trailer_at)?;
+        let right_handed = match trailer_kind {
+            ThreadTrailerKind::ExtendedStandard => {
+                match bytes.get(trailer_offset + extended_standard::RIGHT_HANDED)? {
+                    0 => Some(false),
+                    1 => Some(true),
+                    _ => return None,
+                }
+            }
+            _ => None,
+        };
         let form = match trailer_kind {
             ThreadTrailerKind::ExtendedStandard
                 if bytes.get(trailer_offset + extended_standard::ZERO_FLAG)
-                    == Some(&extended_standard::ZERO_FLAG_VALUE)
-                    && bytes.get(trailer_offset + extended_standard::END_FLAG)
-                        == Some(&extended_standard::END_FLAG_VALUE) =>
+                    == Some(&extended_standard::ZERO_FLAG_VALUE) =>
             {
                 DesignThreadForm::StandardExtended
+            }
+            ThreadTrailerKind::CompactOwnersLeading | ThreadTrailerKind::CompactOwnersTrailing
+                if bytes.get(trailer_offset + extended_standard::ZERO_FLAG)
+                    == Some(&extended_standard::ZERO_FLAG_VALUE)
+                    && bytes.get(trailer_offset + extended_standard::RIGHT_HANDED) == Some(&1) =>
+            {
+                match trailer_kind {
+                    ThreadTrailerKind::CompactOwnersLeading => {
+                        DesignThreadForm::CompactOwnersLeading
+                    }
+                    ThreadTrailerKind::CompactOwnersTrailing => {
+                        DesignThreadForm::CompactOwnersTrailing
+                    }
+                    _ => DesignThreadForm::StandardExtended,
+                }
             }
             ThreadTrailerKind::Standard
                 if bytes.get(trailer_offset..trailer_offset + 2)? == [0, 1] =>
@@ -274,7 +472,7 @@ pub(super) fn parse_thread_payload(
                     value: record_index,
                     offset: u64::try_from(reference_offset).ok()?,
                 };
-                if expected_form == ThreadPrefix::ExtendedCompact {
+                if extended.is_some() {
                     (bytes.get(trailer_offset + extended_compact::END_FLAG)
                         == Some(&extended_compact::END_FLAG_VALUE))
                     .then_some(())?;
@@ -285,8 +483,11 @@ pub(super) fn parse_thread_payload(
             }
             _ => return None,
         };
-        if expected_form == ThreadPrefix::ExtendedCompact
-            && !matches!(form, DesignThreadForm::CompactExtended(_))
+        if extended.is_some()
+            && !matches!(
+                form,
+                DesignThreadForm::CompactExtended(_) | DesignThreadForm::StandardExtended
+            )
         {
             return None;
         }
@@ -303,6 +504,13 @@ pub(super) fn parse_thread_payload(
                 minor_diameter,
                 pitch_diameter,
             )?,
+            extended: extended.map(|prefix| thread::DesignThreadExtended {
+                class: prefix.class.clone(),
+                external: prefix.external,
+                modeled: prefix.modeled,
+                full_length,
+                right_handed,
+            }),
         })
     })()
 }
@@ -360,4 +568,6 @@ enum ThreadTrailerKind {
     CompactLegacy,
     StandardCompact,
     ExtendedStandard,
+    CompactOwnersLeading,
+    CompactOwnersTrailing,
 }

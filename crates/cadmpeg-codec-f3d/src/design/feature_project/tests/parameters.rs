@@ -170,6 +170,94 @@ fn parameters_project_all_design_database_unit_tokens() {
 }
 
 #[test]
+fn parameter_comment_projects_as_a_source_property() {
+    let parameter = parse_design_parameter_record(&parameter_record(
+        None,
+        "12 mm",
+        "User Parameter",
+        Some("mm"),
+        "uf",
+        1.2,
+    ))
+    .expect("generated document parameter");
+    let expression_offset = parameter.expression_offset();
+    let commented = parameter
+        .with_comment(Some(crate::records::identity::RecordedValue {
+            value: "Ø entraxe".into(),
+            offset: expression_offset - 8,
+        }))
+        .unwrap();
+    let crate::design::feature_project::ProjectedParameterDesign {
+        parameters: projected,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &[];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &[commented],
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    assert_eq!(
+        projected[0].properties.get("comment").map(String::as_str),
+        Some("Ø entraxe")
+    );
+}
+
+#[test]
+fn text_parameter_projects_its_text_as_a_string_value() {
+    let numeric = parse_design_parameter_record(&parameter_record(
+        None,
+        "'AB'",
+        "User Parameter",
+        Some("Text"),
+        "tp",
+        0.0,
+    ))
+    .expect("generated document parameter");
+    assert_eq!(
+        untyped_parameter_unit_count(std::slice::from_ref(&numeric)),
+        1
+    );
+    // The text value field starts after the source kind and ends before the unit.
+    let text = numeric
+        .with_text_value(Some(crate::records::identity::RecordedValue {
+            value: "AB".into(),
+            offset: 93,
+        }))
+        .unwrap();
+    assert_eq!(untyped_parameter_unit_count(std::slice::from_ref(&text)), 0);
+    let crate::design::feature_project::ProjectedParameterDesign {
+        parameters: projected,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &[];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &[text],
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    assert_eq!(
+        projected[0].value,
+        Some(ParameterValue::String("AB".into()))
+    );
+    assert!(!projected[0].properties.contains_key("unit"));
+}
+
+#[test]
 fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
     let name = "Width$µ°\"A";
     assert_eq!(
@@ -279,6 +367,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
                         side_extent_discriminators: [1, 0],
                         side_extent_discriminator_offsets: [177, 190],
                         first_side_target_ordinal: None,
+                        distance_tail: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
                         direction_face_extend_offsets: [132, 136],
                         direction_reversed: false,
@@ -293,6 +382,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
 
             previous_history_state_id: None,
@@ -305,6 +395,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_members: None,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
@@ -337,6 +428,22 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     assert_eq!(features.len(), 1);
     assert_eq!(features[0].name.as_deref(), Some("Extrude 1"));
     assert_eq!(features[0].suppressed, Some(true));
+    for family in [
+        crate::design::DesignFeatureFamily::Extrude,
+        crate::design::DesignFeatureFamily::Fillet,
+        crate::design::DesignFeatureFamily::Chamfer,
+        crate::design::DesignFeatureFamily::Hole,
+        crate::design::DesignFeatureFamily::Thread,
+        crate::design::DesignFeatureFamily::Combine,
+    ] {
+        assert!(super::super::stateless_scope_is_suppressed(family));
+    }
+    for family in [
+        crate::design::DesignFeatureFamily::Sketch,
+        crate::design::DesignFeatureFamily::Mirror,
+    ] {
+        assert!(!super::super::stateless_scope_is_suppressed(family));
+    }
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -367,6 +474,39 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
             .map(String::as_str),
         Some("AlongDistance")
     );
+}
+
+#[test]
+fn stateless_combine_is_suppressed_and_sketch_is_not() {
+    use crate::design::feature_project::{
+        project_parameter_design_with_edge_identities, ProjectInputs,
+    };
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+
+    for (kind, suppressed) in [
+        (DesignFeatureKind::Combine, true),
+        (DesignFeatureKind::Sketch, false),
+    ] {
+        let scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            kind,
+            10,
+        );
+        let scopes = [scope];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+        let projected = crate::test_support::with_decode_context(|ctx| {
+            project_parameter_design_with_edge_identities(
+                ctx,
+                &ProjectInputs {
+                    scopes: &scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        });
+        assert_eq!(projected.features[0].suppressed, Some(suppressed));
+    }
 }
 
 #[test]
@@ -587,6 +727,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
                 kind_offset: 0,
                 feature_ordinal: std::num::NonZeroU32::new(record_index).expect("nonzero ordinal"),
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: None,
 
                 previous_history_state_id: None,
@@ -602,6 +743,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
                     .try_into()
                     .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "302".to_owned(),
                 )
@@ -756,6 +898,7 @@ fn parameter_expressions_project_feature_dependencies() {
                 kind_offset: byte_offset + 100,
                 feature_ordinal: std::num::NonZeroU32::MIN,
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: None,
 
                 previous_history_state_id: None,
@@ -774,6 +917,7 @@ fn parameter_expressions_project_feature_dependencies() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "261".to_owned(),
                 )

@@ -30,7 +30,7 @@
 //! let mut input = File::open("part.prt")?;
 //! let result = NxCodec.decode(&mut input, &DecodeOptions::default())?;
 //!
-//! println!("{} bodies", result.ir().model.bodies.len());
+//! println!("{} bodies", result.ir().geometry.bodies.len());
 //! for loss in &result.report().losses {
 //!     println!("{:?}: {}", loss.severity, loss.message);
 //! }
@@ -89,16 +89,13 @@ macro_rules! propagate_resource {
 mod canonical_uuid;
 mod container;
 mod decode;
-mod deltas;
 mod dialect;
 mod evaluation;
 mod framing;
 mod geometry;
 mod grouping;
-mod immutable_text;
 mod inspect;
 mod intersection;
-mod iter_wire;
 mod jt;
 mod jt_topology;
 /// Byte-offset constants generated from `docs/layouts/nx.toml`.
@@ -110,8 +107,6 @@ mod om;
 mod om_tokens;
 mod parasolid;
 mod payload_text;
-mod printable_string;
-mod records;
 mod scan_notes;
 mod topology;
 mod vec3_at;
@@ -155,17 +150,7 @@ impl CodecBackend for NxCodec {
                 })
                 .and_then(|_| native::admit_construction_records(ctx, namespace))
                 .and_then(|()| native::rmfastload_storage::admit(ctx, namespace))
-                .and_then(|()| {
-                    for record in namespace
-                        .arena_iter_as_for_decode::<native::assembly_placement::AssemblyPlacement>(
-                            ctx,
-                            "assembly_placements",
-                        )
-                    {
-                        record?;
-                    }
-                    Ok(())
-                })
+                .and_then(|()| native::assembly_placement::admit_object_records(ctx, namespace))
                 .and_then(|()| native::admit_deltas_records(ctx, namespace, source));
         Ok(match admitted {
             Ok(findings) => findings,

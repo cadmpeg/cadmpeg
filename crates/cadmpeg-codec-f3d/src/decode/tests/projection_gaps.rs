@@ -6,6 +6,18 @@ use super::super::{
     unresolved_dimension_companion_count, DesignProjectionGaps, DimensionCompanionSources,
 };
 use crate::native::F3dNative;
+
+#[test]
+fn surface_untrim_gaps_count_both_face_and_manual_loop_selections() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features.push(serde_json::from_value(serde_json::json!({
+        "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false,
+        "definition": {"kind": "operation", "value": {"kind": "untrim_surface", "value": {"faces": {"kind": "native", "value": "native:faces"}, "loops": {"kind": "selected", "edges": {"kind": "native", "value": "native:loops"}}, "extension": 3.0}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap());
+    let gaps = design_projection_gaps(&ir, &F3dNative::default());
+    assert_eq!(gaps.face_selections, 1);
+    assert_eq!(gaps.native_edge_selections, 1);
+    assert_eq!(gaps.incomplete_features, 1);
+}
 use crate::records::{
     bodies::DesignBodyBinding,
     dimensions::{DesignDimensionLocusPair, DesignDimensionRecipeRecord},
@@ -55,6 +67,7 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
         DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
             component_owner: None,
             component_owner_unresolved: false,
+            history_only: false,
             id: "f3d:Design/BulkStream.dat:design-body-binding#0".into(),
             stream: "Design/BulkStream.dat".into(),
             pair_count: 1,
@@ -98,13 +111,8 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
             serde_json::from_value(serde_json::json!({
                 "id": format!("test:model:feature#thread-{ordinal}"),
                 "ordinal": ordinal,
-                "suppressed": null,
-                "definition": {
-                    "definition": "cosmetic_thread",
-                    "face": face,
-                    "diameter": 2.5
-                }
-            }))
+                "definition": {"kind": "operation", "value": {"kind": "cosmetic_thread", "value": {"face": face,
+                    "diameter": 2.5}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
             .expect("CosmeticThread feature"),
         );
     }
@@ -158,13 +166,11 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#extrude",
             "ordinal": 0,
-            "suppressed": null,
-            "definition": {
-                "definition": "extrude",
-                "profile": {
+            "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {
                     "kind": "sketch_selection",
                     "value": {"sketch": "synthetic:test:id#sketch", "selections": ["native:profile"]}
-                },
+                }},
+                "direction": {"kind": "profile_normal"},
                 "start": {"kind": "profile_plane"},
                 "extent": {
                     "kind": "one_sided",
@@ -175,39 +181,31 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                         }
                     }
                 },
-                "op": "cut"
-            }
-        }))
+                "op": "cut"}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
         .expect("Extrude feature"),
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#sweep",
             "ordinal": 1,
-            "suppressed": null,
-            "definition": {
-                "definition": "sweep",
-                "shape": {
-                    "mode": "solid",
+            "definition": {"kind": "operation", "value": {"kind": "sweep", "value": {"shape": {
+                    "kind": "solid",
                     "op": "cut",
                     "section": {
                         "kind": "profile",
                         "value": {"kind": "native", "value": "native:sweep-profile"}
-                    }
+                    },
+                    "sections": []
                 },
-                "path": {"kind": "native", "value": "native:sweep-path"}
-            }
-        }))
+                "path": {"kind": "native", "value": "native:sweep-path"},
+                "path_tangent": false, "linearize": false}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
         .expect("Sweep feature"),
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#fillet",
             "ordinal": 2,
-            "suppressed": null,
-            "definition": {
-                "definition": "fillet",
-                "groups": [
+            "definition": {"kind": "operation", "value": {"kind": "fillet", "value": {"groups": [
                     {
                         "edges": {"kind": "native", "value": "native:edges"},
                         "radius": {"kind": "constant", "radius": 1.0}
@@ -231,9 +229,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                         },
                         "radius": {"kind": "constant", "radius": 3.0}
                     }
-                ]
-            }
-        }))
+                ]}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
         .expect("Fillet feature"),
     );
     ir.model.features.push(
@@ -241,43 +237,29 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             "id": "synthetic:test:id#suppressed-fillet",
             "ordinal": 2,
             "suppressed": true,
-            "definition": {
-                "definition": "fillet",
-                "groups": [{
+            "definition": {"kind": "operation", "value": {"kind": "fillet", "value": {"groups": [{
                     "edges": {"kind": "native", "value": "native:suppressed-edges"},
                     "radius": {"kind": "constant", "radius": 3.0}
-                }]
-            }
-        }))
+                }]}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
         .expect("suppressed Fillet feature"),
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#native-feature",
             "ordinal": 3,
-            "suppressed": null,
-            "definition": {
-                "definition": "native",
-                "kind": "unsupported",
-                "parameters": {}
-            }
-        }))
+            "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "unsupported",
+                "parameters": {}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
         .expect("native feature"),
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#unresolved-pattern",
             "ordinal": 4,
-            "suppressed": null,
-            "definition": {
-                "definition": "pattern",
-                "seeds": [],
+            "definition": {"kind": "operation", "value": {"kind": "pattern", "value": {"seeds": [],
                 "pattern": {
                     "kind": "unresolved",
                     "form": "circular"
-                }
-            }
-        }))
+                }}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
         .expect("unresolved pattern feature"),
     );
 
@@ -295,6 +277,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             .expect("valid entity ID"),
 
         visibility: None,
+        display_name: None,
 
         class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned()).unwrap(),
         record_index: 10,
@@ -307,6 +290,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             id: "native:sketch-point".into(),
             record_index: 11,
             owner_reference: Some(1),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
                 .unwrap(),
             byte_offset: 0,
@@ -329,6 +313,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         id: "native:sketch-curve".into(),
         record_index: 12,
         owner_reference: Some(1),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
@@ -337,6 +322,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         secondary_id: 2,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     });
     native.lost_edge_references.push(
         LostEdgeReference::new(
@@ -417,6 +403,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 kind_offset: 0,
                 feature_ordinal: std::num::NonZeroU32::MIN,
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: None,
                 previous_history_state_id: None,
                 previous_history_state_id_offset: None,
@@ -434,6 +421,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "001".to_owned(),
                 )
@@ -448,8 +436,10 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         design_projection_gaps(&ir, &native),
         DesignProjectionGaps {
             unresolved_body_bindings: 0,
+            history_only_body_bindings: 0,
             incomplete_features: 6,
             native_reference_images: 0,
+            assumed_reference_image_flags: 0,
             native_decals: 0,
             unprojected_feature_scopes: 1,
             unprojected_parameters: 1,
@@ -468,6 +458,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unprojected_sketch_text_styles: 0,
             unprojected_sketch_relations: 0,
             unprojected_sketch_pattern_states: 0,
+            unprojected_sketch_flags: 0,
             unprojected_dimensions: 0,
             profile_selections: 2,
             path_selections: 1,
@@ -581,7 +572,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             "ordinal": 2,
             "name": "d2",
             "expression": "1 mm",
-            "native_ref": "f3d:test:design-parameter#2"
+            "native_ref": "f3d:test:design-parameter#2",
+            "dependencies": [], "properties": {}
         }))
         .expect("Design parameter"),
     );
@@ -605,6 +597,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
                 kind_offset: 0,
                 feature_ordinal: std::num::NonZeroU32::new(record_index).expect("nonzero ordinal"),
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: current,
                 previous_history_state_id: previous,
                 previous_history_state_id_offset: None,
@@ -622,6 +615,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "001".to_owned(),
                 )
@@ -648,14 +642,9 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
             serde_json::from_value(serde_json::json!({
                 "id": format!("test:model:feature#{}", scope.record_index),
                 "ordinal": scope.record_index,
-                "suppressed": null,
-                "definition": {
-                    "definition": "native",
-                    "kind": "Unsupported",
-                    "parameters": {}
-                },
-                "native_ref": scope.id
-            }))
+                "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "Unsupported",
+                    "parameters": {}}}},
+                "native_ref": scope.id, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
             .expect("native feature")
         })
         .collect();
@@ -991,12 +980,12 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     use cadmpeg_ir::topology::Color;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
-    let first_face = ir.model.faces[0].id.clone();
-    let second_face = ir.model.faces[1].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
+    let first_face = ir.geometry.faces[0].id.clone();
+    let second_face = ir.geometry.faces[1].id.clone();
     let direct = Color::new(0.9, 0.8, 0.7, 1.0).expect("valid color");
     let material = Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color");
-    ir.model.bodies[0].color = Some(direct);
+    ir.geometry.bodies[0].color = Some(direct);
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
         name: None,
@@ -1029,9 +1018,9 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     ];
 
     apply_appearance_base_colors(&mut ir);
-    assert_eq!(ir.model.bodies[0].color, Some(direct));
-    assert_eq!(ir.model.faces[0].color, Some(material));
-    assert_eq!(ir.model.faces[1].color, None);
+    assert_eq!(ir.geometry.bodies[0].color, Some(direct));
+    assert_eq!(ir.geometry.faces[0].color, Some(material));
+    assert_eq!(ir.geometry.faces[1].color, None);
 }
 
 #[test]
@@ -1057,5 +1046,100 @@ fn fixture_pattern_states_have_a_distinct_native_retention_loss_count() {
             "{}",
             case.label
         );
+    }
+}
+
+#[test]
+fn design_projection_gaps_count_canvas_images_with_a_cleared_flag() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    native
+        .design_canvas_images
+        .push(crate::test_support::canvas::canvas_image_fixture());
+    assert_eq!(
+        design_projection_gaps(&ir, &native).assumed_reference_image_flags,
+        0
+    );
+    let mut cleared = crate::test_support::canvas::canvas_wire_fixture();
+    cleared["id"] = serde_json::json!("f3d:native:canvas#1");
+    cleared["second_boundary_flag"] = serde_json::json!(false);
+    native
+        .design_canvas_images
+        .push(serde_json::from_value(cleared).unwrap());
+    assert_eq!(
+        design_projection_gaps(&ir, &native).assumed_reference_image_flags,
+        1
+    );
+}
+
+#[test]
+fn pattern_seed_plane_and_path_selections_count_as_retained_selections() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    for (ordinal, (seeds, pattern)) in [
+        (
+            serde_json::json!([{"kind": "faces", "value": {"kind": "native", "value": "native:seed-faces"}}]),
+            serde_json::json!({"kind": "unresolved", "form": "curve_driven"}),
+        ),
+        (
+            serde_json::json!([{"kind": "faces", "value": {"kind": "unresolved"}}]),
+            serde_json::json!({"kind": "unresolved", "form": "linear"}),
+        ),
+        (
+            serde_json::json!([{"kind": "bodies", "value": {"kind": "native", "value": "native:seed-bodies"}}]),
+            serde_json::json!({"kind": "unresolved", "form": "circular"}),
+        ),
+        (
+            serde_json::json!([{"kind": "feature", "value": "test:model:feature#seed"}]),
+            serde_json::json!({"kind": "mirror_reference", "plane": {"kind": "native", "value": "native:plane"}}),
+        ),
+        (
+            serde_json::json!([{"kind": "feature", "value": "test:model:feature#seed"}]),
+            serde_json::json!({"kind": "curve_driven", "path": {"kind": "native", "value": "native:path"}, "spacing": 25.0, "count": 4}),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": format!("test:model:feature#pattern-{ordinal}"),
+                "ordinal": ordinal,
+                "definition": {"kind": "operation", "value": {"kind": "pattern", "value": {"seeds": seeds,
+                    "pattern": pattern}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
+            .expect("Pattern feature"),
+        );
+    }
+
+    let gaps = design_projection_gaps(&ir, &F3dNative::default());
+    assert_eq!(gaps.face_selections, 3);
+    assert_eq!(gaps.body_selections, 1);
+    assert_eq!(gaps.path_selections, 1);
+}
+
+#[test]
+fn unstitch_faces_reports_native_and_absent_selections_as_incomplete() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+
+    for (faces, expected) in [
+        (FaceSelection::Native("native:face-group".into()), 1),
+        (FaceSelection::Unresolved, 1),
+        (
+            FaceSelection::Faces(vec![
+                cadmpeg_ir::ids::FaceId::mint("test:model:face#1").unwrap()
+            ]),
+            0,
+        ),
+    ] {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "test:model:feature#unstitch",
+                "ordinal": 0,
+                "definition": FeatureDefinition::Operation(FeatureOperation::UnstitchFaces { faces }), "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
+            .unwrap(),
+        );
+        let gaps = design_projection_gaps(&ir, &F3dNative::default());
+        assert_eq!(gaps.incomplete_features, expected);
+        assert_eq!(gaps.face_selections, expected);
     }
 }

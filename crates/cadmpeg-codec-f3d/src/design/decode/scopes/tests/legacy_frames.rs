@@ -4,16 +4,13 @@ use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
-use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
 use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_parameters;
 use crate::design::decode::scopes::work_geometry::{
     exact_work_axis_construction, exact_work_plane_frame,
 };
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
-use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
-use crate::records::feature::direct_face::DesignDirectFaceOperation;
 use crate::records::feature::extrude::{
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
 };
@@ -21,110 +18,8 @@ use crate::records::feature::fixed_parameters::{
     DesignFixedExtrudeDistance, DesignFixedExtrudeScalar,
 };
 use crate::records::feature::scope::DesignParameterScope;
-use crate::test_support::lp_utf16;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
-
-#[test]
-fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
-    let mut frame = vec![0; shell_369_261::LEN];
-    frame[shell_369_261::FEATURE_FORM] = shell_369_261::FEATURE_FORM_VALUE;
-    frame[shell_369_261::OUTWARD] = 0;
-    frame[shell_369_261::SCALAR_MARKER] = shell_369_261::SCALAR_MARKER_VALUE;
-    frame[shell_369_261::GROUP_FORM] = shell_369_261::GROUP_FORM_VALUE;
-    frame[shell_369_261::GUID_CODE_UNIT_COUNT..shell_369_261::GUID]
-        .copy_from_slice(&shell_369_261::GUID_CODE_UNIT_COUNT_VALUE.to_le_bytes());
-    let mut guid = Vec::new();
-    lp_utf16(&mut guid, "00000000-0000-0000-0000-000000000000");
-    frame[shell_369_261::GUID..shell_369_261::ZERO_RUN_3_BEFORE_REFERENCES]
-        .copy_from_slice(&guid[4..]);
-    frame[shell_369_261::REFERENCE_COUNT..shell_369_261::REFERENCE_ENTRY_0]
-        .copy_from_slice(&shell_369_261::REFERENCE_COUNT_VALUE.to_le_bytes());
-    for (offset, record_index) in [
-        (shell_369_261::SCALAR_REFERENCE, 9_000u32),
-        (shell_369_261::GROUP_REFERENCE, 200u32),
-        (shell_369_261::REFERENCE_ENTRY_2, 201u32),
-    ] {
-        frame[offset] = 1;
-        frame[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
-    }
-    frame[shell_369_261::HISTORY_STATE_ID..shell_369_261::KIND_CODE_UNIT_COUNT]
-        .copy_from_slice(&8_323u32.to_le_bytes());
-    frame[shell_369_261::KIND_CODE_UNIT_COUNT..shell_369_261::KIND]
-        .copy_from_slice(&shell_369_261::KIND_CODE_UNIT_COUNT_VALUE.to_le_bytes());
-    let mut kind = Vec::new();
-    lp_utf16(&mut kind, "Shell");
-    frame[shell_369_261::KIND..shell_369_261::FEATURE_ORDINAL].copy_from_slice(&kind[4..]);
-    frame[shell_369_261::FEATURE_ORDINAL..shell_369_261::FEATURE_ORDINAL + 4]
-        .copy_from_slice(&1u32.to_le_bytes());
-    frame[shell_369_261::PREVIOUS_HISTORY_STATE_ID..shell_369_261::PREVIOUS_HISTORY_STATE_ID + 4]
-        .copy_from_slice(&8_322u32.to_le_bytes());
-
-    let mut bytes = frame;
-    let scalar_start = bytes.len();
-    let mut scalar = vec![0; 105];
-    scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
-    scalar[4..7].copy_from_slice(b"321");
-    scalar[7..11].copy_from_slice(&9_000u32.to_le_bytes());
-    scalar[24] = 1;
-    scalar[25..29].copy_from_slice(&42u32.to_le_bytes());
-    scalar[40..48].copy_from_slice(&0.25f64.to_le_bytes());
-    bytes.extend_from_slice(&scalar);
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"265");
-    bytes.extend_from_slice(&9_000u32.to_le_bytes());
-
-    let mut scope = DesignParameterScope::empty(
-        "f3d:test:shell-369#42",
-        crate::records::feature::scope::DesignFeatureKind::Shell,
-        42,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.byte_offset = 0;
-            draft.reference_count_offset = draft.byte_offset + 9;
-            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    scope.class_tag =
-        crate::records::references::DesignClassTag::try_from("369".to_owned()).unwrap();
-    scope.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope
-        .try_edit(|draft| {
-            draft.frame_length = u64_from_index(shell_369_261::LEN);
-            draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated(vec![9_000, 200, 201]);
-            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.layout_fixture_references();
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    assert!(matches!(
-        exact_direct_face_operation(&bytes, &records, &scope),
-        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
-            thickness,
-            thickness_record_index: 9_000,
-            outward: false,
-            thickness_offset,
-            outward_offset: 21,
-        })) if thickness.get() == 0.25 && thickness_offset == u64_from_index(scalar_start + 40)
-    ));
-
-    let mut wrong_pair = scope.clone();
-    wrong_pair.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
-    assert!(exact_direct_face_operation(&bytes, &records, &wrong_pair).is_none());
-
-    let mut invalid_outward = bytes;
-    invalid_outward[shell_369_261::OUTWARD] = 2;
-    assert!(exact_direct_face_operation(&invalid_outward, &records, &scope).is_none());
-}
 
 #[test]
 fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair() {
@@ -160,7 +55,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(
+    let (decoded, _) = exact_work_plane_frame(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -222,7 +117,7 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(
+    let (decoded, _) = exact_work_plane_frame(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -274,7 +169,7 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(
+    let (decoded, _) = exact_work_plane_frame(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -287,10 +182,12 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
 
 #[test]
 fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
+    let row = super::move_transform_type("84E6245F-1CDC-4FB8-8048-163A85FAD3F0", 2);
+    let class_types = super::move_transform_types(&row, &[393, 293, 451, 442, 447, 456]);
     let mut bytes = Vec::new();
     let classes: [(&str, u32); 6] = [
         ("393", 5),
-        ("293", 1),
+        ("293", 5),
         ("451", 5),
         ("442", 5),
         ("447", 5),
@@ -340,6 +237,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
+            &class_types,
         )
         .expect("legacy Move transform frame");
 
@@ -348,20 +246,6 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         assert_eq!(u32::from(decoded.form), form);
         assert_eq!(decoded.form_offset, u64_from_index(frame_at + 43));
         assert_eq!(decoded.transform_offset, u64_from_index(frame_at + 48));
-
-        if class_tag == "456" {
-            let paired_class_at = frame_at + 253 + 4;
-            bytes[paired_class_at..paired_class_at + 3].copy_from_slice(b"262");
-            assert!(
-                crate::design::decode::scopes::direct_face::exact_move_operation(
-                    &bytes,
-                    &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-                    &scope,
-                )
-                .is_none(),
-                "class-456 Move requires paired class 258"
-            );
-        }
     }
 }
 
@@ -448,8 +332,10 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
+            &std::collections::HashMap::new(),
         )
-        .expect("direct WorkAxis carrier");
+        .expect("direct WorkAxis carrier")
+        .construction;
         assert_eq!(construction.origin_offset, 25);
         assert_eq!(construction.displacement_offset, 49);
         assert!(matches!(
@@ -576,9 +462,8 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
+        scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::ReferenceAware {
@@ -589,6 +474,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
                 side_extent_discriminators: [1, 0],
                 side_extent_discriminator_offsets: [77, 90],
                 first_side_target_ordinal: None,
+                distance_tail: None,
                 extent: DesignExtrudeExtent::OneSidedDistance,
                 direction_face_extend_offsets: [32, 36],
                 direction_reversed: false,

@@ -955,7 +955,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     )
     .expect("build the decode context");
     let mut ir = CadIr::empty();
-    ir.model.points.extend([
+    ir.geometry.points.extend([
         Point::new(
             PointId::mint("catia:test:point#point-0").expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
@@ -970,7 +970,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
         ),
     ]);
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -981,6 +981,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
@@ -993,8 +994,8 @@ fn cached_face_point_membership_matches_the_source_predicate() {
         faces.contains(&0)
             == point_on_standard_face(
                 &ctx,
-                ir.model.points[point].position().get(),
-                &ir.model.surfaces[0].geometry,
+                ir.geometry.points[point].position().get(),
+                &ir.geometry.surfaces[0].geometry,
                 None,
             )
             .expect("surface evaluator accepts the fixture")
@@ -1007,7 +1008,7 @@ fn point_face_membership_matches_a_dense_face_point_table() {
     let finite = crate::test_support::test_b5::finite;
     let length = crate::test_support::test_b5::nonnegative_length;
     let mut ir = CadIr::empty();
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [
             [1.0, 0.0, 0.0],
             [0.0, 1.0, 0.0],
@@ -1063,15 +1064,16 @@ fn point_face_membership_matches_a_dense_face_point_table() {
         })
         .collect::<Vec<_>>();
     for (id, geometry) in surface_ids.iter().zip(geometries) {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         });
     }
     let surface_indices = surface_ids
         .iter()
-        .take(ir.model.surfaces.len())
+        .take(ir.geometry.surfaces.len())
         .cloned()
         .enumerate()
         .map(|(index, id)| (id, index))
@@ -1102,11 +1104,11 @@ fn point_face_membership_matches_a_dense_face_point_table() {
         .map(|((surface_id, ..), bounds)| {
             let Some(surface) = surface_indices
                 .get(surface_id)
-                .map(|index| &ir.model.surfaces[*index])
+                .map(|index| &ir.geometry.surfaces[*index])
             else {
                 return Vec::new();
             };
-            ir.model
+            ir.geometry
                 .points
                 .iter()
                 .map(|point| {
@@ -1125,7 +1127,7 @@ fn point_face_membership_matches_a_dense_face_point_table() {
     )
     .expect("build the face point membership cache");
 
-    assert_eq!(membership.len(), ir.model.points.len());
+    assert_eq!(membership.len(), ir.geometry.points.len());
     for (point, faces) in membership.iter().enumerate() {
         let dense_faces = (0..dense.len())
             .filter(|face| dense[*face].get(point) == Some(&true))
@@ -1223,7 +1225,7 @@ fn standard_plane_line_inverts_to_exact_parameter_line() {
 fn standard_emission_reverses_face_pcurve_range() {
     for reversed in [false, true] {
         let mut ir = CadIr::empty();
-        ir.model.points.extend([
+        ir.geometry.points.extend([
             Point::new(
                 PointId::mint("catia:test:point#point-0").expect("identity grammar"),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
@@ -1237,7 +1239,7 @@ fn standard_emission_reverses_face_pcurve_range() {
                 None,
             ),
         ]);
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1248,8 +1250,9 @@ fn standard_emission_reverses_face_pcurve_range() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
             shell: ShellId::mint("catia:test:shell#shell-0").expect("identity grammar"),
             surface: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
@@ -1258,6 +1261,7 @@ fn standard_emission_reverses_face_pcurve_range() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         let bindings = [(
             SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
@@ -1313,6 +1317,7 @@ fn standard_emission_reverses_face_pcurve_range() {
                     annotations: &mut annotations,
                     bindings: &bindings,
                     brep: &[],
+                    face_bounds: &[],
                     surface_indices: &surface_indices,
                     supports: &supports,
                     edge_vertices: &[[0, 1]],
@@ -1328,7 +1333,7 @@ fn standard_emission_reverses_face_pcurve_range() {
         })
         .expect("valid source object identity");
 
-        let [loop_] = ir.model.loops.as_slice() else {
+        let [loop_] = ir.geometry.loops.as_slice() else {
             panic!("standard edge emission must create one loop");
         };
         let [vertex_use, closing_use] = loop_.anchored_vertex_uses() else {
@@ -1354,7 +1359,7 @@ fn standard_emission_reverses_face_pcurve_range() {
                 .expect("identity grammar")
         );
 
-        let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {
+        let [pcurve] = ir.geometry.coedges[0].pcurves.as_slice() else {
             panic!("standard line occurrence must retain its pcurve");
         };
         assert_eq!(
@@ -1364,6 +1369,121 @@ fn standard_emission_reverses_face_pcurve_range() {
             reversed.then_some([1.0, 0.0])
         );
     }
+}
+
+#[test]
+fn standard_planar_solid_emission_preserves_native_face_sense() {
+    use crate::families::standard::topology::{
+        admitted::StandardTopology, BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
+        FaceTopologyDraft, StandardTopologyDraft,
+    };
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+    let mut ir = CadIr::empty();
+    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    for (index, [x, y, z]) in points.into_iter().enumerate() {
+        ir.geometry.points.push(Point::new(
+            PointId::mint(format!("catia:test:point#{index}")).expect("fixture point id"),
+            FinitePoint3::new(Point3::new(x, y, z)).expect("finite fixture point"),
+            None,
+        ));
+    }
+    let surface_id = SurfaceId::mint("catia:test:surface#0").expect("fixture surface id");
+    ir.geometry.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("fixture plane"),
+        )),
+        source_object: None,
+        native_ref: None,
+    });
+    ir.geometry.bodies.push(Body {
+        id: BodyId::mint("catia:test:body#0").expect("fixture body id"),
+        kind: BodyKind::Solid,
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+        native_ref: None,
+    });
+    ir.geometry.faces.push(Face {
+        id: FaceId::mint("catia:standard:face#0").expect("fixture face id"),
+        shell: ShellId::mint("catia:test:shell#0").expect("fixture shell id"),
+        surface: surface_id.clone(),
+        sense: Sense::Reversed,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+        native_ref: None,
+    });
+    let edge_vertices = [[0, 1], [1, 2], [2, 0]];
+    let supports = [1, 2, 3].map(|tag| StandardCurveSupport {
+        pos: 0,
+        tag,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Line,
+    });
+    let topology = StandardTopology::new(StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft::new(
+                edge_vertices
+                    .into_iter()
+                    .enumerate()
+                    .map(|(edge_row, [start_vertex, end_vertex])| CoedgeUse {
+                        edge_row,
+                        reversed: false,
+                        start_vertex,
+                        end_vertex,
+                    })
+                    .collect(),
+            )
+            .expect("closed triangular boundary")],
+        }],
+        edge_rows: [[1, 2], [2, 3], [3, 1]]
+            .map(|handles| {
+                EdgeRow::new(1, handles.to_vec(), EdgeBoundaryLayout::CompleteBoundaryRun)
+                    .expect("fixture edge row")
+            })
+            .to_vec(),
+        vertex_points: points.to_vec(),
+        logical_vertex_count: points.len(),
+    })
+    .expect("admitted fixture topology");
+    crate::test_support::with_service_context(|ctx| {
+        emit_standard_topology(
+            ctx,
+            super::super::EmitStandardTopologyInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[(surface_id.clone(), false, 0)],
+                brep: &[],
+                face_bounds: &[],
+                surface_indices: &HashMap::from([(surface_id, 0)]),
+                supports: &supports,
+                edge_vertices: &edge_vertices,
+                point_assignment: &[0, 1, 2],
+                topology: &topology,
+                native_edge_supports: &[None; 3],
+                limit_curve_bindings: &[None; 3],
+                limit_curves: &[],
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut crate::families::FamilyEntityAdmission::new(ctx),
+            },
+        )
+    })
+    .expect("emit planar solid face");
+
+    assert_eq!(ir.geometry.faces[0].sense, Sense::Reversed);
+    assert_eq!(
+        ir.geometry.faces[0].loops.role(&ir.geometry.loops[0].id),
+        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    );
 }
 
 #[test]
@@ -1503,6 +1623,7 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
 }
 
 mod curve_bindings;
+mod cylindrical_arcs;
 
 #[test]
 fn owner_carrier_helper_preserves_session_depth_refusal() {
@@ -1555,7 +1676,7 @@ fn invariant_face_carrier_binding_selects_a_sole_candidate() {
 #[test]
 fn face_boundary_witnesses_are_empty_without_faces() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         PointId::mint("catia:test:point#a5-witness").expect("identity grammar"),
         FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("finite point"),
         None,
@@ -1572,13 +1693,13 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
     let mut bytes = crate::test_support::test_a5a8::a5_surface_stream();
     bytes.extend(crate::test_support::test_b2::b2_all_compact_owner_packet_stream());
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert!(!crate::families::a5a8::records::a5_surfaces_from_records(
+    let carriers = crate::families::a5a8::records::a5_surfaces_from_records(
         &bytes,
         &records,
-        &mut crate::nurbs::LaneRefusals::new()
+        &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("decode the A5 surfaces")
-    .is_empty());
+    .expect("decode the A5 surfaces");
+    assert!(!carriers.is_empty());
     assert!(
         !crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
             .collect::<Vec<_>>()
@@ -1586,12 +1707,13 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
     );
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:standard:surface#a5-limit").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
         shell: ShellId::mint("catia:standard:shell#0").expect("identity grammar"),
         surface: surface_id,
@@ -1600,6 +1722,7 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     let source = StandardConsolidatedSource {
         data: &bytes,
@@ -1614,7 +1737,7 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
                 source,
                 &[],
                 &cadmpeg_core::decode::WorkBudget::new(100),
-                &mut crate::nurbs::LaneRefusals::new(),
+                &carriers,
             )
         })
         .expect("bind standard A5 owner surfaces"),

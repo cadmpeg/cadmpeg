@@ -74,6 +74,7 @@
 //! assert_eq!(Angle::from_assigned_real(value).get(), -2.5);
 //! ```
 
+use crate::math::portable::Portable;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -151,6 +152,27 @@ impl UnitBinary32 {
     #[must_use]
     pub const fn get(self) -> f32 {
         self.0
+    }
+}
+
+impl From<UnitBinary32> for Fraction {
+    /// Widen an admitted binary32 fraction without another admission.
+    fn from(value: UnitBinary32) -> Self {
+        Self(f64::from(value.get()))
+    }
+}
+
+impl Fraction {
+    /// The fraction of 255 that an eight-bit channel value states.
+    #[must_use]
+    pub fn from_byte(value: u8) -> Self {
+        Self(f64::from(value) / 255.0)
+    }
+
+    /// One minus this fraction.
+    #[must_use]
+    pub fn complement(self) -> Self {
+        Self(1.0 - self.0)
     }
 }
 
@@ -370,7 +392,7 @@ impl NonNegativeLength {
     /// admitted without a check.
     #[must_use]
     pub fn scaled_by_sine(self, angle: Angle) -> Self {
-        Self(self.0 * angle.0.sin().abs())
+        Self(self.0 * angle.0.portable_sin().abs())
     }
 
     /// Assign the length family to a dimensionless nonnegative value in
@@ -725,7 +747,7 @@ impl FiniteReal {
     /// The arctangent of two finite values is finite, so nothing is checked.
     #[must_use]
     pub fn atan2(self, x: Self) -> Self {
-        Self(self.0.atan2(x.0))
+        Self(self.0.portable_atan2(x.0))
     }
 
     /// An index as a real, absent when its integer value is not exact in `f64`.
@@ -775,18 +797,18 @@ impl FiniteReal {
     /// The route lives beside [`FiniteReal`] because only this module
     /// constructs a nonzero value.
     pub(crate) fn hyperbolic_tail(self) -> (f64, NonZeroReal) {
-        let tail = (-self.0.abs()).exp();
+        let tail = (-self.0.abs()).portable_exp();
         (tail, NonZeroReal((1.0 + tail * tail).powi(2)))
     }
 
     /// The hypotenuse of this finite value and one is finite and at least one.
     pub(crate) fn hypot_one_nonzero(self) -> NonZeroReal {
-        NonZeroReal(self.0.hypot(1.0))
+        NonZeroReal(self.0.portable_hypot(1.0))
     }
 
     /// `exp(-|self|)` and `1 + exp(-|self|)^2`; the sum is in `[1, 2]`.
     pub(crate) fn hyperbolic_tail_unit_sum(self) -> (f64, NonZeroReal) {
-        let tail = (-self.0.abs()).exp();
+        let tail = (-self.0.abs()).portable_exp();
         (tail, NonZeroReal(1.0 + tail * tail))
     }
 
@@ -1176,8 +1198,8 @@ impl crate::features::FiniteVector3 {
         let vector = self.get();
         let scale = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
         let length = (vector.x / scale)
-            .hypot(vector.y / scale)
-            .hypot(vector.z / scale);
+            .portable_hypot(vector.y / scale)
+            .portable_hypot(vector.z / scale);
         let scale = NonZeroReal(scale);
         Some((
             unit,
@@ -1225,7 +1247,7 @@ impl ExtendedReal {
 
     /// The hypotenuse `hypot(x, y)` of two finite values: finite or `+inf`.
     pub(crate) fn hypot(x: FiniteReal, y: FiniteReal) -> Self {
-        Self(x.0.hypot(y.0))
+        Self(x.0.portable_hypot(y.0))
     }
 
     /// `self - value`: an infinity less a finite length keeps its infinity.
@@ -1243,7 +1265,7 @@ impl ExtendedReal {
 
     /// The four-quadrant arctangent of `self / x`, an angle in `[-π, π]`.
     pub(crate) fn atan2(self, x: Self) -> FiniteReal {
-        FiniteReal(self.0.atan2(x.0))
+        FiniteReal(self.0.portable_atan2(x.0))
     }
 }
 
@@ -1316,7 +1338,7 @@ impl BeyondUnit {
     /// The inverse hyperbolic cotangent, `atanh(1 / self)`. The reciprocal's
     /// magnitude is below one, so the value is finite and nothing is checked.
     pub(crate) fn arcoth(self) -> FiniteReal {
-        FiniteReal((1.0 / self.0).atanh())
+        FiniteReal((1.0 / self.0).portable_atanh())
     }
 }
 
@@ -1357,7 +1379,7 @@ impl NonZeroReal {
 
     /// `-expm1(-2|self|)` is positive for every nonzero binary64 input.
     pub(crate) fn hyperbolic_sinh_denominator(self) -> Self {
-        Self(-(-2.0 * self.0.abs()).exp_m1())
+        Self(-(-2.0 * self.0.abs()).portable_exp_m1())
     }
 }
 #[cfg(test)]

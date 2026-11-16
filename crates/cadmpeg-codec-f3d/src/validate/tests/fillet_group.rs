@@ -21,7 +21,7 @@ fn native() -> crate::native::F3dNative {
     native
 }
 
-fn add_radius_parameter(
+pub(super) fn add_radius_parameter(
     native: &mut crate::native::F3dNative,
     record_index: u32,
     source_kind: &str,
@@ -84,7 +84,7 @@ fn add_radius_parameter(
     crate::design::test_support::name_scope_references(scope, [owner_index]);
 }
 
-fn radius_native(valid: bool) -> crate::native::F3dNative {
+pub(super) fn radius_native(valid: bool) -> crate::native::F3dNative {
     use crate::records::topology::fillet::{DesignFilletRadiusGroup, DesignFilletRadiusLaw};
     let mut native = native();
     if valid {
@@ -238,5 +238,191 @@ fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
             &native.design_parameters,
         )
         .is_empty()
+    );
+}
+
+#[test]
+fn fixed_fillet_unassigned_group_laws_retain_native_validation() {
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    let mut native = native();
+    let fixed = serde_json::from_value(serde_json::json!({"groups": [{
+        "radii": [0.2], "radius_offsets": [2020], "radius_record_indexes": [202]
+    }]}))
+    .unwrap();
+    let DesignScopePayloadMut::Fillet(slot) = native.design_parameter_scopes[0].payload_mut()
+    else {
+        panic!("Fillet fixture");
+    };
+    slot.fixed = Some(fixed);
+    let mut second = native.design_construction_operand_groups[0].clone();
+    second.record_index += 1;
+    second.id.push_str("-second");
+    native.design_construction_operand_groups.push(second);
+    assert!(
+        crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
+            &native.design_parameter_scopes[0],
+            &native.design_construction_operand_groups,
+        )
+    );
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        let mut findings = Vec::new();
+        super::super::validate_fillet_operand_groups(&ctx, &mut findings, &Default::default());
+        assert!(findings.is_empty());
+    });
+}
+
+/// DR-321: a sole face-role group with no owner and no fixed lane.
+#[test]
+fn a_sole_face_group_without_a_stored_radius_has_no_finding() {
+    use crate::records::topology::construction::DesignConstructionOperandRole;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    let finding_count = |role: DesignOperandRole| {
+        let mut native = super::operand_group_carrier::native_with_identity();
+        native.design_parameter_scopes = self::native().design_parameter_scopes;
+        native.design_parameter_owners.clear();
+        native.design_construction_operand_groups.truncate(1);
+        native.design_construction_operand_groups[0].operand_role =
+            DesignConstructionOperandRole::Other(role);
+        crate::test_support::with_decode_context(|decode| {
+            let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_fillet_operand_groups(&ctx, &mut findings, &Default::default());
+            findings.len()
+        })
+    };
+    assert_eq!(finding_count(DesignOperandRole::ROLE_0X10), 0);
+    assert_eq!(finding_count(DesignOperandRole::BODIES_B), 1);
+}
+
+fn fillet_set_native(radius_owner_record_index: u32) -> crate::native::F3dNative {
+    fillet_set_native_with(radius_owner_record_index, 202)
+}
+
+fn fillet_set_native_with(
+    radius_owner_record_index: u32,
+    tangency_weight_owner_record_index: u32,
+) -> crate::native::F3dNative {
+    use crate::records::feature::fillet_set::{
+        DesignFilletSet, DesignFilletSetLaw, DesignFilletSetList, DesignFilletSetListForm,
+    };
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    let mut native = radius_native(true);
+    add_radius_parameter(&mut native, 203, "TangencyWeight", 1.0, None);
+    native.design_fillet_radius_groups[0].tangency_weight_parameter_record_index = Some(203);
+    let DesignScopePayloadMut::Fillet(slot) = native.design_parameter_scopes[0].payload_mut()
+    else {
+        panic!("Fillet fixture");
+    };
+    slot.sets = Some(DesignFilletSetList {
+        form: DesignFilletSetListForm::Current,
+        rolling_ball_corner: true,
+        sets: vec![DesignFilletSet {
+            record_index: 11,
+            byte_offset: 500,
+            frame_length: 97,
+            group_record_index: 100,
+            law: DesignFilletSetLaw::Constant {
+                radius_owner_record_index,
+            },
+            tangency_weight_owner_record_index,
+            tangent_chain: false,
+            curvature_continuity: Some(false),
+        }],
+    });
+    native
+}
+
+fn fillet_radius_findings(native: &crate::native::F3dNative) -> usize {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let ctx = super::super::Ctx::new(&ir, native, service_ctx);
+        let mut findings = Vec::new();
+        super::super::validate_fillet_radius_groups(&ctx, &mut findings);
+        findings.len()
+    })
+}
+
+#[test]
+fn fillet_set_owners_agree_with_the_radius_group() {
+    assert_eq!(fillet_radius_findings(&fillet_set_native(200)), 0);
+}
+
+#[test]
+fn fillet_set_radius_owner_of_another_parameter_is_a_finding() {
+    assert_eq!(fillet_radius_findings(&fillet_set_native(202)), 1);
+}
+
+#[test]
+fn fillet_set_tangency_owner_of_another_parameter_is_a_finding() {
+    assert_eq!(fillet_radius_findings(&fillet_set_native_with(200, 200)), 1);
+}
+
+fn fillet_set_findings(native: &crate::native::F3dNative) -> usize {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let ctx = super::super::Ctx::new(&ir, native, service_ctx);
+        let mut findings = Vec::new();
+        super::super::validate_fillet_sets(&ctx, &mut findings);
+        findings.len()
+    })
+}
+
+#[test]
+fn fillet_sets_name_scope_members_and_owners_of_their_kinds() {
+    let mut native = fillet_set_native(200);
+    assert_eq!(fillet_set_findings(&native), 1);
+    crate::design::test_support::name_scope_references(
+        &mut native.design_parameter_scopes[0],
+        [100],
+    );
+    assert_eq!(fillet_set_findings(&native), 0);
+    for (radius_owner, tangency_owner) in [(202, 202), (200, 200), (999, 202), (200, 999)] {
+        let mut native = fillet_set_native_with(radius_owner, tangency_owner);
+        crate::design::test_support::name_scope_references(
+            &mut native.design_parameter_scopes[0],
+            [100],
+        );
+        assert_eq!(
+            fillet_set_findings(&native),
+            1,
+            "{radius_owner} {tangency_owner}"
+        );
+    }
+}
+
+#[test]
+fn fillet_set_flags_belong_to_their_forms() {
+    use crate::records::feature::fillet_set::DesignFilletSetListForm;
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    let edit = |change: &dyn Fn(&mut crate::records::feature::fillet_set::DesignFilletSetList)| {
+        let mut native = fillet_set_native(200);
+        crate::design::test_support::name_scope_references(
+            &mut native.design_parameter_scopes[0],
+            [100],
+        );
+        let DesignScopePayloadMut::Fillet(slot) = native.design_parameter_scopes[0].payload_mut()
+        else {
+            panic!("Fillet fixture");
+        };
+        change(slot.sets.as_mut().unwrap());
+        fillet_set_findings(&native)
+    };
+    assert_eq!(edit(&|_| {}), 0);
+    assert_eq!(edit(&|list| list.sets[0].curvature_continuity = None), 1);
+    assert_eq!(
+        edit(&|list| {
+            list.sets[0].frame_length = 93;
+        }),
+        1
+    );
+    assert_eq!(
+        edit(&|list| {
+            list.form = DesignFilletSetListForm::Compact;
+            list.rolling_ball_corner = false;
+        }),
+        1
     );
 }

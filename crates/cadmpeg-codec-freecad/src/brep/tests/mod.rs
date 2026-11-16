@@ -1279,7 +1279,12 @@ pub(crate) fn transfers_binary_exact_curve_and_surface_carriers() {
     flags(&mut brep);
     child(&mut brep, 0, 5);
     brep.push(b'*');
-    for (kind, reverse_index) in [(3_u8, 4_i32), (2, 3), (0, 2)] {
+    brep.push(3);
+    flags(&mut brep);
+    let face_use_orientation = brep.len();
+    child(&mut brep, 0, 4);
+    brep.push(b'*');
+    for (kind, reverse_index) in [(2_u8, 3_i32), (0, 2)] {
         brep.push(kind);
         flags(&mut brep);
         child(&mut brep, 0, reverse_index);
@@ -1292,30 +1297,44 @@ pub(crate) fn transfers_binary_exact_curve_and_surface_carriers() {
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("binary curve carrier");
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert!(matches!(
-        result.ir().model.curves[0].geometry,
+        result.ir().geometry.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(result.ir().model.tessellations[0].triangles(), [[0, 1, 2]]);
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert_eq!(
         result.ir().model.tessellations[0].body.as_ref(),
-        Some(&result.ir().model.bodies[0].id)
+        Some(&result.ir().geometry.bodies[0].id)
     );
     assert_eq!(
         result.ir().model.tessellations[0].faces,
-        [result.ir().model.faces[0].id.clone()]
+        [result.ir().geometry.faces[0].id.clone()]
     );
-    assert_eq!(result.ir().model.coedges.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 1);
     assert!(result.report().geometry_transferred());
+    assert_eq!(
+        result.ir().geometry.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Forward
+    );
+
+    brep[face_use_orientation] = 1;
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.bin", &brep)]);
+    let reversed = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("reversed binary face use");
+    assert_eq!(
+        reversed.ir().geometry.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
 }
 
 #[test]

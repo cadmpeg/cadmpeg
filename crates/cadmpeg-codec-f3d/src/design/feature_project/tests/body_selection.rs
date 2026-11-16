@@ -4,7 +4,7 @@ use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
+pub(in crate::design::feature_project) fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
         DesignFeatureKind::BaseFeature,
@@ -13,6 +13,7 @@ fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
     let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
         component_owner: None,
         component_owner_unresolved: false,
+        history_only: false,
         id: "f3d:Design/BulkStream.dat:design-body-binding#10".to_owned(),
         stream: "Design/BulkStream.dat".to_owned(),
         pair_count: 1,

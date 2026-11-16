@@ -5,15 +5,19 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::{predicate, PredicateBooleanExt};
+use predicates::prelude::predicate;
 use tempfile::tempdir;
 
-use crate::support::{
-    fixture, minimal_fcstd, minimal_rhino_archive, rhino_header, synthetic_rhino_point,
-};
+use crate::support::fixture;
+#[cfg(feature = "fcstd")]
+use crate::support::minimal_fcstd;
+#[cfg(feature = "rhino")]
+use crate::support::{minimal_rhino_archive, rhino_header, synthetic_rhino_point};
 
+#[cfg(feature = "fcstd")]
 #[test]
 fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let input = minimal_fcstd(dir.path(), "document.FCStd");
 
@@ -40,7 +44,7 @@ fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
             String::from_utf8_lossy(&output.stderr)
         );
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["source"]["identity"]["classification"], "classified");
+        assert_eq!(value["source"]["identity"]["kind"], "classified");
         assert!(
             value["source"]["identity"]["dialects"]["primary"]["dialect"]
                 .as_str()
@@ -54,6 +58,7 @@ fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
     }
 }
 
+#[cfg(feature = "iges")]
 #[test]
 fn iges_dump_report_classifies_codec_refusal() {
     let dir = tempdir().unwrap();
@@ -86,6 +91,47 @@ fn iges_dump_report_classifies_codec_refusal() {
         .contains("IGES"));
 }
 
+#[cfg(feature = "iges")]
+#[test]
+fn a_file_of_one_iges_start_card_is_detected_and_dumped() {
+    let dir = tempdir().unwrap();
+    let mut bytes = vec![b' '; 72];
+    bytes.push(b'S');
+    bytes.extend_from_slice(b"      1");
+    bytes.push(b'\n');
+    let input = dir.path().join("one-start.igs");
+    fs::write(&input, &bytes).unwrap();
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["inspect", input.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("format: iges"));
+
+    let report = dir.path().join("decode-report.json");
+    let output = dir.path().join("one-start.cadir.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "dump",
+            input.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert!(value["decode_report"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["code"]["value"]["code"] == "card.framing-recovered"));
+}
+
+#[cfg(feature = "iges")]
 #[test]
 fn convert_decode_failure_writes_a_refusal_report() {
     let dir = tempdir().unwrap();
@@ -118,8 +164,10 @@ fn convert_decode_failure_writes_a_refusal_report() {
     assert!(value["check_report"].is_null());
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let input = minimal_rhino_archive(dir.path(), "empty.3dm", "50");
 
@@ -159,8 +207,10 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
     assert_eq!(value["summary"]["notes"][0], "archive version 50");
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let input = minimal_rhino_archive(dir.path(), "extensionless", "50");
 
@@ -202,6 +252,7 @@ fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
     }
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn rhino_full_band_empty_archive_decodes_to_current_ir() {
     let dir = tempdir().unwrap();
@@ -232,11 +283,12 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
                 value["source"]["attributes"]["container_kind"],
                 "3dm-chunks"
             );
-            assert_eq!(value["model"]["subds"], serde_json::json!([]));
+            assert_eq!(value["geometry"]["subds"], serde_json::json!([]));
         }
     }
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
     let dir = tempdir().unwrap();
@@ -261,10 +313,10 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
         .unwrap();
     assert!(decoded.status.success());
     let ir: serde_json::Value = serde_json::from_slice(&decoded.stdout).unwrap();
-    assert_eq!(ir["model"]["points"][0]["position"]["x"], 1.25);
-    assert_eq!(ir["model"]["points"][0]["position"]["y"], -2.5);
-    assert_eq!(ir["model"]["points"][0]["position"]["z"], 3.75);
-    let body_id = ir["model"]["bodies"][0]["id"].as_str().unwrap();
+    assert_eq!(ir["geometry"]["points"][0]["position"]["x"], 1.25);
+    assert_eq!(ir["geometry"]["points"][0]["position"]["y"], -2.5);
+    assert_eq!(ir["geometry"]["points"][0]["position"]["z"], 3.75);
+    let body_id = ir["geometry"]["bodies"][0]["id"].as_str().unwrap();
     assert!(ir["native"]["rhino"]["unknowns"][0]["links"]
         .as_array()
         .unwrap()
@@ -279,6 +331,7 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
         .stdout(predicate::str::contains("check: OK"));
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn rhino_v1_to_v5_decode_metadata() {
     let dir = tempdir().unwrap();
@@ -293,12 +346,14 @@ fn rhino_v1_to_v5_decode_metadata() {
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
         assert_eq!(value["source"]["attributes"]["archive_version"], version);
-        assert_eq!(value["model"]["subds"], serde_json::json!([]));
+        assert_eq!(value["geometry"]["subds"], serde_json::json!([]));
     }
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn rhino_cli_rejects_truncated_and_malformed_archives_with_context() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let truncated = dir.path().join("truncated.3dm");
     let mut bytes = rhino_header("50");

@@ -37,6 +37,7 @@ use crate::layout::segment_stream_wrapper as stream_wrapper;
 use crate::layout::segment_stream_wrapper_a0 as wrapper_a0;
 use crate::layout::segment_stream_wrapper_c0_33 as wrapper_c0_33;
 use crate::layout::segment_stream_wrapper_c0_45 as wrapper_c0_45;
+use crate::layout::segment_stream_wrapper_c0_57 as wrapper_c0_57;
 use crate::layout::splmsstr_header as splmsstr;
 use crate::layout::ug_part_segment_index_row as index_row;
 
@@ -418,6 +419,16 @@ impl<'a> Container<'a> {
                                                 )? == compressed_word =>
                                                 {
                                                     wrapper_c0_45::LEN
+                                                }
+                                                (
+                                                    wrapper_c0_57::HEADER_CODE_VALUE,
+                                                    wrapper_c0_57::VERSION_VALUE,
+                                                ) if View::u32_le_at(
+                                                    wrapper,
+                                                    wrapper_c0_57::ZERO,
+                                                )? == wrapper_c0_57::ZERO_VALUE =>
+                                                {
+                                                    wrapper_c0_57::LEN
                                                 }
                                                 _ => return None,
                                             };
@@ -1048,8 +1059,6 @@ pub(crate) fn test_modern_layout(version: u8) -> ContainerLayout {
 pub(crate) struct Container<'a> {
     /// The source image, or the materialized logical stream image for legacy CFB.
     pub(crate) data: SourceImage<'a>,
-    /// Physical source-image length before legacy CFB stream materialization.
-    pub(crate) physical_size: u64,
     /// Facts owned by the container grammar that parsed the source.
     pub(crate) layout: ContainerLayout,
     /// Modern entries from both regions or legacy CFB paths, in serialized
@@ -1270,11 +1279,8 @@ pub(crate) fn scan_bytes<'a>(
         let (entries, footer) = header_and_footer_directories(&data, footer_offset)?;
         (entries, Some(footer))
     };
-    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
-
     let mut container = Container {
         data,
-        physical_size,
         layout: ContainerLayout::Modern {
             version,
             file_tag,
@@ -1438,7 +1444,6 @@ pub(crate) fn scan_legacy<'a>(
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
     let mut container = Container {
         data: SourceImage::Borrowed(logical_data),
-        physical_size: cadmpeg_core::decode::u64_from_index(root.window().len()),
         layout: ContainerLayout::LegacyCfb { version },
         entries,
         fastload_table: None,

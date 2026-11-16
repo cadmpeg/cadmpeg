@@ -1,20 +1,38 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "design": {},
+      "fragment": false,
+      "geometry": {
+        "bodies": [],
+        "coedges": [],
+        "curves": [],
+        "edges": [],
+        "faces": [],
+        "loops": [],
+        "pcurves": [],
+        "points": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "regions": [],
+        "shells": [],
+        "subds": [],
+        "surfaces": [],
+        "vertices": []
+      },
+      "ir_version": "11",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
+        "articulations": [],
         "assembly_joints": [],
+        "assets": [],
         "attributes": [],
-        "bodies": [],
-        "coedges": [],
+        "colliders": [],
         "configurations": [],
-        "curves": [],
+        "declared_measures": [],
         "drawings": [],
-        "edges": [],
-        "faces": [],
+        "feature_input_topologies": [],
         "feature_result_topologies": [
           {
             "id": "nx:feature-history:result-topology#0000000000-0000000000",
@@ -42,15 +60,21 @@
         "features": [
           {
             "definition": {
-              "definition": "block",
-              "dimensions": null,
-              "op": "unresolved",
-              "placement": null
+              "kind": "operation",
+              "value": {
+                "kind": "block",
+                "value": {
+                  "op": "unresolved"
+                }
+              }
             },
+            "dependencies": [],
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "BLOCK",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
             "ordinal": 0,
+            "outputs": [],
+            "source_content": [],
             "source_properties": {
               "body_reference.0": "6466",
               "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
@@ -62,21 +86,27 @@
               "primary_body_object_index": "6466",
               "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000000"
             },
-            "source_tag": "BLOCK",
-            "suppressed": null
+            "source_tag": "BLOCK"
           },
           {
             "definition": {
-              "definition": "combine",
-              "op": "join",
-              "operands": {
-                "target": {
-                  "kind": "native",
-                  "value": "nx:om-object-index#6466"
-                },
-                "tools": {
-                  "kind": "native",
-                  "value": "nx:om-object-indices#6476,127"
+              "kind": "operation",
+              "value": {
+                "kind": "combine",
+                "value": {
+                  "destination": "target_component",
+                  "keep_tools": false,
+                  "op": "join",
+                  "operands": {
+                    "target": {
+                      "kind": "native",
+                      "value": "nx:om-object-index#6466"
+                    },
+                    "tools": {
+                      "kind": "native",
+                      "value": "nx:om-object-indices#6476,127"
+                    }
+                  }
                 }
               }
             },
@@ -87,6 +117,8 @@
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000001-0000000000",
             "ordinal": 1,
+            "outputs": [],
+            "source_content": [],
             "source_properties": {
               "body_reference.0": "6466",
               "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000001-0000000000-0000000000",
@@ -98,34 +130,31 @@
               "primary_body_object_index": "6466",
               "primary_body_reference": "nx:feature-history:body-reference#0000000001-0000000000"
             },
-            "source_tag": "UNITE",
-            "suppressed": null
+            "source_tag": "UNITE"
           }
         ],
-        "loops": [],
+        "history_bodies": [],
+        "mass_properties": [],
         "occurrences": [],
         "parameters": [],
-        "pcurves": [],
+        "physical_materials": [],
+        "physics_scenes": [],
         "pmi": [],
-        "points": [],
+        "point_clouds": [],
         "presentation_documents": [],
         "presentation_layers": [],
-        "procedural_curves": [],
-        "procedural_surfaces": [],
         "product_definitions": [],
-        "regions": [],
+        "rigid_bodies": [],
         "semantic_annotations": [],
-        "shells": [],
         "sketch_constraints": [],
         "sketch_entities": [],
         "sketches": [],
+        "solver_settings": [],
+        "spatial_sketch_constraints": [],
         "spatial_sketch_entities": [],
         "spatial_sketches": [],
         "spreadsheets": [],
-        "subds": [],
-        "surfaces": [],
         "tessellations": [],
-        "vertices": [],
         "view_presentations": []
       },
       "native": {
@@ -458,31 +487,28 @@
           ]
         }
       },
+      "process": {},
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
+      },
       "source": {
-        "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "666",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "652",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "partition_streams": "0",
-          "plain_streams": "0"
-        },
+        "attributes": {},
         "identity": {
-          "classification": "classified",
           "dialects": {
             "extra": [],
             "primary": {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "splmsstr_version": "6"
               },
               "dialect": "nx:splmsstr"
             }
-          }
+          },
+          "kind": "classified"
         }
       },
       "tolerances": {
@@ -490,31 +516,39 @@
         "linear": 1e-6
       },
       "units": {
-        "length": "millimeter"
+        "angle": "radian",
+        "length": "millimeter",
+        "mass": "kilogram",
+        "time": "second"
       }
     },
     "report": {
+      "coverage": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "splmsstr_version": "6"
             },
             "dialect": "nx:splmsstr"
           }
-        }
+        },
+        "kind": "classified"
       },
       "losses": [
         {
           "code": {
-            "code": "geometry.not-transferred",
-            "kind": "geometry_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "geometry.not-transferred",
+              "kind": "geometry_not_transferred",
+              "namespace": "nx",
+              "strict_floor": "warning"
+            }
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
@@ -527,7 +561,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "kind": "full"
+      },
+      "transfer_ledger": {
+        "entries": []
       }
     },
     "source_fidelity": {
@@ -535,11 +572,13 @@
         "exactness": {
           "nx:feature-history:feature#0000000000-0000000000": {
             "entity": "derived",
-            "scope": "entity"
+            "fields": {},
+            "kind": "entity"
           },
           "nx:feature-history:feature#0000000001-0000000000": {
             "entity": "derived",
-            "scope": "entity"
+            "fields": {},
+            "kind": "entity"
           }
         },
         "provenance": {
@@ -654,7 +693,11 @@
             "tag": "UG_PART_SEGMENT_OM_LINK"
           }
         }
-      }
+      },
+      "decode_digest": "1b93d2895bc5438cbc863495cf1607f2e2ac4f315edf29c7e38366c6424227fc",
+      "file_digests": {},
+      "retained_records": {},
+      "unrepresented": []
     }
   },
   "inspect": {
@@ -665,28 +708,31 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compression": "none",
+        "kind": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
         "size": {
-          "form": "exact",
+          "kind": "exact",
           "size": 576
         }
       }
     ],
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "splmsstr_version": "6"
           },
           "dialect": "nx:splmsstr"
         }
-      }
+      },
+      "kind": "classified"
     },
+    "losses": [],
     "notes": [
       "SPLMSSTR container: file tag 0, footer offset 652, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",

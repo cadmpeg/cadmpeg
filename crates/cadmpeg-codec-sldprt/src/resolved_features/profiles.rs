@@ -34,7 +34,10 @@ use super::endpoints::{
     terminal_relation_class_offset, unique_arc_center_marker, wide_coordinate_roster_full_circle,
 };
 use super::grid::quantize;
-use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
+use super::holes::{
+    feature_input_sketch_frame, feature_input_sketch_marker_transform, principal_top_profile_frame,
+    sketch_feature_frames,
+};
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
     legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus,
@@ -44,7 +47,7 @@ use super::reference_geometry::reference_plane_frame_key;
 use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
-use super::transforms::sketch_frame_marker_transform;
+use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
 };
@@ -103,6 +106,83 @@ impl FeaturePositions {
     fn first(&self, native: &str) -> Option<usize> {
         self.of(native).first().copied()
     }
+}
+
+/// The sketch profile bodies of each lane whose archive walk read the whole
+/// stream (§2.3), by lane id.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ExactProfiles(HashMap<String, Vec<crate::carchive::SketchProfile>>);
+
+impl ExactProfiles {
+    /// Keep the profile bodies of the lane `lane`.
+    pub(crate) fn insert(&mut self, lane: &str, profiles: Vec<crate::carchive::SketchProfile>) {
+        self.0.insert(lane.to_owned(), profiles);
+    }
+
+    /// Keep the lanes for which `keep` holds.
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.0.retain(|lane, _| keep(lane));
+    }
+
+    fn of(&self, lane: &str) -> Option<&[crate::carchive::SketchProfile]> {
+        self.0.get(lane).map(Vec::as_slice)
+    }
+}
+
+/// A profile-family object of a whole walk, and the lane sketch of the
+/// profile body it holds when that body is one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Holder {
+    start: u64,
+    end: u64,
+    sketch: Option<usize>,
+}
+
+/// The holders of `profiles`, with the lane sketches of `offsets` their
+/// bodies are.
+fn holders(offsets: &[(u64, usize)], profiles: &[crate::carchive::SketchProfile]) -> Vec<Holder> {
+    let sketches = offsets.iter().copied().collect::<HashMap<_, _>>();
+    profiles
+        .iter()
+        .filter_map(|profile| {
+            let stream = u64::try_from(profile.stream).ok()?;
+            Some(Holder {
+                start: u64::try_from(profile.owner_start).ok()?,
+                end: u64::try_from(profile.owner_end).ok()?,
+                sketch: sketches.get(&stream).copied(),
+            })
+        })
+        .collect()
+}
+
+/// The position in `offsets` bound to the name at `start`: the profile body of
+/// the innermost holder that holds the name. A holder that holds two bodies,
+/// or whose body is no lane sketch, binds none. Without a whole walk, or when
+/// no holder holds the name, the only position strictly inside the span.
+fn profile_position(
+    offsets: &[(u64, usize)],
+    holders: Option<&[Holder]>,
+    start: u64,
+    end: Option<u64>,
+) -> Option<usize> {
+    if let Some(holders) = holders {
+        let holding = |holder: &&Holder| holder.start <= start && start < holder.end;
+        if let Some(innermost) = holders
+            .iter()
+            .filter(holding)
+            .max_by_key(|holder| holder.start)
+        {
+            let bodies = holders
+                .iter()
+                .filter(|holder| (holder.start, holder.end) == (innermost.start, innermost.end))
+                .count();
+            if bodies > 1 {
+                return None;
+            }
+            return innermost.sketch;
+        }
+    }
+    only_enclosed(offsets, start, end)
 }
 
 /// The only position of `offsets`, sorted by offset, strictly inside the span.
@@ -184,6 +264,29 @@ fn markers_by_owner(markers: &[SketchInputEntity]) -> HashMap<&str, Vec<&SketchI
     }
     owned
 }
+
+fn enclosed_general_curve_profile(
+    native: &str,
+    lane: &FeatureInputLane,
+    start: u64,
+    end: Option<u64>,
+) -> bool {
+    let Some((owner, offset)) = native
+        .strip_prefix("sldprt:feature-input:general-curve-ref:")
+        .and_then(|reference| reference.rsplit_once(':'))
+    else {
+        return false;
+    };
+    let lane_key = lane
+        .id
+        .rsplit_once('#')
+        .map_or(lane.id.as_str(), |(_, key)| key);
+    owner == lane_key
+        && offset.parse::<u64>().is_ok_and(|offset| {
+            offset > start
+                && offset < end.unwrap_or_else(|| u64_from_index(lane.native_payload.len()))
+        })
+}
 /// Reconcile profile streams with uniquely enclosing sketch feature records.
 pub(crate) fn bind_sketch_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -191,6 +294,7 @@ pub(crate) fn bind_sketch_profiles(
     parameters: &[cadmpeg_ir::features::DesignParameter],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    exact: &ExactProfiles,
 ) {
     let SketchArenas {
         sketches,
@@ -216,6 +320,9 @@ pub(crate) fn bind_sketch_profiles(
             }
         }
         lane_sketches.sort_unstable();
+        let lane_holders = exact
+            .of(lane.id.as_str())
+            .map(|profiles| holders(&lane_sketches, profiles));
         let mut starts = Vec::<(u64, usize, &crate::records::Feature)>::new();
         for feature in native_features.iter() {
             if metadata_ids.contains(feature.id.as_str()) {
@@ -236,8 +343,9 @@ pub(crate) fn bind_sketch_profiles(
                 continue;
             };
             let end = starts.get(index + 1).map(|next| next.0);
-            let Some(sketch) = only_enclosed(&lane_sketches, start, end)
-                .and_then(|position| sketches.get_mut(position))
+            let Some(sketch) =
+                profile_position(&lane_sketches, lane_holders.as_deref(), start, end)
+                    .and_then(|position| sketches.get_mut(position))
             else {
                 continue;
             };
@@ -257,7 +365,11 @@ pub(crate) fn bind_sketch_profiles(
             let replace = match feature.evaluation.definition() {
                 FeatureDefinition::Operation(FeatureOperation::Sketch { .. }) => true,
                 FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
-                    shape.section_is_unresolved()
+                    lanes.iter().all(|candidate| candidate.id == lane.id)
+                        && (shape.section_is_unresolved()
+                            || matches!(shape.referenced_profile(),
+                                Some(cadmpeg_ir::features::PlanarProfileRef::Native(native))
+                                    if enclosed_general_curve_profile(native, lane, start, end)))
                 }
                 FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
                     matches!(profile,
@@ -285,13 +397,13 @@ pub(crate) fn bind_sketch_profiles(
                         *feature_sketch =
                             cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
                     }
-                    FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
-                        shape.set_referenced_profile(sketch_id.into());
-                    }
                     FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
                         *profile = cadmpeg_ir::features::ProfileRef::Planar(
                             cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch_id),
                         );
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
+                        shape.set_referenced_profile(sketch_id.into());
                     }
                     _ => {}
                 });
@@ -570,14 +682,18 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let Some((origin, normal, u_axis)) = feature_input_sketch_frame(
-                &lane.native_payload,
-                &plane_frames,
-                &plane_index,
-                context_start,
-                start,
-                end,
-            ) else {
+            let top_frame =
+                principal_top_profile_frame(&plane_frames, &plane_index, context_start, start, end);
+            let Some((origin, normal, u_axis)) = top_frame.or_else(|| {
+                feature_input_sketch_frame(
+                    &lane.native_payload,
+                    &plane_frames,
+                    &plane_index,
+                    context_start,
+                    start,
+                    end,
+                )
+            }) else {
                 continue;
             };
             let lane_key = lane
@@ -616,7 +732,13 @@ pub(crate) fn project_compact_sketch_profiles(
                 profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
             };
-            let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+            let Some(transform) = feature_input_sketch_marker_transform(
+                &plane_frames,
+                &plane_index,
+                [context_start, start, end],
+                &sketch,
+                QUANTUM,
+            ) else {
                 continue;
             };
             let entity_start = sketch_entities.len();
@@ -693,6 +815,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
+                record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -832,6 +955,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
+                record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -906,6 +1030,7 @@ pub(crate) fn project_compact_sketch_profiles(
             let profiles = vec![profile];
             sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
             sketches.push(sketch);
+            record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
             features[feature_index].evaluation.set_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1129,14 +1254,27 @@ pub(crate) fn project_marker_backed_sketches(
             ) else {
                 continue;
             };
-            let frame = feature_input_sketch_frame(
-                &lane.native_payload,
-                &plane_frames,
-                &plane_index,
-                context_start,
-                start,
-                end,
-            );
+            let top_frame = (!block_definition)
+                .then(|| {
+                    principal_top_profile_frame(
+                        &plane_frames,
+                        &plane_index,
+                        context_start,
+                        start,
+                        end,
+                    )
+                })
+                .flatten();
+            let frame = top_frame.or_else(|| {
+                feature_input_sketch_frame(
+                    &lane.native_payload,
+                    &plane_frames,
+                    &plane_index,
+                    context_start,
+                    start,
+                    end,
+                )
+            });
             let frame = frame
                 .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
                 .or_else(|| {
@@ -1213,6 +1351,10 @@ pub(crate) fn project_marker_backed_sketches(
                             native_ref: Some(lane.id.clone()),
                         };
                         sketches.push(sketch);
+                        record_top_marker_coordinates(
+                            &mut features[feature_index],
+                            top_frame.is_some(),
+                        );
                     }
                     features[feature_index].evaluation.set_definition(
                         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1271,7 +1413,13 @@ pub(crate) fn project_marker_backed_sketches(
                 profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
             };
-            let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+            let Some(transform) = feature_input_sketch_marker_transform(
+                &plane_frames,
+                &plane_index,
+                [context_start, start, end],
+                &sketch,
+                QUANTUM,
+            ) else {
                 continue;
             };
             let encoded_rectangle =
@@ -2165,6 +2313,7 @@ pub(crate) fn project_marker_backed_sketches(
             }
             sketch_entities.extend(projected);
             sketches.push(sketch);
+            record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
             features[feature_index]
                 .evaluation
                 .set_definition(if block_definition {
@@ -3459,6 +3608,7 @@ mod detached_legacy_sketch_tests {
             &[],
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
+            &super::ExactProfiles::default(),
         );
         assert!(matches!(admitted[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -3546,6 +3696,7 @@ mod detached_legacy_sketch_tests {
                 &[],
                 std::slice::from_ref(&history),
                 std::slice::from_ref(&lane),
+                &super::ExactProfiles::default(),
             );
             assert!(matches!(
                 admitted[0].evaluation.definition(),
@@ -4714,6 +4865,9 @@ mod detached_legacy_sketch_tests {
 
 #[cfg(test)]
 mod compact_cycle_tests;
+
+#[cfg(test)]
+mod exact_tests;
 
 #[cfg(test)]
 mod index_tests;

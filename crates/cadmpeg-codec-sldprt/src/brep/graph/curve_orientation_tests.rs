@@ -21,8 +21,13 @@ fn decode_marked_edge(mut carrier: Vec<u8>, marker: u8) -> (String, String, Sens
     let policy = DecodePolicy::service();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let brep =
-        super::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("curve-orientation")).unwrap();
+    let brep = super::decode_body(
+        &ctx,
+        &body,
+        &cadmpeg_ir::stream_name!("curve-orientation"),
+        false,
+    )
+    .unwrap();
     let edge = brep
         .edges
         .iter()
@@ -34,8 +39,8 @@ fn decode_marked_edge(mut carrier: Vec<u8>, marker: u8) -> (String, String, Sens
         .find(|coedge| coedge.edge == edge.id)
         .unwrap();
     (
-        edge.start.as_str().to_owned(),
-        edge.end.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().start.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().end.as_str().to_owned(),
         coedge.sense,
     )
 }
@@ -124,8 +129,13 @@ fn decode_spline_edge(first: [f64; 3], last: [f64; 3]) -> (String, String, Sense
     let policy = DecodePolicy::service();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let brep =
-        super::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("curve-orientation")).unwrap();
+    let brep = super::decode_body(
+        &ctx,
+        &body,
+        &cadmpeg_ir::stream_name!("curve-orientation"),
+        false,
+    )
+    .unwrap();
     let edge = brep
         .edges
         .iter()
@@ -138,8 +148,8 @@ fn decode_spline_edge(first: [f64; 3], last: [f64; 3]) -> (String, String, Sense
         .find(|coedge| coedge.edge == edge.id)
         .unwrap();
     (
-        edge.start.as_str().to_owned(),
-        edge.end.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().start.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().end.as_str().to_owned(),
         coedge.sense,
     )
 }
@@ -161,8 +171,22 @@ fn spline_edge_against_its_curve_reverses_the_stored_direction() {
 }
 
 #[test]
-fn spline_edge_with_ends_off_its_vertices_keeps_the_stored_direction() {
+fn a_spline_edge_inside_its_curve_takes_its_direction_from_its_vertex_parameters() {
+    // The curve runs past both vertices and against the stored direction.
     let (start, end, sense) = decode_spline_edge([2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]);
+    assert!(start.ends_with("#51"), "{start}");
+    assert!(end.ends_with("#50"), "{end}");
+    assert_eq!(sense, Sense::Reversed);
+    // The same curve runs with the stored direction.
+    let (start, end, sense) = decode_spline_edge([-1.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
+    assert!(start.ends_with("#50"), "{start}");
+    assert!(end.ends_with("#51"), "{end}");
+    assert_eq!(sense, Sense::Forward);
+}
+
+#[test]
+fn a_spline_edge_whose_vertices_are_off_its_curve_keeps_the_stored_direction() {
+    let (start, end, sense) = decode_spline_edge([2.0, 1.0, 0.0], [-1.0, 1.0, 0.0]);
     assert!(start.ends_with("#50"), "{start}");
     assert!(end.ends_with("#51"), "{end}");
     assert_eq!(sense, Sense::Forward);
@@ -186,6 +210,44 @@ fn polyline_carrier(points: &[[f64; 3]]) -> crate::brep::CurveCarrier {
         )),
         parameter_range: None,
     }
+}
+
+#[test]
+fn a_periodic_spline_leaves_the_vertex_order_to_the_marker() {
+    // A closed square, periodic: the edge crosses the seam at the origin.
+    let points = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0],
+    ];
+    let mut carrier = polyline_carrier(&points);
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(open)) = &carrier.geometry else {
+        panic!("polyline carrier");
+    };
+    carrier.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            open.degree(),
+            open.knots().to_vec(),
+            points
+                .iter()
+                .map(|&[x, y, z]| Point3::new(x, y, z))
+                .collect(),
+            None,
+            true,
+        )
+        .unwrap(),
+    ));
+    assert_eq!(
+        super::vertex_parameter_reversal(
+            &cadmpeg_test_support::service_decode_context(),
+            &carrier,
+            Some([Point3::new(0.5, 0.0, 0.0), Point3::new(0.0, 0.5, 0.0)]),
+        )
+        .unwrap(),
+        None
+    );
 }
 
 fn domain_reversal(carrier: &crate::brep::CurveCarrier, ends: [[f64; 3]; 2]) -> Option<bool> {
@@ -411,6 +473,7 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
         id: curve_id.clone(),
         geometry: unit_circle(),
         source_object: None,
+        native_ref: None,
     });
     let point_id = PointId::mint("test:model:point#seam").expect("point id");
     brep.points.push(Point::new(
@@ -423,6 +486,7 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
+        native_ref: None,
     });
     // A sentinel closed circle starts at its reference direction; its vertex
     // has since moved to θ = 3π/2.
@@ -433,9 +497,12 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
             Some([0.0, std::f64::consts::TAU]),
         )
         .expect("edge carrier"),
-        start: vertex_id.clone(),
-        end: vertex_id,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            vertex_id.clone(),
+            vertex_id,
+        )),
         tolerance: None,
+        native_ref: None,
     });
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     super::phase_full_turn_edge_ranges(&mut brep, &mut annotations).expect("phase");
@@ -491,7 +558,7 @@ fn chart(poles: &[[f64; 3]], parameters: &[f64]) -> crate::brep::intersection::I
         },
         support_data: crate::brep::intersection::IntersectionSupportData {
             supports: [2, 3],
-            fit_tolerance_mm: 0.01,
+            fit_tolerance_mm: Some(0.01),
             support_uv: None,
         },
     }
@@ -555,14 +622,67 @@ fn an_edge_on_a_chart_inverts_each_vertex_into_one_run_of_spans() {
 
 #[test]
 fn a_closed_chart_starts_a_ring_edge_at_its_seam() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+
     let mut ring = SQUARE.to_vec();
     ring.push(SQUARE[0]);
     let closed =
         crate::brep::index::IndexedCurve::Derived(chart(&ring, &[0.0, 10.0, 20.0, 30.0, 40.0]));
     assert_eq!(
-        super::closed_edge_start(Some(&closed)),
+        super::closed_edge_start(&ctx, Some(&closed)).unwrap(),
         Some((Point3::new(0.0, 0.0, 0.0), [0.0, 40.0]))
     );
     let open = crate::brep::index::IndexedCurve::Derived(chart(&SQUARE, &[0.0, 10.0, 20.0, 30.0]));
-    assert_eq!(super::closed_edge_start(Some(&open)), None);
+    assert_eq!(super::closed_edge_start(&ctx, Some(&open)).unwrap(), None);
+}
+
+/// The boundary a blend face on one ring edge sees, with the closed edge's
+/// `span` and `start`.
+fn ring_edge_boundary(span: Option<[f64; 2]>, start: Option<Point3>) -> (Vec<Point3>, Vec<Point3>) {
+    const COEDGE: u32 = 70;
+    const EDGE: u32 = 71;
+    let mut ring = SQUARE.to_vec();
+    ring.push(SQUARE[0]);
+    let closed = chart(&ring, &[0.0, 10.0, 20.0, 30.0, 40.0]);
+    let curve = closed.carrier.attr;
+    let mut carriers = crate::brep::index::CarrierIndex::default();
+    carriers.insert_intersection(closed);
+    let mut tables = crate::brep::topology::Tables::default();
+    let mut refs = [0; 9];
+    refs[6] = EDGE;
+    tables.insert_coedge(crate::brep::topology::Coedge {
+        attr: COEDGE,
+        refs,
+        sense: Sense::Forward,
+        offset: 0,
+    });
+    let policy = DecodePolicy::service();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::blend_boundary(
+        &ctx,
+        &tables,
+        &[(1, vec![COEDGE])],
+        &carriers,
+        &std::collections::HashMap::from([(EDGE, (curve, span))]),
+        &std::collections::HashMap::new(),
+        &start.into_iter().map(|start| (EDGE, start)).collect(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_closed_ring_edge_bounds_a_blend_over_its_whole_domain_from_its_seam() {
+    let seam = Point3::new(0.0, 0.0, 0.0);
+    let (vertices, points) = ring_edge_boundary(Some([0.0, 40.0]), Some(seam));
+    assert_eq!(vertices, [seam]);
+    let far_side = Point3::new(10.0, 10.0, 0.0);
+    assert!(points.iter().any(|point| point.distance(far_side) < 1.0e-9));
+    assert!(points.len() > 1);
+}
+
+#[test]
+fn an_edge_with_no_range_and_no_closure_gives_a_blend_no_boundary() {
+    assert_eq!(ring_edge_boundary(None, None), (Vec::new(), Vec::new()));
 }

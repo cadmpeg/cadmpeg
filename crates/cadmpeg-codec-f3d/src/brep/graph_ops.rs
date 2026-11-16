@@ -5,6 +5,8 @@ use super::Brep;
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::attributes::AttributeTarget;
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use std::collections::{HashMap, HashSet};
 
@@ -42,6 +44,140 @@ impl Brep {
         ctx: &DecodeContext<'_>,
         selected_keys: &HashSet<u64>,
     ) -> Result<(), CodecError> {
+        let selected = self
+            .body_selectors_for(selected_keys)?
+            .into_keys()
+            .collect();
+        self.retain_bodies(ctx, selected)
+    }
+
+    /// Remove the sketch-region bodies of a blob that stores no body key, when
+    /// the blob's body map holds one selector per remaining body, and number
+    /// the remaining bodies by their selector position. Returns the number of
+    /// removed bodies.
+    pub(crate) fn omit_sketch_region_bodies(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        selector_count: usize,
+    ) -> Result<usize, CodecError> {
+        if self
+            .asm
+            .body_native_keys
+            .iter()
+            .any(|key| key.asm_body_key.is_some())
+        {
+            return Ok(0);
+        }
+        let regions = self.sketch_region_bodies();
+        if regions.is_empty() {
+            return Ok(0);
+        }
+        let selected = self
+            .asm
+            .body_native_keys
+            .iter()
+            .map(|key| key.body.clone())
+            .filter(|body| !regions.contains(body))
+            .collect::<Vec<_>>();
+        if selected.len() != selector_count {
+            return Ok(0);
+        }
+        self.retain_bodies(ctx, selected)?;
+        self.asm
+            .body_native_keys
+            .sort_by_key(|key| key.body_ordinal);
+        for (ordinal, key) in self.asm.body_native_keys.iter_mut().enumerate() {
+            key.body_ordinal = u32::try_from(ordinal)
+                .map_err(|_| CodecError::malformed("F3D BREP body ordinal exceeds u32"))?;
+        }
+        Ok(regions.len())
+    }
+
+    /// Bodies with at least one edge, whose every edge stores a sketch-curve
+    /// link, and whose faces store no attribute.
+    fn sketch_region_bodies(&self) -> HashSet<BodyId> {
+        let mut linked_edges = HashSet::new();
+        for link in &self.sketch_curve_links {
+            if let AttributeTarget::Edge(edge) = &link.target {
+                linked_edges.insert(edge.as_str());
+            }
+        }
+        let mut attributed_faces = HashSet::new();
+        for attribute in &self.asm.attributes {
+            if let AttributeTarget::Face(face) = &attribute.target {
+                attributed_faces.insert(face.as_str());
+            }
+        }
+        let mut loops_by_face = HashMap::<&str, Vec<&str>>::new();
+        for row in &self.asm.loops {
+            loops_by_face
+                .entry(row.face.as_str())
+                .or_default()
+                .push(row.id.as_str());
+        }
+        let mut faces_by_shell = HashMap::<&str, Vec<&str>>::new();
+        for face in &self.asm.faces {
+            faces_by_shell
+                .entry(face.shell.as_str())
+                .or_default()
+                .push(face.id.as_str());
+        }
+        let mut edges_by_loop = HashMap::<&str, Vec<&str>>::new();
+        for coedge in &self.asm.coedges {
+            edges_by_loop
+                .entry(coedge.owner_loop.as_str())
+                .or_default()
+                .push(coedge.edge.as_str());
+        }
+        let shells = self
+            .asm
+            .shells
+            .iter()
+            .map(|shell| (shell.region.as_str(), shell))
+            .fold(
+                HashMap::<&str, Vec<_>>::new(),
+                |mut by_region, (region, shell)| {
+                    by_region.entry(region).or_default().push(shell);
+                    by_region
+                },
+            );
+        let mut regions = HashSet::new();
+        for row in &self.asm.regions {
+            let shells = shells.get(row.id.as_str()).map_or(&[][..], Vec::as_slice);
+            let mut edge_count = 0_usize;
+            let is_region = shells.iter().all(|shell| {
+                shell.wire_edges().next().is_none()
+                    && faces_by_shell
+                        .get(shell.id.as_str())
+                        .into_iter()
+                        .flatten()
+                        .all(|face| {
+                            !attributed_faces.contains(face)
+                                && loops_by_face
+                                    .get(face)
+                                    .into_iter()
+                                    .flatten()
+                                    .flat_map(|ring| edges_by_loop.get(ring).into_iter().flatten())
+                                    .all(|edge| {
+                                        edge_count += 1;
+                                        linked_edges.contains(edge)
+                                    })
+                        })
+            });
+            if is_region && edge_count != 0 {
+                regions.insert(row.body.clone());
+            } else {
+                regions.remove(&row.body);
+            }
+        }
+        regions
+    }
+
+    fn retain_bodies(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        selected: Vec<BodyId>,
+    ) -> Result<(), CodecError> {
         let reachable = {
             let mut native_bodies = HashSet::new();
             for native in &self.asm.body_native_keys {
@@ -49,7 +185,7 @@ impl Brep {
                 native_bodies.insert(body);
             }
             let mut reachable = HashSet::new();
-            for body in self.body_selectors_for(selected_keys)?.into_keys() {
+            for body in selected {
                 reachable.insert(body.into_string());
             }
             for body in &self.asm.bodies {
@@ -70,6 +206,15 @@ impl Brep {
                 bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces,
                 curves, pcurves
             );
+            for region in &self.asm.regions {
+                insert_brep_adjacency(&mut adjacency, region.body.as_str(), region.id.as_str());
+            }
+            for shell in &self.asm.shells {
+                insert_brep_adjacency(&mut adjacency, shell.region.as_str(), shell.id.as_str());
+            }
+            for face in &self.asm.faces {
+                insert_brep_adjacency(&mut adjacency, face.shell.as_str(), face.id.as_str());
+            }
             macro_rules! native_dependencies {
                 ($($field:ident => $owner:ident),*) => {$(
                     for row in &self.asm.$field {
@@ -240,11 +385,11 @@ mod tests {
                 bodies: vec![Body {
                     id: BodyId::mint("f3d:brep:entity#1").unwrap(),
                     kind: BodyKind::default(),
-                    regions: vec![],
                     transform: None,
                     name: Some("f3d:brep:entity#1".into()),
                     color: None,
                     visible: None,
+                    native_ref: None,
                 }],
                 points: vec![Point::new(
                     PointId::mint("f3d:brep:point#2").unwrap(),
@@ -325,13 +470,14 @@ mod tests {
     #[test]
     fn carrier_selection_keeps_its_procedure_and_support_surface() {
         use cadmpeg_ir::geometry::{ProceduralSurface, ProceduralSurfaceDefinition, Surface};
-        let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-        let carrier = model.faces[0].surface.clone();
+        let mut geometry = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
+        let carrier = geometry.faces[0].surface.clone();
         let support = cadmpeg_ir::ids::SurfaceId::mint("f3d:brep:surface#support").unwrap();
-        model.surfaces.push(Surface {
+        geometry.surfaces.push(Surface {
             id: support.clone(),
-            geometry: model.surfaces[0].geometry.clone(),
+            geometry: geometry.surfaces[0].geometry.clone(),
             source_object: None,
+            native_ref: None,
         });
         let definition = ProceduralSurface::new(
             "f3d:brep:procedure#replica".try_into().unwrap(),
@@ -343,18 +489,18 @@ mod tests {
         );
         let mut brep = Brep {
             asm: AsmBrep {
-                bodies: model.bodies,
-                regions: model.regions,
-                shells: model.shells,
-                faces: model.faces,
-                loops: model.loops,
-                coedges: model.coedges,
-                edges: model.edges,
-                vertices: model.vertices,
-                points: model.points,
-                surfaces: model.surfaces,
-                curves: model.curves,
-                pcurves: model.pcurves,
+                bodies: geometry.bodies,
+                regions: geometry.regions,
+                shells: geometry.shells,
+                faces: geometry.faces,
+                loops: geometry.loops,
+                coedges: geometry.coedges,
+                edges: geometry.edges,
+                vertices: geometry.vertices,
+                points: geometry.points,
+                surfaces: geometry.surfaces,
+                curves: geometry.curves,
+                pcurves: geometry.pcurves,
                 procedural_surfaces: vec![(carrier, definition)],
                 ..AsmBrep::default()
             },

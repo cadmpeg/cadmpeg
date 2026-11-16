@@ -45,8 +45,11 @@ fn fixture_native_envelope_context(
             std::collections::BTreeMap::default(),
         ));
     }
-    let mut fidelity = input.fidelity.cloned().unwrap_or_default();
-    let source = match fidelity.retained_record(crate::SOURCE_IMAGE_ID) {
+    let fidelity = input.fidelity.cloned();
+    let source = match fidelity
+        .as_ref()
+        .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
+    {
         Some(record) => record
             .data()
             .ok_or_else(|| {
@@ -80,6 +83,9 @@ fn fixture_native_envelope_context(
         } else {
             container::native_envelope_fixture(&source)
         };
+    let mut fidelity = fidelity.unwrap_or_else(|| {
+        SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&source))
+    });
     let _previous_image = fidelity.remove_retained_record(crate::SOURCE_IMAGE_ID);
     fidelity.insert_retained_record(
         crate::source_image_id(),
@@ -173,4 +179,5 @@ pub(crate) mod native;
 pub(crate) mod parasolid;
 pub(crate) mod pmi;
 pub(crate) mod surfaces;
+pub(crate) mod swift;
 pub(crate) mod tessellation;

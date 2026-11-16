@@ -24,7 +24,8 @@ use crate::report::{
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy, InspectOptions, View,
+    ArenaClass, ContentScope, DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy,
+    InspectOptions, View, WholeInput,
 };
 use cadmpeg_core::dialect::FormatIdentity;
 use cadmpeg_core::{CodecError, ReadSeek};
@@ -260,27 +261,26 @@ impl DecodeResult {
     /// the report body, then canonicalizing the IR and source fidelity.
     ///
     /// A document without source metadata yields an unclassified report for
-    /// `format`, the codec's registry format. The document records the depth
-    /// the backend's transfer state reports; a depth shallower than
-    /// `requested` adds an error loss.
+    /// `format`, the codec's registry format. The document records the scope
+    /// of the depth the backend's transfer state reports, less each class
+    /// `requested` excludes that the document leaves empty; each class
+    /// `requested` names that the document lacks adds an error loss.
     fn new(decoded: Decoded, format: FormatId, requested: DecodeDepth) -> Result<Self, CodecError> {
         let Decoded {
             mut ir,
             mut body,
             source_fidelity,
         } = decoded;
-        let delivered = body.transfer.depth();
-        ir.set_decode_depth(delivered);
-        ir.check_decode_depth().map_err(|error| {
+        let scope = recorded_scope(&ir, body.transfer.depth().scope(), requested.scope());
+        ir.set_scope(scope).map_err(|error| {
             CodecError::malformed(format_args!("codec {format:?} decoded {error}"))
         })?;
-        if delivered < requested {
-            body.losses.push(
-                DecodeLossCode::DepthNotDelivered { delivered }.note(format!(
-                    "requested {requested} depth but the {format} decoder delivered \
-                     {delivered} depth, so the records only {requested} depth carries are absent"
-                )),
-            );
+        for class in scope.missing_from(requested.scope()) {
+            body.losses
+                .push(DecodeLossCode::DepthNotDelivered { class }.note(format!(
+                    "requested {requested} depth but the {format} decoder did not deliver \
+                     the {class} class, so its records are absent"
+                )));
         }
         let classification = match ir.source.as_ref() {
             Some(source) => match source.classification() {
@@ -345,12 +345,29 @@ pub trait CodecBackend {
         Ok(Vec::new())
     }
 
+    /// Replace source text while retaining codec-owned lexical constraints.
+    fn repro_redactions(
+        _ir: &CadIr,
+    ) -> Result<std::collections::BTreeMap<String, String>, CodecError> {
+        Ok(std::collections::BTreeMap::new())
+    }
+
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect_impl(
         &self,
         ctx: &DecodeContext<'_>,
         prefix: View<'_>,
     ) -> Result<Confidence, CodecError>;
+
+    /// Judge the whole source, after the registry proved that the detection
+    /// prefix holds every byte of it. The default judges it as a prefix.
+    fn detect_whole_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: WholeInput<'_>,
+    ) -> Result<Confidence, CodecError> {
+        self.detect_impl(ctx, input.view())
+    }
 
     /// Enumerate the acquired root view's streams/segments without decoding
     /// geometry.
@@ -421,6 +438,13 @@ pub trait Codec: sealed::Sealed {
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect(&self, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError>;
 
+    /// Judge the whole source, [`CodecBackend::detect_whole_impl`].
+    fn detect_whole(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: WholeInput<'_>,
+    ) -> Result<Confidence, CodecError>;
+
     /// Findings this codec reports over its own native namespace,
     /// [`CodecBackend::validate_native`].
     fn validate_native(
@@ -429,6 +453,12 @@ pub trait Codec: sealed::Sealed {
         ir: &CadIr,
         source: Option<&SourceFidelity>,
     ) -> Result<Vec<Finding>, CodecError>;
+
+    /// Codec-owned lexical replacements for private reproduction fragments.
+    fn repro_redactions(
+        &self,
+        ir: &CadIr,
+    ) -> Result<std::collections::BTreeMap<String, String>, CodecError>;
 
     /// Inspects the source under its input and resource limits.
     fn inspect(
@@ -473,6 +503,14 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         self.detect_impl(ctx, prefix)
     }
 
+    fn detect_whole(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: WholeInput<'_>,
+    ) -> Result<Confidence, CodecError> {
+        self.detect_whole_impl(ctx, input)
+    }
+
     fn validate_native(
         &self,
         ctx: &DecodeContext<'_>,
@@ -480,6 +518,13 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         source: Option<&SourceFidelity>,
     ) -> Result<Vec<Finding>, CodecError> {
         C::validate_native(ctx, ir, source)
+    }
+
+    fn repro_redactions(
+        &self,
+        ir: &CadIr,
+    ) -> Result<std::collections::BTreeMap<String, String>, CodecError> {
+        C::repro_redactions(ir)
     }
 
     fn inspect(
@@ -533,3 +578,23 @@ pub mod write;
 
 #[cfg(test)]
 mod tests;
+
+/// The scope a decode records: the delivered scope, less each class the
+/// request excludes whose arenas the document leaves empty.
+fn recorded_scope(ir: &CadIr, delivered: ContentScope, requested: ContentScope) -> ContentScope {
+    ArenaClass::ALL
+        .into_iter()
+        .rev()
+        .fold(delivered, |scope, class| {
+            let withdrawn = scope.with(class, false);
+            if scope.holds(class)
+                && !requested.holds(class)
+                && ir.populated_arena(class).is_none()
+                && withdrawn.unmet_requirement().is_none()
+            {
+                withdrawn
+            } else {
+                scope
+            }
+        })
+}

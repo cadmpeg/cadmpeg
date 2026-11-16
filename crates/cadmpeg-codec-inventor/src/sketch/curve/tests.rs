@@ -101,12 +101,14 @@ fn native_curve_losses_name_each_retained_helper_and_trim_reason() {
     ] {
         let source = entity(kind);
         let geometry = super::super::project_geometry(&source, &std::collections::HashMap::new());
-        assert!(matches!(
-            geometry
-                .as_ref()
-                .map(cadmpeg_ir::sketches::SketchGeometry::definition),
-            Some(cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. })
-        ));
+        if is_non_geometric(&source) {
+            assert!(geometry.is_none());
+        } else {
+            assert!(matches!(
+                geometry.as_ref().map(SketchGeometry::definition),
+                Some(SketchGeometryDefinition::Native { .. })
+            ));
+        }
         let expected_code = if matches!(source.kind, PmDcSketchEntityKind::Ellipse { .. }) {
             crate::loss::InventorLossCode::SketchEllipseCurveNative.code()
         } else {
@@ -154,6 +156,7 @@ fn untyped_and_absent_sketch_members_have_pinned_losses() {
     let unresolved = HashSet::from([("generated", 1), ("generated", 2), ("generated", 3)]);
     let losses = member_loss_counts(
         &unresolved,
+        &HashSet::new(),
         [
             ("generated", 1, [7; 16]),
             ("generated", 2, [7; 16]),
@@ -178,7 +181,12 @@ fn untyped_and_absent_sketch_members_have_pinned_losses() {
         .contains("byte grammar and curve operands"));
     assert!(losses[1].message.contains("Retained 1"));
     assert!(losses[1].message.contains("source record is absent"));
-    assert!(member_loss_counts(&HashSet::new(), [("generated", 1, [7; 16])]).is_empty());
+    assert!(member_loss_counts(
+        &HashSet::new(),
+        &HashSet::new(),
+        [("generated", 1, [7; 16])]
+    )
+    .is_empty());
 }
 
 #[test]
@@ -234,6 +242,7 @@ fn midpoint_controls_require_a_null_parameter_and_zero_suffix() {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: vec![constraint],
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let loss = relation_loss(&inventory);
@@ -244,6 +253,58 @@ fn midpoint_controls_require_a_null_parameter_and_zero_suffix() {
                 InventorLossCode::SketchMidpointCurveNative.code()
             );
             assert!(loss.message.contains("control values"));
+        }
+    }
+}
+
+#[test]
+fn unknown_member_classes_keep_their_type_counts_and_pinned_loss() {
+    let unresolved = HashSet::from([("generated", 0), ("generated", 1), ("generated", 2)]);
+    let types = [
+        [
+            0x2b, 0x11, 0x7b, 0x31, 0xd3, 0x11, 0x7c, 0x7a, 0x60, 0x00, 0x1c, 0xb3, 0xd1, 0xc1,
+            0xfb, 0xb0,
+        ],
+        [
+            0x84, 0x5c, 0x3b, 0xbf, 0xd2, 0x11, 0x2a, 0xe9, 0x60, 0x00, 0x4b, 0xb3, 0x89, 0x32,
+            0xed, 0xb0,
+        ],
+        [
+            0x6d, 0x37, 0xc7, 0x43, 0xb5, 0x48, 0x53, 0xfb, 0x86, 0xf9, 0x13, 0x92, 0x00, 0x29,
+            0xb0, 0xd0,
+        ],
+    ];
+    let losses = member_loss_counts(
+        &unresolved,
+        &HashSet::new(),
+        types.into_iter().enumerate().map(|(ordinal, id)| {
+            (
+                "generated",
+                u32::try_from(ordinal).expect("synthetic ordinal"),
+                id,
+            )
+        }),
+    );
+    assert_eq!(losses.len(), 3);
+    for loss in losses {
+        assert_eq!(loss.code.local_code(), "sketch.member-native");
+        assert!(loss.message.contains("Retained 1"));
+        assert!(loss
+            .message
+            .contains("byte grammar and curve operands remain unresolved"));
+    }
+}
+
+#[test]
+fn non_geometric_relation_gate_checks_each_entity_operand_slot() {
+    for (source, operands) in crate::test_support::sketch_relations::entity_operand_cases() {
+        for index in 0..=6 {
+            assert_eq!(
+                relation_stays_native(&source, |reference| reference.index() == index),
+                operands.contains(&index),
+                "{:?}: operand {index}",
+                source.kind
+            );
         }
     }
 }

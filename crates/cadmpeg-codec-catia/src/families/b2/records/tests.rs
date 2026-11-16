@@ -5,6 +5,25 @@
 
 mod parameter_points;
 
+#[test]
+fn two_edge_complement_identifies_endpoint_order() {
+    use super::two_edge_complement_relation;
+
+    assert_eq!(
+        two_edge_complement_relation(50, [7, 32], [43, 18]),
+        Some(true)
+    );
+    assert_eq!(
+        two_edge_complement_relation(26, [5, 18], [8, 21]),
+        Some(false)
+    );
+    assert_eq!(
+        two_edge_complement_relation(32, [8, 24], [8, 24]),
+        Some(false)
+    );
+    assert_eq!(two_edge_complement_relation(10, [1, 2], [3, 4]), None);
+}
+
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -87,7 +106,7 @@ fn b2_plane_carrier_parser_preserves_each_selector_layout() {
         (&carriers[2], B2PlaneCarrierLayout::ImplicitX, [-2.0, 5.0]),
     ] {
         assert!(matches!(&carrier.payload, B2PlaneCarrierPayload::Plane {
-            layout: actual, point, direction, u_range, v_range,
+            layout: actual, point, direction, u_range, v_range, ..
         } if *actual == layout && *point == [10.0,20.0]
             && direction.get() == [1.0,0.0,0.0]
             && u_range.endpoints() == u_bounds && v_range.endpoints() == [-2.0,3.0]));
@@ -556,6 +575,26 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
     .into_inner();
     assert_eq!(controls, [0x11, 0x09, 0x05, 0x05]);
     assert_eq!(terminal_controls, [0x01, 0x05]);
+}
+
+#[test]
+fn owner_chart_rejects_owned_child_in_place_of_preceding_carrier() {
+    let mut bytes = b2_owner_chart_stream_with_extended_bridge();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let carrier_reference = records
+        .iter()
+        .find(|record| record.class() == 0x37)
+        .and_then(crate::wire::records::ConsolidatedRecord::payload)
+        .expect("complete extended bridge")
+        .start
+        + 1;
+    assert_eq!(bytes[carrier_reference], 0x05);
+    bytes[carrier_reference] = 0x07;
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert!(super::b2_owner_charts_from_records(&bytes, &records).is_empty());
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.consolidated_owner_packets.len(), 1);
+    assert!(native.consolidated_owner_packets[0].owner_chart().is_none());
 }
 
 #[test]
@@ -1364,6 +1403,7 @@ fn b2_spatial_circle_stream() -> Vec<u8> {
 mod carrier_records;
 mod indexed_wrappers;
 mod owner_incidence;
+mod rolling_ball_constructions;
 mod spatial_and_consolidated;
 
 mod plane_carriers;

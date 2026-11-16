@@ -244,6 +244,49 @@ fn compact_plane_origin_requires_exact_consumption_and_reports_its_loss() {
 }
 
 #[test]
+fn plane_local_system_close_search_records_no_refusal_at_a_data_close() {
+    // The origin literal `2f e3 00` is 38912.0 and holds the close byte as data.
+    let mut payload = vec![
+        7, 0x22, 4, 0x01, 0, 0, // plane row
+        0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3, // envelope
+        0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f, 0x2f, 0xe3, 0x00, 0x18, 0xe4, 0xe3,
+    ];
+    let mut losses = Vec::new();
+    let systems = with_surface_ctx(&payload, |ctx| {
+        crate::surface::plane_local_systems(ctx, &payload, &mut losses)
+    })
+    .expect("bounded plane row");
+    assert_eq!(systems.len(), 1);
+    assert_eq!(
+        systems[0].layout,
+        Some(scalar::PlaneSupportFrameLayout::CompactRotation)
+    );
+    assert_eq!(
+        &systems[0].slots[9..],
+        &[Some(38912.0), Some(0.0), Some(0.0)]
+    );
+    assert!(losses.is_empty());
+
+    let close = payload.len() - 1;
+    payload.insert(close, 0x18);
+    losses.clear();
+    let systems = with_surface_ctx(&payload, |ctx| {
+        crate::surface::plane_local_systems(ctx, &payload, &mut losses)
+    })
+    .expect("bounded plane row");
+    assert_eq!(systems.len(), 1);
+    assert_eq!(systems[0].layout, None);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.kind()
+    );
+    assert!(losses[0]
+        .message
+        .starts_with("Plane 7 local system at byte 17:"));
+}
+
+#[test]
 fn plane_envelope_slots_keep_signed_units_and_bounded_scalar_repeats() {
     let body = [
         0x2f, 0, 0, 0xe4, 0x18, 0x0f, 0x2d, 0x10, 0, 0, 0, 0, 0, 0, 0xe5, 0x10, 0x0e, 0xe4,

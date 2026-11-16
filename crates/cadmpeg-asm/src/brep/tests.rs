@@ -509,7 +509,7 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     assert_eq!(brep.regions.len(), 1);
     assert_eq!(brep.shells.len(), 1);
     assert_eq!(
-        brep.shells[0].wire_edges(),
+        brep.shells[0].wire_edges().cloned().collect::<Vec<_>>(),
         vec![EdgeId::mint(id(FORMAT, 1).into_string()).expect("identity grammar")]
     );
     assert_eq!(brep.edges.len(), 1);
@@ -545,6 +545,55 @@ point $-1 -1 $-1 5 0 0 #\n\
 point $-1 -1 $-1 0 0 10 #\n\
 End-of-ASM-data \n";
 
+/// Two forward faces on tori of opposite minor-radius sign. `asm.md` states
+/// that a negative minor radius points the native normal toward the tube
+/// center, and the neutral normal `Su × Sv` points away from it for either
+/// sign, so only the negative-minor face reverses in the normalized B-rep.
+#[test]
+fn negative_minor_torus_reverses_the_normalized_face_sense() {
+    let source: &[u8] = b"23200 0 1 0 \n\
+14 cadmpeg-tests 4 ACIS 0 \n\
+1 1e-06 1e-10 \n\
+body $-1 -1 $-1 $1 $-1 $-1 #\n\
+lump $-1 -1 $-1 $-1 $2 $0 #\n\
+shell $-1 -1 $-1 $-1 $-1 $3 $-1 $1 #\n\
+face $-1 -1 $-1 $4 $-1 $2 $-1 $5 forward single #\n\
+face $-1 -1 $-1 $-1 $-1 $2 $-1 $6 forward single #\n\
+torus-surface $-1 -1 $-1 0 0 0 0 0 1 6 -2 1 0 0 forward_v I I I I #\n\
+torus-surface $-1 -1 $-1 0 0 0 0 0 1 6 2 1 0 0 forward_v I I I I #\n\
+End-of-ASM-data \n";
+    crate::test_support::with_service_context(source, |ctx| {
+        let parsed = crate::sat::parse(ctx, source).expect("synthetic SAT stream");
+        let header = parsed.header.as_kernel_header();
+        let brep = super::decode_with_header(
+            ctx,
+            &parsed.records,
+            source,
+            Some(&header),
+            "stream",
+            FORMAT,
+            DecodePurpose::Model,
+        )
+        .expect("synthetic torus faces decode");
+
+        let senses = brep.faces.iter().map(|face| face.sense).collect::<Vec<_>>();
+        assert_eq!(
+            senses,
+            [
+                cadmpeg_ir::topology::Sense::Reversed,
+                cadmpeg_ir::topology::Sense::Forward
+            ]
+        );
+        let flipped = brep
+            .face_sidedness
+            .iter()
+            .map(|sidedness| sidedness.carrier_flipped)
+            .collect::<Vec<_>>();
+        assert_eq!(flipped, [true, false]);
+    })
+    .expect("fixture is within the service input limit");
+}
+
 fn edge_by_record(brep: &AsmBrep, index: i64) -> &cadmpeg_ir::topology::Edge {
     let edge = EdgeId::mint(id(FORMAT, index).into_string()).expect("identity grammar");
     brep.edges
@@ -573,7 +622,10 @@ fn null_curve_apex_edge_is_a_point_edge_of_a_solid() {
         assert_eq!(brep.bodies.len(), 1);
         assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Solid);
         let apex = edge_by_record(&brep, 14);
-        assert_eq!(apex.start, apex.end);
+        assert_eq!(
+            apex.ends.as_ref().unwrap().start,
+            apex.ends.as_ref().unwrap().end
+        );
         assert_eq!(apex.param_range(), None);
         let carrier = apex.curve().expect("apex edge carrier");
         let curve = brep
@@ -918,11 +970,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         shells: vec![Shell::new(
             ShellId::mint(id(FORMAT, 3).into_string()).expect("identity grammar"),
             RegionId::mint("test:model:region#0").expect("identity grammar"),
-            vec![face_id.clone()],
-            Vec::new(),
-            Vec::new(),
-        )
-        .unwrap()],
+        )],
         loops: vec![Loop {
             id: LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar"),
             face: face_id,
@@ -934,6 +982,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
                 )
                 .expect("valid loop ring"),
             ),
+            native_ref: None,
         }],
         ..AsmBrep::default()
     };
@@ -1015,16 +1064,17 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         bodies: vec![Body {
             id: body_id.clone(),
             kind: BodyKind::Sheet,
-            regions: vec![RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar")],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         }],
         regions: vec![Region {
             id: RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
             body: body_id.clone(),
             shells: Vec::new(),
+            native_ref: None,
         }],
         ..AsmBrep::default()
     };
@@ -1548,20 +1598,19 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
         bodies: vec![Body {
             id: body_id.clone(),
             kind: BodyKind::Sheet,
-            regions: vec![region_id.clone()],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         }],
         regions: vec![Region {
             id: region_id.clone(),
             body: body_id,
             shells: vec![shell_id.clone()],
+            native_ref: None,
         }],
-        shells: vec![
-            Shell::with_faces(shell_id.clone(), region_id, vec![face_id.clone()]).expect("shell"),
-        ],
+        shells: vec![Shell::new(shell_id.clone(), region_id)],
         faces: vec![Face {
             id: face_id.clone(),
             shell: shell_id,
@@ -1571,6 +1620,7 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         }],
         ..AsmBrep::default()
     };

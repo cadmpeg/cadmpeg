@@ -13,6 +13,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
+pub(crate) mod fragment_fallback;
 mod surface_patch;
 use surface_patch::{surface_patch_grouped_recipe_edges, SurfacePatchRecipeEdges};
 
@@ -76,7 +77,7 @@ pub(super) fn resolved_edge_group(
             previous_state_id,
             feature_id,
         },
-        (EdgeGroupProof::Generic, None),
+        (EdgeGroupProof::Generic, None, &mut false),
         ctx,
     )
 }
@@ -324,6 +325,7 @@ pub(super) fn resolved_edge_treatment_group(
                 treatment_radius,
             },
             decode_ctx,
+            &mut Vec::new(),
         )
     })
 }
@@ -361,6 +363,34 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     group: &DesignConstructionOperandGroup,
     input: EdgeTreatmentInputs<'_>,
     ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+    let mut deleted_set_assumed = false;
+    let selection = resolved_edge_treatment_group_with_corners_inner(
+        group,
+        input,
+        ctx,
+        &mut deleted_set_assumed,
+    )?;
+    if deleted_set_assumed
+        && matches!(
+            selection,
+            cadmpeg_ir::features::EdgeSelection::Historical { .. }
+        )
+    {
+        losses.push(crate::loss::F3dLossCode::HistoricalEdgeSelectionDeletedSetAssumed.note(format!(
+            "Group {} is read with the assumption that the treated edge set equals the transition-deleted set.",
+            group.id
+        )));
+    }
+    Ok(selection)
+}
+
+fn resolved_edge_treatment_group_with_corners_inner(
+    group: &DesignConstructionOperandGroup,
+    input: EdgeTreatmentInputs<'_>,
+    ctx: &DecodeContext<'_>,
+    deleted_set_assumed: &mut bool,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
     let EdgeTreatmentInputs {
@@ -395,6 +425,7 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
                     radius: treatment_radius,
                 },
                 None,
+                deleted_set_assumed,
             ),
             ctx,
         );
@@ -454,6 +485,7 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
                 radius: treatment_radius,
             },
             Some(&edge_members),
+            deleted_set_assumed,
         ),
         ctx,
     )?;
@@ -530,9 +562,10 @@ fn resolved_edge_group_with_transition_chain(
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     transition: EdgeGroupTransition<'_>,
-    (proof, members_override): (
+    (proof, members_override, deleted_set_assumed): (
         EdgeGroupProof,
         Option<&[crate::records::identity::Located<u32>]>,
+        &mut bool,
     ),
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
@@ -937,7 +970,7 @@ fn resolved_edge_group_with_transition_chain(
     if exact_slots.is_none() {
         exact_slots = changed_reference_edge_group_candidates(&matched_operands, ctx)?;
     }
-    let transition_slots = || -> Result<Option<Vec<i64>>, CodecError> {
+    let mut transition_slots = || -> Result<Option<Vec<i64>>, CodecError> {
         let mut slots = match treatment_radius {
             Some(radius) => radius_edge_group_candidates(&matched_operands, radius),
             None => None,
@@ -985,6 +1018,10 @@ fn resolved_edge_group_with_transition_chain(
         if slots.is_none() && allow_edge_treatment_transition_chain {
             slots = deleted_boundary_edge_group_candidates(&matched_operands);
         }
+        if slots.is_none() && allow_edge_treatment_transition_chain {
+            slots = shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?;
+            *deleted_set_assumed = slots.is_some();
+        }
         if slots.is_none() {
             slots = scope_partition_edge_group_candidates(group, groups, operands, members);
         }
@@ -1003,11 +1040,18 @@ fn resolved_edge_group_with_transition_chain(
         _ => None,
     };
     let resolved_slots = exact_slots.or(transition_complete_slots);
-    let resolved_slots = if resolved_slots.is_some()
-        || has_standard_recipe_operands
-        || transition_state_id.is_none()
-    {
+    let resolved_slots = if resolved_slots.is_some() || transition_state_id.is_none() {
         resolved_slots
+    } else if has_standard_recipe_operands {
+        // Standard recipes resolve member by member; their group may also
+        // take the edges its transition deletes.
+        if allow_edge_treatment_transition_chain {
+            let slots = shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?;
+            *deleted_set_assumed = slots.is_some();
+            slots
+        } else {
+            None
+        }
     } else {
         transition_slots()?
     };
@@ -1016,7 +1060,16 @@ fn resolved_edge_group_with_transition_chain(
             return lost_selection();
         }
         if has_standard_recipe_operands {
-            return Ok(native_edge_selection(group));
+            return Ok(partial_historical_edge_selection(
+                matched_operands
+                    .iter()
+                    .map(|operand| (operand.id.as_str(), resolved_edge_operand(operand))),
+                previous_state_id,
+                feature_id,
+                state,
+                &group.id,
+            )
+            .unwrap_or_else(|| native_edge_selection(group)));
         }
         let mut combined_edges = Vec::new();
         for (index, operand) in matched_operands.iter().enumerate() {
@@ -1541,7 +1594,10 @@ pub(super) fn radius_edge_group_candidates(
 /// operation transition is the proof: every member identity carries the same
 /// transition edge set, every edge in that set blends at the group radius,
 /// every member's deleted predecessor edges are a nonempty subset of it, and
-/// the members' union is the whole set.
+/// the members' union is the whole set. A single-member group also proves its
+/// edge when the transition is the radius-qualified subset of its deleted
+/// set: every radius candidate on the member lies in the transition, so no
+/// deleted edge outside it carries competing treatment evidence.
 fn transition_complete_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     identities: &[&DesignEdgeIdentityOperand],
@@ -1583,8 +1639,11 @@ fn transition_complete_edge_group_candidates(
     }
     let mut union = Vec::new();
     for operand in operands {
-        if operand.deleted_boundary_edge_slots.is_empty()
-            || operand
+        if operand.deleted_boundary_edge_slots.is_empty() {
+            return None;
+        }
+        if operands.len() != 1
+            && operand
                 .deleted_boundary_edge_slots
                 .iter()
                 .any(|edge| transition.binary_search(edge).is_err())
@@ -1595,7 +1654,23 @@ fn transition_complete_edge_group_candidates(
     }
     union.sort_unstable_by(Ord::cmp);
     union.dedup();
-    (union == transition).then_some(union)
+    if union == transition {
+        return Some(union);
+    }
+    if operands.len() == 1
+        && transition
+            .iter()
+            .all(|edge| union.binary_search(edge).is_ok())
+        && identities.iter().all(|identity| {
+            identity
+                .treatment_radius_candidates
+                .iter()
+                .all(|candidate| transition.binary_search(&candidate.edge_slot).is_ok())
+        })
+    {
+        return Some(transition);
+    }
+    None
 }
 
 fn radius_edge_identity_group_candidates(
@@ -1955,7 +2030,8 @@ fn deleted_boundary_edge_group_candidates(operands: &[&DesignEdgeOperand]) -> Op
     for operand in operands {
         if operand.recipe_structure.is_none()
             || operand.recipe_references.is_empty()
-            || operand.recipe_references.len() != operand.recipe_reference_contexts.len()
+            || crate::records::dimensions::reference_lanes(&operand.recipe_references).len()
+                != operand.recipe_reference_contexts.len()
             || operand.recipe_reference_contexts.is_empty()
             || operand.deleted_boundary_edge_slots.is_empty()
             || operand.deleted_boundary_edge_slots.iter().any(|edge| {
@@ -2013,7 +2089,8 @@ fn contextual_deleted_edge_group_candidates(
     for operand in operands {
         if operand.recipe_structure.is_none()
             || operand.recipe_references.is_empty()
-            || operand.recipe_references.len() != operand.recipe_reference_contexts.len()
+            || crate::records::dimensions::reference_lanes(&operand.recipe_references).len()
+                != operand.recipe_reference_contexts.len()
             || operand.recipe_reference_contexts.is_empty()
         {
             return Ok(None);
@@ -2059,6 +2136,63 @@ fn contextual_deleted_edge_group_candidates(
     Ok(Some(assignment))
 }
 
+fn shared_reference_deleted_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let Some(first) = operands.first() else {
+        return Ok(None);
+    };
+    let deleted = &first.transition_deleted_edge_slots;
+    if deleted.len() != operands.len()
+        || operands
+            .iter()
+            .any(|operand| operand.transition_deleted_edge_slots != *deleted)
+    {
+        return Ok(None);
+    }
+    let mut candidate_sets = Vec::new();
+    let mut covered = HashSet::new();
+    for operand in operands {
+        if resolved_edge_operand(operand).is_some_and(|edge| deleted.binary_search(&edge).is_err())
+        {
+            return Ok(None);
+        }
+        let [first_side, second_side] = operand.recipe_reference_contexts.as_slice() else {
+            return Ok(None);
+        };
+        if operand.recipe_structure.is_none()
+            || first_side.preceding_faces.len() != 1
+            || second_side.preceding_faces.len() != 1
+            || first_side.preceding_faces == second_side.preceding_faces
+        {
+            return Ok(None);
+        }
+        let mut candidates = first_side
+            .changed_reference_edge_slots
+            .iter()
+            .copied()
+            .filter(|edge| second_side.changed_reference_edge_slots.contains(edge))
+            .collect::<Vec<_>>();
+        candidates.sort_unstable();
+        candidates.dedup();
+        if candidates.is_empty()
+            || candidates
+                .iter()
+                .any(|edge| deleted.binary_search(edge).is_err())
+        {
+            return Ok(None);
+        }
+        covered.extend(candidates.iter().copied());
+        candidate_sets.push(candidates);
+    }
+    if covered.len() != deleted.len() || bipartite_assignment(&candidate_sets, None, ctx)?.is_none()
+    {
+        return Ok(None);
+    }
+    Ok(Some(deleted.clone()))
+}
+
 /// Resolve a legacy single-member treatment whose selected edge persists in
 /// the result boundary instead of appearing in the operand boundary delta.
 ///
@@ -2080,7 +2214,8 @@ fn result_boundary_reference_edge_group_candidates(
             side.scalars.len() != 2 || side.payload_prefix != [0] || !side.entries.is_empty()
         })
         || operand.recipe_references.is_empty()
-        || operand.recipe_references.len() != operand.recipe_reference_contexts.len()
+        || crate::records::dimensions::reference_lanes(&operand.recipe_references).len()
+            != operand.recipe_reference_contexts.len()
         || operand.recipe_reference_contexts.is_empty()
         || !operand.changed_boundary_edge_slots.is_empty()
         || !operand.deleted_boundary_edge_slots.is_empty()
@@ -2504,7 +2639,7 @@ fn project_fixed_fillet(
         edge_identity_operands,
         &[],
         &[],
-        ctx,
+        (ctx, &mut Vec::new()),
     )
 }
 
@@ -2515,7 +2650,10 @@ pub(super) fn project_fixed_fillet_with_corners(
     edge_identity_operands: &[DesignEdgeIdentityOperand],
     vertex_operands: &[DesignEdgeTreatmentVertexOperand],
     histories: &[crate::history_records::AsmHistory],
-    ctx: &DecodeContext<'_>,
+    (ctx, losses): (
+        &DecodeContext<'_>,
+        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         edge_treatments::{FilletGroup, RadiusSpec, VariableRadius},
@@ -2661,6 +2799,7 @@ pub(super) fn project_fixed_fillet_with_corners(
                 treatment_radius: edge_radius,
             },
             ctx,
+            losses,
         )?;
         groups.push(FilletGroup {
             edges,

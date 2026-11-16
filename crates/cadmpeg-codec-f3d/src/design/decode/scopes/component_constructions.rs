@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exact derived-instance, component-insert, copy-paste-component and component-pattern occurrence scopes.
 
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 
-use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::next_indexed_record_offset;
@@ -17,136 +15,22 @@ use crate::layout::component_insert_carrier_334_prefix as component_carrier_334;
 use crate::layout::component_insert_identity_scope_272_prefix as identity_insert;
 use crate::layout::component_insert_identity_scope_compact as component_identity_scope;
 use crate::layout::component_insert_identity_scope_shifted_prefix as component_identity_shifted;
+use crate::layout::component_insert_matrix_scope_400_prefix as matrix_insert;
 use crate::layout::component_insert_matrix_scope_414_264_prefix as component_matrix_414;
 use crate::layout::component_insert_relation_345_57 as component_insert_relation_345;
 use crate::layout::component_insert_relation_child_393_58 as component_insert_relation_child_393;
 use crate::layout::component_insert_scope_283_262_257 as component_scope_283_257;
 use crate::layout::component_insert_scope_283_262_385 as component_scope_283_385;
-use crate::layout::derived_instance_relation_310_57 as derived_instance_relation_310;
-use crate::layout::derived_instance_scope_279_261 as derived_instance_279_261;
 use crate::records::feature::assembly_features;
 use crate::records::feature::assembly_features::DesignComponentInsertConstruction;
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 use crate::records::feature::assembly_features::DesignCopyPasteComponentOperation;
-use crate::records::feature::assembly_features::DesignDerivedInstanceConstruction;
 use crate::records::feature::patterns;
 use crate::records::feature::patterns::DesignRectangularPatternInstances;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-
-pub(super) fn exact_derived_instance_construction(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    scope: &DesignParameterScope,
-    occurrences: &[DesignComponentOccurrence],
-) -> Result<Option<DesignDerivedInstanceConstruction>, CodecError> {
-    if !matches!(
-        scope.kind(),
-        scope::DesignFeatureKind::DerivedInstance | scope::DesignFeatureKind::CopyPaste
-    ) {
-        return Ok(None);
-    }
-    let parsed = (|| {
-        if scope.kind() != scope::DesignFeatureKind::DerivedInstance
-            || scope.class_tag.as_str() != "279"
-            || scope.paired_class_tag.as_str() != "261"
-            || scope.frame_length() != u64_from_index(derived_instance_279_261::LEN)
-            || scope.reference_members().len() != 1
-        {
-            return None;
-        }
-        let start = usize::try_from(scope.byte_offset()).ok()?;
-        if bytes.get(
-            start + derived_instance_279_261::REFERENCE_MARKER
-                ..start + derived_instance_279_261::REFERENCE_RECORD_INDEX,
-        )? != [derived_instance_279_261::REFERENCE_MARKER_VALUE]
-            || bytes.get(
-                start + derived_instance_279_261::REFERENCE_RECORD_INDEX + 4
-                    ..start + derived_instance_279_261::REFERENCE_COUNT,
-            )? != [0; 6]
-            || View::u32_le_at(bytes, start + derived_instance_279_261::REFERENCE_COUNT)?
-                != derived_instance_279_261::REFERENCE_COUNT_VALUE
-            || marked_record_reference(bytes, start + derived_instance_279_261::RELATION_REFERENCE)?
-                != *scope.reference_members().values().next()?
-            || bytes.get(start + derived_instance_279_261::RELATION_REFERENCE + 11) != Some(&0)
-        {
-            return None;
-        }
-        let reference_record_index = View::u32_le_at(
-            bytes,
-            start + derived_instance_279_261::REFERENCE_RECORD_INDEX,
-        )?;
-        let transform_offset = start + derived_instance_279_261::TRANSFORM;
-        let transform = rigid_transform_at(bytes, transform_offset)?;
-
-        let relation_record_index = *scope.reference_members().values().next()?;
-        let relation_at = records.first_at_or_after(0, relation_record_index)?;
-        let (relation_kind, _) =
-            lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
-        if relation_at >= start
-            || relation_kind != "310"
-            || next_indexed_record_offset(bytes, relation_at + 1)?
-                != relation_at + derived_instance_relation_310::LEN
-            || bytes.get(
-                relation_at + derived_instance_relation_310::INDEXED_HEADER + 11
-                    ..relation_at + derived_instance_relation_310::CARRIER_MARKER,
-            )? != [0; 10]
-            || bytes.get(relation_at + derived_instance_relation_310::CARRIER_MARKER)
-                != Some(&derived_instance_relation_310::CARRIER_MARKER_VALUE)
-            || bytes.get(
-                relation_at + derived_instance_relation_310::CARRIER_RECORD_INDEX + 4
-                    ..relation_at + derived_instance_relation_310::MIDDLE_MARKER,
-            )? != [0; 8]
-            || bytes.get(relation_at + derived_instance_relation_310::MIDDLE_MARKER)
-                != Some(&derived_instance_relation_310::MIDDLE_MARKER_VALUE)
-            || bytes.get(
-                relation_at + derived_instance_relation_310::MIDDLE_RECORD_INDEX + 4
-                    ..relation_at + derived_instance_relation_310::SCOPE_MARKER,
-            )? != [0; 7]
-            || bytes.get(relation_at + derived_instance_relation_310::SCOPE_MARKER)
-                != Some(&derived_instance_relation_310::SCOPE_MARKER_VALUE)
-            || View::u32_le_at(
-                bytes,
-                relation_at + derived_instance_relation_310::SCOPE_RECORD_INDEX,
-            )? != scope.record_index
-            || bytes.get(
-                relation_at + derived_instance_relation_310::SCOPE_RECORD_INDEX + 4
-                    ..relation_at + derived_instance_relation_310::LEN,
-            )? != [0; 6]
-        {
-            return None;
-        }
-        let carrier_record_index = View::u32_le_at(
-            bytes,
-            relation_at + derived_instance_relation_310::CARRIER_RECORD_INDEX,
-        )?;
-        let stream = native_stream(&scope.id)?;
-        let mut candidates = occurrences.iter().filter(|occurrence| {
-            native_stream(&occurrence.id) == Some(stream)
-                && occurrence.class_tag.as_str() == "380"
-                && occurrence.record_index == carrier_record_index
-                && occurrence.byte_offset() < u64_from_index(relation_at)
-                && occurrence.transform().map(|frame| frame.value) == Some(transform)
-        });
-        let carrier = candidates.next()?;
-        if candidates.next().is_some() {
-            return None;
-        }
-        let transform_offset = u64::try_from(transform_offset).ok()?;
-        Some(Ok(DesignDerivedInstanceConstruction {
-            reference_record_index,
-            relation_record_index,
-            carrier_record_index,
-            component_guid: carrier.component_guid.clone(),
-            occurrence_guid: carrier.occurrence_guid.clone(),
-            transform,
-            transform_offset,
-        }))
-    })();
-    parsed.transpose()
-}
 
 pub(super) fn exact_component_insert_construction(
     bytes: &[u8],
@@ -161,9 +45,10 @@ pub(super) fn exact_component_insert_construction(
         {
             return None;
         }
+        let frame_length = scope.canonical_name_frame_length()?;
         let (transform, transform_at, occurrence_identity) =
-            match (scope.frame_length(), scope.paired_class_tag.as_str()) {
-                (399, "259")
+            match (frame_length, scope.paired_class_tag.as_str()) {
+                (399, _)
                     if bytes.get(start + 11..start + 20)? == [0; 9]
                         && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
                         && bytes.get(start + 33..start + 37)? == [0; 4]
@@ -178,7 +63,7 @@ pub(super) fn exact_component_insert_construction(
                         View::u64_le_at(bytes, start + 25)?,
                     )
                 }
-                (381, "261")
+                (381, _)
                     if bytes.get(start + 11..start + 20)? == [0; 9]
                         && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
                         && bytes.get(start + 33..start + 37)? == [0; 4]
@@ -193,7 +78,7 @@ pub(super) fn exact_component_insert_construction(
                         View::u64_le_at(bytes, start + 25)?,
                     )
                 }
-                (395, "258")
+                (395, _)
                     if bytes.get(start + 11..start + 21)? == [0; 10]
                         && bytes.get(start + 29..start + 33)? == [0; 4]
                         && bytes.get(start + 33) == Some(&1)
@@ -206,6 +91,11 @@ pub(super) fn exact_component_insert_construction(
                         Some(transform_at),
                         View::u64_le_at(bytes, start + 21)?,
                     )
+                }
+                (400, _) => {
+                    let (transform, transform_at, occurrence_identity) =
+                        exact_matrix_insert_scope(bytes, start, relation_record_index, false)?;
+                    (transform, Some(transform_at), occurrence_identity)
                 }
                 (404, _)
                     if bytes.get(start + 11..start + 20)? == [0; 9]
@@ -224,12 +114,12 @@ pub(super) fn exact_component_insert_construction(
                         View::u64_le_at(bytes, start + 29)?,
                     )
                 }
-                (272, "262") if scope.class_tag.as_str() == "357" => (
+                (272, _) => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
                     exact_identity_insert_scope(bytes, start, relation_record_index, false)?,
                 ),
-                (276, "262") if matches!(scope.class_tag.as_str(), "357" | "360" | "362") => (
+                (276, _) => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
                     exact_identity_insert_scope(bytes, start, relation_record_index, true)?,
@@ -280,8 +170,8 @@ pub(super) fn exact_component_insert_construction(
                 _ => return None,
             };
         let relation_at = records.first_at_or_after(0, relation_record_index)?;
-        let (carrier_record_index, placements) = if matches!(scope.frame_length(), 272 | 276 | 404)
-        {
+        let mut occurrence_key = None;
+        let (carrier_record_index, placements) = if matches!(frame_length, 272 | 276 | 400 | 404) {
             if relation_at >= start
                 || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 58
                 || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
@@ -298,21 +188,43 @@ pub(super) fn exact_component_insert_construction(
             }
             let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
             let mut placements = Vec::new();
-            if scope.frame_length() != 404 {
+            if frame_length != 404 {
                 let carrier_at =
                     unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-                let (role, offset) = crate::xref::identity_component_insert_carrier(
-                    bytes,
-                    carrier_at,
-                    relation_at,
-                    carrier_record_index,
-                )?;
-                placements.push((role, offset, None));
+                let identity = (frame_length != 400)
+                    .then(|| {
+                        crate::xref::identity_component_insert_carrier(
+                            bytes,
+                            carrier_at,
+                            relation_at,
+                            carrier_record_index,
+                        )
+                    })
+                    .flatten();
+                if let Some((role, offset)) = identity {
+                    placements.push((role, offset, None));
+                } else {
+                    let carrier = crate::xref::attributed_component_insert_carrier(
+                        bytes,
+                        carrier_at,
+                        relation_at,
+                        carrier_record_index,
+                    )?;
+                    let carrier_transform = match carrier.transform_offset {
+                        Some(at) => Some(rigid_transform_at(bytes, at)?),
+                        None => None,
+                    };
+                    if carrier_transform != transform_at.map(|_| transform) {
+                        return None;
+                    }
+                    placements.push((carrier.role, carrier.role_offset, carrier.transform_offset));
+                    occurrence_key = Some(carrier.occurrence_key);
+                }
             }
             for &carrier_at in records
                 .offsets(carrier_record_index)
                 .iter()
-                .filter(|at| scope.frame_length() == 404 && **at < relation_at)
+                .filter(|at| frame_length == 404 && **at < relation_at)
             {
                 for at in carrier_at + 11..relation_at {
                     let Some(after_role) = fixed_guid_end(bytes, at) else {
@@ -330,6 +242,21 @@ pub(super) fn exact_component_insert_construction(
                         }
                     }
                 }
+            }
+            if frame_length == 404 && placements.is_empty() {
+                let carrier_at =
+                    unique_indexed_record_before(records, carrier_record_index, relation_at)?;
+                let carrier = crate::xref::attributed_component_insert_carrier(
+                    bytes,
+                    carrier_at,
+                    relation_at,
+                    carrier_record_index,
+                )?;
+                if rigid_transform_at(bytes, carrier.transform_offset?)? != transform {
+                    return None;
+                }
+                placements.push((carrier.role, carrier.role_offset, carrier.transform_offset));
+                occurrence_key = Some(carrier.occurrence_key);
             }
             (carrier_record_index, placements)
         } else if scope.class_tag.as_str() == "426" && scope.paired_class_tag.as_str() == "258" {
@@ -450,7 +377,7 @@ pub(super) fn exact_component_insert_construction(
                         placements.push((role, at + 4, Some(transform_at)));
                     }
                 }
-                if scope.frame_length() == 381 {
+                if frame_length == 381 {
                     let legacy = legacy_component_insert_placements(
                         bytes,
                         carrier_at,
@@ -475,6 +402,7 @@ pub(super) fn exact_component_insert_construction(
             occurrence_identity: Some(occurrence_identity),
             neutron_role,
             neutron_role_offset: u64::try_from(neutron_role_offset).ok()?,
+            occurrence_key,
             placement: match (transform_at, carrier_transform_offset) {
                 (Some(offset), carrier_offset) => {
                     Some(assembly_features::DesignComponentInsertMatrix {
@@ -785,6 +713,98 @@ fn exact_component_insert_scope_283_262_385(
 
 const NULL_COMPONENT_INSERT_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
+pub(super) fn unresolved_component_insert_placement(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<assembly_features::DesignComponentInsertPlacement> {
+    if scope.kind() != scope::DesignFeatureKind::ComponentInsert
+        || scope.reference_members().len() != 1
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let end = usize::try_from(scope.paired_byte_offset()).ok()?;
+    let bytes = bytes.get(..end)?;
+    let relation = *scope.reference_members().values().next()?;
+    let (occurrence_identity, matrix) = match scope.canonical_name_frame_length()? {
+        272 => (
+            exact_identity_insert_scope(bytes, start, relation, false)?,
+            None,
+        ),
+        276 => (
+            exact_identity_insert_scope(bytes, start, relation, true)?,
+            None,
+        ),
+        400 | 404 => {
+            let shifted = scope.canonical_name_frame_length()? == 404;
+            let (value, offset, identity) =
+                exact_matrix_insert_scope(bytes, start, relation, shifted)?;
+            (
+                identity,
+                Some(crate::records::identity::Located {
+                    value,
+                    offset: u64::try_from(offset).ok()?,
+                }),
+            )
+        }
+        _ => return None,
+    };
+    Some(assembly_features::DesignComponentInsertPlacement {
+        occurrence_identity,
+        matrix,
+    })
+}
+
+fn exact_matrix_insert_scope(
+    bytes: &[u8],
+    start: usize,
+    relation_record_index: u32,
+    shifted: bool,
+) -> Option<(
+    crate::records::sketch_placement::SketchPlacementMatrix,
+    usize,
+    u64,
+)> {
+    let delta = if shifted { 4 } else { 0 };
+    let prefix: &[u8] = if shifted {
+        &[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+    } else {
+        &[0; 14]
+    };
+    if bytes.get(
+        start + matrix_insert::ZERO_PREFIX..start + matrix_insert::OCCURRENCE_IDENTITY + delta,
+    )? != prefix
+    {
+        return None;
+    }
+    let start = start + delta;
+    let transform_at = start + matrix_insert::TRANSFORM;
+    if bytes.get(
+        start + matrix_insert::ZERO_AFTER_IDENTITY..start + matrix_insert::RELATION_REFERENCE,
+    )? != [0; 4]
+        || bytes.get(start + matrix_insert::RELATION_REFERENCE) != Some(&1)
+        || View::u32_le_at(bytes, start + matrix_insert::RELATION_REFERENCE + 1)?
+            != relation_record_index
+        || bytes.get(
+            start + matrix_insert::ZERO_AFTER_RELATION..start + matrix_insert::MATRIX_MARKERS,
+        )? != [0; 6]
+        || bytes.get(start + matrix_insert::MATRIX_MARKERS..start + matrix_insert::TRANSFORM)?
+            != [1, 0]
+        || fixed_utf16_ascii_eq(
+            bytes,
+            start + matrix_insert::NULL_GUID,
+            "00000000-0000-0000-0000-000000000000",
+        )? != start + matrix_insert::LEN
+    {
+        return None;
+    }
+    Some((
+        rigid_transform_at(bytes, transform_at)?,
+        transform_at,
+        View::u64_le_at(bytes, start + matrix_insert::OCCURRENCE_IDENTITY)?,
+    ))
+}
+
 fn exact_identity_insert_scope(
     bytes: &[u8],
     start: usize,
@@ -1026,7 +1046,7 @@ pub(super) fn exact_copy_paste_component_operation(
         let relation_record_index = *scope.reference_members().values().next()?;
         // The compact frame omits one four-byte prologue field, so both placements
         // and every marked reference before them move four bytes earlier.
-        let source_at = match (scope.kind_name(), scope.frame_length()) {
+        let source_at = match (scope.source_kind_name(), scope.frame_length()) {
             ("CopyPaste", 529) => 38,
             ("CopyPaste", 525) => 34,
             _ => return None,

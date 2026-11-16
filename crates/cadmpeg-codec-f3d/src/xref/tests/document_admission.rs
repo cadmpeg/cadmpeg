@@ -36,6 +36,101 @@ fn single_type_metadata(
 }
 
 #[test]
+fn three_property_control_one_identity_requires_the_complete_registered_form() {
+    use crate::layout::legacy_attributed_external_placement_attributes as attributes;
+    use crate::layout::legacy_attributed_external_placement_members as members;
+    use crate::layout::legacy_attributed_external_placement_prefix as prefix;
+
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let mut frame = crate::test_support::legacy_attributed_external_placement(role, true, None);
+    frame[4..7].copy_from_slice(b"256");
+    frame[prefix::LEN + attributes::LEN + members::CONTROL..][..2]
+        .copy_from_slice(&1_u16.to_le_bytes());
+    assert_eq!(
+        frame.len(),
+        prefix::LEN + attributes::LEN + members::LEN + super::super::legacy_identity_tail::LEN
+    );
+    let meta = single_type_metadata(
+        super::super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+        2,
+        "Component",
+        "256",
+        10,
+    );
+    let records = super::super::typed_occurrence_placement_records(&frame, &meta).unwrap();
+    let placements = super::super::occurrence_placements(&frame, &records, None);
+    assert_eq!(placements.len(), 1);
+    assert_eq!(placements[0].link_names, [role]);
+    assert!(placements[0].transform.is_none());
+    assert_eq!(placements[0].owner.as_ref().unwrap().target, 7);
+    for end in 0..frame.len() {
+        assert!(
+            super::super::occurrence_placement(&frame[..end], None)
+                .unwrap()
+                .is_none(),
+            "end={end}"
+        );
+    }
+    let wrong = single_type_metadata(
+        "00000000-0000-0000-0000-000000000000",
+        2,
+        "Component",
+        "256",
+        10,
+    );
+    assert!(
+        super::super::typed_occurrence_placement_records(&frame, &wrong)
+            .unwrap()
+            .is_empty()
+    );
+    let document = super::document_with_placement(role, frame);
+    let result = F3dCodec
+        .decode(&mut Cursor::new(document), &DecodeOptions::default())
+        .unwrap();
+    let mut reference =
+        crate::test_support::native_test::f3d_native(result.ir()).xref_references[0].clone();
+    assert_eq!(reference.id, "f3d:xref:reference#0");
+    assert_eq!(
+        result.ir().model.occurrences[0].native_ref.as_deref(),
+        Some(reference.id.as_str())
+    );
+    assert!(super::super::placement_source_matches(&reference).unwrap());
+    reference.neutron_role = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+        .to_owned()
+        .try_into()
+        .unwrap();
+    assert!(!super::super::placement_source_matches(&reference).unwrap());
+}
+
+#[test]
+fn control_one_requires_the_three_property_identity_envelope() {
+    use crate::layout::legacy_attributed_external_placement_attributes as attributes;
+    use crate::layout::legacy_attributed_external_placement_empty_attributes as empty;
+    use crate::layout::legacy_attributed_external_placement_members as members;
+    use crate::layout::legacy_attributed_external_placement_prefix as prefix;
+
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    for (properties, matrix, control) in [
+        (true, Some(crate::xref::IDENTITY_ROWS), 1_u16),
+        (false, None, 1),
+        (true, None, 2),
+    ] {
+        let mut frame =
+            crate::test_support::legacy_attributed_external_placement(role, properties, matrix);
+        let start = prefix::LEN
+            + if properties {
+                attributes::LEN
+            } else {
+                empty::LEN
+            };
+        frame[start + members::CONTROL..][..2].copy_from_slice(&control.to_le_bytes());
+        assert!(super::super::occurrence_placement(&frame, None)
+            .unwrap()
+            .is_none());
+    }
+}
+
+#[test]
 fn fixture_placement_frames_require_registered_component_types() {
     #[derive(serde::Deserialize)]
     struct Case {
@@ -296,7 +391,7 @@ fn empty_model_maps_with_outgoing_references_are_an_assembly_without_docstruct()
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(!decoded.report().geometry_transferred());
     assert!(decoded
         .report()
@@ -304,6 +399,17 @@ fn empty_model_maps_with_outgoing_references_are_an_assembly_without_docstruct()
         .iter()
         .all(|loss| loss.code != crate::loss::F3dLossCode::BodylessDesignCarrier.kind()));
     assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(
+                |loss| loss.code == crate::loss::F3dLossCode::XrefPlacementIdentityAssumed.kind()
+            )
+            .count(),
+        1
+    );
     assert!(decoded
         .report()
         .losses
@@ -319,4 +425,50 @@ fn empty_model_maps_with_outgoing_references_are_an_assembly_without_docstruct()
         .unwrap()
         .attributes
         .contains_key("docstruct_type"));
+}
+
+#[test]
+fn leading_source_placement_closes_with_an_independent_local_matrix() {
+    use crate::layout::legacy_attributed_external_placement_empty_attributes as attributes;
+    use crate::layout::legacy_attributed_external_placement_members as members;
+    use crate::layout::legacy_attributed_external_placement_prefix as prefix;
+
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let local = [
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for (source, local, control) in [
+        (None, None, 0_u16),
+        (None, Some(local), 1),
+        (Some(super::super::IDENTITY_ROWS), None, 1),
+        (Some(super::super::IDENTITY_ROWS), Some(local), 0),
+    ] {
+        let mut frame =
+            crate::test_support::legacy_attributed_external_placement(role, false, local);
+        frame[prefix::LEN + attributes::LEN..][..2].copy_from_slice(&control.to_le_bytes());
+        let mut leading = vec![u8::from(source.is_none())];
+        if let Some(source) = source {
+            leading.extend(source.into_iter().flatten().flat_map(f64::to_le_bytes));
+        }
+        let at = prefix::LEN + attributes::LEN + members::METADATA_GUID_LENGTH;
+        frame.splice(at..at, leading);
+        let placement = super::super::occurrence_placement(&frame, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(placement.transform, local);
+        assert_eq!(placement.owner.unwrap().target, 7);
+        assert_eq!(placement.link_names, [role]);
+        for end in 0..frame.len() {
+            assert!(super::super::occurrence_placement(&frame[..end], None)
+                .unwrap()
+                .is_none());
+        }
+        frame.push(0);
+        assert!(super::super::occurrence_placement(&frame, None)
+            .unwrap()
+            .is_none());
+    }
 }

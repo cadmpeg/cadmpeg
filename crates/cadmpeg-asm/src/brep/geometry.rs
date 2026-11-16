@@ -108,6 +108,12 @@ pub(super) fn is_analytic_curve(head: &str) -> bool {
 /// radii remain in the IR because they are part of the ASM carrier semantics.
 /// A negative torus major radius decodes as its magnitude, the same tube
 /// circle; its pcurves change chart through `SupportChart::torus`.
+///
+/// The second value states that the native normal opposes the normal `Su × Sv`
+/// of the decoded carrier, so the face sense folds that reversal in. `Su × Sv`
+/// of a torus points away from the tube center for either minor-radius sign,
+/// and a negative minor radius points the native normal toward that center.
+/// `Su × Sv` of a negative-radius sphere already points toward its center.
 pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
     decode_surface_carrier(rec, &collect_carrier(rec))
 }
@@ -193,7 +199,7 @@ fn decode_surface_carrier(rec: &Record, c: &Carrier) -> Option<(SolvedSurfaceGeo
                     PositiveLength::new(major.abs() * LEN_TO_MM)?,
                     NonZeroLength::new(minor * LEN_TO_MM)?,
                 )),
-                false,
+                minor < 0.0,
             ))
         }
         _ => None,
@@ -500,7 +506,7 @@ pub(super) fn sense_at(rec: &Record, i: usize) -> Sense {
 /// marks geometry as the reverse of its cached definition. A reversed intcurve
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.
-pub(crate) fn record_reversed(rec: &Record) -> bool {
+pub fn record_reversed(rec: &Record) -> bool {
     // Adjacency in chunk space: a freestanding payload identifier (e.g. the
     // embedded curve's type name) can sit between value tokens without
     // separating the sense bit from the scope it precedes.
@@ -564,12 +570,12 @@ pub(super) fn double_at(rec: &Record, i: usize) -> Option<f64> {
     }
 }
 
-pub(super) fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
+pub(super) fn pcurve_uv_offset(rec: &Record) -> Option<[f64; 2]> {
     // The final two value tokens; a record may end with payload identifiers
     // (e.g. `null_curve` placeholders), which are not fields.
     let mut values = rec.chunks().rev();
     match (values.next(), values.next()) {
-        (Some(Token::Double(end)), Some(Token::Double(start))) => Some([*start, *end]),
+        (Some(Token::Double(dv)), Some(Token::Double(du))) => Some([*du, *dv]),
         _ => None,
     }
 }
@@ -1186,10 +1192,13 @@ pub(super) fn attach_point_edge_carriers(out: &mut AsmBrep, records: &[Record], 
         let Some(index) = point_edges.get(&edge.id) else {
             continue;
         };
-        if edge.curve().is_some() || edge.start != edge.end {
+        let Some(ends) = edge.ends.as_ref().filter(|ends| ends.start == ends.end) else {
+            continue;
+        };
+        if edge.curve().is_some() {
             continue;
         }
-        let Some(position) = vertex_positions.get(&edge.start) else {
+        let Some(position) = vertex_positions.get(&ends.start) else {
             continue;
         };
         let curve = brep_id!(format, CurveId, "point-edge-curve", *index);
@@ -1201,6 +1210,7 @@ pub(super) fn attach_point_edge_carriers(out: &mut AsmBrep, records: &[Record], 
             ))),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
     }
     out.curves.extend(curves);
@@ -1220,15 +1230,16 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
         let Some(body) = shell_bodies.get(&shell.id).copied() else {
             continue;
         };
-        if !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty() {
+        if !shell.members.is_empty() {
             body_has_wires.insert(body);
         }
-        if !shell.faces().is_empty() {
-            body_has_faces.insert(body);
-        }
-        for face in shell.faces() {
-            face_bodies.insert(face, body);
-        }
+    }
+    for face in &out.faces {
+        let Some(body) = shell_bodies.get(&face.shell).copied() else {
+            continue;
+        };
+        body_has_faces.insert(body);
+        face_bodies.insert(&face.id, body);
     }
     // A single-sided face without loops covers a whole closed surface (a
     // full sphere or torus), so it bounds a volume by itself. A body bounded
@@ -1507,9 +1518,12 @@ mod tests {
         let edge = Edge {
             id: EdgeId::mint("sat:audit:edge#domain").unwrap(),
             carrier: EdgeCarrier::new(Some(id.clone()), Some([-1e-10, 5e-13])).unwrap(),
-            start: VertexId::mint("sat:audit:vertex#a").unwrap(),
-            end: VertexId::mint("sat:audit:vertex#b").unwrap(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("sat:audit:vertex#a").unwrap(),
+                VertexId::mint("sat:audit:vertex#b").unwrap(),
+            )),
             tolerance: None,
+            native_ref: None,
         };
         let mut out = super::AsmBrep {
             curves: vec![Curve {
@@ -1517,6 +1531,7 @@ mod tests {
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             }],
             edges: vec![edge],
             ..Default::default()

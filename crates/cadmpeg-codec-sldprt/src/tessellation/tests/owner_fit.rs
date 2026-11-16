@@ -234,3 +234,20 @@ fn owner_work_scales_with_rows_above_the_floor() {
     );
     assert_eq!(tessellation_owner_work_limit(None), TESSELLATION_OWNER_WORK);
 }
+
+#[test]
+fn owner_rows_count_tables_that_already_have_an_owner() {
+    use crate::tessellation::tessellation_owner_rows;
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model
+        .tessellations
+        .push(super::persistent_mesh("synthetic:test:tessellation#open"));
+    let open_only = tessellation_owner_rows(&ir);
+    let mut owned = super::persistent_mesh("synthetic:test:tessellation#owned");
+    owned.faces.push(
+        cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#face-owned").expect("identity grammar"),
+    );
+    ir.model.tessellations.push(owned);
+    assert_eq!(open_only, Some(4));
+    assert_eq!(tessellation_owner_rows(&ir), Some(8));
+}

@@ -65,6 +65,7 @@ mod shell;
 mod sketches;
 mod sphere;
 mod subdivision_body;
+mod sweep;
 mod symbolic_thread;
 mod thread;
 mod through_curve_mesh;

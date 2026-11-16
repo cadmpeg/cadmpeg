@@ -303,9 +303,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         faces: &FaceSelection,
         thickness: Option<&cadmpeg_ir::scalar::PositiveLength>,
         side: Option<&ThickenSide>,
+        has_result_or_chain: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
+        if has_result_or_chain {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} has unsupported thicken result or tangent-chain settings",
+                feature.id
+            )));
+        }
         Ok({
             use cadmpeg_ir::features::ThickenSide;
 
@@ -487,10 +494,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         support_faces: &FaceSelection,
         continuity: &cadmpeg_ir::features::FilledSurfaceContinuityState,
         merge_result: Option<bool>,
+        constrained_or_reversed: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
+            if constrained_or_reversed {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has filled-surface interior constraints or a reversed normal",
+                    feature.id
+                )));
+            }
             let cadmpeg_ir::features::SurfaceBoundary::Edges(boundary) = boundary else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses a path-based filled-surface boundary",
@@ -564,6 +578,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         anchor: &cadmpeg_ir::features::DraftAnchor,
         angle: Option<&cadmpeg_ir::scalar::SlopeAngle>,
         outward: Option<bool>,
+        second_side: Option<&cadmpeg_ir::features::DraftSecondSide>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -588,6 +603,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
             };
             if existing.is_some_and(|record| !feature_family(record, "Draft"))
+                || second_side.is_some()
                 || pull_plane.is_some()
                 || !operands_supported(face_selection, faces.as_ref())
                 || !operands_supported(plane_selection, neutral_plane.as_ref())

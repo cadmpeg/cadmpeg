@@ -24,16 +24,17 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::test_support::smbh_revision_test::scrubbed_definition;
 use crate::test_support::streams_test::{
-    generated_act_bulkstream, generated_act_metastream, generated_design_base_feature_bulkstream,
-    generated_design_base_feature_metastream, generated_design_base_flange_bulkstream,
-    generated_design_base_flange_metastream, generated_design_bulkstream,
-    generated_design_copy_paste_bodies_bulkstream, generated_design_copy_paste_bodies_metastream,
-    generated_design_copy_paste_bulkstream, generated_design_copy_paste_metastream,
-    generated_design_form_bulkstream, generated_design_form_metastream,
-    generated_design_metastream, generated_design_remove_body_bulkstream,
-    generated_design_remove_body_metastream, generated_design_sketch_dimension_bulkstream,
-    generated_design_sketch_dimension_metastream, generated_design_surface_stitch_bulkstream,
-    generated_design_surface_stitch_metastream,
+    design_metastream_with_records, generated_act_bulkstream, generated_act_metastream,
+    generated_design_base_feature_bulkstream, generated_design_base_feature_metastream,
+    generated_design_base_flange_bulkstream, generated_design_base_flange_metastream,
+    generated_design_bulkstream, generated_design_copy_paste_bodies_bulkstream,
+    generated_design_copy_paste_bodies_metastream, generated_design_copy_paste_bulkstream,
+    generated_design_copy_paste_metastream, generated_design_form_bulkstream,
+    generated_design_form_metastream, generated_design_metastream,
+    generated_design_remove_body_bulkstream, generated_design_remove_body_metastream,
+    generated_design_sketch_dimension_bulkstream, generated_design_sketch_dimension_metastream,
+    generated_design_surface_stitch_bulkstream, generated_design_surface_stitch_metastream,
+    generated_design_types, GeneratedDesignMetastreamVariant,
 };
 use crate::F3dCodec;
 
@@ -54,7 +55,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .expect("revision surface decode");
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .first()
         .expect("revision surface construction");
@@ -80,7 +81,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
     let actual = scrubbed_definition(
         round_trip
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .first()
             .expect("round-trip construction")
@@ -244,6 +245,35 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_remove_body(smbh: &[u8]) 
     )
 }
 
+/// The generated `RemoveBody` design whose construction group's identity
+/// wrapper is followed by an entity-tracking path at an unrelated record index,
+/// with both tracking records registered in the Design type table.
+pub(crate) fn f3d_with_smbh_and_remove_body_tracking_path(smbh: &[u8]) -> Vec<u8> {
+    let properties = vec![generated_instance_properties_for(
+        "11111111-2222-3333-4444-555555555555",
+    )];
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::RemoveBody);
+    let (design_bulk, design_records, tracking_types) =
+        crate::test_support::lost_edge_test::remove_body_tracking_path_bulkstream(types.len());
+    let wrapper = [u64::from(
+        crate::test_support::lost_edge_test::TRACKING_WRAPPER,
+    )];
+    let carrier = [u64::from(
+        crate::test_support::lost_edge_test::TRACKING_WRAPPER + 1,
+    )];
+    let entities: [&[u64]; 2] = [&wrapper, &carrier];
+    for ((guid, base, version), entities) in tracking_types.into_iter().zip(entities) {
+        types.push((guid, base, version, "EntityTracking", entities));
+    }
+    let design_metastream = design_metastream_with_records(&types, &design_records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        smbh,
+        &properties,
+        &design_bulk,
+        &design_metastream,
+    )
+}
+
 /// The generated `RemoveBody` design whose two-operand construction group ends
 /// an unresolved edge run of `run` records.
 pub(crate) fn f3d_with_smbh_and_remove_body_lost_edge_run(smbh: &[u8], run: u32) -> Vec<u8> {
@@ -318,6 +348,89 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_form(smbh: &[u8]) -> Vec<
     )
 }
 
+pub(crate) fn f3d_with_form_body_resource(tsm: &[u8]) -> Vec<u8> {
+    use crate::test_support::{indexed_header, lp_utf16, push_marked_reference};
+    let (mut bulk, mut records) = generated_design_form_bulkstream();
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::Form);
+    let rows = [
+        (
+            "830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06571",
+            "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            0,
+            "Fusion",
+            &[1700u64][..],
+        ),
+        (
+            "FA1F0081-C9A1-4E14-8F25-D12DD868ED90",
+            "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+            10,
+            "Fusion",
+            &[1701u64][..],
+        ),
+        (
+            "22709494-9149-4A70-A829-7D748A7B5DB1",
+            "1B7920A0-725B-4368-9448-E4D323D53E7C",
+            6,
+            "Fusion",
+            &[1702u64][..],
+        ),
+        (
+            "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA",
+            "",
+            4,
+            "Fusion",
+            &[1703u64][..],
+        ),
+        (
+            "702B9CD2-537C-429E-8CC4-22BEEEB98C37",
+            "",
+            1,
+            "Fusion",
+            &[1704u64][..],
+        ),
+    ];
+    let first = types.len();
+    types.extend(rows);
+    for (ordinal, record) in (1700u32..=1704).enumerate() {
+        records.push((u64::from(record), u64::try_from(bulk.len()).unwrap()));
+        let tag: [u8; 3] = format!("{:03}", first + ordinal + 256)
+            .as_bytes()
+            .try_into()
+            .unwrap();
+        indexed_header(&mut bulk, tag, record);
+        match record {
+            1700 => {
+                bulk.extend_from_slice(&[0; 10]);
+                lp_utf16(
+                    &mut bulk,
+                    "TSpline.00000000-0000-4000-8000-000000000099.tsm",
+                );
+                push_marked_reference(&mut bulk, 1702);
+            }
+            1701 => {
+                for value in [
+                    "00000000-0000-4000-8000-000000000001",
+                    "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+                    "",
+                    "PrismMaterial-001",
+                ] {
+                    lp_utf16(&mut bulk, value);
+                }
+                for target in [1400, 1703, 1702, 1704] {
+                    push_marked_reference(&mut bulk, target);
+                }
+                indexed_header(&mut bulk, *b"258", record);
+            }
+            _ => bulk.extend_from_slice(&[0; 10]),
+        }
+    }
+    let meta = crate::test_support::streams_test::design_metastream_with_records(&types, &records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
+        &synthetic_geometry_smbh(), &[], &bulk, &meta,
+        &[("FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000099.tsm", tsm)],
+    )
+}
+
 pub(crate) fn generated_form_tsm() -> Vec<u8> {
     br"#TS0200
 degree 3
@@ -370,7 +483,7 @@ fn f3d_with_smbh_and_instance_properties_and_design(
     )
 }
 
-fn f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+pub(crate) fn f3d_with_smbh_and_instance_properties_and_design_with_metastream(
     smbh: &[u8],
     properties: &[Vec<u8>],
     design_bulk: &[u8],
@@ -575,7 +688,6 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
         )
         .unwrap()
     };
-    let start = offset(1202) + 58;
     let owner = offset(1203);
     let parameter = offset(1204);
     let companion = offset(1205);
@@ -635,6 +747,36 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
     frame.extend_from_slice(&[0; 8]);
     crate::test_support::push_marked_reference(&mut frame, 277);
     frame.resize(paired + 59, 0);
+    insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
+    let meta = generated_design_sketch_dimension_metastream(&records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        &synthetic_geometry_smbh(),
+        &[],
+        &bulk,
+        &meta,
+    )
+}
+
+fn insert_frame_in_preceding_companion(
+    bulk: &mut Vec<u8>,
+    records: &mut [(u64, u64)],
+    inserted: &[u8],
+) {
+    let offset = |index| {
+        usize::try_from(
+            records
+                .iter()
+                .find(|(record, _)| *record == index)
+                .unwrap()
+                .1,
+        )
+        .unwrap()
+    };
+    let start = offset(1202) + 58;
+    let owner = offset(1203);
+    let parameter = offset(1204);
+    let companion = offset(1205);
+    let mut frame = inserted.to_vec();
     let new_owner = start + frame.len();
     let new_parameter = new_owner + parameter - owner;
     frame.extend_from_slice(&bulk[owner..companion]);
@@ -642,7 +784,7 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
     frame.extend_from_slice(&bulk[companion..]);
     bulk.truncate(start);
     bulk.extend_from_slice(&frame);
-    for (record, offset) in &mut records {
+    for (record, offset) in records.iter_mut() {
         *offset = match *record {
             1204 => u64::try_from(new_parameter).unwrap(),
             1203 => u64::try_from(new_owner).unwrap(),
@@ -652,7 +794,36 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
             _ => *offset,
         };
     }
-    let meta = generated_design_sketch_dimension_metastream(&records);
+}
+
+/// An archive whose preceding companion holds a two-point presentation frame.
+/// The frame's class tags are the type-table ordinals of `primary` and `paired`,
+/// and neither type lists an entity.
+pub(crate) fn f3d_with_generated_sketch_presentation(
+    primary: &'static str,
+    paired: &'static str,
+) -> Vec<u8> {
+    let (mut bulk, mut records) = generated_design_sketch_dimension_bulkstream();
+    let mut frame = Vec::new();
+    crate::test_support::indexed_header(&mut frame, *b"273", 1304);
+    frame.extend_from_slice(&[0; 8]);
+    frame.push(1);
+    frame.extend_from_slice(&2u32.to_le_bytes());
+    for (index, role) in [(1300u32, 0u32), (1302, 1)] {
+        crate::test_support::push_marked_reference(&mut frame, index);
+        frame.extend_from_slice(&role.to_le_bytes());
+    }
+    frame.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+    let pair = frame.len();
+    crate::test_support::indexed_header(&mut frame, *b"274", 1304);
+    frame.extend_from_slice(&[0; 8]);
+    crate::test_support::push_marked_reference(&mut frame, 277);
+    frame.resize(pair + 59, 0);
+    insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::SketchDimension);
+    types.push((primary, "", 3, "Fusion", &[]));
+    types.push((paired, "", 1, "Dimension", &[]));
+    let meta = design_metastream_with_records(&types, &records);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         &synthetic_geometry_smbh(),
         &[],

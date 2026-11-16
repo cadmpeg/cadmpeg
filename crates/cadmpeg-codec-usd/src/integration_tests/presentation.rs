@@ -21,8 +21,8 @@ fn record<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
 fn layers_and_attributes_survive_a_write() {
     let source = decode(&fixture("brep_array_box"));
     let mut ir = source.ir().clone();
-    let face = ir.model.faces[0].id.to_string();
-    let body = ir.model.bodies[0].id.to_string();
+    let face = ir.geometry.faces[0].id.to_string();
+    let body = ir.geometry.bodies[0].id.to_string();
     let occurrence = ir.model.occurrences[0].id.to_string();
     ir.model.presentation_layers = vec![record(serde_json::json!({
         "id": "test:presentation:layer#1",

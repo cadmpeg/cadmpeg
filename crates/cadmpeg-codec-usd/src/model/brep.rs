@@ -604,6 +604,7 @@ pub(super) fn import(
             geometry: CurveGeometry::Solved(geometry),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         curve_ids.insert((catalog, index), curve_id);
     }
@@ -618,6 +619,7 @@ pub(super) fn import(
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
+                native_ref: None,
             }),
             SurfaceShape::Constructed(definition) => {
                 out.surfaces.push(Surface {
@@ -626,6 +628,7 @@ pub(super) fn import(
                         record: None,
                     }),
                     source_object: None,
+                    native_ref: None,
                 });
                 out.constructions.push((
                     surface_id.clone(),
@@ -655,6 +658,7 @@ pub(super) fn import(
             id: ids.vertices[*vertex].clone(),
             point,
             tolerance: own_tolerance(&brep.tolerances.vertices, *vertex, scale),
+            native_ref: None,
         });
     }
 
@@ -705,9 +709,12 @@ pub(super) fn import(
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
-            start: ids.vertices[start].clone(),
-            end: ids.vertices[end].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                ids.vertices[start].clone(),
+                ids.vertices[end].clone(),
+            )),
             tolerance,
+            native_ref: None,
         });
     }
 
@@ -728,6 +735,7 @@ pub(super) fn import(
                         vertex: ids.vertices[vertex].clone(),
                         pcurves: Vec::new(),
                     },
+                    native_ref: None,
                 });
             }
             continue;
@@ -750,6 +758,7 @@ pub(super) fn import(
                     metadata: PcurveMetadata::General {
                         form: cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::default(),
                     },
+                    native_ref: None,
                 });
                 pcurves.push(PcurveUse {
                     pcurve: pcurve_id,
@@ -770,6 +779,7 @@ pub(super) fn import(
                 },
                 pcurves,
                 use_curve: None,
+                native_ref: None,
             });
             coedge_ids.push(coedge_id);
         }
@@ -779,6 +789,7 @@ pub(super) fn import(
             id: loop_id,
             face: face_id,
             boundary: LoopBoundary::Ring(ring),
+            native_ref: None,
         });
     }
     for members in radial.values() {
@@ -818,24 +829,16 @@ pub(super) fn import(
             name: brep.identities.face_names.get(face).cloned().flatten(),
             color: None,
             tolerance: own_tolerance(&brep.tolerances.faces, face, scale),
+            native_ref: None,
         });
         out.face_ids.insert(record.id, face_id);
     }
     for (shell, record) in brep.shells.iter().enumerate() {
         let region = shell_region[shell].unwrap_or_default();
-        let faces: Vec<FaceId> = record
-            .faces
-            .iter()
-            .map(|face| ids.faces[*face].clone())
-            .collect();
-        let shell_record = Shell::new(
-            id::shell(key, shell),
-            id::region(key, region),
-            faces,
-            Vec::new(),
-            Vec::new(),
-        )
-        .map_err(|_| format!("shell {shell} holds no face"))?;
+        if record.faces.is_empty() {
+            return Err(format!("shell {shell} holds no face"));
+        }
+        let shell_record = Shell::new(id::shell(key, shell), id::region(key, region));
         out.shells.push(shell_record);
     }
     for (region, shells) in regions.iter().enumerate() {
@@ -843,6 +846,7 @@ pub(super) fn import(
             id: id::region(key, region),
             body: ids.body.clone(),
             shells: shells.iter().map(|shell| id::shell(key, *shell)).collect(),
+            native_ref: None,
         });
     }
     Ok(out)
@@ -1163,20 +1167,19 @@ impl super::Builder<'_, '_, '_, '_> {
             body,
             name,
         } = imported;
-        let model = &mut self.ir.model;
-        let region_ids = regions.iter().map(|region| region.id.clone()).collect();
-        model.points.extend(points);
-        model.vertices.extend(vertices);
-        model.curves.extend(curves);
-        model.surfaces.extend(surfaces);
-        model.pcurves.extend(pcurves);
-        model.edges.extend(edges);
-        model.coedges.extend(coedges);
-        model.loops.extend(loops);
-        model.faces.extend(faces);
-        model.shells.extend(shells);
-        model.regions.extend(regions);
-        if let Err(error) = model.add_procedural_surfaces(constructions)? {
+        let geometry = &mut self.ir.geometry;
+        geometry.points.extend(points);
+        geometry.vertices.extend(vertices);
+        geometry.curves.extend(curves);
+        geometry.surfaces.extend(surfaces);
+        geometry.pcurves.extend(pcurves);
+        geometry.edges.extend(edges);
+        geometry.coedges.extend(coedges);
+        geometry.loops.extend(loops);
+        geometry.faces.extend(faces);
+        geometry.shells.extend(shells);
+        geometry.regions.extend(regions);
+        if let Err(error) = geometry.add_procedural_surfaces(constructions)? {
             return Ok(Err(error.to_string()));
         }
         let tolerance = records.tolerance * self.scale;
@@ -1189,8 +1192,8 @@ impl super::Builder<'_, '_, '_, '_> {
             self.body_ids.insert(key.to_owned(), body.clone());
         }
         let body = self.body_id(key);
-        self.body(prim, key, kind.unwrap_or(BodyKind::General), region_ids);
-        if let (Some(name), Some(record)) = (name, self.ir.model.bodies.last_mut()) {
+        self.body(prim, key, kind.unwrap_or(BodyKind::General));
+        if let (Some(name), Some(record)) = (name, self.ir.geometry.bodies.last_mut()) {
             record.name = Some(name);
         }
         self.transferred = true;

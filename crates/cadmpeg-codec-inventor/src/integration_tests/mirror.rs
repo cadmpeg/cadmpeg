@@ -29,16 +29,23 @@ fn refused_mirror_operands_reach_the_feature_projection_loss_list() {
             "{name}"
         );
         assert_eq!(projected.mirror_losses.len(), 1, "{name}");
-        assert_eq!(
-            projected.mirror_losses[0].code,
-            InventorLossCode::FeatureMirrorOperandsNative
-                .note("test")
-                .code,
-            "{name}"
-        );
+        let expected = match crate::test_support::mirror::refusal_code(&name) {
+            "feature.mirror-boolean-native" => InventorLossCode::FeatureMirrorBooleanNative,
+            "feature.mirror-instance-map-native" => {
+                InventorLossCode::FeatureMirrorInstanceMapNative
+            }
+            _ => InventorLossCode::FeatureMirrorOperandsNative,
+        };
+        assert_eq!(projected.mirror_losses[0].code, expected.note("test").code);
+        if name == "true slot 11" {
+            assert_eq!(
+                projected.mirror_losses[0].message,
+                "Mirror slot 11 has a true Boolean with an unresolved construction role."
+            );
+        }
         assert_eq!(
             projected.mirror_losses[0].code.local_code(),
-            "feature.mirror-operands-native",
+            crate::test_support::mirror::refusal_code(&name),
             "{name}"
         );
     }
@@ -84,6 +91,7 @@ fn mirrors_without_a_history_or_with_multiple_segments_keep_the_pinned_loss() {
         model_roots: Vec::new(),
         brep_segments: Vec::new(),
         issues: Vec::new(),
+        opaque_base_units: std::collections::HashMap::default(),
     };
     let sketch = crate::sketch::SketchInventory {
         sketches: Vec::new(),
@@ -91,6 +99,7 @@ fn mirrors_without_a_history_or_with_multiple_segments_keep_the_pinned_loss() {
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     for count in [1, 2] {
@@ -123,5 +132,173 @@ fn mirrors_without_a_history_or_with_multiple_segments_keep_the_pinned_loss() {
             .mirror_losses
             .iter()
             .all(|loss| { loss.code.local_code() == "feature.mirror-operands-native" }));
+    }
+}
+
+#[test]
+fn mirror_body_copy_reaches_history_with_the_generated_result_and_no_loss() {
+    let (fixture, source) = crate::test_support::mirror::new_body_form();
+    let native = source.id();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let projected = fixture.project_history(&ctx, source).expect("history");
+    let feature = projected
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(native.as_str()))
+        .expect("mirror");
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MirrorShape { .. })
+    ));
+    assert!(feature.dependencies.is_empty());
+    assert_eq!(projected.result_topologies.len(), 1);
+    assert_eq!(
+        projected.result_topologies[0].bodies()[0].as_str(),
+        fixture.properties.last().expect("output").id()
+    );
+    assert!(projected.mirror_losses.is_empty());
+    assert!(!projected
+        .features
+        .iter()
+        .any(|feature| feature.native_ref.as_deref()
+            == Some(fixture.generated_features[0].id().as_str())));
+}
+
+#[test]
+fn mirror_unproved_generated_flags_emit_the_pinned_instance_map_loss() {
+    let (mut fixture, source) = crate::test_support::mirror::new_body_form();
+    let mut node = serde_json::to_value(&fixture.generated_features[0]).expect("node");
+    node["header"]["flags"] = serde_json::json!(0x86200);
+    fixture.generated_features[0] = serde_json::from_value(node).expect("unproved node");
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let projected = fixture.project_history(&ctx, source).expect("history");
+    assert_eq!(projected.mirror_losses.len(), 1);
+    assert_eq!(
+        projected.mirror_losses[0].code,
+        InventorLossCode::FeatureMirrorInstanceMapNative
+            .note("test")
+            .code
+    );
+    assert!(projected.result_topologies.is_empty());
+}
+
+#[test]
+fn replacement_reaches_history_with_the_selected_body_and_no_loss() {
+    let (fixture, source) = crate::test_support::mirror::replacement_form();
+    let native = source.id();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let projected = fixture.project_history(&ctx, source).expect("history");
+    let feature = projected
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(native.as_str()))
+        .expect("replacement");
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MirrorShape { .. })
+    ));
+    assert_eq!(projected.result_topologies.len(), 1);
+    assert_eq!(
+        projected.result_topologies[0].bodies()[0].as_str(),
+        fixture.properties[3].id()
+    );
+    assert!(projected.mirror_losses.is_empty());
+}
+
+#[test]
+fn mirror_plane_supplied_by_a_work_plane_reaches_history_as_a_dependency() {
+    let (fixture, source) = crate::test_support::mirror::replacement_form();
+    let supplied = fixture.with_supplying_plane();
+    let native = source.id();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let projected = supplied.project_history(&ctx, source).expect("history");
+    let feature = projected
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(native.as_str()))
+        .expect("mirror");
+    let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+        plane_reference, ..
+    }) = feature.evaluation.definition()
+    else {
+        panic!("mirror shape")
+    };
+    assert_eq!(*plane_reference, None);
+    let plane = projected
+        .features
+        .iter()
+        .find(|candidate| candidate.native_ref.as_deref() == Some(supplied.planes[1].id().as_str()))
+        .expect("supplying work plane in the history");
+    assert!(matches!(
+        plane.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
+    ));
+    assert!(plane.ordinal < feature.ordinal);
+    assert_eq!(
+        feature.dependencies.iter().collect::<Vec<_>>(),
+        vec![&plane.id]
+    );
+    assert!(projected.mirror_losses.is_empty());
+}
+
+#[test]
+fn mirror_plane_without_a_proving_reference_has_no_plane_dependency() {
+    let (fixture, source) = crate::test_support::mirror::replacement_form();
+    let native = source.id();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let projected = fixture.project_history(&ctx, source).expect("history");
+    let feature = projected
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(native.as_str()))
+        .expect("mirror");
+    assert!(feature.dependencies.is_empty());
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+            plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(_)),
+            ..
+        })
+    ));
+}
+
+#[test]
+fn mirror_plane_supplied_by_an_unplaced_or_later_work_plane_stays_native() {
+    use crate::test_support::mirror::SupplierPlacement;
+
+    for placement in [SupplierPlacement::After, SupplierPlacement::Unplaced] {
+        let (fixture, source) = crate::test_support::mirror::replacement_form();
+        let fixture = fixture
+            .with_supplying_plane()
+            .with_supplier_placement(placement);
+        let native = source.id();
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let projected = fixture.project_history(&ctx, source).expect("history");
+        let feature = projected
+            .features
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some(native.as_str()))
+            .expect("mirror");
+        assert!(feature.dependencies.is_empty());
+        assert!(matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+                plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(_)),
+                ..
+            })
+        ));
+        assert!(projected.mirror_losses.is_empty());
     }
 }

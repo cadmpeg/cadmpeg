@@ -62,7 +62,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     .iter()
                     .map(|parameter| parameter.id.to_string()),
             )
-            .chain(model.bodies.iter().map(|body| body.id.to_string()))
+            .chain(self.ir.geometry.bodies.iter().map(|body| body.id.to_string()))
             .collect();
         let named: BTreeSet<String> = self
             .feature_ids

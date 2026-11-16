@@ -1187,3 +1187,22 @@ mod reflected_reversal;
 mod knot_order;
 
 mod knot_admission;
+
+#[test]
+fn surface_cache_fit_round_trips_and_rejects_invalid_values() {
+    let mut surface = surface();
+    assert_eq!(surface.cache_fit_tolerance(), None);
+    let fit = crate::geometry::FitTolerance::try_new(0.125).expect("fit");
+    surface.set_cache_fit_tolerance(Some(fit));
+    let wire = serde_json::to_value(&surface).expect("wire");
+    assert_eq!(wire["cache_fit_tolerance"], 0.125);
+    assert_eq!(
+        serde_json::from_value::<NurbsSurface>(wire.clone()).expect("surface"),
+        surface
+    );
+    for invalid in [serde_json::Value::Null, serde_json::json!(-1.0)] {
+        let mut wire = wire.clone();
+        wire["cache_fit_tolerance"] = invalid;
+        assert!(serde_json::from_value::<NurbsSurface>(wire).is_err());
+    }
+}

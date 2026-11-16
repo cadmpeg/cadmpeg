@@ -756,6 +756,7 @@ fn offset_parameter_factor_preserves_curve_direction() {
 #[test]
 fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
     let placement = |stream: &str, suffix| DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
@@ -839,6 +840,7 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
             id: format!("f3d:{stream}:sketch-point#{record_index}"),
             record_index,
             owner_reference: None,
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),
             byte_offset: 0,

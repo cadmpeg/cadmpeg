@@ -45,10 +45,7 @@ use super::outputs::{
     feature_parameters, feature_reference_name, schema_operation_kind,
     section_definition_for_history_feature, sweep_output_kind, sweep_solid, CommaList,
 };
-use super::round::{
-    chamfer_constant_distance, differing_positive_lengths, round_constant_radius,
-    round_observed_radii, round_placed_cylinder_radii,
-};
+use super::round::{chamfer_constant_distance, round_constant_radius};
 use super::selections::feature_edge_selection;
 use crate::container::ContainerScan;
 use crate::decode::analytic::planes::{
@@ -119,10 +116,12 @@ pub(super) fn thicken_feature_definition(
             let face = FaceId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             faces.push(face);
         }
-        if faces
-            .iter()
-            .all(|face| ir.model.faces.iter().any(|candidate| candidate.id == *face))
-        {
+        if faces.iter().all(|face| {
+            ir.geometry
+                .faces
+                .iter()
+                .any(|candidate| candidate.id == *face)
+        }) {
             FaceSelection::Resolved { faces, native }
         } else if let Some(faces) = generated_surface_face_refs(
             &source_ids,
@@ -143,14 +142,11 @@ pub(super) fn thicken_feature_definition(
         }
         None => None,
     };
-    Ok(IrFeatureDefinition::Operation(
-        IrFeatureOperation::Thicken {
-            faces,
-            thickness: offset
-                .and_then(|(magnitude, _)| cadmpeg_ir::scalar::PositiveLength::new(magnitude)),
-            side: offset.map(|(_, side)| side),
-        },
-    ))
+    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::thicken(
+        faces,
+        offset.and_then(|(magnitude, _)| cadmpeg_ir::scalar::PositiveLength::new(magnitude)),
+        offset.map(|(_, side)| side),
+    )))
 }
 
 fn hole_face_selection(
@@ -164,7 +160,7 @@ fn hole_face_selection(
     let native = format!("creo:visibgeom:surface#{surface_id}");
     let candidate_id = format!("creo:visibgeom:face#{surface_id}");
     let resolved = ir
-        .model
+        .geometry
         .faces
         .iter()
         .any(|candidate| candidate.id.as_str() == candidate_id);
@@ -352,16 +348,43 @@ pub(in super::super) fn schema_feature_definition(
         let drilled_dimensions = drilled_recipe.and_then(|recipe| {
             simple_drilled_hole_dimensions(
                 scan,
+                recipe.table,
                 simple_drilled_hole_envelope_spans(scan, recipe.table),
                 recipe.dimension_family,
             )
         });
-        let drilled_placement =
-            drilled_recipe
-                .zip(drilled_dimensions)
-                .and_then(|(recipe, (diameter, _, depth))| {
-                    simple_drilled_hole_placement(scan, recipe.table, diameter, depth)
-                });
+        let placed_drilled_recipe = drilled_recipe.filter(|recipe| {
+            recipe.table.surface_ids_iter().all(|surface_id| {
+                let Some(face) = exactly_one(ir.geometry.faces.iter().filter(|face| {
+                    crate::identity::matches_numbered_identity(
+                        face.id.as_str(),
+                        "creo:visibgeom:face#",
+                        surface_id,
+                    )
+                })) else {
+                    return false;
+                };
+                let Some(surface) = exactly_one(
+                    ir.geometry
+                        .surfaces
+                        .iter()
+                        .filter(|surface| surface.id == face.surface),
+                ) else {
+                    return false;
+                };
+                matches!(
+                    source_carriers.surface_geometry(surface),
+                    SurfaceGeometry::Solved(
+                        SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_)
+                    )
+                )
+            })
+        });
+        let drilled_placement = placed_drilled_recipe.zip(drilled_dimensions).and_then(
+            |(recipe, (diameter, _, depth))| {
+                simple_drilled_hole_placement(scan, recipe.table, diameter, depth)
+            },
+        );
         let placement = feature_outline_planes(scan, feature_id).and_then(hole_placement);
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
@@ -473,7 +496,8 @@ pub(in super::super) fn schema_feature_definition(
                     })
             });
         let drilled_axis = if drilled_placement.is_none() {
-            if let Some((recipe, (diameter, _, _))) = drilled_recipe.zip(drilled_dimensions) {
+            if let Some((recipe, (diameter, _, _))) = placed_drilled_recipe.zip(drilled_dimensions)
+            {
                 simple_drilled_hole_axis_placement(scan, recipe.table, diameter)
             } else {
                 None
@@ -562,21 +586,10 @@ pub(in super::super) fn schema_feature_definition(
         }));
     }
     if schema_class == Some(SchemaClass::Round) {
-        let mut observed_radii = round_observed_radii(scan, feature_id);
-        let placed_radii = round_placed_cylinder_radii(scan, ir, source_carriers, feature_id);
-        observed_radii.extend(placed_radii);
         let radius = round_constant_radius(ctx, scan, ir, source_carriers, feature_id)?
             .and_then(cadmpeg_ir::scalar::PositiveLength::new)
             .map_or_else(
-                || {
-                    if differing_positive_lengths(&observed_radii) {
-                        RadiusSpec::Unresolved {
-                            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
-                        }
-                    } else {
-                        RadiusSpec::Unresolved { form: None }
-                    }
-                },
+                || RadiusSpec::Unresolved { form: None },
                 |radius| RadiusSpec::Constant { radius },
             );
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
@@ -620,11 +633,15 @@ pub(in super::super) fn schema_feature_definition(
             anchor,
             angle: None,
             outward: None,
+            second_side: None,
         }));
     }
+    let recipe = feature_recipe(scan, feature_id);
+    let generic_sweep_without_recipe = matches!(kind, "Protrusion" | "Cut") && recipe.is_none();
     if schema_class == Some(SchemaClass::Protrusion)
+        && !generic_sweep_without_recipe
         && !feature_section_sweep_semantics_conflict(scan, feature_id)
-        && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
+        && section_sweep_allows_linear_extrusion(schema_class, recipe)
     {
         if let Some(sweep) = circular_sweep_geometry(scan, feature_id) {
             let definition =
@@ -655,9 +672,7 @@ pub(in super::super) fn schema_feature_definition(
             ));
         }
     }
-    if feature_recipe(scan, feature_id)
-        == Some(crate::feature::operations::FeatureRecipeKind::Revolve)
-    {
+    if recipe == Some(crate::feature::operations::FeatureRecipeKind::Revolve) {
         let extent = feature_revolution_extent(scan, feature_id);
         let profile = unique_feature_profile_ref(scan, ir, feature_id);
         let axis = feature_revolution_axis_for_transfer(
@@ -726,8 +741,8 @@ pub(in super::super) fn schema_feature_definition(
             },
         ));
     }
-    let recipe = feature_recipe(scan, feature_id);
-    if (!feature_section_sweep_semantics_conflict(scan, feature_id)
+    if (!generic_sweep_without_recipe
+        && !feature_section_sweep_semantics_conflict(scan, feature_id)
         && section_sweep_allows_linear_extrusion(schema_class, recipe))
         || feature_is_sheet_extrusion(scan, feature_id)
     {
@@ -1002,7 +1017,7 @@ fn reconciled_datum_plane_definition(
         .get(&surface_id)
         .map(|surface| Vector3::from(surface.u_axis))
         .or_else(|| {
-            let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| {
+            let surface = exactly_one(ir.geometry.surfaces.iter().filter(|surface| {
                 crate::identity::matches_numbered_identity(
                     surface.id.as_str(),
                     "creo:visibgeom:surface#",

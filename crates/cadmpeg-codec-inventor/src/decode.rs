@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::document::{CadIr, Model, SourceMeta, Topology};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
@@ -51,11 +51,12 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    decode_container(ctx, &InventorContainer::open(ctx, root)?)
+    decode_container(ctx, root, &InventorContainer::open(ctx, root)?)
 }
 
 fn decode_container<'a>(
     ctx: &DecodeContext<'a>,
+    root: View<'a>,
     container: &InventorContainer<'a>,
 ) -> Result<Decoded, CodecError> {
     // One predicate, read once from the parsed declarations: it decides the
@@ -78,19 +79,11 @@ fn decode_container<'a>(
     } else {
         ctx.depth()
     };
-    let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+    let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.entity_count());
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "cfb_major_version".to_owned(),
         container.snapshot.major_version().to_string(),
-    );
-    attributes.insert(
-        "cfb_sector_size".to_owned(),
-        container.snapshot.sector_size().to_string(),
-    );
-    attributes.insert(
-        "rse_segment_pairs".to_owned(),
-        container.rse.segments.len().to_string(),
     );
     let mut document_kind = container.rse.document_kind();
     let mut metadata = MetadataProjection::default();
@@ -265,7 +258,7 @@ fn decode_container<'a>(
         cadmpeg_core::text::named_entries("the inventor document", attributes)?,
     ));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
-        let entity_count = ir.model.entity_count();
+        let entity_count = ir.entity_count();
         ir.model.product_definitions.push(project_root_product(
             ctx,
             &document_kind,
@@ -431,7 +424,7 @@ fn decode_container<'a>(
     let pm_graphics_style_collections = presentation_native.graphics_style_collections;
     let pm_graphics_primary_color_styles = presentation_native.graphics_primary_color_styles;
     ctx.admit_entities(
-        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+        cadmpeg_core::decode::u64_from_index(ir.entity_count()),
         &mut admitted_entities,
         "admit Inventor pre-assembly entities",
     )?;
@@ -542,6 +535,13 @@ fn decode_container<'a>(
         &feature_inventory.dimensions,
     )?;
     namespace.set_arena(ctx, "pm_dc_feature_labels", &feature_inventory.labels)?;
+    if !feature_inventory.thread_definitions.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_dc_thread_definitions",
+            &feature_inventory.thread_definitions,
+        )?;
+    }
     if !feature_inventory.sheet_metal_styles.is_empty() {
         namespace.set_arena(
             ctx,
@@ -611,7 +611,7 @@ fn decode_container<'a>(
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
-    let body_keys = if delivered == DecodeDepth::Full {
+    let body_keys = if delivered >= DecodeDepth::Design {
         kernel_brep.body_native_keys.clone()
     } else {
         Vec::new()
@@ -629,7 +629,7 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
-    let mut unresolved = if delivered == DecodeDepth::Full {
+    let mut unresolved = if delivered >= DecodeDepth::Design {
         project_design(
             ctx,
             &mut ir,
@@ -641,24 +641,38 @@ fn decode_container<'a>(
     } else {
         UnresolvedDesign::default()
     };
+    if delivered >= DecodeDepth::Design {
+        losses.extend(crate::annotation::project(
+            ctx,
+            &crate::annotation::Inputs {
+                rse: &container.rse,
+                labels: &feature_inventory.labels,
+                parameters: &design_inventory.parameters,
+                properties: &feature_inventory.properties,
+            },
+            &mut ir,
+        )?);
+    }
+    let mut stored_body_losses = Vec::new();
     if !body_keys.is_empty() {
-        let transferred = crate::feature::base::project(
+        let projection = crate::feature::base::project(
             ctx,
             &container.rse,
             &feature_inventory,
             &design_inventory,
             &sketch_inventory.transforms,
             &body_keys,
-            &mut ir.model,
+            &mut ir,
         )?;
         unresolved.features = unresolved
             .features
-            .checked_sub(transferred)
+            .checked_sub(projection.transferred)
             .ok_or_else(|| {
                 CodecError::malformed("Inventor Base projection exceeds unresolved feature count")
             })?;
+        stored_body_losses = projection.losses;
     }
-    let composite_links = if delivered == DecodeDepth::Full {
+    let composite_links = if delivered >= DecodeDepth::Design {
         crate::feature::composite::links(
             ctx,
             &container.rse,
@@ -678,7 +692,7 @@ fn decode_container<'a>(
             roots: &design_inventory.model_roots,
         },
         &body_keys,
-        &mut ir.model,
+        &mut ir,
     )?;
     unresolved.features = unresolved
         .features
@@ -694,7 +708,7 @@ fn decode_container<'a>(
             &composite_links,
         )?;
     }
-    if delivered == DecodeDepth::Full {
+    if delivered >= DecodeDepth::Design {
         let links = crate::feature::body_selection::links(
             ctx,
             &container.rse,
@@ -707,28 +721,51 @@ fn decode_container<'a>(
             &links,
             &active_carrier,
             &body_keys,
-            &ir.model,
+            &ir.geometry,
             &crate::feature::body_selection::Scope {
                 metadata: &segment_meta,
                 roots: &design_inventory.model_roots,
             },
         );
         joined.extend(composite.bodies);
-        crate::feature::body_selection::project(&mut ir.model, &joined, &feature_inventory);
+        crate::feature::body_selection::project(&mut ir, &joined, &feature_inventory);
         if !links.is_empty() {
             ir.native
                 .namespace_mut("inventor")
                 .set_arena(ctx, "body_wrapper_links", &links)?;
+        }
+        if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
+            let history = crate::feature::history_states::project(
+                ctx,
+                carrier,
+                &crate::feature::history_states::Inputs {
+                    features: &feature_inventory.features,
+                    model_features: &ir.model.features,
+                    kernel_links: &feature_inventory.kernel_entity_links,
+                    wrapper_links: &links,
+                    properties: &feature_inventory.properties,
+                },
+            )?;
+            if !history.records.is_empty() {
+                ir.native.namespace_mut("inventor").set_arena(
+                    ctx,
+                    "feature_history_states",
+                    &history.records,
+                )?;
+            }
+            losses.extend(crate::feature::history_states::losses(&history));
+            ir.model.history_bodies = history.bodies.bodies;
         }
         losses.extend(crate::feature::body_selection::native_losses(
             &ir.model, &joined,
         ));
     }
     ir.set_native_unknowns(ctx, "inventor", &[])?;
-    let geometry_transferred =
-        !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
+    let geometry_transferred = !(ir.geometry.surfaces.is_empty()
+        && ir.geometry.points.is_empty()
+        && ir.geometry.faces.is_empty());
     let body_ids = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())
@@ -780,7 +817,7 @@ fn decode_container<'a>(
             }
         })
         .collect::<HashMap<_, _>>();
-    for face in &mut ir.model.faces {
+    for face in &mut ir.geometry.faces {
         if face.color.is_none() {
             face.color = face_colors.get(&face.id).copied();
         }
@@ -908,10 +945,15 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
+        losses.extend(stored_body_losses);
         losses.extend(crate::feature::derived::native_source_loss(
             &feature_inventory.labels,
         ));
         losses.extend(crate::feature::tagging::native_losses(&feature_inventory));
+        losses.extend(crate::feature::coil::native_losses(
+            &feature_inventory,
+            &ir.model.features,
+        ));
         losses.extend(composite_losses);
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
@@ -920,6 +962,13 @@ fn decode_container<'a>(
         losses.extend(crate::feature::edge_selection::native_losses(
             &feature_inventory,
             &ir.model.features,
+        ));
+        losses.extend(crate::feature::face_selection::native_losses(
+            &ir.model.features,
+        ));
+        losses.extend(crate::feature::face_selection::assumption_losses(
+            &ir.model.features,
+            &feature_inventory,
         ));
         losses.extend(crate::feature::sheet_metal::retained_control_losses(
             ir.model.features.iter(),
@@ -933,6 +982,7 @@ fn decode_container<'a>(
         losses.extend(unresolved.edge_treatment_losses);
         losses.extend(unresolved.loft_losses);
         losses.extend(unresolved.split_losses);
+        losses.extend(unresolved.thicken_losses);
         losses.extend(unresolved.plate_losses);
         losses.extend(unresolved.mirror_losses);
         losses.extend(crate::feature::work_plane::native_losses(
@@ -962,12 +1012,13 @@ fn decode_container<'a>(
                 )
             })
             .count();
-        if partial_threads != 0 {
-            losses.push(InventorLossCode::FeatureThreadDefinitionPartial.note(format!(
-                "Transferred {partial_threads} Inventor thread annotation(s) with native face selections; sizing, handedness, and termination operands remain native."
-            )));
+        if let Some(loss) = crate::feature::thread::partial_loss(partial_threads) {
+            losses.push(loss);
         }
-        losses.extend(crate::feature::thicken_operand_losses(&ir.model.features));
+        losses.extend(crate::feature::thicken_operand_losses(
+            &ir.model.features,
+            &crate::feature::thicken_source_ids(&feature_inventory),
+        ));
         let partial_shells = ir
             .model
             .features
@@ -1010,18 +1061,23 @@ fn decode_container<'a>(
                 unresolved.parameters
             )));
         }
+        if unresolved.value_only_parameters != 0 {
+            losses.push(InventorLossCode::ParameterExpressionNative.note(format!(
+                "Transferred {} Inventor parameter(s) with their exact value and no expression text: the unit record of the root literal has an undefined base-unit type and stays native.",
+                unresolved.value_only_parameters
+            )));
+        }
+        losses.extend(crate::design::layout_assumed_loss(
+            &unresolved.layout_assumed_parameters,
+        ));
         losses.extend(crate::design::bounded_expression_loss(
             unresolved.bounded_parameters,
         ));
-        if unresolved.sketches != 0
-            || unresolved.sketch_entities != 0
-            || unresolved.sketch_constraints != 0
-        {
-            losses.push(InventorLossCode::SketchGraphOpen.note(format!(
-                "Retained {} Inventor sketch record(s), {} sketch-entity record(s), and {} sketch-constraint record(s) whose neutral graph is not closed.",
-                unresolved.sketches, unresolved.sketch_entities, unresolved.sketch_constraints
-            )));
-        }
+        losses.extend(crate::sketch::graph_loss(
+            unresolved.sketches,
+            unresolved.sketch_entities,
+            unresolved.sketch_constraints,
+        ));
         if unresolved.sketch_construction != 0 {
             losses.push(InventorLossCode::SketchConstructionUnresolved.note(format!(
                 "{} Inventor sketch curve(s) carry entity flags whose construction meaning is unresolved; they project as geometry and stay out of the sketch profile tables.",
@@ -1030,6 +1086,15 @@ fn decode_container<'a>(
         }
         losses.extend(crate::sketch::axis_distance_loss(
             unresolved.sketch_axis_distances,
+        ));
+        losses.extend(crate::sketch::carrier_conflict_loss(
+            unresolved.sketch_carrier_conflicts,
+        ));
+        losses.extend(crate::sketch::degenerate_line_loss(
+            unresolved.sketch_degenerate_lines,
+        ));
+        losses.extend(crate::sketch::rounded_line_loss(
+            unresolved.sketch_rounded_lines,
         ));
         losses.extend(crate::sketch::point_tail::paired_association_loss(
             &sketch_inventory,
@@ -1041,6 +1106,12 @@ fn decode_container<'a>(
         losses.extend(crate::sketch::curve::member_losses(
             &sketch_inventory,
             &container.rse,
+        ));
+        losses.extend(crate::sketch::polygon_control_vertex_loss(
+            &sketch_inventory.constraints,
+        ));
+        losses.extend(crate::sketch::circle_parameter::loss(
+            &sketch_inventory.constraints,
         ));
         losses.extend(crate::sketch::spline::point_relation_loss(
             &sketch_inventory.constraints,
@@ -1159,7 +1230,7 @@ fn decode_container<'a>(
         }
     }
     let preview_asset_count = ir.model.assets.len();
-    let mut source_fidelity = SourceFidelity::default();
+    let mut source_fidelity = SourceFidelity::for_root(root);
     let mut annotations = AnnotationBuilder::new();
     for record in kernel_annotations {
         admit_kernel_annotation(&mut annotations, &record)?;
@@ -1175,21 +1246,35 @@ fn decode_container<'a>(
                 "retain Inventor kernel carrier that read no geometry",
             )?;
             let data = carrier.bytes.window().to_vec();
+            let id = UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
+                carrier.segment_token.clone().dash(carrier.record_ordinal),
+            );
             source_fidelity.retain_unknown_records(
                 format!("RSeStorage/B{}:expanded", carrier.segment_token),
                 [UnknownRecord::retained(
-                    UnknownId::compose(
-                        &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
-                        carrier.segment_token.clone().dash(carrier.record_ordinal),
-                    ),
+                    id.clone(),
                     carrier.carrier_offset,
                     data,
                     vec![active_carrier.id().to_owned()],
                 )],
             )?;
+            if !empty_kernel_stream {
+                source_fidelity
+                    .mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
+            }
         }
     }
     if !kernel_unknowns.is_empty() {
+        // Topology-only vertex and edge records carry nothing the arenas lack.
+        let untyped = kernel_unknowns
+            .iter()
+            .filter(|record| {
+                let id = record.id().as_str();
+                !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+            })
+            .map(|record| record.id().clone())
+            .collect::<Vec<_>>();
         source_fidelity
             .attach_native_unknown_records(&mut ir, "inventor", kernel_unknowns, ctx)
             .map_err(|error| {
@@ -1197,6 +1282,9 @@ fn decode_container<'a>(
                     "Inventor kernel unknown retention failed: {error}"
                 ))
             })?;
+        for id in untyped {
+            source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
+        }
     }
     let kernel_unknown_record_count = ir.native_unknowns("inventor")?.len();
     let appearance_binding_count = ir.model.appearance_bindings.len();
@@ -1427,6 +1515,10 @@ fn decode_container<'a>(
                 .filter(|(_, count)| *count != 0),
         )
         .collect();
+    if ctx.container_only() {
+        ir.geometry = Topology::default();
+        ir.model = Model::default();
+    }
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
@@ -1452,6 +1544,8 @@ struct UnresolvedDesign {
     parameters: usize,
     parameter_scopes: usize,
     bounded_parameters: usize,
+    value_only_parameters: usize,
+    layout_assumed_parameters: std::collections::BTreeMap<[u8; 16], usize>,
     sketches: usize,
     sketch_entities: usize,
     sketch_constraints: usize,
@@ -1460,11 +1554,15 @@ struct UnresolvedDesign {
     profile_bodies: usize,
     sketch_construction: usize,
     sketch_axis_distances: usize,
+    sketch_carrier_conflicts: usize,
+    sketch_degenerate_lines: usize,
+    sketch_rounded_lines: usize,
     extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    thicken_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
@@ -1498,7 +1596,7 @@ fn project_design(
             sketches: &ir.model.sketches,
             entities: &ir.model.sketch_entities,
             profile_bodies: &profile_bodies.bodies,
-            result_model: Some(&ir.model),
+            result_model: Some(ir),
         },
     )?;
     let mut added_profiles = features.added_profiles;
@@ -1533,6 +1631,8 @@ fn project_design(
         parameters: parameters.unresolved,
         parameter_scopes: parameters.unresolved_scopes,
         bounded_parameters: parameters.bounded,
+        value_only_parameters: parameters.value_only,
+        layout_assumed_parameters: parameters.layout_assumed,
         sketches: sketches.unresolved_sketches,
         sketch_entities: sketches.unresolved_entities,
         sketch_constraints: sketches.unresolved_constraints,
@@ -1541,11 +1641,15 @@ fn project_design(
         profile_bodies: profile_bodies.undecoded,
         sketch_construction: sketches.unresolved_construction,
         sketch_axis_distances: sketches.native_axis_distances,
+        sketch_carrier_conflicts: sketches.native_carrier_conflicts,
+        sketch_degenerate_lines: sketches.native_degenerate_lines,
+        sketch_rounded_lines: sketches.native_rounded_lines,
         extrusion_losses: features.extrusion_losses,
         revolve_losses: features.revolve_losses,
         edge_treatment_losses: features.edge_treatment_losses,
         loft_losses: features.loft_losses,
         split_losses: features.split_losses,
+        thicken_losses: features.thicken_losses,
         plate_losses: features.plate_losses,
         mirror_losses: features.mirror_losses,
     })
@@ -2095,12 +2199,6 @@ fn apply_kernel_header(
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("kernel_save_format_version"),
             format!("{version}"),
-        );
-    }
-    if let Some(count) = header.entity_count {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("kernel_entity_count"),
-            format!("{count}"),
         );
     }
     if let Some(flags) = header.flags {

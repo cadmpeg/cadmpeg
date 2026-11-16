@@ -789,7 +789,7 @@ pub(crate) struct DesignFaceRecipeNode {
     pub(crate) end_byte_offset: u64,
     /// Complete node words, including the three-word opener.
     pub(crate) program: Vec<i32>,
-    /// Shared two-side topology recipe structure following the node opener.
+    /// Topology recipe structure following the node opener.
     pub(crate) recipe_structure: Option<DesignFaceRecipeStructure>,
 }
 
@@ -798,10 +798,11 @@ pub(crate) struct DesignFaceRecipeNode {
 pub(crate) struct DesignFaceRecipeStructure {
     /// Scalar before the prelude delimiters.
     pub(crate) root: i32,
-    /// Two scalar prelude runs before the first side clause.
+    /// Two scalar prelude runs before the first side clause. The second
+    /// counts the side clauses.
     pub(crate) prelude: [i32; 2],
-    /// Two ordered topology side clauses.
-    pub(crate) sides: [DesignTopologyRecipeSide; 2],
+    /// Ordered topology side clauses, one or two.
+    pub(crate) sides: Vec<DesignTopologyRecipeSide>,
     /// Scalar carried by the optional `[-1, value, -1, 0, 0, -1]` postlude.
     #[serde(
         default,
@@ -812,16 +813,53 @@ pub(crate) struct DesignFaceRecipeStructure {
     pub(crate) postlude_value: Option<i32>,
 }
 
+/// The zero-based prefix-operand ordinal of each recipe reference, or `None`
+/// when a packed-token reference has no preceding operand to extend.
+pub(crate) fn prefix_operand_ordinals(references: &[DesignRecipeReference]) -> Option<Vec<usize>> {
+    let mut fields = Vec::<((u64, u64), usize)>::new();
+    let mut ordinals = Vec::new();
+    let mut operand_count = 0;
+    for reference in references {
+        // The names of one counted operand share its ordinal.
+        let field = reference.operand_offset.map_or(
+            (reference.selector_offset, reference.token_offset),
+            |offset| (offset, offset),
+        );
+        let ordinal = if let Some((_, ordinal)) = fields.iter().find(|(other, _)| *other == field) {
+            *ordinal
+        } else {
+            let ordinal = if reference.has_packed_token() {
+                *ordinals.last()?
+            } else {
+                operand_count += 1;
+                operand_count - 1
+            };
+            fields.push((field, ordinal));
+            ordinal
+        };
+        ordinals.push(ordinal);
+    }
+    Some(ordinals)
+}
+
+impl DesignFaceRecipeNode {
+    pub(crate) fn has_two_side_clauses(&self) -> bool {
+        self.recipe_structure
+            .as_ref()
+            .is_some_and(|structure| structure.sides.len() == 2)
+    }
+}
+
 impl DesignFaceRecipeStructure {
     pub(crate) fn has_valid_operand_ordinals(&self, references: &[DesignRecipeReference]) -> bool {
-        let operand_count = references
-            .iter()
-            .map(|reference| (reference.selector_offset, reference.token_offset))
-            .collect::<std::collections::HashSet<_>>()
-            .len();
+        let Some(ordinals) = prefix_operand_ordinals(references) else {
+            return false;
+        };
+        let operand_count = ordinals.iter().max().map_or(0, |ordinal| ordinal + 1);
         let in_range =
             |value: i32| usize::try_from(value).is_ok_and(|ordinal| ordinal < operand_count);
         self.prelude[1] == 2
+            && self.sides.len() == 2
             && in_range(self.root)
             && in_range(self.prelude[0])
             && self.sides.iter().all(|side| {

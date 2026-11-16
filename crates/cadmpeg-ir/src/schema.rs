@@ -107,6 +107,12 @@ pub enum EntityKind {
     PhysicsScene,
     /// Solver settings.
     SolverSettings,
+    /// Declared measure.
+    DeclaredMeasure,
+    /// Point cloud.
+    PointCloud,
+    /// History body.
+    HistoryBody,
 }
 
 impl EntityKind {
@@ -161,11 +167,14 @@ impl EntityKind {
             Self::Articulation => 45,
             Self::PhysicsScene => 46,
             Self::SolverSettings => 47,
+            Self::DeclaredMeasure => 48,
+            Self::PointCloud => 49,
+            Self::HistoryBody => 50,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 48] = [
+    pub const ALL: [Self; 51] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -214,6 +223,9 @@ impl EntityKind {
         Self::Articulation,
         Self::PhysicsScene,
         Self::SolverSettings,
+        Self::DeclaredMeasure,
+        Self::PointCloud,
+        Self::HistoryBody,
     ];
 }
 
@@ -255,29 +267,24 @@ macro_rules! impl_entity_schema {
     };
 }
 
-impl_entity_schema!(crate::topology::Body, Body, id; id, kind, regions, transform, name, color, visible);
-impl_entity_schema!(crate::topology::Region, Region, id; id, body, shells);
-impl EntitySchema for crate::topology::Shell {
-    const KIND: EntityKind = EntityKind::Shell;
-    fn identity(&self) -> &str {
-        self.id.as_str()
-    }
-}
-impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance);
-impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary);
-impl_entity_schema!(crate::topology::Coedge, Coedge, id; id, owner_loop, edge, radial_next, sense, pcurves, use_curve);
-impl_entity_schema!(crate::topology::Edge, Edge, id; id, carrier, start, end, tolerance);
-impl_entity_schema!(crate::topology::Vertex, Vertex, id; id, point, tolerance);
+impl_entity_schema!(crate::topology::Body, Body, id; id, kind, transform, name, color, visible, native_ref);
+impl_entity_schema!(crate::topology::Region, Region, id; id, body, shells, native_ref);
+impl_entity_schema!(crate::topology::Shell, Shell, id; id, region, members, native_ref);
+impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance, native_ref);
+impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary, native_ref);
+impl_entity_schema!(crate::topology::Coedge, Coedge, id; id, owner_loop, edge, radial_next, sense, pcurves, use_curve, native_ref);
+impl_entity_schema!(crate::topology::Edge, Edge, id; id, carrier, ends, tolerance, native_ref);
+impl_entity_schema!(crate::topology::Vertex, Vertex, id; id, point, tolerance, native_ref);
 impl EntitySchema for crate::topology::Point {
     const KIND: EntityKind = EntityKind::Point;
     fn identity(&self) -> &str {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object);
-impl_entity_schema!(crate::geometry::Curve, Curve, id; id, geometry, parameter_range, source_object);
-impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, cage, source_object);
-impl_entity_schema!(crate::geometry::pcurve::Pcurve, Pcurve, id; id, geometry, metadata);
+impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object, native_ref);
+impl_entity_schema!(crate::geometry::Curve, Curve, id; id, geometry, parameter_range, source_object, native_ref);
+impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, cage, source_object, native_ref);
+impl_entity_schema!(crate::geometry::pcurve::Pcurve, Pcurve, id; id, geometry, metadata, native_ref);
 impl EntitySchema for crate::geometry::ProceduralSurface {
     const KIND: EntityKind = EntityKind::ProceduralSurface;
 
@@ -400,6 +407,9 @@ impl_entity_schema!(crate::physics::RigidBody, RigidBody, id; id, target, kinema
 impl_entity_schema!(crate::physics::Articulation, Articulation, id; id, root, native_ref);
 impl_entity_schema!(crate::physics::PhysicsScene, PhysicsScene, id; id, name, gravity_direction, gravity_magnitude, native_ref);
 impl_entity_schema!(crate::physics::solver::SolverSettings, SolverSettings, id; id, solver, schema, target, values, native_ref);
+impl_entity_schema!(crate::declared_measures::DeclaredMeasure, DeclaredMeasure, id; id, target, quantity, provenance, source_error, label, native_ref);
+impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, product_definition, name, sensor, positions, normals, colors, channels, native_ref);
+impl_entity_schema!(crate::history_body::HistoryBody, HistoryBody, id; id, produced_by, consumed_by, state, topology);
 impl_entity_schema!(crate::physics::Collider, Collider, id; id, target, shape, enabled, material, native_ref);
 
 #[cfg(test)]

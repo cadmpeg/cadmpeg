@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod partial_operands;
+
 use crate::records::sketch_placement::DesignSketchPlacement;
-use cadmpeg_ir::document::Model;
+use cadmpeg_ir::document::{Model, Topology};
 use cadmpeg_ir::features::DistinctMembers;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureContent;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::RegionId;
+use cadmpeg_ir::schema::rewrite::typed::TextReplacements;
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::topology::Region;
@@ -100,16 +104,16 @@ fn member_definition_preserves_the_body_transform_inside_each_placement() {
     .expect("affine transform");
 
     let ctx = cadmpeg_test_support::service_decode_context();
-    let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-    model.bodies[0].transform = Some(inner);
-    crate::f3z::merge::define_member(&ctx, &mut model, "member").unwrap();
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.geometry.bodies[0].transform = Some(inner);
+    crate::f3z::merge::define_member(&ctx, &mut ir, "member").unwrap();
     assert_eq!(
-        model.product_definitions[0].bodies,
-        [model.bodies[0].id.clone()]
+        ir.model.product_definitions[0].bodies,
+        [ir.geometry.bodies[0].id.clone()]
     );
     assert_eq!(
         outer
-            .compose(model.bodies[0].transform.unwrap())
+            .compose(ir.geometry.bodies[0].transform.unwrap())
             .unwrap()
             .rows(),
         [
@@ -119,6 +123,23 @@ fn member_definition_preserves_the_body_transform_inside_each_placement() {
             [0.0, 0.0, 0.0, 1.0],
         ]
     );
+}
+
+fn merged_member(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    member: cadmpeg_ir::CadIr,
+) -> cadmpeg_ir::CadIr {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut scope = OccurrenceScope {
+        native_text: &TextReplacements::default(),
+        ctx,
+        occurrence: "member",
+    };
+    ir.geometry
+        .extend_rewritten(member.geometry, &mut scope)
+        .unwrap();
+    ir.model.extend_rewritten(member.model, &mut scope).unwrap();
+    ir
 }
 
 #[test]
@@ -139,19 +160,19 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
     let archive = &session.archive;
     for (has_definitions, owned_after_composition) in [(true, true), (true, false), (false, false)]
     {
-        let mut member = Model::default();
+        let mut member = cadmpeg_ir::CadIr::empty();
         if has_definitions {
             crate::f3z::merge::define_member(&ctx, &mut member, "existing").unwrap();
         }
-        member.bodies = (0..2)
+        member.geometry.bodies = (0..2)
             .map(|index| Body {
                 id: BodyId::mint(format!("f3d:brep:saved-edge-body#{index}")).unwrap(),
                 kind: BodyKind::Wire,
-                regions: Vec::new(),
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             })
             .collect();
         let member_loss = crate::decode::saved_free_edge_bodies_loss(&member).unwrap();
@@ -162,16 +183,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
         if owned_after_composition {
             crate::f3z::merge::define_member(&ctx, &mut member, "member").unwrap();
         }
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.model
-            .extend_rewritten(
-                member,
-                &mut OccurrenceScope {
-                    ctx: &ctx,
-                    occurrence: "member",
-                },
-            )
-            .unwrap();
+        let mut ir = merged_member(&ctx, member);
         crate::f3z::merge::MergeSession {
             ctx: &ctx,
             scan: &scan,
@@ -181,13 +193,15 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             stack: vec!["root.f3d".to_owned()],
             members: std::collections::BTreeMap::new(),
             failed: std::collections::BTreeMap::new(),
+            scene_sources: &mut crate::scene::Sources::new(),
             operation_poses: std::collections::BTreeMap::new(),
             operation_protected: std::collections::BTreeSet::new(),
+            component_path_tables: Vec::new(),
         }
         .merge(
             &mut ir,
             &mut report,
-            &mut cadmpeg_ir::SourceFidelity::default(),
+            &mut cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b"")),
             &crate::xref::XrefTable::default(),
         )
         .unwrap();
@@ -260,25 +274,29 @@ fn merged_component_root_occurrences_become_children_of_the_outer_instance() {
 #[test]
 fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let mut merged = Model::default();
-    let mut component = Model::default();
-    component.bodies = vec![Body {
-        id: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("f3d:brep:entity#2").expect("identity grammar")],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    }];
-    component.regions = vec![Region {
-        id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
-        body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-        shells: Vec::new(),
-    }];
+    let mut merged = Topology::default();
+    let component = Topology {
+        bodies: vec![Body {
+            id: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+            kind: BodyKind::Solid,
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+            native_ref: None,
+        }],
+        regions: vec![Region {
+            id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
+            body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+            shells: Vec::new(),
+            native_ref: None,
+        }],
+        ..Topology::default()
+    };
     for ordinal in 0..2 {
         let occurrence = format!("role/occurrence-{ordinal}");
         let mut scope = OccurrenceScope {
+            native_text: &TextReplacements::default(),
             ctx: &ctx,
             occurrence: &occurrence,
         };
@@ -290,12 +308,99 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     for ordinal in 0..2 {
         let prefix = format!("f3d:xref/role/occurrence-{ordinal}/brep:entity#");
         assert_eq!(merged.bodies[ordinal].id.as_str(), format!("{prefix}1"));
-        assert_eq!(
-            merged.bodies[ordinal].regions[0].as_str(),
-            format!("{prefix}2")
-        );
         assert_eq!(merged.regions[ordinal].id.as_str(), format!("{prefix}2"));
         assert_eq!(merged.regions[ordinal].body.as_str(), format!("{prefix}1"));
+    }
+}
+
+#[test]
+fn occurrence_merge_rewrites_only_member_native_record_text() {
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::NativeRecord;
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let id = "f3d:Design1/BulkStream.dat:design-construction-operand-group#7";
+    let mut native = Native::default();
+    native.namespace_mut("f3d").arenas_mut().insert(
+        "operands".into(),
+        vec![NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new()).unwrap()],
+    );
+    let targets = super::super::native_record_targets(&native, "member");
+    let native_text = TextReplacements::build(targets.iter()).unwrap();
+    let mut scope = OccurrenceScope {
+        ctx: &ctx,
+        occurrence: "member",
+        native_text: &native_text,
+    };
+    for (source, expected) in [
+        (
+            id,
+            "f3d:xref/member/Design1/BulkStream.dat:design-construction-operand-group#7",
+        ),
+        (
+            "f3d:Design1/BulkStream.dat:design-construction-operand-group#8",
+            "f3d:Design1/BulkStream.dat:design-construction-operand-group#8",
+        ),
+    ] {
+        let profile = ProfileRef::Planar(PlanarProfileRef::Native(source.into()));
+        assert_eq!(
+            scope.rewrite(profile).unwrap(),
+            ProfileRef::Planar(PlanarProfileRef::Native(expected.into()))
+        );
+    }
+}
+
+#[test]
+fn occurrence_merge_scopes_unmaterialized_partial_pattern_references() {
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::features::patterns::{
+        curve_driven::CurveDrivenPatternParameters, PatternKind, PatternSeed, PatternTransform,
+    };
+    use cadmpeg_ir::features::PathRef;
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let source = "f3d:Design1/BulkStream.dat:design-record#91";
+    let mut row = feature("f3d:model:feature#pattern", 0);
+    row.name = Some(source.into());
+    row.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: vec![PatternSeed::Native(source.into())],
+            pattern: PatternKind::new(PatternTransform::CurveDrivenPartial {
+                parameters: CurveDrivenPatternParameters {
+                    path: Some(PathRef::Native(source.into())),
+                    ..Default::default()
+                },
+            })
+            .unwrap(),
+        }),
+    );
+    let mut model = Model::default();
+    model.features.push(row.clone());
+    for occurrence in ["left", "right"] {
+        let targets = super::super::native_record_targets(&Native::default(), occurrence);
+        let mut scoped_model = model.clone();
+        super::super::rescope_partial_pattern_sources(&mut scoped_model, occurrence);
+        let native_text = TextReplacements::build(targets.iter()).unwrap();
+        let rewritten = OccurrenceScope {
+            ctx: &ctx,
+            occurrence,
+            native_text: &native_text,
+        }
+        .rewrite(scoped_model.features.remove(0))
+        .unwrap();
+        assert_eq!(rewritten.name.as_deref(), Some(source));
+        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+            rewritten.evaluation.definition()
+        else {
+            panic!("pattern")
+        };
+        let PatternTransform::CurveDrivenPartial { parameters } = pattern.definition() else {
+            panic!("partial")
+        };
+        let expected = format!("f3d:xref/{occurrence}/Design1/BulkStream.dat:design-record#91");
+        assert_eq!(parameters.path, Some(PathRef::Native(expected.clone())));
+        assert_eq!(seeds, &[PatternSeed::Native(expected)]);
     }
 }
 
@@ -307,29 +412,27 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     let body = Body {
         id: BodyId::mint(source_id).unwrap(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("f3d:model:region#source").unwrap()],
         transform: None,
         name: Some(source_id.into()),
         color: None,
         visible: None,
+        native_ref: None,
     };
     let scoped = OccurrenceScope {
+        native_text: &TextReplacements::default(),
         ctx: &ctx,
         occurrence: "component-0",
     }
     .rewrite(body)
     .unwrap();
     assert_eq!(scoped.id.as_str(), "f3d:xref/component-0/model:body#source");
-    assert_eq!(
-        scoped.regions[0].as_str(),
-        "f3d:xref/component-0/model:region#source"
-    );
     assert_eq!(scoped.name.as_deref(), Some(source_id));
 }
 
 #[test]
 fn occurrence_merge_remaps_and_retains_native_records() {
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             42,
             crate::records::sketch_placement::DesignSketchFrameForm::MemberCompact {
@@ -385,7 +488,6 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
     let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
-        Vec::new(),
         serde_json::Map::new(),
     )
     .unwrap();
@@ -420,7 +522,7 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
         configurations[0].id(),
         "f3d:xref/component-0/configuration:entry#Design/table.dsgcfg"
     );
-    assert_eq!(configurations[0].payload(), serde_json::Map::new());
+    assert_eq!(configurations[0].payload(), &serde_json::Map::new());
 }
 
 #[test]
@@ -442,7 +544,6 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
-        Vec::new(),
         configuration_payload.clone(),
     )
     .expect("admitted configuration payload");
@@ -510,7 +611,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     );
     assert_eq!(
         merged_configurations[0].payload(),
-        configuration_payload,
+        &configuration_payload,
         "configuration text and extension map keys are source payload, not identities"
     );
 }
@@ -593,6 +694,7 @@ fn merged_documents_keep_parameter_names_and_document_local_expression_dependenc
         .extend_rewritten(
             component,
             &mut OccurrenceScope {
+                native_text: &TextReplacements::default(),
                 ctx: &ctx,
                 occurrence: "component-0",
             },
@@ -703,6 +805,7 @@ fn parameter_document(
                 record_index: u32::try_from(ordinal).unwrap(),
                 source_ordinal: u32::try_from(ordinal).unwrap(),
                 source: DesignParameterSource::User {
+                    source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                     family_discriminator: None,
                 },
                 expression: expression.into(),
@@ -827,7 +930,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         ..Default::default()
     };
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    ir.model.bodies[0].transform = Some(
+    ir.geometry.bodies[0].transform = Some(
         Transform::affine([
             [1.0, 0.0, 0.0, 3.0],
             [0.0, 1.0, 0.0, 7.0],
@@ -835,7 +938,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         ])
         .unwrap(),
     );
-    let root_body = ir.model.bodies[0].clone();
+    let root_body = ir.geometry.bodies[0].clone();
     let mut children = Vec::new();
     for index in 0..2 {
         let parent = OccurrenceId::mint(format!("f3d:model:occurrence#group-{index}")).unwrap();
@@ -889,7 +992,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             cadmpeg_core::decode::DecodeDepth::Full,
             false,
         ));
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut fidelity = cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b""));
     let merged = crate::f3z::merge::MergeSession {
         ctx: &ctx,
         scan: &scan,
@@ -899,15 +1002,17 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         stack: vec!["root.f3d".to_owned()],
         members: std::collections::BTreeMap::new(),
         failed: std::collections::BTreeMap::new(),
+        scene_sources: &mut crate::scene::Sources::new(),
         operation_poses: std::collections::BTreeMap::new(),
         operation_protected: std::collections::BTreeSet::new(),
+        component_path_tables: Vec::new(),
     }
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();
     assert_eq!(merged, 4);
-    assert_eq!(ir.model.bodies.len(), 2);
-    assert_eq!(ir.model.bodies[0], root_body);
-    assert!(ir.model.bodies[1].transform.is_none());
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    assert_eq!(ir.geometry.bodies[0], root_body);
+    assert!(ir.geometry.bodies[1].transform.is_none());
     assert_eq!(ir.model.product_definitions.len(), 2);
     let leaf_definition = ir
         .model
@@ -915,7 +1020,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         .iter()
         .find(|definition| !definition.bodies.is_empty())
         .unwrap();
-    assert_eq!(leaf_definition.bodies, [ir.model.bodies[1].id.clone()]);
+    assert_eq!(leaf_definition.bodies, [ir.geometry.bodies[1].id.clone()]);
     let graph = cadmpeg_ir::products::AssemblyGraph::new(&ir.model.occurrences).unwrap();
     let mut translations = Vec::new();
     let mut member_definitions = Vec::new();
@@ -951,7 +1056,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             cadmpeg_test_support::assembly::resolved_transform(&graph, &imported.id).unwrap();
         let body_world = world
             .compose(
-                ir.model.bodies[1]
+                ir.geometry.bodies[1]
                     .transform
                     .unwrap_or_else(Transform::identity),
             )
@@ -978,9 +1083,9 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
 
 #[test]
 fn imported_definition_bodies_keep_their_definition_frame() {
-    let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-    let body = model.bodies[0].id.clone();
-    model
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let body = ir.geometry.bodies[0].id.clone();
+    ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             id: cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:component#owned").unwrap(),
@@ -994,10 +1099,9 @@ fn imported_definition_bodies_keep_their_definition_frame() {
             sketches: Vec::new(),
             native_ref: None,
         });
-    let original = model.bodies[0].transform;
-    let mut free_body = model.bodies[0].clone();
+    let original = ir.geometry.bodies[0].transform;
+    let mut free_body = ir.geometry.bodies[0].clone();
     free_body.id = BodyId::mint("f3d:model:body#free").unwrap();
-    free_body.regions.clear();
     free_body.transform = Some(
         Transform::affine([
             [1.0, 0.0, 0.0, 20.0],
@@ -1006,13 +1110,13 @@ fn imported_definition_bodies_keep_their_definition_frame() {
         ])
         .unwrap(),
     );
-    model.bodies.push(free_body.clone());
+    ir.geometry.bodies.push(free_body.clone());
     let ctx = cadmpeg_test_support::service_decode_context();
-    let definition = crate::f3z::merge::define_member(&ctx, &mut model, "member").unwrap();
-    assert_eq!(model.bodies[0].transform, original);
-    assert_eq!(model.bodies[1], free_body);
-    assert_eq!(model.product_definitions[1].id, definition);
-    assert_eq!(model.product_definitions[1].bodies, [free_body.id]);
+    let definition = crate::f3z::merge::define_member(&ctx, &mut ir, "member").unwrap();
+    assert_eq!(ir.geometry.bodies[0].transform, original);
+    assert_eq!(ir.geometry.bodies[1], free_body);
+    assert_eq!(ir.model.product_definitions[1].id, definition);
+    assert_eq!(ir.model.product_definitions[1].bodies, [free_body.id]);
 }
 
 #[test]
@@ -1262,12 +1366,12 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
                 None,
             )
         };
-        let mut component = Model::default();
+        let mut component = cadmpeg_ir::CadIr::empty();
         let definition = define_member(&ctx, &mut component, "member").unwrap();
         let occurrence = |name: &str, parent: serde_json::Value, native: Option<&str>| {
             let mut occurrence = serde_json::from_value::<Occurrence>(serde_json::json!({
                 "id":format!("f3d:model:occurrence#{name}"),
-                "prototype":{"scope":"local", "definition":definition},
+                "prototype":{"kind":"local", "definition":definition},
                 "parent":parent, "ordinal":0, "transform":Transform::identity(),
                 "scale":[1.0, 1.0, 1.0]
             }))
@@ -1277,7 +1381,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         };
         let mut carriers = Vec::new();
         let root_native = "f3d:Design/BulkStream.dat:design-component-occurrence#4";
-        component.occurrences.push(occurrence(
+        component.model.occurrences.push(occurrence(
             "root",
             serde_json::json!({"kind":"root"}),
             keyed_root.then_some(root_native),
@@ -1312,7 +1416,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
                 "Design"
             };
             let id = format!("f3d:{stream}/BulkStream.dat:design-component-occurrence#{index}");
-            component.occurrences.push(occurrence(
+            component.model.occurrences.push(occurrence(
                 name,
                 serde_json::json!({
                     "kind":"occurrence", "occurrence":format!("f3d:model:occurrence#{parent}")
@@ -1336,21 +1440,12 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         }
         let external =
             JointOperand::external(ExternalDocument::path("other.f3d"), "object", keys.clone());
-        component.assembly_joints.push(joint(
+        component.model.assembly_joints.push(joint(
             "member",
             JointOperand::root("object", keys.clone()),
             external.clone(),
         ));
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.model
-            .extend_rewritten(
-                component,
-                &mut OccurrenceScope {
-                    ctx: &ctx,
-                    occurrence: "member",
-                },
-            )
-            .unwrap();
+        let mut ir = merged_member(&ctx, component);
         let member = MemberDefinition {
             definition: ir.model.product_definitions[0].id.clone(),
             scope: "member".into(),
@@ -1370,7 +1465,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             .unwrap();
         let placing = crate::ids::neutral_xref_occurrence_id(0, 0);
         ir.model.occurrences.push(serde_json::from_value(serde_json::json!({
-            "id":placing, "prototype":{"scope":"external", "document":ExternalDocument::path("member.f3d")},
+            "id":placing, "prototype":{"kind":"external", "document":ExternalDocument::path("member.f3d")},
             "parent":{"kind":"root"}, "ordinal":0, "transform":Transform::identity(),
             "scale":[1.0, 1.0, 1.0], "native_ref":reference.id
         })).unwrap());
@@ -1392,13 +1487,15 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
                 stack: vec!["root.f3d".into()],
                 members: std::collections::BTreeMap::from([("member.f3d".into(), member)]),
                 failed: std::collections::BTreeMap::new(),
+                scene_sources: &mut crate::scene::Sources::new(),
                 operation_poses: std::collections::BTreeMap::new(),
                 operation_protected: std::collections::BTreeSet::new(),
+                component_path_tables: Vec::new(),
             }
             .merge(
                 &mut ir,
                 &mut report,
-                &mut cadmpeg_ir::SourceFidelity::default(),
+                &mut cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b"")),
                 &table
             )
             .unwrap(),
@@ -1457,8 +1554,10 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
 #[test]
 fn product_history_owner_rescopes_feature_and_parameter_links() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let (mut component, _) = parameter_document(&ctx, 1.0);
-    let owner = crate::f3z::merge::define_member(&ctx, &mut component, "synthetic").unwrap();
+    let mut document = cadmpeg_ir::CadIr::empty();
+    document.model = parameter_document(&ctx, 1.0).0;
+    let owner = crate::f3z::merge::define_member(&ctx, &mut document, "synthetic").unwrap();
+    let mut component = document.model;
     let mut row = feature("f3d:model:feature#owned", 0);
     row.product_definition = Some(owner.clone());
     component.features.push(row);
@@ -1472,6 +1571,7 @@ fn product_history_owner_rescopes_feature_and_parameter_links() {
         .extend_rewritten(
             component,
             &mut OccurrenceScope {
+                native_text: &TextReplacements::default(),
                 ctx: &ctx,
                 occurrence: "left",
             },
@@ -1487,4 +1587,406 @@ fn product_history_owner_rescopes_feature_and_parameter_links() {
         .parameters
         .iter()
         .all(|row| row.product_definition.as_ref() == Some(rescoped)));
+}
+
+#[test]
+fn a_refused_joint_leaves_its_feature_native() {
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, PairedJointKind,
+    };
+    let joint = |id: &str, scope: &str| {
+        let mut joint = AssemblyJoint::paired(
+            JointId::mint(id).unwrap(),
+            PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [
+                JointConnector {
+                    operand: JointOperand::root("first", Vec::new()),
+                    frame: Transform::identity(),
+                    detached: false,
+                },
+                JointConnector {
+                    operand: JointOperand::root("second", Vec::new()),
+                    frame: Transform::identity(),
+                    detached: false,
+                },
+            ],
+            None,
+        );
+        joint.native_ref = Some(scope.to_owned());
+        joint
+    };
+    let mut retained_feature = feature("f3d:model:feature#retained", 0);
+    retained_feature.native_ref = Some("f3d:scope#retained".to_owned());
+    let mut refused_feature = feature("f3d:model:feature#refused", 1);
+    refused_feature.native_ref = Some("f3d:scope#refused".to_owned());
+    let mut features = [retained_feature, refused_feature];
+    let complete = std::collections::BTreeSet::from([
+        "f3d:scope#retained".to_owned(),
+        "f3d:scope#refused".to_owned(),
+    ]);
+    super::super::bind_retained_joint_features(
+        &mut features,
+        &[joint("f3d:model:joint#retained", "f3d:scope#retained")],
+        &complete,
+    );
+    assert!(matches!(
+        features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. })
+    ));
+    assert!(matches!(
+        features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
+}
+
+/// A standalone model with one insertion occurrence, one `Assemble` feature
+/// and one joint of the same scope whose first operand descends by `keys`.
+fn standalone_joint_model(keys: Vec<String>) -> (Model, cadmpeg_ir::ids::OccurrenceId) {
+    use cadmpeg_ir::ids::OccurrenceId;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, OccurrenceParent,
+        PairedJointKind, PrototypeReference,
+    };
+    let insertion = OccurrenceId::mint("f3d:model:occurrence#insertion").unwrap();
+    let mut joint = AssemblyJoint::paired(
+        JointId::mint("f3d:model:joint#standalone").unwrap(),
+        PairedJointKind::Fixed {
+            angle: None,
+            translation_offset: None,
+            angular_limits: None,
+            linear_limits: None,
+        },
+        [
+            JointConnector {
+                operand: JointOperand::occurrence(
+                    insertion.clone(),
+                    "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+                    keys,
+                ),
+                frame: Transform::identity(),
+                detached: false,
+            },
+            JointConnector {
+                operand: JointOperand::root("root", Vec::new()),
+                frame: Transform::identity(),
+                detached: false,
+            },
+        ],
+        None,
+    );
+    joint.native_ref = Some("f3d:scope#standalone".to_owned());
+    let mut assemble = feature("f3d:model:feature#standalone", 0);
+    assemble.native_ref = Some("f3d:scope#standalone".to_owned());
+    let mut model = Model::default();
+    model.features = vec![assemble];
+    model.assembly_joints = vec![joint];
+    model.occurrences = vec![Occurrence {
+        id: insertion.clone(),
+        prototype: PrototypeReference::Unresolved {},
+        parent: OccurrenceParent::Root {},
+        ordinal: 0,
+        transform: Transform::identity(),
+        linked_prototype: None,
+        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+        name: None,
+        visible: None,
+        link: None,
+        native_ref: None,
+    }];
+    (model, insertion)
+}
+
+#[test]
+fn standalone_joint_of_a_complete_scope_binds_its_feature() {
+    use cadmpeg_ir::features::FeatureOperation;
+    let (mut model, insertion) = standalone_joint_model(Vec::new());
+    let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
+    let children = std::collections::BTreeMap::new();
+    let mut losses = Vec::new();
+    super::super::rebind_joints(
+        &mut super::super::JointRows {
+            occurrences: &model.occurrences,
+            joints: &mut model.assembly_joints,
+            features: &mut model.features,
+        },
+        &children,
+        &children,
+        &complete,
+        super::super::JointRebind::CompleteScopes,
+        &mut losses,
+    );
+    assert!(losses.is_empty());
+    assert_eq!(model.assembly_joints.len(), 1);
+    assert!(model
+        .assembly_joints
+        .iter()
+        .flat_map(cadmpeg_ir::products::AssemblyJoint::connectors)
+        .any(|connector| matches!(
+            &connector.operand.container,
+            cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
+                if occurrence == &insertion
+        )));
+    assert!(matches!(
+        model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. })
+    ));
+}
+
+#[test]
+fn standalone_joint_inside_an_unmerged_document_keeps_a_nested_occurrence_path() {
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::products::OperandContainer;
+    const NESTED: &str = "ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let (mut model, insertion) = standalone_joint_model(vec![NESTED.into()]);
+    let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
+    let children = std::collections::BTreeMap::new();
+    let mut losses = Vec::new();
+    super::super::rebind_joints(
+        &mut super::super::JointRows {
+            occurrences: &model.occurrences,
+            joints: &mut model.assembly_joints,
+            features: &mut model.features,
+        },
+        &children,
+        &children,
+        &complete,
+        super::super::JointRebind::CompleteScopes,
+        &mut losses,
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::AssemblyOperandNestedPathRetained.kind()
+    );
+    let operand = &model.assembly_joints[0]
+        .connectors()
+        .next()
+        .unwrap()
+        .operand;
+    assert_eq!(
+        operand.container,
+        OperandContainer::Occurrence {
+            occurrence: insertion,
+            occurrence_path: vec![NESTED.to_owned()],
+        }
+    );
+    assert!(operand.subelements.is_empty());
+    assert!(matches!(
+        model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. })
+    ));
+}
+
+#[test]
+fn standalone_joint_with_an_unknown_merged_child_key_keeps_its_decoded_operand() {
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::ids::OccurrenceId;
+    let (mut model, insertion) =
+        standalone_joint_model(vec!["ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee".into()]);
+    let decoded = model.assembly_joints.clone();
+    let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
+    let child = OccurrenceId::mint("f3d:model:occurrence#child").unwrap();
+    let children = std::collections::BTreeMap::from([(
+        (insertion, "11111111-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned()),
+        Some(&child),
+    )]);
+    let mut losses = Vec::new();
+    super::super::rebind_joints(
+        &mut super::super::JointRows {
+            occurrences: &model.occurrences,
+            joints: &mut model.assembly_joints,
+            features: &mut model.features,
+        },
+        &children,
+        &children,
+        &complete,
+        super::super::JointRebind::CompleteScopes,
+        &mut losses,
+    );
+    assert_eq!(model.assembly_joints, decoded);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::AssemblyJointSourceBindingAssumed.kind()
+    );
+    assert!(matches!(
+        model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. })
+    ));
+}
+
+#[test]
+fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
+    use cadmpeg_ir::ids::OccurrenceId;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, OperandContainer, PairedJointKind,
+    };
+    const FIRST: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const SECOND: &str = "ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let id = |key: &str| OccurrenceId::mint(format!("f3d:model:occurrence#{key}")).unwrap();
+    let roots = [id("insertion-a"), id("insertion-b")];
+    let middles = [id("child-a"), id("child-b")];
+    let leaves = [id("leaf-a"), id("leaf-b")];
+    let children = std::collections::BTreeMap::from([
+        ((roots[0].clone(), FIRST.to_owned()), Some(&middles[0])),
+        ((roots[1].clone(), FIRST.to_owned()), Some(&middles[1])),
+        ((middles[0].clone(), SECOND.to_owned()), Some(&leaves[0])),
+        ((middles[1].clone(), SECOND.to_owned()), Some(&leaves[1])),
+    ]);
+    let instances = roots
+        .iter()
+        .chain(&middles)
+        .chain(&leaves)
+        .collect::<std::collections::BTreeSet<_>>();
+    for insertion in 0..2 {
+        let make_joint = |keys: Vec<String>| {
+            AssemblyJoint::paired(
+                JointId::mint("f3d:model:joint#descent").unwrap(),
+                PairedJointKind::Fixed {
+                    angle: None,
+                    translation_offset: None,
+                    angular_limits: None,
+                    linear_limits: None,
+                },
+                [
+                    JointConnector {
+                        operand: JointOperand::occurrence(roots[insertion].clone(), FIRST, keys),
+                        frame: Transform::identity(),
+                        detached: false,
+                    },
+                    JointConnector {
+                        operand: JointOperand::root("root", Vec::new()),
+                        frame: Transform::identity(),
+                        detached: false,
+                    },
+                ],
+                None,
+            )
+        };
+        let mut joint = make_joint(vec![FIRST.to_ascii_uppercase(), SECOND.to_owned()]);
+        let frames = joint.connectors().map(|c| c.frame).collect::<Vec<_>>();
+        let mut losses = Vec::new();
+        assert!(super::super::retain_complete_joint(
+            &mut joint,
+            &children,
+            &instances,
+            &mut losses
+        ));
+        let operand = &joint.connectors().next().unwrap().operand;
+        assert_eq!(
+            operand.container,
+            OperandContainer::Occurrence {
+                occurrence: leaves[insertion].clone(),
+                occurrence_path: Vec::new()
+            }
+        );
+        assert!(operand.subelements.is_empty());
+        assert_eq!(
+            joint.connectors().map(|c| c.frame).collect::<Vec<_>>(),
+            frames
+        );
+        assert!(losses.is_empty());
+        let mut external = make_joint(Vec::new());
+        external.connectors_mut().next().unwrap().operand = JointOperand::external(
+            cadmpeg_ir::products::ExternalDocument::path("missing.f3d"),
+            FIRST,
+            Vec::new(),
+        );
+        let mut losses = Vec::new();
+        assert!(!super::super::retain_complete_joint(
+            &mut external,
+            &children,
+            &instances,
+            &mut losses
+        ));
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+        );
+        let mut absent = make_joint(Vec::new());
+        absent.connectors_mut().next().unwrap().operand.container = OperandContainer::Occurrence {
+            occurrence: id("absent"),
+            occurrence_path: Vec::new(),
+        };
+        let mut losses = Vec::new();
+        assert!(!super::super::retain_complete_joint(
+            &mut absent,
+            &children,
+            &instances,
+            &mut losses
+        ));
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+        );
+        for (keys, ambiguous) in [
+            (vec![FIRST.to_owned(), "missing".to_owned()], false),
+            (vec![FIRST.to_owned(), SECOND.to_owned()], true),
+        ] {
+            let mut invalid = make_joint(keys);
+            let mut missing = children.clone();
+            if ambiguous {
+                missing.insert((middles[insertion].clone(), SECOND.to_owned()), None);
+            }
+            let mut losses = Vec::new();
+            assert!(!super::super::retain_complete_joint(
+                &mut invalid,
+                &missing,
+                &instances,
+                &mut losses
+            ));
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+            );
+        }
+    }
+}
+
+#[test]
+fn standalone_external_joint_binds_without_changing_source_operands() {
+    use cadmpeg_ir::products::{ExternalDocument, JointOperand};
+    let (mut model, _) = standalone_joint_model(Vec::new());
+    for (ordinal, connector) in model.assembly_joints[0].connectors_mut().enumerate() {
+        connector.operand = JointOperand::external(
+            ExternalDocument::document_id("11111111-2222-3333-4444-555555555555"),
+            format!("source-occurrence-{ordinal}"),
+            vec!["nested-source-occurrence".into()],
+        );
+    }
+    let decoded = model.assembly_joints.clone();
+    let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
+    let children = std::collections::BTreeMap::new();
+    let mut losses = Vec::new();
+    super::super::rebind_joints(
+        &mut super::super::JointRows {
+            occurrences: &model.occurrences,
+            joints: &mut model.assembly_joints,
+            features: &mut model.features,
+        },
+        &children,
+        &children,
+        &complete,
+        super::super::JointRebind::CompleteScopes,
+        &mut losses,
+    );
+    assert_eq!(model.assembly_joints, decoded);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::AssemblyJointSourceBindingAssumed.kind()
+    );
+    assert_eq!(
+        model.features[0].evaluation.definition(),
+        &FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
+            joint: decoded[0].id.clone(),
+        })
+    );
 }

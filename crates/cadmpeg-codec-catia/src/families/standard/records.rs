@@ -110,11 +110,11 @@ impl AnalyticSurfaceKind {
     }
     const fn bounds_offset(self) -> usize {
         match self {
-            Self::Plane => 3,
-            Self::Cylinder => 27,
-            Self::Cone => 27,
-            Self::Sphere => 19,
-            Self::Torus => 31,
+            Self::Plane => analytic_plane::BOUNDS - analytic_plane::MARKER,
+            Self::Cylinder => analytic_cylinder::BOUNDS - analytic_cylinder::MARKER,
+            Self::Cone => analytic_cone::BOUNDS - analytic_cone::MARKER,
+            Self::Sphere => analytic_sphere::BOUNDS - analytic_sphere::MARKER,
+            Self::Torus => analytic_torus::BOUNDS - analytic_torus::MARKER,
         }
     }
 }
@@ -244,18 +244,33 @@ struct StandardSurfaceRecordTable {
     successors: Vec<Option<usize>>,
 }
 
+fn analytic_record_fields_are_valid(brep: &[u8], prefix: &SurfacePrefix) -> bool {
+    (|| -> Option<()> {
+        let marker_length = analytic_plane::KIND + 1 - analytic_plane::MARKER;
+        let parameter_start = prefix.pos.checked_add(marker_length)?;
+        let bounds_start = prefix.pos.checked_add(prefix.kind.bounds_offset())?;
+        let parameter_bytes = bounds_start.checked_sub(parameter_start)?;
+        let mut view = View::over_retained(brep);
+        view.seek(parameter_start)?;
+        for _ in 0..parameter_bytes / std::mem::size_of::<f32>() {
+            if !view.f32_be()?.is_finite() {
+                return None;
+            }
+        }
+        face_bounds_at(brep, bounds_start)?;
+        Some(())
+    })()
+    .is_some()
+}
+
 fn standard_surface_record_table(brep: &[u8]) -> StandardSurfaceRecordTable {
     let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
-    for prefix in surface_prefixes(brep) {
-        records.insert(
-            prefix.pos - analytic_plane::MARKER,
-            StandardSurfaceRecord::Analytic(prefix),
-        );
-    }
     let mut analytic_ranges = Vec::new();
-    for record in records.values() {
-        if let StandardSurfaceRecord::Analytic(prefix) = record {
-            analytic_ranges.push((prefix.pos - analytic_plane::MARKER, record.end()));
+    for prefix in surface_prefixes(brep) {
+        let record = StandardSurfaceRecord::Analytic(prefix);
+        analytic_ranges.push((record.pos(), record.end()));
+        if analytic_record_fields_are_valid(brep, &prefix) {
+            records.insert(record.pos(), record);
         }
     }
     let mut next_analytic = analytic_ranges.iter().copied().peekable();
@@ -353,6 +368,33 @@ pub(super) fn standard_surface_record_groups(
         }
     }
     Ok(groups)
+}
+
+/// Counts source-closed surface rosters and those with valid local supports.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct SurfaceRosterCensus {
+    pub(crate) rosters: usize,
+    pub(crate) records: usize,
+    pub(crate) supported_rosters: usize,
+    pub(crate) supported_records: usize,
+}
+
+pub(crate) fn surface_roster_census(
+    ctx: &DecodeContext<'_>,
+    brep: &[u8],
+) -> Result<SurfaceRosterCensus, CodecError> {
+    let mut census = SurfaceRosterCensus::default();
+    for records in standard_surface_record_groups(ctx, brep)? {
+        census.rosters += 1;
+        census.records += records.len();
+        if let Some(support_start) = records.last().map(StandardSurfaceRecord::end) {
+            if standard_curve_supports_at(brep, records.len(), support_start).is_some() {
+                census.supported_rosters += 1;
+                census.supported_records += records.len();
+            }
+        }
+    }
+    Ok(census)
 }
 
 /// One surface roster and its positionally following, face-local support
@@ -1154,5 +1196,33 @@ mod tests {
         })
         .expect("compute the standard surface populations");
         assert_eq!(populations.len(), 1);
+    }
+
+    #[test]
+    fn surface_roster_census_distinguishes_support_from_roster_closure() {
+        let mut bytes = vec![0x34, 0x12, 0, 0, 0, 0];
+        for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x01);
+        bytes.push(0x60);
+        let census = crate::test_support::with_service_context(|ctx| {
+            super::surface_roster_census(ctx, &bytes)
+        })
+        .expect("census");
+        assert_eq!(census.rosters, 1);
+        assert_eq!(census.records, 1);
+        assert_eq!(census.supported_rosters, 0);
+        assert_eq!(census.supported_records, 0);
+
+        bytes.extend_from_slice(&[1, 0, 0, 0x00, 0x02, 0x00, 0x33, 0x36, 0, 0]);
+        let census = crate::test_support::with_service_context(|ctx| {
+            super::surface_roster_census(ctx, &bytes)
+        })
+        .expect("supported census");
+        assert_eq!(census.rosters, 1);
+        assert_eq!(census.records, 1);
+        assert_eq!(census.supported_rosters, 1);
+        assert_eq!(census.supported_records, 1);
     }
 }

@@ -41,7 +41,26 @@ fn normalizes_lines_rectangles_paths_and_resolved_text() {
     );
     assert_eq!(geometry.texts[0].text, "Resolved title");
     assert_eq!(geometry.texts[0].position, [115.0, 19.0]);
-    assert_eq!(geometry.texts[0].height.get(), 4.0);
+    assert_eq!(geometry.texts[0].height.unwrap().get(), 4.0);
+}
+
+#[test]
+fn text_without_font_size_keeps_content_and_position() {
+    let (geometry, _) = parse_svg(r#"<text x="10" y="288">cadmpeg CC0</text>"#);
+    let [text] = geometry.texts.as_slice() else {
+        panic!("one text")
+    };
+    assert_eq!(text.text, "cadmpeg CC0");
+    for (actual, expected) in text.position.get().into_iter().zip([10.0, 9.0]) {
+        assert!((actual - expected).abs() < 1.0e-12);
+    }
+    assert!(text.height.is_none());
+    for size in ["0", "-1", "invalid"] {
+        let (geometry, _) = parse_svg(&format!(
+            r#"<text x="10" y="288" font-size="{size}">text</text>"#
+        ));
+        assert!(geometry.texts.is_empty());
+    }
 }
 
 #[test]

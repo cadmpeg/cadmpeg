@@ -65,7 +65,7 @@ fn pcurve_vertex_case() -> (
     }
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for face_id in [10, 11] {
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
@@ -79,6 +79,7 @@ fn pcurve_vertex_case() -> (
                 ),
             ),
             source_object: None,
+            native_ref: None,
         });
     }
     let carriers = [10, 11]
@@ -112,6 +113,50 @@ fn pcurve_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError
     })
 }
 
+#[test]
+fn cap_ruling_zero_station_places_only_its_owned_vertex() {
+    for (directions, expected_vertex) in [([0x01, 0xf6], 1), ([0xf6, 0x01], 2)] {
+        let (mut scan, mut ir, _) = pcurve_vertex_case();
+        scan.curves.pcurves.clear();
+        scan.curves.topology_rows[0].directions = directions;
+        scan.surfaces.withheld_cap_curve_ids.insert(7);
+        scan.surfaces.withheld_cap_surface_ids.insert(10);
+        scan.curves
+            .two_chart_pcurves
+            .push(crate::curve::TwoChartPcurveSamples {
+                curve_id: 7,
+                faces: [10, 11],
+                samples: vec![[[0.0, 0.0], [0.0, 0.0]], [[1.0, 1.0], [0.0, 99.0]]],
+                offset: 0,
+            });
+        ir.geometry.surfaces.remove(0);
+        ir.geometry.surfaces[0].geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("cylinder"),
+            ),
+        );
+        crate::decode::with_service_context(|ctx| {
+            let result = solve_topological_vertices(
+                ctx,
+                &scan,
+                &ir,
+                &std::collections::BTreeMap::new(),
+                &std::collections::BTreeSet::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+            .expect("zero station");
+            assert_eq!(result.points.len(), 1);
+            assert_eq!(result.points.get(&expected_vertex), Some(&[2.0, 0.0, 0.0]));
+        });
+    }
+}
+
 fn analytic_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError> {
     let (mut scan, mut ir, carriers) = pcurve_vertex_case();
     let make_curve = |curve_id: u32, direction: [f64; 3]| cadmpeg_ir::geometry::Curve {
@@ -120,8 +165,9 @@ fn analytic_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecErr
             .expect("identity grammar"),
         geometry: line([0.0, 0.0, 0.0], direction),
         source_object: None,
+        native_ref: None,
     };
-    ir.model.curves.push(make_curve(7, [1.0, 0.0, 0.0]));
+    ir.geometry.curves.push(make_curve(7, [1.0, 0.0, 0.0]));
     let id = crate::topology::HalfEdgeId {
         curve_id: 8,
         side: crate::topology::Side::Zero,
@@ -149,7 +195,7 @@ fn analytic_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecErr
             next_edges: [8, 0],
             offset: 0,
         });
-    ir.model.curves.push(make_curve(8, [0.0, 1.0, 0.0]));
+    ir.geometry.curves.push(make_curve(8, [0.0, 1.0, 0.0]));
     crate::decode::with_service_context(|ctx| {
         solve_topological_vertices(
             ctx,

@@ -66,6 +66,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             kind_offset: 1100,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
 
             previous_history_state_id: None,
@@ -81,6 +82,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_members: None,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
@@ -1146,6 +1148,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ),
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
+                token_integer: 0,
                 design_references: vec![303],
                 ordinal: 0,
             },
@@ -1156,6 +1159,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ),
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
+                token_integer: 0,
                 design_references: vec![303],
                 ordinal: 0,
             },
@@ -1183,6 +1187,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             ),
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
+            token_integer: 0,
             design_references: vec![303],
             ordinal: 0,
         }],
@@ -1465,6 +1470,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         selector: 1,
         selector_offset: 1_101,
         token: "3".into(),
+        token_integer: 0,
         token_offset: 1,
         design_reference: 303,
         design_reference_offset: 2,
@@ -1472,6 +1478,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     });
     bind_face_operand_candidates(
         std::slice::from_mut(&mut operand),
@@ -1484,6 +1491,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ),
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
+                token_integer: 0,
                 design_references: vec![303],
                 ordinal: 0,
             },
@@ -1494,6 +1502,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ),
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("4").unwrap(),
+                token_integer: 0,
                 design_references: vec![303],
                 ordinal: 1,
             },
@@ -1504,6 +1513,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ),
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("3").unwrap(),
+                token_integer: 0,
                 design_references: vec![303],
                 ordinal: 0,
             },
@@ -1526,6 +1536,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         selector: 1,
         selector_offset: 1_201,
         token: "3".into(),
+        token_integer: 0,
         token_offset: 1_202,
         design_reference: 303,
         design_reference_offset: 1_203,
@@ -1533,6 +1544,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     }];
     direct_face.alternate_selector_candidate_faces.clear();
     direct_face.resolved_face_slots.clear();
@@ -1619,7 +1631,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         recipe_structure: Some(DesignFaceRecipeStructure {
             root: 0,
             prelude: [0, 2],
-            sides: [
+            sides: vec![
                 DesignTopologyRecipeSide {
                     header_value: 0,
                     scalars: vec![0, 1],

@@ -98,8 +98,8 @@ fn every_unselected_deltas_family_preserves_its_paired_primary_model() {
             )
             .unwrap();
         assert_eq!(
-            serde_json::to_value(&paired.ir().model).unwrap(),
-            serde_json::to_value(&baseline.ir().model).unwrap()
+            serde_json::to_value((&paired.ir().geometry, &paired.ir().model)).unwrap(),
+            serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
         );
         assert!(
             cadmpeg_ir::validate::validate_neutral(paired.ir(), Vec::new())
@@ -123,15 +123,15 @@ fn unpaired_deltas_and_schema_only_streams_contribute_no_geometry() {
         relabeled.extend_from_slice(&bytes[6 + short.len()..]);
         relabeled
     };
-    let mut schema_only = crate::test_support::test_pmarks::prefix(1);
-    schema_only.extend(crate::test_support::owned_deltas::body(36).0);
+    let mut schema_only = cadmpeg_parasolid::test_support::test_pmarks::prefix(1);
+    schema_only.extend(cadmpeg_parasolid::test_support::owned_deltas::body(36).0);
     for bytes in [
         d::deltas_point_partition_stream(),
         d::status_framed_deltas_stream(),
         d::variable_status_framed_deltas_stream(),
         transmit_file(schema_only),
-        transmit_file(crate::test_support::test_pmarks::complete(
-            crate::test_support::owned_deltas::body_stream(36),
+        transmit_file(cadmpeg_parasolid::test_support::test_pmarks::complete(
+            cadmpeg_parasolid::test_support::owned_deltas::body_stream(36),
         )),
     ] {
         let decoded = NxCodec
@@ -140,10 +140,10 @@ fn unpaired_deltas_and_schema_only_streams_contribute_no_geometry() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert!(decoded.ir().model.points.is_empty());
-        assert!(decoded.ir().model.bodies.is_empty());
-        assert!(decoded.ir().model.curves.is_empty());
-        assert!(decoded.ir().model.surfaces.is_empty());
+        assert!(decoded.ir().geometry.points.is_empty());
+        assert!(decoded.ir().geometry.bodies.is_empty());
+        assert!(decoded.ir().geometry.curves.is_empty());
+        assert!(decoded.ir().geometry.surfaces.is_empty());
         let attributes = &decoded.ir().source.as_ref().unwrap().attributes;
 
         assert_eq!(

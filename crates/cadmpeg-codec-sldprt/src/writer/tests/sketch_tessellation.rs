@@ -2,6 +2,7 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
 use crate::test_support::appearance::sldprt_with_body_and_material;
@@ -485,8 +486,14 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
         .unwrap();
         let endpoint_refs = arc.endpoint_refs.clone();
         let endpoints = [
-            cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 0.25f64.cos(), 800.0 * 0.25f64.sin()),
-            cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 1.25f64.cos(), 800.0 * 1.25f64.sin()),
+            cadmpeg_ir::math::Point2::new(
+                100.0 + 800.0 * 0.25f64.portable_cos(),
+                800.0 * 0.25f64.portable_sin(),
+            ),
+            cadmpeg_ir::math::Point2::new(
+                100.0 + 800.0 * 1.25f64.portable_cos(),
+                800.0 * 1.25f64.portable_sin(),
+            ),
         ];
         for entity in &mut ir_edit.model.sketch_entities {
             edit::replace(&mut entity.geometry, |previous| {
@@ -624,8 +631,8 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -689,8 +696,8 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -784,8 +791,8 @@ fn semantic_writer_preserves_display_list_geometry() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,

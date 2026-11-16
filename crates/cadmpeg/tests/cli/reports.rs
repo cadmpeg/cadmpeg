@@ -5,11 +5,16 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::{predicate, PredicateBooleanExt};
+use predicates::prelude::predicate;
 use tempfile::tempdir;
 
-use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
+use crate::support::fixture;
+#[cfg(feature = "creo")]
+use crate::support::geometryless_creo;
+#[cfg(feature = "rhino")]
+use crate::support::minimal_rhino_archive;
 
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn artifact_reports_cover_success_with_and_without_geometry() {
     let dir = tempdir().unwrap();
@@ -38,13 +43,13 @@ fn artifact_reports_cover_success_with_and_without_geometry() {
     assert!(value["refusal"].is_null());
     assert!(value["decode_report"].is_null());
     assert!(value["check_report"].is_object());
-    assert_eq!(value["export"]["identity"]["payload"], "native");
+    assert_eq!(value["export"]["identity"]["kind"], "native");
     assert_eq!(value["export"]["identity"]["target"], "step:ap214");
     assert_eq!(value["export"]["census"]["basis"], "target_records");
     assert!(value["export"]["census"]["counts"].is_object());
-    assert_eq!(value["export"]["write_path"]["path"], "synthesized");
+    assert_eq!(value["export"]["write_path"]["kind"], "synthesized");
     assert_eq!(
-        value["export"]["write_path"]["fidelity"]["status"],
+        value["export"]["write_path"]["fidelity"]["kind"],
         "not_provided"
     );
     assert!(value["export"]["losses"].is_array());
@@ -74,6 +79,7 @@ fn artifact_reports_cover_success_with_and_without_geometry() {
     assert!(value["export"].is_object());
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn convert_refuses_one_path_for_the_cad_file_and_command_report() {
     let dir = tempdir().unwrap();
@@ -104,8 +110,10 @@ fn convert_refuses_one_path_for_the_cad_file_and_command_report() {
     assert!(!output.exists());
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn report_write_failure_does_not_replace_a_typed_refusal() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let cube = fixture(
         dir.path(),
@@ -133,6 +141,7 @@ fn report_write_failure_does_not_replace_a_typed_refusal() {
         );
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn report_write_failure_does_not_reclassify_a_completed_conversion() {
     let dir = tempdir().unwrap();
@@ -165,6 +174,7 @@ fn report_write_failure_does_not_reclassify_a_completed_conversion() {
     assert!(fs::read(output).unwrap().starts_with(b"ISO-10303-21"));
 }
 
+#[cfg(feature = "f3d")]
 #[test]
 fn f3d_export_report_identifies_regenerated_output() {
     let dir = tempdir().unwrap();
@@ -190,7 +200,7 @@ fn f3d_export_report_identifies_regenerated_output() {
         .assert()
         .success();
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["export"]["identity"]["payload"], "native");
+    assert_eq!(value["export"]["identity"]["kind"], "native");
     assert_eq!(
         value["export"]["identity"]["target"],
         "f3d:manifest-3-2-0-0"
@@ -204,6 +214,7 @@ fn f3d_export_report_identifies_regenerated_output() {
             .is_some_and(|note| note.contains("regenerated"))));
 }
 
+#[cfg(feature = "creo")]
 #[test]
 fn reporting_commands_emit_json_only_on_stdout() {
     let dir = tempdir().unwrap();
@@ -250,6 +261,7 @@ fn reporting_commands_emit_json_only_on_stdout() {
     assert_eq!(value["command"], "inspect");
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn inspect_report_writes_summary_to_file() {
     let dir = tempdir().unwrap();
@@ -304,6 +316,7 @@ fn validate_report_writes_result_to_file() {
     assert!(value["check_report"].is_object());
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn check_classifies_and_reports_an_unsupported_dialect() {
     let dir = tempdir().unwrap();
@@ -340,6 +353,7 @@ fn check_classifies_and_reports_an_unsupported_dialect() {
     assert!(value["check_report"].is_null());
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn inspect_classifies_and_reports_an_unsupported_dialect() {
     let dir = tempdir().unwrap();
@@ -423,8 +437,8 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
     // findings under `.check_report.findings` in the written report.
     let dir = tempdir().unwrap();
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let absent = format!("{}-absent", ir.model.faces[0].surface);
-    ir.model.faces[0].surface = absent.try_into().expect("valid identity");
+    let absent = format!("{}-absent", ir.geometry.faces[0].surface);
+    ir.geometry.faces[0].surface = absent.try_into().expect("valid identity");
     let input = fixture(dir.path(), "broken.cadir.json", &ir);
     let report = dir.path().join("report.json");
 

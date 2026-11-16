@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod base;
+mod kernel;
 mod mirror;
 mod motion;
+mod nist_ctc_01;
 
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -17,7 +19,9 @@ use crate::test_support::test_fixtures::{
 use crate::InventorCodec;
 
 mod combine;
+mod sketch_graph;
 mod surface_extrusion;
+mod thicken;
 
 #[test]
 fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
@@ -42,11 +46,11 @@ fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
             .expect("sphere decode");
         assert!(decoded.report().geometry_transferred());
         let (ir, report, fidelity) = decoded.into_parts();
-        assert_eq!(ir.model.bodies.len(), 1);
-        assert_eq!(ir.model.faces.len(), 1);
-        assert_eq!(ir.model.surfaces.len(), 1);
+        assert_eq!(ir.geometry.bodies.len(), 1);
+        assert_eq!(ir.geometry.faces.len(), 1);
+        assert_eq!(ir.geometry.surfaces.len(), 1);
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
-            &ir.model.surfaces[0].geometry
+            &ir.geometry.surfaces[0].geometry
         else {
             panic!("fixture transfers a sphere")
         };
@@ -70,3 +74,5 @@ fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
         assert!(errors.is_empty(), "{methods:?}: {errors:?}");
     }
 }
+
+mod coil;

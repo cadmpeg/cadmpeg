@@ -345,7 +345,9 @@ impl Writer<'_> {
                 }
                 None => recorded.clone(),
             };
-            let body = model
+            let body = self
+                .ir
+                .geometry
                 .bodies
                 .iter()
                 .find(|candidate| &candidate.id == body_id)?;

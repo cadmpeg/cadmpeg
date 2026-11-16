@@ -100,7 +100,7 @@ fn positional_round_result() -> Result<usize, CodecError> {
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
             feature_id: 913,
-            radius: crate::legacy_feature::LegacyRoundRadius::Constant(
+            radius: crate::feature::dimensions::RoundDimensionRadius::Constant(
                 cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
             ),
             edge_ids: None,
@@ -175,6 +175,7 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
         offset: usize::try_from(surface_id).expect("fixture index fits usize"),
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: usize::try_from(surface_id).expect("fixture index fits usize"),
     };
     scan.surfaces
@@ -193,7 +194,7 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
         .expect("valid source object identity"),
         0
     );
-    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
 }
 
 #[test]
@@ -233,7 +234,7 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
         1
     );
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) =
-        ir.model.surfaces[0].geometry.solved()
+        ir.geometry.surfaces[0].geometry.solved()
     else {
         panic!("zero-major positional frame must transfer as a sphere");
     };
@@ -276,7 +277,7 @@ fn positional_sphere_is_in_millimeters_at_ir_admission() {
         )
         .expect("positional sphere transfer");
     });
-    let surface = ir.model.surfaces.first().expect("positional sphere");
+    let surface = ir.geometry.surfaces.first().expect("positional sphere");
     let Some(SolvedSurfaceGeometry::Sphere(sphere)) = surface.geometry.solved() else {
         panic!("positional sphere changed family");
     };
@@ -441,6 +442,7 @@ fn construction_copy_scan(tabulated: bool) -> crate::container::ContainerScan<'s
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 0,
         });
     scan

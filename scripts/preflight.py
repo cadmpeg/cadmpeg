@@ -8,7 +8,7 @@ checks against the merge base with the upstream default branch, and prints one
 summary line per result:
 
     preflight: PASS  branch      up to date with origin/main
-    preflight: FAIL  ir-version  IR_VERSION is 8 but 1 file(s) still pin "ir_version": "11"
+    preflight: FAIL  ir-version  IR_VERSION is 12 but 1 file(s) still pin "ir_version": "11"
       fix: ...
 
 A FAIL is a problem that review or CI rejects. A WARN asks for a human
@@ -34,6 +34,8 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+PYTHON_NAMES = ("python3", "python")
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = Path(__file__).resolve().parent
@@ -95,6 +97,9 @@ class Context:
     def run(self, command: list[str], env: dict[str, str] | None = None) -> tuple[int, str]:
         """Run a program in the tree root and return its status and combined output."""
         merged = {**os.environ, **(env or {})}
+        if command and command[0] in PYTHON_NAMES:
+            # `python3` can be a Microsoft Store stub on Windows; use the running interpreter.
+            command = [sys.executable, *command[1:]]
         process = subprocess.run(command, cwd=self.root, capture_output=True, text=True,
                                  errors="replace", env=merged)
         return process.returncode, (process.stdout + process.stderr).strip()

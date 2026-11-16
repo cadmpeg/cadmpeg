@@ -245,7 +245,7 @@ fn hole_construction_preserves_tangent_and_input_reference_wire() {
         wire.push_str(r#","input_record_indices":[378,379],"input_record_offsets":[129,134]}"#);
         let result =
             serde_json::from_str::<crate::records::feature::hole::DesignHoleConstruction>(&wire);
-        if mask == 0 || mask == 7 {
+        if mask == 0 || mask == 5 || mask == 7 {
             assert_eq!(
                 serde_json::to_string(&result.expect("complete tangent form")).expect("hole wire"),
                 wire
@@ -653,9 +653,12 @@ fn scale_center_preserves_wire_and_rejects_partial_location() {
             body_group_record_index: 102,
             center_record_index: 105,
             center_position: center,
-            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5)
-                .expect("checked fixture value"),
-            uniform_factor_offset: 21,
+            further_body_group_record_indices: Vec::new(),
+            factors: crate::records::feature::body_ops::DesignScaleFactors::Uniform {
+                factor: cadmpeg_ir::scalar::PositiveReal::new(2.5).expect("checked fixture value"),
+                offset: 21,
+            },
+            matrix_offset: None,
         };
         let expected = match center {
             None => {
@@ -1268,7 +1271,6 @@ fn coil_selection_preserves_wire_and_rejects_dependent_fields_without_identity()
         .to_string();
     assert!(error.contains("secondary_identity"));
     assert!(error.contains("curve_secondary_identity"));
-
     let face = r#"{"kind":"face_recipe","asset_id":"00000001-1111-4111-8111-111111111111","context_id":"00000002-1111-4111-8111-111111111111","recipe_record_index":3,"recipe_record_byte_offset":40,"recipe_id":"recipe","recipe_kind":"#;
     for kind in ["face", "bounded_face"] {
         for fields in [
@@ -1369,13 +1371,13 @@ fn coil_placement_derives_only_the_encoded_identity_matrix() {
 
 #[test]
 fn move_form_preserves_its_closed_integer_wire_domain() {
-    for code in [1, 5] {
+    for code in [0, 1, 2, 4, 5, 6] {
         let wire = code.to_string();
         let form: crate::records::feature::direct_face::DesignMoveForm =
             serde_json::from_str(&wire).expect("move form");
         assert_eq!(serde_json::to_string(&form).expect("move form wire"), wire);
     }
-    for code in [0, 2, 3, 4, 6, u32::MAX] {
+    for code in [3, 7, u32::MAX] {
         let error = serde_json::from_str::<crate::records::feature::direct_face::DesignMoveForm>(
             &code.to_string(),
         )
@@ -1567,7 +1569,6 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
     use crate::records::feature::work_geometry::{
         DesignVertexRecipe, DesignVertexResolution, DesignWorkPlaneConstruction,
     };
-
     let base = serde_json::json!({
         "record_index": 2, "byte_offset": 10, "class_tag": "369",
         "paired_byte_offset": 20, "paired_class_tag": "261",
@@ -1660,7 +1661,7 @@ fn feature_kind_classifies_nonempty_native_names_at_construction() {
         assert_eq!(decoded, kind);
         assert_eq!(
             matches!(kind, DesignFeatureKind::Native(_)),
-            matches!(name, "Unsupported" | "fillet" | " ")
+            matches!(name, "Esboço" | "Extrusão" | "Unsupported" | "fillet" | " ")
         );
     }
     assert!(DesignFeatureKind::try_from(String::new()).is_err());
@@ -1801,8 +1802,6 @@ fn surface_trim_sidecar_requires_a_nonempty_cell_table() {
     let entry = serde_json::json!({"record_index": 4, "record_reference_offset": 0,
         "ordinal": 1, "ordinal_offset": 0});
     let mut wire = serde_json::json!({"id": "trim", "scope_record_index": 1,
-        "selection_record_index": 2, "selection_byte_offset": 0,
-        "selection_next_record_index": 3, "selection_next_byte_offset": 0,
         "chain_records": [
             {"record_index": 3, "byte_offset": 0, "class_tag": "288", "frame_length": 11},
             {"record_index": 6, "byte_offset": 11, "class_tag": "271", "frame_length": 11}
@@ -1831,13 +1830,19 @@ fn surface_trim_sidecar_requires_a_nonempty_cell_table() {
 
 mod scalars;
 
+mod chamfer_sets;
 mod fillet_law;
+mod fillet_sets;
 
 mod combine;
 
 mod copied_bodies;
 
 mod admitted_scalars;
+
+mod revolve_targets;
+
+mod extrude_distance_tail;
 
 #[test]
 fn required_surface_operations_reject_absence() {
@@ -1962,3 +1967,34 @@ fn vertex_frame_rejects_displaced_indices_and_recipe_prefix() {
 mod three_point_planes;
 
 mod work_points;
+
+#[test]
+fn a_path_pattern_scope_keeps_its_kind_through_serialization() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let scope = |kind: DesignFeatureKind, source_kind: Option<&str>| {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            kind,
+            10,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.paired_byte_offset = draft.kind_offset + 22 + 72;
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope.source_kind = source_kind.map(str::to_owned);
+        scope
+    };
+    for (kind, source_kind) in [
+        (DesignFeatureKind::native("PathPattern"), None),
+        (DesignFeatureKind::PathPattern, Some("PathPattern")),
+    ] {
+        let original = scope(kind.clone(), source_kind);
+        let reloaded: DesignParameterScope =
+            serde_json::from_value(serde_json::to_value(&original).unwrap()).unwrap();
+        assert_eq!(reloaded.kind(), kind);
+        assert_eq!(reloaded.source_kind.as_deref(), source_kind);
+    }
+}

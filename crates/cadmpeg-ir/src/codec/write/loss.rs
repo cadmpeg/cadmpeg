@@ -71,9 +71,12 @@ impl ExportLossCode {
             }
             EntityKind::Drawing
             | EntityKind::PresentationDocument
-            | EntityKind::ViewPresentation => LossTaxonomy::MetadataNotTransferred,
+            | EntityKind::ViewPresentation
+            | EntityKind::DeclaredMeasure => LossTaxonomy::MetadataNotTransferred,
             EntityKind::SemanticAnnotation | EntityKind::PmiAnnotation => LossTaxonomy::PmiOmitted,
             EntityKind::Tessellation => LossTaxonomy::TessellationOmitted,
+            EntityKind::PointCloud => LossTaxonomy::PointCloudOmitted,
+            EntityKind::HistoryBody => LossTaxonomy::ParametricRecordOmitted,
             EntityKind::Appearance | EntityKind::AppearanceBinding => {
                 LossTaxonomy::MaterialNotTransferred
             }

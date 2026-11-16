@@ -7,13 +7,13 @@ use super::{
     ParasolidDeltasRecord, ParasolidDeltasResidualSpan, ParasolidDeltasTransmitHeader,
 };
 use crate::parasolid::{classify, ParasolidSubtype, StreamBody};
-use crate::records::deltas::{DeltasEnd, DeltasRecords};
 use crate::RETAINED_PARASOLID_STREAM_ID_PREFIX;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace, NativeRecord};
 use cadmpeg_ir::report::check::{Check, Finding};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::SourceFidelity;
+use cadmpeg_parasolid::records::deltas::{DeltasEnd, DeltasRecords};
 use serde::Serialize;
 use std::collections::BTreeMap;
 

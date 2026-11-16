@@ -4,7 +4,7 @@ use cadmpeg_core::decode::u64_from_index;
 use super::exact_hole_construction as exact_hole_construction_with_ctx;
 use super::exact_hole_face_selection;
 use super::HOLE_FACE_SELECTION_TYPE_GUID;
-use super::HOLE_POINT_DATA_TYPE_GUID;
+use crate::design::decode::scopes::point_direction::POINT_DIRECTION_TYPE_GUID;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
@@ -39,7 +39,7 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
         })
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let types = HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]);
+    let types = HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 4))]);
     let construction = exact_hole_construction_with_ctx(
         &bytes,
         &records,
@@ -71,6 +71,13 @@ fn hole_point_stream() -> (Vec<u8>, DesignParameterScope, usize, usize) {
 }
 
 fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, usize, usize) {
+    hole_point_stream_tail(version, if version == 1 { &[0x55; 13] } else { &[] })
+}
+
+fn hole_point_stream_tail(
+    version: u32,
+    class_tail: &[u8],
+) -> (Vec<u8>, DesignParameterScope, usize, usize) {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"282");
@@ -91,6 +98,8 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
     bytes.extend_from_slice(&19u32.to_le_bytes());
     if version == 4 {
         bytes.push(0x7f);
+    }
+    if matches!(version, 2 | 4) {
         for value in [-1.0_f64, -1.0, -1.0] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
@@ -100,9 +109,7 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
     bytes.push(1);
     bytes.extend_from_slice(&378u64.to_le_bytes());
     bytes.extend_from_slice(&[0; 2]);
-    if version == 1 {
-        bytes.extend_from_slice(&[0x55; 13]);
-    }
+    bytes.extend_from_slice(class_tail);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"259");
     bytes.extend_from_slice(&55u32.to_le_bytes());
@@ -136,7 +143,7 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
         &bytes,
         &records,
         &scope,
-        &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]),
+        &HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 4))]),
     )
     .expect("hole point carrier");
 
@@ -170,7 +177,7 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
         construction
             .tangent_point_data
             .as_ref()
-            .map(|tangent| tangent.prefix),
+            .and_then(|tangent| tangent.prefix),
         Some(0x7f)
     );
     assert_f64_array(
@@ -207,7 +214,7 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
         &bytes,
         &records,
         &scope,
-        &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 1))]),
+        &HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 1))]),
     )
     .expect("legacy hole point carrier");
 
@@ -236,7 +243,7 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
         construction
             .tangent_point_data
             .as_ref()
-            .map(|tangent| tangent.prefix),
+            .and_then(|tangent| tangent.prefix),
         None
     );
     assert_eq!(construction.tangent_point_data, None);
@@ -263,6 +270,199 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
             .collect::<Vec<_>>(),
         [u64_from_index(input_reference_at + 1)]
     );
+}
+
+/// The bytes that a version-four carrier stores after its counted reference
+/// run: two zero bytes and one more counted marked reference.
+const VERSION_FOUR_CLASS_TAIL: [u8; 17] = [0, 0, 1, 0, 0, 0, 1, 132, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+
+#[test]
+fn hole_construction_reads_a_version_four_class_tail_before_its_paired_header() {
+    let (bytes, scope, _, _) = hole_point_stream_tail(4, &VERSION_FOUR_CLASS_TAIL);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction = exact_hole_construction(
+        &bytes,
+        &records,
+        &scope,
+        &HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 4))]),
+    )
+    .expect("version-four carrier with its class tail");
+    assert_eq!(
+        construction
+            .input_records
+            .iter()
+            .map(|reference| reference.value)
+            .collect::<Vec<_>>(),
+        [378]
+    );
+}
+
+#[test]
+fn hole_construction_refuses_another_record_before_its_paired_header() {
+    let mut tail = Vec::new();
+    indexed_header(&mut tail, *b"300", 90);
+    for version in [1, 2, 4] {
+        let (bytes, scope, _, _) = hole_point_stream_tail(version, &tail);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        assert!(exact_hole_construction(
+            &bytes,
+            &records,
+            &scope,
+            &HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, version))]),
+        )
+        .is_none());
+    }
+}
+
+/// One version-three point-data record frame with a single input reference.
+fn point_data_frame(
+    bytes: &mut Vec<u8>,
+    record_index: u32,
+    position: [f64; 3],
+    reference_type: u32,
+) {
+    indexed_header(bytes, *b"325", record_index);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&0i32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 16]);
+    bytes.push(0);
+    for value in position {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&reference_type.to_le_bytes());
+    for _ in 0..3 {
+        bytes.extend_from_slice(&(-1.0_f64).to_le_bytes());
+    }
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&90u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    indexed_header(bytes, *b"259", record_index);
+}
+
+fn with_point_records(
+    scope: &mut DesignParameterScope,
+    bytes: &mut Vec<u8>,
+    frames: &[(u32, [f64; 3], u32)],
+) {
+    for (record_index, position, reference_type) in frames {
+        point_data_frame(bytes, *record_index, *position, *reference_type);
+    }
+    scope
+        .try_edit(|draft| {
+            let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+            values.extend(frames.iter().map(|frame| frame.0));
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(values);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+}
+
+#[test]
+fn hole_locations_read_every_point_record_in_reference_order() {
+    let (mut bytes, mut scope, _, _) = hole_point_stream();
+    with_point_records(
+        &mut scope,
+        &mut bytes,
+        &[(71, [3.0, 1.5, 2.0], 10), (70, [1.0, 1.5, 2.0], 10)],
+    );
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction = exact_hole_construction(
+        &bytes,
+        &records,
+        &scope,
+        &HashMap::from([
+            (55_u64, (POINT_DIRECTION_TYPE_GUID, 4)),
+            (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+            (71_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+        ]),
+    )
+    .expect("hole carrier with its point records");
+    let read: Vec<_> = construction
+        .locations
+        .iter()
+        .map(|location| {
+            (
+                location.record_index,
+                location.position.map(cadmpeg_ir::scalar::FiniteReal::get),
+                location.reference_type,
+            )
+        })
+        .collect();
+    assert_eq!(read, [(71, [3.0, 1.5, 2.0], 10), (70, [1.0, 1.5, 2.0], 10)]);
+    for location in &construction.locations {
+        let at = usize::try_from(location.position_offset).unwrap();
+        assert_eq!(
+            cadmpeg_core::decode::View::f64_le_at(&bytes, at),
+            Some(location.position[0].get())
+        );
+    }
+}
+
+#[test]
+fn hole_locations_keep_the_sole_input_of_a_vertex_rule_record() {
+    let (mut bytes, mut scope, _, _) = hole_point_stream();
+    with_point_records(
+        &mut scope,
+        &mut bytes,
+        &[(70, [1.0, 1.5, 2.0], 10), (71, [3.0, 1.5, 2.0], 17)],
+    );
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction = exact_hole_construction(
+        &bytes,
+        &records,
+        &scope,
+        &HashMap::from([
+            (55_u64, (POINT_DIRECTION_TYPE_GUID, 4)),
+            (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+            (71_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+        ]),
+    )
+    .expect("hole carrier with its point records");
+    let inputs: Vec<_> = construction
+        .locations
+        .iter()
+        .map(|location| {
+            location
+                .vertex_input
+                .as_ref()
+                .map(|input| (input.record_index(), input.carrier().is_none()))
+        })
+        .collect();
+    assert_eq!(inputs, [Some((90, true)), None]);
+}
+
+#[test]
+fn hole_locations_drop_the_run_when_one_point_record_does_not_read() {
+    let (mut bytes, mut scope, _, _) = hole_point_stream();
+    with_point_records(&mut scope, &mut bytes, &[(70, [1.0, 1.5, 2.0], 10)]);
+    scope
+        .try_edit(|draft| {
+            let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+            values.push(71);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(values);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction = exact_hole_construction(
+        &bytes,
+        &records,
+        &scope,
+        &HashMap::from([
+            (55_u64, (POINT_DIRECTION_TYPE_GUID, 4)),
+            (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+            (71_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+        ]),
+    )
+    .expect("hole carrier");
+    assert!(construction.locations.is_empty());
 }
 
 #[test]
@@ -353,6 +553,29 @@ const WORDED: super::ExtentLayout = super::ExtentLayout {
     control: true,
 };
 
+/// The block after the extent controls of type versions 5 and 7: u32 `1`,
+/// four counted UTF-16 names, and the u32 hole type.
+fn standard_block(names: [&str; 4], hole_type: u32) -> Vec<u8> {
+    let mut bytes = 1_u32.to_le_bytes().to_vec();
+    for name in names {
+        let units: Vec<u16> = name.encode_utf16().collect();
+        bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+        for unit in units {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&hole_type.to_le_bytes());
+    bytes
+}
+
+const NO_NAMES: [&str; 4] = ["", "", "", ""];
+const M3: [&str; 4] = [
+    "Ansi Metric M Profile",
+    "Normal",
+    "M3",
+    "Flat Head Machine Screw",
+];
+
 fn extent_payload(controls: &[u8], saved: bool) -> Vec<u8> {
     let mut bytes = vec![0, 1];
     bytes.extend_from_slice(&u32::from(saved).to_le_bytes());
@@ -432,7 +655,7 @@ fn hole_extent_refuses_other_control_spellings_and_truncation() {
         [0, 0, 0, 0, 1, 0, 0, 0],
         [0, 0, 0, 0, 0, 1, 0, 0],
         [0, 0, 0, 0, 1, 1, 2, 0],
-        [0, 0, 0, 0, 1, 1, 1, 1],
+        [0, 0, 0, 0, 1, 1, 1, 2],
     ] {
         assert!(super::hole_extent_payload(&extent_payload(&controls, true), 0, WORDED).is_none());
     }
@@ -440,6 +663,42 @@ fn hole_extent_refuses_other_control_spellings_and_truncation() {
     for end in 0..bytes.len() {
         assert!(super::hole_extent_payload(&bytes[..end], 0, WORDED).is_none());
     }
+}
+
+#[test]
+fn hole_direction_control_reads_after_the_controls_of_a_worded_extent() {
+    for control in [0, 1] {
+        let mut controls = vec![0, 0, 0, 0, 1, 1, 0, 0];
+        controls.extend_from_slice(&standard_block(NO_NAMES, 0));
+        assert_eq!(controls.len(), 4 + 28);
+        controls.push(control);
+        let bytes = extent_payload(&controls, false);
+        let extent = super::hole_extent_payload(&bytes, 0, WORDED).unwrap();
+        let read = extent.direction_control.unwrap();
+        assert_eq!(read.value, control);
+        assert_eq!(usize::try_from(read.offset).unwrap(), bytes.len() - 1);
+    }
+}
+
+#[test]
+fn hole_direction_control_is_absent_when_it_is_not_stored_or_not_valid() {
+    let mut controls = vec![0, 0, 0, 0, 1, 1, 0, 0];
+    controls.extend_from_slice(&standard_block(NO_NAMES, 0));
+    let short = extent_payload(&controls, false);
+    let extent = super::hole_extent_payload(&short, 0, WORDED).unwrap();
+    assert_eq!(extent.direction_control, None);
+
+    controls.push(2);
+    let invalid = extent_payload(&controls, false);
+    let extent = super::hole_extent_payload(&invalid, 0, WORDED).unwrap();
+    assert_eq!(extent.direction_control, None);
+    assert_eq!(extent.extent_control, Some(0));
+
+    let mut bare = vec![1, 1, 0, 0];
+    bare.extend_from_slice(&[0; 24]);
+    bare.push(1);
+    let extent = super::hole_extent_payload(&extent_payload(&bare, false), 0, BARE).unwrap();
+    assert_eq!(extent.direction_control, None);
 }
 
 #[test]
@@ -496,4 +755,181 @@ fn hole_extent_uses_the_admitted_scope_frame_without_a_point_carrier() {
             expected
         );
     }
+}
+
+#[test]
+fn a_standard_hole_reads_its_sizing_names_and_the_direction_after_them() {
+    let mut controls = vec![1, 0, 0, 0, 1, 1, 0, 1];
+    controls.extend_from_slice(&standard_block(M3, 2));
+    controls.push(1);
+    let bytes = extent_payload(&controls, false);
+    let extent = super::hole_extent_payload(&bytes, 0, WORDED).unwrap();
+    assert_eq!(extent.extent_control, Some(0));
+    let hole_type = extent.hole_type.as_ref().unwrap();
+    assert_eq!(hole_type.value, 2);
+    assert_eq!(usize::try_from(hole_type.offset).unwrap(), bytes.len() - 5);
+    let read = extent.direction_control.unwrap();
+    assert_eq!(
+        (read.value, usize::try_from(read.offset).unwrap()),
+        (1, bytes.len() - 1)
+    );
+    let standard = extent.standard.unwrap();
+    assert_eq!(
+        [
+            standard.standard.as_str(),
+            standard.fit.as_str(),
+            standard.size.as_str(),
+            standard.fastener.as_str()
+        ],
+        M3
+    );
+    let names_length = 4 * 4 + 2 * M3.iter().map(|name| name.len()).sum::<usize>();
+    assert_eq!(
+        usize::try_from(standard.offset).unwrap(),
+        bytes.len() - 1 - 4 - names_length
+    );
+}
+
+#[test]
+fn hole_type_metadata_roundtrips_and_rejects_an_unknown_type() {
+    use crate::records::feature::hole::DesignHoleExtent;
+    let legacy: DesignHoleExtent =
+        serde_json::from_value(serde_json::json!({"extent_control":0})).unwrap();
+    assert_eq!(legacy.hole_type, None);
+    for value in [0, 1, 2] {
+        let encoded =
+            serde_json::json!({"extent_control":0,"hole_type":{"value":value,"offset":17}});
+        let extent: DesignHoleExtent = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(extent.hole_type.as_ref().unwrap().value, value);
+        assert_eq!(serde_json::to_value(extent).unwrap(), encoded);
+    }
+    assert!(serde_json::from_value::<DesignHoleExtent>(
+        serde_json::json!({"hole_type":{"value":3,"offset":17}})
+    )
+    .is_err());
+}
+
+#[test]
+fn the_standard_flag_must_agree_with_the_sizing_names() {
+    for (flag, names) in [(0, M3), (1, NO_NAMES), (1, ["", "Normal", "M3", "Screw"])] {
+        let mut controls = vec![0, 0, 0, 0, 1, 1, 0, flag];
+        controls.extend_from_slice(&standard_block(names, 2));
+        controls.push(1);
+        let extent =
+            super::hole_extent_payload(&extent_payload(&controls, false), 0, WORDED).unwrap();
+        assert_eq!(extent.extent_control, Some(0), "flag {flag}");
+        assert_eq!(extent.direction_control, None, "flag {flag}");
+        assert_eq!(extent.standard, None, "flag {flag}");
+    }
+}
+
+#[test]
+fn a_block_without_its_one_word_or_with_another_hole_type_reads_no_direction() {
+    for (one, hole_type) in [(0_u32, 0_u32), (2, 0), (1, 3)] {
+        let mut block = standard_block(NO_NAMES, hole_type);
+        block[..4].copy_from_slice(&one.to_le_bytes());
+        let mut controls = vec![0, 0, 0, 0, 1, 1, 0, 0];
+        controls.extend_from_slice(&block);
+        controls.push(1);
+        let extent =
+            super::hole_extent_payload(&extent_payload(&controls, false), 0, WORDED).unwrap();
+        assert_eq!(
+            extent.direction_control, None,
+            "one {one}, hole type {hole_type}"
+        );
+    }
+    for hole_type in 0..=2 {
+        let mut controls = vec![0, 0, 0, 0, 1, 1, 0, 0];
+        controls.extend_from_slice(&standard_block(NO_NAMES, hole_type));
+        controls.push(1);
+        let extent =
+            super::hole_extent_payload(&extent_payload(&controls, false), 0, WORDED).unwrap();
+        assert!(extent.direction_control.is_some(), "hole type {hole_type}");
+        assert_eq!(extent.hole_type.unwrap().value, hole_type);
+    }
+}
+
+#[test]
+fn a_sizing_name_longer_than_the_bound_reads_no_direction() {
+    let long = "M".repeat(super::MAX_HOLE_STANDARD_NAME + 1);
+    for (names, read) in [
+        (["Ansi", "Normal", &long[1..], "Screw"], true),
+        (["Ansi", "Normal", long.as_str(), "Screw"], false),
+    ] {
+        let mut controls = vec![0, 0, 0, 0, 1, 1, 0, 1];
+        controls.extend_from_slice(&standard_block(names, 0));
+        controls.push(1);
+        let extent =
+            super::hole_extent_payload(&extent_payload(&controls, false), 0, WORDED).unwrap();
+        assert_eq!(extent.direction_control.is_some(), read);
+    }
+}
+
+#[test]
+fn the_standard_flag_is_refused_without_the_leading_word() {
+    let mut controls = vec![1, 1, 0, 1];
+    controls.extend_from_slice(&standard_block(M3, 2));
+    controls.push(1);
+    assert!(super::hole_extent_payload(&extent_payload(&controls, false), 0, BARE).is_none());
+}
+
+#[test]
+fn hole_construction_reads_version_two_tangent_data_without_a_prefix() {
+    let (mut bytes, mut scope, position_at, input_reference_at) =
+        hole_point_stream_tail(2, &[0x55; 17]);
+    with_point_records(&mut scope, &mut bytes, &[(70, [1.25, -2.5, 3.75], 6)]);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction = exact_hole_construction(
+        &bytes,
+        &records,
+        &scope,
+        &HashMap::from([
+            (55_u64, (POINT_DIRECTION_TYPE_GUID, 2)),
+            (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+        ]),
+    )
+    .expect("version-two hole point carrier");
+    assert_f64_array(
+        construction
+            .position
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.25, -2.5, 3.75],
+    );
+    assert_eq!(construction.position_offset, u64_from_index(position_at));
+    assert_f64_array(
+        construction
+            .direction
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 0.0, 1.0],
+    );
+    assert_eq!(construction.reference_type, 19);
+    let tangent = construction.tangent_point_data.as_ref().unwrap();
+    assert_eq!(tangent.prefix, None);
+    assert_eq!(tangent.data.offset, 93);
+    assert_f64_array(
+        tangent.data.value.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [-1.0; 3],
+    );
+    assert_eq!(
+        construction
+            .input_records
+            .iter()
+            .map(|input| (input.value, input.offset))
+            .collect::<Vec<_>>(),
+        [(378, u64_from_index(input_reference_at + 1))]
+    );
+    assert_eq!(input_reference_at, 121);
+    let points = construction.entry_points().unwrap();
+    assert_eq!(points.len(), 1);
+    assert_f64_array(
+        points[0].map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.25, -2.5, 3.75],
+    );
+    assert_eq!(construction.drilling_direction(0), Some([0.0, 0.0, -1.0]));
+    let wire = serde_json::to_string(&construction).unwrap();
+    assert_eq!(
+        serde_json::from_str::<crate::records::feature::hole::DesignHoleConstruction>(&wire)
+            .unwrap(),
+        construction
+    );
 }

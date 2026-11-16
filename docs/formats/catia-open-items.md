@@ -38,14 +38,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The 79-file reference population has no required legacy catalog opener and therefore no legacy role-selector population. The selector bytes in constructed framing tests remain unnamed; their following field codes do not supply a role mapping.
 
-### DI-03. Part-container object-graph ownership
-
-**Question.** How does an outer `Data` declaration's 16-byte identifier select the physical stream containing the part's design-history object graph?
-
-**Known.** `catia.md` §3.1 "The outer logical stream named `Data`" defines concrete/base class declarations and their identifiers. `CATFeatCont` names a base class of `CATPrtCont`, directly or through `CATProdCont`. This class ancestry does not join object graphs. `catia.md` §7.3 "An object graph is preceded by" defines object-graph framing, entity identity, structural owner groups, and source-schema selection. Class names, structural owner groups, and physical stream ownership are distinct incidences.
-
-**Need.** We must know the identifier-to-stream mapping across directory name forms and establish unique complete graph-extent containment before assigning the part's modeling scope.
-
 ### DI-04. Opaque inline values and head-slot namespaces
 
 **Question.** What roles do the values in opaque childless `7C09` bodies have, and which complete productions establish the namespace of the second reference in compact lead-`12` and lead-`52` heads?
@@ -176,6 +168,28 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production.
 
+**Conflict.** FTC-07 has two native scalar candidates with value `0.762`, the same decoded framing, and the same design-object owner. Its STEP twin assigns `0.762 mm` to a parallelism tolerance and to a surface-profile tolerance with different targets. Contextual entity references select the two scalars and distinct geometry-reference chains. The first chain reaches `ShortBrpLocation` label `2(E,227)`. The second selects an aggregate with 32 members; one member reaches label `2(E,220)`, and recursive traversal reaches 33 locations. The second record also selects a `0.127` scalar and fields named `Seg3TolNumValue` and `Seg3TolTabValue`. This supports a composite-profile candidate. The subtype, datum references, and topology targets remain unresolved.
+
+### DI-29. Sheet topology roots
+
+**Question.** Which native records own sheet bodies and their surface representations?
+
+**Known.** FTC-07 has one FBB group with 304 face rows. `SurfacicReps` supplies analytic carriers for 284 of those faces. Its STEP twin contains a 304-face solid and two separate one-face sheets. The Fill Boundary field selects the sketch by both entity reference and persistent key. Six native line programs form two directed triangular components in the sketch chart. The source endpoint references select the six shared point records. The chart lifts the components to the STEP sheet vertices; the largest line-to-point residual is `0.000000942 mm`. The two reconstructed sheet areas are `7.7961625330 mm²` and `7.7961620861 mm²`, versus `7.7961625247 mm²` and `7.7961620847 mm²` in STEP. A seventh line extends beyond the two components and has a different management-flag field. The decoder transfers independent closed components as sheet bodies and reports `topology.sheet-components-inferred` for member exclusion and result grouping.
+
+**Need.** Establish the management-flag and construction-state meanings and the Fill result grouping. Transfer the source-selected chart and directed boundary uses with their identity encoding.
+
+**Conflict.** The current owner-first head interpretation groups records by runtime class. The paired definition suffix identifies that class; the next head operand selects the owner. Compact references and escaped `80` references use different identity encodings. Applying a one-based correction to the escaped form selects the wrong owner or a sketch itself.
+
+### DI-30. Source-schema selector indexing
+
+**Question.** Which source-schema identity and catalog index does each compact or fixed-width selector use, and how does a selected value program bind to its owner?
+
+**Known.** `catia.md` §7.3 defines the current fixed-width selector lookup and the value-chain productions. FTC-07 has compact definition bytes `F3 F4` on both `0.762` scalar candidates. Reading each byte as a one-based identity selects the catalog entries `LENGTH` and `TolNumValue`. A fixed selector `324` on a `0.127` scalar selects `RefTolNumValue` under the same interpretation.
+
+**Need.** Resolve complete selector and value-program framing across definition, value, and suffix fields. Preserve each decoded scalar and its source owner when changing a lookup. Establish contextual entity-reference encoding independently of schema indexing.
+
+**Conflict.** The current lookup selects the catalog entry at the stored fixed-width ordinal. The one-based interpretation selects the preceding entry and gives scalar-compatible roles for these controls. A partial change also alters the number of selectors in a definition and changes downstream value-chain admission.
+
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-02. Rolling-ball scalar-jet semantics and tail control
@@ -194,13 +208,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Establish the metadata meaning through a controlled producer save that measures the exact streamed objects. Do not derive it from partial allocation ownership or assign a link-count meaning from distribution alone.
 
-**Note.** The canonical A5 class-`32` header does not select a rolling-ball variant. Its generic meaning also remains unknown. A controlled producer save that measures the exact streamed object must establish the meaning before a fresh writer can derive the header value.
+**Note.** The canonical A5 class-`32` header does not select a rolling-ball variant. Its generic meaning also remains unknown. A controlled producer save that measures the exact streamed object must establish the meaning before a fresh writer can derive the header value. A class-`5b` frame candidate has a four-byte compact header and a count-one reference to the following class-`61` roster. Its suffix reference interpretations select unrelated record classes across peer frames; suffix semantics and allocation continuity remain unresolved.
 
 ### SN-04. Class-`0x5e` terminal byte
 
 **Question.** What does the terminal byte of a `b2`, `b3`, or `b4 03 5e` record control?
 
-**Known.** The width-coded terminal is a single-byte `allocation_ref` with the seven admitted value/form pairs `(0,backward_distance)`, `(0,selector2)`, `(8,backward_distance)`, `(8,selector2)`, `(9,backward_distance)`, `(10,backward_distance)`, and `(10,selector2)`, encoded as `01`, `02`, `21`, `22`, `25`, `29`, and `2a`. The object-stream record additionally admits `(9,selector2)`, encoded as `26`. The raw byte and decoded value/form are retained independently of the endpoint identities, and the terminal exhausts the payload after the five references.
+**Known.** The width-coded terminal is a single-byte `allocation_ref` with the seven admitted value/form pairs `(0,backward_distance)`, `(0,selector2)`, `(8,backward_distance)`, `(8,selector2)`, `(9,backward_distance)`, `(10,backward_distance)`, and `(10,selector2)`, encoded as `01`, `02`, `21`, `22`, `25`, `29`, and `2a`. The object-stream record additionally admits `(9,selector2)`, encoded as `26`. The raw byte and decoded value/form are retained independently of the endpoint identities. The terminal exhausts the payload after either four or five complete references. The separate four-reference native record retains its complete source frame without assigning operand roles or neutral topology.
 
 **Need.** We must determine what the decoded value means, whether it has any writer-level relation to a successor definition or carrier construction, and whether the four-reference width-coded variant has the same role. Do not use the local successor-layout correlation as a universal endpoint-orientation rule.
 
@@ -232,13 +246,37 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Resolve scalar operands through an independently bound source-local owner before applying the parameter relation to a carrier. Obtain a complete witness before admitting any selector outside the listed grammar, including `0986`.
 
-### SN-08. Class-`0x25` operand namespaces
+### SN-39. Scalar parameter-map fit-tolerance units
 
-**Question.** Which source-local curve representations do scalar class-`0x25` allocation operands reference, and what do the separate multi-operand productions encode?
+**Question.** Does the scalar class-`25` fit tolerance bound Cartesian displacement, a representation parameter, or a scaled error measure?
 
-**Known.** `catia.md` §6.3 "A B-family scalar class-`25` parameter map" defines the complete affine and sampled maps, allocation addressing forms, sites, and fit tolerance. B-family class `25` and A8 class `25` have separate headers and payloads. Two-operand scalar maps retain exact sample pairing and source positions. The separate A8 sampled parameter map is defined in §6.7.
+**Known.** `catia.md` §6.3 "Every scalar is finite. Lead `0a` appends" defines a finite nonnegative fit-tolerance field distinct from signed accuracy. The operands select parameter representations. For corroborated planar shared edges the decoder interprets that tolerance as a model-space bound in mm and reports `geometry.parameter-map-accuracy-inferred`.
 
-**Need.** Bind scalar operands through an independently resolved local owner before applying a map to a carrier. Resolve the multi-operand payloads beginning `83` or `84` separately. Obtain a complete witness before admitting an unlisted scalar selector.
+**Need.** Author controlled changes to geometric scale and parameter scale independently. Determine which scale changes the tolerance before assigning it a physical unit in the format model.
+
+**Conflict.** The decoder's planar repair uses a model-space interpretation while the format model leaves the field's unit unresolved.
+
+
+### SN-08. Class-`0x25` remaining allocation forms
+
+**Question.** Which allocation identities do the remaining scalar class-`0x25` operand forms select, and what do the separate multi-operand productions encode?
+
+**Known.** `catia.md` §6.3 "A B-family scalar class-`25` parameter map" defines the complete affine and sampled maps, allocation addressing forms, sites, fit tolerance, and adjacent class-`06` use-pair framing. The same section defines the target and source representation order and the width-coded allocation addresses. B-family class `25` and A8 class `25` have separate headers and payloads. Two-operand scalar maps retain exact sample pairing and source positions. The separate A8 sampled parameter map is defined in §6.7. An A-family scalar sampled map can carry more than twelve site pairs. Its operands select the same representations as its class-`62` owner occurrences.
+
+**Need.** Transfer the wider A-family sampled map and its selected representations. Establish the address semantics for the remaining operand forms through independent owner and carrier relations. Resolve the multi-operand payloads beginning `83` or `84` separately. Obtain a complete witness before admitting an unlisted scalar selector.
+
+**Conflict.** A record-distance reading and a weighted-address reading can select different wrappers for a backward-distance operand. Their parameter ranges do not distinguish the alternatives when the selected wrappers have no evaluable domain.
+
+In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands. Two candidate map-to-side matches have matching source intervals and adjacent face carriers. Their chart-side operands are `2` and `6`, and their respective map source operands are `7650` and `7659`. A single additive offset would require both `7648` and `7653` to hold both matches. The 80 chart-side frames and 439 distinct source-scoped records selected by resolved edge endpoint references form disjoint sets.
+
+### SN-40. Overlapping three-reference endpoint station tags
+
+**Question.** Which layout applies to an 18-byte lead-`80` incidence tail when both the first scalar's tag position and the final tag position hold a compact code?
+
+**Known.** `catia.md` §6.4 "The following incidence tails preserve separate parameter gauges" defines the first-tag and final-tag layouts when each has a unique tag position. Both guards match the tail `80 <0.5:f64le> 05 <f64le bits 3d00000000000000>`. The decoder keeps a valid first-tag reading, otherwise takes a valid final-tag reading, and reports `topology.endpoint-station-reading-inferred` with the selected reading and parameter.
+
+**Need.** Obtain a real-file witness with an independently established endpoint station that distinguishes the two valid readings. Determine whether an owner relation or an additional selector identifies the layout.
+
 
 ### SN-09. A8 parameter-map interpolation and additional operand productions
 
@@ -252,7 +290,7 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Question.** Which serialized relation identifies a consolidated pcurve's geometry factory and binds its remaining persistent support tags to identity-bearing records?
 
-**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding, the unique embedded type-`3` cylinder binding, and the unique standard `00 33` carrier binding. Before the standard-carrier lookup, §7.5 outer alias rows canonicalize a raw `op1` tag only when exactly one retained alias row supplies one canonical surface-roster tag. Direct surface-support rows preserve their tag; grouped non-surface rows require one direct row in the same exact group. Duplicate raw tags, duplicate group targets, missing group targets, unknown geometry, and failed endpoint lifts remain unresolved. B5 object-stream references and allocation operands remain separate namespaces.
+**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding, the unique cylinder compact-header operand binding, and the unique standard `00 33` carrier binding. Before the standard-carrier lookup, §7.5 outer alias rows canonicalize a raw `op1` tag only when exactly one retained alias row supplies one canonical surface-roster tag. Direct surface-support rows preserve their tag; grouped non-surface rows require one direct row in the same exact group. Duplicate raw tags, duplicate group targets, missing group targets, unknown geometry, and failed endpoint lifts remain unresolved. B5 object-stream references and allocation operands remain separate namespaces.
 
 `catia.md` §6.3 "The compact tag is separate" defines factory-local tag scope and the separate addressing forms. Complete consolidated analytic and freeform carrier payloads without their own persistent surface tag supply geometry through independent construction or geometric witnesses.
 
@@ -260,15 +298,17 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Conflict.** A unique class-`19` record with tag 125 and a pcurve with `op1=125` occupy the same source extent, but their U intervals differ and the pcurve is not constant in V. Distinct tags 113 and 126 lift to the same five-site geometric locus through different cylinder charts. Same-source containment, numeric uniqueness, and geometric coincidence do not identify the owning factory or object.
 
+**Note.** In FTC-07, class-`5f` and class-`62` owner references bind two class-`20` jets to consecutive spherical edge uses. Each jet interval equals its class-`25` source interval. Scaling the jet coordinates by the sphere radius makes both lifts follow their edge curves. The class-`06` compressed station controls need an independent decoding. The solid area and volume remain unavailable because other face curves and orientation relations also fail measurement.
+
 ### SN-15. Additional standard-circle branch relations
 
-**Question.** Which native incidence or chart relation selects a standard circle's edge interval when the admitted cylinder, torus, and paired-support pcurve witnesses do not select one branch?
+**Question.** Which native incidence or chart relation selects a standard circle's edge interval when the admitted witnesses in `catia.md` §5.8 leave the branch unresolved?
 
-**Known.** `catia.md` §5.8 "Cylinder and torus payloads use" identifies their witness point as the trimmed-face AABB center and requires the carrier-specific chart and midpoint invariants. The same bounds block exists on plane, cone, and sphere records. A box center is a spatial bound, independent of an edge's angular interval.
+**Known.** `catia.md` §5.8 "Cylinder and torus payloads use" identifies their witness point as the trimmed-face AABB center and defines a branch when one candidate's exact extrema fit all available incident-face boxes. The same bounds block exists on plane, cone, and sphere records. A box center is a spatial bound, independent of an edge's angular interval.
 
 **Need.** Establish a source-bound parameter or boundary incidence for the remaining branches. Require independent interior-arc verification and agreement between incident carriers before extending the witness relation.
 
-**Conflict.** In `collet.CATPart`, four cone-face AABB centers select the complement of the arcs on edges 148, 231, 240, and 241. Independent sibling STEP circle frames, endpoints, and traversal senses reproduce the existing selected arcs within `4.506e-7` mm; each complement's midpoint differs by 11.5 mm. Center-azimuth containment alone is not an admitted cone branch relation.
+**Conflict.** In FTC-07, a cylinder face's AABB-center azimuth lies about `1.38e-7` radians beyond an edge endpoint. Strict angular containment selects the complementary arc, whose extrema exceed the face box by more than 3 mm. The STEP twin's short arc and the native face box select the other interval.
 
 ### SN-17. Unbound fixed-nine carrier context
 
@@ -296,11 +336,11 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 ### SN-23. Class-`0x61` roster controls and member identities
 
-**Question.** Which owning contexts select roster controls `3` and `8`, and how do source-local member references select final topology outside independently closed domains?
+**Question.** Which owning contexts select roster controls `3` and `8`, and which native relation selects the current result from multiple valid body roots?
 
-**Known.** `catia.md` §6.4 "Member bits retain serialized occurrence order" defines the reference forms, packed control, occurrence bits, and closure. Source-closed class-`65`/`60`/`61` chains with a one-child class-`60` owner use control `1`. A one-child allocation list does not by itself identify the owning domain. Controls `3` and `8` are separate roster selectors without an assigned domain, location, or body-kind meaning.
+**Known.** `catia.md` §6.4 "Member bits retain serialized occurrence order" defines the reference forms, packed control, occurrence bits, and closure. Source-closed class-`65`/`60`/`61` chains with a one-child class-`60` owner use control `1`. A one-child allocation list does not by itself identify the owning domain. The wide control-`1` roster binds its members through the allocation widths in the frame headers. Control `3` identifies the sheet-group roster form in §6.4, with member orientation established in the native rolling-ball chart. Other carrier charts use inferred parity. The owning domain of control `8` remains open.
 
-**Need.** Resolve the owning domain and every member in its allocation namespace before binding final topology. Verify the bit's orientation context relative to both the domain and the member carrier. Establish a separate selector oracle for controls `3` and `8`.
+**Need.** Resolve the active-result relation from the feature or container data. Verify chart parity for additional carrier forms. Establish a selector oracle for control `8`.
 
 **Conflict.** A source-local 53-member roster and the current 700-face shell have different cardinalities. Descending numeric reference order agrees with six independent face-orientation sequences, but numeric order alone does not supply an allocation-to-standard identity relation.
 
@@ -324,13 +364,21 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Question.** Which allocation-scoped relation maps a closed owner boundary to the standard face and edge-support records?
 
-**Known.** `catia.md` §6.4 "A fixed-nine packet has a closed owner-boundary cycle" defines the typed cycle and its endpoint closure. The fixed-nine and counted-owner grammars preserve distinct reference forms and tails. The class-`5b` interval prefix and class-`5c` parallel reference/item lane have bounded structure; neither assigns a standard support identity. A 79-file source sweep contains 94 contiguous ten-record boundary blocks, of which 86 close under the five-reference edge grammar. The other eight use the separate four-reference edge production. A broader nine-allocation-reference sweep contains 135 closed four-edge graphs: 131 have five-byte tails and four have 62-byte tails. The fixed-nine native route retains two of the four long-tail graphs; the other two use the counted allocation-reference grammar. These populations have different admission rules.
+**Known.** `catia.md` §6.4 "A fixed-nine packet has a closed owner-boundary cycle" defines the typed cycle and its endpoint closure. The fixed-nine and counted-owner grammars preserve distinct reference forms and tails. The counted numeric-tail and adjacent A5 chart production constrain a standard face carrier through its stored bounds and vertices. The class-`5b` interval prefix and class-`5c` parallel reference/item lane have bounded structure; neither assigns a standard support identity. A 79-file source sweep contains 94 contiguous ten-record boundary blocks, of which 86 close under the five-reference edge grammar. The other eight use the separate four-reference edge production. A broader nine-allocation-reference sweep contains 135 closed four-edge graphs: 131 have five-byte tails and four have 62-byte tails. The fixed-nine native route retains two of the four long-tail graphs; the other two use the counted allocation-reference grammar. These populations have different admission rules.
 
 **Need.** Establish a source-closed allocation bridge to standard support identities. Assign the class-`5b` interval frame and suffix, class-`5c` item and terminal meanings, and the remaining owner-tail controls from an independent semantic relation. Broader counted-packet cycle projection requires its own complete endpoint and source-closure rules.
 
 **Conflict.** The proposed universal face-node offset `target − final_owner_reference = m + 1` for a second owned-child operand `m ≥ 2` has three source counterexamples: spray-bottle at `369117` gives `m=2`, difference `0`; NIST CTC 01 at `1887263` and `1920192` gives `m=6`, difference `−7`. The bounded `27 03`/`27 05` prelude with difference `+10` remains a separate admitted relation. Numerical overlap across source namespaces does not establish an identity join.
 
 **Note.** Existing native retention passes full model checking for 5,214 copied control frames and 19,277 copied owner frames. Both existing typed boundary cycles match independently reconstructed source endpoints. Unassigned meanings remain open; no cross-source geometry binding follows from these structural results.
+
+### SN-38. Two-edge sheet face orientation
+
+**Question.** Which native relation assigns the absolute face sense of a closed two-edge sheet relative to its surface chart?
+
+**Known.** The class-`62` complement relation determines the endpoint pairing in four isolated faces. The curved face has forward sense in CATIA STEP; two selector-`d8` planar faces have reversed sense. Both planar face boundaries and areas agree with native pcurve lifts independently of their sense. The last singleton class-`61` record before the boundary owner has occurrence bit one on the curved face and bit zero on both selector-`d8` planar faces; the independent tilted planar face has bit one.
+
+**Need.** Prove the last singleton class-`61` to selected-face identity beyond an isolated one-face source and establish its chart-parity rule for additional surface carriers. A third tilted planar face uses carrier and pcurve productions outside the currently decoded variants.
 
 ## 4. Object stream
 
@@ -354,11 +402,30 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 ### OS-05. Object-stream outward-shell sign
 
-**Question.** Which source field gives the outward-shell sign?
+**Question.** Which source ownership and chart relations assign absolute
+face-to-carrier orientation, and how do loop controls and signed shell members
+participate in that relation?
 
-**Known.** `catia.md` §6.7 "**Object-stream topology:**" defines the radial orientation equations used to select a consistent neutral shell gauge.
+**Known.** `catia.md` §6.7 defines the separate loop-location controls,
+source-closed ownership payloads, and the bounded selected-plane signed-member
+and chart composition. A loop's first control alone does not establish
+outward face sense. Native outer-cylinder and negative-X-cap records supply
+counterexamples to a universal primary-control rule. A raw loop control,
+chart handedness, face occurrence, and outward shell orientation are distinct
+relations. The selected standard-plane rule does not establish a universal
+member-sign rule for other carriers or owners.
 
-**Need.** We must know the source sign to preserve native shell orientation.
+**Need.** Establish the complete selected owner, occurrence, and chart
+composition for each supported domain. Preserve the bounded standard-plane
+mapping. Determine an independent absolute orientation before transferring
+B5 face sense; do not invert all primary controls or replace them with an
+unqualified signed-member rule.
+
+**Conflict.** B5 `native_carrier_face_sense` still assigns neutral face sense
+from the unique outer loop's first control across its admitted carriers,
+with an additional cone chart-parity factor. That positive rule lacks a
+complete outward-orientation contract. Standard-family topology can use a
+different, independently constrained orientation route.
 
 ### OS-06. Object-stream edge terminal controls
 
@@ -368,15 +435,13 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** We must determine the terminal's selection rule and the allocation context that selects its value and form. Equal edge geometry and endpoint incidences do not supply that rule. A fresh native writer needs evidence for the terminal; existing records retain their exact byte.
 
-## 5. Zero-entity `a9 03`
+### OS-16. Binary64 values in inline entity bodies
 
-### ZE-05. Zero-entity ownership-root selection
+**Question.** Which inline entity-body bytes are `E6 <bits:u64le>` binary64 fields, so that an `EA` among their value bytes is not an identity delimiter?
 
-**Question.** How does a zero-entity stream select its ownership root when more than one face-roster/shell/body triple is structurally valid?
+**Known.** `catia.md` §7.3 "An object graph is preceded by" defines the entity-table run, its `DE` separator, and the unique strictly increasing identity path. Inside an inline body, only `32` five-byte atoms and `FE F6` fixed frames hide `EA` bytes from the path. A complete record run can precede `DE`, a `7C08` graph with the same record count, a `7C0B` value block, and its `7C02` catalog in the declared `CATPrtCont` content stream, while its final inline record has two `EA` candidates above the previous identity: the identity at body offset 7 and an `EA` that is the eighth byte of a nine-byte `E6` field. The path is then not unique, so the graph is not detected and the part has no modeling scope. When every inline `E6` begins a nine-byte field, other complete graph runs lose identities, because some inline bodies have an `E6` byte that is not a binary64 tag before their identity.
 
-**Known.** `zero_entity_ownership_roots` recognizes every contiguous `[0x6142, 0x6006, 0x6508]` triple with checked fields and retains the candidates in source order. The neutral zero-entity route binds ownership only when exactly one candidate exists. Multiple candidates remain native and do not select a body or shell.
-
-**Need.** We must know the terminal/root identity rule or reject multiple valid ownership triples before transferring body and shell ownership.
+**Need.** We must know the inline-body production that starts a binary64 field. Without it, the identity path stays ambiguous and the graph remains outside the modeling scope.
 
 ## 6. E5 `0D 03`
 

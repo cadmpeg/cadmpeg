@@ -32,7 +32,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             .unwrap(),
         );
     }
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#polygonal").unwrap(),
         geometry: SurfaceGeometry::Solved(placed),
         source_object: Some(SourceObjectAssociation {
@@ -45,6 +45,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             layer: Some("Layer".into()),
             instance_path: vec!["Outer".into(), "Inner".into()],
         }),
+        native_ref: None,
     });
     for rational in [false, true] {
         let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
@@ -60,14 +61,15 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             false,
         )
         .unwrap();
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("synthetic:test:id#nurbs-{rational}"))
                 .unwrap(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
             source_object: None,
+            native_ref: None,
         });
     }
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#procedural").unwrap(),
         geometry: SurfaceGeometry::Procedural {
             construction: cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -79,6 +81,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             }),
         },
         source_object: None,
+        native_ref: None,
     });
     let mut configuration = design_configuration("carriers", 0, Some(0), None);
     configuration.bodies = None;
@@ -96,6 +99,7 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -344,6 +348,7 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -426,6 +431,7 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -535,6 +541,7 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -625,6 +632,7 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -830,6 +838,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
         &mut ir,
         &[],
         &[],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());
@@ -921,6 +930,7 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
             feature_input_lane("first", Some("0")),
             feature_input_lane("second", Some("1")),
         ],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     );
     assert_eq!(ir.model.parameters, expected.model.parameters);

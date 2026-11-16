@@ -69,7 +69,7 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 #[test]
 fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -81,19 +81,20 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
         bodies: None,
         ..design_configuration("unresolved", 0, Some(0), None)
     });
 
-    assert_eq!(configuration_surface_carriers(&ir, 0), ir.model.surfaces,);
+    assert_eq!(configuration_surface_carriers(&ir, 0), ir.geometry.surfaces,);
 }
 
 #[test]
 fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -105,6 +106,7 @@ fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.model
         .configurations
@@ -447,8 +449,15 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     let mut annotations = cadmpeg_ir::Annotations::default();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    project_configuration_sketch_states(&ctx, &mut ir, &[history], &[lane], &mut annotations)
-        .unwrap();
+    project_configuration_sketch_states(
+        &ctx,
+        &mut ir,
+        &[history],
+        &[lane],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
+        &mut annotations,
+    )
+    .unwrap();
 
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
@@ -676,7 +685,15 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     let mut annotations = cadmpeg_ir::Annotations::default();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    project_configuration_sketch_states(&ctx, &mut ir, &[], &lanes, &mut annotations).unwrap();
+    project_configuration_sketch_states(
+        &ctx,
+        &mut ir,
+        &[],
+        &lanes,
+        &crate::resolved_features::profiles::ExactProfiles::default(),
+        &mut annotations,
+    )
+    .unwrap();
 
     assert!(ir.model.configurations.iter().all(|configuration| matches!(
         &configuration.feature_states[&feature_id].definition,
@@ -751,7 +768,15 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
     let mut annotations = cadmpeg_ir::Annotations::default();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    project_configuration_sketch_states(&ctx, &mut ir, &[], &lanes, &mut annotations).unwrap();
+    project_configuration_sketch_states(
+        &ctx,
+        &mut ir,
+        &[],
+        &lanes,
+        &crate::resolved_features::profiles::ExactProfiles::default(),
+        &mut annotations,
+    )
+    .unwrap();
 
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&feature_id].definition,
@@ -1630,7 +1655,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
@@ -1642,6 +1667,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     ir.model.configurations.push(with_configuration_id(
         design_configuration("config", 0, Some(0), None),
@@ -1733,7 +1759,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1744,8 +1770,9 @@ fn configuration_frame_alias_binds_without_body_membership() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
@@ -1757,6 +1784,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     let mut configuration = design_configuration("config", 0, None, None);
     configuration.bodies = None;

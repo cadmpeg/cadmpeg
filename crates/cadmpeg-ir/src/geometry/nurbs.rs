@@ -180,7 +180,7 @@ pub struct WeightedPole3<P = Point3> {
 // whose positions are `FinitePoint3` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum NurbsPoles3<P = Point3> {
     /// A polynomial curve: its poles carry no weight.
@@ -498,7 +498,7 @@ impl<P: Copy> NurbsPoles3<P> {
 // whose positions are `FinitePoint3` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum NurbsPoleGrid<P = Point3> {
     /// A polynomial surface: its poles carry no weight.
@@ -705,12 +705,14 @@ pub struct NurbsSurface {
     #[cfg_attr(feature = "schema", schemars(with = "NurbsPoleGrid"))]
     poles: NurbsPoleGrid<FinitePoint3>,
     /// Whether the carrier's oriented normal is opposite `Pu × Pv`.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     normal_reversed: bool,
     /// Whether the surface is periodic in u.
     u_periodic: bool,
     /// Whether the surface is periodic in v.
     v_periodic: bool,
+    /// Fit tolerance of the source approximation cache, in model length units.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_fit_tolerance: Option<super::FitTolerance>,
 }
 
 /// Polynomial tensor-product B-spline surface with a rectangular control grid.
@@ -1139,7 +1141,18 @@ impl NurbsSurface {
             normal_reversed,
             u_periodic,
             v_periodic,
+            cache_fit_tolerance: None,
         })
+    }
+
+    /// Fit tolerance of the source approximation cache.
+    pub const fn cache_fit_tolerance(&self) -> Option<super::FitTolerance> {
+        self.cache_fit_tolerance
+    }
+
+    /// Retain the fit tolerance of the source approximation cache.
+    pub fn set_cache_fit_tolerance(&mut self, tolerance: Option<super::FitTolerance>) {
+        self.cache_fit_tolerance = tolerance;
     }
 
     /// Degree in the u parametric direction.
@@ -1335,33 +1348,36 @@ impl NurbsSurface {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NurbsSurfaceWire {
+    #[serde(default, deserialize_with = "deserialize_cache_fit_tolerance")]
+    cache_fit_tolerance: Option<super::FitTolerance>,
+    u_degree: u32,
+    v_degree: u32,
+    u_knots: Vec<f64>,
+    v_knots: Vec<f64>,
+    poles: NurbsPoleGrid,
+    normal_reversed: bool,
+    u_periodic: bool,
+    v_periodic: bool,
+}
+
 impl<'de> Deserialize<'de> for NurbsSurface {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Wire {
-            u_degree: u32,
-            v_degree: u32,
-            u_knots: Vec<f64>,
-            v_knots: Vec<f64>,
-            poles: NurbsPoleGrid,
-            #[serde(default)]
-            normal_reversed: bool,
-            u_periodic: bool,
-            v_periodic: bool,
-        }
-
-        let wire = Wire::deserialize(deserializer)?;
-        NurbsSurface::new(
+        let wire = NurbsSurfaceWire::deserialize(deserializer)?;
+        let mut surface = NurbsSurface::new(
             NurbsSurfaceAxis::new(wire.u_degree, wire.u_knots, wire.u_periodic),
             NurbsSurfaceAxis::new(wire.v_degree, wire.v_knots, wire.v_periodic),
             wire.poles,
             wire.normal_reversed,
         )
-        .map_err(serde::de::Error::custom)
+        .map_err(serde::de::Error::custom)?;
+        surface.set_cache_fit_tolerance(wire.cache_fit_tolerance);
+        Ok(surface)
     }
 }
 
@@ -1664,3 +1680,9 @@ fn knots_ordered(knots: &[f64], repeats: bool) -> bool {
 mod tests;
 
 mod identity_rewrite;
+
+cadmpeg_core::named_optional_field!(
+    deserialize_cache_fit_tolerance,
+    super::FitTolerance,
+    "cache_fit_tolerance"
+);

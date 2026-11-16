@@ -60,7 +60,10 @@ result.
 Checked-in dictionaries live under `dictionaries/`. `cargo-fuzz` does not load
 them by itself. Pass `-dict=crates/cadmpeg-fuzz/dictionaries/<target>.dict`
 after `--` when a target-specific file exists, or the format-prefix file
-(`step.dict`, `iges.dict`, `sat.dict`) for the text formats. The nightly smoke
+(`f3d.dict`, `inventor.dict`, `fcstd.dict`, `sldprt.dict`, `catia.dict`,
+`creo.dict`, `nx.dict`, `rhino.dict`, `iges.dict`, `sat.dict`, `pvz.dict`,
+`usd.dict`, `step.dict`, plus `protein.dict`, `compound.dict`, `decode.dict`,
+`acis.dict` for the shared harnesses) otherwise. The nightly smoke
 job does this.
 
 ## Targets

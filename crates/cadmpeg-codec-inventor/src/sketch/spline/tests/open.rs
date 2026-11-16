@@ -326,6 +326,7 @@ fn spline_midpoint_retains_its_native_locus_and_ordered_operands() {
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: vec![constraint],
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     let loss = crate::sketch::curve::relation_loss(&inventory).expect("midpoint locus loss");

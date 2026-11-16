@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::{Duration, Instant};
 
 mod indexed;
+pub(crate) mod transition_geometry;
 use indexed::IndexedTopology;
 
 /// Local work cap for historical topology binding, in history records
@@ -61,7 +62,14 @@ pub(crate) fn bind(
     let saved_limit = cadmpeg_asm::asm_header::parse(bytes)
         .and_then(|header| header.metadata.entity_count)
         .and_then(|count| i64::try_from(count).ok());
+    let mut serialized_records: Vec<_> = archive.values().cloned().collect();
+    serialized_records.sort_by_key(|record| record.offset);
+    let version = cadmpeg_asm::asm_header::parse(bytes)
+        .and_then(|header| header.metadata.save_format_version);
+    let source_subtypes = cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&serialized_records)
+        .with_save_format_version(version);
     let mut binder = Binder::new(&archive, saved_limit, work);
+    binder.source_subtypes = Some(&source_subtypes);
     let mut newer_index: Option<usize> = None;
     let mut current = IndexedTopology::default();
     let mut newer_versions = BTreeMap::new();
@@ -126,10 +134,12 @@ pub(crate) fn bind(
                 topology: &newer_rows,
                 versions: &newer_versions,
             };
-            let Some(transition) = transition_for_changes(older, new, &changed) else {
+            let Some(mut transition) = transition_for_changes(older, new, &changed) else {
                 complete = false;
                 return;
             };
+            transition.geometry_unchanged =
+                transition_geometry::unchanged(&transition, older.versions, new.versions, &archive);
             transitions.push((index, transition));
         } else {
             if binder.update(&changed, versions).is_none() {
@@ -879,6 +889,7 @@ struct Binder<'a> {
     revision_subtypes: HashMap<i64, Subtypes>,
     saved_limit: Option<i64>,
     subtype_table: Option<cadmpeg_asm::nurbs::toks::SubtypeTable>,
+    source_subtypes: Option<&'a cadmpeg_asm::nurbs::toks::SubtypeTable>,
     definitions: Vec<Definition>,
     work: &'a WorkBudget,
 }
@@ -893,6 +904,7 @@ impl<'a> Binder<'a> {
             saved_limit,
             work,
             subtype_table: None,
+            source_subtypes: None,
             definitions: Vec::new(),
             archive,
             live: Live::new(),
@@ -1409,7 +1421,7 @@ impl<'a> Binder<'a> {
             bytes,
             stats,
             self.work,
-            self.subtype_table.as_ref(),
+            self.source_subtypes.or(self.subtype_table.as_ref()),
         )?
         else {
             *stats.fallbacks.entry("subset-decode").or_default() += 1;
@@ -1462,7 +1474,7 @@ impl<'a> Binder<'a> {
                 bytes,
                 stats,
                 self.work,
-                self.subtype_table.as_ref(),
+                self.source_subtypes.or(self.subtype_table.as_ref()),
             )?
             else {
                 *stats.fallbacks.entry("container-decode").or_default() += 1;
@@ -1547,7 +1559,7 @@ impl<'a> Binder<'a> {
             bytes,
             stats,
             self.work,
-            None,
+            self.source_subtypes,
         )
     }
 }

@@ -139,6 +139,12 @@ makes it smaller still. When the allowance runs out, one `info` finding
 checked. These findings do not change the exit status
 ([measurement contract][measurement]).
 
+Stored geometric validation properties are compared with the measurements of
+the part or bodies they describe. A difference beyond measurement numeric
+error plus model uncertainty adds a `declared_measure` error and fails the
+check. An unresolved target or unavailable quantity produces a warning with
+its reason. STEP imports these declarations; CADIR preserves them.
+
 `--container-only` stops native decoding before geometry and records container
 depth. It is useful for container diagnostics. `convert` writes such a document
 to CADIR only: every other output refuses it (`insufficient_depth`, exit 1).
@@ -357,7 +363,7 @@ cadmpeg query findings report.json     # severity  check  entity  message
 cadmpeg query losses report.json       # severity  code   message
 cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
-cadmpeg query item bracket.cadir.json model.faces FACE_ID  # one record; alias: record
+cadmpeg query item bracket.cadir.json geometry.faces FACE_ID  # one record; alias: record
 cadmpeg query schema types model.features    # the arena's IR record type (no FILE)
 cadmpeg query schema file part.cadir.json native.nx.class_definitions  # inferred native fields
 cadmpeg query graph bracket.cadir.json model.features ID --hops 1

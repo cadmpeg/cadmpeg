@@ -187,7 +187,7 @@ impl super::Builder<'_, '_, '_, '_> {
         let mut outputs = tokens(prim, "cad:feature:outputs", &mut self.issues).unwrap_or_default();
         let bodies: BTreeSet<&str> = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .map(|body| body.id.as_str())

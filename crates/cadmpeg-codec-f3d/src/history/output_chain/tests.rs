@@ -4,10 +4,12 @@ use super::OutputChain;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 use std::collections::HashMap;
 
-fn history() -> AsmHistory {
+/// A chain whose states hold the given body slots, newest first.
+fn history_with_bodies(bodies: [&[i64]; 3]) -> AsmHistory {
     let states = [(321, 2, Some(1)), (316, 1, Some(0)), (315, 0, None)]
         .into_iter()
-        .map(|(state_id, node_index, next_ref)| {
+        .zip(bodies)
+        .map(|((state_id, node_index, next_ref), bodies)| {
             (
                 AsmDeltaState {
                     id: format!("f3d:asm-delta-state#{state_id}"),
@@ -25,12 +27,19 @@ fn history() -> AsmHistory {
                     records: Vec::new(),
                     transition: None,
                 },
-                Some(AsmHistoricalTopology::default()),
+                Some(AsmHistoricalTopology {
+                    bodies: bodies.to_vec(),
+                    ..AsmHistoricalTopology::default()
+                }),
                 Vec::new(),
             )
         })
         .collect();
     crate::test_support::history::history("f3d:asm-history#1".into(), 0, None, false, states)
+}
+
+fn history() -> AsmHistory {
+    history_with_bodies([&[]; 3])
 }
 
 #[test]
@@ -44,6 +53,49 @@ fn output_chain_admits_direct_and_complete_intervals() {
     let outputs = HashMap::from([((0, 321), Some(vec![2, 3])), ((0, 316), Some(vec![1, 2]))]);
     assert_eq!(chain.outputs(&outputs), Some(vec![1, 2, 3]));
     assert!(OutputChain::resolve(&histories, 315, 321, None).is_none());
+}
+
+#[test]
+fn output_chain_omits_bodies_that_the_interval_inserts_and_deletes() {
+    let outputs = HashMap::from([((0, 321), Some(vec![1, 2, 9])), ((0, 316), Some(vec![9]))]);
+    let chain = OutputChain::resolve(
+        &[history_with_bodies([&[1, 2], &[1, 9], &[1]])],
+        321,
+        315,
+        None,
+    )
+    .unwrap();
+    assert_eq!(chain.outputs(&outputs), Some(vec![1, 2]));
+
+    // The preceding state holds slot 9: the interval deletes an input body.
+    let chain = OutputChain::resolve(
+        &[history_with_bodies([&[1, 2], &[1, 9], &[1, 9]])],
+        321,
+        315,
+        None,
+    )
+    .unwrap();
+    assert_eq!(chain.outputs(&outputs), Some(vec![1, 2, 9]));
+
+    // The current state holds slot 9: the interval creates an output body.
+    let chain = OutputChain::resolve(
+        &[history_with_bodies([&[1, 2, 9], &[1, 9], &[1]])],
+        321,
+        315,
+        None,
+    )
+    .unwrap();
+    assert_eq!(chain.outputs(&outputs), Some(vec![1, 2, 9]));
+
+    // A direct interval has no intermediate state.
+    let chain = OutputChain::resolve(
+        &[history_with_bodies([&[1, 2], &[1, 9], &[1]])],
+        321,
+        316,
+        None,
+    )
+    .unwrap();
+    assert_eq!(chain.outputs(&outputs), Some(vec![1, 2, 9]));
 }
 
 #[test]

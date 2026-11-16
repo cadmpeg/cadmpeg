@@ -166,6 +166,7 @@ fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
         edge_samples: keys
             .iter()
             .map(|&key| AsmHistoricalEdgeSample {
+                bounds: None,
                 edge: key,
                 interior: origin,
                 tangent: if changed { None } else { Some(axis) },
@@ -183,6 +184,7 @@ fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
                     entity_ref: attribute,
                     selector: attribute,
                     token: if changed { "changed" } else { "tag" }.into(),
+                    token_integer: 0,
                     design_references: vec![30],
                     ordinal,
                 });
@@ -795,6 +797,7 @@ fn empty_deltas_leave_family_storage_untouched() {
     let before_members = family.faces.as_ptr();
     let before_tags = family.persistent_subentity_tags.as_ptr();
     AsmHistoricalTransition {
+        geometry_unchanged: false,
         previous_state_id: None,
         records: AsmHistoricalEntityDelta::default(),
         record_revisions: Vec::new(),

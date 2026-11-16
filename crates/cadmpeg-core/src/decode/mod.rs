@@ -13,8 +13,10 @@ mod deflate;
 mod depth;
 mod error;
 mod input;
+mod part;
 mod policy;
 mod probe;
+mod scope;
 mod space;
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
@@ -24,6 +26,7 @@ pub mod tree;
 mod unique;
 mod utf16;
 mod view;
+mod whole_input;
 pub mod zstd;
 
 #[cfg(test)]
@@ -34,12 +37,14 @@ pub use budget::{work_units, BudgetExhausted, DepthGuard, WorkBudget, WorkBudget
 pub use companion::{Companion, CompanionLoad, Companions};
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use depth::DecodeDepth;
-pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
+pub use error::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
+pub use scope::{ArenaClass, ArenaClasses, ContentScope, ScopeDependency};
 pub use space::{ByteRange, SpaceId};
 pub use transaction::{DecodeCheckpoint, DecodeSpaceRebinding, DecodeTrace};
 pub use unique::unique_index;
 pub use view::{
     bounded_len, id_from_index, index_from_u32, index_from_u64, u64_from_index, BoundedCount, View,
 };
+pub use whole_input::WholeInput;

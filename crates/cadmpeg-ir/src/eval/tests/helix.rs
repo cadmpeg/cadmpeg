@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::math::portable::Portable;
 use crate::math::Point3;
 use crate::math::Vector3;
 use crate::CadIr;
@@ -29,7 +30,7 @@ fn helix_fixture() -> (CadIr, CurveId) {
         .unwrap(),
     );
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
@@ -37,8 +38,9 @@ fn helix_fixture() -> (CadIr, CurveId) {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_curves.push(procedural_curve! {
+    ir.geometry.procedural_curves.push(procedural_curve! {
         id: construction_id,
         definition: definition,
         cache_fit_tolerance: None,
@@ -141,7 +143,7 @@ fn cacheless_helix_curve_evaluates_point_and_exact_differentials() {
 fn reversing_a_tapered_helix_preserves_points_and_derivatives() {
     let (ir, _) = helix_fixture();
     let ProceduralCurveDefinition::Helix(mut helix) =
-        ir.model.procedural_curves[0].definition().clone()
+        ir.geometry.procedural_curves[0].definition().clone()
     else {
         panic!("helix construction expected");
     };
@@ -186,15 +188,15 @@ fn helix_angle_range_can_span_both_large_finite_signs() {
     let result = super::super::helix_differential(helix_of(&definition), parameter).unwrap();
     assert_eq!(
         result.point,
-        Point3::new(parameter.cos(), parameter.sin(), 0.0)
+        Point3::new(parameter.portable_cos(), parameter.portable_sin(), 0.0)
     );
     assert_eq!(
         result.tangent.unwrap().get(),
-        Vector3::new(-parameter.sin(), parameter.cos(), 0.0)
+        Vector3::new(-parameter.portable_sin(), parameter.portable_cos(), 0.0)
     );
     assert_eq!(
         result.acceleration.unwrap().get(),
-        Vector3::new(-parameter.cos(), -parameter.sin(), 0.0)
+        Vector3::new(-parameter.portable_cos(), -parameter.portable_sin(), 0.0)
     );
 }
 
@@ -291,7 +293,7 @@ fn helix_inverse_finds_the_witness_without_retained_storage() {
     .unwrap()
     .unwrap();
     let evaluated = super::super::helix_differential(
-        helix_of(ir.model.procedural_curves[0].definition()),
+        helix_of(ir.geometry.procedural_curves[0].definition()),
         inverse.get(),
     )
     .unwrap();
@@ -312,7 +314,7 @@ fn helix_inverse_returns_the_session_depth_refusal() {
         expected_helix(1.7).0,
         1.5,
         ir.tolerances.linear.into(),
-        ir.model.procedural_curves[0].definition(),
+        ir.geometry.procedural_curves[0].definition(),
     )
     .unwrap_err() else {
         panic!("helix inversion must refuse");

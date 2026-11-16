@@ -13,6 +13,7 @@ use zip::CompressionMethod;
 use super::{
     decode_parameters, parse_design_parameter_record, parse_legacy_parameter_owner_68,
     parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
+    parse_text_parameter_owner, wide_parameter_comment,
 };
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::records::{
@@ -23,8 +24,20 @@ use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
+mod comment_field;
+mod compact_null_owner;
+mod expression_flags;
 mod registered_tail;
+mod tail_forms;
+mod text_owner;
 mod unparsed_frames;
+
+/// The text scalar envelope of a text parameter's owner: `00` + LP-UTF16 `text`.
+fn text_envelope(text: &str) -> Vec<u8> {
+    let mut envelope = vec![0];
+    lp_utf16(&mut envelope, text);
+    envelope
+}
 
 #[test]
 fn discriminated_user_parameter_preserves_length_expression_and_unit() {
@@ -106,7 +119,7 @@ fn class_287_parameter_record_with_expression_trailer(
 }
 
 #[test]
-fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
+fn class_287_parameter_accepts_the_compact_prefix_with_the_parameter_tail() {
     let parameter = parse_design_parameter_record(&class_287_parameter_record("HoleDepth", "d20"))
         .expect("class-287 parameter");
     assert_eq!(parameter.class_tag.as_str(), "287");
@@ -153,7 +166,7 @@ fn class_287_parameter_requires_its_marker_and_tail() {
 
     let mut frame = class_287_parameter_record("HoleDepth", "d20");
     let tail = frame.len() - 12;
-    frame[tail + 2] = 174;
+    frame[tail + 1] = 0;
     assert!(parse_design_parameter_record(&frame).is_none());
 }
 
@@ -353,9 +366,6 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     invalid_distance[22..30].copy_from_slice(&7u64.to_le_bytes());
     assert!(parse_design_parameter_record(&invalid_distance).is_none());
 
-    revised_distance[tail + 2] = 19;
-    assert!(parse_design_parameter_record(&revised_distance).is_none());
-
     let mut sheet_metal =
         parameter_record(Some(301), "50.00 mm", "FlangeHeight", Some("mm"), "d2", 5.0);
     sheet_metal[22..30].copy_from_slice(&6u64.to_le_bytes());
@@ -383,72 +393,6 @@ fn parameter_record_rejects_noncanonical_tail() {
     );
     *record.last_mut().unwrap() = 1;
     assert!(parse_design_parameter_record(&record).is_none());
-}
-
-#[test]
-fn parameter_family_18_tail_pins_admitted_discriminators() {
-    for discriminator in [0u64, 3, 4] {
-        let mut distance = parameter_record(
-            Some(44),
-            "Width / 2",
-            "AlongDistance",
-            Some("mm"),
-            "d12",
-            3.0,
-        );
-        let tail = distance.len() - 12;
-        distance[tail + 2] = 18;
-        distance[22..30].copy_from_slice(&discriminator.to_le_bytes());
-        assert_eq!(
-            parse_design_parameter_record(&distance)
-                .expect("family-18 parameter with discriminator 0/3/4")
-                .family_discriminator()
-                .map(|value| value.value.code()),
-            Some(discriminator)
-        );
-    }
-
-    let mut tangency = parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
-    let tail = tangency.len() - 12;
-    tangency[tail + 2] = 18;
-    tangency[22..30].copy_from_slice(&6u64.to_le_bytes());
-    assert_eq!(
-        parse_design_parameter_record(&tangency)
-            .expect("family-18 tangency weight parameter with discriminator 6")
-            .family_discriminator()
-            .map(|value| value.value.code()),
-        Some(6)
-    );
-
-    let mut rejected_discriminator_5 = parameter_record(
-        Some(44),
-        "Width / 2",
-        "AlongDistance",
-        Some("mm"),
-        "d12",
-        3.0,
-    );
-    let tail = rejected_discriminator_5.len() - 12;
-    rejected_discriminator_5[tail + 2] = 18;
-    rejected_discriminator_5[22..30].copy_from_slice(&5u64.to_le_bytes());
-    assert!(parse_design_parameter_record(&rejected_discriminator_5).is_none());
-
-    let mut rejected_tangency_5 = tangency.clone();
-    rejected_tangency_5[22..30].copy_from_slice(&5u64.to_le_bytes());
-    assert!(parse_design_parameter_record(&rejected_tangency_5).is_none());
-
-    let mut rejected_discriminator_6 = parameter_record(
-        Some(44),
-        "Width / 2",
-        "AlongDistance",
-        Some("mm"),
-        "d12",
-        3.0,
-    );
-    let tail = rejected_discriminator_6.len() - 12;
-    rejected_discriminator_6[tail + 2] = 18;
-    rejected_discriminator_6[22..30].copy_from_slice(&6u64.to_le_bytes());
-    assert!(parse_design_parameter_record(&rejected_discriminator_6).is_none());
 }
 
 #[test]
@@ -860,6 +804,46 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
 }
 
 #[test]
+fn legacy_parameter_owner_68_scalar_lane_stores_the_parameter_value_and_two_flags() {
+    let evaluated = crate::records::identity::Located {
+        value: 0.06,
+        offset: 700,
+    };
+    let lane = |scalar: f64, marker: u8, flags: [u8; 2]| {
+        let mut frame = legacy_parameter_owner_68_frame("385");
+        frame[24] = marker;
+        frame[25..33].copy_from_slice(&scalar.to_le_bytes());
+        frame[53..55].copy_from_slice(&flags);
+        super::parse_admitted_legacy_parameter_owner_68(&frame, evaluated, 0, true)
+            .and_then(|parsed| parsed.into_record("Design/BulkStream.dat", 0))
+    };
+    let owner = lane(0.06, 0, [1, 1]).expect("scalar lane with both flags");
+    assert_eq!(owner.evaluated_value().get(), 0.06);
+    assert_eq!(owner.parameter_record_index(), 101);
+    assert_eq!(owner.companion_record_index(), 102);
+    assert_eq!(owner.scope_record_index(), 0);
+    for flags in [[0, 0], [0, 1], [1, 0]] {
+        assert!(lane(0.06, 0, flags).is_some(), "{flags:?}");
+    }
+    // The lane value is the linked parameter's value, and the lane opens with
+    // its zero marker; each flag byte is zero or one.
+    assert!(lane(0.5, 0, [1, 1]).is_none());
+    assert!(lane(0.06, 1, [1, 1]).is_none());
+    assert!(lane(0.06, 0, [2, 1]).is_none());
+    assert!(lane(0.06, 0, [1, 2]).is_none());
+    let mut shifted = legacy_parameter_owner_68_frame("385");
+    shifted[23] = 1;
+    assert!(
+        super::parse_admitted_legacy_parameter_owner_68(&shifted, evaluated, 0, true).is_none()
+    );
+    let mut zero_run = legacy_parameter_owner_68_frame("385");
+    zero_run[52] = 1;
+    assert!(
+        super::parse_admitted_legacy_parameter_owner_68(&zero_run, evaluated, 0, true).is_none()
+    );
+}
+
+#[test]
 fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     let parsed = parse_legacy_parameter_owner_88(
         &legacy_parameter_owner_88_frame("284"),
@@ -1028,6 +1012,22 @@ fn compact_scalar_parameter_owner_can_carry_a_two_byte_variant_slot() {
 }
 
 #[test]
+fn compact_scalar_parameter_owner_can_set_the_final_trailer_byte() {
+    let plain = parse_parameter_owner(&compact_parameter_owner_frame()).expect("owner");
+    assert!(!plain.trailer_flag);
+    let mut frame = compact_parameter_owner_frame();
+    frame[78..80].copy_from_slice(&[0, 1]);
+    let parsed = parse_parameter_owner(&frame).expect("flagged compact scalar owner");
+    assert!(parsed.trailer_flag);
+    assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.frame_length, 103);
+    assert_eq!(parsed.parameter_record_index, 6654);
+    assert_eq!(parsed.companion_record_index, 6655);
+    frame[78..80].copy_from_slice(&[0, 2]);
+    assert!(parse_parameter_owner(&frame).is_none());
+}
+
+#[test]
 fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
     let mut prefix = vec![0; 58];
     prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -1188,6 +1188,44 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert_eq!(owner.frame_length(), 104);
     assert!(owners.unparsed.is_empty());
     assert_eq!(owner.evaluated_value_offset(), 40);
+
+    // The owner of a text parameter stores the text in its scalar envelope.
+    let text = parameter
+        .clone()
+        .with_text_value(Some(crate::records::identity::RecordedValue {
+            value: "AB".into(),
+            offset: 270,
+        }))
+        .unwrap();
+    let owners = with_scan(&archive(stream, &exact), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&text),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect("text parameter owner");
+    assert!(owners.owners.is_empty());
+    assert_eq!(owners.unparsed, [text.id.clone()]);
+
+    let mut text_frame = parameter_owner_frame();
+    text_frame.splice(39..48, text_envelope("AB"));
+    text_frame.extend_from_slice(&paired_header());
+    let owners = with_scan(&archive(stream, &text_frame), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&text),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect("text owner frame");
+    let [owner] = owners.owners.as_slice() else {
+        panic!("expected the text parameter owner");
+    };
+    assert!(owners.unparsed.is_empty());
+    assert_eq!(owner.scope_record_index(), 12);
+    assert_eq!(owner.text_value(), Some("AB"));
+    assert_eq!(owner.evaluated_value_offset(), 320);
 
     let mut compact = without_variant_padding(parameter_owner_frame());
     compact.extend_from_slice(&paired_header());
@@ -1530,9 +1568,7 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
     let parsed = super::parse_design_parameter(&payload)
         .unwrap()
         .expect("parsed parameter");
-    let error = super::locate_design_parameter(parsed, stream, usize::MAX)
-        .expect_err("a frame at the end of the address space cannot be located");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(super::locate_design_parameter(parsed, stream, usize::MAX).is_none());
 }
 
 #[test]
@@ -1618,6 +1654,7 @@ fn typed_compact_parameters_read_owned_and_document_forms() {
     assert_eq!(
         parameter.source(),
         &crate::records::parameters::DesignParameterSource::User {
+            source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
             family_discriminator: None
         }
     );
@@ -1696,7 +1733,6 @@ fn typed_owner_frame_widens_every_reference_and_keeps_the_scalar_envelope() {
 
 #[test]
 fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator() {
-    // The current discriminated family: discriminator 6 and the `00 01 10` tail.
     let mut narrow = parameter_record(Some(305), "10 mm", "AlongDistance", Some("mm"), "d3", 1.0);
     narrow[22..30].copy_from_slice(&6u64.to_le_bytes());
     let tail = narrow.len() - 10;
@@ -1721,34 +1757,6 @@ fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator(
     let mut nonzero = wide.clone();
     nonzero[24] = 1;
     assert!(parse_design_parameter_record(&nonzero).is_none());
-}
-
-#[test]
-fn discriminated_parameter_with_the_00_01_11_tail_has_discriminator_6() {
-    let mut frame = parameter_record(
-        Some(2553),
-        "-65.0 deg",
-        "alignAngle",
-        Some("deg"),
-        "d1",
-        -1.134,
-    );
-    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
-    let tail = frame.len() - 10;
-    frame[tail] = 0x11;
-    let parameter = parse_design_parameter_record(&frame).expect("tail 0x11 parameter");
-    assert_eq!(parameter.name(), "d1");
-    assert_eq!(parameter.evaluated_value().get(), -1.134);
-    assert_eq!(
-        parameter
-            .family_discriminator()
-            .map(|field| field.value.code()),
-        Some(6)
-    );
-
-    // The 00 01 11 tail belongs to discriminator 6 only.
-    frame[22..30].copy_from_slice(&0u64.to_le_bytes());
-    assert!(parse_design_parameter_record(&frame).is_none());
 }
 
 #[test]
@@ -1810,7 +1818,12 @@ fn document_parameter_admits_the_ten_byte_expression_trailer() {
     assert_eq!(parameter.expression(), "20 mm");
     assert_eq!(parameter.evaluated_value().get(), 2.0);
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 1])).is_some());
-    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])).is_none());
+    assert_eq!(
+        parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]))
+            .expect("wide discriminator-6 document parameter with the eleven-byte trailer")
+            .kind(),
+        DesignParameterKind::User
+    );
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 1, 0, 1])).is_some());
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 2, 0, 1])).is_none());
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 1, 0, 0, 0, 0, 1])).is_none());
@@ -1818,11 +1831,10 @@ fn document_parameter_admits_the_ten_byte_expression_trailer() {
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 1, 0])).is_none());
 }
 
-/// The earlier discriminated family stores a document parameter with
-/// discriminator 4, the expression trailer six zero bytes and `01 00 01`, and
-/// the `00 01 13` tail.
+/// A document parameter with discriminator 4 can store the expression trailer
+/// six zero bytes and `01 00 01`.
 #[test]
-fn earlier_family_document_parameter_admits_its_trailer() {
+fn discriminator_4_document_parameter_admits_its_trailer() {
     let mut frame = Vec::new();
     frame.extend_from_slice(&3u32.to_le_bytes());
     frame.extend_from_slice(b"282");
@@ -1840,8 +1852,7 @@ fn earlier_family_document_parameter_admits_its_trailer() {
     lp_utf16(&mut frame, "ClipAngle");
     frame.extend_from_slice(&std::f64::consts::FRAC_PI_4.to_le_bytes());
     frame.extend_from_slice(&[0, 1, 0x13, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    let parameter =
-        parse_design_parameter_record(&frame).expect("earlier-family document parameter");
+    let parameter = parse_design_parameter_record(&frame).expect("document parameter");
     assert_eq!(parameter.kind(), DesignParameterKind::User);
     assert_eq!(parameter.owner_record_index(), None);
     assert_eq!(parameter.name(), "ClipAngle");
@@ -1876,11 +1887,6 @@ fn wide_owned_parameter_accepts_eleven_zero_bytes_after_expression() {
     longer.insert(expression_end, 0);
     assert!(parse_design_parameter_record(&longer).is_none());
 
-    let mut intermediate = frame.clone();
-    let tail_at = intermediate.len() - 10;
-    intermediate[tail_at] = 17;
-    assert!(parse_design_parameter_record(&intermediate).is_none());
-
     let mut narrow = frame.clone();
     narrow.drain(22..26);
     assert!(parse_design_parameter_record(&narrow).is_none());
@@ -1891,6 +1897,10 @@ fn wide_owned_parameter_accepts_eleven_zero_bytes_after_expression() {
     assert!(parse_design_parameter_record(&scale).is_some());
     let expression_end = 50 + 4 + 2;
     scale.splice(expression_end..expression_end, [0; 2]);
+    let parameter = parse_design_parameter_record(&scale).expect("discriminator-5 wide parameter");
+    assert_eq!(parameter.source_kind(), "ScaleFactor");
+    assert_eq!(parameter.owner_record_index(), Some(1));
+    scale[26..30].copy_from_slice(&4u32.to_le_bytes());
     assert!(parse_design_parameter_record(&scale).is_none());
 }
 
@@ -1943,25 +1953,6 @@ fn discriminated_expression_trailer_carries_flag_bytes() {
         parse_design_parameter_record(&with_trailer(None, "User Parameter", [0, 0, 0, 1, 1]))
             .expect("document parameter with trailer flags");
     assert_eq!(user.kind(), DesignParameterKind::User);
-}
-
-/// The intermediate discriminated family stores discriminator 5 or 6.
-#[test]
-fn intermediate_family_admits_discriminators_five_and_six() {
-    for (discriminator, admitted) in [(5u64, true), (6, true), (4, false)] {
-        let mut frame = parameter_record(
-            Some(77),
-            "25.0 deg",
-            "Angle Threshold",
-            Some("deg"),
-            "d1",
-            0.436,
-        );
-        frame[22..30].copy_from_slice(&discriminator.to_le_bytes());
-        let tail = frame.len() - 12;
-        frame[tail + 2] = 17;
-        assert_eq!(parse_design_parameter_record(&frame).is_some(), admitted);
-    }
 }
 
 #[test]

@@ -63,7 +63,7 @@ fn dumped(path: &Path) -> Value {
 
 #[cfg(any(feature = "fcstd", feature = "iges"))]
 fn by_id<'a>(document: &'a Value, arena: &str) -> BTreeMap<&'a str, &'a Value> {
-    document["model"][arena]
+    document["geometry"][arena]
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_default()
@@ -82,8 +82,8 @@ fn discontinuous_rings(document: &Value) -> BTreeMap<String, String> {
         let coedge = coedges[coedge];
         let edge = edges[coedge["edge"].as_str().unwrap()];
         let (start, end) = (
-            edge["start"].as_str().unwrap(),
-            edge["end"].as_str().unwrap(),
+            edge["ends"]["start"].as_str().unwrap(),
+            edge["ends"]["end"].as_str().unwrap(),
         );
         if coedge["sense"] == "reversed" {
             (end, start)
@@ -92,7 +92,7 @@ fn discontinuous_rings(document: &Value) -> BTreeMap<String, String> {
         }
     };
     let mut rings = BTreeMap::new();
-    for face_loop in document["model"]["loops"].as_array().unwrap() {
+    for face_loop in document["geometry"]["loops"].as_array().unwrap() {
         if face_loop["boundary"]["kind"] != "ring" {
             continue;
         }
@@ -129,7 +129,7 @@ fn rings_listed_out_of_traversal_order_are_check_warnings() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd");
     let mut document = dumped(&source);
-    for face_loop in document["model"]["loops"].as_array_mut().unwrap() {
+    for face_loop in document["geometry"]["loops"].as_array_mut().unwrap() {
         if face_loop["boundary"]["kind"] == "ring" {
             face_loop["boundary"]["coedges"]
                 .as_array_mut()
@@ -175,7 +175,11 @@ fn iges_void_shell_faces_have_no_orientation_finding() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../cadmpeg-codec-iges/tests/golden/fixtures/explicit_void_solid.igs");
     let document = dumped(&path);
-    let [region] = document["model"]["regions"].as_array().unwrap().as_slice() else {
+    let [region] = document["geometry"]["regions"]
+        .as_array()
+        .unwrap()
+        .as_slice()
+    else {
         panic!("one region");
     };
     let void = region["shells"][1].as_str().unwrap();
@@ -201,11 +205,11 @@ fn conflicting_void_solid(dir: &Path) -> std::path::PathBuf {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../cadmpeg-codec-iges/tests/golden/fixtures/explicit_void_solid.igs");
     let mut document = dumped(&path);
-    let void = document["model"]["regions"][0]["shells"][1]
+    let void = document["geometry"]["regions"][0]["shells"][1]
         .as_str()
         .unwrap()
         .to_owned();
-    for face in document["model"]["faces"].as_array_mut().unwrap() {
+    for face in document["geometry"]["faces"].as_array_mut().unwrap() {
         if face["shell"] == void.as_str() {
             face["sense"] = Value::from("forward");
         }
@@ -287,5 +291,63 @@ fn the_188_step_fixtures_have_no_measurement_warnings() {
         let report = check_json(&measure_fixture(name), &[]);
         assert!(warnings(&report, "ring_order").is_empty(), "{name}");
         assert!(warnings(&report, "orientation").is_empty(), "{name}");
+    }
+}
+
+#[test]
+fn declared_geometry_errors_fail_check_and_unresolved_targets_warn() {
+    use cadmpeg_ir::declared_measures::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget};
+    use cadmpeg_ir::ids::DeclaredMeasureId;
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let dir = tempfile::tempdir().unwrap();
+    for (value, unresolved, exit, severity) in [
+        (1000.0, false, 0, None),
+        (1001.0, false, 1, Some("error")),
+        (1000.0, true, 0, Some("warning")),
+    ] {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let target = if unresolved {
+            DeclaredTarget::Unresolved {}
+        } else {
+            DeclaredTarget::Bodies {
+                bodies: vec![ir.geometry.bodies[0].id.clone()],
+            }
+        };
+        ir.model.declared_measures.push(DeclaredMeasure::new(
+            DeclaredMeasureId::mint("test:model:declared_measure#volume").unwrap(),
+            target,
+            DeclaredQuantity::Volume {
+                value: FiniteReal::new(value).unwrap(),
+            },
+        ));
+        let path = dir.path().join("declared.cadir.json");
+        std::fs::write(&path, ir.to_canonical_json().unwrap()).unwrap();
+        let output = super::cadmpeg()
+            .arg("check")
+            .arg(&path)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(exit),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let found: Vec<_> = report["check_report"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|finding| finding["check"] == "declared_measure")
+            .collect();
+        match severity {
+            None => assert!(found.is_empty(), "{found:#?}"),
+            Some(severity) => {
+                assert_eq!(found.len(), 1, "{found:#?}");
+                assert_eq!(found[0]["severity"], severity);
+            }
+        }
     }
 }

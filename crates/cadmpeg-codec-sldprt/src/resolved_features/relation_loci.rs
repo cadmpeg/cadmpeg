@@ -1176,7 +1176,11 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 resolved_or_none!(sketch_entities.iter().find(|entity| entity.id() == &first));
             let second_line =
                 resolved_or_none!(sketch_entities.iter().find(|entity| entity.id() == &second));
-            if !line_line_distance(first_line, second_line)
+            let measured_distance = line_line_distance(first_line, second_line);
+            if authoritative && measured_distance.is_none() {
+                return Ok(None);
+            }
+            if !measured_distance
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
             {
                 if dynamic {
@@ -4576,7 +4580,7 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
             };
             let candidates =
                 if let Some(sketch) = sketches.iter().find(|candidate| candidate.id == **sketch) {
-                    marker_transforms_with_frame_fallback(candidates, sketch, QUANTUM)
+                    marker_transforms_with_frame_fallback(candidates, sketch, QUANTUM, features)
                 } else {
                     candidates
                 };

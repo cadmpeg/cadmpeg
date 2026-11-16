@@ -42,6 +42,9 @@ pub(crate) struct Brep {
     pub(crate) persistent_subentity_tags: Vec<PersistentSubentityTag>,
     /// Original authoring times attached to solved entities.
     pub(crate) creation_timestamps: Vec<CreationTimestamp>,
+    /// Sketch-region bodies removed from keyless blobs.
+    #[serde(skip)]
+    pub(crate) sketch_region_bodies_omitted: usize,
 }
 
 impl Brep {
@@ -71,6 +74,7 @@ impl Brep {
             persistent_design_links,
             persistent_subentity_tags,
             creation_timestamps,
+            sketch_region_bodies_omitted: 0,
         })
     }
 
@@ -121,6 +125,7 @@ impl Brep {
 
     /// Append a disjoint, already-qualified BREP graph.
     pub(crate) fn append(&mut self, other: Self) {
+        self.sketch_region_bodies_omitted += other.sketch_region_bodies_omitted;
         let mut asm = other.asm;
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
@@ -234,9 +239,9 @@ pub(crate) fn decode_text(
     )?)
 }
 
-/// Decode only the topology and analytic measurements used to bind ASM
-/// history. Free-form carrier shapes are not materialized because historical
-/// binding consumes their stable record identities, not their control data.
+/// Decode the topology, bounded curve caches, analytic measurements, and exact
+/// cacheless helix constructions used to bind ASM history. Free-form surface
+/// shapes remain unmaterialized.
 pub(crate) fn decode_history_topology(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
@@ -490,12 +495,15 @@ fn persistent_subentity_tags(
     let mut groups = Vec::new();
     for ordinal in 0..group_count {
         let Some(
-            [AttributeValue::Integer(selector), AttributeValue::String(token), AttributeValue::Integer(0), AttributeValue::Integer(reference_count)],
+            [AttributeValue::Integer(selector), AttributeValue::String(token), AttributeValue::Integer(token_integer), AttributeValue::Integer(reference_count)],
         ) = rest.get(position..position + 4)
         else {
             return Ok(Vec::new());
         };
         let Some(token) = cadmpeg_core::text::NonBlankString::new(token.to_owned()) else {
+            return Ok(Vec::new());
+        };
+        let Ok(token_integer) = u32::try_from(*token_integer) else {
             return Ok(Vec::new());
         };
         if *reference_count < 0 {
@@ -537,6 +545,7 @@ fn persistent_subentity_tags(
             target: attribute.target.clone(),
             selector: *selector,
             token,
+            token_integer,
             design_references,
             ordinal,
         };

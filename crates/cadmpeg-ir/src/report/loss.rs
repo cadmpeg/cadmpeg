@@ -160,6 +160,8 @@ pub enum LossTaxonomy {
     SubdOmitted,
     /// Tessellations were omitted because the writer emits exact geometry only.
     TessellationOmitted,
+    /// Point clouds were not represented in the target.
+    PointCloudOmitted,
     /// Product-manufacturing-information annotations were not represented in the target.
     PmiOmitted,
     /// Source-object associations were not represented in the target.
@@ -220,6 +222,7 @@ impl LossTaxonomy {
             Self::PcurveOmitted => "pcurve_omitted",
             Self::SubdOmitted => "subd_omitted",
             Self::TessellationOmitted => "tessellation_omitted",
+            Self::PointCloudOmitted => "point_cloud_omitted",
             Self::PmiOmitted => "pmi_omitted",
             Self::SourceAssociationOmitted => "source_association_omitted",
             Self::PassthroughRecordOmitted => "passthrough_record_omitted",
@@ -274,6 +277,7 @@ impl LossTaxonomy {
             | Self::PcurveOmitted
             | Self::SubdOmitted
             | Self::TessellationOmitted
+            | Self::PointCloudOmitted
             | Self::ProceduralReduced => LossCategory::Geometry,
         }
     }
@@ -321,14 +325,19 @@ pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 
 /// Machine-readable loss code on the decode/export wire.
 ///
-/// A `scope` tag selects the variant. A shared loss is
-/// `{ "scope": "shared", "kind": "pcurve_omitted" }`; a codec-local one is
-/// `{ "scope": "namespaced", "namespace": "rhino", "code": "brep.trim-pcurve-dropped",
-/// "kind": "pcurve_omitted" }`, carrying `strict_floor` exactly when the code
-/// pins one.
+/// A `kind` tag selects the variant. A shared loss is
+/// `{ "kind": "shared", "value": { "kind": "pcurve_omitted" } }`; a codec-local
+/// one is `{ "kind": "namespaced", "value": { "namespace": "rhino", "code":
+/// "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" } }`, carrying
+/// `strict_floor` exactly when the code pins one.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum LossKind {
     /// Shared loss whose wire code is determined by its taxonomy.
     Shared {

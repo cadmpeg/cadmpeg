@@ -5,6 +5,7 @@ use crate::curve::CurveExpressionLine;
 use crate::curve::ExternalRelationSymbols;
 
 mod affine;
+mod cross_section_terminal;
 mod dimensions;
 mod dump;
 mod expression_programs;

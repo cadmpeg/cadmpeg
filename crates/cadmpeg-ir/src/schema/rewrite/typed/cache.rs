@@ -4,13 +4,14 @@
 use cadmpeg_core::CodecError;
 
 /// Borrowed replacements require unique keys in byte order.
-#[derive(Debug)]
-pub(super) struct ReplacementIndex<'ctx> {
+#[derive(Debug, Default)]
+pub struct TextReplacements<'ctx> {
     values: Vec<(&'ctx str, &'ctx str)>,
 }
 
-impl<'ctx> ReplacementIndex<'ctx> {
-    pub(super) fn build<K: AsRef<str> + 'ctx>(
+impl<'ctx> TextReplacements<'ctx> {
+    /// Build a lookup from unique keys in byte order.
+    pub fn build<K: AsRef<str> + 'ctx>(
         replacements: impl ExactSizeIterator<Item = (&'ctx K, &'ctx String)>,
     ) -> Result<Self, CodecError> {
         let mut values: Vec<(&'ctx str, &'ctx str)> = Vec::new();

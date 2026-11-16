@@ -26,6 +26,7 @@ fn is_linear_pattern_accepts_linear_and_rejects_mirror_and_native_features() {
                 count: 2,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             },
             true,
         ),
@@ -491,6 +492,77 @@ fn project_fixture_with_spacings(
         &results,
         &model_features,
     ));
+    if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+        feature.evaluation.definition()
+    {
+        if let [PatternSeed::Bodies(source_selection)] = seeds.as_slice() {
+            use cadmpeg_ir::features::BodySelection;
+            let BodySelection::Local {
+                bodies: selections,
+                native,
+            } = source_selection
+            else {
+                panic!("local body seed");
+            };
+            assert_eq!(results[0].native_ref.as_deref(), Some(native.as_str()));
+            assert_eq!(
+                results[0]
+                    .bodies()
+                    .iter()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    .collect::<Vec<_>>(),
+                selections.iter().map(String::as_str).collect::<Vec<_>>()
+            );
+            let bodies = selections
+                .iter()
+                .enumerate()
+                .map(|(i, wrapper)| {
+                    (
+                        wrapper.as_str().to_owned(),
+                        cadmpeg_ir::ids::BodyId::mint(format!("test:model:body#{i}"))
+                            .expect("body id"),
+                    )
+                })
+                .collect::<HashMap<_, _>>();
+            let validation = validation_index(SourceRecords {
+                properties: &properties,
+                parameters: &raw,
+                values: &neutral,
+                transforms: &transforms,
+                directions: &[],
+                bodies: &bodies,
+            });
+            let mut resolved = feature.clone();
+            let mut definition = resolved.evaluation.definition().clone();
+            super::super::body_selection::definition(&mut definition, &bodies, None);
+            resolved.evaluation =
+                cadmpeg_ir::features::FeatureEvaluation::from_definition(definition);
+            assert!(matches_source(
+                source,
+                &resolved,
+                &validation,
+                &operands,
+                &results,
+                &model_features
+            ));
+            assert!(!matches_source(
+                source,
+                &feature,
+                &validation,
+                &operands,
+                &results,
+                &model_features
+            ));
+            assert!(!matches_source(
+                source,
+                &resolved,
+                &index,
+                &operands,
+                &results,
+                &model_features
+            ));
+        }
+    }
     for refusal in [
         "missing",
         "duplicate",
@@ -499,6 +571,12 @@ fn project_fixture_with_spacings(
         "sketch",
         "native_binding",
     ] {
+        if matches!(feature.evaluation.definition(), FeatureDefinition::Operation(
+            FeatureOperation::Pattern { seeds, .. }
+        ) if matches!(seeds.first(), Some(PatternSeed::Bodies(_))))
+        {
+            continue;
+        }
         let mut altered = model_features.clone();
         match refusal {
             "missing" => altered.clear(),
@@ -676,6 +754,7 @@ fn project_fixture_with_spacings(
             second,
             count,
             omitted_instances,
+            ..
         } = &mut transform
         else {
             panic!("linear pattern");
@@ -971,7 +1050,11 @@ fn project_fixture_with_spacings(
         &model_features,
     ));
     let mut changed_seeds = seeds.clone();
-    changed_seeds.reverse();
+    if changed_seeds.len() == 1 {
+        changed_seeds.clear();
+    } else {
+        changed_seeds.reverse();
+    }
     changed.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: changed_seeds,
@@ -1023,6 +1106,7 @@ fn rectangular_patterns_keep_exact_seeds_and_both_directions() {
                 count,
                 second: actual,
                 omitted_instances,
+                ..
             } = pattern.definition()
             else {
                 panic!("linear pattern");
@@ -1717,4 +1801,5 @@ fn pattern_seeds_require_their_exact_record_family() {
     .is_none());
 }
 
+mod body_seeds;
 mod omissions;

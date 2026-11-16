@@ -53,14 +53,14 @@ fn source_property_formats_key_and_value() {
 fn segment_body_index_groups_bodies_by_object_and_binding() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let body = cadmpeg_ir::ids::BodyId::mint("nx:s2:body#3").unwrap();
-    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+    ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     let binding = crate::native::segments::SegmentBodyBinding {
         id: "binding".into(),

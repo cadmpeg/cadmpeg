@@ -19,6 +19,7 @@ use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::{TessellationChannel, TessellationMesh};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::units::OrthonormalFrame3;
+use cadmpeg_ir::CadIr;
 use std::collections::HashMap;
 
 use crate::layout::display_lists_compact_face_header as compact_face;
@@ -41,19 +42,21 @@ const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
 /// tests and vertex measures. Tables left when it runs out stay unassigned.
 const TESSELLATION_OWNER_WORK: usize = 1 << 30;
 
-/// Work the surface-owner pass may spend per row it walks, above
+/// Work the surface-owner pass may spend per row of the model, above
 /// [`TESSELLATION_OWNER_WORK`]. The rows are the model's faces and coedges
-/// and the vertices and triangles of the tables that need an owner.
+/// and the vertices and triangles of its tessellation tables.
 const TESSELLATION_OWNER_WORK_PER_ROW: usize = 1 << 17;
 
-/// The rows the surface-owner pass walks, or `None` past `usize`.
-fn tessellation_owner_rows(model: &cadmpeg_ir::document::Model) -> Option<usize> {
-    let mut rows = model.faces.len().checked_add(model.coedges.len())?;
-    for mesh in model
-        .tessellations
-        .iter()
-        .filter(|mesh| needs_surface_owner(mesh))
-    {
+/// The rows that size the surface-owner work, or `None` past `usize`. Tables
+/// that face keys or persistent identities already own still count, so
+/// owning them first leaves the remaining tables the same budget.
+fn tessellation_owner_rows(ir: &CadIr) -> Option<usize> {
+    let mut rows = ir
+        .geometry
+        .faces
+        .len()
+        .checked_add(ir.geometry.coedges.len())?;
+    for mesh in &ir.model.tessellations {
         rows = rows
             .checked_add(mesh.vertex_count())?
             .checked_add(mesh.triangle_count())?;
@@ -479,6 +482,13 @@ pub(crate) struct PersistentFaceBinding {
     pub(crate) identity: PersistentFaceIdentity,
 }
 
+/// One `DisplayLists` table whose face key can bind a B-rep face.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FaceKeyBinding {
+    pub(crate) tessellation: String,
+    pub(crate) key: u32,
+}
+
 impl DisplayFace {
     /// Return the source ID only when all duplicated references agree.
     pub(crate) fn feature_source_id(&self) -> Option<FeatureSourceId> {
@@ -616,24 +626,37 @@ pub(crate) fn auxiliary_channels_are_consistent(
     {
         return false;
     }
+    auxiliary_lanes_are_consistent(
+        strips,
+        [
+            (usize::try_from(b.count()).ok(), b.data()),
+            (usize::try_from(c.count()).ok(), c.data()),
+            (usize::try_from(d.count()).ok(), d.data()),
+        ],
+    )
+}
+
+/// Whether the three auxiliary lanes, each a count and its data, agree with the
+/// strip lengths.
+fn auxiliary_lanes_are_consistent(
+    strips: &[usize],
+    [b, c, d]: [(Option<usize>, &[u8]); 3],
+) -> bool {
     let Some(endpoint_count) = strips.iter().try_fold(0usize, |total, length| {
         total.checked_add(length.checked_mul(2)?.checked_sub(2)?)
     }) else {
         return false;
     };
-    let stored_list_c_matches = c.data().chunks_exact(4).len() == strips.len()
-        && c.data().chunks_exact(4).zip(strips).all(|(bytes, length)| {
+    let stored_list_c_matches = c.1.chunks_exact(4).len() == strips.len()
+        && c.1.chunks_exact(4).zip(strips).all(|(bytes, length)| {
             length.checked_mul(2).and_then(|count| count.checked_sub(2))
                 == View::u32_le_at(bytes, 0).and_then(|count| usize::try_from(count).ok())
         });
-    let counts = (
-        usize::try_from(b.count()).ok(),
-        usize::try_from(d.count()).ok(),
-    );
+    let counts = (b.0, d.0);
     (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
-        && usize::try_from(c.count()).ok() == Some(strips.len())
+        && c.0 == Some(strips.len())
         && stored_list_c_matches
-        && b.data()
+        && b.1
             .chunks_exact(4)
             .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite))
 }
@@ -646,10 +669,23 @@ struct ProbedTable {
     channels: Vec<TessellationChannel>,
 }
 
+/// The `(item_size, kind, flags)` of the six descriptors of a display-list
+/// table, in order (`sldprt.md` §8).
+const TABLE_DESCRIPTORS: [(usize, u32, u32); 6] = [
+    (4, 8, 2),
+    (12, 100, 2),
+    (12, 100, 2),
+    (4, 8, 2),
+    (4, 8, 2),
+    (1, 8, 2),
+];
+
 /// Read the six descriptors at `at` as display-list lanes.
 ///
 /// `None` is a probe miss: the descriptors at this byte position do not state
-/// the display-list grammar.
+/// the display-list grammar. Channel bytes are charged only after the six
+/// descriptors match, the strip and position lanes are not empty and the
+/// auxiliary lanes agree with the strips.
 fn probe_table(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -658,8 +694,10 @@ fn probe_table(
     let mut strips = Vec::new();
     let mut vertices = Vec::new();
     let mut normals = Vec::new();
-    let mut channels = Vec::new();
-    for index in 0..6 {
+    let mut ranges = [(0_usize, 0_usize, 0_u32, 0_usize); 6];
+    for (index, &(expected_size, expected_kind, expected_flags)) in
+        TABLE_DESCRIPTORS.iter().enumerate()
+    {
         let Some(item_size_field) = View::u32_le_at(bytes, at) else {
             return Ok(None);
         };
@@ -670,6 +708,9 @@ fn probe_table(
         let Some(flags) = View::u32_le_at(bytes, at + 8) else {
             return Ok(None);
         };
+        if (item_size, kind, flags) != (expected_size, expected_kind, expected_flags) {
+            return Ok(None);
+        }
         let Some(count) = View::u32_le_at(bytes, at + 12).map(cadmpeg_core::decode::index_from_u32)
         else {
             return Ok(None);
@@ -684,28 +725,15 @@ fn probe_table(
         if end > bytes.len() {
             return Ok(None);
         }
-        ctx.retain_bytes(
-            cadmpeg_core::decode::u64_from_index(end - data),
-            "copy display-list channel bytes",
-        )?;
-        let Ok(channel) = TessellationChannel::new(
-            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-            item_size_field,
-            kind,
-            flags,
-            bytes[data..end].to_vec(),
-        ) else {
-            return Ok(None);
-        };
-        channels.push(channel);
-        if index == 0 && item_size == 4 && kind == 8 {
+        ranges[index] = (data, end, item_size_field, count);
+        if index == 0 {
             for i in 0..count {
                 let Some(length) = View::u32_le_at(bytes, data + i * 4) else {
                     return Ok(None);
                 };
                 strips.push(cadmpeg_core::decode::index_from_u32(length));
             }
-        } else if index == 1 && item_size == 12 && kind == 100 {
+        } else if index == 1 {
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -718,7 +746,7 @@ fn probe_table(
                 };
                 vertices.push(Point3::new(x * 1000.0, y * 1000.0, z * 1000.0));
             }
-        } else if index == 2 && item_size == 12 && kind == 100 {
+        } else if index == 2 {
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -734,18 +762,42 @@ fn probe_table(
         }
         at = end;
     }
-    if !matches!(channels.as_slice(), [a, positions, normals, ..]
-        if (a.item_size(), a.kind(), a.flags()) == (4, 8, 2)
-            && (positions.item_size(), positions.kind(), positions.flags()) == (12, 100, 2)
-            && (normals.item_size(), normals.kind(), normals.flags()) == (12, 100, 2))
-    {
+    if strips.is_empty() || vertices.is_empty() {
         return Ok(None);
     }
-    if strips.is_empty()
-        || vertices.is_empty()
-        || !auxiliary_channels_are_consistent(&strips, &channels[3..])
-    {
+    let lane = |index: usize| {
+        let (data, end, _, count) = ranges[index];
+        (Some(count), &bytes[data..end])
+    };
+    if !auxiliary_lanes_are_consistent(&strips, [lane(3), lane(4), lane(5)]) {
         return Ok(None);
+    }
+    let Some(channel_bytes) = ranges
+        .iter()
+        .try_fold(0_usize, |total, &(data, end, _, _)| {
+            total.checked_add(end - data)
+        })
+    else {
+        return Ok(None);
+    };
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(channel_bytes),
+        "copy display-list channel bytes",
+    )?;
+    let mut channels = Vec::with_capacity(TABLE_DESCRIPTORS.len());
+    for (&(data, end, item_size_field, _), &(_, kind, flags)) in
+        ranges.iter().zip(&TABLE_DESCRIPTORS)
+    {
+        let Ok(channel) = TessellationChannel::new(
+            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+            item_size_field,
+            kind,
+            flags,
+            bytes[data..end].to_vec(),
+        ) else {
+            return Ok(None);
+        };
+        channels.push(channel);
     }
     Ok(Some((
         ProbedTable {
@@ -1123,6 +1175,29 @@ fn known_extended_form(
         .then_some(index)
 }
 
+/// End of the metadata interval of `face`, before the header of the `next` table.
+fn bounded_metadata_end(payload: &[u8], face: &DisplayFace, next: Option<&DisplayFace>) -> usize {
+    next.map_or(face.metadata.end(), |next| {
+        face.metadata.end().min(table_header_start(payload, next))
+    })
+}
+
+/// The nonzero face key `K` at `M+0x64` of table `index`, in either header form (spec §8).
+pub(crate) fn display_face_key(payload: &[u8], faces: &[DisplayFace], index: usize) -> Option<u32> {
+    let face = faces.get(index)?;
+    let start = face.metadata.start();
+    let key_end = start
+        .checked_add(extended_meta::FACE_KEY)?
+        .checked_add(std::mem::size_of::<u32>())?;
+    if key_end > bounded_metadata_end(payload, face, faces.get(index + 1)) {
+        return None;
+    }
+    if View::u32_le_at(payload, start + extended_meta::ONE) != Some(extended_meta::ONE_VALUE) {
+        return None;
+    }
+    View::u32_le_at(payload, start + extended_meta::FACE_KEY).filter(|key| *key != 0)
+}
+
 pub(crate) fn summary_for_faces(payload: &[u8], faces: &[DisplayFace]) -> Summary {
     let mut summary = Summary::default();
     for (index, face) in faces.iter().enumerate() {
@@ -1131,9 +1206,7 @@ pub(crate) fn summary_for_faces(payload: &[u8], faces: &[DisplayFace]) -> Summar
         let Some(word) = extended_header_word(payload, face) else {
             continue;
         };
-        let metadata_end = faces.get(index + 1).map_or(face.metadata.end(), |next| {
-            face.metadata.end().min(table_header_start(payload, next))
-        });
+        let metadata_end = bounded_metadata_end(payload, face, faces.get(index + 1));
         if let Some(form) = known_extended_form(payload, face, word, metadata_end) {
             summary.extended_forms[form] += 1;
         } else {
@@ -1204,20 +1277,20 @@ impl MeshSamples {
 /// remaining tables stay unassigned and one loss counts them.
 pub(crate) fn assign_unique_surface_owners(
     ctx: &DecodeContext<'_>,
-    model: &mut cadmpeg_ir::document::Model,
+    ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
-    let work_limit = tessellation_owner_work_limit(tessellation_owner_rows(model));
-    assign_unique_surface_owners_within(ctx, model, losses, work_limit)
+    let work_limit = tessellation_owner_work_limit(tessellation_owner_rows(ir));
+    assign_unique_surface_owners_within(ctx, ir, losses, work_limit)
 }
 
 fn assign_unique_surface_owners_within(
     ctx: &DecodeContext<'_>,
-    model: &mut cadmpeg_ir::document::Model,
+    ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     work_limit: usize,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
-    for face in &model.faces {
+    for face in &ir.geometry.faces {
         if let Some(stated) = face.tolerance {
             if stated.get() < EPS_DISPLAY_QUANTIZATION {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -1229,55 +1302,65 @@ fn assign_unique_surface_owners_within(
             }
         }
     }
-    if !model.tessellations.iter().any(needs_surface_owner) {
+    if !ir.model.tessellations.iter().any(needs_surface_owner) {
         return Ok(Vec::new());
     }
-    let surfaces = model
+    let surfaces = ir
+        .geometry
         .surfaces
         .iter()
         .map(|surface| (&surface.id, &surface.geometry))
         .collect::<HashMap<_, _>>();
-    let regions = model
+    let regions = ir
+        .geometry
         .regions
         .iter()
         .map(|region| (&region.id, &region.body))
         .collect::<HashMap<_, _>>();
-    let shell_bodies = model
+    let shell_bodies = ir
+        .geometry
         .shells
         .iter()
         .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
         .collect::<HashMap<_, _>>();
-    let body_transforms = model
+    let body_transforms = ir
+        .geometry
         .bodies
         .iter()
         .map(|body| (&body.id, body.transform))
         .collect::<HashMap<_, _>>();
-    let loops = model
+    let loops = ir
+        .geometry
         .loops
         .iter()
         .map(|loop_| (&loop_.id, loop_))
         .collect::<HashMap<_, _>>();
-    let coedges = model
+    let coedges = ir
+        .geometry
         .coedges
         .iter()
         .map(|coedge| (&coedge.id, coedge))
         .collect::<HashMap<_, _>>();
-    let edges = model
+    let edges = ir
+        .geometry
         .edges
         .iter()
         .map(|edge| (&edge.id, edge))
         .collect::<HashMap<_, _>>();
-    let vertices = model
+    let vertices = ir
+        .geometry
         .vertices
         .iter()
         .map(|vertex| (&vertex.id, vertex))
         .collect::<HashMap<_, _>>();
-    let points = model
+    let points = ir
+        .geometry
         .points
         .iter()
         .map(|point| (&point.id, point.position().get()))
         .collect::<HashMap<_, _>>();
-    let curves = model
+    let curves = ir
+        .geometry
         .curves
         .iter()
         .map(|curve| (&curve.id, &curve.geometry))
@@ -1293,7 +1376,7 @@ fn assign_unique_surface_owners_within(
     };
     let work = WorkBudget::new(work_limit);
     let mut candidates = Vec::new();
-    for face in &model.faces {
+    for face in &ir.geometry.faces {
         let candidate = (|| {
             let body = *shell_bodies.get(&face.shell)?;
             let inverse = match body_transforms.get(body).copied().flatten() {
@@ -1323,7 +1406,7 @@ fn assign_unique_surface_owners_within(
 
     let mut assigned = Vec::new();
     let mut capped = 0usize;
-    for mesh in &mut model.tessellations {
+    for mesh in &mut ir.model.tessellations {
         if !needs_surface_owner(mesh) {
             continue;
         }
@@ -1602,7 +1685,7 @@ fn contains_nurbs_surface(surface: &SolvedSurfaceGeometry) -> bool {
 /// geometric coincidence test. A repeated key with different B-rep targets or
 /// repeated table IDs with different identities is rejected as ambiguous.
 pub(crate) fn assign_persistent_owners(
-    model: &mut cadmpeg_ir::document::Model,
+    ir: &mut CadIr,
     face_identities: &[(FaceId, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
 ) -> Vec<String> {
@@ -1620,21 +1703,7 @@ pub(crate) fn assign_persistent_owners(
         }
     }
 
-    let regions = model
-        .regions
-        .iter()
-        .map(|region| (&region.id, &region.body))
-        .collect::<HashMap<_, _>>();
-    let shell_bodies = model
-        .shells
-        .iter()
-        .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
-        .collect::<HashMap<_, _>>();
-    let face_bodies = model
-        .faces
-        .iter()
-        .filter_map(|face| Some((&face.id, *shell_bodies.get(&face.shell)?)))
-        .collect::<HashMap<_, _>>();
+    let face_bodies = face_bodies(&ir.geometry);
 
     let mut bindings_by_mesh = HashMap::<&str, Option<&PersistentFaceIdentity>>::new();
     for binding in bindings {
@@ -1653,7 +1722,7 @@ pub(crate) fn assign_persistent_owners(
     }
 
     let mut assigned = Vec::new();
-    for mesh in &mut model.tessellations {
+    for mesh in &mut ir.model.tessellations {
         if mesh.body.is_some() || !mesh.faces.is_empty() {
             continue;
         }
@@ -1663,15 +1732,100 @@ pub(crate) fn assign_persistent_owners(
         let Some(Some(face)) = faces_by_identity.get(identity) else {
             continue;
         };
-        let Some(body) = face_bodies.get(face) else {
+        let Some(body) = face_bodies.get(*face) else {
             continue;
         };
         let assigned_id = mesh.id.as_str().to_owned();
         mesh.faces.push((*face).clone());
-        mesh.body = Some((*body).clone());
+        mesh.body = Some(body.clone());
         assigned.push(assigned_id);
     }
     assigned
+}
+
+/// Bind `DisplayLists` tables to faces through the face key at `M+0x64`.
+///
+/// A key binds only when exactly one table and exactly one emitted face carry
+/// it, so a repeated key on either side binds nothing.
+pub(crate) fn assign_face_key_owners(
+    ir: &mut CadIr,
+    face_keys: &[(FaceId, u32)],
+    bindings: &[FaceKeyBinding],
+) -> Vec<String> {
+    let faces_by_key = unique_by_key(face_keys.iter().map(|(face, key)| (*key, face)));
+    let tables_by_key = unique_by_key(
+        bindings
+            .iter()
+            .map(|binding| (binding.key, binding.tessellation.as_str())),
+    );
+    let face_bodies = face_bodies(&ir.geometry);
+    let mut owners = HashMap::new();
+    for (key, table) in &tables_by_key {
+        let (Some(table), Some(Some(face))) = (table, faces_by_key.get(key)) else {
+            continue;
+        };
+        if let Some(body) = face_bodies.get(*face) {
+            owners.insert(*table, (*face, body));
+        }
+    }
+    let mut assigned = Vec::new();
+    for mesh in &mut ir.model.tessellations {
+        if mesh.body.is_some() || !mesh.faces.is_empty() {
+            continue;
+        }
+        let Some((face, body)) = owners.get(mesh.id.as_str()) else {
+            continue;
+        };
+        mesh.faces.push((*face).clone());
+        mesh.body = Some((*body).clone());
+        assigned.push(mesh.id.as_str().to_owned());
+    }
+    assigned
+}
+
+/// Each key's value, or `None` when the key occurs with two different values.
+fn unique_by_key<K: Eq + std::hash::Hash, V: PartialEq>(
+    pairs: impl IntoIterator<Item = (K, V)>,
+) -> HashMap<K, Option<V>> {
+    let mut found = HashMap::<K, Option<V>>::new();
+    for (key, value) in pairs {
+        match found.entry(key) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(value));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if entry
+                    .get()
+                    .as_ref()
+                    .is_some_and(|previous| *previous != value)
+                {
+                    *entry.get_mut() = None;
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The body of every face whose shell and region resolve.
+fn face_bodies(
+    geometry: &cadmpeg_ir::document::Topology,
+) -> HashMap<FaceId, cadmpeg_ir::ids::BodyId> {
+    let regions = geometry
+        .regions
+        .iter()
+        .map(|region| (&region.id, &region.body))
+        .collect::<HashMap<_, _>>();
+    let shell_bodies = geometry
+        .shells
+        .iter()
+        .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
+        .collect::<HashMap<_, _>>();
+    geometry
+        .faces
+        .iter()
+        .filter_map(|face| Some((face.id.clone(), (*shell_bodies.get(&face.shell)?).clone())))
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2062,8 +2216,8 @@ fn closed_planar_circle(
     let center = circle_curve.center().get();
     let axis = *circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
-    let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
-    let end_point = *points.get(&vertices.get(&edge.end)?.point)?;
+    let boundary_point = *points.get(&vertices.get(edge.start()?)?.point)?;
+    let end_point = *points.get(&vertices.get(edge.end()?)?.point)?;
     if radius <= tolerance
         || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
         || analytic_surface_residual(surface.solved()?, center)? > tolerance
@@ -2367,9 +2521,10 @@ fn planar_trim(
             if coedge.owner_loop != loop_.id {
                 return None;
             }
+            let ends = edge.ends.as_ref()?;
             let (start, end) = match coedge.sense {
-                Sense::Forward => (&edge.start, &edge.end),
-                Sense::Reversed => (&edge.end, &edge.start),
+                Sense::Forward => (&ends.start, &ends.end),
+                Sense::Reversed => (&ends.end, &ends.start),
             };
             let start = *points.get(&vertices.get(start)?.point)?;
             let end = *points.get(&vertices.get(end)?.point)?;
@@ -2605,7 +2760,7 @@ fn cylindrical_trim(
             }
             _ => return None,
         }
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             let vertex = vertices.get(vertex_id)?;
             let point = *points.get(&vertex.point)?;
             if analytic_surface_residual(surface.solved()?, point)? > tolerance {
@@ -2626,7 +2781,7 @@ fn cylindrical_trim(
     for coedge_id in loop_.coedges() {
         let coedge = coedges.get(coedge_id)?;
         let edge = edges.get(&coedge.edge)?;
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             let vertex = vertices.get(vertex_id)?;
             let point = *points.get(&vertex.point)?;
             let angle = cylinder_angle(point, origin, &frame)?;
@@ -2763,7 +2918,7 @@ fn conical_trim(
             }
             _ => return None,
         }
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             let vertex = vertices.get(vertex_id)?;
             let point = *points.get(&vertex.point)?;
             if analytic_surface_residual(surface.solved()?, point)? > tolerance {

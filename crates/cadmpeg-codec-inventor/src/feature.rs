@@ -12,13 +12,14 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferGroup, FilletGroup, RadiusSpec},
         holes::HoleKind,
         DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection, ExtrudeSide,
-        ExtrusionDirectionSource, FaceSelection, Feature, FeatureContent, FeatureDefinition,
-        FeatureId, FeatureOperation, FeatureResultTopology, LinearTermination, ParameterValue,
+        ExtrusionDirectionSource, Feature, FeatureContent, FeatureDefinition, FeatureId,
+        FeatureOperation, FeatureResultTopology, LinearTermination, ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -38,13 +39,17 @@ use sheet_metal::refusal::PlateError;
 pub(crate) mod base;
 pub(crate) mod body_selection;
 pub(crate) mod chamfer;
+pub(crate) mod coil;
 pub(crate) mod combine;
 pub(crate) mod delete_face;
 pub(crate) mod derived;
 pub(crate) mod edge_selection;
 pub(crate) mod extrusion;
+pub(crate) mod face_selection;
 pub(crate) mod fillet;
 pub(crate) mod history;
+pub(crate) mod history_bodies;
+pub(crate) mod history_states;
 mod hole;
 pub(crate) mod loft_sweep;
 pub(crate) mod mirror;
@@ -55,13 +60,15 @@ pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
 pub(crate) mod split;
 pub(crate) mod tagging;
+pub(crate) mod thicken;
+pub(crate) mod thread;
 pub(crate) mod work_plane;
 
 pub(crate) mod composite;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
-const FEATURE_TYPE: [u8; 16] = [
+pub(crate) const FEATURE_TYPE: [u8; 16] = [
     0x91, 0x4d, 0x87, 0x90, 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc, 0x06, 0x63, 0xdc, 0x09,
 ];
 const END_OF_FEATURES_TYPE: [u8; 16] = [
@@ -76,7 +83,7 @@ const ENTITY_STYLE_LINK_TYPE: [u8; 16] = inventor_id(0x9087_4d15);
 const PART_OPERATION_TYPE: [u8; 16] = [
     0x28, 0xbe, 0x9a, 0x72, 0xd1, 0x11, 0x44, 0x09, 0x00, 0x08, 0x4e, 0xba, 0x32, 0xa3, 0xdc, 0x09,
 ];
-const BOUNDARY_PATCH_TYPE: [u8; 16] = [
+pub(crate) const BOUNDARY_PATCH_TYPE: [u8; 16] = [
     0x91, 0x73, 0x94, 0x22, 0xd1, 0x11, 0x07, 0xcf, 0x00, 0x08, 0x35, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
 pub(crate) const SELECTION_LIST_TYPE: [u8; 16] = [
@@ -166,12 +173,12 @@ const WORK_POINT_TYPE: [u8; 16] = [
 ];
 /// Work-plane value that precedes the explicit plane frame in its extended form.
 const WORK_PLANE_FRAME_MARKER: u32 = 0x203;
-const WORK_AXIS_TYPE: [u8; 16] = [
+pub(crate) const WORK_AXIS_TYPE: [u8; 16] = [
     0x89, 0x6c, 0xf0, 0x8e, 0xd1, 0x11, 0x3c, 0x04, 0x60, 0x00, 0x7c, 0xb8, 0x01, 0xf3, 0x1b, 0xb0,
 ];
 /// Revolve extent value of a full revolution.
 const REVOLVE_EXTENT_FULL: u16 = 3;
-const FEATURE_LABEL_TYPE: [u8; 16] = [
+pub(crate) const FEATURE_LABEL_TYPE: [u8; 16] = [
     0x2b, 0xa4, 0x48, 0x2b, 0xd2, 0x11, 0x58, 0x64, 0x60, 0x00, 0x74, 0xb7, 0x9b, 0x49, 0xeb, 0xb0,
 ];
 
@@ -188,6 +195,7 @@ pub(crate) struct FeatureInventory {
     pub(crate) sheet_metal_flanges: Vec<sheet_metal::flange::Flange>,
     pub(crate) dimensions: Vec<revolve::Dimension>,
     pub(crate) labels: Vec<PmDcFeatureLabel>,
+    pub(crate) thread_definitions: Vec<thread::Definition>,
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
     pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pub(crate) work_planes: Vec<PmDcWorkPlane>,
@@ -206,6 +214,7 @@ pub(crate) struct FeatureProjection {
     pub(crate) edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) thicken_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Closed loops that resolved extrusion profiles append to sketch
@@ -236,6 +245,10 @@ pub(crate) enum PmDcFeaturePropertyKind {
         family: PmDcFeatureEnumFamily,
         type_value: i16,
         value: u16,
+    },
+    ThickenSelection {
+        faces: crate::pmdc::PmDcReference,
+        parameter: crate::pmdc::PmDcReference,
     },
     WideEnumeration {
         type_value: u32,
@@ -355,6 +368,8 @@ pub(crate) enum PmDcFeatureEnumFamily {
     Auxiliary,
     PlateSide,
     Motion,
+    ThickenControl13,
+    ThickenControl14,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -778,6 +793,19 @@ pub(crate) fn inventory(
                         )
                     })
                 }
+                thread::TYPE if thread::definition_version_supported(version) => {
+                    thread::parse(ctx, record.payload, version).and_then(|definition| {
+                        push_record(
+                            ctx,
+                            &mut inventory.thread_definitions,
+                            definition,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor thread definition",
+                        )
+                    })
+                }
                 FEATURE_LABEL_TYPE => parse_label(ctx, record.payload, version).and_then(|label| {
                     push_record(
                         ctx,
@@ -1100,7 +1128,8 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         revolve::CONTROL_TYPE => Some(parse_auxiliary_enum),
         _ => sheet_metal::property_parser(type_id)
             .or_else(|| split::property_parser(type_id))
-            .or_else(|| motion::parser(type_id)),
+            .or_else(|| motion::parser(type_id))
+            .or_else(|| thicken::property_parser(type_id)),
     }
 }
 
@@ -1703,6 +1732,10 @@ const BASE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 const EXTRUSION_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x31, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24, 0xdc, 0x09,
 ]));
+/// Feature-label class of a surface extrusion.
+const SURFACE_EXTRUSION_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0xf0, 0xa4, 0x97, 0xe5, 0xd4, 0x11, 0xd8, 0x84, 0x10, 0x00, 0xfa, 0xa5, 0xbb, 0xa6, 0x47, 0xb5,
+]));
 const FILLET_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xdc, 0x15, 0xf7, 0xf1, 0xd1, 0x11, 0x42, 0x05, 0x00, 0x08, 0x30, 0xb0, 0x05, 0x24, 0xdc, 0x09,
 ]));
@@ -1726,7 +1759,7 @@ const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 pub(crate) const THREAD_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x06, 0x19, 0xaa, 0x28, 0xd4, 0x11, 0xc7, 0x7a, 0x60, 0x00, 0xc4, 0xa4, 0xca, 0xe1, 0xfb, 0xb0,
 ]));
-const THICKEN_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+pub(crate) const THICKEN_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xec, 0xf4, 0x81, 0x72, 0x9c, 0x4d, 0x5f, 0x92, 0x5f, 0x21, 0x92, 0xb4, 0xa8, 0x30, 0x96, 0xac,
 ]));
 const SHELL_CLASS_ID: ClassId = ClassId(NativeBytes::new([
@@ -1841,13 +1874,7 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
         ],
         "SheetMetalPlate",
     ),
-    (
-        [
-            0xda, 0x14, 0x19, 0xb4, 0xd2, 0x11, 0xda, 0xd0, 0x60, 0x00, 0x12, 0xa9, 0x9d, 0xcc,
-            0xef, 0xb0,
-        ],
-        "Coil",
-    ),
+    (coil::CLASS_BYTES, "Coil"),
     (
         [
             0xda, 0xc2, 0x7a, 0x76, 0xd2, 0x11, 0x0d, 0x2e, 0x60, 0x00, 0x2a, 0xab, 0x01, 0xf3,
@@ -1885,13 +1912,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
     ),
     (
         [
-            0xf0, 0xa4, 0x97, 0xe5, 0xd4, 0x11, 0xd8, 0x84, 0x10, 0x00, 0xfa, 0xa5, 0xbb, 0xa6,
-            0x47, 0xb5,
-        ],
-        "ExtrudeSurface",
-    ),
-    (
-        [
             0xf2, 0x58, 0xf7, 0x4c, 0xd3, 0x11, 0x4f, 0x24, 0x60, 0x00, 0x47, 0xa9, 0x9d, 0xcc,
             0xef, 0xb0,
         ],
@@ -1903,6 +1923,7 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
 pub(crate) enum FeatureFamily {
     Base,
     Extrusion,
+    SurfaceExtrusion,
     Fillet,
     Chamfer,
     Hole,
@@ -1924,6 +1945,7 @@ impl FeatureFamily {
         match self {
             Self::Base => &[BASE_CLASS_ID, derived::CLASS_ID],
             Self::Extrusion => &[EXTRUSION_CLASS_ID],
+            Self::SurfaceExtrusion => &[SURFACE_EXTRUSION_CLASS_ID],
             Self::Fillet => &[FILLET_CLASS_ID, CORNER_ROUND_CLASS_ID],
             Self::Chamfer => &[CHAMFER_CLASS_ID],
             Self::Hole => &[HOLE_CLASS_ID],
@@ -1948,6 +1970,7 @@ impl FeatureFamily {
         match self {
             Self::Base => 1,
             Self::Extrusion => 26,
+            Self::SurfaceExtrusion => 16,
             Self::Fillet => 15,
             Self::Chamfer => 11,
             Self::Hole => 24,
@@ -1981,6 +2004,7 @@ impl FeatureFamily {
         [
             Self::Base,
             Self::Extrusion,
+            Self::SurfaceExtrusion,
             Self::Fillet,
             Self::Chamfer,
             Self::Hole,
@@ -2008,7 +2032,16 @@ impl FeatureFamily {
                 FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
             ) | (
                 Self::Extrusion,
-                FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    solid: Some(true),
+                    ..
+                })
+            ) | (
+                Self::SurfaceExtrusion,
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    solid: Some(false),
+                    ..
+                })
             ) | (
                 Self::Plate,
                 FeatureDefinition::Operation(
@@ -2029,7 +2062,13 @@ impl FeatureFamily {
                 FeatureDefinition::Operation(FeatureOperation::Hole { .. })
             ) | (
                 Self::Thicken,
-                FeatureDefinition::Operation(FeatureOperation::Thicken { .. })
+                FeatureDefinition::Operation(
+                    FeatureOperation::Thicken { .. }
+                        | FeatureOperation::MoveFace {
+                            motion: cadmpeg_ir::features::FaceMotion::Offset { .. },
+                            ..
+                        }
+                )
             ) | (
                 Self::Shell,
                 FeatureDefinition::Operation(FeatureOperation::Shell { .. })
@@ -2052,7 +2091,12 @@ impl FeatureFamily {
                 FeatureDefinition::Operation(FeatureOperation::Combine { .. })
             ) | (
                 Self::Split,
-                FeatureDefinition::Operation(FeatureOperation::SplitBody { .. })
+                FeatureDefinition::Operation(
+                    FeatureOperation::SplitBody { .. }
+                        | FeatureOperation::SplitFace { .. }
+                        | FeatureOperation::TrimBodies { .. }
+                        | FeatureOperation::TrimBodiesAtPlane { .. }
+                )
             )
         )
     }
@@ -2060,6 +2104,9 @@ impl FeatureFamily {
     pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
         match definition {
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}) => Some(Self::Base),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                solid: Some(false), ..
+            }) => Some(Self::SurfaceExtrusion),
             FeatureDefinition::Operation(FeatureOperation::Extrude { .. }) => Some(Self::Extrusion),
             FeatureDefinition::Operation(
                 FeatureOperation::SheetMetalBaseFlange { .. }
@@ -2082,7 +2129,12 @@ impl FeatureFamily {
                 FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. },
             ) => Some(Self::Motion),
             FeatureDefinition::Operation(FeatureOperation::Combine { .. }) => Some(Self::Combine),
-            FeatureDefinition::Operation(FeatureOperation::SplitBody { .. }) => Some(Self::Split),
+            FeatureDefinition::Operation(
+                FeatureOperation::SplitBody { .. }
+                | FeatureOperation::SplitFace { .. }
+                | FeatureOperation::TrimBodies { .. }
+                | FeatureOperation::TrimBodiesAtPlane { .. },
+            ) => Some(Self::Split),
             _ => None,
         }
     }
@@ -2090,7 +2142,9 @@ impl FeatureFamily {
 
 #[derive(Default)]
 pub(crate) struct ProjectionIndex<'a> {
-    result_model: Option<&'a cadmpeg_ir::document::Model>,
+    body_joins: Option<&'a HashMap<String, cadmpeg_ir::ids::BodyId>>,
+    result_model: Option<&'a CadIr>,
+    thread_definitions: &'a [thread::Definition],
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
     dimensions: HashMap<(&'a str, u32), Option<&'a revolve::Dimension>>,
     sketch_entities: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketchEntity>>,
@@ -2105,6 +2159,11 @@ pub(crate) struct ProjectionIndex<'a> {
     transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
     work_planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
+    /// Surface-body wrappers that a new-body solid extrusion stores as its
+    /// result.
+    solid_wrappers: HashMap<(&'a str, u32), u64>,
+    /// History position of each feature record.
+    positions: HashMap<(&'a str, u32), u64>,
     profiles: profile::ProfileIndex<'a>,
     /// Profile sketch ordinal of each sheet-metal plate, from the face label
     /// whose participants are that sketch and that plate.
@@ -2117,7 +2176,7 @@ pub(crate) struct ProjectedSketches<'a> {
     pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
     /// The decoded profile bodies that extrusion profiles resolve through.
     pub(crate) profile_bodies: &'a [profile::ProfileBody],
-    pub(crate) result_model: Option<&'a cadmpeg_ir::document::Model>,
+    pub(crate) result_model: Option<&'a CadIr>,
 }
 
 pub(crate) fn project(
@@ -2161,8 +2220,9 @@ pub(crate) fn project(
             edge_treatment_losses: Vec::new(),
             loft_losses: Vec::new(),
             split_losses: Vec::new(),
+            thicken_losses: Vec::new(),
             plate_losses: Vec::new(),
-            mirror_losses: mirror::native_losses(&inventory.pattern_features, &[]),
+            mirror_losses: mirror::native_losses(&inventory.pattern_features, &[], &[]),
             added_profiles: HashMap::new(),
         });
     }
@@ -2222,7 +2282,9 @@ pub(crate) fn project(
         )
     }));
     let mut index = ProjectionIndex {
+        body_joins: None,
         result_model,
+        thread_definitions: &inventory.thread_definitions,
         edge_names: HashMap::new(),
         sketch_entities: if inventory.properties.iter().any(|property| {
             matches!(
@@ -2312,6 +2374,8 @@ pub(crate) fn project(
             links
         },
         work_planes: unique_work_planes,
+        solid_wrappers: HashMap::new(),
+        positions: HashMap::new(),
         profiles: profile::ProfileIndex::new(
             profile_bodies,
             &inventory.kernel_entity_links,
@@ -2347,12 +2411,33 @@ pub(crate) fn project(
                 .copied()
         })
     };
+    if let Some(token) = token {
+        index.positions = history
+            .placements
+            .iter()
+            .map(|(ordinal, placement)| ((token, *ordinal), placement.ordinal))
+            .collect();
+    }
+    index.solid_wrappers = extrusion::solid_result_wrappers(
+        &inventory.features,
+        |feature| {
+            label_of(feature.identity.record_ordinal).is_some_and(|label| {
+                matches!(
+                    FeatureFamily::from_class_id(label.class_id()),
+                    Some(FeatureFamily::Extrusion)
+                )
+            })
+        },
+        &index.properties,
+        &index.positions,
+    );
     let mut projected = Vec::new();
     let mut extrusion_losses = Vec::new();
     let mut revolve_losses = Vec::new();
     let mut edge_treatment_losses = Vec::new();
     let mut loft_losses = Vec::new();
     let mut split_losses = Vec::new();
+    let mut thicken_losses = Vec::new();
     let mut plate_refusals = sheet_metal::projection::Refusals::default();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
@@ -2365,6 +2450,9 @@ pub(crate) fn project(
                 FeatureFamily::Base => None,
                 FeatureFamily::Extrusion => {
                     extrusion::project(ctx, feature, label, &index, &mut extrusion_losses)
+                }
+                FeatureFamily::SurfaceExtrusion => {
+                    extrusion::project_surface(ctx, feature, label, &index, &mut extrusion_losses)
                 }
                 FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
@@ -2417,15 +2505,6 @@ pub(crate) fn project(
         };
         match value {
             Some((projected_feature, result)) => {
-                if let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
-                    projected_feature.evaluation.definition()
-                {
-                    edge_treatment_losses.extend(
-                        groups
-                            .iter()
-                            .filter_map(|group| chamfer::orientation_loss(group.spec)),
-                    );
-                }
                 neutral += 1;
                 projected.push(HistoryItem {
                     record: feature.identity.record_ordinal,
@@ -2447,6 +2526,12 @@ pub(crate) fn project(
                             .unwrap_or(revolve::NativeReason::ProfileOrResult)
                             .note(),
                     );
+                }
+                if label.is_some_and(|label| label.class_id() == THICKEN_CLASS_ID) {
+                    let reason = indexed_thicken_operation(feature, &index, inventory)
+                        .err()
+                        .unwrap_or(thicken::NativeReason::Result);
+                    thicken_losses.push(reason.note());
                 }
                 if let Some(label) = label {
                     let property = |reference: crate::pmdc::PmDcReference| {
@@ -2509,7 +2594,8 @@ pub(crate) fn project(
                 &inventory.properties,
                 &sketch.transforms,
                 &inventory.work_planes,
-            );
+            )
+            .with_generated_nodes(&inventory.features, &inventory.labels);
             let seeds = unique_index(
                 inventory
                     .features
@@ -2525,7 +2611,16 @@ pub(crate) fn project(
             );
             (index, seeds)
         });
-    for pattern in &inventory.pattern_features {
+    let mut mirror_refusals = if mirrors.is_some() {
+        ctx.alloc_filled(
+            inventory.pattern_features.len(),
+            None,
+            "track Inventor mirror Boolean refusals",
+        )?
+    } else {
+        Vec::new()
+    };
+    for (pattern_index, pattern) in inventory.pattern_features.iter().enumerate() {
         if history.placement(pattern.identity.record_ordinal).is_none() {
             continue;
         }
@@ -2533,10 +2628,16 @@ pub(crate) fn project(
         let value = match pattern.family {
             PmDcPatternFamily::Mirror => label.and_then(|label| {
                 let (mirror_index, seed_records) = mirrors.as_ref()?;
-                mirror_index.project(ctx, pattern, label, |ordinal| {
-                    let seed = seed_records.get(&ordinal)?.as_ref()?;
-                    mirror::seed_feature_id(&history, pattern.identity.record_ordinal, seed)
-                })
+                mirror_index.project(
+                    ctx,
+                    pattern,
+                    label,
+                    |ordinal| {
+                        let seed = seed_records.get(&ordinal)?.as_ref()?;
+                        mirror::seed_feature_id(&history, pattern.identity.record_ordinal, seed)
+                    },
+                    |refusal| mirror_refusals[pattern_index] = Some(refusal),
+                )
             }),
             PmDcPatternFamily::Rectangular => pattern::project(
                 ctx,
@@ -2662,7 +2763,32 @@ pub(crate) fn project(
         }
     }
     edge_selection::bind_generated(&mut features, &mut result_topologies)?;
-    let input_topologies = sheet_metal::inputs::project(ctx, &mut features, inventory)?;
+    let mut input_topologies = sheet_metal::inputs::project(ctx, &mut features, inventory)?;
+    input_topologies.extend(edge_selection::historical::project(
+        ctx,
+        &mut features,
+        inventory,
+    )?);
+    input_topologies.extend(face_selection::project(ctx, &mut features, inventory)?);
+    input_topologies.extend(chamfer::oriented::project(
+        ctx,
+        &mut features,
+        inventory,
+        |token, reference| resolve_property(token, reference.index(), &index),
+        |source, slot| length_parameter(source, slot, &index),
+    )?);
+    // The orientation notes follow the final specs, after the joins above.
+    for feature in &features {
+        if let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
+            feature.evaluation.definition()
+        {
+            edge_treatment_losses.extend(
+                groups
+                    .iter()
+                    .filter_map(|group| chamfer::orientation_loss(group.spec)),
+            );
+        }
+    }
     let unresolved_chamfers = features
         .iter()
         .filter(|feature| {
@@ -2689,8 +2815,13 @@ pub(crate) fn project(
         edge_treatment_losses,
         loft_losses,
         split_losses,
+        thicken_losses,
         plate_losses: plate_refusals.losses(&features),
-        mirror_losses: mirror::native_losses(&inventory.pattern_features, &features),
+        mirror_losses: mirror::native_losses(
+            &inventory.pattern_features,
+            &features,
+            &mirror_refusals,
+        ),
         features,
         result_topologies,
         input_topologies,
@@ -2746,6 +2877,8 @@ fn apply_history(
         .filter(|pattern| Some(pattern.identity.segment_token.as_str()) == token)
         .map(|pattern| (pattern.identity.record_ordinal, pattern))
         .collect::<HashMap<_, _>>();
+    let mirror_planes =
+        mirror::MirrorIndex::new(&inventory.properties, &[], &inventory.work_planes);
     for item in projected.iter_mut() {
         let Some(placement) = history.placement(item.record) else {
             continue;
@@ -2787,6 +2920,14 @@ fn apply_history(
                 })
                 .unwrap_or_default(),
         };
+        let mut consumed = consumed;
+        let mut supplier = None;
+        if let (true, Some(token), Some(pattern)) =
+            (item.neutral, token, patterns.get(&item.record).copied())
+        {
+            supplier = mirror::supplying_plane(&mirror_planes, token, pattern);
+            consumed.extend(supplier);
+        }
         for ordinal in consumed {
             let Some(dependency) = ids.get(&ordinal) else {
                 continue;
@@ -2798,6 +2939,11 @@ fn apply_history(
                 continue;
             }
             item.feature.dependencies.insert(dependency.clone());
+            if supplier == Some(ordinal) {
+                item.feature
+                    .evaluation
+                    .edit(|definition, _| mirror::without_supplied_plane_reference(definition));
+            }
         }
     }
     Ok(())
@@ -2902,6 +3048,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
         return match family {
             FeatureFamily::Base => NativeFeatureKind::Other("Base".into()),
             FeatureFamily::Extrusion => NativeFeatureKind::Extrude,
+            FeatureFamily::SurfaceExtrusion => NativeFeatureKind::Other("ExtrudeSurface".into()),
             FeatureFamily::Fillet => NativeFeatureKind::Fillet,
             FeatureFamily::Chamfer => NativeFeatureKind::Chamfer,
             FeatureFamily::Hole => NativeFeatureKind::Other("Hole".into()),
@@ -3026,6 +3173,7 @@ fn project_thread(
         Ok(key) => key,
         Err(error) => return Some(Err(error)),
     };
+    let thread_fields = thread::fields(source, label, index.thread_definitions);
     Some(Ok(Feature {
         product_definition: None,
         id: FeatureId::compose(
@@ -3043,11 +3191,11 @@ fn project_thread(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face: cadmpeg_ir::features::FaceSelection::Native(faces.id()),
-                diameter: None,
+                diameter: thread_fields.diameter,
                 extent: None,
-                standard: None,
-                designation: None,
-                pitch: None,
+                standard: thread_fields.standard,
+                designation: thread_fields.designation,
+                pitch: thread_fields.pitch,
                 modeled: None,
             }),
         ),
@@ -3128,6 +3276,12 @@ impl<'a> BoundaryProfile<'a> {
         })
     }
 
+    /// The native selection of the profile curves. A surface extrusion keeps
+    /// the selection: it does not state whether a closed ring is filled.
+    fn selection(self) -> Option<PlanarProfileRef> {
+        PlanarProfileRef::sketch_selection(self.sketch_id, self.selections).ok()
+    }
+
     /// The selected sketch regions, or the native selection when they do not
     /// resolve. Resolution can append loops to the sketch profile table, so a
     /// projection resolves its profile after every other check.
@@ -3170,7 +3324,7 @@ fn project_extrusion(
         direction,
         start,
         extent,
-    } = extrusion::indexed_operands(source, label, index)?;
+    } = extrusion::indexed_operands(source, label, index, extrusion::Output::Solid)?;
     let (feature_id, result) = match feature_result(ctx, source, 26, index)? {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
@@ -3206,6 +3360,100 @@ fn project_extrusion(
                 extent,
                 op,
                 solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            }),
+        ),
+        native_ref: Some(source.id()),
+    };
+    Some(Ok((feature, result)))
+}
+
+/// Slots of a surface extrusion that hold no operand. Slot 14 is null or
+/// selects the solid body wrapper; slot 26 is the solid result collection.
+const SURFACE_EXTRUSION_NULL_SLOTS: [usize; 6] = [8, 9, 10, 12, 17, 26];
+
+/// The profile of a surface extrusion: the native selection of the boundary
+/// patch, or the native patch record when no neutral sketch exists.
+fn surface_extrusion_profile(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<PlanarProfileRef> {
+    let slots = source.properties.references();
+    if slots.len() != 30
+        || slots.get(23)? != slots.get(1)?
+        || SURFACE_EXTRUSION_NULL_SLOTS
+            .iter()
+            .any(|slot| slots[*slot].index() != 0)
+        || !extrusion::surface_input_is_solid(source, index)
+    {
+        return None;
+    }
+    let boundary = references(source, 1, PmDcFeatureReferenceFamily::BoundaryPatch, index)?;
+    let token = source.identity.segment_token.as_str();
+    let zero_control = !boundary.references().is_empty()
+        && boundary.references().iter().all(|reference| {
+            resolve_property(token, reference.index(), index).is_some_and(|property| {
+                matches!(
+                    property.kind,
+                    PmDcFeaturePropertyKind::ProfileSelection { value: 0, .. }
+                )
+            })
+        });
+    if !zero_control {
+        return None;
+    }
+    match BoundaryProfile::new(source, label, 1, index) {
+        Some(boundary) => boundary.selection(),
+        None => extrusion::native_profile(source, label, index),
+    }
+}
+
+fn project_surface_extrusion(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let profile = surface_extrusion_profile(source, label, index)?;
+    let extrusion::Operands {
+        op,
+        direction,
+        start,
+        extent,
+    } = extrusion::indexed_operands(source, label, index, extrusion::Output::Surface)?;
+    let (feature_id, result) = match body_result(ctx, source, 16, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
+        return Some(Err(error));
+    }
+    let feature = Feature {
+        product_definition: None,
+        id: feature_id,
+        ordinal: u64::from(label.index),
+        name: label.name().map(str::to_owned),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: boolean_properties(source, &[20, 22], index),
+        source_tag: Some("extrude".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(profile),
+                direction: ExtrudeDirection::Explicit {
+                    vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
+                    source: Some(ExtrusionDirectionSource::Custom {}),
+                },
+                start,
+                extent,
+                op,
+                solid: Some(false),
                 face_maker: None,
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
@@ -3583,8 +3831,12 @@ fn extrusion_side(
             if side_has_point(source, slots) {
                 return None;
             }
-            let (plane, native) = extent_target_plane(source, index, 11, 13, 18)?;
-            LinearTermination::ToPlane { plane, native }
+            let (plane, native, source) = extent_target_plane(source, index, 11, 13, 18)?;
+            LinearTermination::ToPlane {
+                plane,
+                native,
+                source: Some(source),
+            }
         }
         _ => return None,
     };
@@ -3671,6 +3923,7 @@ fn extent_target_plane(
 ) -> Option<(
     cadmpeg_ir::features::FeatureSupportPlaneFrame,
     cadmpeg_core::text::NonBlankString,
+    cadmpeg_ir::features::PlaneTargetSource,
 )> {
     let references = source.properties.references();
     let plane = references.get(plane_slot)?.index();
@@ -3685,29 +3938,55 @@ fn extent_target_plane(
             .work_planes
             .get(&(token, plane.checked_sub(1)?))
             .and_then(Option::as_ref)?;
-        return target_plane(plane.origin, plane.u_axis, plane.v_axis, plane.id());
+        let (frame, native) = target_plane(plane.origin, plane.u_axis, plane.v_axis, plane.id())?;
+        return Some((
+            frame,
+            native,
+            cadmpeg_ir::features::PlaneTargetSource::WorkPlane,
+        ));
     }
-    if !matches!(
-        resolve_property(token, flag, index)?.kind,
-        PmDcFeaturePropertyKind::TerminationFlag { value: 1 }
-    ) {
+    let flag = resolve_property(token, flag, index)?;
+    if flag.identity.type_id.as_str() != type_id_string(TERMINATION_FLAG_TYPE)
+        || !matches!(
+            flag.kind,
+            PmDcFeaturePropertyKind::TerminationFlag { value: 1 }
+        )
+    {
         return None;
     }
     let surface = resolve_property(token, surface, index)?;
+    if surface.identity.type_id.as_str() != type_id_string(SURFACE_TYPE) {
+        return None;
+    }
     let PmDcFeaturePropertyKind::PlaneSurface {
         origin,
         u_axis,
         v_axis,
+        references,
         extension,
-        ..
+        state,
+        surface_form,
+        value,
     } = surface.kind
     else {
         return None;
     };
-    if extension.is_some_and(|value| value != 0) {
+    if !extrusion::plane_surface_controls(
+        surface.save_version_major,
+        references,
+        extension,
+        state,
+        surface_form,
+        value,
+    ) {
         return None;
     }
-    target_plane(origin, u_axis, v_axis, surface.id())
+    let (plane, native) = target_plane(origin, u_axis, v_axis, surface.id())?;
+    Some((
+        plane,
+        native,
+        cadmpeg_ir::features::PlaneTargetSource::FaceSurface,
+    ))
 }
 
 /// Build a model-space plane frame from an origin in centimetres and two
@@ -3832,6 +4111,7 @@ fn project_chamfer(
         spec,
         flip_direction,
         direct,
+        ..
     } = operands;
     let (feature_id, result) = match feature_result(ctx, source, 11, index)? {
         Ok(value) => value,
@@ -3955,9 +4235,7 @@ fn project_hole(
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let hole_form = enum16(source, 0, PmDcFeatureEnumFamily::Hole, index)?;
-    if boolean(source, 17, index)? {
-        return None;
-    }
+    let reversed = boolean(source, 17, index)?;
     let diameter = length_parameter(source, 1, index)?;
     let depth = length_parameter(source, 2, index)?;
     let head_diameter = length_parameter(source, 3, index)?;
@@ -4001,14 +4279,15 @@ fn project_hole(
         return None;
     }
     // Slot 16 is the owning sketch's direction record: the sketch-plane
-    // normal. With the slot-17 Boolean false the hole drills against it.
+    // normal. With the slot-17 Boolean false the hole drills against it;
+    // with the Boolean true it drills along it.
     let direction_record = resolve_direction(source, 16, index)?;
-    let direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
+    let normal = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
         direction_record.direction[0].get(),
         direction_record.direction[1].get(),
         direction_record.direction[2].get(),
-    ))?
-    .reversed();
+    ))?;
+    let direction = if reversed { normal } else { normal.reversed() };
     let placements = hole::placements(source, label, index, transform, direction)?;
     let shape = cadmpeg_ir::features::holes::HoleShape::new(
         cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -4067,107 +4346,51 @@ fn project_hole(
     )))
 }
 
-/// Admit the join form with Boolean values `1, 0, 0, 0, 0, 1, 0` in slots
-/// 2, 3, 4, 7, 10, 16, and 17, and a positive thickness in slot 6.
-pub(crate) fn thicken_operation<'a>(
-    source: &PmDcFeature,
-    property_at: impl Fn(usize) -> Option<&'a PmDcFeatureProperty>,
-    parameter_at: impl Fn(usize) -> Option<(&'a crate::design::PmDcParameter, &'a ParameterValue)>,
-    record_type_at: impl Fn(u32) -> Option<&'a str>,
-) -> Option<FeatureOperation> {
-    if source.properties.references().len() != 18
-        || [5, 8, 11]
-            .into_iter()
-            .any(|slot| source.properties.references()[slot].index() != 0)
-        || !matches!(
-            property_at(1)?.kind,
-            PmDcFeaturePropertyKind::Enumeration {
-                family: PmDcFeatureEnumFamily::PartOperation,
-                type_value: 5,
-                value: 3,
-            }
-        )
-    {
-        return None;
-    }
-    for (slot, expected) in [
-        (2, true),
-        (3, false),
-        (4, false),
-        (7, false),
-        (10, false),
-        (16, true),
-        (17, false),
-    ] {
-        if !matches!(
-            property_at(slot)?.kind,
-            PmDcFeaturePropertyKind::Boolean { value, .. } if value == expected
-        ) {
-            return None;
-        }
-    }
-    if !matches!(
-        property_at(9)?.kind,
-        PmDcFeaturePropertyKind::References {
-            family: PmDcFeatureReferenceFamily::FeatureDimensions,
-            ..
-        }
-    ) {
-        return None;
-    }
-    for (slot, expected) in [
-        (13, "4c40b0a3ac4b9504e719b28a70e0e818"),
-        (14, "c11c7b63ea4d840b68b76e8c67bcbc48"),
-    ] {
-        if record_type_at(source.properties.references()[slot].record_ordinal()?)? != expected {
-            return None;
-        }
-    }
-    let (raw_thickness, value) = parameter_at(6)?;
-    let ParameterValue::Length(thickness) = value else {
-        return None;
-    };
-    if Length::new(raw_thickness.model_value.get() * 10.0)? != *thickness {
-        return None;
-    }
-    let (raw_control, control) = parameter_at(12)?;
-    if !matches!(control, ParameterValue::Real(value) if *value == raw_control.model_value) {
-        return None;
-    }
-    let selections = property_at(0)?;
-    let PmDcFeaturePropertyKind::References {
-        family: PmDcFeatureReferenceFamily::SelectionList,
-        items,
-    } = &selections.kind
-    else {
-        return None;
-    };
-    let mut distinct = HashSet::new();
-    if items.references().is_empty()
-        || items.references().iter().any(|reference| {
-            reference
-                .record_ordinal()
-                .and_then(&record_type_at)
-                .is_none()
-                || !distinct.insert(reference.index())
+pub(crate) fn thicken_source_ids(inventory: &FeatureInventory) -> HashSet<String> {
+    let owners: HashSet<_> = inventory
+        .labels
+        .iter()
+        .filter(|label| label.class_id() == THICKEN_CLASS_ID)
+        .filter_map(|label| {
+            Some((
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal()?,
+            ))
         })
-    {
-        return None;
-    }
-    Some(FeatureOperation::Thicken {
-        faces: FaceSelection::Native(selections.id()),
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::try_from(*thickness).ok()?),
-        side: None,
-    })
+        .collect();
+    inventory
+        .features
+        .iter()
+        .filter(|feature| {
+            owners.contains(&(
+                feature.identity.segment_token.as_str(),
+                feature.identity.record_ordinal,
+            ))
+        })
+        .map(Located::id)
+        .collect()
 }
 
 pub(crate) fn thicken_operand_losses<'a>(
     features: impl IntoIterator<Item = &'a Feature>,
+    thicken_sources: &HashSet<String>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let count = features
         .into_iter()
         .filter(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => true,
+            FeatureDefinition::Operation(FeatureOperation::MoveFace {
+                motion: cadmpeg_ir::features::FaceMotion::Offset { .. },
+                faces,
+            }) => {
+                !matches!(
+                    faces,
+                    cadmpeg_ir::features::FaceSelection::Historical { .. }
+                ) && feature
+                    .native_ref
+                    .as_ref()
+                    .is_some_and(|id| thicken_sources.contains(id.as_str()))
+            }
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
                 kind.as_str() == "Thicken"
             }
@@ -4178,22 +4401,29 @@ pub(crate) fn thicken_operand_losses<'a>(
         return Vec::new();
     }
     vec![crate::loss::InventorLossCode::FeatureThickenOperandsNative.note(format!(
-        "{count} Inventor thicken operation(s) retain native selections or unresolved construction controls and thickness side."
+        "{count} Inventor Thicken operation(s) retain native face selections or construction operands."
     ))]
 }
 
-fn project_thicken(
-    ctx: &DecodeContext<'_>,
+fn indexed_thicken_operation(
     source: &PmDcFeature,
-    label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
     inventory: &FeatureInventory,
-) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    let operation = thicken_operation(
+) -> Result<FeatureOperation, thicken::NativeReason> {
+    thicken::operation(
         source,
-        |slot| slot_property(source, slot, index),
-        |slot| {
-            let ordinal = source.properties.references().get(slot)?.record_ordinal()?;
+        |reference| {
+            index
+                .properties
+                .get(&(
+                    source.identity.segment_token.as_str(),
+                    reference.record_ordinal()?,
+                ))?
+                .as_ref()
+                .copied()
+        },
+        |reference| {
+            let ordinal = reference.record_ordinal()?;
             let parameter = index
                 .parameters
                 .get(&(source.identity.segment_token.as_str(), ordinal))?
@@ -4206,6 +4436,16 @@ fn project_thicken(
                 .as_ref()?;
             Some((*parameter, value))
         },
+        |reference| {
+            index
+                .dimensions
+                .get(&(
+                    source.identity.segment_token.as_str(),
+                    reference.record_ordinal()?,
+                ))?
+                .as_ref()
+                .copied()
+        },
         |ordinal| {
             inventory
                 .record_types
@@ -4213,7 +4453,17 @@ fn project_thicken(
                 .get(&ordinal)?
                 .as_deref()
         },
-    )?;
+    )
+}
+
+fn project_thicken(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    inventory: &FeatureInventory,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let operation = indexed_thicken_operation(source, index, inventory).ok()?;
     let (feature_id, result) = match feature_result(ctx, source, 15, index)? {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
@@ -4374,7 +4624,9 @@ fn enum16(
         | PmDcFeatureEnumFamily::Chamfer
         | PmDcFeatureEnumFamily::PlateSide
         | PmDcFeatureEnumFamily::Motion => 2,
-        PmDcFeatureEnumFamily::Auxiliary => return None,
+        PmDcFeatureEnumFamily::Auxiliary
+        | PmDcFeatureEnumFamily::ThickenControl13
+        | PmDcFeatureEnumFamily::ThickenControl14 => return None,
     };
     match property.kind {
         PmDcFeaturePropertyKind::Enumeration {
@@ -4548,7 +4800,7 @@ pub(crate) mod tests {
         PmDcWorkPlanePayload, ProjectionIndex, BOOLEAN_TYPE, CHAMFER_CLASS_ID,
         END_OF_FEATURES_TYPE, ENTITY_STYLE_LINK_TYPE, EXTRUSION_CLASS_ID, FEATURE_LABEL_TYPE,
         FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID, MIRROR_FEATURE_TYPE, PLANE_SURFACE_FORM,
-        RECTANGULAR_PATTERN_FEATURE_TYPE, WORK_PLANE_TYPE,
+        RECTANGULAR_PATTERN_FEATURE_TYPE, SURFACE_EXTRUSION_CLASS_ID, WORK_PLANE_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};
@@ -4627,6 +4879,7 @@ pub(crate) mod tests {
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
             issues: Vec::new(),
+            opaque_base_units: std::collections::HashMap::default(),
         };
         let sketch = crate::sketch::SketchInventory {
             sketches: Vec::new(),
@@ -4634,6 +4887,7 @@ pub(crate) mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
@@ -4924,14 +5178,23 @@ pub(crate) mod tests {
         ordinal: u32,
         kind: PmDcFeaturePropertyKind,
     ) -> PmDcFeatureProperty {
+        let type_id = match &kind {
+            PmDcFeaturePropertyKind::PlaneSurface { .. } => {
+                crate::record_identity::RecordTypeId::from_bytes(super::SURFACE_TYPE)
+            }
+            PmDcFeaturePropertyKind::TerminationFlag { .. } => {
+                crate::record_identity::RecordTypeId::from_bytes(super::TERMINATION_FLAG_TYPE)
+            }
+            _ => crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}"))
+                .expect("test GUID"),
+        };
         Located::new(
             PmDcFeaturePropertyPayload {
                 save_version_major: 16,
                 header: test_header(),
                 kind,
             },
-            crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}"))
-                .expect("test GUID"),
+            type_id,
             segment().clone(),
             ordinal,
         )
@@ -5098,7 +5361,9 @@ pub(crate) mod tests {
         entity_style_links: &'a [PmDcEntityStyleLink],
     ) -> ProjectionIndex<'a> {
         ProjectionIndex {
+            body_joins: None,
             result_model: None,
+            thread_definitions: &[],
             edge_names: std::collections::HashMap::new(),
             dimensions: std::collections::HashMap::new(),
             sketch_entities: std::collections::HashMap::new(),
@@ -5185,6 +5450,8 @@ pub(crate) mod tests {
                 })
                 .collect(),
             work_planes: std::collections::HashMap::new(),
+            solid_wrappers: std::collections::HashMap::new(),
+            positions: std::collections::HashMap::new(),
             profiles: super::profile::ProfileIndex::new(&[], &[], entity_style_links, &[], &[]),
             plate_sketches: std::collections::HashMap::new(),
         }

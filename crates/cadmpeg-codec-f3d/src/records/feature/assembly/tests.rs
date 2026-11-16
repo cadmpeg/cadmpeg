@@ -367,6 +367,8 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
                 .try_into()
                 .unwrap(),
             context_id_offset: 422,
+            serialization_form:
+                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
             recipe_record_index: 50,
             recipe_record_byte_offset: 500,
             recipe_id: "recipe".into(),
@@ -419,6 +421,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
                 tangent_point_data: None,
                 input_records: Vec::new(),
                 face_selection: None,
+                locations: Vec::new(),
             }),
             selection: selection(41),
         },
@@ -1039,6 +1042,8 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
                 .try_into()
                 .unwrap(),
             context_id_offset: 422,
+            serialization_form:
+                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
             recipe_record_index: 50,
             recipe_record_byte_offset: 500,
             recipe_id: "recipe".into(),
@@ -1097,6 +1102,7 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
                 tangent_point_data: None,
                 input_records: Vec::new(),
                 face_selection: None,
+                locations: Vec::new(),
             }),
             selection: selection(41),
         },

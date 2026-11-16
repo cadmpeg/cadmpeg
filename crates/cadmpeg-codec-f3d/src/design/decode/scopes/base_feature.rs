@@ -2,9 +2,11 @@ use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed
 use crate::layout::base_feature_class_377_prefix as class_377;
 use crate::layout::base_feature_class_452_262_compact as class_452_compact;
 use crate::layout::base_feature_class_452_262_expanded as class_452_expanded;
+use crate::loss::F3dLossCode;
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
 use crate::records::feature::base_feature::DesignBaseFeatureEntry;
 use crate::records::feature::base_feature::DesignLegacyBaseFeatureBody;
+use crate::records::feature::base_feature::DesignPasteSource;
 use crate::records::feature::base_feature::{
     local_reference_field, DesignBaseFeatureBodyReferenceForm,
 };
@@ -12,6 +14,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use std::collections::HashMap;
 
 use super::shared_frames::marked_record_reference;
 
@@ -671,9 +674,16 @@ use crate::layout::base_feature_compact_repeated_body_entry as compact_entry;
 use crate::layout::base_feature_compact_result_body_count as compact_count;
 use crate::layout::base_feature_legacy_444_zero_body as legacy_444_zero_body;
 use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
+use crate::layout::base_feature_null_reference_count as null_count;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
+use crate::layout::base_feature_suffix_result_body as suffix_layout;
 use crate::layout::base_feature_typed_reference_zero_body as typed_zero_body;
+use crate::layout::base_feature_wide_shifted_zero_body as shifted_zero_body;
+use crate::layout::base_feature_wide_zero_body as wide_zero_body;
+use crate::layout::timeline_body_owner_marked_prefix as owner_marked_prefix;
+use crate::layout::timeline_body_owner_prefix as owner_prefix;
+use crate::layout::timeline_owned_paste_source_pairs as paste_pairs;
 use crate::records::feature::scope;
 
 fn read_base_feature_entry_at(
@@ -694,6 +704,57 @@ fn read_base_feature_entry_at(
     };
     *cursor = at.checked_add(result_body_entry::LEN)?;
     Some(entry)
+}
+
+/// Reads the marked null reference at `at` and returns its flag.
+fn marked_null_reference_flag(bytes: &[u8], at: usize) -> Option<bool> {
+    if bytes.get(at + null_count::NULL_REFERENCE_MARKER) != Some(&1)
+        || bytes.get(at + null_count::NULL_REFERENCE..at + null_count::NULL_REFERENCE_FLAG)
+            != Some(&[0; 8])
+        || bytes.get(at + null_count::NULL_REFERENCE_ZERO) != Some(&0)
+    {
+        return None;
+    }
+    match bytes.get(at + null_count::NULL_REFERENCE_FLAG)? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+/// Repeated-run form selected by the count field of a result-body envelope
+/// whose class pair has no row of its own.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UnclassedResultBodyCount {
+    /// `u8 1`, six zero bytes, u32 count: the passive references repeat.
+    Passive,
+    /// `u8 1`, five zero bytes, `u8 1`, u32 count: the body suffixes repeat.
+    BodySuffix,
+}
+
+fn unclassed_result_body_count(
+    bytes: &[u8],
+    count_field: usize,
+    body_count: usize,
+) -> Option<UnclassedResultBodyCount> {
+    if bytes.get(count_field + compact_count::COUNT_MARKER) != Some(&1)
+        || bytes.get(
+            count_field + compact_count::ZERO_RUN_5..count_field + compact_count::REPEAT_MARKER,
+        ) != Some(&[0; 5])
+        || usize::try_from(View::u32_le_at(
+            bytes,
+            count_field + compact_count::BODY_COUNT,
+        )?)
+        .ok()?
+            != body_count
+    {
+        return None;
+    }
+    match bytes.get(count_field + compact_count::REPEAT_MARKER)? {
+        0 => Some(UnclassedResultBodyCount::Passive),
+        1 => Some(UnclassedResultBodyCount::BodySuffix),
+        _ => None,
+    }
 }
 
 /// Distance from the null GUID length field of the typed zero-body form to
@@ -736,12 +797,442 @@ fn exact_typed_zero_body_base_feature(
         return None;
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
+        null_reference_flag_offset: None,
+        repeats_body_suffixes: false,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
             + u64::try_from(typed_zero_body::SHARED_METADATA_RECORD).ok()?,
         metadata_field: bytes
             .get(start + typed_zero_body::SHARED_METADATA_FIELD..reference_end)?
+            .to_vec()
+            .into(),
+    })
+}
+
+/// Paste object whose owned scope stores the pasted bodies.
+const PASTE_BODIES_TYPE_GUID: &str = "BA3059E4-4B23-4D02-9D18-E7BB95C991F3";
+/// Body-to-component object whose owned scope stores the moved bodies.
+const BODY_TO_COMPONENT_TYPE_GUID: &str = "56225BC7-69B7-446A-9AEA-6AA25BC7806E";
+
+/// A timeline object's reference to the Base Feature scope it owns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TimelineBodyOwner {
+    record: u32,
+    body_count: usize,
+    reference_offset: u64,
+    /// A same-index paired header closes the object's frame.
+    paired: bool,
+    /// The object is a paste object: its scope stores a source pair per body.
+    pastes: bool,
+    /// The paste object stores a null removal key: it pastes copies and keeps
+    /// its source bodies.
+    keeps_sources: bool,
+}
+
+impl TimelineBodyOwner {
+    pub(super) fn keeps_sources(&self) -> bool {
+        self.keeps_sources
+    }
+}
+
+const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
+const GUID_CODE_UNITS: usize = 36;
+
+/// Whether `envelope` is zero from `at` up to an LP-UTF16 null-GUID key that
+/// ends inside it.
+fn null_removal_key_at(envelope: &[u8], at: usize) -> bool {
+    let Some(key_at) = envelope
+        .get(at..)
+        .and_then(|rest| rest.iter().position(|byte| *byte != 0))
+    else {
+        return false;
+    };
+    crate::bytes::lp_utf16_bounded(envelope, at + key_at, GUID_CODE_UNITS..=GUID_CODE_UNITS)
+        .is_some_and(|(key, _)| key == NULL_GUID)
+}
+
+/// Index the paste and body-to-component timeline objects that name each
+/// scope, in ascending object record order.
+pub(super) fn timeline_body_owners<'a>(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    types: impl Iterator<Item = &'a crate::records::entity_header::SegmentType>,
+) -> HashMap<u32, Vec<TimelineBodyOwner>> {
+    let mut owners = HashMap::<u32, Vec<TimelineBodyOwner>>::new();
+    for design_type in types.filter(|design_type| {
+        [PASTE_BODIES_TYPE_GUID, BODY_TO_COMPONENT_TYPE_GUID]
+            .iter()
+            .any(|guid| guid.eq_ignore_ascii_case(design_type.type_guid.as_str()))
+    }) {
+        let pastes = PASTE_BODIES_TYPE_GUID.eq_ignore_ascii_case(design_type.type_guid.as_str());
+        for &entity in design_type.entities.values() {
+            let Some((scope, owner)) = u32::try_from(entity)
+                .ok()
+                .and_then(|record| parse_timeline_body_owner(bytes, records, record, pastes))
+            else {
+                continue;
+            };
+            owners.entry(scope).or_default().push(owner);
+        }
+    }
+    for named in owners.values_mut() {
+        named.sort_by_key(|owner| owner.record);
+        named.dedup_by_key(|owner| owner.record);
+    }
+    owners
+}
+
+fn parse_timeline_body_owner(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    record: u32,
+    pastes: bool,
+) -> Option<(u32, TimelineBodyOwner)> {
+    let offsets = records.offsets(record);
+    let start = *offsets.first()?;
+    // The object's frame ends at its next same-index header.
+    let end = offsets.iter().copied().find(|offset| *offset > start);
+    let bytes = match end {
+        Some(end) => bytes.get(..end)?,
+        None => bytes,
+    };
+    let count_at = if bytes
+        .get(start + owner_prefix::ZERO_RUN_10..start + owner_prefix::BODY_COUNT)?
+        == [0; 10]
+    {
+        start + owner_prefix::BODY_COUNT
+    } else if bytes
+        .get(start + owner_marked_prefix::ZERO_RUN_9..start + owner_marked_prefix::MARKER)?
+        == [0; 9]
+        && bytes.get(start + owner_marked_prefix::MARKER) == Some(&1)
+        && bytes
+            .get(start + owner_marked_prefix::ZERO_U32..start + owner_marked_prefix::BODY_COUNT)?
+            == [0; 4]
+    {
+        start + owner_marked_prefix::BODY_COUNT
+    } else {
+        return None;
+    };
+    let body_count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+    if body_count == 0 {
+        return None;
+    }
+    let mut cursor = count_at + 4;
+    for _ in 0..body_count {
+        crate::bytes::take_reference(bytes, &mut cursor)?.into_local()?;
+    }
+    let reference_offset = u64::try_from(cursor.checked_add(1)?).ok()?;
+    let (scope, _) = crate::bytes::take_reference(bytes, &mut cursor)?.into_local()?;
+    Some((
+        u32::try_from(scope).ok()?,
+        TimelineBodyOwner {
+            record,
+            body_count,
+            reference_offset,
+            paired: end.is_some(),
+            pastes,
+            keeps_sources: pastes && end.is_some() && null_removal_key_at(bytes, cursor),
+        },
+    ))
+}
+
+/// Read the counted GUID pair of each pasted body after the body runs: the
+/// first GUID of each pair and the offset of its code units.
+fn paste_source_pairs(bytes: &[u8], at: usize, body_count: usize) -> Option<Vec<(String, u64)>> {
+    if bytes.get(at + paste_pairs::MARKER) != Some(&1)
+        || bytes.get(at + paste_pairs::ZERO_RUN_4..at + paste_pairs::PAIR_COUNT)? != [0; 4]
+        || usize::try_from(View::u32_le_at(bytes, at + paste_pairs::PAIR_COUNT)?).ok()?
+            != body_count
+    {
+        return None;
+    }
+    let mut cursor = at + paste_pairs::LEN;
+    let mut guid = || {
+        let (guid, after) =
+            crate::bytes::lp_utf16_bounded(bytes, cursor, GUID_CODE_UNITS..=GUID_CODE_UNITS)
+                .filter(|(guid, _)| crate::bytes::is_guid_prefix(guid))?;
+        let code_units = u64::try_from(after - 2 * GUID_CODE_UNITS).ok()?;
+        cursor = after;
+        Some((guid, code_units))
+    };
+    (0..body_count)
+        .map(|_| {
+            let source = guid()?;
+            guid()?;
+            Some(source)
+        })
+        .collect()
+}
+
+/// The entity suffix of the browser node that each source GUID names, when
+/// every source GUID names exactly one node.
+fn paste_sources(
+    pairs: Vec<(String, u64)>,
+    nodes: &HashMap<String, Option<u64>>,
+) -> Option<Vec<DesignPasteSource>> {
+    pairs
+        .into_iter()
+        .map(|(source, node_guid_offset)| {
+            Some(DesignPasteSource {
+                entity_suffix: (*nodes.get(&source.to_ascii_lowercase())?)?,
+                node_guid_offset,
+            })
+        })
+        .collect()
+}
+
+/// The owned construction of the first object, in record order, whose owned
+/// runs read. Several objects add a loss and leave the copy sources empty; a
+/// paste object without a paired header and copy sources that do not resolve
+/// each add a loss.
+pub(super) fn timeline_owned_base_feature(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    owners: &[TimelineBodyOwner],
+    nodes: &HashMap<String, Option<u64>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<DesignBaseFeatureConstruction> {
+    let (owner, (mut construction, source_loss)) = owners.iter().find_map(|owner| {
+        Some((
+            owner,
+            exact_timeline_owned_base_feature(bytes, scope, *owner, nodes)?,
+        ))
+    })?;
+    if owners.len() > 1 {
+        losses.push(F3dLossCode::FeatureTimelineOwnerCompeting.note(format!(
+            "{} is named by timeline objects {}; object {}, the lowest record whose owned runs read, owns it.",
+            scope.id,
+            owners
+                .iter()
+                .map(|owner| owner.record.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            owner.record
+        )));
+        if let DesignBaseFeatureConstruction::TimelineOwnedBodies { copy_sources, .. } =
+            &mut construction
+        {
+            copy_sources.clear();
+        }
+    } else {
+        losses.extend(source_loss);
+    }
+    if owner.pastes && !owner.paired {
+        losses.push(F3dLossCode::FeatureTimelineOwnerUnpaired.note(format!(
+            "{} is owned by timeline object {}, which has no same-index paired header; its copy form stays unread.",
+            scope.id, owner.record
+        )));
+    }
+    Some(construction)
+}
+
+/// Read the parallel parameter-body and body-entity runs of an owned scope.
+/// A paste object's scope also stores a GUID pair per body before its
+/// reference table; the source of each copy is read when the paste keeps its
+/// sources. Unread pairs or unresolved sources then leave the copy sources
+/// empty and give a loss.
+pub(super) fn exact_timeline_owned_base_feature(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    owner: TimelineBodyOwner,
+    nodes: &HashMap<String, Option<u64>>,
+) -> Option<(
+    DesignBaseFeatureConstruction,
+    Option<cadmpeg_ir::report::loss::LossNote>,
+)> {
+    if scope.kind() != scope::DesignFeatureKind::BaseFeature {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let bytes = bytes.get(..usize::try_from(scope.paired_byte_offset()).ok()?)?;
+    if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
+        || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
+        || usize::try_from(View::u32_le_at(
+            bytes,
+            start + result_body::COMBINED_BODY_REFERENCE_COUNT,
+        )?)
+        .ok()?
+            != owner.body_count.checked_mul(2)?
+    {
+        return None;
+    }
+    let mut cursor = start + result_body::LEN;
+    let mut run = |count: usize| -> Option<Vec<DesignBaseFeatureEntry<u64>>> {
+        (0..count)
+            .map(|_| read_base_feature_entry_at(bytes, &mut cursor))
+            .collect()
+    };
+    let parameter_bodies = run(owner.body_count)?;
+    let bodies = run(owner.body_count)?;
+    let mut source_loss = None;
+    let copy_sources = if owner.keeps_sources {
+        let pairs = usize::try_from(scope.reference_count_offset())
+            .ok()
+            .and_then(|references| bytes.get(..references))
+            .and_then(|bounded| paste_source_pairs(bounded, cursor, owner.body_count));
+        match pairs {
+            None => {
+                source_loss = Some(F3dLossCode::FeaturePasteSourcesUnresolved.note(format!(
+                    "{} keeps its pasted bodies; its source GUID pairs are missing or unreadable.",
+                    scope.id
+                )));
+                Vec::new()
+            }
+            Some(pairs) => paste_sources(pairs, nodes).unwrap_or_else(|| {
+                source_loss = Some(F3dLossCode::FeaturePasteSourcesUnresolved.note(format!(
+                    "{} keeps its pasted copies as stored bodies; a source GUID names no unique browser node.",
+                    scope.id
+                )));
+                Vec::new()
+            }),
+        }
+    } else {
+        Vec::new()
+    };
+    Some((
+        DesignBaseFeatureConstruction::TimelineOwnedBodies {
+            parameter_bodies,
+            bodies,
+            owner_record: owner.record,
+            owner_reference_offset: owner.reference_offset,
+            copy_sources,
+        },
+        source_loss,
+    ))
+}
+
+/// Read the zero-body frame whose shared-metadata reference starts at offset 36.
+fn exact_wide_zero_body_base_feature(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<DesignBaseFeatureConstruction> {
+    use crate::records::feature::base_feature::DesignBaseFeatureResults;
+    if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
+        || bytes
+            .get(start + wide_zero_body::ZERO_RUN_9..start + wide_zero_body::ZERO_BODY_MARKER)?
+            != [0; 9]
+        || bytes.get(start + wide_zero_body::ZERO_BODY_MARKER) != Some(&1)
+        || bytes.get(
+            start + wide_zero_body::ZERO_RUN_15..start + wide_zero_body::SHARED_METADATA_MARKER,
+        )? != [0; 15]
+        || bytes.get(start + wide_zero_body::SHARED_METADATA_MARKER) != Some(&1)
+        || bytes.get(
+            start + wide_zero_body::ZERO_PADDING_8..start + wide_zero_body::GUID_CODE_UNIT_COUNT,
+        )? != [0; 8]
+        || View::u32_le_at(bytes, start + wide_zero_body::GUID_CODE_UNIT_COUNT)? != 36
+    {
+        return None;
+    }
+    let metadata_record = u32::try_from(View::u64_le_at(
+        bytes,
+        start + wide_zero_body::SHARED_METADATA_RECORD,
+    )?)
+    .ok()?;
+    if !scope
+        .reference_members()
+        .values()
+        .copied()
+        .eq([metadata_record])
+    {
+        return None;
+    }
+    Some(DesignBaseFeatureConstruction::ResultBodies {
+        null_reference_flag_offset: None,
+        repeats_body_suffixes: false,
+        bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
+        metadata_record,
+        metadata_record_offset: scope.byte_offset()
+            + u64::try_from(wide_zero_body::SHARED_METADATA_RECORD).ok()?,
+        metadata_field: bytes
+            .get(
+                start + wide_zero_body::SHARED_METADATA_FIELD
+                    ..start + wide_zero_body::ZERO_PADDING_8,
+            )?
+            .to_vec()
+            .into(),
+    })
+}
+
+fn exact_wide_shifted_zero_body_base_feature(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<DesignBaseFeatureConstruction> {
+    use crate::records::feature::base_feature::DesignBaseFeatureResults;
+    if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
+        || bytes.get(
+            start + shifted_zero_body::ZERO_RUN_9..start + shifted_zero_body::ZERO_BODY_MARKER,
+        )? != [0; 9]
+        || bytes.get(start + shifted_zero_body::ZERO_BODY_MARKER) != Some(&1)
+        || bytes.get(
+            start + shifted_zero_body::ZERO_RUN_15
+                ..start + shifted_zero_body::SHARED_METADATA_MARKER,
+        )? != [0; 15]
+        || bytes.get(start + shifted_zero_body::SHARED_METADATA_MARKER) != Some(&1)
+        || bytes.get(
+            start + shifted_zero_body::ZERO_PADDING_12
+                ..start + shifted_zero_body::GUID_CODE_UNIT_COUNT,
+        )? != [0; 12]
+        || View::u32_le_at(bytes, start + shifted_zero_body::GUID_CODE_UNIT_COUNT)? != 36
+    {
+        return None;
+    }
+    let metadata_record = u32::try_from(View::u64_le_at(
+        bytes,
+        start + shifted_zero_body::SHARED_METADATA_RECORD,
+    )?)
+    .ok()?;
+    if scope.reference_members().len() != 1
+        || !scope
+            .reference_members()
+            .values()
+            .copied()
+            .eq([metadata_record])
+    {
+        return None;
+    }
+    if bytes
+        .get(start + shifted_zero_body::ZERO_RUN_3..start + shifted_zero_body::REFERENCE_COUNT)?
+        != [0; 3]
+        || View::u32_le_at(bytes, start + shifted_zero_body::REFERENCE_COUNT)?
+            != shifted_zero_body::REFERENCE_COUNT_VALUE
+        || bytes.get(start + shifted_zero_body::SCOPE_REFERENCE_MARKER)
+            != Some(&shifted_zero_body::SCOPE_REFERENCE_MARKER_VALUE)
+        || View::u32_le_at(bytes, start + shifted_zero_body::SCOPE_REFERENCE_RECORD)?
+            != metadata_record
+        || bytes.get(
+            start + shifted_zero_body::SCOPE_REFERENCE_FIELD
+                ..start + shifted_zero_body::HISTORY_STATE,
+        )? != [0; 6]
+    {
+        return None;
+    }
+    let history_state = View::u32_le_at(bytes, start + shifted_zero_body::HISTORY_STATE)?;
+    if u64::from(history_state) != u64::try_from(scope.history_state_id()?).ok()? {
+        return None;
+    }
+    let kind_units = View::u32_le_at(bytes, start + shifted_zero_body::KIND_LENGTH)?;
+    let ordinal_offset = start
+        .checked_add(shifted_zero_body::KIND_LENGTH)?
+        .checked_add(4)?
+        .checked_add(usize::try_from(kind_units.checked_mul(2)?).ok()?)?;
+    if View::u32_le_at(bytes, ordinal_offset)? != scope.feature_ordinal.get() {
+        return None;
+    }
+    Some(DesignBaseFeatureConstruction::ResultBodies {
+        null_reference_flag_offset: None,
+        repeats_body_suffixes: false,
+        bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
+        metadata_record,
+        metadata_record_offset: scope.byte_offset()
+            + u64::try_from(shifted_zero_body::SHARED_METADATA_RECORD).ok()?,
+        metadata_field: bytes
+            .get(
+                start + shifted_zero_body::SHARED_METADATA_FIELD
+                    ..start + shifted_zero_body::ZERO_PADDING_12,
+            )?
             .to_vec()
             .into(),
     })
@@ -773,6 +1264,8 @@ pub(super) fn exact_base_feature_construction(
         }
         if scope.frame_length() == 267 {
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+                null_reference_flag_offset: None,
+                repeats_body_suffixes: false,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record: View::u32_le_at(
                     bytes,
@@ -786,11 +1279,9 @@ pub(super) fn exact_base_feature_construction(
             scope.class_tag.as_str() == "290" && scope.paired_class_tag.as_str() == "261";
         let legacy_360_258 =
             scope.class_tag.as_str() == "360" && scope.paired_class_tag.as_str() == "258";
-        let legacy_409_262 =
-            scope.class_tag.as_str() == "409" && scope.paired_class_tag.as_str() == "262";
         let legacy_444_263 =
             scope.class_tag.as_str() == "444" && scope.paired_class_tag.as_str() == "263";
-        if legacy_409_262 && scope.frame_length() == 258 {
+        if !legacy_444_263 && scope.frame_length() == 258 {
             if scope.byte_offset().checked_add(scope.frame_length())
                 != Some(scope.paired_byte_offset())
             {
@@ -832,6 +1323,8 @@ pub(super) fn exact_base_feature_construction(
                 return None;
             }
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+                null_reference_flag_offset: None,
+                repeats_body_suffixes: false,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record,
                 metadata_record_offset: scope.byte_offset()
@@ -844,6 +1337,12 @@ pub(super) fn exact_base_feature_construction(
                     .to_vec()
                     .into(),
             }));
+        }
+        if let Some(construction) = exact_wide_zero_body_base_feature(bytes, scope, start) {
+            return Some(Ok(construction));
+        }
+        if let Some(construction) = exact_wide_shifted_zero_body_base_feature(bytes, scope, start) {
+            return Some(Ok(construction));
         }
         if legacy_444_263 && scope.frame_length() == 258 {
             if scope.byte_offset().checked_add(scope.frame_length())
@@ -913,6 +1412,8 @@ pub(super) fn exact_base_feature_construction(
                 return None;
             }
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+                null_reference_flag_offset: None,
+                repeats_body_suffixes: false,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record,
                 metadata_record_offset: scope.byte_offset()
@@ -941,17 +1442,42 @@ pub(super) fn exact_base_feature_construction(
             return None;
         }
         let body_count = combined_count / 2;
-        let expanded = legacy_290_261
-            || legacy_360_258
-            || matches!(
-                (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-                ("384", "264") | ("409", "262")
-            );
-        let compact = matches!(
-            (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-            ("420", "258") | ("452", "266")
-        );
         let body_run_length = u64::try_from(body_count.checked_mul(52)?).ok()?;
+        let ordinary = matches!(
+            scope.kind_offset().checked_sub(scope.byte_offset())?,
+            kind if kind == 169 + body_run_length || kind == 165 + body_run_length
+        );
+        let legacy_290_261 = legacy_290_261 && !ordinary;
+        let legacy_360_258 = legacy_360_258 && !ordinary;
+        let legacy_444_263 = legacy_444_263 && !ordinary;
+        let class_expanded = legacy_290_261
+            || legacy_360_258
+            || (!ordinary
+                && matches!(
+                    (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+                    ("384", "264") | ("409", "262")
+                ));
+        let class_compact = !ordinary
+            && matches!(
+                (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+                ("420", "258") | ("452", "266")
+            );
+        let count_field = start
+            + result_body::LEN
+            + body_count
+                .checked_mul(2)?
+                .checked_mul(result_body_entry::LEN)?;
+        let flagged_null_reference =
+            ordinary && marked_null_reference_flag(bytes, count_field) == Some(true);
+        let unclassed_count =
+            if class_expanded || class_compact || legacy_444_263 || flagged_null_reference {
+                None
+            } else {
+                unclassed_result_body_count(bytes, count_field, body_count)
+            };
+        let expanded = class_expanded || unclassed_count == Some(UnclassedResultBodyCount::Passive);
+        let compact =
+            class_compact || unclassed_count == Some(UnclassedResultBodyCount::BodySuffix);
         let base_length = if legacy_290_261 {
             Some(261)
         } else if expanded || compact || legacy_444_263 {
@@ -960,22 +1486,28 @@ pub(super) fn exact_base_feature_construction(
             None
         };
         // The ordinary form is measured to its scope kind, which the fixed
-        // scope tail of either length follows.
-        let sized = match base_length {
-            Some(base_length) => scope.frame_length() == base_length + body_run_length,
-            None => {
-                scope.kind_offset().checked_sub(scope.byte_offset()) == Some(169 + body_run_length)
+        // scope tail of either length follows; the kind position selects the
+        // width of its metadata field.
+        let ordinary_metadata_width = match base_length {
+            Some(base_length) => {
+                if scope.frame_length() != base_length + body_run_length {
+                    return None;
+                }
+                None
             }
+            None => match scope.kind_offset().checked_sub(scope.byte_offset())? {
+                kind if kind == 169 + body_run_length => Some(6),
+                kind if kind == 165 + body_run_length => Some(2),
+                _ => return None,
+            },
         };
-        if !sized {
-            return None;
-        }
         let mut cursor = start + result_body::LEN;
         let mut entities = Vec::new();
         for _ in 0..body_count {
             entities.push(read_base_feature_entry_at(bytes, &mut cursor)?);
         }
         let mut references = Vec::new();
+        let mut null_reference_flag_offset = None;
         for _ in 0..body_count {
             let entry = read_base_feature_entry_at(bytes, &mut cursor)?;
             references.push(DesignBaseFeatureEntry {
@@ -1019,19 +1551,32 @@ pub(super) fn exact_base_feature_construction(
             }
             cursor += compact_count::LEN;
         } else {
-            if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 1..cursor + 11) != Some(&[0; 10])
+            if marked_null_reference_flag(bytes, cursor)? {
+                null_reference_flag_offset =
+                    Some(u64::try_from(cursor + null_count::NULL_REFERENCE_FLAG).ok()?);
+            }
+            if usize::try_from(View::u32_le_at(bytes, cursor + null_count::BODY_COUNT)?).ok()?
+                != body_count
             {
                 return None;
             }
-            cursor += 11;
-            if usize::try_from(View::u32_le_at(bytes, cursor)?).ok()? != body_count {
-                return None;
-            }
-            cursor += 4;
+            cursor += null_count::LEN;
         }
+        let repeated_value = |ordinal: usize| {
+            View::u32_le_at(
+                bytes,
+                cursor + ordinal * compact_entry::LEN + compact_entry::BODY_ENTITY_SUFFIX,
+            )
+        };
+        let repeats_body_suffixes = ordinary_metadata_width.is_some()
+            && !(0..body_count)
+                .all(|ordinal| repeated_value(ordinal) == Some(references[ordinal].value))
+            && (0..body_count).all(|ordinal| {
+                repeated_value(ordinal).map(u64::from) == Some(entities[ordinal].value)
+            });
         let mut repeated_reference_fields = Vec::new();
         for ordinal in 0..body_count {
-            let expected = if compact {
+            let expected = if compact || repeats_body_suffixes {
                 u32::try_from(entities[ordinal].value).ok()?
             } else {
                 references[ordinal].value
@@ -1058,11 +1603,7 @@ pub(super) fn exact_base_feature_construction(
         }
         let metadata_record = u32::try_from(View::u64_le_at(bytes, cursor + 1)?).ok()?;
         let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
-        let metadata_field_width = if expanded || compact || legacy_444_263 {
-            2
-        } else {
-            6
-        };
+        let metadata_field_width = ordinary_metadata_width.unwrap_or(2);
         let metadata_field = bytes
             .get(cursor + 9..cursor + 9 + metadata_field_width)?
             .to_vec();
@@ -1110,6 +1651,8 @@ pub(super) fn exact_base_feature_construction(
                 .is_some_and(|padding| padding.iter().all(|byte| *byte == 0));
         let first = first?;
         admitted.then_some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+            null_reference_flag_offset,
+            repeats_body_suffixes,
             bodies: DesignBaseFeatureResults::WithRepeatedFields { first, rest },
             metadata_record,
             metadata_record_offset,
@@ -1117,6 +1660,122 @@ pub(super) fn exact_base_feature_construction(
         }))
     })()
     .transpose()
+    .map(|construction| {
+        construction.or_else(|| {
+            usize::try_from(scope.byte_offset())
+                .ok()
+                .and_then(|start| exact_suffix_result_bodies(bytes, scope, start))
+        })
+    })
+}
+
+/// Kind-offset increase per body of a suffix result-body frame: one entity
+/// entry, one repeated entry and one result entry.
+const SUFFIX_RESULT_BODY_KIND_STRIDE: usize = 37;
+/// Kind offset of a suffix result-body frame less one stride per body.
+const SUFFIX_RESULT_BODY_KIND_BASE: usize = 169;
+/// Distance from the end of the zero tail to the scope kind.
+const SUFFIX_RESULT_BODY_TAIL_END_BEFORE_KIND: usize = 102;
+
+/// The suffix result-body form: u32 `N` at offset 20, `N` body entries, the
+/// marked null reference, u32 `N`, the repeated body suffixes, one zero byte,
+/// the metadata record with a six-byte field, u32 `N`, and `N` result entries.
+fn exact_suffix_result_bodies(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<DesignBaseFeatureConstruction> {
+    if scope.kind() != scope::DesignFeatureKind::BaseFeature
+        || bytes.get(start + suffix_layout::ZERO_RUN_8..start + suffix_layout::BODY_COUNT_MARKER)?
+            != [0; 8]
+        || bytes.get(start + suffix_layout::BODY_COUNT_MARKER) != Some(&1)
+    {
+        return None;
+    }
+    let body_count =
+        usize::try_from(View::u32_le_at(bytes, start + suffix_layout::BODY_COUNT)?).ok()?;
+    let kind_offset =
+        usize::try_from(scope.kind_offset().checked_sub(scope.byte_offset())?).ok()?;
+    if body_count == 0
+        || kind_offset
+            != SUFFIX_RESULT_BODY_KIND_BASE
+                .checked_add(body_count.checked_mul(SUFFIX_RESULT_BODY_KIND_STRIDE)?)?
+    {
+        return None;
+    }
+    let mut cursor = start + suffix_layout::BODY_MARKER;
+    let mut bodies = Vec::new();
+    for _ in 0..body_count {
+        bodies.push(read_base_feature_entry_at(bytes, &mut cursor)?);
+    }
+    let flagged = marked_null_reference_flag(bytes, cursor)?;
+    let null_reference_flag_offset = if flagged {
+        Some(u64::try_from(cursor + null_count::NULL_REFERENCE_FLAG).ok()?)
+    } else {
+        None
+    };
+    if usize::try_from(View::u32_le_at(bytes, cursor + null_count::BODY_COUNT)?).ok()? != body_count
+    {
+        return None;
+    }
+    cursor += null_count::LEN;
+    let mut repeated_fields = Vec::new();
+    for body in &bodies {
+        if body.value == 0
+            || bytes.get(cursor + compact_entry::BODY_MARKER) != Some(&1)
+            || u64::from(View::u32_le_at(
+                bytes,
+                cursor + compact_entry::BODY_ENTITY_SUFFIX,
+            )?) != body.value
+        {
+            return None;
+        }
+        let field: [u8; 6] = bytes
+            .get(cursor + compact_entry::BODY_FIELD..cursor + compact_entry::LEN)?
+            .try_into()
+            .ok()?;
+        repeated_fields.push(field.into());
+        cursor += compact_entry::LEN;
+    }
+    if bytes.get(cursor) != Some(&0) || bytes.get(cursor + 1) != Some(&1) {
+        return None;
+    }
+    cursor += 1;
+    let metadata_record = u32::try_from(View::u64_le_at(bytes, cursor + 1)?).ok()?;
+    let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
+    let metadata_field = bytes.get(cursor + 9..cursor + 15)?.to_vec();
+    cursor += 15;
+    if usize::try_from(View::u32_le_at(bytes, cursor)?).ok()? != body_count {
+        return None;
+    }
+    cursor += 4;
+    let mut results = Vec::new();
+    for _ in 0..body_count {
+        if bytes.get(cursor) != Some(&1) {
+            return None;
+        }
+        results.push(DesignBaseFeatureEntry {
+            value: View::u32_le_at(bytes, cursor + 1)?,
+            offset: u64::try_from(cursor + 1).ok()?,
+            field: bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?,
+        });
+        cursor += 11;
+    }
+    let tail_end = start
+        .checked_add(kind_offset)?
+        .checked_sub(SUFFIX_RESULT_BODY_TAIL_END_BEFORE_KIND)?;
+    if bytes.get(cursor..tail_end)?.iter().any(|byte| *byte != 0) {
+        return None;
+    }
+    Some(DesignBaseFeatureConstruction::SuffixResultBodies {
+        bodies,
+        repeated_fields,
+        results,
+        metadata_record,
+        metadata_record_offset,
+        metadata_field: metadata_field.into(),
+        null_reference_flag_offset,
+    })
 }
 
 fn exact_base_feature_body_snapshot(

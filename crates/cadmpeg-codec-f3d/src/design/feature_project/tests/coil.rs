@@ -11,7 +11,9 @@ use crate::records::{
     },
     parameters::DesignParameter,
 };
-use cadmpeg_ir::features::{CoilPlacement, CoilResult, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{
+    CoilPlacement, FeatureDefinition, FeatureOperation, SolidFeatureResult,
+};
 
 fn parameter(
     record_index: u32,
@@ -148,7 +150,7 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     let owned = owned_parameters(&parameters);
 
     let FeatureDefinition::Operation(FeatureOperation::Coil { construction, .. }) =
-        project_coil(&scope, &owned, &[])
+        project_coil(&scope, &owned, &[], &mut Vec::new())
             .unwrap()
             .expect("typed long Coil")
     else {
@@ -177,7 +179,9 @@ fn coil_without_transform_keeps_native_placement() {
         slot.as_mut().unwrap().transform = None;
     }
     let owned = owned_parameters(&parameters);
-    let definition = project_coil(&scope, &owned, &[]).unwrap().unwrap();
+    let definition = project_coil(&scope, &owned, &[], &mut Vec::new())
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Coil { construction, .. })
@@ -187,6 +191,12 @@ fn coil_without_transform_keeps_native_placement() {
 }
 
 fn coil_body_group() -> crate::records::topology::construction::DesignConstructionOperandGroup {
+    coil_body_group_with_members(&[61])
+}
+
+fn coil_body_group_with_members(
+    members: &[u32],
+) -> crate::records::topology::construction::DesignConstructionOperandGroup {
     use crate::records::topology::construction::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
         DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
@@ -199,10 +209,11 @@ fn coil_body_group() -> crate::records::topology::construction::DesignConstructi
         record_index: 60,
         byte_offset: 0,
         class_tag: "282".to_owned().try_into().unwrap(),
-        members: vec![crate::records::identity::Located {
-            value: 61,
-            offset: 0,
-        }],
+        members: members
+            .iter()
+            .zip((0..).step_by(11))
+            .map(|(&value, offset)| crate::records::identity::Located { value, offset })
+            .collect(),
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame::try_from(
             DesignConstructionOperandGroupFrameDraft {
@@ -246,14 +257,166 @@ fn coil_join_projects_boolean_result() {
     }
     let group = coil_body_group();
     let owned = owned_parameters(&parameters);
-    let definition = project_coil(&scope, &owned, std::slice::from_ref(&group))
-        .unwrap()
-        .unwrap();
+    let definition = project_coil(
+        &scope,
+        &owned,
+        std::slice::from_ref(&group),
+        &mut Vec::new(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Coil {
-            result: CoilResult::Boolean { .. },
+            result: SolidFeatureResult::Boolean { .. },
             ..
         })
     ));
+}
+
+#[test]
+fn ten_reference_coil_join_targets_its_role_four_group() {
+    let (mut scope, parameters) = long_coil_fixture();
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated((61..71).collect());
+            draft.reference_count_offset = 126;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.kind_offset + 22 + 78;
+            draft.frame_length = draft.paired_byte_offset;
+            draft.feature_ordinal_offset = draft.kind_offset + 22;
+        })
+        .unwrap();
+    if let crate::records::feature::scope::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
+        scope.payload_mut()
+    {
+        slot.as_mut().unwrap().operation = Some(crate::records::identity::RecordedValue {
+            value: DesignExtrudeOperation::Join,
+            offset: 26,
+        });
+    }
+    let owned = owned_parameters(&parameters);
+    let target = |role| {
+        let mut group = coil_body_group();
+        group.operand_role =
+            crate::records::topology::construction::DesignConstructionOperandRole::Other(role);
+        match project_coil(
+            &scope,
+            &owned,
+            std::slice::from_ref(&group),
+            &mut Vec::new(),
+        )
+        .unwrap()
+        {
+            Some(FeatureDefinition::Operation(FeatureOperation::Coil {
+                result: SolidFeatureResult::Boolean { targets, .. },
+                ..
+            })) => Some(targets),
+            _ => None,
+        }
+    };
+    assert_eq!(
+        target(crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A),
+        Some(cadmpeg_ir::features::BodySelection::Native(
+            "f3d:Design/BulkStream.dat:group#60".into()
+        ))
+    );
+    assert_eq!(
+        target(crate::records::topology::extrude_selection::DesignOperandRole::BODIES_B),
+        None
+    );
+}
+
+#[test]
+fn ten_reference_coil_cut_targets_a_role_eight_group_at_ordinal_eight() {
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+
+    let (mut scope, parameters) = long_coil_fixture();
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated((61..71).collect());
+            draft.reference_count_offset = 126;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.kind_offset + 22 + 78;
+            draft.frame_length = draft.paired_byte_offset;
+            draft.feature_ordinal_offset = draft.kind_offset + 22;
+        })
+        .unwrap();
+    if let crate::records::feature::scope::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
+        scope.payload_mut()
+    {
+        slot.as_mut().unwrap().operation = Some(crate::records::identity::RecordedValue {
+            value: DesignExtrudeOperation::Cut,
+            offset: 26,
+        });
+    }
+    let owned = owned_parameters(&parameters);
+    let target = |role, ordinal| {
+        let mut group = coil_body_group();
+        group.operand_role =
+            crate::records::topology::construction::DesignConstructionOperandRole::Other(role);
+        group.scope_reference_ordinal = ordinal;
+        match project_coil(
+            &scope,
+            &owned,
+            std::slice::from_ref(&group),
+            &mut Vec::new(),
+        )
+        .unwrap()
+        {
+            Some(FeatureDefinition::Operation(FeatureOperation::Coil {
+                result: SolidFeatureResult::Boolean { targets, .. },
+                ..
+            })) => Some(targets),
+            _ => None,
+        }
+    };
+    let group = Some(cadmpeg_ir::features::BodySelection::Native(
+        "f3d:Design/BulkStream.dat:group#60".into(),
+    ));
+    assert_eq!(target(DesignOperandRole::BODIES_A, 0), group);
+    assert_eq!(target(DesignOperandRole::BODIES_B, 8), group);
+    assert_eq!(target(DesignOperandRole::BODIES_A, 8), None);
+    assert_eq!(target(DesignOperandRole::BODIES_B, 0), None);
+}
+
+#[test]
+fn coil_join_with_a_two_member_target_group_charges_the_member_assumption() {
+    let (mut scope, parameters) = long_coil_fixture();
+    if let crate::records::feature::scope::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
+        scope.payload_mut()
+    {
+        slot.as_mut().unwrap().operation = Some(crate::records::identity::RecordedValue {
+            value: DesignExtrudeOperation::Join,
+            offset: 62,
+        });
+    }
+    let owned = owned_parameters(&parameters);
+    let project = |members: &[u32]| {
+        let group = coil_body_group_with_members(members);
+        let mut losses = Vec::new();
+        let definition = project_coil(&scope, &owned, std::slice::from_ref(&group), &mut losses)
+            .unwrap()
+            .unwrap();
+        (definition, losses)
+    };
+    let (definition, losses) = project(&[61, 62]);
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::Coil {
+            result: SolidFeatureResult::Boolean { .. },
+            ..
+        })
+    ));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::CoilTargetMembersAssumed.kind()
+    );
+    assert!(project(&[61]).1.is_empty());
 }

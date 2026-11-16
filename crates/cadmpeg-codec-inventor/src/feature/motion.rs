@@ -26,7 +26,7 @@ use crate::sketch::PmDcTransform;
 pub(super) const TRANSFORM_LIST_TYPE: [u8; 16] = [
     0x29, 0xfe, 0x00, 0x08, 0xd5, 0x11, 0xdd, 0x35, 0x10, 0x00, 0x36, 0x97, 0xab, 0x9f, 0x0a, 0xb5,
 ];
-pub(super) const BODY_SELECTION_TYPE: [u8; 16] = [
+pub(crate) const BODY_SELECTION_TYPE: [u8; 16] = [
     0x83, 0xaa, 0xda, 0xd5, 0x4f, 0x43, 0x75, 0xda, 0xcd, 0x10, 0x03, 0xb2, 0x60, 0xa8, 0xa4, 0x22,
 ];
 pub(super) const MOTION_MODE_TYPE: [u8; 16] = [
@@ -418,8 +418,30 @@ impl<'a> ValidationIndex<'a> {
         bodies: &HashMap<String, cadmpeg_ir::ids::BodyId>,
     ) -> bool {
         decode(source, &self.properties, &self.transforms).is_some_and(|motion| {
+            let mut expected = motion.operation;
+            // A historical face selection keeps its native collection; the
+            // face join is checked by `face_selection::valid`.
+            if let (
+                FeatureOperation::MoveFace {
+                    faces: expected_faces,
+                    ..
+                },
+                FeatureDefinition::Operation(FeatureOperation::MoveFace { faces: actual, .. }),
+            ) = (&mut expected, definition)
+            {
+                if let (
+                    FaceSelection::Native(native),
+                    FaceSelection::Historical { native: stored, .. }
+                    | FaceSelection::HistoricalPartial { native: stored, .. },
+                ) = (&*expected_faces, actual)
+                {
+                    if native == stored.as_str() {
+                        *expected_faces = actual.clone();
+                    }
+                }
+            }
             super::body_selection::matches(
-                FeatureDefinition::Operation(motion.operation),
+                FeatureDefinition::Operation(expected),
                 definition,
                 bodies,
                 None,

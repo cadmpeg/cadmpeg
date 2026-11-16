@@ -2,11 +2,13 @@
 //! Typed BODY/SHELL/REGION/FACE ownership and face-use decode tests.
 #![allow(clippy::unwrap_used)]
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::append_void_and_faceless_regions;
 use crate::test_support::parasolid::bridge_owned;
 use crate::test_support::parasolid::entity51;
 use crate::test_support::parasolid::owned_triangle;
@@ -28,16 +30,16 @@ fn decode_builds_valid_topology_and_plane() {
         .unwrap();
 
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 3);
-    assert_eq!(result.ir().model.edges.len(), 3);
-    assert_eq!(result.ir().model.vertices.len(), 3);
-    assert_eq!(result.ir().model.points.len(), 3);
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 3);
+    assert_eq!(result.ir().geometry.edges.len(), 3);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.points.len(), 3);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
 
-    match &result.ir().model.surfaces[0].geometry {
+    match &result.ir().geometry.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.frame().axis().as_raw();
@@ -51,7 +53,7 @@ fn decode_builds_valid_topology_and_plane() {
 
     let xs: Vec<f64> = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .map(|p| p.position().get().x)
@@ -61,10 +63,10 @@ fn decode_builds_valid_topology_and_plane() {
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
-    assert_eq!(result.ir().model.loops[0].coedges().len(), 3);
+    assert_eq!(result.ir().geometry.loops[0].coedges().len(), 3);
     assert!(result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .all(|edge| edge.curve().is_none()));
@@ -93,10 +95,10 @@ fn numeric_entity_chains_do_not_claim_faces() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        result.ir().model.bodies[0].id.as_str(),
+        result.ir().geometry.bodies[0].id.as_str(),
         "sldprt:brep:body#0"
     );
     assert!(result
@@ -115,10 +117,10 @@ fn typed_body_kind_is_preserved() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert_eq!(
-        result.ir().model.bodies[0].kind,
+        result.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
     );
 }
@@ -134,24 +136,24 @@ fn typed_ownership_keeps_distinct_bodies_separate() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.bodies.len(), 2);
-    assert_eq!(result.ir().model.regions.len(), 2);
-    assert_eq!(result.ir().model.shells.len(), 2);
-    assert_eq!(result.ir().model.faces.len(), 2);
+    assert_eq!(result.ir().geometry.bodies.len(), 2);
+    assert_eq!(result.ir().geometry.regions.len(), 2);
+    assert_eq!(result.ir().geometry.shells.len(), 2);
+    assert_eq!(result.ir().geometry.faces.len(), 2);
     assert_eq!(
-        result.ir().model.bodies[0].id.as_str(),
+        result.ir().geometry.bodies[0].id.as_str(),
         "sldprt:brep:body#500"
     );
     assert_eq!(
-        result.ir().model.bodies[1].id.as_str(),
+        result.ir().geometry.bodies[1].id.as_str(),
         "sldprt:brep:body#501"
     );
-    assert!(result
+    assert!(result.ir().geometry.shells.iter().all(|shell| result
         .ir()
-        .model
-        .shells
-        .iter()
-        .all(|shell| shell.faces().len() == 1));
+        .geometry
+        .shell_faces(&shell.id)
+        .count()
+        == 1));
 }
 
 #[test]
@@ -170,14 +172,14 @@ fn typed_face_ownership_is_independent_of_attribute_chain_head() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        result.ir().model.bodies[0].id.as_str(),
+        result.ir().geometry.bodies[0].id.as_str(),
         "sldprt:brep:body#900"
     );
     assert_eq!(
-        result.ir().model.faces[0].shell.as_str(),
+        result.ir().geometry.faces[0].shell.as_str(),
         "sldprt:brep:shell#901"
     );
 }
@@ -198,9 +200,9 @@ fn a_shared_metadata_head_does_not_supply_loop_or_body_ownership() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert_eq!(
-        result.ir().model.faces[0].id.as_str(),
+        result.ir().geometry.faces[0].id.as_str(),
         "sldprt:brep:face#10"
     );
 }
@@ -225,10 +227,10 @@ fn distinct_faces_with_shared_metadata_head_retain_typed_body_membership() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 2);
+    assert_eq!(result.ir().geometry.faces.len(), 2);
     let identities: std::collections::HashSet<_> = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| face.id.as_str())
@@ -237,11 +239,47 @@ fn distinct_faces_with_shared_metadata_head_retain_typed_body_membership() {
         identities,
         std::collections::HashSet::from(["sldprt:brep:face#10", "sldprt:brep:face#210"])
     );
-    assert_eq!(result.ir().model.bodies.len(), 2);
-    assert!(result
+    assert_eq!(result.ir().geometry.bodies.len(), 2);
+    assert!(result.ir().geometry.shells.iter().all(|shell| result
         .ir()
-        .model
-        .shells
+        .geometry
+        .shell_faces(&shell.id)
+        .count()
+        == 1));
+}
+
+#[test]
+fn a_void_region_without_faces_transfers_no_region_and_a_faceless_solid_region_stays() {
+    let (owner, region, void, faceless) = (500, 80, 600, 601);
+    let mut body = owned_triangle(0, owner, 0.0);
+    append_void_and_faceless_regions(&mut body, owner, region, void, faceless);
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let regions: BTreeMap<_, _> = result
+        .ir()
+        .geometry
+        .regions
         .iter()
-        .all(|shell| shell.faces().len() == 1));
+        .map(|region| (region.id.as_str(), region.shells.len()))
+        .collect();
+    assert_eq!(
+        regions,
+        BTreeMap::from([("sldprt:brep:region#80", 1), ("sldprt:brep:region#601", 0)])
+    );
+    let body_regions: BTreeSet<_> = result
+        .ir()
+        .geometry
+        .body_regions(&result.ir().geometry.bodies[0].id)
+        .map(|region| region.id.as_str())
+        .collect();
+    assert_eq!(
+        body_regions,
+        BTreeSet::from(["sldprt:brep:region#80", "sldprt:brep:region#601"])
+    );
 }

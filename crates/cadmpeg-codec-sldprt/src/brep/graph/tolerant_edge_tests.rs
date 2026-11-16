@@ -23,7 +23,7 @@ fn stream() -> StreamHandle {
     StreamHandle::new(cadmpeg_ir::stream_name!("test"))
 }
 
-fn fin(attr: u16, partner: u16, edge: u16, curve: u16) -> (u16, Coedge) {
+fn fin(attr: u32, partner: u32, edge: u32, curve: u32) -> (u32, Coedge) {
     let coedge = Coedge {
         attr,
         refs: [1, 0, 0, 0, 0, partner, edge, curve, 1],
@@ -33,7 +33,7 @@ fn fin(attr: u16, partner: u16, edge: u16, curve: u16) -> (u16, Coedge) {
     (attr, coedge)
 }
 
-fn bounded(attr: u16, surface: u16) -> SurfaceCurveCarrier {
+fn bounded(attr: u32, surface: u32) -> SurfaceCurveCarrier {
     SurfaceCurveCarrier {
         attr,
         offset: 0,
@@ -51,12 +51,12 @@ fn bounded(attr: u16, surface: u16) -> SurfaceCurveCarrier {
 
 /// Attach `carrier` as curve 31 of `out`, its support 200 emitted as the
 /// face surfaces of `emitted`.
-fn attach(out: &mut Brep, carrier: &SurfaceCurveCarrier, emitted: &HashMap<u16, u16>) {
+fn attach(out: &mut Brep, carrier: &SurfaceCurveCarrier, emitted: &HashMap<u32, u32>) {
     attach_surface_curve(
-        &ctx(),
-        out,
+        &mut super::BrepSink { ctx: &ctx(), out },
         &mut AnnotationBuilder::new(),
         carrier,
+        &super::CarrierIndex::default(),
         emitted,
         31,
         &stream(),
@@ -67,7 +67,7 @@ fn attach(out: &mut Brep, carrier: &SurfaceCurveCarrier, emitted: &HashMap<u16, 
 #[test]
 fn a_tolerant_edge_reads_a_decoded_curve_of_a_fin_on_it() {
     // Curve 31 is the one that decodes.
-    let decoded = |curve: u16| curve == 31;
+    let decoded = |curve: u32| curve == 31;
     let coedges = HashMap::from([
         fin(10, 11, 5, 30),
         fin(11, 10, 5, 31),
@@ -88,8 +88,8 @@ fn a_tolerant_edge_takes_a_stated_fin_curve_before_a_fitted_one() {
     // Curve 30, the canonical fin's, only decodes (a fitted curve on a
     // sweep); its partner's, 31, is stated on a surface.
     let coedges = HashMap::from([fin(10, 11, 5, 30), fin(11, 10, 5, 31)]);
-    let stated = |curve: u16| curve == 31;
-    let decodes = |curve: u16| curve == 30 || curve == 31;
+    let stated = |curve: u32| curve == 31;
+    let decodes = |curve: u32| curve == 30 || curve == 31;
     assert_eq!(
         super::tolerant_fin_curve(10, &coedges, stated, decodes),
         Some(31)
@@ -118,6 +118,7 @@ fn plane(id: &str) -> Surface {
             )
             .expect("a plane"),
         )),
+        native_ref: None,
     }
 }
 
@@ -136,6 +137,7 @@ fn an_sp_curve_on_a_spun_surface_is_emitted_as_its_fitted_curve() {
             .expect("a line"),
         )),
         kind: SweepKind::Spun {
+            profile_bounds: [None, None],
             base: Point3::new(0.0, 0.0, 0.0),
             axis: cadmpeg_ir::units::SumSquaresUnitVector3::new(Vector3::new(0.0, 0.0, 1.0))
                 .expect("a unit axis"),
@@ -172,6 +174,53 @@ fn an_sp_curve_on_a_spun_surface_is_emitted_as_its_fitted_curve() {
             .get();
         assert!(at.distance(expected) < 1.0e-6, "t {t}: {at:?}");
     }
+}
+
+#[test]
+fn a_surface_curve_retains_a_known_support_without_a_face() {
+    let ctx = ctx();
+    let bytes = crate::test_support::parasolid::plane_carrier(
+        200,
+        [0.0; 3],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    );
+    let carriers = crate::brep::index::scan_carriers(&ctx, &bytes).unwrap();
+    let mut out = Brep::default();
+    attach_surface_curve(
+        &mut super::BrepSink {
+            ctx: &ctx,
+            out: &mut out,
+        },
+        &mut AnnotationBuilder::new(),
+        &bounded(31, 200),
+        &carriers,
+        &HashMap::new(),
+        31,
+        &stream(),
+    )
+    .unwrap();
+    assert!(out.faces.is_empty());
+    assert_eq!(out.surfaces.len(), 1);
+    let surface = super::id_hidden_support_surface(200);
+    assert_eq!(out.surfaces[0].id, surface);
+    let ProceduralCurveDefinition::SurfaceCurve {
+        family: SurfaceCurveFamily::Parametric { context, .. },
+    } = out.procedural_curves[0].definition()
+    else {
+        panic!("parametric surface curve");
+    };
+    assert_eq!(context.sides()[0].surface.as_ref(), Some(&surface));
+    let CurveGeometry::Procedural {
+        cache: Some(curve), ..
+    } = &out.curves[0].geometry
+    else {
+        panic!("fitted 3D cache");
+    };
+    let point = cadmpeg_ir::eval::decode::curve_point_solved(&ctx, curve, 0.5)
+        .unwrap()
+        .get();
+    assert!(point.distance(Point3::new(0.5, 0.0, 0.0)) < 1.0e-7);
 }
 
 #[test]
@@ -239,7 +288,7 @@ fn a_bounded_sp_curve_is_emitted_on_its_supports_face_surface() {
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     ));
 
-    // A support no face emits leaves the curve opaque.
+    // An unresolved support leaves the curve opaque.
     let mut out = Brep::default();
     attach(&mut out, &carrier, &HashMap::new());
     assert!(matches!(
@@ -262,6 +311,7 @@ fn cylinder(id: &str) -> Surface {
             )
             .expect("a cylinder"),
         )),
+        native_ref: None,
     }
 }
 
@@ -301,6 +351,16 @@ fn a_bounded_sp_curve_carries_a_fitted_cache_in_its_own_parameter() {
     out.surfaces.push(cylinder("sldprt:brep:surf#100"));
     let emitted = HashMap::from([(200, 100)]);
     attach(&mut out, &carrier, &emitted);
+    out.losses.extend(out.approximations.take_notes());
+    assert_eq!(out.losses.len(), 1);
+    assert_eq!(
+        out.losses[0].code,
+        crate::loss::SldprtLossCode::GeometryCarrierApproximated.kind()
+    );
+    assert_eq!(out.losses[0].message, format!(
+        "1 fitted surface-parameter curve(s) use approximate carriers; largest sampled fit tolerance {} mm.",
+        crate::brep::fit::FIT_TOLERANCE_MM
+    ));
     let cache = out.curves[0].geometry.solved_cache().expect("a cache");
     let SolvedCurveGeometry::Nurbs(nurbs) = cache else {
         panic!("{cache:?}");
@@ -341,6 +401,7 @@ fn a_bounded_sp_curve_on_a_b_surface_resolves_its_knot_lines() {
         id: SurfaceId::mint("sldprt:brep:surf#100").expect("identity grammar"),
         source_object: None,
         geometry: crate::test_support::surfaces::ridged(),
+        native_ref: None,
     });
     let emitted = HashMap::from([(200, 100)]);
     attach(&mut out, &carrier, &emitted);
@@ -377,6 +438,8 @@ fn a_bounded_sp_curve_the_fit_refuses_has_no_cache() {
         CurveGeometry::Procedural { cache: None, .. }
     ));
     assert_eq!(out.procedural_curves[0].cache_fit_tolerance(), None);
+    assert!(out.losses.is_empty());
+    assert!(out.approximations.take_notes().is_empty());
 }
 
 /// The planar triangle with `edge_40` and `coedge_30` in place of its own, and
@@ -406,7 +469,7 @@ fn triangle_on_sp_curve(edge_40: &[u8], coedge_30: &[u8], from: [f64; 2], to: [f
 }
 
 fn decode_edge_40(body: &[u8]) -> (Brep, cadmpeg_ir::topology::Edge) {
-    let brep = super::decode_body(&ctx(), body, &cadmpeg_ir::stream_name!("test"))
+    let brep = super::decode_body(&ctx(), body, &cadmpeg_ir::stream_name!("test"), false)
         .expect("the triangle decodes");
     let edge = brep
         .edges
@@ -434,7 +497,13 @@ fn an_edge_on_a_bare_sp_curve_runs_from_the_domain_low_end() {
     assert!(edge
         .curve()
         .is_some_and(|id| id.as_str().ends_with("curve#70")));
-    assert!(edge.start.as_str().ends_with("vertex#50"));
+    assert!(edge
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .as_str()
+        .ends_with("vertex#50"));
     assert!(brep.curves.iter().any(|curve| {
         curve.id.as_str().ends_with("curve#70")
             && matches!(curve.geometry, CurveGeometry::Procedural { .. })
@@ -446,8 +515,20 @@ fn an_edge_on_a_bare_sp_curve_runs_from_the_domain_low_end() {
         [1.0, 0.0],
         [0.0, 0.0],
     ));
-    assert!(edge.start.as_str().ends_with("vertex#51"));
-    assert!(edge.end.as_str().ends_with("vertex#50"));
+    assert!(edge
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .as_str()
+        .ends_with("vertex#51"));
+    assert!(edge
+        .ends
+        .as_ref()
+        .unwrap()
+        .end
+        .as_str()
+        .ends_with("vertex#50"));
 }
 
 #[test]

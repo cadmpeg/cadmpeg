@@ -2,6 +2,8 @@
 //! Native B-rep, prototype surfaces, positional solids, and carrier intersections.
 
 pub(super) mod brep;
+pub(super) mod cap_envelopes;
+pub(super) mod cone_origins;
 pub(super) mod cylinders;
 pub(super) mod intersection_candidates;
 pub(super) mod intersection_resolve;
@@ -322,7 +324,7 @@ pub(super) fn transfer_part_product(
     )?;
     ctx.charge_entities(1, "admit Creo model product_definitions")?;
     let mut bodies = Vec::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         let body_id = body.id.as_str().to_owned();
         bodies.push(
             cadmpeg_ir::ids::BodyId::mint(body_id).map_err(cadmpeg_core::CodecError::malformed)?,
@@ -558,7 +560,7 @@ pub(super) fn transfer_fc05_cap_circles(
             reference,
             axis_sign,
         );
-        let witness = crate::decode::analytic::planes::fc05_cylinder_model_witness(
+        let witness = crate::decode::analytic::planes::fc05_cylinder_resolved_plane_witness(
             scan,
             cylinder_id,
             crate::decode::analytic::equations::CylinderEquation {
@@ -567,6 +569,8 @@ pub(super) fn transfer_fc05_cap_circles(
                 ref_direction: legacy_frame.2,
                 radius: circle.radius_mm,
             },
+            ir,
+            source_carriers,
         );
         let mut surface_origin = witness.origin;
         if let Some(frame) = pair_frame {
@@ -577,7 +581,7 @@ pub(super) fn transfer_fc05_cap_circles(
             &crate::identity::VISIBGEOM_CURVE,
             circle.curve_id,
         )?;
-        if !ir.model.curves.iter().any(|curve| curve.id == id) {
+        if !ir.geometry.curves.iter().any(|curve| curve.id == id) {
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::from(center),
                 Vector3::from(axis),
@@ -620,6 +624,7 @@ pub(super) fn transfer_fc05_cap_circles(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
         }
@@ -628,7 +633,7 @@ pub(super) fn transfer_fc05_cap_circles(
             cylinder_id,
         )?;
         if ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id == surface_id)
@@ -675,6 +680,7 @@ pub(super) fn transfer_fc05_cap_circles(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }

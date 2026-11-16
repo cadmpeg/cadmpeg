@@ -111,15 +111,13 @@ pub(super) fn browser_node_records(
                 frame.entity_id
             )));
         }
-        let Some((guid, after_guid)) =
-            lp_utf16_bounded(record, 21, GUID_LEN..=GUID_LEN).filter(|(guid, after)| {
-                is_guid_prefix(guid)
-                    && after
-                        .checked_add(11)
-                        .is_some_and(|record_end| record_end <= record.len())
-                    && record.get(*after + 1..*after + 3) == Some(&[0x01, 0x01])
-            })
-        else {
+        let Some((guid, after_guid)) = browser_node_guid(record).filter(|(guid, after)| {
+            is_guid_prefix(guid)
+                && after
+                    .checked_add(11)
+                    .is_some_and(|record_end| record_end <= record.len())
+                && record.get(*after + 1..*after + 3) == Some(&[0x01, 0x01])
+        }) else {
             continue;
         };
         let hidden @ (0 | 1) = record.get(after_guid).copied().ok_or_else(|| {
@@ -144,6 +142,37 @@ pub(super) fn browser_node_records(
         });
     }
     Ok(out)
+}
+
+/// The LP-UTF16 GUID that a browser-node record stores after its ten zero
+/// bytes, and the offset after it.
+fn browser_node_guid(record: &[u8]) -> Option<(String, usize)> {
+    lp_utf16_bounded(record, 21, GUID_LEN..=GUID_LEN)
+}
+
+/// Map each decoded browser node's GUID, compared case-insensitively, to its
+/// Design entity suffix. A GUID that two typed browser-node frames of any
+/// version store maps to no suffix, and a typed frame without a readable GUID
+/// leaves the map empty.
+pub(super) fn browser_node_suffixes(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<HashMap<String, Option<u64>>, CodecError> {
+    let mut frames = HashMap::<String, usize>::new();
+    for frame in typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")? {
+        let Some((guid, _)) = browser_node_guid(&bytes[frame.start..frame.end]) else {
+            return Ok(HashMap::new());
+        };
+        *frames.entry(guid.to_ascii_lowercase()).or_default() += 1;
+    }
+    Ok(browser_node_records(bytes, meta)?
+        .into_iter()
+        .map(|node| {
+            let guid = node.guid.to_ascii_lowercase();
+            let suffix = (frames.get(&guid) == Some(&1)).then_some(node.entity_suffix);
+            (guid, suffix)
+        })
+        .collect())
 }
 
 /// Decode every typed body presentation in one Design stream.
@@ -202,6 +231,7 @@ pub(crate) fn body_presentations(
                 frame.end,
                 entity_suffix,
                 &entity_types,
+                &nodes,
             )?;
             let name = material.as_ref().and_then(|m| m.body_name.clone());
             (
@@ -232,6 +262,7 @@ pub(crate) fn body_presentations(
                 frame.start + 15,
                 frame.end,
                 entity_suffix,
+                &nodes,
             )?
             else {
                 continue;
@@ -244,18 +275,10 @@ pub(crate) fn body_presentations(
                 Some(material),
             )
         };
-        let browser_node = if let Some(material) = material.as_ref() {
-            let mut matching_nodes = nodes.iter().filter(|node| {
-                node.entity_suffix == entity_suffix
-                    && node.guid.eq_ignore_ascii_case(&material.node_guid)
-            });
-            match (matching_nodes.next(), matching_nodes.next()) {
-                (Some(node), None) => Some(node.clone()),
-                _ => None,
-            }
-        } else {
-            None
-        };
+        let browser_node = material
+            .as_ref()
+            .and_then(|material| matching_browser_node(&nodes, entity_suffix, &material.node_guid))
+            .cloned();
         out.push(BodyPresentation {
             byte_offset: u64_from_index(frame.start),
             entity_suffix,
@@ -266,6 +289,32 @@ pub(crate) fn body_presentations(
         });
     }
     Ok(out)
+}
+
+fn matching_browser_node<'a>(
+    nodes: &'a [BrowserNodeRecord],
+    entity_suffix: u64,
+    node_guid: &str,
+) -> Option<&'a BrowserNodeRecord> {
+    let mut matching = nodes.iter().filter(|node| {
+        node.entity_suffix == entity_suffix && node.guid.eq_ignore_ascii_case(node_guid)
+    });
+    match (matching.next(), matching.next()) {
+        (Some(node), None) => Some(node),
+        _ => None,
+    }
+}
+
+fn valid_body_scene_node(
+    entity_suffix: u64,
+    node_guid: &str,
+    scene_node_entity: u64,
+    nodes: &[BrowserNodeRecord],
+) -> bool {
+    entity_suffix.checked_add(1) == Some(scene_node_entity)
+        || matching_browser_node(nodes, entity_suffix, node_guid)
+            .and_then(|node| u64::from(node.record_index).checked_add(1))
+            == Some(scene_node_entity)
 }
 
 fn entity_types(
@@ -295,6 +344,7 @@ fn presentation_material(
     end: usize,
     entity_suffix: u64,
     entity_types: &HashMap<u64, (&str, u32)>,
+    nodes: &[BrowserNodeRecord],
 ) -> Result<Option<PresentationMaterial>, CodecError> {
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
@@ -338,10 +388,12 @@ fn presentation_material(
         let Some(brep_container_entity) = local_reference(bytes, &mut reference_at) else {
             continue;
         };
-        if local_reference_value(bytes, &mut reference_at) != Some(LocalReference::Null) {
-            continue;
-        }
-        let Some(scene_node_entity) = local_reference(bytes, &mut reference_at) else {
+        let scene_node_entity = match local_reference_value(bytes, &mut reference_at) {
+            Some(LocalReference::Null) => local_reference(bytes, &mut reference_at),
+            Some(LocalReference::Target(target)) if target != 0 => Some(target),
+            _ => None,
+        };
+        let Some(scene_node_entity) = scene_node_entity else {
             continue;
         };
         if entity_types
@@ -350,7 +402,7 @@ fn presentation_material(
                 !guid.eq_ignore_ascii_case(BREP_CONTAINER_TYPE_GUID)
                     || *version != BREP_CONTAINER_TYPE_VERSION
             })
-            || entity_suffix.checked_add(1) != Some(scene_node_entity)
+            || !valid_body_scene_node(entity_suffix, &node_guid, scene_node_entity, nodes)
             || entity_types
                 .get(&scene_node_entity)
                 .is_none_or(|(guid, version)| {
@@ -381,6 +433,10 @@ fn presentation_material(
             == Some(legacy_marker.as_slice())
         {
             (visual_marker_at + legacy_marker.len(), true)
+        } else if bytes.get(visual_marker_at..visual_marker_at + physical_marker.len())
+            == Some(physical_marker.as_slice())
+        {
+            (visual_marker_at + physical_marker.len(), true)
         } else if bytes.get(visual_marker_at..visual_marker_at + modern_marker.len())
             == Some(modern_marker.as_slice())
         {
@@ -400,7 +456,7 @@ fn presentation_material(
         let visual_preset = if legacy {
             if let Some(at) = skip_zeros(bytes, after_visual_marker, end) {
                 lp_utf16_bounded(bytes, at, 1..=256)
-                    .and_then(|(value, _)| value.starts_with("Prism-").then_some((at, value)))
+                    .and_then(|(value, _)| value.starts_with("Prism").then_some((at, value)))
             } else {
                 None
             }
@@ -433,6 +489,7 @@ fn bare_presentation_material(
     start: usize,
     end: usize,
     entity_suffix: u64,
+    nodes: &[BrowserNodeRecord],
 ) -> Result<Option<PresentationMaterial>, CodecError> {
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
@@ -474,7 +531,7 @@ fn bare_presentation_material(
         let Some(node_entity) = local_reference(bytes, &mut node_reference_at) else {
             continue;
         };
-        if entity_suffix.checked_add(1) != Some(node_entity) {
+        if !valid_body_scene_node(entity_suffix, &node_guid, node_entity, nodes) {
             continue;
         }
 
@@ -659,7 +716,7 @@ mod tests {
         end: usize,
         entity_suffix: u64,
     ) -> Option<super::PresentationMaterial> {
-        super::bare_presentation_material(bytes, start, end, entity_suffix).unwrap()
+        super::bare_presentation_material(bytes, start, end, entity_suffix, &[]).unwrap()
     }
 
     #[test]
@@ -698,6 +755,89 @@ mod tests {
         let nodes = browser_node_records(&bytes, &meta).unwrap();
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0].entity_suffix, 42);
+    }
+
+    /// Append a browser-node record of class `class_tag` whose GUID is
+    /// followed by `tail` and the owning entity suffix.
+    fn push_browser_node(
+        bytes: &mut Vec<u8>,
+        class_tag: &str,
+        record_index: u32,
+        guid: &str,
+        tail: [u8; 3],
+    ) {
+        lp_ascii(bytes, class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        lp_utf16(bytes, guid);
+        bytes.extend_from_slice(&tail);
+        bytes.extend_from_slice(&u64::from(record_index - 1).to_le_bytes());
+    }
+
+    #[test]
+    fn a_browser_node_guid_that_two_frames_store_joins_no_suffix() {
+        const GUID: &str = "11111111-2222-8333-A444-555555555555";
+        let suffixes = |second: Option<(&str, [u8; 3], u32)>| {
+            let mut bytes = Vec::new();
+            push_browser_node(&mut bytes, "256", 43, GUID, [0, 1, 1]);
+            let mut types = vec![design_type(
+                BROWSER_NODE_TYPE_GUID,
+                Some(BROWSER_NODE_BASE_TYPE_GUID),
+                BROWSER_NODE_TYPE_VERSION,
+                DESIGN_MODULE_FUSION,
+                vec![43],
+            )];
+            let mut records = vec![primary_record(43, 0)];
+            if let Some((guid, tail, version)) = second {
+                records.push(primary_record(44, bytes.len()));
+                if version == BROWSER_NODE_TYPE_VERSION {
+                    types[0] = design_type(
+                        BROWSER_NODE_TYPE_GUID,
+                        Some(BROWSER_NODE_BASE_TYPE_GUID),
+                        version,
+                        DESIGN_MODULE_FUSION,
+                        vec![43, 44],
+                    );
+                    push_browser_node(&mut bytes, "256", 44, guid, tail);
+                } else {
+                    types.push(design_type(
+                        BROWSER_NODE_TYPE_GUID,
+                        Some(BROWSER_NODE_BASE_TYPE_GUID),
+                        version,
+                        DESIGN_MODULE_FUSION,
+                        vec![44],
+                    ));
+                    push_browser_node(&mut bytes, "257", 44, guid, tail);
+                }
+            }
+            let meta = crate::metastream::MetaStream {
+                types,
+                records,
+                secondary_records: Vec::new(),
+            };
+            super::browser_node_suffixes(&bytes, &meta)
+                .unwrap()
+                .get(&GUID.to_ascii_lowercase())
+                .copied()
+        };
+        let lower = GUID.to_ascii_lowercase();
+        let other = "66666666-2222-8333-A444-555555555555";
+        assert_eq!(suffixes(None), Some(Some(42)));
+        assert_eq!(
+            suffixes(Some((other, [0, 1, 1], BROWSER_NODE_TYPE_VERSION))),
+            Some(Some(42))
+        );
+        assert_eq!(
+            suffixes(Some(("short", [0, 1, 1], BROWSER_NODE_TYPE_VERSION + 1))),
+            None
+        );
+        for second in [
+            (lower.as_str(), [0, 1, 1], BROWSER_NODE_TYPE_VERSION),
+            (lower.as_str(), [1, 0, 1], BROWSER_NODE_TYPE_VERSION),
+            (lower.as_str(), [0, 1, 1], BROWSER_NODE_TYPE_VERSION + 1),
+        ] {
+            assert_eq!(suffixes(Some(second)), Some(None), "{second:?}");
+        }
     }
 
     #[test]
@@ -1371,6 +1511,87 @@ mod tests {
         assert_eq!(presentations.len(), 1);
         assert_eq!(presentations[0].material, None);
         assert_eq!(presentations[0].name, None);
+    }
+
+    #[test]
+    fn typed_presentation_accepts_resaved_scene_node() {
+        let body_tag = 256u32;
+        let browser_tag = 257u32;
+        let entity = 42u64;
+        let browser_record = u32::try_from(entity + 4).unwrap();
+        let node_guid = "11111111-2222-8333-A444-555555555555";
+        let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, &body_tag.to_string());
+        bytes.extend_from_slice(&entity.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        lp_utf16(&mut bytes, &format!("0_{entity}"));
+        lp_utf16(&mut bytes, node_guid);
+        bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        lp_utf16(&mut bytes, "PrismMaterial-001");
+        push_reference_u64(&mut bytes, 7);
+        bytes.push(0);
+        push_reference_u64(&mut bytes, entity + 5);
+        lp_utf16(&mut bytes, "Top");
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 1]);
+        lp_utf16(&mut bytes, visual_guid);
+        for marker in MODERN_APPEARANCE_LIBRARY_IDS {
+            lp_utf16(&mut bytes, marker);
+        }
+
+        let browser_offset = bytes.len();
+        lp_ascii(&mut bytes, &browser_tag.to_string());
+        bytes.extend_from_slice(&browser_record.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        lp_utf16(&mut bytes, node_guid);
+        bytes.extend_from_slice(&[0, 1, 1]);
+        bytes.extend_from_slice(&entity.to_le_bytes());
+
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                design_type(
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    vec![entity],
+                ),
+                design_type(
+                    BROWSER_NODE_TYPE_GUID,
+                    Some(BROWSER_NODE_BASE_TYPE_GUID),
+                    BROWSER_NODE_TYPE_VERSION,
+                    DESIGN_MODULE_FUSION,
+                    vec![u64::from(browser_record)],
+                ),
+                design_type(
+                    BREP_CONTAINER_TYPE_GUID,
+                    None,
+                    BREP_CONTAINER_TYPE_VERSION,
+                    "",
+                    vec![7],
+                ),
+                design_type(
+                    BODY_SCENE_NODE_TYPE_GUID,
+                    None,
+                    BODY_SCENE_NODE_TYPE_VERSION,
+                    "",
+                    vec![entity + 5],
+                ),
+            ],
+            records: vec![
+                primary_record(entity, 0),
+                primary_record(u64::from(browser_record), browser_offset),
+            ],
+            secondary_records: Vec::new(),
+        };
+        let presentations = body_presentations(&bytes, &meta).expect("named presentation frame");
+        assert_eq!(presentations.len(), 1);
+        assert_eq!(presentations[0].name.as_deref(), Some("Top"));
+        assert!(presentations[0].material.is_some());
+        assert!(presentations[0].browser_node.is_some());
     }
 
     #[test]

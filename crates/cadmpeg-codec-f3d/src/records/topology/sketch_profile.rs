@@ -27,9 +27,16 @@ pub(crate) struct DesignSketchProfileOperand {
     pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the suffix's UTF-16LE code units.
     entity_reference_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) compact_tail_flags: Option<[bool; 2]>,
     /// Exact nested profile-region selection, when its complete frame closes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) region_selection: Option<DesignSketchProfileRegionSelection>,
+    /// Whether the Design stream registers no Sketch entity with the stored
+    /// suffix. `entity_id` then spells the suffix with the stream's Sketch
+    /// entity prefix.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) sketch_absent: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     paired_class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
@@ -54,7 +61,9 @@ impl Clone for DesignSketchProfileOperand {
             asset_id_offset: self.asset_id_offset,
             entity_id: self.entity_id.clone(),
             entity_reference_offset: self.entity_reference_offset,
+            compact_tail_flags: self.compact_tail_flags,
             region_selection: self.region_selection.clone(),
+            sketch_absent: self.sketch_absent,
             paired_class_tag: self.paired_class_tag.clone(),
             paired_byte_offset: self.paired_byte_offset,
         }
@@ -80,7 +89,9 @@ impl DesignSketchProfileOperand {
             asset_id_offset: draft.asset_id_offset,
             entity_id: draft.entity_id,
             entity_reference_offset: draft.entity_reference_offset,
+            compact_tail_flags: draft.compact_tail_flags,
             region_selection: draft.region_selection,
+            sketch_absent: draft.sketch_absent,
             paired_class_tag: draft.paired_class_tag,
             paired_byte_offset: draft.paired_byte_offset,
         };
@@ -97,10 +108,23 @@ impl DesignSketchProfileOperand {
             asset_id_offset: self.asset_id_offset,
             entity_id: self.entity_id,
             entity_reference_offset: self.entity_reference_offset,
+            compact_tail_flags: self.compact_tail_flags,
             region_selection: self.region_selection,
+            sketch_absent: self.sketch_absent,
             paired_class_tag: self.paired_class_tag,
             paired_byte_offset: self.paired_byte_offset,
         }
+    }
+    pub(crate) fn flags_assumption_loss(&self) -> Option<cadmpeg_ir::report::loss::LossNote> {
+        let [first, second] = self
+            .compact_tail_flags
+            .filter(|flags| flags.iter().any(|flag| *flag))?;
+        Some(crate::loss::F3dLossCode::FeatureSketchProfileFlagsAssumed.note(format!(
+            "Sketch-profile operand record {} has compact tail flags [{}, {}]; the flags are assumed not to change the profile interpretation.",
+            self.record_index,
+            u8::from(first),
+            u8::from(second),
+        )))
     }
     pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
@@ -124,7 +148,11 @@ impl Serialize for DesignSketchProfileOperand {
             entity_suffix: u64,
             entity_reference_offset: u64,
             #[serde(skip_serializing_if = "Option::is_none")]
+            compact_tail_flags: Option<[bool; 2]>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             region_selection: Option<&'a DesignSketchProfileRegionSelection>,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            sketch_absent: bool,
             paired_class_tag: &'a str,
             paired_byte_offset: u64,
         }
@@ -138,7 +166,9 @@ impl Serialize for DesignSketchProfileOperand {
             entity_id: self.entity_id.as_str(),
             entity_suffix: self.entity_id.suffix(),
             entity_reference_offset: self.entity_reference_offset,
+            compact_tail_flags: self.compact_tail_flags,
             region_selection: self.region_selection.as_ref(),
+            sketch_absent: self.sketch_absent,
             paired_class_tag: self.paired_class_tag.as_str(),
             paired_byte_offset: self.paired_byte_offset,
         }
@@ -165,8 +195,11 @@ pub(crate) struct DesignSketchProfileOperandDraft {
     pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the suffix's UTF-16LE code units.
     pub(crate) entity_reference_offset: u64,
+    pub(crate) compact_tail_flags: Option<[bool; 2]>,
     /// Exact nested profile-region selection, when its complete frame closes.
     pub(crate) region_selection: Option<DesignSketchProfileRegionSelection>,
+    /// Whether the stream registers no Sketch entity with the stored suffix.
+    pub(crate) sketch_absent: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
@@ -193,6 +226,12 @@ struct DesignSketchProfileOperandWire {
     entity_suffix: u64,
     /// Byte offset of the suffix's UTF-16LE code units.
     entity_reference_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_compact_tail_flags"
+    )]
+    compact_tail_flags: Option<[bool; 2]>,
     /// Exact nested profile-region selection, when its complete frame closes.
     #[serde(
         default,
@@ -200,6 +239,9 @@ struct DesignSketchProfileOperandWire {
         deserialize_with = "deserialize_region_selection"
     )]
     region_selection: Option<DesignSketchProfileRegionSelection>,
+    /// Whether the stream registers no Sketch entity with the stored suffix.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    sketch_absent: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     paired_class_tag: String,
     /// Byte offset of the same-index paired header.
@@ -223,7 +265,9 @@ impl TryFrom<DesignSketchProfileOperandWire> for DesignSketchProfileOperand {
             asset_id_offset: wire.asset_id_offset,
             entity_id,
             entity_reference_offset: wire.entity_reference_offset,
+            compact_tail_flags: wire.compact_tail_flags,
             region_selection: wire.region_selection,
+            sketch_absent: wire.sketch_absent,
             paired_class_tag: wire.paired_class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
         })
@@ -245,7 +289,9 @@ impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
             entity_id: value.entity_id.into_string(),
             entity_suffix,
             entity_reference_offset: value.entity_reference_offset,
+            compact_tail_flags: value.compact_tail_flags,
             region_selection: value.region_selection,
+            sketch_absent: value.sketch_absent,
             paired_class_tag: value.paired_class_tag.into(),
             paired_byte_offset: value.paired_byte_offset,
         }
@@ -261,23 +307,102 @@ pub(crate) struct DesignSketchProfileRegionSelection {
     pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII region-selection class tag.
     pub(crate) class_tag: DesignClassTag,
-    /// Byte offset of the selected-region count.
+    /// Byte offset of the member-list count.
     pub(crate) region_count_offset: u64,
-    /// Selected regions in source order.
+    /// Member lists in source order.
     pub(crate) regions: Vec<DesignSketchProfileRegion>,
+    /// Atomic regions that make up the selected regions, in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) atomic_regions: Vec<DesignSketchProfileAtomicRegion>,
     /// Source per-file dynamic three-digit ASCII companion class tag.
     pub(crate) companion_class_tag: DesignClassTag,
     /// Byte offset of the same-index companion header.
     pub(crate) companion_byte_offset: u64,
 }
 
-/// One selected region in a nested sketch-profile selection.
+/// One boundary loop of a nested sketch-profile selection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSketchProfileRegion {
-    /// Byte offset of this region's member count.
+    /// Byte offset of this list's member count.
     pub(crate) member_count_offset: u64,
     /// Persistent curve members in source order.
     pub(crate) members: Vec<DesignSketchProfileRegionMember>,
+    /// Zero-based selected region that owns the loop.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(crate) region_ordinal: u32,
+}
+
+/// One atomic region of a selected region in a nested sketch-profile
+/// selection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignSketchProfileAtomicRegion {
+    /// Zero-based selected region that the atomic region is part of.
+    pub(crate) region_ordinal: u32,
+    /// Byte offset of the atomic region's loop count.
+    pub(crate) loop_count_offset: u64,
+    /// Boundary loops in source order.
+    pub(crate) loops: Vec<DesignSketchProfileRegion>,
+}
+
+// Serde requires `skip_serializing_if` predicates to borrow the field.
+fn is_zero<T: Copy + Into<u64>>(value: &T) -> bool {
+    (*value).into() == 0
+}
+
+impl DesignSketchProfileRegionSelection {
+    /// The member rings that select regions. For each selected region,
+    /// these are the loops of its atomic regions when it has atomic regions
+    /// and they name every curve of the selected region, otherwise the
+    /// selected region's own loops. `None` when atomic regions omit a curve
+    /// of their selected region.
+    pub(crate) fn resolution_regions(&self) -> Option<Vec<&DesignSketchProfileRegion>> {
+        let mut rings = Vec::new();
+        let mut start = 0;
+        while let Some(first) = self.regions.get(start) {
+            let ordinal = first.region_ordinal;
+            let own = self
+                .regions
+                .iter()
+                .skip(start)
+                .take_while(|region| region.region_ordinal == ordinal)
+                .collect::<Vec<_>>();
+            start += own.len();
+            let atomic = self
+                .atomic_regions
+                .iter()
+                .filter(|atomic| atomic.region_ordinal == ordinal)
+                .flat_map(|atomic| &atomic.loops)
+                .collect::<Vec<_>>();
+            if atomic.is_empty() {
+                rings.extend(own);
+                continue;
+            }
+            let covered = own.iter().flat_map(|region| &region.members).all(|member| {
+                atomic
+                    .iter()
+                    .flat_map(|region| &region.members)
+                    .any(|atomic| atomic.curve_primary_id == member.curve_primary_id)
+            });
+            if !covered {
+                return None;
+            }
+            rings.extend(atomic);
+        }
+        Some(rings)
+    }
+
+    pub(crate) fn has_extended_incidence(&self) -> bool {
+        self.regions
+            .iter()
+            .chain(self.atomic_regions.iter().flat_map(|atomic| &atomic.loops))
+            .flat_map(|region| &region.members)
+            .any(|member| {
+                member
+                    .incidence_values
+                    .iter()
+                    .any(|value| u32::from(*value) > 2)
+            })
+    }
 }
 
 /// One fixed-width persistent curve member of a selected sketch region.
@@ -293,38 +418,31 @@ pub(crate) struct DesignSketchProfileRegionMember {
     pub(crate) curve_primary_id: std::num::NonZeroU32,
     /// Byte offset of the persistent curve identity.
     pub(crate) curve_primary_id_offset: u64,
-    /// First incidence value, encoded as zero or one.
+    /// First incidence value, encoded as zero or one. On an edge of one curve,
+    /// one when the ring traverses the curve against its stored direction.
     pub(crate) incidence_flag: bool,
-    /// Second and third incidence values, in source order.
+    /// Second and third nonzero incidence words, in source order.
     pub(crate) incidence_values: [DesignRegionIncidence; 2],
     /// Byte offset of the first incidence word.
     pub(crate) incidence_words_offset: u64,
 }
 
-/// One of the two admitted nonzero region-incidence values.
+/// Nonzero region-incidence word retained from a boundary member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DesignRegionIncidence {
-    One,
-    Two,
-}
+pub(crate) struct DesignRegionIncidence(std::num::NonZeroU32);
 
 impl TryFrom<u32> for DesignRegionIncidence {
     type Error = String;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::One),
-            2 => Ok(Self::Two),
-            _ => Err("incidence_words second and third values must be 1 or 2".into()),
-        }
+        std::num::NonZeroU32::new(value)
+            .map(Self)
+            .ok_or_else(|| "incidence_words second and third values must be nonzero".into())
     }
 }
 
 impl From<DesignRegionIncidence> for u32 {
     fn from(value: DesignRegionIncidence) -> Self {
-        match value {
-            DesignRegionIncidence::One => 1,
-            DesignRegionIncidence::Two => 2,
-        }
+        value.0.get()
     }
 }
 
@@ -404,6 +522,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_region_selection,
     DesignSketchProfileRegionSelection,
     "region_selection"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_compact_tail_flags,
+    [bool; 2],
+    "compact_tail_flags"
 );
 
 #[cfg(test)]

@@ -142,7 +142,7 @@ use super::attributes::{
 use super::geometry::{
     coedge_pcurve_ref, collect_carrier, double_at, is_asm_stream_delimiter, is_coedge_record,
     is_edge_record, is_known_record_head, is_vertex_record, norm3, pcurve_inline_tail_flags,
-    pcurve_parameter_range, record_reversed, reverse_curve_geometry, scale_point, sense_at,
+    pcurve_uv_offset, record_reversed, reverse_curve_geometry, scale_point, sense_at,
     tolerant_coedge_extension, vertex_point_ref,
 };
 use super::topology::{
@@ -203,6 +203,7 @@ fn emit_carrier_surface(
         id: <SurfaceId>::from(id(format, i)),
         geometry,
         source_object: None,
+        native_ref: None,
     });
     if let Some(procedural) = procedural_surface_defs.remove(&i) {
         let support_start = out.surfaces.len();
@@ -281,6 +282,7 @@ fn emit_carrier_surface(
                                 id: id.clone(),
                                 geometry: item.component,
                                 source_object: None,
+                                native_ref: None,
                             });
                             cadmpeg_ir::geometry::CompoundComponent {
                                 parameter: item.parameter,
@@ -311,6 +313,7 @@ fn emit_carrier_surface(
                     id: support_id.clone(),
                     geometry: support,
                     source_object: None,
+                    native_ref: None,
                 });
                 ProceduralSurfaceDefinition::SubSurface(
                     cadmpeg_ir::geometry::surface_payloads::SubSurfaceConstruction::try_new(
@@ -338,6 +341,7 @@ fn emit_carrier_surface(
                     id: support_id.clone(),
                     geometry: support,
                     source_object: None,
+                    native_ref: None,
                 });
                 let reference_id = brep_id!(
                     format,
@@ -350,6 +354,7 @@ fn emit_carrier_surface(
                     id: reference_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(reference)),
                     source_object: None,
+                    native_ref: None,
                 });
                 let pcurve = pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs });
                 ProceduralSurfaceDefinition::Taper(
@@ -406,12 +411,14 @@ fn emit_carrier_surface(
                     id: first_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)),
                     source_object: None,
+                    native_ref: None,
                 });
                 out.curves.push(Curve {
                     parameter_range: None,
                     id: second_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)),
                     source_object: None,
+                    native_ref: None,
                 });
                 ProceduralSurfaceDefinition::Ruled {
                     first: first_id,
@@ -442,12 +449,14 @@ fn emit_carrier_surface(
                     id: first_id.clone(),
                     geometry: first,
                     source_object: None,
+                    native_ref: None,
                 });
                 out.curves.push(Curve {
                     parameter_range: None,
                     id: second_id.clone(),
                     geometry: second,
                     source_object: None,
+                    native_ref: None,
                 });
                 ProceduralSurfaceDefinition::Sum(
                     cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
@@ -478,6 +487,7 @@ fn emit_carrier_surface(
                     id: directrix_id.clone(),
                     geometry: directrix,
                     source_object: None,
+                    native_ref: None,
                 });
                 ProceduralSurfaceDefinition::Revolution(
                     cadmpeg_ir::features::FinitePoint3::new(axis_origin)
@@ -513,6 +523,7 @@ fn emit_carrier_surface(
                     id: support_id.clone(),
                     geometry: support,
                     source_object: None,
+                    native_ref: None,
                 });
                 let (u_sense, v_sense, extension) = match layout {
                     EmbeddedOffsetLayout::Legacy {
@@ -558,6 +569,7 @@ fn emit_carrier_surface(
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                     source_object: None,
+                    native_ref: None,
                 });
                 ProceduralSurfaceDefinition::Extrusion(
                     cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
@@ -678,6 +690,7 @@ fn emit_deformable_surface(
         id: support.clone(),
         geometry: embedded.support,
         source_object: None,
+        native_ref: None,
     });
     let data = match embedded.data {
         EmbeddedDeformableSurfaceData::Resolved(data) => data,
@@ -704,6 +717,7 @@ fn emit_deformable_surface(
                 id: secondary_surface.clone(),
                 geometry: surface,
                 source_object: None,
+                native_ref: None,
             });
             let curve_id = brep_id!(
                 format,
@@ -716,6 +730,7 @@ fn emit_deformable_surface(
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             });
             cadmpeg_ir::geometry::DeformableSurfaceData::SurfaceCurve {
                 surface: secondary_surface,
@@ -756,6 +771,7 @@ fn emit_deformable_surface(
                 id: secondary_surface.clone(),
                 geometry: surface,
                 source_object: None,
+                native_ref: None,
             });
             let curve_id = brep_id!(
                 format,
@@ -768,6 +784,7 @@ fn emit_deformable_surface(
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             });
             cadmpeg_ir::geometry::DeformableSurfaceData::Full {
                 leading_vectors,
@@ -809,6 +826,7 @@ fn emit_classic_loft_data(
         id: support_id.clone(),
         geometry: data.surface,
         source_object: None,
+        native_ref: None,
     });
     (
         data.type_code,
@@ -858,6 +876,7 @@ fn emit_loft_member_form(
                     id: support_id.clone(),
                     geometry,
                     source_object: None,
+                    native_ref: None,
                 });
                 support_id.clone()
             });
@@ -906,6 +925,7 @@ fn emit_loft_path_curve(
         id: id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
         source_object: None,
+        native_ref: None,
     });
     Some(LoftPathCurve { id, endpoints })
 }
@@ -972,6 +992,7 @@ fn emit_loft_surface(
                                                 SolvedCurveGeometry::Nurbs(member.curve),
                                             ),
                                             source_object: None,
+                                            native_ref: None,
                                         });
                                         cadmpeg_ir::geometry::LoftProfileMember {
                                             profile: LoftPathCurve {
@@ -1018,6 +1039,7 @@ fn emit_loft_surface(
                                                 SolvedCurveGeometry::Nurbs(geometry)
                                             ),
                                             source_object: None,
+                                            native_ref: None,
                                         });
                                     id
                                 })
@@ -1114,6 +1136,7 @@ fn emit_compound_loft_surface(
                                     member.curve,
                                 )),
                                 source_object: None,
+                                native_ref: None,
                             });
                             let (type_code, data) = emit_classic_loft_data(out, member.data, {
                                 {
@@ -1156,6 +1179,7 @@ fn emit_compound_loft_surface(
                 id: path.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
                 source_object: None,
+                native_ref: None,
             });
             let auxiliaries = scale
                 .auxiliaries
@@ -1178,6 +1202,7 @@ fn emit_compound_loft_surface(
                             id: id.clone(),
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                             source_object: None,
+                            native_ref: None,
                         });
                         id
                     })
@@ -1224,6 +1249,7 @@ fn emit_compound_loft_surface(
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             });
             cadmpeg_ir::geometry::CompoundLoftTail::Six {
                 flags,
@@ -1285,6 +1311,7 @@ fn emit_compound_loft_surface(
                         id: id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                         source_object: None,
+                        native_ref: None,
                     });
                     cadmpeg_ir::geometry::CompoundLoftDirection::Curve {
                         curve: id,
@@ -1360,6 +1387,7 @@ fn emit_scaled_compound_loft_surface(
                                 member.curve,
                             )),
                             source_object: None,
+                            native_ref: None,
                         });
                         let (type_code, data) = emit_classic_loft_data(out, member.data, {
                             {
@@ -1402,6 +1430,7 @@ fn emit_scaled_compound_loft_surface(
             id: path.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
             source_object: None,
+            native_ref: None,
         });
         let auxiliaries = scale
             .auxiliaries
@@ -1424,6 +1453,7 @@ fn emit_scaled_compound_loft_surface(
                         id: id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                         source_object: None,
+                        native_ref: None,
                     });
                     id
                 })
@@ -1467,6 +1497,7 @@ fn emit_scaled_compound_loft_surface(
                         id: id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                         source_object: None,
+                        native_ref: None,
                     });
                     cadmpeg_ir::geometry::CompoundLoftDirection::Curve {
                         curve: id,
@@ -1513,6 +1544,7 @@ fn emit_scaled_compound_loft_surface(
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             });
             cadmpeg_ir::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
                 scale: scale
@@ -1548,6 +1580,7 @@ fn emit_scaled_compound_loft_surface(
         id: tail_curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.tail_curve)),
         source_object: None,
+        native_ref: None,
     });
     let shape = match embedded.shape {
         EmbeddedScaledCompoundLoftShape::Full => {
@@ -1660,6 +1693,7 @@ fn map_law_expression(
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             });
             cadmpeg_ir::geometry::LawExpression::Edge {
                 curve: LoftPathCurve { id, endpoints },
@@ -1775,6 +1809,7 @@ fn emit_skin_surface(
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             });
             let secondary_id = brep_id!(
                 format,
@@ -1787,6 +1822,7 @@ fn emit_skin_surface(
                 id: secondary_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(secondary_curve)),
                 source_object: None,
+                native_ref: None,
             });
             cadmpeg_ir::geometry::SkinSurfaceLayout::Compact {
                 inner_count,
@@ -1820,6 +1856,7 @@ fn emit_skin_surface(
                                 profile.curve,
                             )),
                             source_object: None,
+                            native_ref: None,
                         });
                         let (type_code, data) = emit_classic_loft_data(
                             out,
@@ -1850,6 +1887,7 @@ fn emit_skin_surface(
                 id: path_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(path)),
                 source_object: None,
+                native_ref: None,
             });
             cadmpeg_ir::geometry::SkinSurfaceLayout::Profiles {
                 profiles,
@@ -1869,6 +1907,7 @@ fn emit_skin_surface(
         id: parameter_curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.parameter_curve)),
         source_object: None,
+        native_ref: None,
     });
     let formula = map_law_formula(embedded.formula, |variable_index, variable| {
         map_law_expression(&mut *out, format, scope, variable_index.into(), variable)
@@ -1961,6 +2000,7 @@ fn emit_net_surface(
                                             SolvedCurveGeometry::Nurbs(member.curve),
                                         ),
                                         source_object: None,
+                                        native_ref: None,
                                     });
                                     cadmpeg_ir::geometry::LoftProfileMember {
                                         profile: LoftPathCurve {
@@ -2011,6 +2051,7 @@ fn emit_net_surface(
                                         geometry,
                                     )),
                                     source_object: None,
+                                    native_ref: None,
                                 });
                                 id
                             })
@@ -2196,6 +2237,7 @@ fn emit_sweep_surface(
                         id: guide_curve_id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(guide_curve)),
                         source_object: None,
+                        native_ref: None,
                     });
                     cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitGuide {
                         mode,
@@ -2232,6 +2274,7 @@ fn emit_sweep_surface(
                         id: support_surface_id.clone(),
                         geometry: support_surface,
                         source_object: None,
+                        native_ref: None,
                     });
                     let auxiliary_curve = auxiliary_curve
                         .map(|geometry| -> Result<_, cadmpeg_core::CodecError> {
@@ -2249,6 +2292,7 @@ fn emit_sweep_surface(
                                         geometry,
                                     )),
                                     source_object: None,
+                                    native_ref: None,
                                 });
                                 id
                             })
@@ -2342,6 +2386,7 @@ fn emit_sweep_surface(
         id: profile.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(profile_geometry)),
         source_object: None,
+        native_ref: None,
     });
     let spine = brep_id!(
         format,
@@ -2354,6 +2399,7 @@ fn emit_sweep_surface(
         id: spine.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spine_geometry)),
         source_object: None,
+        native_ref: None,
     });
     Ok(ProceduralSurfaceDefinition::Sweep(
         cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload::try_new(
@@ -2395,6 +2441,7 @@ fn emit_g2_blend_surface(
             id: surface.clone(),
             geometry: side.surface,
             source_object: None,
+            native_ref: None,
         });
         let curve = brep_id!(
             format,
@@ -2407,6 +2454,7 @@ fn emit_g2_blend_surface(
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(side.curve)),
             source_object: None,
+            native_ref: None,
         });
         let pcurves = side
             .pcurves
@@ -2439,6 +2487,7 @@ fn emit_g2_blend_surface(
                                     geometry,
                                 )),
                                 source_object: None,
+                                native_ref: None,
                             });
                             cadmpeg_ir::geometry::G2BlendFullSupport {
                                 surface: id,
@@ -2474,6 +2523,7 @@ fn emit_g2_blend_surface(
             embedded.second_exact_surface,
         )),
         source_object: None,
+        native_ref: None,
     });
     let center_curve = brep_id!(
         format,
@@ -2486,6 +2536,7 @@ fn emit_g2_blend_surface(
         id: center_curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.center_curve)),
         source_object: None,
+        native_ref: None,
     });
     Ok(ProceduralSurfaceDefinition::G2Blend(
         cadmpeg_ir::geometry::surface_payloads::G2BlendSurfacePayload::try_new(
@@ -2531,6 +2582,7 @@ fn emit_rolling_ball_side(
                 id: id.clone(),
                 geometry: support.surface,
                 source_object: None,
+                native_ref: None,
             });
             Ok(RollingBallSupportSurface {
                 surface: id,
@@ -2552,6 +2604,7 @@ fn emit_rolling_ball_side(
                 id: id.clone(),
                 geometry: support.curve,
                 source_object: None,
+                native_ref: None,
             });
             Ok(RollingBallSupportCurve {
                 curve: id,
@@ -2608,6 +2661,7 @@ fn emit_variable_blend_surface(
             id: id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         });
         Ok(id)
     };
@@ -2698,6 +2752,7 @@ fn emit_revision_compound_loft_surface(
                                     member.curve,
                                 )),
                                 source_object: None,
+                                native_ref: None,
                             });
                             cadmpeg_ir::geometry::LoftProfileMember {
                                 profile: LoftPathCurve {
@@ -2756,6 +2811,7 @@ fn emit_revision_compound_loft_surface(
                             id: id.clone(),
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                             source_object: None,
+                            native_ref: None,
                         });
                         id
                     })
@@ -2802,6 +2858,7 @@ fn emit_revision_compound_loft_surface(
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             });
             cadmpeg_ir::geometry::CompoundLoftDirection::Curve {
                 curve: id,
@@ -2831,6 +2888,7 @@ fn emit_revision_compound_loft_surface(
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             });
             cadmpeg_ir::geometry::RevisionCompoundLoftTail::Curve {
                 interval,
@@ -2888,6 +2946,7 @@ fn emit_revision_g2_blend_surface(
         id: center_id.clone(),
         geometry: construction.center,
         source_object: None,
+        native_ref: None,
     });
     Ok(ProceduralSurfaceDefinition::RevisionG2Blend {
         construction: Box::new(
@@ -2949,6 +3008,7 @@ fn emit_vertex_blend_surface(
                     id: id.clone(),
                     geometry: curve,
                     source_object: None,
+                    native_ref: None,
                 });
                 VertexBlendBoundaryGeometry::Circle {
                     curve: id,
@@ -2982,6 +3042,7 @@ fn emit_vertex_blend_surface(
                     id: id.clone(),
                     geometry: surface,
                     source_object: None,
+                    native_ref: None,
                 });
                 VertexBlendBoundaryGeometry::Pcurve {
                     surface: id,
@@ -3008,6 +3069,7 @@ fn emit_vertex_blend_surface(
                     id: id.clone(),
                     geometry: curve,
                     source_object: None,
+                    native_ref: None,
                 });
                 VertexBlendBoundaryGeometry::Plane {
                     normal,
@@ -3073,6 +3135,7 @@ fn emit_blend_surface(
                 id: support_id.clone(),
                 geometry: support,
                 source_object: None,
+                native_ref: None,
             });
             resolved_supports[side] = Some(BlendSupport {
                 surface: support_id,
@@ -3094,6 +3157,7 @@ fn emit_blend_surface(
                     id: spine_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spine)),
                     source_object: None,
+                    native_ref: None,
                 });
                 spine_id
             })
@@ -3133,6 +3197,7 @@ fn emit_blend_surface(
                     id: slice.clone(),
                     geometry: native.slice,
                     source_object: None,
+                    native_ref: None,
                 });
                 let third = native
                     .third
@@ -3153,6 +3218,7 @@ fn emit_blend_surface(
                                 id: surface.clone(),
                                 geometry: side.surface,
                                 source_object: None,
+                                native_ref: None,
                             });
                             let curve = brep_id!(
                                 format,
@@ -3167,6 +3233,7 @@ fn emit_blend_surface(
                                     side.curve,
                                 )),
                                 source_object: None,
+                                native_ref: None,
                             });
                             Box::new(RollingBallThirdSide {
                                 label: side.label,
@@ -3292,6 +3359,7 @@ fn emit_carrier_curve(
                 id: brep_id!(format, CurveId, "entity", brep_key!(i, ":reversed")),
                 geometry: reversed,
                 source_object: None,
+                native_ref: None,
             });
         } else {
             reverse_curve_geometry(&mut geometry);
@@ -3302,6 +3370,7 @@ fn emit_carrier_curve(
         id: <CurveId>::from(id(format, i)),
         geometry,
         source_object: None,
+        native_ref: None,
     });
     let surface_start = out.surfaces.len();
     let curve_start = out.curves.len();
@@ -3332,6 +3401,7 @@ fn emit_carrier_curve(
                             id: source_id.clone(),
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
                             source_object: None,
+                            native_ref: None,
                         });
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(
                             VectorOffsetCurveConstruction::try_new(
@@ -3352,6 +3422,7 @@ fn emit_carrier_curve(
                             id: source_id.clone(),
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
                             source_object: None,
+                            native_ref: None,
                         });
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(
                             cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
@@ -3379,6 +3450,7 @@ fn emit_carrier_curve(
                                 id: id.clone(),
                                 geometry,
                                 source_object: None,
+                                native_ref: None,
                             });
                             Ok(Some(id))
                         };
@@ -3423,6 +3495,7 @@ fn emit_carrier_curve(
                                     id: id.clone(),
                                     geometry,
                                     source_object: None,
+                                    native_ref: None,
                                 });
                                 Ok(Some(id))
                             };
@@ -3457,6 +3530,7 @@ fn emit_carrier_curve(
                                 id: id.clone(),
                                 geometry,
                                 source_object: None,
+                                native_ref: None,
                             });
                             Ok(id)
                         };
@@ -3526,6 +3600,7 @@ fn emit_carrier_curve(
                                     id: id.clone(),
                                     geometry,
                                     source_object: None,
+                                    native_ref: None,
                                 });
                                 Ok(Some(id))
                             };
@@ -3550,6 +3625,7 @@ fn emit_carrier_curve(
                                 id: curve.clone(),
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                                 source_object: None,
+                                native_ref: None,
                             });
                             cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve }
                         }
@@ -3641,6 +3717,7 @@ fn emit_carrier_curve(
                                                 SolvedCurveGeometry::Nurbs(curve.component),
                                             ),
                                             source_object: None,
+                                            native_ref: None,
                                         });
                                         cadmpeg_ir::geometry::CompoundComponent {
                                             parameter: curve.parameter,
@@ -3763,6 +3840,7 @@ fn emit_surface_curve_layout<F>(
                 id: id.clone(),
                 geometry,
                 source_object: None,
+                native_ref: None,
             });
             Ok(Some(id))
         };
@@ -3825,6 +3903,7 @@ fn emit_silhouette_curve(
             id: id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         });
         Ok(Some(id))
     };
@@ -3844,6 +3923,7 @@ fn emit_silhouette_curve(
         id: cast_surface.clone(),
         geometry: embedded.cast_surface,
         source_object: None,
+        native_ref: None,
     });
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(
         cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::from_unit_direction(
@@ -3896,6 +3976,7 @@ fn emit_surface_offset_curve(
                 id: id.clone(),
                 geometry,
                 source_object: None,
+                native_ref: None,
             });
             Ok(Some(id))
         };
@@ -3910,6 +3991,7 @@ fn emit_surface_offset_curve(
         id: base.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.base)),
         source_object: None,
+        native_ref: None,
     });
     Ok(
         cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
@@ -3948,6 +4030,7 @@ fn emit_spring_surface(
         id: id.clone(),
         geometry,
         source_object: None,
+        native_ref: None,
     });
     id
 }
@@ -4062,6 +4145,7 @@ fn emit_projection_curve(
             id: id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         });
         Ok(Some(id))
     };
@@ -4077,6 +4161,7 @@ fn emit_projection_curve(
         id: source.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.source)),
         source_object: None,
+        native_ref: None,
     });
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(
         cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(
@@ -4136,6 +4221,7 @@ fn emit_law_curve(
                 id: id.clone(),
                 geometry,
                 source_object: None,
+                native_ref: None,
             });
             Ok(Some(id))
         };
@@ -4210,6 +4296,7 @@ pub(super) fn emit_carrier_records(
                         record: Some(unknown_record_id(r, format)?),
                     }),
                     source_object: None,
+                    native_ref: None,
                 });
             }
             _ if reach.curves.contains(&i) => {
@@ -4253,7 +4340,7 @@ pub(super) fn emit_pcurves(
                     _ => None,
                 };
                 let native_tail_flags = pcurve_inline_tail_flags(r);
-                let parameter_range = pcurve_parameter_range(r);
+                let uv_offset = pcurve_uv_offset(r);
                 let fit_tolerance = match (r.chunk(3), r.chunk(4)) {
                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                         nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
@@ -4261,10 +4348,10 @@ pub(super) fn emit_pcurves(
                     }
                     _ => None,
                 };
-                let parameter_range = parameter_range
-                    .map(|range| {
-                        cadmpeg_ir::units::FiniteVector::new(range)
-                            .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+                let uv_offset = uv_offset
+                    .map(|offset| {
+                        cadmpeg_ir::units::FiniteVector::new(offset)
+                            .ok_or(PcurveMetadata::NON_FINITE_UV_OFFSET)
                     })
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4278,30 +4365,37 @@ pub(super) fn emit_pcurves(
                 let metadata = match (
                     wrapper_reversed,
                     native_tail_flags,
-                    parameter_range,
+                    uv_offset,
                     fit_tolerance,
                 ) {
                     (
                         Some(wrapper_reversed),
                         Some(native_tail_flags),
-                        Some(parameter_range),
+                        Some(uv_offset),
                         Some(fit_tolerance),
                     ) => PcurveMetadata::AsmInline {
                         form: PcurveInlineForm::new(
                             wrapper_reversed,
                             native_tail_flags,
-                            parameter_range,
+                            uv_offset,
                             fit_tolerance,
                         ),
                     },
-                    (wrapper_reversed, _, parameter_range, fit_tolerance) => {
-                        PcurveMetadata::general(wrapper_reversed, parameter_range, fit_tolerance)
+                    (wrapper_reversed, _, uv_offset, fit_tolerance) => {
+                        let mut form = cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::new(
+                            wrapper_reversed,
+                            None,
+                            fit_tolerance,
+                        );
+                        form.uv_offset = uv_offset;
+                        PcurveMetadata::General { form }
                     }
                 };
                 out.pcurves.push(Pcurve {
                     id: <PcurveId>::from(id(format, i)),
                     geometry,
                     metadata,
+                    native_ref: None,
                 });
             }
         }
@@ -4390,6 +4484,7 @@ pub(super) fn emit_vertices(
                         tolerance: evaluated_vertex_tolerance(r).and_then(|value| {
                             cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM)
                         }),
+                        native_ref: None,
                     });
                     if r.head() == "tvertex" && !invalid_vertex_tolerance(r) {
                         if let (Some(Token::Double(first)), Some(Token::Double(second))) =
@@ -4597,9 +4692,12 @@ pub(super) fn emit_edges(
                 id: EdgeId::from(id(format, i)),
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-                start: VertexId::from(id(format, start)),
-                end: VertexId::from(id(format, end)),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::from(id(format, start)),
+                    VertexId::from(id(format, end)),
+                )),
                 tolerance,
+                native_ref: None,
             });
             if let Some((entity_revision, trailing_field)) = tolerant_tail {
                 out.tolerant_edge_tails.push(TolerantEdgeTail {
@@ -4754,6 +4852,7 @@ pub(super) fn emit_coedges(
                                             SolvedCurveGeometry::Nurbs(curve),
                                         ),
                                         source_object: None,
+                                        native_ref: None,
                                     });
                                     Some(cadmpeg_ir::topology::CoedgeUseCurve {
                                         curve: curve_id,
@@ -4801,6 +4900,7 @@ pub(super) fn emit_coedges(
                     .into_iter()
                     .collect::<Vec<_>>(),
                 use_curve,
+                native_ref: None,
             });
             if let Some((parameter_range, extension)) = tolerant {
                 out.tolerant_coedge_parameters
@@ -4849,6 +4949,7 @@ pub(super) fn emit_loops(
                 id: <LoopId>::from(id(format, i)),
                 face: <FaceId>::from(id(format, owner)),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                native_ref: None,
             });
         }
     }
@@ -4885,10 +4986,10 @@ pub(super) fn emit_faces(
             let loops = loop_chain(r, by_index, kept_loops, format);
             // The face record's sense is relative to its surface record's
             // orientation. A reversed spline record flips the cache normal,
-            // and a negative-cosine cone points its normal toward the axis;
-            // the IR stores the forward carrier in both cases, so the
-            // reversal folds into the face sense to keep the IR
-            // self-consistent.
+            // a negative-cosine cone points its normal toward the axis, and a
+            // negative-minor torus points its normal toward the tube center;
+            // the IR stores the forward carrier in each case, so the reversal
+            // folds into the face sense to keep the IR self-consistent.
             let native_sense = sense_at(r, 8);
             let mut sense = native_sense;
             let carrier_flipped = by_index
@@ -4913,6 +5014,7 @@ pub(super) fn emit_faces(
                 name: attribute_name(r)?,
                 color: attribute_color(r),
                 tolerance: None,
+                native_ref: None,
             });
             let containment = match (r.chunk(9), r.chunk(10)) {
                 (Some(Token::True), Some(Token::True)) => Some(FaceContainment::In),
@@ -5028,15 +5130,14 @@ pub fn emit_containers(
             retain_record(ctx, out, r, bytes, format)?;
             continue;
         }
-        let shell = Shell::new(
+        let shell = Shell::with_members(
             ShellId::from(id(format, i)),
             RegionId::from(id(format, owner)),
-            faces,
             wire_edges,
             free_vertices,
-        )
-        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?;
+        );
         out.shells.push(shell);
+        out.chain_order.shell_faces.insert(i, faces);
         emitted_shells.insert(i);
     }
     for r in records.iter().filter(|record| record.head() != "shell") {
@@ -5053,10 +5154,13 @@ pub fn emit_containers(
                     id: <RegionId>::from(id(format, i)),
                     body: <BodyId>::from(id(format, owner)),
                     shells,
+                    native_ref: None,
                 });
             }
             "body" => {
-                let regions = region_chain(r, by_index, format);
+                out.chain_order
+                    .body_regions
+                    .insert(i, region_chain(r, by_index, format));
                 let body_id = <BodyId>::from(id(format, i));
                 if let Some(Token::Long(key)) = r.chunk(1) {
                     out.body_native_keys.push(BodyNativeKey {
@@ -5108,12 +5212,12 @@ pub fn emit_containers(
                 out.bodies.push(Body {
                     id: body_id,
                     kind: cadmpeg_ir::topology::BodyKind::Solid,
-                    regions,
                     transform: transform_record
                         .and_then(|transform| decode_transform(transform, header_scale)),
                     name: attribute_name(r)?,
                     color: attribute_color(r),
                     visible: None,
+                    native_ref: None,
                 });
             }
             _ => {}
@@ -5126,16 +5230,17 @@ pub fn emit_containers(
         out.bodies.push(Body {
             id: body_id.clone(),
             kind: cadmpeg_ir::topology::BodyKind::Wire,
-            regions: vec![region_id.clone()],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         out.regions.push(Region {
             id: region_id.clone(),
             body: body_id,
             shells: vec![shell_id.clone()],
+            native_ref: None,
         });
         out.shells.push(Shell::with_wire_edge(
             shell_id,

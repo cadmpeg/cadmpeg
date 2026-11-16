@@ -73,7 +73,7 @@ Spec §4.2 · layout: byte offsets · size: 21 B
 Relative to the endpoint of the five variable-width XMT indices, excluding the type tag and first-use schema information.
 
 Parsed by:
-- `crates/cadmpeg-codec-nx/src/deltas/pmark_state.rs`
+- `crates/cadmpeg-parasolid/src/deltas/pmark_state.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -266,6 +266,22 @@ Parsed by:
 | 14 | 4 | `duplicate_byte_len` | `u32` | little | spec | `duplicate_byte_len:u32 LE` at `+14` equal to `compressed_byte_len` |
 | 18 | 27 | `opaque` | `bytes[27]` | n/a | spec | bytes `+18..+44` opaque |
 
+## `segment_stream_wrapper_c0_57`
+
+Spec §2 · layout: byte offsets · size: 57 B
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 4 | 4 | `compressed_byte_len` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 8 | 4 | `header_code` | `u32` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `61` |
+| 12 | 2 | `version` | `u16` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `4` |
+| 14 | 4 | `zero` | `u32` | little | spec | The `zero:u32 LE` at `+14` equals zero. · value `0` |
+| 18 | 39 | `opaque` | `bytes[39]` | n/a | spec | Bytes `+18..+56` are opaque. |
+
 ## `fastload_structure_envelope`
 
 Spec §2.3 · layout: byte offsets · size: 12 B
@@ -282,7 +298,7 @@ Spec §2.3 · layout: byte offsets · size: 12 B
 
 Spec §7.1 · layout: byte offsets · size: 14 B
 
-Signature-relative. `section_end = signature_offset + 16 + payload_size`, so bytes +14..+16 belong to the header but the spec names no field for them.
+Signature-relative. `section_end = signature_offset + 16 + payload_size`. An ID-bounded entity index in a standard size-framed part section uses signature offset +14 as its offset base.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -734,16 +750,16 @@ Unstated regions:
 
 Spec §6.3 · layout: byte offsets · size: 31 B
 
-§4.1's fixed-record table has no row for type 38; the 31-byte total here is the parser's constant, which the six stated reference offsets close exactly. Recorded in the pull request.
+§4.1's fixed-record table has no row for type 38. The record is 31 bytes with the appended `intersection_data` reference and 29 bytes without it.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 19 | 2 | `ref0_primary_support` | `xmt_ref` | big | spec | six support xmt references at `+19,+21,+23,+25,+27,+29` |
-| 21 | 2 | `ref1_second_support_bridge` | `xmt_ref` | big | spec | six support xmt references at `+19,+21,+23,+25,+27,+29` |
+| 19 | 2 | `ref0_primary_support` | `xmt_ref` | big | spec | five construction xmt references at `+19,+21,+23,+25,+27` |
+| 21 | 2 | `ref1_second_support_bridge` | `xmt_ref` | big | spec | five construction xmt references at `+19,+21,+23,+25,+27` |
 | 23 | 2 | `ref2_chart` | `xmt_ref` | big | spec | \| 2 \| `0x28` CHART_s seed/control polyline \| |
 | 25 | 2 | `ref3_term_start` | `xmt_ref` | big | spec | \| 3/4 \| `0x29` term_use start / end endpoint \| |
 | 27 | 2 | `ref4_term_end` | `xmt_ref` | big | spec | \| 3/4 \| `0x29` term_use start / end endpoint \| |
-| 29 | 2 | `ref5_values_array` | `xmt_ref` | big | spec | \| 5 \| `0x00cc` values-array (support UV parameters) \| |
+| 29 | 2 | `ref5_values_array` | `xmt_ref` | big | spec | adds a sixth reference at `+29` |
 
 Unstated regions:
 
@@ -770,9 +786,9 @@ Cross-checked against code:
 
 ## `nurbs_surface_descriptor_prefix`
 
-Spec §6.2 · layout: byte offsets · size: 28 B
+Spec §6.2 · layout: byte offsets · size: 34 B
 
-Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends at the V distinct-knot count; the later reference layout is variable-width.
+Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends after the vertex dimension; the later reference layout is variable-width.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -786,9 +802,12 @@ Offsets are relative to the type tag after the optional envelope and large-index
 | 19 | 1 | `v_knot_type` | `u8` | big | spec | U/V knot types `+18/+19` |
 | 20 | 4 | `u_distinct_knot_count` | `u32` | big | spec | distinct-knot counts `+20/+24` |
 | 24 | 4 | `v_distinct_knot_count` | `u32` | big | spec | distinct-knot counts `+20/+24` |
+| 28 | 1 | `rational` | `u8` | big | spec | rational `+28` |
+| 32 | 2 | `dimension` | `u16` | big | spec | vertex dimension `+32` |
 
 Unstated regions:
 
+- `29..32` (3 B): U/V closed flags and surface form.
 - `0..4` (4 B): Type tag and the encoded XMT identity.
 
 ## `nurbs_knot_array_count_prefix`
@@ -947,13 +966,12 @@ Closes the enclosing leading, map, or PMARK section. In the exact final position
 
 Spec §4.2 · layout: byte offsets · size: 6 B
 
-Relative to the endpoint of the variable-width nonnull XMT/kind pairs. The terminal word is below 0x8000 and does not frame nodes or select a state.
+Relative to the endpoint of the variable-width nonnull XMT/kind pairs.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `null_xmt` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the · value `1` |
-| 2 | 2 | `zero` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the · value `0` |
-| 4 | 2 | `terminal_word` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the |
+| 0 | 2 | `null_xmt` | `u16` | big | spec | at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs. · value `1` |
+| 2 | 4 | `terminal_bytes` | `bytes[4]` | big | spec | at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs. |
 
 ## Not tabulated
 
@@ -962,4 +980,4 @@ Relative to the endpoint of the variable-width nonnull XMT/kind pairs. The termi
 | OM record grammars (§7.1) | §3.3 | About sixty fixed-literal token grammars with sequential field positions but no stated absolute offsets. They are slot layouts over a variable-width compact-index lane, so no byte arithmetic closes. |
 | Deltas physical record grammars (§4.2) | §4.2 | Effective schema plans determine ordinary-node field order and variable extents. Status-free PARTITION/PMARK prefixes and enclosing sections have distinct grammars; one fixed layout does not describe these productions. |
 | Int32 Compressed Data Packet Mk. 2 (§2.3) | §2.3 | A most-significant-bit-first bit stream with `u6` and `u3` sub-fields; there are no byte offsets to state. |
-| B_SURFACE and B_CURVE counted payload and reference tails (§6.2) | §6.2 | Types 125-128 and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above. |
+| B_SURFACE and B_CURVE counted payload and reference tails (§6.2) | §6.2 | Types 45, 125-128, and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above. |

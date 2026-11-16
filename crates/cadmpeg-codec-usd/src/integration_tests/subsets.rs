@@ -151,26 +151,26 @@ fn a_brep_array_keeps_the_identities_of_its_entities() {
     let (written, _) = crate::test_support::encode(&ir);
     assert!(written.contains("CadBrepIdentityAPI"), "{written}");
     let read = crate::test_support::decode(&written);
-    let ids = |model: &cadmpeg_ir::document::Model| {
-        let mut out: Vec<String> = model
+    let ids = |geometry: &cadmpeg_ir::document::Topology| {
+        let mut out: Vec<String> = geometry
             .faces
             .iter()
             .map(|face| face.id.to_string())
-            .chain(model.edges.iter().map(|edge| edge.id.to_string()))
-            .chain(model.vertices.iter().map(|vertex| vertex.id.to_string()))
-            .chain(model.bodies.iter().map(|body| body.id.to_string()))
+            .chain(geometry.edges.iter().map(|edge| edge.id.to_string()))
+            .chain(geometry.vertices.iter().map(|vertex| vertex.id.to_string()))
+            .chain(geometry.bodies.iter().map(|body| body.id.to_string()))
             .collect();
         out.sort();
         out
     };
-    assert_eq!(ids(&ir.model), ids(&read.ir().model));
+    assert_eq!(ids(&ir.geometry), ids(&read.ir().geometry));
 }
 
 #[test]
 fn a_brep_array_keeps_the_names_and_tolerances_of_its_entities() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     let tolerance = |value: f64| cadmpeg_ir::scalar::PositiveReal::new(value);
-    let edited = &mut ir.model;
+    let edited = &mut ir.geometry;
     edited.bodies[0].name = Some("Unit cube".to_owned());
     edited.faces[0].name = Some("Bottom".to_owned());
     edited.faces[1].tolerance = tolerance(0.01);
@@ -179,7 +179,7 @@ fn a_brep_array_keeps_the_names_and_tolerances_of_its_entities() {
     let (written, _) = crate::test_support::encode(&ir);
     assert!(written.contains("CadBrepToleranceAPI"), "{written}");
     let read = crate::test_support::decode(&written);
-    let (model, after) = (&ir.model, &read.ir().model);
+    let (model, after) = (&ir.geometry, &read.ir().geometry);
     let body = &after.bodies[0];
     assert_eq!(body.name.as_deref(), Some("Unit cube"));
     let face = |id: &cadmpeg_ir::ids::FaceId| {

@@ -2,6 +2,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::design::decode::scopes::parameter_scope::parse_parameter_scope_with_type_guid;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudeOperation;
@@ -157,12 +158,13 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 .unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(
+        parse_parameter_scope_with_type_guid(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
+            Some("DD405BC2-D673-44F0-8833-5CB2A1C186C7"),
         )
         .unwrap()
         .unwrap()
@@ -191,6 +193,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             side_extent_discriminators: [1, 0],
             side_extent_discriminator_offsets: [77, 90],
             first_side_target_ordinal: None,
+            distance_tail: None,
             extent: DesignExtrudeExtent::OneSidedDistance,
             direction_face_extend_offsets: [32, 36],
             direction_reversed: false,
@@ -221,6 +224,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 crate::records::feature::extrude::DesignExtrudePrologueReference {
                     record_index: 77,
                     record_index_offset: 26,
+                    type_guid: None,
                     trailing_zero_count: 8,
                     operation_prefix_marker_offset: None,
                 }
@@ -231,6 +235,14 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             side_extent_discriminators: [1, 1],
             side_extent_discriminator_offsets: [87, 100],
             first_side_target_ordinal: None,
+            distance_tail: Some(
+                crate::records::feature::extrude::DesignExtrudeDistanceTail {
+                    target_option: 0,
+                    target_option_offset: 96,
+                    measurement: crate::records::feature::extrude::DesignExtrudeMeasurement::Sided,
+                    measurement_offset: 112,
+                }
+            ),
             extent: DesignExtrudeExtent::TwoSidedDistance,
             direction_face_extend_offsets: [42, 46],
             direction_reversed: false,
@@ -260,6 +272,36 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::TwoSidedToFaces)
     );
+    let short_reference = scope(
+        "Extrude",
+        2,
+        (1, 2),
+        0,
+        1,
+        2,
+        Some(6),
+        false,
+        Some(((1, 0), false)),
+        None,
+        None,
+    );
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        reference: Some(reference),
+        operation_offset,
+        ..
+    }) = short_reference.extrude_prologue()
+    else {
+        panic!("short referenced Extrude prologue");
+    };
+    assert_eq!(reference.record_index, 77);
+    assert_eq!(reference.trailing_zero_count, 6);
+    assert_eq!(operation_offset, 36);
+    let serialized = serde_json::to_value(reference).unwrap();
+    assert_eq!(serialized["trailing_zero_count"], 6);
+    let decoded: crate::records::feature::extrude::DesignExtrudePrologueReference =
+        serde_json::from_value(serialized).unwrap();
+    assert_eq!(decoded.trailing_zero_count, 6);
+
     let compact_reference = scope(
         "Extrude",
         2,
@@ -323,8 +365,9 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         to_face.kind(),
-        crate::records::feature::scope::DesignFeatureKind::Extrusion
+        crate::records::feature::scope::DesignFeatureKind::Extrude
     );
+    assert_eq!(to_face.source_kind.as_deref(), Some("Extrusion"));
     let Some(prologue) = to_face.extrude_prologue() else {
         panic!("to-face Extrude prologue");
     };
@@ -1180,6 +1223,7 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
                     u64_from_index(layout::SECOND_SIDE_EXTENT),
                 ],
                 first_side_target_ordinal: None,
+                distance_tail: None,
                 extent: DesignExtrudeExtent::SymmetricDistance,
                 direction_face_extend_offsets: [
                     u64_from_index(layout::DIRECTION),
@@ -1201,8 +1245,17 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
     assert!(parse(&invalid_marker, "415").extrude_prologue().is_none());
 
     let mut invalid_class = valid.clone();
-    assert!(parse(&invalid_class, "414").extrude_prologue().is_none());
+    // The current reference-aware form admits dual-lane symmetric extents
+    // under any stream-local class tag; only the legacy class-415 layout
+    // keys on its tags.
+    assert_eq!(
+        parse(&invalid_class, "414")
+            .extrude_prologue()
+            .map(crate::records::feature::extrude::DesignExtrudePrologue::extent),
+        Some(Some(DesignExtrudeExtent::SymmetricDistance))
+    );
     invalid_class[447 + 4..447 + 7].copy_from_slice(b"264");
+    invalid_class[layout::DIRECTION..layout::DIRECTION + 4].copy_from_slice(&0u32.to_le_bytes());
     assert!(parse(&invalid_class, "415").extrude_prologue().is_none());
 
     let mut invalid_slots = valid;
@@ -1487,7 +1540,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     }
 
     let mut invalid_class_397 = make_bytes(b"397", b"262", 2);
-    invalid_class_397[135..139].copy_from_slice(&2u32.to_le_bytes());
+    invalid_class_397[135..139].copy_from_slice(&3u32.to_le_bytes());
     let invalid_scope = parse_parameter_scope(
         &invalid_class_397,
         &crate::design::test_support::indexed_record_offsets_for_test(&invalid_class_397),
@@ -1500,7 +1553,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     assert!(invalid_scope.extrude_prologue().is_none());
 
     let mut invalid_tail = make_bytes(b"357", b"258", 2);
-    invalid_tail[135..139].copy_from_slice(&0u32.to_le_bytes());
+    invalid_tail[135..139].copy_from_slice(&3u32.to_le_bytes());
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,

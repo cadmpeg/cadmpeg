@@ -388,11 +388,9 @@ fn display_jt_index_requires_every_declared_header() {
         );
         data.push(2);
         data.extend_from_slice(&compressed);
-        let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
         let data_len = cadmpeg_core::decode::u64_from_index(data.len());
         let container = Container {
             data: data.clone().into(),
-            physical_size,
             layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
@@ -532,11 +530,9 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
     data.extend_from_slice(&16_u32.to_le_bytes());
     data.extend_from_slice(&[0xff; 16]);
     data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
-    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.into(),
-        physical_size,
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
             name: "/Root/UG_PART/DisplayJT".to_string(),
@@ -654,11 +650,9 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
     let compressed = encoder.finish().expect("required invariant");
     let mut data = vec![0; 33];
     data.extend_from_slice(&compressed);
-    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.into(),
-        physical_size,
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
             name: "/Root/UG_PART/DisplayJT".to_string(),
@@ -1228,7 +1222,15 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
             .as_ref()
             .expect("required invariant")
             .color,
-        Some(Color::new(0.2, 0.3, 0.4, 0.5).expect("valid color"))
+        Some(
+            Color::new(
+                f64::from(0.2_f32),
+                f64::from(0.3_f32),
+                f64::from(0.4_f32),
+                0.5
+            )
+            .expect("valid color")
+        )
     );
     assert_eq!(
         tessellations[1]
@@ -1645,7 +1647,15 @@ fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
     );
     assert_eq!(
         super::display_jt_path_color(&path),
-        Some(Color::new(0.1, 0.2, 0.3, 0.8).expect("valid color"))
+        Some(
+            Color::new(
+                f64::from(0.1_f32),
+                f64::from(0.2_f32),
+                f64::from(0.3_f32),
+                f64::from(0.8_f32)
+            )
+            .expect("valid color")
+        )
     );
 
     super::accumulate_display_jt_material(&mut path, &material([1.0; 4], 0x06, 0));
@@ -1789,11 +1799,9 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
             + 25
     ];
     data.extend_from_slice(&body);
-    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = crate::container::Container {
         data: data.into(),
-        physical_size,
         layout: crate::container::test_modern_layout(1),
         entries: vec![crate::container::DirEntry {
             name: "/Root/UG_PART/DisplayJT".to_string(),

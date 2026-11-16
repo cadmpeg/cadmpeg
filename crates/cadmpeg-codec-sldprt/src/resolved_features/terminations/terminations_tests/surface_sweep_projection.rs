@@ -1,18 +1,18 @@
 //! Surface sweep profile projection.
 
-use super::super::project_surface_sweep_profiles;
+use super::super::project_sweep_reference_paths;
 use crate::test_support::container::{make_block, sldprt_with_body};
 use crate::test_support::history::resolved_feature_classes_with_ids;
 use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, PlanarProfileRef, SweepMode, SweepSection, SweepShape,
+    FeatureDefinition, FeatureOperation, PathRef, SweepMode, SweepSection, SweepShape,
 };
 use std::io::Cursor;
 
 #[test]
-fn surface_sweep_projection_binds_the_helix_profile() {
+fn component_reference_curve_is_a_native_sweep_path() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -58,6 +58,24 @@ fn surface_sweep_projection_binds_the_helix_profile() {
     let native =
         crate::native::SldprtNative::load(decoded.ir().native.namespace("sldprt").unwrap())
             .unwrap();
+    let (lane, class) = native
+        .feature_input_lanes
+        .iter()
+        .find_map(|lane| {
+            lane.classes
+                .iter()
+                .find(|class| class.name == "moCompReferenceCurve_c")
+                .map(|class| (lane, class))
+        })
+        .unwrap();
+    let key = lane
+        .id
+        .rsplit_once('#')
+        .map_or(lane.id.as_str(), |(_, key)| key);
+    let expected_path = format!(
+        "sldprt:feature-input:component-reference-curve:{key}:{}",
+        class.offset
+    );
     let mut features = decoded.ir().model.features.clone();
     for feature in &mut features {
         if matches!(
@@ -65,9 +83,11 @@ fn surface_sweep_projection_binds_the_helix_profile() {
             FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
         ) {
             feature.evaluation.edit(|definition, _| {
-                if let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
-                    definition
+                if let FeatureDefinition::Operation(FeatureOperation::Sweep {
+                    shape, path, ..
+                }) = definition
                 {
+                    *path = None;
                     *shape = SweepShape::sheet_sections(
                         SweepMode::Surface {},
                         SweepSection::Unresolved(None),
@@ -79,7 +99,7 @@ fn surface_sweep_projection_binds_the_helix_profile() {
         }
     }
     let mut admitted = features.clone();
-    project_surface_sweep_profiles(
+    project_sweep_reference_paths(
         &mut admitted,
         &native.feature_histories,
         &native.feature_input_lanes,
@@ -93,8 +113,8 @@ fn surface_sweep_projection_binds_the_helix_profile() {
         .find(|feature| feature.name.as_deref() == Some("Surface-Sweep1"))
         .unwrap();
     assert!(
-        matches!(sweep.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. })
-        if matches!(shape.referenced_profile(), Some(PlanarProfileRef::Feature(id)) if id == &helix.id))
+        matches!(sweep.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path: Some(PathRef::Native(path)), .. })
+        if shape.section_is_unresolved() && path == &expected_path)
     );
     assert!(sweep.dependencies.contains(&helix.id));
 }

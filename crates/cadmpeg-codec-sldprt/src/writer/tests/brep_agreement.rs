@@ -60,7 +60,7 @@ fn feature_output_scope_edit_is_refused() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let feature_id = decoded.ir().model.features[0].id.clone();
-    let body = decoded.ir().model.bodies[0].id.clone();
+    let body = decoded.ir().geometry.bodies[0].id.clone();
     let outputs = decoded.ir().model.features[0].evaluation.outputs().clone();
     let replacement = if outputs.is_empty() {
         vec![body]
@@ -106,7 +106,7 @@ fn feature_output_edit_with_nongeometric_history_edit_is_refused() {
         .iter()
         .position(|feature| feature.name.as_deref() == Some("Equations"))
         .unwrap();
-    let body = decoded.ir().model.bodies[0].id.clone();
+    let body = decoded.ir().geometry.bodies[0].id.clone();
     let feature_id = decoded.ir().model.features[modeling].id.clone();
     let replacement = if decoded.ir().model.features[modeling]
         .evaluation

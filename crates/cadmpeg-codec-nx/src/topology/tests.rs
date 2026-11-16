@@ -26,6 +26,8 @@ use crate::topology::{
 use crate::NxCodec;
 use cadmpeg_core::decode::View;
 
+mod primary_edges;
+
 #[test]
 fn unique_candidate_filter_reuses_input_storage() {
     let candidates = [9, 7, 2, 7, 4, 7]
@@ -33,7 +35,7 @@ fn unique_candidate_filter_reuses_input_storage() {
         .enumerate()
         .map(|(index, xmt)| NodeCandidate {
             kind: NodeKind::Point,
-            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+            xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(xmt).unwrap(),
             pos: 40 * index,
             end: 40 * (index + 1),
             shift: index % 2,
@@ -57,7 +59,7 @@ fn unique_candidate_filter_reuses_input_storage() {
 fn unique_candidate_identity_includes_the_record_kind() {
     let point = NodeCandidate {
         kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(9).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(9).unwrap(),
         pos: 0,
         end: 40,
         shift: 0,
@@ -126,9 +128,9 @@ fn topology_retains_shell_body_identity_without_body_record() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].id.as_str(), "nx:s0:body#2");
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies[0].id.as_str(), "nx:s0:body#2");
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -163,8 +165,8 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -218,9 +220,9 @@ fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    assert_eq!(result.ir().model.curves.len(), 1);
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
 }
 
 #[test]
@@ -288,7 +290,7 @@ fn topology_closes_high_identity_procedural_surface_dependencies() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
 }
 
 #[test]
@@ -350,9 +352,12 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.regions.len(), 1);
-    assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
-    assert_eq!(result.ir().model.faces.len(), 2);
+    assert_eq!(result.ir().geometry.regions.len(), 1);
+    assert_eq!(
+        result.ir().geometry.regions[0].id.as_str(),
+        "nx:s0:region#12"
+    );
+    assert_eq!(result.ir().geometry.faces.len(), 2);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -373,9 +378,9 @@ fn topology_rejects_nonreciprocal_fin_ring() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.loops.is_empty());
-    assert!(result.ir().model.coedges.is_empty());
-    assert!(result.ir().model.edges.is_empty());
+    assert!(result.ir().geometry.loops.is_empty());
+    assert!(result.ir().geometry.coedges.is_empty());
+    assert!(result.ir().geometry.edges.is_empty());
 
     let mut broken_partner = topology_partition_stream();
     let fin = broken_partner
@@ -409,8 +414,8 @@ fn unresolved_fin_edge_records_face_boundary_loss() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .expect("decode");
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert!(result.ir().model.loops.is_empty());
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert!(result.ir().geometry.loops.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == NxLossCode::TopologyFaceLoopUnresolved.kind()
             && loss.message.contains("FIN 7")
@@ -431,8 +436,8 @@ fn admitted_loop_records_loss_when_its_edge_cannot_emit() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .expect("decode");
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert!(result.ir().model.loops.is_empty());
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert!(result.ir().geometry.loops.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == NxLossCode::TopologyLoopRingUnresolved.kind()
             && loss.message.contains("LOOP 5")
@@ -470,7 +475,7 @@ fn linked_fin_ring_order_is_emitted() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .expect("decode");
-    let ids = result.ir().model.loops[0]
+    let ids = result.ir().geometry.loops[0]
         .coedges()
         .iter()
         .map(cadmpeg_ir::ids::CoedgeId::as_str)
@@ -505,7 +510,7 @@ fn face_loop_chain_order_is_emitted() {
         .expect("decode");
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str().ends_with("#4"))
@@ -668,14 +673,14 @@ fn topology_rejects_duplicate_identity_instead_of_preferring_body_shape() {
 fn topology_rejects_overlapping_candidates_without_ranking() {
     let first = NodeCandidate {
         kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(11).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(11).unwrap(),
         pos: 0,
         shift: 0,
         end: 24,
     };
     let second = NodeCandidate {
         kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(12).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(12).unwrap(),
         pos: 8,
         shift: 0,
         end: 32,
@@ -698,14 +703,14 @@ fn topology_admits_disjoint_bounded_records_in_one_overlap_cluster() {
     stream.extend([0xaa; 39]);
     let face = |xmt, pos| NodeCandidate {
         kind: NodeKind::Face,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(xmt).unwrap(),
         pos,
         shift: 0,
         end: pos + 39,
     };
     let spanning = NodeCandidate {
         kind: NodeKind::Edge,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(40).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(40).unwrap(),
         pos: 20,
         shift: 0,
         end: 70,
@@ -726,14 +731,14 @@ fn topology_bounds_a_record_at_the_type_38_schema_header() {
     stream.extend([0xaa; 8]);
     let plane = NodeCandidate {
         kind: NodeKind::Plane,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(6).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(6).unwrap(),
         pos: 0,
         shift: 0,
         end: 91,
     };
     let embedded = NodeCandidate {
         kind: NodeKind::Vertex,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(19).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(19).unwrap(),
         pos: 11,
         shift: 0,
         end: 39,
@@ -792,18 +797,36 @@ fn topology_retains_non_overlapping_ownership_records() {
 }
 
 #[test]
+fn topology_rejects_ownership_records_inside_counted_lanes() {
+    // The 12-value surface lane count ends in `00 0c`, and the lane's node
+    // identity 22 follows it.
+    let mut stream = crate::test_support::test_deltas::bspline_partition_stream();
+    assert_eq!(Graph::parse(&stream).kind_count(NodeKind::Body), 0);
+
+    let mut body = record(12, 24);
+    put_ref(&mut body, 2, 22);
+    stream.extend(body);
+    let graph = Graph::parse(&stream);
+    assert_eq!(graph.kind_count(NodeKind::Body), 1);
+    assert_eq!(
+        graph.get(NodeKind::Body, 22).map(super::Node::pos),
+        Some(stream.len() - 24)
+    );
+}
+
+#[test]
 fn topology_resolves_overlap_before_duplicate_identity() {
     let stream = vec![0; 40];
     let outer = NodeCandidate {
         kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(11).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(11).unwrap(),
         pos: 0,
         shift: 0,
         end: 40,
     };
     let embedded = NodeCandidate {
         kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(11).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(11).unwrap(),
         pos: 8,
         shift: 0,
         end: 32,
@@ -854,7 +877,7 @@ fn declared_intersection_requires_its_own_complete_schema() {
     assert_eq!(
         curves[0]
             .references
-            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+            .map(cadmpeg_parasolid::xmt::XmtTarget::to_wire),
         [6, 7, 20, 21, 22, 23]
     );
     for at in [16, TYPE_38_SCHEMA_HEADER.len() - 1] {
@@ -906,7 +929,7 @@ fn topology_reference_views_reserve_only_one_as_null() {
             }
             let node = Node {
                 kind,
-                xmt: crate::framing::xmt_reference::NonNullXmt::try_from(2).unwrap(),
+                xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(2).unwrap(),
                 pos: 0,
                 end: bytes.len(),
                 shift: 0,
@@ -1049,7 +1072,7 @@ fn topology_field_tolerances_require_finite_native_values() {
 fn ownership_admission_matches_pairwise_overlap() {
     let span = |kind, xmt: u32, pos: usize, len: usize| NodeCandidate {
         kind,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(xmt).unwrap(),
         pos,
         end: pos + len,
         shift: 0,

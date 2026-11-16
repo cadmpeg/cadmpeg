@@ -3,10 +3,10 @@
 use crate::decode::analytic::equations::{CylinderEquation, PlaneEquation};
 use crate::decode::analytic::planes::{
     fc05_cylinder_branch_witnesses, fc05_cylinder_model_witness,
-    plane_candidate_pcurve_lies_on_carrier, plane_candidates, round_edge_envelopes_for_plane,
-    select_stored_frame_branches, select_stored_frame_carrier_pcurve_branches,
-    stored_parameter_normal_candidates, unique_round_edge_origin_candidate, PlaneCandidate,
-    PlaneChart,
+    fc05_cylinder_resolved_plane_witness, plane_candidate_pcurve_lies_on_carrier, plane_candidates,
+    round_edge_envelopes_for_plane, select_stored_frame_branches,
+    select_stored_frame_carrier_pcurve_branches, stored_parameter_normal_candidates,
+    unique_round_edge_origin_candidate, PlaneCandidate, PlaneChart,
 };
 use crate::surface::{LocalSystemClassification, OutlinePlane, PlaneLocalSystem};
 
@@ -148,6 +148,44 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
     assert_eq!(witness.radius, 1.0);
 }
 
+#[test]
+fn resolved_adjacent_plane_selects_the_bound_reference_circle() {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let scan = fc05_witness_scan();
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.geometry.surfaces.push(Surface {
+        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#1").expect("surface identity"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(2.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .expect("plane"),
+        )),
+        source_object: None,
+        native_ref: None,
+    });
+    let legacy = CylinderEquation {
+        origin: [0.0, 0.0, 0.0],
+        axis: [0.0, 1.0, 0.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        radius: 1.0,
+    };
+    let witness = fc05_cylinder_resolved_plane_witness(
+        &scan,
+        2,
+        legacy,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    );
+    for (actual, expected) in witness.origin.into_iter().zip([1.0, 0.0, 0.5]) {
+        assert!((actual - expected).abs() < 1.0e-12);
+    }
+}
+
 fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerScan<'static> {
     let mut scan = crate::test_support::empty_container_scan();
     for id in [1, 2] {
@@ -220,6 +258,7 @@ fn carrier_pcurve_branch_scan() -> crate::container::ContainerScan<'static> {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 2,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 2,
         });
     scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
@@ -276,7 +315,8 @@ fn two_variable_plane_branch_scan() -> crate::container::ContainerScan<'static> 
 fn two_variable_plane_branches_keep_mirror_ambiguity() {
     let scan = two_variable_plane_branch_scan();
     let mut candidates = std::collections::BTreeMap::new();
-    select_stored_frame_branches(&scan, &mut candidates).expect("select the stored frame branches");
+    select_stored_frame_branches(&scan, &mut candidates, &std::collections::BTreeMap::new())
+        .expect("select the stored frame branches");
     assert!(candidates.is_empty());
 }
 
@@ -356,6 +396,32 @@ fn stored_parameter_normal_branch_uses_unique_pcurve_endpoint_witness() {
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
     assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, -0.8]);
+}
+
+#[test]
+fn rotation_frames_keep_their_column_normal_under_a_pcurve_witness() {
+    // A compact rotation stores columns zero and one as [u, 0, v]; its normal
+    // is u x v, so slots six to eight are a parameter direction.
+    const EPS_ROTATION_NORMAL_TEST: f64 = 1e-12;
+    for layout in [
+        crate::scalar::PlaneSupportFrameLayout::CompactRotation,
+        crate::scalar::PlaneSupportFrameLayout::SupportTriples,
+    ] {
+        let mut scan = stored_frame_branch_scan(true);
+        scan.planes.local_systems[0].layout = Some(layout);
+        assert!(stored_parameter_normal_candidates(&scan.planes.local_systems[0]).is_none());
+        let candidates = plane_candidates(&scan).expect("find the plane candidates");
+        let candidates = candidates.get(&1).expect("selected plane");
+        assert_eq!(candidates.len(), 1);
+        let normal = candidates[0].equation.normal;
+        let u_axis = candidates[0].chart.expect("chart").u_axis;
+        for (actual, expected) in normal.into_iter().zip([0.0, 1.0, 0.0]) {
+            assert!((actual - expected).abs() <= EPS_ROTATION_NORMAL_TEST);
+        }
+        for (actual, expected) in u_axis.into_iter().zip([0.6, 0.0, 0.8]) {
+            assert!((actual - expected).abs() <= EPS_ROTATION_NORMAL_TEST);
+        }
+    }
 }
 
 #[test]
@@ -464,7 +530,7 @@ fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
             feature_id: 4,
-            radius: crate::legacy_feature::LegacyRoundRadius::NotPresent,
+            radius: crate::feature::dimensions::RoundDimensionRadius::NotPresent,
             edge_ids: None,
             offset: 3,
         });
@@ -499,6 +565,7 @@ fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 2,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 2,
         });
     scan

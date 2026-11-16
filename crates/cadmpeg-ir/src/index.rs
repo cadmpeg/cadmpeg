@@ -158,35 +158,36 @@ impl IndexQuery for StandardIndex {
 }
 
 macro_rules! define_model_index {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+    ($( $field:ident: $element:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         define_model_index! {
-            @generate [$($field),*];
+            @generate [$($field $home),*];
             [
-                bodies: Body;
-                regions: Region;
-                shells: Shell;
-                faces: Face;
-                loops: Loop;
-                coedges: Coedge;
-                edges: Edge;
-                vertices: Vertex;
-                points: Point;
-                surfaces: Surface;
-                curves: Curve;
-                subds: SubdSurface;
-                pcurves: Pcurve;
-                procedural_surfaces: ProceduralSurface;
-                procedural_curves: ProceduralCurve;
-                tessellations: Tessellation;
-                appearances: Appearance;
+                bodies: Body, geometry;
+                regions: Region, geometry;
+                shells: Shell, geometry;
+                faces: Face, geometry;
+                loops: Loop, geometry;
+                coedges: Coedge, geometry;
+                edges: Edge, geometry;
+                vertices: Vertex, geometry;
+                points: Point, geometry;
+                surfaces: Surface, geometry;
+                curves: Curve, geometry;
+                subds: SubdSurface, geometry;
+                pcurves: Pcurve, geometry;
+                procedural_surfaces: ProceduralSurface, geometry;
+                procedural_curves: ProceduralCurve, geometry;
+                tessellations: Tessellation, model;
+                appearances: Appearance, model;
             ]
         }
     };
-    (@generate [$($field:ident),*]; [$($lookup:ident: $element:ty;)*]) => {
+    (@generate [$($field:ident $home:ident),*]; [$($lookup:ident: $element:ty, $lookup_home:ident;)*]) => {
         /// One-pass borrowed lookup index for neutral and native identities.
         pub struct ModelIndex<'a> {
             ir: &'a CadIr,
             $($lookup: OnceLock<IdentityIndex<'a>>,)*
+            curve_use_hulls: OnceLock<HashMap<&'a str, Option<[f64; 2]>>>,
             procedural_surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_surfaces_by_id: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
@@ -240,21 +241,21 @@ macro_rules! define_model_index {
                 let mut procedural_surface_by_surface = BorrowedIdentityIndex::new();
                 let mut procedural_curves_by_curve = BorrowedIdentityIndex::new();
                 let mut procedural_surfaces_by_id = BorrowedIdentityIndex::new();
-                for procedural in &ir.model.procedural_surfaces {
+                for procedural in &ir.geometry.procedural_surfaces {
                     procedural_surfaces_by_id.entry(procedural.id.as_str(), || procedural);
                 }
                 let mut procedural_curves_by_id = BorrowedIdentityIndex::new();
-                for procedural in &ir.model.procedural_curves {
+                for procedural in &ir.geometry.procedural_curves {
                     procedural_curves_by_id.entry(procedural.id.as_str(), || procedural);
                 }
-                for carrier in &ir.model.surfaces {
+                for carrier in &ir.geometry.surfaces {
                     if let Some(construction) = carrier.geometry.procedural_construction() {
                         if let Some(&procedural) = procedural_surfaces_by_id.slots.get(construction.as_str()) {
                             *procedural_surface_by_surface.entry(carrier.id.as_str(), || procedural) = procedural;
                         }
                     }
                 }
-                for carrier in &ir.model.curves {
+                for carrier in &ir.geometry.curves {
                     if let Some(construction) = carrier.geometry.procedural_construction() {
                         if let Some(&procedural) = procedural_curves_by_id.slots.get(construction.as_str()) {
                             let members = procedural_curves_by_curve.entry(carrier.id.as_str(), Vec::new);
@@ -266,6 +267,7 @@ macro_rules! define_model_index {
                 let mut index = Self {
                     ir,
                     $($lookup: OnceLock::new(),)*
+                    curve_use_hulls: OnceLock::new(),
                     procedural_surface_by_surface,
                     procedural_surfaces_by_id,
                     procedural_curves_by_curve,
@@ -279,20 +281,39 @@ macro_rules! define_model_index {
                 index
             }
 
+            /// Parameter hull of the edges and coedge uses on this carrier.
+            pub fn curve_use_hull(&self, curve: &str) -> Option<[f64; 2]> {
+                self.curve_use_hulls.get_or_init(|| {
+                    let mut hulls = HashMap::new();
+                    for edge in &self.ir.geometry.edges {
+                        if let Some(curve) = edge.curve() {
+                            let range = edge.param_range().map(crate::units::FiniteVector::get);
+                            merge_curve_use(&mut hulls, curve.as_str(), range);
+                        }
+                    }
+                    for coedge in &self.ir.geometry.coedges {
+                        if let Some(use_curve) = &coedge.use_curve {
+                            merge_curve_use(&mut hulls, use_curve.curve.as_str(), Some(use_curve.parameter_range.endpoints()));
+                        }
+                    }
+                    hulls
+                }).get(curve).copied().flatten()
+            }
+
             fn identity_set(&self) -> &BorrowedIdentityIndex<'a, bool> {
                 &self.identities
             }
 
             fn build_identity_set(&self) -> (BorrowedIdentityIndex<'a, bool>, bool) {
                 let mut entities = 0_usize;
-                $(entities += self.ir.model.$field.len();)*
+                $(entities += self.ir.$home.$field.len();)*
                 let mut slots = entities;
                 if self.include_native {
                     self.native_view().for_each(|_, _, records| slots += records.len());
                     slots += self.additional_native_identities.len();
                 }
                 let mut identities = BorrowedIdentityIndex { slots: HashMap::with_capacity(slots) };
-                $(for entity in &self.ir.model.$field { identities.entry(entity.identity(), || false); })*
+                $(for entity in &self.ir.$home.$field { identities.entry(entity.identity(), || false); })*
                 if !self.include_native {
                     return (identities, false);
                 }
@@ -372,7 +393,7 @@ macro_rules! define_model_index {
             $(
                 #[doc = concat!("Looks up an entity in the `", stringify!($lookup), "` arena.")]
                 pub fn $lookup<P: IndexQuery>(&self, identity: &str, admission: P) -> P::Output<Option<&'a $element>> {
-                    admission.finish(lookup_identity(&self.ir.model.$lookup, &self.$lookup, identity, &admission))
+                    admission.finish(lookup_identity(&self.ir.$lookup_home.$lookup, &self.$lookup, identity, &admission))
                 }
             )*
         }
@@ -380,6 +401,22 @@ macro_rules! define_model_index {
 }
 
 crate::document::arena_registry!(define_model_index);
+
+fn merge_curve_use<'a>(
+    hulls: &mut HashMap<&'a str, Option<[f64; 2]>>,
+    curve: &'a str,
+    range: Option<[f64; 2]>,
+) {
+    hulls
+        .entry(curve)
+        .and_modify(|hull| {
+            *hull = match (*hull, range) {
+                (Some(a), Some(b)) => Some([a[0].min(b[0]).min(b[1]), a[1].max(b[0]).max(b[1])]),
+                _ => None,
+            };
+        })
+        .or_insert_with(|| range.map(|r| [r[0].min(r[1]), r[0].max(r[1])]));
+}
 
 #[cfg(test)]
 mod tests {
@@ -515,7 +552,7 @@ mod tests {
         let native_id = "test:fixture:native#0";
         let staged_id = "test:fixture:staged#0";
         let mut ir = CadIr::empty();
-        ir.model.points.push(crate::topology::Point::new(
+        ir.geometry.points.push(crate::topology::Point::new(
             crate::ids::PointId::mint(model_id).unwrap(),
             crate::features::FinitePoint3::ZERO,
             None,
@@ -596,15 +633,16 @@ mod tests {
         let exact_construction =
             crate::ids::ProceduralSurfaceId::mint("test:model:procedural#exact")
                 .expect("valid identity");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: exact_surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: exact_construction.clone(),
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
-        ir.model.procedural_surfaces.push(procedural_surface! {
+        ir.geometry.procedural_surfaces.push(procedural_surface! {
             id: exact_construction.clone(),
             definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
             cache_fit_tolerance: None,
@@ -613,7 +651,7 @@ mod tests {
 
         let cached_surface = crate::ids::SurfaceId::mint("test:model:surface#cached".to_string())
             .expect("valid identity");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: cached_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
@@ -624,8 +662,9 @@ mod tests {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model
+        ir.geometry
             .add_procedural_surface(&cached_surface, procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached").expect("valid identity"),
                     definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
@@ -652,7 +691,7 @@ mod tests {
         );
 
         assert!(ir
-            .model
+            .geometry
             .add_procedural_surface(&cached_surface, procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached-duplicate").expect("valid identity"),
                     definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
@@ -670,7 +709,7 @@ mod tests {
             crate::features::FinitePoint3::ZERO,
             crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 0.0, 0.0)).unwrap(),
         ] {
-            ir.model
+            ir.geometry
                 .points
                 .push(crate::topology::Point::new(id.clone(), position, None));
         }

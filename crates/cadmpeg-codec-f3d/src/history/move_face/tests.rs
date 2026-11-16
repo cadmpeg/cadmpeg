@@ -1,0 +1,512 @@
+// SPDX-License-Identifier: Apache-2.0
+use super::{agreed_selection, moved_face_selection, recipe_face_selection};
+use crate::history_records::{
+    AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalPlane, AsmHistoricalTopology,
+};
+use crate::records::topology::face::DesignFaceOperand;
+use cadmpeg_ir::features::{FaceMotion, FeatureDirection3};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
+use std::collections::BTreeSet;
+
+const NORMAL_Z: Vector3 = Vector3 {
+    x: 0.0,
+    y: 0.0,
+    z: 1.0,
+};
+const CYLINDER_ORIGIN: Point3 = Point3 {
+    x: 4.0,
+    y: 4.0,
+    z: 0.0,
+};
+
+fn binding(entity: i64, carrier: i64) -> AsmHistoricalCarrierBinding {
+    AsmHistoricalCarrierBinding { entity, carrier }
+}
+
+fn plane(surface: i64, z: f64) -> AsmHistoricalPlane {
+    plane_at(surface, Point3::new(1.0, 2.0, z), NORMAL_Z)
+}
+
+fn plane_at(surface: i64, origin: Point3, normal: Vector3) -> AsmHistoricalPlane {
+    AsmHistoricalPlane {
+        surface,
+        origin,
+        normal,
+    }
+}
+
+fn cylinder_at(surface: i64, origin: Point3, axis: Vector3, radius: f64) -> AsmHistoricalCylinder {
+    AsmHistoricalCylinder {
+        surface,
+        origin,
+        axis,
+        radius,
+    }
+}
+
+/// Faces 10 and 20 on planes at z = 0 and z = 5, and face 30 on a cylinder.
+fn input() -> AsmHistoricalTopology {
+    AsmHistoricalTopology {
+        faces: vec![10, 20, 30],
+        face_surfaces: vec![binding(10, 100), binding(20, 200), binding(30, 300)],
+        surface_planes: vec![plane(100, 0.0), plane(200, 5.0)],
+        surface_cylinders: vec![cylinder_at(300, CYLINDER_ORIGIN, NORMAL_Z, 2.0)],
+        ..AsmHistoricalTopology::default()
+    }
+}
+
+/// The input with new carriers, where face 10 moves to z = 2.
+fn top_moves_up() -> AsmHistoricalTopology {
+    let mut output = input();
+    output.face_surfaces = vec![binding(10, 110), binding(20, 210), binding(30, 310)];
+    output.surface_planes = vec![plane(110, 2.0), plane(210, 5.0)];
+    output.surface_cylinders = vec![cylinder_at(310, CYLINDER_ORIGIN, NORMAL_Z, 2.0)];
+    output
+}
+
+fn with_plane_10(origin: Point3, normal: Vector3) -> AsmHistoricalTopology {
+    let mut output = top_moves_up();
+    output.surface_planes[0] = plane_at(110, origin, normal);
+    output
+}
+
+fn with_cylinder(row: AsmHistoricalCylinder) -> AsmHistoricalTopology {
+    let mut output = top_moves_up();
+    output.surface_cylinders[0] = row;
+    output
+}
+
+fn offset(distance: f64) -> FaceMotion {
+    FaceMotion::Offset {
+        distance: Length::new(distance).unwrap(),
+    }
+}
+
+fn translate(x: f64, y: f64, z: f64) -> FaceMotion {
+    let shift = Vector3::new(x, y, z);
+    FaceMotion::Translate {
+        direction: FeatureDirection3::new(shift.unit().unwrap()).unwrap(),
+        distance: Length::new(shift.norm()).unwrap(),
+    }
+}
+
+fn select(
+    members: &[u32],
+    motion: &FaceMotion,
+    updated: &[i64],
+    output: &AsmHistoricalTopology,
+) -> Option<Vec<i64>> {
+    let updated: BTreeSet<i64> = updated.iter().copied().collect();
+    moved_face_selection(members, motion, &updated, &input(), output)
+}
+
+#[test]
+fn the_face_whose_plane_follows_a_translation_is_the_selection() {
+    assert_eq!(
+        select(&[1], &translate(0.0, 0.0, 2.0), &[10, 20], &top_moves_up()),
+        Some(vec![10])
+    );
+}
+
+#[test]
+fn the_face_whose_plane_follows_an_offset_of_either_sign_is_the_selection() {
+    for distance in [2.0, -2.0] {
+        assert_eq!(
+            select(&[1], &offset(distance), &[10, 20], &top_moves_up()),
+            Some(vec![10])
+        );
+    }
+}
+
+#[test]
+fn a_translation_within_the_plane_moves_the_row_origin() {
+    let output = with_plane_10(Point3::new(4.0, 2.0, 0.0), NORMAL_Z);
+    assert_eq!(
+        select(&[1], &translate(3.0, 0.0, 0.0), &[10], &output),
+        Some(vec![10])
+    );
+}
+
+#[test]
+fn a_plane_row_that_moves_another_way_does_not_follow_the_motion() {
+    for motion in [
+        translate(0.0, 0.0, 3.0),
+        translate(0.0, 2.0, 0.0),
+        offset(3.0),
+    ] {
+        assert_eq!(select(&[1], &motion, &[10, 20], &top_moves_up()), None);
+    }
+}
+
+#[test]
+fn an_offset_shift_within_the_plane_does_not_follow_the_offset() {
+    let output = with_plane_10(Point3::new(3.0, 2.0, 0.0), NORMAL_Z);
+    assert_eq!(select(&[1], &offset(2.0), &[10], &output), None);
+}
+
+#[test]
+fn a_turned_plane_does_not_follow_the_motion() {
+    let output = with_plane_10(Point3::new(1.0, 2.0, 2.0), Vector3::new(0.0, 1.0, 0.0));
+    assert_eq!(
+        select(&[1], &translate(0.0, 0.0, 2.0), &[10], &output),
+        None
+    );
+    assert_eq!(select(&[1], &offset(2.0), &[10], &output), None);
+}
+
+#[test]
+fn a_cylinder_follows_a_translation_with_its_radius() {
+    let moved = |radius| {
+        with_cylinder(cylinder_at(
+            310,
+            Point3::new(5.0, 4.0, 0.0),
+            NORMAL_Z,
+            radius,
+        ))
+    };
+    assert_eq!(
+        select(&[1], &translate(1.0, 0.0, 0.0), &[30], &moved(2.0)),
+        Some(vec![30])
+    );
+    assert_eq!(
+        select(&[1], &translate(1.0, 0.0, 0.0), &[30], &moved(3.0)),
+        None
+    );
+    assert_eq!(
+        select(&[1], &translate(2.0, 0.0, 0.0), &[30], &moved(2.0)),
+        None
+    );
+}
+
+#[test]
+fn a_turned_cylinder_does_not_follow_a_translation() {
+    let output = with_cylinder(cylinder_at(
+        310,
+        Point3::new(5.0, 4.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        2.0,
+    ));
+    assert_eq!(
+        select(&[1], &translate(1.0, 0.0, 0.0), &[30], &output),
+        None
+    );
+}
+
+#[test]
+fn a_cylinder_follows_an_offset_on_its_axis_line() {
+    let moved = |origin, radius| with_cylinder(cylinder_at(310, origin, NORMAL_Z, radius));
+    let along_axis = Point3::new(4.0, 4.0, 9.0);
+    for radius in [3.0, 1.0] {
+        assert_eq!(
+            select(&[1], &offset(1.0), &[30], &moved(along_axis, radius)),
+            Some(vec![30])
+        );
+    }
+    assert_eq!(
+        select(&[1], &offset(2.0), &[30], &moved(along_axis, 3.0)),
+        None
+    );
+    assert_eq!(
+        select(
+            &[1],
+            &offset(1.0),
+            &[30],
+            &moved(Point3::new(5.0, 4.0, 0.0), 3.0)
+        ),
+        None
+    );
+}
+
+#[test]
+fn a_turned_cylinder_does_not_follow_an_offset() {
+    let output = with_cylinder(cylinder_at(
+        310,
+        CYLINDER_ORIGIN,
+        Vector3::new(1.0, 0.0, 0.0),
+        3.0,
+    ));
+    assert_eq!(select(&[1], &offset(1.0), &[30], &output), None);
+}
+
+#[test]
+fn every_moved_face_counts_against_the_members() {
+    let mut both = top_moves_up();
+    both.surface_planes[1] = plane(210, 7.0);
+    let motion = translate(0.0, 0.0, 2.0);
+    assert_eq!(
+        select(&[1, 2], &motion, &[10, 20], &both),
+        Some(vec![10, 20])
+    );
+    assert_eq!(select(&[1], &motion, &[10, 20], &both), None);
+    assert_eq!(select(&[1, 2, 3], &motion, &[10, 20], &both), None);
+}
+
+#[test]
+fn a_face_that_no_transition_updates_does_not_count() {
+    let mut both = top_moves_up();
+    both.surface_planes[1] = plane(210, 7.0);
+    assert_eq!(
+        select(&[1], &translate(0.0, 0.0, 2.0), &[10], &both),
+        Some(vec![10])
+    );
+}
+
+#[test]
+fn a_repeated_member_counts_once() {
+    assert_eq!(
+        select(
+            &[1, 1],
+            &translate(0.0, 0.0, 2.0),
+            &[10, 20],
+            &top_moves_up()
+        ),
+        Some(vec![10])
+    );
+}
+
+#[test]
+fn an_updated_face_without_a_row_in_the_input_states_no_selection() {
+    let mut without = input();
+    without.surface_planes.retain(|row| row.surface != 200);
+    let updated: BTreeSet<i64> = [10, 20].into_iter().collect();
+    assert_eq!(
+        moved_face_selection(
+            &[1],
+            &translate(0.0, 0.0, 2.0),
+            &updated,
+            &without,
+            &top_moves_up()
+        ),
+        None
+    );
+}
+
+#[test]
+fn an_updated_face_without_a_row_in_the_output_states_no_selection() {
+    let mut output = top_moves_up();
+    output.surface_planes.retain(|row| row.surface != 210);
+    assert_eq!(
+        select(&[1], &translate(0.0, 0.0, 2.0), &[10, 20], &output),
+        None
+    );
+}
+
+#[test]
+fn an_updated_face_outside_either_state_states_no_selection() {
+    assert_eq!(
+        select(&[1], &translate(0.0, 0.0, 2.0), &[10, 99], &top_moves_up()),
+        None
+    );
+    let mut output = top_moves_up();
+    output.face_surfaces.retain(|row| row.entity != 20);
+    assert_eq!(
+        select(&[1], &translate(0.0, 0.0, 2.0), &[10, 20], &output),
+        None
+    );
+}
+
+#[test]
+fn a_slot_with_two_rows_states_no_selection() {
+    let mut output = top_moves_up();
+    output.surface_planes.push(plane(210, 6.0));
+    assert_eq!(
+        select(&[1], &translate(0.0, 0.0, 2.0), &[10, 20], &output),
+        None
+    );
+    let mut output = top_moves_up();
+    output.face_surfaces.push(binding(20, 110));
+    assert_eq!(
+        select(&[1], &translate(0.0, 0.0, 2.0), &[10, 20], &output),
+        None
+    );
+}
+
+#[test]
+fn a_surface_with_a_plane_and_a_cylinder_row_states_no_selection() {
+    let mut output = top_moves_up();
+    output
+        .surface_cylinders
+        .push(cylinder_at(210, CYLINDER_ORIGIN, NORMAL_Z, 1.0));
+    assert_eq!(
+        select(&[1], &translate(0.0, 0.0, 2.0), &[10, 20], &output),
+        None
+    );
+}
+
+#[test]
+fn no_moved_face_states_no_selection() {
+    assert_eq!(
+        select(&[], &translate(0.0, 0.0, 2.0), &[20], &top_moves_up()),
+        None
+    );
+}
+
+#[test]
+fn a_zero_offset_states_no_selection() {
+    assert_eq!(select(&[1], &offset(0.0), &[20], &top_moves_up()), None);
+}
+
+#[test]
+fn a_rotation_states_no_selection() {
+    let rotation = FaceMotion::Rotate {
+        axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        axis_dir: FeatureDirection3::Z_AXIS,
+        angle: cadmpeg_ir::scalar::Angle::new(1.0).unwrap(),
+    };
+    assert_eq!(select(&[1], &rotation, &[10, 20], &top_moves_up()), None);
+}
+
+fn complete_motion(rows: [[f64; 4]; 3]) -> FaceMotion {
+    FaceMotion::Transform {
+        transform: cadmpeg_ir::transform::Transform::affine(rows).unwrap(),
+    }
+}
+
+#[test]
+fn complete_motion_keeps_translation_selections_with_tiny_linear_components() {
+    let motion = complete_motion([
+        [1., 1.0e-14, 0., 3.],
+        [-1.0e-14, 1., 0., 0.],
+        [0., 0., 1., 0.],
+    ]);
+    let output = with_plane_10(Point3::new(4., 2., 0.), NORMAL_Z);
+    assert_eq!(select(&[1], &motion, &[10, 20], &output), Some(vec![10]));
+}
+
+#[test]
+fn complete_screw_motion_selects_transformed_plane_and_cylinder_rows() {
+    let motion = complete_motion([[0., -1., 0., 2.], [1., 0., 0., -3.], [0., 0., 1., 0.25]]);
+    let mut output = with_plane_10(Point3::new(0., -2., 0.25), NORMAL_Z);
+    output.surface_cylinders[0] = cylinder_at(310, Point3::new(-2., 1., 0.25), NORMAL_Z, 2.);
+    assert_eq!(
+        select(&[1, 2], &motion, &[10, 20, 30], &output),
+        Some(vec![10, 30])
+    );
+    for (origin, axis, radius) in [
+        (Point3::new(-1., 1., 0.25), NORMAL_Z, 2.),
+        (Point3::new(-2., 1., 0.25), Vector3::new(1., 0., 0.), 2.),
+        (Point3::new(-2., 1., 0.25), NORMAL_Z, 3.),
+    ] {
+        output.surface_cylinders[0] = cylinder_at(310, origin, axis, radius);
+        assert_eq!(select(&[1], &motion, &[30], &output), None);
+    }
+}
+
+#[test]
+fn complete_rotation_maps_plane_normals_and_cylinder_axes() {
+    let motion = complete_motion([[1., 0., 0., 0.], [0., 0., -1., 0.], [0., 1., 0., 0.]]);
+    let direction = Vector3::new(0., -1., 0.);
+    let mut output = with_plane_10(Point3::new(1., 0., 2.), direction);
+    output.surface_cylinders[0] = cylinder_at(310, Point3::new(4., 0., 4.), direction, 2.);
+    assert_eq!(
+        select(&[1, 2], &motion, &[10, 30], &output),
+        Some(vec![10, 30])
+    );
+    output.surface_planes[0].normal = NORMAL_Z;
+    assert_eq!(select(&[1], &motion, &[10], &output), None);
+}
+
+#[test]
+fn a_fixed_or_unrepresentable_transformed_row_supplies_no_selection() {
+    let mut fixed = input();
+    fixed.surface_planes[0].origin = Point3::new(0., 0., 0.);
+    let updated = [10].into_iter().collect();
+    for rows in [
+        [[1., 0., 0., 0.], [0., 1., 0., 0.], [0., 0., 1., 0.]],
+        [[0., -1., 0., 0.], [1., 0., 0., 0.], [0., 0., 1., 0.]],
+        [
+            [1., 1.0e-14, 0., 0.],
+            [-1.0e-14, 1., 0., 0.],
+            [0., 0., 1., 0.],
+        ],
+    ] {
+        assert_eq!(
+            moved_face_selection(&[1], &complete_motion(rows), &updated, &fixed, &fixed),
+            None
+        );
+    }
+    let overflow = complete_motion([
+        [f64::MAX, 0., 0., f64::MAX],
+        [0., 1., 0., 0.],
+        [0., 0., 1., 0.],
+    ]);
+    assert_eq!(select(&[1], &overflow, &[10], &input()), None);
+}
+
+#[test]
+fn a_plane_row_that_moves_against_its_normal_follows_an_offset() {
+    let output = with_plane_10(Point3::new(1.0, 2.0, -2.0), NORMAL_Z);
+    for distance in [2.0, -2.0] {
+        assert_eq!(
+            select(&[1], &offset(distance), &[10], &output),
+            Some(vec![10])
+        );
+    }
+}
+
+fn member(record_index: u32, kind: &str, slots: &[i64]) -> DesignFaceOperand {
+    let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+        "id": format!("f3d:test:face-operand#{record_index}"), "scope_record_index": 5,
+        "scope_reference_ordinal": 1, "group_record_index": 6, "group_member_ordinal": 0,
+        "record_index": record_index, "byte_offset": 0, "class_tag": "282",
+        "paired_byte_offset": 12, "paired_class_tag": "259",
+        "recipe_record_index": record_index + 3, "recipe_record_byte_offset": 24,
+        "recipe_id": "f3d:test:recipe#22", "recipe_prefix_offset": 35, "recipe_prefix_bytes": "",
+        "recipe_references": [], "recipe_kind": kind, "recipe_program_offset": 0,
+        "recipe_program": [0, -1, 3], "recipe_node_offsets": [], "recipe_nodes": [],
+        "next_record_index": record_index + 2, "next_byte_offset": 36
+    }))
+    .unwrap();
+    operand.resolved_face_slots = slots.to_vec();
+    operand
+}
+
+fn select_by_recipes(members: &[u32], operands: &[DesignFaceOperand]) -> Option<Vec<i64>> {
+    let operands: Vec<_> = operands.iter().collect();
+    recipe_face_selection(members, &operands, &input())
+}
+
+#[test]
+fn each_member_recipe_selects_one_distinct_input_face() {
+    let operands = [
+        member(1, "bounded_face", &[20]),
+        member(2, "bounded_face", &[10]),
+    ];
+    assert_eq!(select_by_recipes(&[1, 2], &operands), Some(vec![10, 20]));
+    assert_eq!(select_by_recipes(&[2, 1], &operands), Some(vec![10, 20]));
+    assert_eq!(select_by_recipes(&[1, 1], &operands), Some(vec![20]));
+}
+
+#[test]
+fn a_member_recipe_without_one_input_face_states_no_selection() {
+    let resolved = member(1, "bounded_face", &[10]);
+    for operands in [
+        vec![resolved.clone()],
+        vec![resolved.clone(), member(2, "bounded_face", &[])],
+        vec![resolved.clone(), member(2, "bounded_face", &[20, 30])],
+        vec![resolved.clone(), member(2, "bounded_face", &[99])],
+        vec![resolved.clone(), member(2, "bounded_face", &[10])],
+        vec![resolved.clone(), member(2, "face", &[20])],
+        vec![
+            resolved.clone(),
+            member(2, "bounded_face", &[20]),
+            member(2, "bounded_face", &[20]),
+        ],
+    ] {
+        assert_eq!(select_by_recipes(&[1, 2], &operands), None);
+    }
+    assert_eq!(select_by_recipes(&[], &[resolved]), None);
+}
+
+#[test]
+fn the_transitions_and_the_member_recipes_agree_or_state_no_selection() {
+    assert_eq!(
+        agreed_selection(Some(vec![10]), Some(vec![10])),
+        Some(vec![10])
+    );
+    assert_eq!(agreed_selection(Some(vec![10]), Some(vec![20])), None);
+    assert_eq!(agreed_selection(Some(vec![10]), None), Some(vec![10]));
+    assert_eq!(agreed_selection(None, Some(vec![20])), Some(vec![20]));
+    assert_eq!(agreed_selection(None, None), None);
+}

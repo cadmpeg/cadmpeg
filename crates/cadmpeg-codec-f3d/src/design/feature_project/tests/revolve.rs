@@ -17,11 +17,15 @@ fn revolve_projects_with_native_profile() {
             draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
                 operation_offset: 0,
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+                ),
                 angle_record_index: 300,
                 angle_offset: 0,
                 second_side: None,
                 opposite_angle: None,
+                solid: Some(false),
+                reversed: false,
             })
             .into();
         })
@@ -87,6 +91,7 @@ fn revolve_projects_with_native_profile() {
         &[],
         &[],
         (&[], &[]),
+        &[],
     )
     else {
         panic!("expected a revolve");
@@ -97,6 +102,40 @@ fn revolve_projects_with_native_profile() {
             groups[0].id.clone()
         ))
     );
+    assert_eq!(
+        construction.axis().unwrap().reference,
+        Some(cadmpeg_ir::features::PathRef::Native(axis.id.clone())),
+    );
+    let mut unresolved_axis = axis.clone();
+    unresolved_axis.resolved_axis = None;
+    let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Revolve {
+            construction: unresolved,
+            ..
+        },
+    )) = super::super::project_fixed_revolve_with_entities(
+        &scope,
+        &groups,
+        &[unresolved_axis],
+        &[],
+        &[],
+        (&[], &[]),
+        &[],
+    )
+    else {
+        panic!("expected a revolve with an unresolved axis");
+    };
+    assert_eq!(unresolved.axis(), None);
+    assert_eq!(
+        unresolved.profile(),
+        Some(&cadmpeg_ir::features::PlanarProfileRef::Native(
+            groups[0].id.clone()
+        ))
+    );
+    let cadmpeg_ir::features::RevolveConstruction::Resolved { solid, .. } = construction else {
+        panic!("expected a resolved revolve");
+    };
+    assert_eq!(solid, Some(false));
 }
 
 #[test]
@@ -109,25 +148,32 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
     use crate::records::topology::entity_selection::DesignEntitySelectionOperand;
     use crate::records::topology::extrude_selection::DesignOperandRole;
 
-    let mut scope =
-        DesignParameterScope::empty("f3d:test:scope#12", DesignFeatureKind::Revolve, 12);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#12",
+        DesignFeatureKind::Revolve,
+        12,
+    );
     scope
         .try_edit(|draft| {
             draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
                 operation_offset: 0,
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                ),
                 angle_record_index: 300,
                 angle_offset: 0,
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             })
             .into();
         })
         .unwrap();
     let group = |record_index, ordinal, member, role: DesignOperandRole| {
         serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
-            "id": format!("f3d:test:group#{record_index}"),
+            "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),
             "scope_record_index": 12,
             "scope_reference_ordinal": ordinal,
             "record_index": record_index,
@@ -156,7 +202,7 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
     ];
     let selection = |primary_identity: u64| {
         serde_json::from_value::<DesignEntitySelectionOperand>(serde_json::json!({
-            "id": "f3d:test:entity-selection#201", "scope_record_index": 12,
+            "id": "f3d:Design/BulkStream.dat:entity-selection#201", "scope_record_index": 12,
             "group_record_index": 101, "group_member_ordinal": 0,
             "record_index": 201, "byte_offset": 100, "class_tag": "307",
             "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 130,
@@ -175,6 +221,10 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
             std::slice::from_ref(selection),
             &[],
             (&[], &[]),
+            &crate::test_support::origin_types::origin_design_types(
+                "f3d:Design/MetaStream.dat",
+                39,
+            ),
         )
     };
     for (primary_identity, direction) in [
@@ -189,6 +239,12 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
             panic!("expected a revolve about origin axis {primary_identity}");
         };
         let axis = construction.axis().expect("origin axis");
+        assert_eq!(
+            axis.reference,
+            Some(cadmpeg_ir::features::PathRef::Native(
+                "f3d:Design/BulkStream.dat:entity-selection#201".into(),
+            ))
+        );
         assert_eq!(axis.origin, cadmpeg_ir::features::FinitePoint3::ZERO);
         assert_eq!(
             axis.direction,
@@ -226,8 +282,10 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
                 draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                     operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
                     operation_offset: 0,
-                    angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2)
-                        .unwrap(),
+                    travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                        cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2)
+                            .unwrap(),
+                    ),
                     angle_record_index: 300,
                     angle_offset: 0,
                     opposite_angle: None,
@@ -239,6 +297,8 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
                             angle_offset: 0,
                         },
                     ),
+                    solid: None,
+                    reversed: false,
                 })
                 .into();
             })
@@ -258,6 +318,10 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
             std::slice::from_ref(&selection(41)),
             &[],
             (&[], &[]),
+            &crate::test_support::origin_types::origin_design_types(
+                "f3d:Design/MetaStream.dat",
+                39,
+            ),
         )
         else {
             panic!("expected a resolved revolve");
@@ -266,8 +330,51 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
     }
 }
 
-#[test]
-fn revolve_axes_turn_the_profile_toward_the_sketch_normal() {
+/// The direction of a revolve axis after orientation, for a profile edge on
+/// the XY plane whose sketch normal is +Z.
+fn oriented_direction(
+    start: [f64; 2],
+    end: [f64; 2],
+    axis_direction: cadmpeg_ir::units::UnitVector3,
+) -> Option<cadmpeg_ir::features::FeatureDirection3> {
+    oriented_direction_for_angle(
+        start,
+        end,
+        axis_direction,
+        cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
+        true,
+        false,
+    )
+}
+
+fn oriented_direction_for_angle(
+    start: [f64; 2],
+    end: [f64; 2],
+    axis_direction: cadmpeg_ir::units::UnitVector3,
+    angle: cadmpeg_ir::scalar::PositiveAngle,
+    has_profile: bool,
+    reversed: bool,
+) -> Option<cadmpeg_ir::features::FeatureDirection3> {
+    oriented_direction_for_selection(
+        start,
+        end,
+        axis_direction,
+        angle,
+        has_profile,
+        reversed,
+        None,
+    )
+}
+
+fn oriented_direction_for_selection(
+    start: [f64; 2],
+    end: [f64; 2],
+    axis_direction: cadmpeg_ir::units::UnitVector3,
+    angle: cadmpeg_ir::scalar::PositiveAngle,
+    has_profile: bool,
+    reversed: bool,
+    selection: Option<u32>,
+) -> Option<cadmpeg_ir::features::FeatureDirection3> {
     use cadmpeg_ir::features::{
         AngularTermination, BooleanOp, Feature, FeatureDefinition, FeatureDirection3, FeatureId,
         FeatureOperation, FinitePoint3, PlanarProfileRef, RevolutionAxis, RevolveConstruction,
@@ -278,82 +385,195 @@ fn revolve_axes_turn_the_profile_toward_the_sketch_normal() {
         Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
         SketchGeometryDefinition, SketchId, SketchPlacement,
     };
-    use cadmpeg_ir::units::UnitVector3;
 
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#12",
+        crate::records::feature::scope::DesignFeatureKind::Revolve,
+        12,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.payload =
+                crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(
+                    crate::records::feature::path_features::DesignRevolveConstruction {
+                        operation:
+                            crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
+                        operation_offset: 0,
+                        travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                            angle,
+                        ),
+                        angle_record_index: 300,
+                        angle_offset: 0,
+                        second_side: None,
+                        opposite_angle: None,
+                        solid: Some(true),
+                        reversed: true,
+                    },
+                )
+                .into();
+        })
+        .unwrap();
     let sketch_id = SketchId::mint("generated:test:sketch#1").unwrap();
-    // A profile edge on the XY plane, with the sketch normal along +Z.
-    let oriented = |start: [f64; 2], end: [f64; 2], axis_direction: UnitVector3| {
-        let entity = SketchEntity::new(
-            SketchEntityId::mint("generated:test:sketch-entity#1").unwrap(),
-            sketch_id.clone(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: Point2::new(start[0], start[1]),
-                end: Point2::new(end[0], end[1]),
-            })
-            .unwrap(),
-        );
-        let sketch = Sketch {
-            id: sketch_id.clone(),
-            name: None,
-            configuration: None,
-            visible: None,
-            placement: SketchPlacement::try_resolved(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-            profiles: vec![vec![SketchEntityUse {
+    let entity = SketchEntity::new(
+        SketchEntityId::mint("generated:test:sketch-entity#1").unwrap(),
+        sketch_id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(start[0], start[1]),
+            end: Point2::new(end[0], end[1]),
+        })
+        .unwrap(),
+    );
+    let mut sketch = Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: if has_profile {
+            vec![vec![SketchEntityUse {
                 entity: entity.id().clone(),
                 reversed: false,
             }]]
-            .try_into()
-            .unwrap(),
-            native_ref: None,
-        };
-        let mut features = [Feature {
-            id: FeatureId::mint("synthetic:test:id#f3d:feature:revolve").expect("identity grammar"),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            dependencies: Default::default(),
-            source_properties: Default::default(),
-            source_tag: None,
-            source_text: None,
-            source_content: Default::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Revolve {
-                    construction: RevolveConstruction::Resolved {
-                        profile: PlanarProfileRef::Sketch(sketch_id.clone()),
-                        axis: RevolutionAxis {
-                            origin: FinitePoint3::ZERO,
-                            direction: FeatureDirection3::from(axis_direction),
-                            reference: None,
-                        },
-                        extent: RevolveExtent::OneSided {
-                            termination: AngularTermination::Angle {
-                                angle: cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
-                            },
-                        },
-                        solid: None,
-                        face_maker: None,
-                        fuse_order: None,
-                        allow_multi_profile_faces: None,
-                    },
-                    op: BooleanOp::NewBody,
-                }),
-            ),
-            native_ref: None,
-            product_definition: None,
-        }];
-        super::super::orient_revolve_axes(&mut features, &[sketch], &[entity], (1.0e-6, 1.0e-9));
-        let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
-            features[0].evaluation.definition()
-        else {
-            panic!("expected a revolve");
-        };
-        construction.axis().map(|axis| axis.direction)
+        } else {
+            Vec::new()
+        }
+        .try_into()
+        .unwrap(),
+        native_ref: None,
     };
+    let extra = SketchEntity::new(
+        SketchEntityId::mint("generated:test:sketch-entity#2").unwrap(),
+        sketch_id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(-10.0, 0.0),
+            end: Point2::new(10.0, 0.0),
+        })
+        .unwrap(),
+    );
+    if selection.is_some() {
+        sketch.profiles = vec![
+            vec![SketchEntityUse {
+                entity: entity.id().clone(),
+                reversed: false,
+            }],
+            vec![SketchEntityUse {
+                entity: extra.id().clone(),
+                reversed: false,
+            }],
+        ]
+        .try_into()
+        .unwrap();
+    }
+    let profile = match selection {
+        Some(0) => PlanarProfileRef::sketch_profiles(sketch_id.clone(), vec![0]).unwrap(),
+        Some(1) => PlanarProfileRef::sketch_regions(
+            sketch_id.clone(),
+            vec![cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![]).unwrap()],
+        )
+        .unwrap(),
+        Some(2) => {
+            PlanarProfileRef::sketch_entities(sketch_id.clone(), vec![entity.id().clone()]).unwrap()
+        }
+        _ => PlanarProfileRef::Sketch(sketch_id.clone()),
+    };
+    let mut features = [Feature {
+        id: FeatureId::mint("synthetic:test:id#f3d:feature:revolve").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Revolve {
+                construction: RevolveConstruction::Resolved {
+                    profile,
+                    axis: RevolutionAxis {
+                        origin: FinitePoint3::ZERO,
+                        direction: FeatureDirection3::from(axis_direction),
+                        reference: None,
+                    },
+                    extent: RevolveExtent::OneSided {
+                        termination: AngularTermination::Angle { angle },
+                    },
+                    solid: None,
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                },
+                op: BooleanOp::NewBody,
+            }),
+        ),
+        native_ref: reversed.then(|| scope.id.clone()),
+        product_definition: None,
+    }];
+    super::super::orient_revolve_axes(
+        &mut features,
+        std::slice::from_ref(&scope),
+        &[sketch],
+        &[entity, extra],
+        (1.0e-6, 1.0e-9),
+    );
+    let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
+        features[0].evaluation.definition()
+    else {
+        panic!("expected a revolve");
+    };
+    construction.axis().map(|axis| axis.direction)
+}
+
+#[test]
+fn full_turn_revolve_preserves_selected_axis_without_profile_loops() {
+    use cadmpeg_ir::features::FeatureDirection3;
+    use cadmpeg_ir::scalar::PositiveAngle;
+    use cadmpeg_ir::units::UnitVector3;
+
+    const PARTIAL_TURN_GAP: f64 = 1.0e-6;
+
+    for direction in [UnitVector3::Y_AXIS, UnitVector3::Y_AXIS.reversed()] {
+        assert_eq!(
+            oriented_direction_for_angle(
+                [-10.0, 0.0],
+                [10.0, 20.0],
+                direction,
+                PositiveAngle::FULL_TURN,
+                false,
+                false,
+            ),
+            Some(FeatureDirection3::from(direction))
+        );
+        for angle in [
+            PositiveAngle::QUARTER_TURN,
+            PositiveAngle::new(std::f64::consts::TAU - PARTIAL_TURN_GAP).unwrap(),
+        ] {
+            assert_eq!(
+                oriented_direction_for_angle(
+                    [-10.0, 0.0],
+                    [10.0, 20.0],
+                    direction,
+                    angle,
+                    false,
+                    false,
+                ),
+                None
+            );
+        }
+    }
+}
+
+#[test]
+fn revolve_axes_turn_the_profile_toward_the_sketch_normal() {
+    use cadmpeg_ir::features::FeatureDirection3;
+    use cadmpeg_ir::units::UnitVector3;
+
+    let oriented = oriented_direction;
     let y = FeatureDirection3::from(UnitVector3::Y_AXIS);
     let minus_y = FeatureDirection3::from(UnitVector3::Y_AXIS.reversed());
     // Turning +X toward +Z is right-handed about -Y, whichever way the Y axis
@@ -384,4 +604,110 @@ fn revolve_axes_turn_the_profile_toward_the_sketch_normal() {
         oriented([10.0, 0.0], [30.0, 20.0], UnitVector3::Z_AXIS),
         None
     );
+}
+
+/// `f3d.md` states that a positive angle revolves the profile toward the
+/// positive-normal side of its sketch plane, whatever the stored axis direction.
+#[test]
+fn a_quarter_turn_lands_on_the_positive_normal_side() {
+    use cadmpeg_ir::features::{AngularTermination, FinitePoint3, RevolutionAxis, RevolveExtent};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::units::UnitVector3;
+    use cadmpeg_test_support::revolve::swept_box;
+
+    const EPS_SWEEP_MM: f64 = 1.0e-9;
+
+    let extent = RevolveExtent::OneSided {
+        termination: AngularTermination::Angle {
+            angle: cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
+        },
+    };
+    for (start, end, low_x, high_x) in [
+        ([10.0, 0.0], [30.0, 20.0], 0.0, 30.0),
+        ([-30.0, 0.0], [-10.0, 20.0], -30.0, 0.0),
+    ] {
+        for stored in [UnitVector3::Y_AXIS, UnitVector3::Y_AXIS.reversed()] {
+            let axis = RevolutionAxis {
+                origin: FinitePoint3::ZERO,
+                direction: oriented_direction(start, end, stored).expect("an oriented axis"),
+                reference: None,
+            };
+            let profile = [
+                Point3::new(start[0], start[1], 0.0),
+                Point3::new(end[0], end[1], 0.0),
+            ];
+            let (low, high) = swept_box(&profile, &axis, &extent);
+            assert!(low[2].abs() <= EPS_SWEEP_MM, "{low:?}");
+            assert!((high[2] - 30.0).abs() <= EPS_SWEEP_MM, "{high:?}");
+            assert!((low[0] - low_x).abs() <= EPS_SWEEP_MM, "{low:?}");
+            assert!((high[0] - high_x).abs() <= EPS_SWEEP_MM, "{high:?}");
+        }
+    }
+}
+
+/// `f3d.md` states that a negative angle of a referenced-angle form revolves
+/// the profile by its magnitude toward the negative-normal side.
+#[test]
+fn a_reversed_quarter_turn_lands_on_the_negative_normal_side() {
+    use cadmpeg_ir::features::{AngularTermination, FinitePoint3, RevolutionAxis, RevolveExtent};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::PositiveAngle;
+    use cadmpeg_ir::units::UnitVector3;
+    use cadmpeg_test_support::revolve::swept_box;
+
+    const EPS_SWEEP_MM: f64 = 1.0e-9;
+
+    let extent = RevolveExtent::OneSided {
+        termination: AngularTermination::Angle {
+            angle: PositiveAngle::QUARTER_TURN,
+        },
+    };
+    for (start, end) in [([10.0, 0.0], [30.0, 20.0]), ([-30.0, 0.0], [-10.0, 20.0])] {
+        for stored in [UnitVector3::Y_AXIS, UnitVector3::Y_AXIS.reversed()] {
+            let direction = |reversed| {
+                oriented_direction_for_angle(
+                    start,
+                    end,
+                    stored,
+                    PositiveAngle::QUARTER_TURN,
+                    true,
+                    reversed,
+                )
+                .expect("an oriented axis")
+            };
+            let axis = RevolutionAxis {
+                origin: FinitePoint3::ZERO,
+                direction: direction(true),
+                reference: None,
+            };
+            assert_eq!(axis.direction.reversed(), direction(false));
+            let profile = [
+                Point3::new(start[0], start[1], 0.0),
+                Point3::new(end[0], end[1], 0.0),
+            ];
+            let (low, high) = swept_box(&profile, &axis, &extent);
+            assert!((low[2] + 30.0).abs() <= EPS_SWEEP_MM, "{low:?}");
+            assert!(high[2].abs() <= EPS_SWEEP_MM, "{high:?}");
+        }
+    }
+}
+
+#[test]
+fn partial_turn_orientation_uses_selected_profile_curves() {
+    for selection in 0..3 {
+        assert_eq!(
+            oriented_direction_for_selection(
+                [10.0, 0.0],
+                [30.0, 20.0],
+                cadmpeg_ir::units::UnitVector3::Y_AXIS,
+                cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
+                true,
+                false,
+                Some(selection),
+            ),
+            Some(cadmpeg_ir::features::FeatureDirection3::from(
+                cadmpeg_ir::units::UnitVector3::Y_AXIS.reversed(),
+            )),
+        );
+    }
 }

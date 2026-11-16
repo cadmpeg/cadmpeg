@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 
 use crate::bytes::is_guid_hyphenated;
 use crate::bytes::utf16::Utf16View;
+use crate::layout::manifest_lineage_suffix as lineage_suffix;
 
 const MAX_MANIFEST_STRING_UNITS: usize = 4 * 1024;
 const MAX_REGISTRY_ENTRIES: usize = 64;
@@ -495,7 +496,15 @@ fn parse_asset_tail_at<'a>(cursor: &mut Cursor<'a>) -> Result<Vec<Utf16View<'a>>
                 ));
             }
             if !cursor.exhausted() {
-                expect_lineage_urn(cursor.utf16("top-level manifest lineage URN")?)?;
+                let lineage = cursor.utf16("top-level manifest lineage URN")?;
+                if !lineage.chars().eq("NA_EXPORT".chars())
+                    && !lineage.chars().eq("NA_OFFLINESAVE".chars())
+                {
+                    expect_lineage_urn(lineage)?;
+                    if cursor.view.unread() == lineage_suffix::BYTES_VALUE {
+                        cursor.view.seek_to_end();
+                    }
+                }
             }
         }
         1 if !cursor.exhausted() => {

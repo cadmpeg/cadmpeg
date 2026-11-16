@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
 const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-12;
@@ -58,7 +57,12 @@ fn open_nurbs_object_record_short_typecodes_decode() {
 
     let result = decode(&archive(&[record]));
 
-    assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
+    assert_eq!(
+        result.ir().geometry.points.len(),
+        1,
+        "{:?}",
+        result.report()
+    );
     assert!(result.report().geometry_transferred());
 }
 
@@ -72,13 +76,18 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
     );
     let result = decode(&archive(&[point, line]));
 
-    assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
     assert_eq!(
-        result.ir().model.points[0].position().get(),
+        result.ir().geometry.points.len(),
+        1,
+        "{:?}",
+        result.report()
+    );
+    assert_eq!(
+        result.ir().geometry.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)
     );
-    assert_eq!(result.ir().model.curves.len(), 1);
-    let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("bounded line must decode to an exact NURBS carrier");
     };
@@ -105,14 +114,14 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
         .expect("required invariant")[0]
         .links
         .iter()
-        .any(|link| link.as_str() == result.ir().model.bodies[0].id.as_str()));
+        .any(|link| link.as_str() == result.ir().geometry.bodies[0].id.as_str()));
     assert!(result
         .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
         .iter()
-        .any(|link| link.as_str() == result.ir().model.curves[0].id.as_str()));
+        .any(|link| link.as_str() == result.ir().geometry.curves[0].id.as_str()));
     assert!(result.report().geometry_transferred());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
@@ -130,9 +139,14 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
         let valid = object_record(1, POINT_CLASS, &point_payload([4.0, 5.0, 6.0]));
         let result = decode(&archive(&[malformed, valid]));
 
-        assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
         assert_eq!(
-            result.ir().model.points[0].position().get(),
+            result.ir().geometry.points.len(),
+            1,
+            "{:?}",
+            result.report()
+        );
+        assert_eq!(
+            result.ir().geometry.points[0].position().get(),
             cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
         );
         assert!(result
@@ -287,14 +301,11 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
             &crate::subd::tests::quad_payload(archive_band),
         );
         let result = decode(&archive_version(version, &[object]));
-        assert_eq!(result.ir().model.subds.len(), 1, "archive {version}");
+        assert_eq!(result.ir().geometry.subds.len(), 1, "archive {version}");
         assert_eq!(
-            wire::field::<Vec<subd::SubdEdgeUse>>(
-                &(wire::field::<Vec<subd::SubdFace>>(&(result.ir().model.subds[0].cage), "faces")
-                    [0]),
-                "edges"
-            )
-            .len(),
+            result.ir().geometry.subds[0].cage.faces()[0]
+                .edge_uses()
+                .count(),
             4
         );
         assert!(!result
@@ -325,8 +336,8 @@ fn polycurve_nested_past_the_curve_depth_cap_fails_one_object() {
         object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0])),
     ]));
 
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert!(result.ir().geometry.curves.is_empty());
     assert!(result
         .report()
         .losses
@@ -378,8 +389,8 @@ fn revolution_profile_over_the_join_degree_cap_fails_one_object() {
         object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0])),
     ]));
 
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert!(result.ir().model.surfaces.iter().all(|surface| matches!(
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert!(result.ir().geometry.surfaces.iter().all(|surface| matches!(
         surface.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     )));
@@ -441,19 +452,19 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         object_record(4, POLYCURVE_CLASS, &outer),
     ]));
 
-    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().geometry.points.len(), 3);
     assert_eq!(
-        result.ir().model.points[0].position().get(),
+        result.ir().geometry.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
     assert_eq!(
-        result.ir().model.points[2].position().get(),
+        result.ir().geometry.points[2].position().get(),
         cadmpeg_ir::math::Point3::new(7.0, 8.0, 9.0)
     );
-    assert_eq!(result.ir().model.curves.len(), 7);
+    assert_eq!(result.ir().geometry.curves.len(), 7);
     let line = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| {
@@ -470,7 +481,7 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
     assert_eq!(line.knots().as_slice(), [-1.0, -1.0, 3.0, 3.0]);
     let polyline = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| {
@@ -485,10 +496,10 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         panic!("polyline carrier");
     };
     assert_eq!(polyline.knots().as_slice(), [2.0, 2.0, 3.5, 9.0, 9.0]);
-    assert_eq!(result.ir().model.procedural_curves.len(), 2);
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 2);
     let root = result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .find(|curve| !curve.id.as_str().contains("component"))
@@ -592,7 +603,7 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
     let point = object_record(1, POINT_CLASS, &point_payload([8.0, 9.0, 10.0]));
     let result = decode(&archive(&[bad_mesh, point]));
     assert!(result.ir().model.tessellations.is_empty());
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(result
         .ir()
         .native_unknowns("rhino")
@@ -691,13 +702,13 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
         );
         let result = decode(&archive(&[object_record(0x10, EXTRUSION_CLASS, &payload)]));
         assert_eq!(
-            result.ir().model.procedural_surfaces.len(),
+            result.ir().geometry.procedural_surfaces.len(),
             1,
             "minor {minor}: {:?}",
             result.report()
         );
         let expected_caps = if minor < 2 { 2 } else { 1 };
-        assert_eq!(result.ir().model.faces.len(), expected_caps);
+        assert_eq!(result.ir().geometry.faces.len(), expected_caps);
         assert_eq!(
             result.ir().model.tessellations.len(),
             usize::from(minor == 3)
@@ -718,10 +729,10 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
 
     let payload = crate::extrusion::tests::archive_payload(2, [true, true], true, false);
     let result = decode(&archive(&[object_record(0x10, EXTRUSION_CLASS, &payload)]));
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
-    assert_eq!(result.ir().model.faces.len(), 2);
-    assert_eq!(result.ir().model.loops.len(), 4);
-    assert_eq!(result.ir().model.pcurves.len(), 4);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir().geometry.faces.len(), 2);
+    assert_eq!(result.ir().geometry.loops.len(), 4);
+    assert_eq!(result.ir().geometry.pcurves.len(), 4);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -743,13 +754,13 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
         object_record(0x10, EXTRUSION_CLASS, &malformed),
         point,
     ]));
-    assert!(result.ir().model.procedural_surfaces.is_empty());
-    assert!(result.ir().model.faces.is_empty());
-    assert!(result.ir().model.pcurves.is_empty());
+    assert!(result.ir().geometry.procedural_surfaces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
+    assert!(result.ir().geometry.pcurves.is_empty());
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .filter(|surface| matches!(
@@ -761,7 +772,7 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
             .count(),
         1
     );
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -790,41 +801,42 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         3,
         &[object_record(0x10, BREP_CLASS, &payload)],
     ));
-    let model = &result.ir().model;
-    assert_eq!(model.bodies.len(), 1, "{:?}", result.report());
-    assert_eq!(model.regions.len(), 1);
-    assert_eq!(model.shells.len(), 1);
-    assert_eq!(model.faces.len(), 1);
-    assert_eq!(model.loops.len(), 1);
-    assert_eq!(model.coedges.len(), 3);
-    assert_eq!(model.edges.len(), 3);
-    assert_eq!(model.vertices.len(), 3);
-    assert_eq!(model.pcurves.len(), 3);
-    assert_eq!(model.curves.len(), 3);
-    assert_eq!(model.surfaces.len(), 1);
-    let body = &model.bodies[0];
-    let region = &model.regions[0];
-    let shell = &model.shells[0];
-    let face = &model.faces[0];
-    let loop_record = &model.loops[0];
-    assert_eq!(body.regions, vec![region.id.clone()]);
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1, "{:?}", result.report());
+    assert_eq!(geometry.regions.len(), 1);
+    assert_eq!(geometry.shells.len(), 1);
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.loops.len(), 1);
+    assert_eq!(geometry.coedges.len(), 3);
+    assert_eq!(geometry.edges.len(), 3);
+    assert_eq!(geometry.vertices.len(), 3);
+    assert_eq!(geometry.pcurves.len(), 3);
+    assert_eq!(geometry.curves.len(), 3);
+    assert_eq!(geometry.surfaces.len(), 1);
+    let body = &geometry.bodies[0];
+    let region = &geometry.regions[0];
+    let shell = &geometry.shells[0];
+    let face = &geometry.faces[0];
+    let loop_record = &geometry.loops[0];
     assert_eq!(region.body, body.id);
     assert_eq!(region.shells, vec![shell.id.clone()]);
     assert_eq!(shell.region, region.id);
-    assert_eq!(shell.faces(), vec![face.id.clone()]);
     assert_eq!(face.shell, shell.id);
     assert_eq!(face.loops, vec![loop_record.id.clone()]);
     assert_eq!(loop_record.face, face.id);
-    assert!(model.coedges.iter().all(|coedge| !coedge.pcurves.is_empty()
-        && model.edges.iter().any(|edge| edge.id == coedge.edge)));
-    assert!(model.edges.iter().all(|edge| edge.curve().is_some()
+    assert!(geometry
+        .coedges
+        .iter()
+        .all(|coedge| !coedge.pcurves.is_empty()
+            && geometry.edges.iter().any(|edge| edge.id == coedge.edge)));
+    assert!(geometry.edges.iter().all(|edge| edge.curve().is_some()
         && edge
             .tolerance
             .is_some_and(|tolerance| (tolerance.get() - 0.3).abs() < EPS_TOPOLOGY_TOLERANCE)));
-    assert!(model.vertices.iter().all(|vertex| vertex
+    assert!(geometry.vertices.iter().all(|vertex| vertex
         .tolerance
         .is_some_and(|tolerance| (tolerance.get() - 0.2).abs() < EPS_TOPOLOGY_TOLERANCE)));
-    assert!(model.pcurves.iter().all(|pcurve| pcurve
+    assert!(geometry.pcurves.iter().all(|pcurve| pcurve
         .fit_tolerance()
         .map(cadmpeg_ir::geometry::FitTolerance::get)
         == Some(0.04)));
@@ -861,16 +873,16 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
         BREP_CLASS,
         &singular_seam_brep_payload(false),
     )]));
-    let model = &valid.ir().model;
-    assert_eq!(model.bodies.len(), 1, "{:?}", valid.report());
-    assert_eq!(model.faces.len(), 1);
-    assert_eq!(model.loops.len(), 1);
-    assert_eq!(model.coedges.len(), 4);
-    assert_eq!(model.edges.len(), 3);
-    assert_eq!(model.vertices.len(), 2);
-    assert_eq!(model.pcurves.len(), 4);
+    let geometry = &valid.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1, "{:?}", valid.report());
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.loops.len(), 1);
+    assert_eq!(geometry.coedges.len(), 4);
+    assert_eq!(geometry.edges.len(), 3);
+    assert_eq!(geometry.vertices.len(), 2);
+    assert_eq!(geometry.pcurves.len(), 4);
     assert_eq!(
-        model.coedges[3].sense,
+        geometry.coedges[3].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert!(
@@ -884,9 +896,9 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
         BREP_CLASS,
         &singular_seam_brep_payload(true),
     )]));
-    assert!(malformed.ir().model.faces.is_empty());
-    assert!(malformed.ir().model.loops.is_empty());
-    assert!(malformed.ir().model.coedges.is_empty());
+    assert!(malformed.ir().geometry.faces.is_empty());
+    assert!(malformed.ir().geometry.loops.is_empty());
+    assert!(malformed.ir().geometry.coedges.is_empty());
     assert!(malformed.report().losses.iter().any(|loss| {
         loss.severity == Severity::Warning
             && loss.message.contains("Brep topology fallback")
@@ -907,15 +919,15 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
         object_record(0x10, BREP_CLASS, &brep_payload(true)),
         point,
     ]));
-    let model = &result.ir().model;
-    assert!(model.faces.is_empty());
-    assert!(model.loops.is_empty());
-    assert!(model.coedges.is_empty());
-    assert!(model.edges.is_empty());
-    assert!(model.pcurves.is_empty());
-    assert_eq!(model.curves.len(), 3);
-    assert_eq!(model.surfaces.len(), 1);
-    assert_eq!(model.points.len(), 1);
+    let geometry = &result.ir().geometry;
+    assert!(geometry.faces.is_empty());
+    assert!(geometry.loops.is_empty());
+    assert!(geometry.coedges.is_empty());
+    assert!(geometry.edges.is_empty());
+    assert!(geometry.pcurves.is_empty());
+    assert_eq!(geometry.curves.len(), 3);
+    assert_eq!(geometry.surfaces.len(), 1);
+    assert_eq!(geometry.points.len(), 1);
     assert!(!result
         .ir()
         .native_unknowns("rhino")
@@ -966,7 +978,12 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
     for failure in failures {
         let point = object_record(1, POINT_CLASS, &point_payload([6.0, 7.0, 8.0]));
         let result = EditableDecodeResult::from(decode(&archive(&[failure.clone(), point])));
-        assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
+        assert_eq!(
+            result.ir().geometry.points.len(),
+            1,
+            "{:?}",
+            result.report()
+        );
         assert_eq!(
             result
                 .ir()
@@ -1026,9 +1043,9 @@ fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     let brep = object_record(0x10, BREP_CLASS, &payload);
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 1.0, 1.0]));
     let result = decode(&archive(&[brep, point]));
-    assert_eq!(result.ir().model.bodies.len(), 2);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.points.len(), 4);
+    assert_eq!(result.ir().geometry.bodies.len(), 2);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 4);
     assert!(result.report().losses.iter().any(|loss| {
         loss.severity == Severity::Error
             && loss.message.contains("Brep anonymous CRC mismatch")

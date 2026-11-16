@@ -21,6 +21,7 @@ use crate::geometry::{
     SolvedCurveGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+use crate::math::portable::Portable;
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::CadIr;
@@ -51,22 +52,26 @@ fn curve_surface_model(
         cache: None,
     };
     let mut ir = CadIr::empty();
-    ir.model
+    ir.geometry
         .curves
         .extend(ids.iter().zip(curves).map(|(id, geometry)| Curve {
             parameter_range: None,
             id: id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         }));
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: geometry.clone(),
         source_object: None,
+        native_ref: None,
     });
-    ir.model
-        .procedural_surfaces
-        .push(ProceduralSurface::new(construction, definition(&ids), None));
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        definition(&ids),
+        None,
+    ));
     (ir, surface_id, geometry)
 }
 
@@ -206,15 +211,16 @@ fn procedural_curve_model(
     let construction =
         ProceduralCurveId::mint("test:model:procedural#curve").expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model
+    ir.geometry
         .curves
         .extend(ids.iter().zip(curves).map(|(id, geometry)| Curve {
             parameter_range: None,
             id: id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         }));
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: owner.clone(),
         geometry: CurveGeometry::Procedural {
@@ -222,8 +228,9 @@ fn procedural_curve_model(
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
-    ir.model
+    ir.geometry
         .add_procedural_curve(&owner, ProceduralCurve::new(construction, definition(&ids)))
         .expect("procedural curve fixture");
     (ir, owner)
@@ -382,12 +389,13 @@ fn an_extrusion_over_a_helix_whose_tangent_overflows_has_its_finite_point() {
         construction: construction.clone(),
         cache: None,
     };
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: geometry.clone(),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction,
         ProceduralSurfaceDefinition::Extrusion(
             ExtrusionSurfaceConstruction::try_new(
@@ -902,7 +910,7 @@ fn a_hyperbola_whose_scaled_cosh_alone_overflows_keeps_its_point_and_second_deri
     ));
     let t = 1.0e-7_f64;
     let lanes = |value: Vector3| {
-        assert_eq!(value.x, t.cosh());
+        assert_eq!(value.x, t.portable_cosh());
         assert!((value.y / (f64::MAX * t.sinh()) - 1.0).abs() <= 4.0 * f64::EPSILON);
         assert_eq!(value.z, 0.0);
     };
@@ -943,15 +951,16 @@ fn an_extrusion_over_a_helix_whose_acceleration_overflows_keeps_its_first_partia
     let surface = SurfaceId::mint("test:model:surface#extrusion").expect("valid identity");
     let construction =
         ProceduralSurfaceId::mint("test:model:procedural#extrusion").expect("valid identity");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction.clone(),
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction,
         ProceduralSurfaceDefinition::Extrusion(
             ExtrusionSurfaceConstruction::try_new(

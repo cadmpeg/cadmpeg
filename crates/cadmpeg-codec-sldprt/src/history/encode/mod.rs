@@ -32,6 +32,7 @@ pub(super) struct NeutralFeatureEncoding {
 }
 
 pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
+    pub(super) contradicted_travel: bool,
     pub(super) feature: &'context cadmpeg_ir::features::Feature,
     pub(super) existing: Option<&'context Feature>,
     pub(super) principal_planes_by_record:
@@ -263,7 +264,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 faces,
                 thickness,
                 side,
-            }) => self.encode_thicken(faces, thickness.as_ref(), side.as_ref()),
+                result,
+                tangent_chain,
+            }) => self.encode_thicken(
+                faces,
+                thickness.as_ref(),
+                side.as_ref(),
+                result.is_some() || tangent_chain.is_some(),
+            ),
             FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, distance }) => {
                 self.encode_offset_surface(faces, distance.as_ref())
             }
@@ -283,21 +291,44 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 support_faces,
                 continuity,
                 merge_result,
-            }) => self.encode_filled_surface(boundary, support_faces, continuity, *merge_result),
+                interior_constraints,
+                reverse_normal,
+            }) => self.encode_filled_surface(
+                boundary,
+                support_faces,
+                continuity,
+                *merge_result,
+                !interior_constraints.is_empty() || *reverse_normal == Some(true),
+            ),
             FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: face_selection,
                 anchor,
                 angle,
                 outward,
-            }) => self.encode_draft(face_selection, anchor, angle.as_ref(), *outward),
+                second_side,
+            }) => self.encode_draft(
+                face_selection,
+                anchor,
+                angle.as_ref(),
+                *outward,
+                second_side.as_ref(),
+            ),
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands,
                 op,
                 keep_tools,
+                destination,
             }) => {
                 let target = operands.target();
                 let tools = operands.tools();
-                self.encode_combine(target, tools, *op, *keep_tools)
+                match destination {
+                    cadmpeg_ir::features::CombineDestination::TargetComponent => {
+                        self.encode_combine(target, tools, *op, *keep_tools)
+                    }
+                    cadmpeg_ir::features::CombineDestination::NewComponent => {
+                        self.encode_unsupported()
+                    }
+                }
             }
             FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
                 targets,

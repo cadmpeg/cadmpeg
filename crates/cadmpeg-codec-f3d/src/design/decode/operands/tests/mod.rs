@@ -9,6 +9,8 @@
 mod construction;
 mod construction_candidates;
 mod face_sources;
+mod fixed_fillet_retention;
+mod hole_locations;
 mod recipe_structures;
 mod recipes;
 mod selection;
@@ -17,5 +19,8 @@ mod work_point;
 
 mod body_recipes;
 mod body_target_groups;
+mod loft_point_groups;
 
 mod construction_paths;
+
+mod multiple_profiles;

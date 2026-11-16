@@ -2,7 +2,11 @@
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
 mod assembly_bodies;
+mod closed_faces;
+mod declared_measures;
 mod partial_geometry;
+mod pmi_scope;
+mod tolerance_zones;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
@@ -69,6 +73,7 @@ use crate::writer::tests::round_trips::{
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 mod measured_geometry;
+mod nist_pmi_conformance;
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -171,20 +176,20 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("STEP cube decode"),
         );
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.faces.len(), 6);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 6);
         assert_valid(&result);
 
         let mut edited = result.ir().clone();
         edited
-            .model
+            .geometry
             .points
             .first_mut()
             .expect("unit cube has a point")
             .position()
             .get()
             .x += 1.0;
-        let expected_model = edited.model.clone();
+        let expected_geometry = edited.geometry.clone();
         let codec = StepCodec {
             options: options.clone(),
         };
@@ -220,21 +225,21 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         );
         assert_valid(&edited_result);
         assert_eq!(
-            edited_result.ir().model.bodies.len(),
-            expected_model.bodies.len()
+            edited_result.ir().geometry.bodies.len(),
+            expected_geometry.bodies.len()
         );
         assert_eq!(
-            edited_result.ir().model.faces.len(),
-            expected_model.faces.len()
+            edited_result.ir().geometry.faces.len(),
+            expected_geometry.faces.len()
         );
-        let expected_points = expected_model
+        let expected_points = expected_geometry
             .points
             .iter()
             .map(|point| point.position().get())
             .collect::<Vec<_>>();
         let actual_points = edited_result
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .map(|point| point.position().get())
@@ -259,3 +264,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         }
     }
 }
+
+mod dimension_limits;
+
+mod near_coincident_edges;

@@ -33,6 +33,9 @@ fn fixture(class: &str) -> (DesignParameterScope, DesignRecordHeader) {
             DesignMoveForm::Form1
         },
         form_offset: 443,
+        transform_reference_offset: None,
+        prefix: None,
+        ..DesignMoveOperation::default()
     });
     (
         scope,
@@ -50,7 +53,7 @@ fn move_transform_validator_checks_each_added_class_and_locations() {
     for class in [
         "330", "273", "408", "372", "289", "394", "406", "282", "403", "391", "452",
     ] {
-        let (mut scope, mut header) = fixture(class);
+        let (scope, mut header) = fixture(class);
         assert!(move_operation_links_hold(&scope, Some(&header)));
         assert!(!move_operation_links_hold(&scope, None));
         let mut shifted = scope.clone();
@@ -73,17 +76,8 @@ fn move_transform_validator_checks_each_added_class_and_locations() {
         header.record_index += 1;
         assert!(!move_operation_links_hold(&scope, Some(&header)));
         header.record_index -= 1;
-        let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
-            panic!("Move payload");
-        };
-        operation.form = if class == "452" {
-            DesignMoveForm::Form1
-        } else {
-            DesignMoveForm::Form5
-        };
-        assert!(!move_operation_links_hold(&scope, Some(&header)));
         header.class_tag = "999".to_owned().try_into().unwrap();
-        assert!(!move_operation_links_hold(&scope, Some(&header)));
+        assert!(move_operation_links_hold(&scope, Some(&header)));
     }
 }
 
@@ -97,9 +91,7 @@ fn move_face_scope(kind: DesignFeatureKind, form: DesignMoveForm) -> DesignParam
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (DesignScopePayloadMut::MoveFace(slot) | DesignScopePayloadMut::DeplacerFace(slot)) =
-        scope.payload_mut()
-    else {
+    let DesignScopePayloadMut::MoveFace(slot) = scope.payload_mut() else {
         panic!("MoveFace payload");
     };
     *slot = Some(DesignMoveOperation {
@@ -108,37 +100,37 @@ fn move_face_scope(kind: DesignFeatureKind, form: DesignMoveForm) -> DesignParam
         transform_record_index: 71,
         form,
         form_offset: 443,
+        transform_reference_offset: None,
+        prefix: None,
+        ..DesignMoveOperation::default()
     });
     scope
 }
 
 #[test]
 fn move_face_validator_ignores_the_transform_class_and_checks_its_links() {
-    for kind in [DesignFeatureKind::MoveFace, DesignFeatureKind::DeplacerFace] {
-        for form in [DesignMoveForm::Form1, DesignMoveForm::Form5] {
-            let scope = move_face_scope(kind.clone(), form);
-            for class in ["313", "396", "999"] {
-                let (_, header) = fixture(class);
-                assert!(move_operation_links_hold(&scope, Some(&header)));
-            }
-            let (_, mut header) = fixture("313");
-            assert!(!move_operation_links_hold(&scope, None));
-            header.byte_offset += 1;
-            assert!(!move_operation_links_hold(&scope, Some(&header)));
-            header.byte_offset -= 1;
-            header.record_index += 1;
-            assert!(!move_operation_links_hold(&scope, Some(&header)));
-            header.record_index -= 1;
-            let mut unbound = scope.clone();
-            let (DesignScopePayloadMut::MoveFace(Some(operation))
-            | DesignScopePayloadMut::DeplacerFace(Some(operation))) = unbound.payload_mut()
-            else {
-                panic!("MoveFace payload");
-            };
-            operation.transform_record_index = 72;
-            header.record_index = 72;
-            assert!(!move_operation_links_hold(&unbound, Some(&header)));
+    let kind = DesignFeatureKind::MoveFace;
+    for form in [DesignMoveForm::Form1, DesignMoveForm::Form5] {
+        let scope = move_face_scope(kind.clone(), form);
+        for class in ["313", "396", "999"] {
+            let (_, header) = fixture(class);
+            assert!(move_operation_links_hold(&scope, Some(&header)));
         }
+        let (_, mut header) = fixture("313");
+        assert!(!move_operation_links_hold(&scope, None));
+        header.byte_offset += 1;
+        assert!(!move_operation_links_hold(&scope, Some(&header)));
+        header.byte_offset -= 1;
+        header.record_index += 1;
+        assert!(!move_operation_links_hold(&scope, Some(&header)));
+        header.record_index -= 1;
+        let mut unbound = scope.clone();
+        let DesignScopePayloadMut::MoveFace(Some(operation)) = unbound.payload_mut() else {
+            panic!("MoveFace payload");
+        };
+        operation.transform_record_index = 72;
+        header.record_index = 72;
+        assert!(!move_operation_links_hold(&unbound, Some(&header)));
     }
 }
 
@@ -176,4 +168,71 @@ fn move_transform_validator_reports_shifted_matrix_location() {
                 == "Fusion Design parameter scope has an invalid paired frame"));
         }
     });
+}
+
+#[test]
+fn a_marked_move_transform_needs_no_listed_class() {
+    let (mut scope, header) = fixture("332");
+    assert!(move_operation_links_hold(&scope, Some(&header)));
+    let marked = scope.byte_offset() + 21;
+    let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
+        panic!("Move payload");
+    };
+    operation.transform_reference_offset = Some(marked);
+    assert!(move_operation_links_hold(&scope, Some(&header)));
+    let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
+        panic!("Move payload");
+    };
+    operation.transform_reference_offset = Some(marked + 1);
+    assert!(!move_operation_links_hold(&scope, Some(&header)));
+}
+
+#[test]
+fn move_prefix_validator_rejects_inconsistent_native_claims() {
+    use crate::records::feature::direct_face::{DesignMovePrefix, DesignMoveReference};
+
+    let (mut scope, header) = fixture("452");
+    let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
+        panic!("Move payload");
+    };
+    operation.prefix = Some(DesignMovePrefix {
+        leading: None,
+        references: std::array::from_fn(|_| DesignMoveReference::Null),
+        codes: [0; 2],
+        matrix_omitted: true,
+    });
+    assert!(move_operation_links_hold(&scope, Some(&header)));
+    for violation in 0..3 {
+        let mut changed = scope.clone();
+        let DesignScopePayloadMut::Move(Some(operation)) = changed.payload_mut() else {
+            panic!("Move payload");
+        };
+        if violation == 0 {
+            let mut matrix = operation.transform.rows();
+            matrix[0][3] = 1.0;
+            operation.transform = matrix.try_into().unwrap();
+        } else if violation == 1 {
+            operation.prefix.as_mut().unwrap().codes[0] = 1;
+        } else {
+            operation.form = DesignMoveForm::Form2;
+            operation.prefix.as_mut().unwrap().matrix_omitted = false;
+        }
+        assert!(!move_operation_links_hold(&changed, Some(&header)));
+    }
+    let mut wire = serde_json::to_value(scope.move_operation().unwrap()).unwrap();
+    wire["prefix"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<DesignMoveOperation>(wire).is_err());
+}
+
+#[test]
+fn move_face_native_links_reject_group_provenance_on_body_moves() {
+    let (mut scope, header) = fixture("452");
+    let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
+        panic!("Move payload");
+    };
+    operation.face_group = Some(crate::records::identity::Located {
+        value: 50,
+        offset: 38,
+    });
+    assert!(!move_operation_links_hold(&scope, Some(&header)));
 }

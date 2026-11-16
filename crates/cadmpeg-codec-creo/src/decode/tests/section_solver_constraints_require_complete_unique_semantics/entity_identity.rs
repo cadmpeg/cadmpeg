@@ -733,49 +733,32 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 1;
-    assert_eq!(
-        solver_only_section_entity_family(&opaque_line, 101),
-        Some(SectionEntityIncidenceFamily::Point)
-    );
-    assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
-            ctx,
-            &opaque_line,
-            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-            Some(&BTreeMap::from([
-                (
-                    SketchEntityId::mint("creo:featdefs:sketch_entity#917:100".to_string())
-                        .expect("valid test fixture"),
-                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                        start: Point2::new(3.0, -1.0),
-                        end: Point2::new(3.0, 5.0),
-                    })
-                    .expect("valid test fixture"),
-                ),
-                (
-                    SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string())
-                        .expect("valid test fixture"),
-                    SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("point")
-                            .expect("nonempty source identity"),
-                    })
-                    .expect("valid test fixture"),
-                ),
-            ])),
-        ))
-        .expect("test section solve")[0]
+    assert_eq!(solver_only_section_entity_family(&opaque_line, 101), None);
+    let centered_sketch = SketchId::mint("creo:model:sketch#917").expect("valid test fixture");
+    let centered_items = &opaque_line
+        .relations
+        .as_ref()
+        .expect("relations")
+        .skamps()
+        .iter()
+        .next()
+        .expect("midpoint row")
+        .items;
+    assert!(section_skamp_midpoint(
+        &opaque_line,
+        &centered_sketch,
+        &centered_items[0],
+        &centered_items[1],
+        None
+    )
+    .is_none());
+    assert!(matches!(
+        section_skamp_constraints(&opaque_line, &centered_sketch)[0]
             .0
-            .definition)
+            .definition
             .kind(),
-        SketchConstraintDefinitionInput::Midpoint {
-            point: SketchLocus::Entity(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string())
-                    .expect("valid test fixture")
-            ),
-            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:100".to_string())
-                .expect("valid test fixture"),
-        }
-    );
+        SketchConstraintDefinitionInput::Native { .. }
+    ));
     declared_solver_rows(&mut opaque_line.relations.as_mut().expect("relations").skamps).insert(
         0,
         crate::feature::definitions::FeatureSkamp {
@@ -878,6 +861,94 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
             .kind(),
         SketchConstraintDefinitionInput::Native { .. }
     ));
+    assert!(matches!(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
+            ctx,
+            &opaque_line,
+            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
+            Some(&BTreeMap::from([
+                (
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#917:100".to_string())
+                        .expect("valid test fixture"),
+                    SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                        native_kind: cadmpeg_core::text::NonBlankString::new("line")
+                            .expect("source centered-line identity"),
+                    })
+                    .expect("valid test fixture"),
+                ),
+                (
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string())
+                        .expect("valid test fixture"),
+                    SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                        native_kind: cadmpeg_core::text::NonBlankString::new("line")
+                            .expect("nonempty source identity"),
+                    })
+                    .expect("valid test fixture"),
+                ),
+            ])),
+        ))
+        .expect("test section solve")[1]
+            .0
+            .definition
+            .kind(),
+        SketchConstraintDefinitionInput::Midpoint { .. }
+    ));
+    let centered_items = &opaque_line
+        .relations
+        .as_ref()
+        .expect("relations")
+        .skamps()
+        .iter()
+        .find(|row| row.kind == 35)
+        .expect("midpoint row")
+        .items;
+    let expected = Some((
+        SketchLocus::Center(
+            SketchEntityId::mint("creo:featdefs:sketch_entity#917:100".to_string())
+                .expect("valid test fixture"),
+        ),
+        SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string())
+            .expect("valid test fixture"),
+    ));
+    assert_eq!(
+        section_skamp_midpoint(
+            &opaque_line,
+            &centered_sketch,
+            &centered_items[0],
+            &centered_items[1],
+            None
+        ),
+        expected
+    );
+    assert_eq!(
+        section_skamp_midpoint(
+            &opaque_line,
+            &centered_sketch,
+            &centered_items[1],
+            &centered_items[0],
+            None
+        ),
+        expected
+    );
+    let mut incomplete_centered = opaque_line.clone();
+    incomplete_centered
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps
+        .as_mut()
+        .expect("table")
+        .header_mut()
+        .expect("header")
+        .declared_count = 3;
+    assert!(section_skamp_midpoint(
+        &incomplete_centered,
+        &centered_sketch,
+        &centered_items[0],
+        &centered_items[1],
+        None
+    )
+    .is_none());
     let mut opaque_family_collision = opaque_point.clone();
     opaque_family_collision
         .segments

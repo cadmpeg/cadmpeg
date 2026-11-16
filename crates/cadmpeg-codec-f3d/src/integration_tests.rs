@@ -6,17 +6,30 @@ mod align;
 mod archive_session;
 mod attribute_colors;
 mod body_reference_tails;
+mod cc0_controller;
 mod configuration_parameters;
 mod design_containment;
+mod design_parameters;
 mod emboss_operands;
+mod external_placement;
+mod f30_placements;
+mod fusion_profile_regions;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
 mod measured_geometry;
 mod optional_payloads;
+mod pcurve_uv_offset;
 mod placement_history;
+mod position;
 mod procedural_support;
 mod product_owners;
+mod profile_region_selection;
+mod reference_rows;
+mod scene;
+mod sketch_regions;
+mod tracking_path_headers;
+mod treatment_losses;
 mod work_planes;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -37,7 +50,9 @@ use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_s
 use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
 };
-use crate::test_support::smbh_pcurves_test::synthetic_geometry_with_rational_pcurve_smbh;
+use crate::test_support::smbh_pcurves_test::{
+    synthetic_geometry_with_rational_pcurve_smbh, with_plane_pcurve_offset_vertices,
+};
 use crate::test_support::smbh_surfaces_test::{
     synthetic_compound_loft_smbh, synthetic_cyl_spl_sur_smbh, synthetic_profile_first_sweep_smbh,
 };
@@ -83,7 +98,7 @@ fn f3d_pipeline_aligns_detection_inspection_container_roles_and_decode() {
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert!(!result.source_fidelity().retained_records().is_empty());
     assert_valid(&result);
 }
@@ -130,7 +145,13 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
 fn geometry_pipeline_composes_topology_pcurves_freeform_and_procedural_families() {
     let fixtures = [
         (synthetic_geometry_smbh(), true),
-        (synthetic_geometry_with_rational_pcurve_smbh(), true),
+        (
+            with_plane_pcurve_offset_vertices(
+                synthetic_geometry_with_rational_pcurve_smbh(),
+                [-1.0, 2.0],
+            ),
+            true,
+        ),
         (synthetic_geometry_with_helix_curve_smbh(), false),
         (synthetic_cyl_spl_sur_smbh(), true),
         (synthetic_profile_first_sweep_smbh(), true),
@@ -142,20 +163,20 @@ fn geometry_pipeline_composes_topology_pcurves_freeform_and_procedural_families(
     let mut saw_procedural_surface = false;
     for (smbh, geometrically_consistent) in fixtures {
         let result = decode(f3d_with_smbh(&smbh));
-        saw_pcurve |= !result.ir().model.pcurves.is_empty();
-        saw_nurbs |= result.ir().model.curves.iter().any(|curve| {
+        saw_pcurve |= !result.ir().geometry.pcurves.is_empty();
+        saw_nurbs |= result.ir().geometry.curves.iter().any(|curve| {
             matches!(
                 curve.geometry,
                 cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
             )
-        }) || result.ir().model.surfaces.iter().any(|surface| {
+        }) || result.ir().geometry.surfaces.iter().any(|surface| {
             matches!(
                 surface.geometry,
                 cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
             )
         });
-        saw_procedural_curve |= !result.ir().model.procedural_curves.is_empty();
-        saw_procedural_surface |= !result.ir().model.procedural_surfaces.is_empty();
+        saw_procedural_curve |= !result.ir().geometry.procedural_curves.is_empty();
+        saw_procedural_surface |= !result.ir().geometry.procedural_surfaces.is_empty();
         if geometrically_consistent {
             assert_valid(&result);
         } else {
@@ -167,6 +188,9 @@ fn geometry_pipeline_composes_topology_pcurves_freeform_and_procedural_families(
 
 #[test]
 fn design_pipeline_correlates_protein_properties_history_sketches_and_configuration() {
+    use crate::test_support::configuration_table::{
+        property_target, root_record, string_cell, table_document, with_root_segment, ROOT_RECORD,
+    };
     let protein = decode(f3d_with_smbh_and_protein(
         &synthetic_geometry_with_history_smbh(),
     ));
@@ -177,14 +201,23 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     assert_valid(&protein);
 
     let name = "FusionAssetName[Active]/DesignConfigurationTable.integration.dsgcfg";
-    let payload = br#"{"configurations":{"wide":{"parameters":{"width":"25 mm"},"suppressed":["slot"]}},"active":"wide"}"#;
-    let configured = decode(f3d_with_configuration(
-        &synthetic_geometry_smbh(),
-        name,
-        payload,
+    let payload = serde_json::to_vec(&table_document(
+        "1",
+        &[("P", property_target("Part Number"))],
+        &[("wide", "Wide", vec![("P", string_cell("W-1"))])],
+        &["wide"],
+    ))
+    .unwrap();
+    let configured = decode(with_root_segment(
+        f3d_with_configuration(&synthetic_geometry_smbh(), name, &payload),
+        root_record(*b"256", ROOT_RECORD, "1", "wide"),
     ));
     assert_eq!(configured.ir().model.configurations.len(), 1);
     assert!(configured.ir().model.configurations[0].active);
+    assert_eq!(
+        configured.ir().model.configurations[0].properties["property:Part Number"],
+        "W-1"
+    );
     assert_valid(&configured);
 }
 
@@ -193,21 +226,21 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = decode(source);
     let mut edited = decoded.ir().clone();
-    let moved = edited.model.points[0].position().get();
-    edited.model.points[0].set_position(
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             2.5, moved.y, moved.z,
         ))
         .expect("a finite position is a point"),
     );
-    edited.model.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+    edited.geometry.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     let mut bytes = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut bytes)
         .expect("preserved F3D write");
     let round_trip = decode(bytes);
-    assert_eq!(round_trip.ir().model.points[0].position().get().x, 2.5);
+    assert_eq!(round_trip.ir().geometry.points[0].position().get().x, 2.5);
     assert_eq!(
-        round_trip.ir().model.faces[0].sense,
+        round_trip.ir().geometry.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert_valid(&round_trip);
@@ -228,9 +261,38 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
         Confidence::High
     );
     let round_trip = decode(bytes);
-    assert_eq!(round_trip.ir().model.bodies.len(), 1);
-    assert_eq!(round_trip.ir().model.faces.len(), 6);
+    assert_eq!(round_trip.ir().geometry.bodies.len(), 1);
+    assert_eq!(round_trip.ir().geometry.faces.len(), 6);
     assert_valid(&round_trip);
+}
+
+#[test]
+fn f3z_pipeline_merges_three_levels_of_occurrences() {
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let inner = f3d_without_brep(
+        "assembly-design",
+        "inner.f3d",
+        &[("component.f3d", XREF_ROLE)],
+    );
+    let middle = f3d_without_brep("assembly-design", "middle.f3d", &[("inner.f3d", XREF_ROLE)]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let merged = decode(f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("middle.f3d", middle.as_slice()),
+            ("inner.f3d", inner.as_slice()),
+            ("component.f3d", component.as_slice()),
+        ],
+    ));
+    let scope = format!("xref/role-{XREF_ROLE}/reference-0/occurrence-0/");
+    let expected = format!("f3d:{scope}{scope}{scope}");
+    assert_eq!(merged.ir().geometry.bodies.len(), 1);
+    assert!(merged.ir().geometry.bodies[0]
+        .id
+        .as_str()
+        .starts_with(&expected));
+    assert_valid(&merged);
 }
 
 #[test]
@@ -251,7 +313,7 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
             ("component.f3d", component.as_slice()),
         ],
     ));
-    assert!(merged.ir().model.bodies[0].id.as_str().contains(&format!(
+    assert!(merged.ir().geometry.bodies[0].id.as_str().contains(&format!(
         "xref/role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0/"
     )));
     assert_valid(&merged);
@@ -275,7 +337,7 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
 /// A geometry request stops a standalone geometry document before design
 /// intent. A document with no body source classifies itself by what design
 /// intent projects, and an F3Z archive merges its members into one document,
-/// so both decode in full. Each agrees with its full decode.
+/// so both decode their design. Each agrees with its full decode.
 #[test]
 fn geometry_depth_cuts_only_documents_that_agree_without_design_intent() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
@@ -307,19 +369,27 @@ fn geometry_depth_cuts_only_documents_that_agree_without_design_intent() {
                 },
             )
             .expect("geometry-depth decode");
-            (*name, result.ir().decode_depth())
+            (*name, result.report().depth())
         })
         .collect::<Vec<_>>();
     assert_eq!(
         delivered,
         [
             ("standalone", cadmpeg_core::decode::DecodeDepth::Geometry),
-            ("no body source", cadmpeg_core::decode::DecodeDepth::Full),
-            ("archive", cadmpeg_core::decode::DecodeDepth::Full),
+            ("no body source", cadmpeg_core::decode::DecodeDepth::Design),
+            ("archive", cadmpeg_core::decode::DecodeDepth::Design),
         ]
     );
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&F3dCodec, &inputs);
     assert_eq!(summary.cut, 1, "{summary:?}");
+}
+
+#[test]
+fn each_depth_records_the_scope_it_requests() {
+    cadmpeg_test_support::depth::assert_each_depth_records_its_scope(
+        &F3dCodec,
+        &f3d_with_smbh(&synthetic_geometry_smbh()),
+    );
 }
 
 #[test]
@@ -338,7 +408,7 @@ fn container_only_pipeline_retains_native_sections_without_semantic_projection()
     );
     assert!(result.report().container_only());
     assert!(!result.report().geometry_transferred());
-    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
     assert!(!result.source_fidelity().retained_records().is_empty());
     assert!(result.ir().native.namespace("f3d").is_some());
 }
@@ -358,8 +428,8 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
 
     assert!(drifted.report().geometry_transferred());
     assert_eq!(
-        drifted.ir().model.bodies.len(),
-        known.ir().model.bodies.len()
+        drifted.ir().geometry.bodies.len(),
+        known.ir().geometry.bodies.len()
     );
 
     let matched = drifted
@@ -543,12 +613,12 @@ fn the_patch_path_names_the_preserved_dialect() {
         "3-3-0-0",
     ));
     assert!(
-        !result.ir().model.points.is_empty(),
+        !result.ir().geometry.points.is_empty(),
         "the patch lane needs an editable point"
     );
     let mut edited = result.ir().clone();
-    let moved = edited.model.points[0].position().get();
-    edited.model.points[0].set_position(
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
@@ -649,3 +719,9 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
 }
 
 mod dimension_annotations;
+
+mod stale_region_certificate;
+
+mod move_face;
+
+mod form;

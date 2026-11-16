@@ -109,7 +109,10 @@ fn numerical_audit_midpoint_preserves_finite_large_origin() {
                 })
                 .unwrap(),
             );
-            assert!(super::midpoint_constraint(&[&line, &point]).is_some());
+            assert!(
+                super::midpoint_constraint(&[&line, &point], super::MidpointCarrier::Line)
+                    .is_some()
+            );
         }
     };
 }

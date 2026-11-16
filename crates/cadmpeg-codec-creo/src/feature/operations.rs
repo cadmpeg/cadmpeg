@@ -109,8 +109,6 @@ pub(crate) enum OperationName {
         bytes: Vec<u8>,
         /// Stored identifier keyword.
         keyword: IdKeyword,
-        /// Optional stored-name byte immediately preceding the family name.
-        prefix: Option<u8>,
     },
     /// Derived operation name with no stored display name.
     Derived,
@@ -137,13 +135,6 @@ impl OperationName {
     pub(crate) fn identifier_keyword(&self) -> Option<&str> {
         match self {
             Self::Stored { keyword, .. } => Some(keyword.as_str()),
-            Self::Derived => None,
-        }
-    }
-
-    pub(crate) fn stored_name_prefix(&self) -> Option<u8> {
-        match self {
-            Self::Stored { prefix, .. } => *prefix,
             Self::Derived => None,
         }
     }
@@ -316,8 +307,6 @@ pub(crate) struct FeatureOperation<R: RecipeForm = RecipeResolution> {
     pub(crate) depdb: Option<DepdbPrefix>,
     /// Byte offset of the operation name in the original stream.
     pub(crate) offset: usize,
-    /// Byte offset including the optional stored-name prefix.
-    pub(crate) state_offset: usize,
 }
 
 impl FeatureOperationState {
@@ -331,7 +320,6 @@ impl FeatureOperationState {
             display_state_conflict: self.display_state_conflict,
             depdb: self.depdb,
             offset: self.offset,
-            state_offset: self.state_offset,
         }
     }
 }
@@ -344,10 +332,6 @@ impl<R: RecipeForm> FeatureOperation<R> {
     #[cfg(test)]
     pub(crate) fn stored_name(&self) -> Option<String> {
         self.name.stored_name()
-    }
-
-    pub(crate) fn stored_name_prefix(&self) -> Option<u8> {
-        self.name.stored_name_prefix()
     }
 
     pub(crate) fn root_schema_class(&self) -> Option<SchemaClass> {
@@ -539,6 +523,49 @@ fn conflicting_recipe_features(bindings: &[(u32, FeatureRecipeBinding)]) -> BTre
     conflicting
 }
 
+/// Value ranges of `tm_sec`, `tm_min`, `tm_hour`, `tm_mday`, and `tm_mon`.
+const TIMESTAMP_FIELD_RANGES: [std::ops::RangeInclusive<u32>; 5] =
+    [0..=60, 0..=59, 0..=23, 1..=31, 0..=11];
+/// Compact `tm_year` occupies one or two bytes.
+const TIMESTAMP_YEAR_MAX_BYTES: usize = 2;
+
+/// Whether a complete compact `modif_time` compound
+/// `e2 <tm_sec> <tm_min> <tm_hour> <tm_mday> <tm_mon> <tm_year>` ends at `end`.
+fn timestamp_ends_at(payload: &[u8], end: usize) -> bool {
+    let shortest = 1 + TIMESTAMP_FIELD_RANGES.len() + 1;
+    (shortest..shortest + TIMESTAMP_YEAR_MAX_BYTES).any(|length| {
+        let Some(start) = end.checked_sub(length) else {
+            return false;
+        };
+        if payload.get(start) != Some(&0xe2) {
+            return false;
+        }
+        let mut cursor = start + 1;
+        for range in &TIMESTAMP_FIELD_RANGES {
+            match psb::complete_compact_int(payload, cursor) {
+                Some((value, next)) if range.contains(&value) => cursor = next,
+                _ => return false,
+            }
+        }
+        psb::complete_compact_int(payload, cursor).is_some_and(|(_, next)| next == end)
+    })
+}
+
+/// Start of an `item_name` that follows its compact `modif_time` compound.
+/// `family_start` is the first byte of the backward family-byte run; only the
+/// compact `tm_year` can join that run.
+fn item_name_after_timestamp(
+    payload: &[u8],
+    family_start: usize,
+    separator: usize,
+) -> Option<usize> {
+    let mut ends = (family_start..=separator)
+        .take(TIMESTAMP_YEAR_MAX_BYTES + 1)
+        .filter(|end| timestamp_ends_at(payload, *end));
+    let end = ends.next()?;
+    ends.next().is_none().then_some(end)
+}
+
 /// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
 /// procedural-recipe record from one feature-state namespace, in byte order.
 pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
@@ -573,22 +600,16 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
         while offset > 0 && family_byte(payload[offset - 1]) {
             offset -= 1;
         }
+        if let Some(name_start) = item_name_after_timestamp(payload, offset, separator) {
+            offset = name_start;
+        }
         while offset < separator && std::str::from_utf8(&payload[offset..separator]).is_err() {
             offset += 1;
         }
-        let state_offset = offset;
-        let stored_family = &payload[offset..separator];
-        let family = stored_family;
+        let family = &payload[offset..separator];
         if family.is_empty() || family.first() == Some(&b' ') || family.last() == Some(&b' ') {
             continue;
         }
-        let (stored_name_prefix, family) = match family {
-            [prefix @ (b'o' | b'x' | b'y' | b'z'), first, ..] if first.is_ascii_uppercase() => {
-                offset += 1;
-                (Some(*prefix), &family[1..])
-            }
-            _ => (None, family),
-        };
         let digits = &payload[separator + separator_bytes.len()..];
         let Some(end) = digits.iter().position(|byte| *byte == 0) else {
             continue;
@@ -627,7 +648,7 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
             })
         };
         let kind = String::from_utf8_lossy(family).into_owned();
-        let name_bytes = payload[state_offset..separator + separator_bytes.len() + end].to_vec();
+        let name_bytes = payload[offset..separator + separator_bytes.len() + end].to_vec();
         result.push(FeatureOperation {
             feature_id,
             kind: OperationKind::Stored(kind),
@@ -635,7 +656,6 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
                 bytes: name_bytes,
                 keyword: IdKeyword::from_bytes(&separator_bytes[1..separator_bytes.len() - 1])
                     .unwrap_or(IdKeyword::Id),
-                prefix: stored_name_prefix,
             },
             recipe,
             display_state_conflict: false,
@@ -644,7 +664,6 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
                 parent: binding.parent_feature_id,
             }),
             offset,
-            state_offset,
         });
     }
     for (feature_id, binding) in bound_recipes {
@@ -675,7 +694,6 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
                 parent: binding.parent_feature_id,
             }),
             offset: binding.offset,
-            state_offset: binding.offset,
         });
     }
     result.as_mut_slice().sort_by_key(|left| left.offset);
@@ -741,6 +759,7 @@ pub(crate) fn project_states(states: Vec<FeatureOperationState>) -> Vec<FeatureO
 #[cfg(test)]
 mod tests {
     mod current_operations;
+    mod item_names;
 
     use super::reference_names;
     use std::borrow::Cow;

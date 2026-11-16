@@ -10,6 +10,7 @@ use super::test_bytes::put_f64;
 use super::test_bytes::put_ref;
 use super::test_bytes::put_vec3;
 use super::test_bytes::record;
+use super::test_bytes::{record_offset, rewrite_cells};
 use super::test_streams::offset_surface_topology_partition_stream;
 use super::test_streams::topology_partition_stream;
 
@@ -484,7 +485,7 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
     put_ref(&mut surface, 21, 21);
     s.extend(surface);
 
-    let mut descriptor = record(126, 48);
+    let mut descriptor = record(126, 49);
     put_ref(&mut descriptor, 2, 20);
     put_ref(&mut descriptor, 6, 1);
     put_ref(&mut descriptor, 8, 1);
@@ -494,18 +495,17 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
     descriptor[19] = 5;
     descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
     descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
-    put_ref(&mut descriptor, 36, 30);
-    put_ref(&mut descriptor, 38, 31);
-    put_ref(&mut descriptor, 40, 32);
-    put_ref(&mut descriptor, 42, 33);
-    put_ref(&mut descriptor, 44, 125);
-    put_ref(&mut descriptor, 46, 21);
+    put_ref(&mut descriptor, 32, 3);
+    for (index, reference) in [22, 30, 31, 32, 33].into_iter().enumerate() {
+        put_ref(&mut descriptor, 34 + index * 3, reference);
+    }
     s.extend(descriptor);
 
     let mut data = record(125, 97 + 12 * 8);
     put_ref(&mut data, 2, 21);
     data[90] = b'+';
     data[91..95].copy_from_slice(&12u32.to_be_bytes());
+    put_ref(&mut data, 95, 22);
     for (index, value) in [
         0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.01, 0.0, 0.0, 0.01, 0.02, 0.0,
     ]
@@ -542,19 +542,21 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
     put_ref(&mut curve, 19, 40);
     put_ref(&mut curve, 21, 41);
     s.extend(curve);
-    let mut curve_descriptor = record(136, 27);
+    let mut curve_descriptor = record(136, 30);
     put_ref(&mut curve_descriptor, 2, 40);
     put_ref(&mut curve_descriptor, 4, 1);
     put_ref(&mut curve_descriptor, 8, 2);
     put_ref(&mut curve_descriptor, 10, 3);
     put_ref(&mut curve_descriptor, 14, 2);
     curve_descriptor[16] = 5;
-    put_ref(&mut curve_descriptor, 23, 42);
-    put_ref(&mut curve_descriptor, 25, 43);
+    for (index, reference) in [44, 42, 43].into_iter().enumerate() {
+        put_ref(&mut curve_descriptor, 21 + index * 3, reference);
+    }
     s.extend(curve_descriptor);
     let mut curve_data = record(135, 15 + 6 * 8);
     put_ref(&mut curve_data, 2, 41);
     curve_data[9..13].copy_from_slice(&6u32.to_be_bytes());
+    put_ref(&mut curve_data, 13, 44);
     for (index, value) in [0.0, 0.0, 0.0, 0.02, 0.0, 0.0].into_iter().enumerate() {
         put_f64(&mut curve_data, 15 + index * 8, value);
     }
@@ -621,7 +623,7 @@ pub(crate) fn extended_bspline_surface_stream() -> Vec<u8> {
 
     let xmt = encoded_xmt(payload_ref);
     let shift = xmt.len() - 2;
-    let first = encoded_xmt(40_020);
+    let first = encoded_xmt(40_009);
     let data_at = 95 + shift + first.len();
     let mut payload = vec![0u8; data_at + 12 * 8];
     payload[..2].copy_from_slice(&125u16.to_be_bytes());
@@ -668,7 +670,7 @@ pub(crate) fn extended_bspline_surface_stream() -> Vec<u8> {
 
 pub(crate) fn bspline_surface_replacement_partition_stream() -> Vec<u8> {
     let mut stream = bspline_partition_stream();
-    let mut descriptor = record(126, 48);
+    let mut descriptor = record(126, 49);
     put_ref(&mut descriptor, 2, 60);
     put_ref(&mut descriptor, 6, 1);
     put_ref(&mut descriptor, 8, 1);
@@ -678,18 +680,17 @@ pub(crate) fn bspline_surface_replacement_partition_stream() -> Vec<u8> {
     descriptor[19] = 5;
     descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
     descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
-    put_ref(&mut descriptor, 36, 30);
-    put_ref(&mut descriptor, 38, 31);
-    put_ref(&mut descriptor, 40, 32);
-    put_ref(&mut descriptor, 42, 33);
-    put_ref(&mut descriptor, 44, 125);
-    put_ref(&mut descriptor, 46, 61);
+    put_ref(&mut descriptor, 32, 3);
+    for (index, reference) in [62, 30, 31, 32, 33].into_iter().enumerate() {
+        put_ref(&mut descriptor, 34 + index * 3, reference);
+    }
     stream.extend(descriptor);
 
     let mut data = record(125, 97 + 12 * 8);
     put_ref(&mut data, 2, 61);
     data[90] = b'+';
     data[91..95].copy_from_slice(&12u32.to_be_bytes());
+    put_ref(&mut data, 95, 62);
     for (index, value) in [
         0.0, 0.0, 0.0, 0.0, 0.03, 0.0, 0.015, 0.0, 0.0, 0.015, 0.03, 0.0,
     ]
@@ -718,20 +719,22 @@ pub(crate) fn deltas_bspline_surface_wrapper_stream() -> Vec<u8> {
 
 pub(crate) fn bspline_curve_replacement_partition_stream() -> Vec<u8> {
     let mut stream = bspline_partition_stream();
-    let mut descriptor = record(136, 27);
+    let mut descriptor = record(136, 30);
     put_ref(&mut descriptor, 2, 70);
     put_ref(&mut descriptor, 4, 1);
     put_ref(&mut descriptor, 8, 2);
     put_ref(&mut descriptor, 10, 3);
     put_ref(&mut descriptor, 14, 2);
     descriptor[16] = 5;
-    put_ref(&mut descriptor, 23, 42);
-    put_ref(&mut descriptor, 25, 43);
+    for (index, reference) in [72, 42, 43].into_iter().enumerate() {
+        put_ref(&mut descriptor, 21 + index * 3, reference);
+    }
     stream.extend(descriptor);
 
     let mut data = record(135, 15 + 6 * 8);
     put_ref(&mut data, 2, 71);
     data[9..13].copy_from_slice(&6u32.to_be_bytes());
+    put_ref(&mut data, 13, 72);
     for (index, value) in [0.0, 0.0, 0.0, 0.02, 0.01, 0.0].into_iter().enumerate() {
         put_f64(&mut data, 15 + index * 8, value);
     }
@@ -868,65 +871,47 @@ pub(crate) fn forward_trimmed_curve_chain_stream() -> Vec<u8> {
     stream
 }
 
+/// A wide pointer that names no record.
+const WIDE_DANGLING: u32 = 40_000;
+
 pub(crate) fn topology_with_extended_edge_curve_reference() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let edge = stream
-        .windows(4)
-        .position(|window| window == [0, 16, 0, 8])
-        .expect("edge record");
-    stream[edge + 24..edge + 26].copy_from_slice(&(-9i16).to_be_bytes());
-    stream.splice(edge + 26..edge + 26, [0, 0]);
+    let curve = 40_009;
+    let sites = [
+        (record_offset(&stream, 30, 9) + 2, curve),
+        (record_offset(&stream, 17, 7) + 18, curve),
+        (record_offset(&stream, 16, 8) + 24, curve),
+    ];
+    rewrite_cells(&mut stream, &sites);
     stream
 }
 
 pub(crate) fn topology_with_extended_face_attribute_reference() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let face = stream
-        .windows(4)
-        .position(|window| window == [0, 14, 0, 4])
-        .expect("face record");
-    stream.splice(face + 8..face + 10, [0xff, 0xff, 0x00, 0x00]);
+    let face = record_offset(&stream, 14, 4);
+    rewrite_cells(&mut stream, &[(face + 8, WIDE_DANGLING)]);
     stream
 }
 
 pub(crate) fn topology_with_extended_edge_attribute_reference() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let edge = stream
-        .windows(4)
-        .position(|window| window == [0, 16, 0, 8])
-        .expect("edge record");
-    stream.splice(edge + 8..edge + 10, [0xff, 0xff, 0x00, 0x00]);
+    let edge = record_offset(&stream, 16, 8);
+    rewrite_cells(&mut stream, &[(edge + 8, WIDE_DANGLING)]);
     stream
 }
 
+/// The shell, loop, fin, vertex, and point identities and every reference to
+/// them in four-byte cells.
 pub(crate) fn topology_with_extended_internal_topology_references() -> Vec<u8> {
-    let mut stream = topology_partition_stream();
-    for (tag, xmt, offset) in [(13, 3, 8), (15, 5, 8), (17, 7, 4), (18, 10, 8), (29, 11, 8)] {
-        let marker = [0, tag, 0, xmt];
-        let record = stream
-            .windows(marker.len())
-            .position(|window| window == marker)
-            .expect("topology record");
-        stream.splice(
-            record + offset..record + offset + 2,
-            [0xff, 0xff, 0x00, 0x00],
-        );
-    }
-    stream
+    super::test_streams::widen_topology_xmts(&topology_partition_stream(), |xmt| {
+        matches!(xmt, 3 | 5 | 7 | 10 | 11)
+    })
 }
 
 pub(crate) fn topology_with_fully_extended_geometry_headers() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     for (tag, xmt) in [(50, 6), (30, 9)] {
-        let marker = [0, tag, 0, xmt];
-        let record = stream
-            .windows(marker.len())
-            .position(|window| window == marker)
-            .expect("geometry record");
-        for index in 0..5 {
-            let at = record + 8 + index * 4;
-            stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
-        }
+        fully_extend_common_header(&mut stream, [0, tag, 0, xmt]);
     }
     stream
 }
@@ -945,43 +930,17 @@ pub(crate) fn topology_with_escaped_geometry_envelopes() -> Vec<u8> {
 
 pub(crate) fn offset_surface_with_fully_extended_common_header() -> Vec<u8> {
     let mut stream = offset_surface_topology_partition_stream();
-    let record = stream
-        .windows(4)
-        .position(|window| window == [0, 60, 0, 12])
-        .expect("offset record");
-    for index in 0..5 {
-        let at = record + 8 + index * 4;
-        stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
-    }
+    fully_extend_common_header(&mut stream, [0, 60, 0, 12]);
     stream
 }
 
+/// Give the five common-header pointers after the identity of the record
+/// that starts with `marker` the four-byte cell of a wide pointer.
 pub(crate) fn fully_extend_common_header(stream: &mut Vec<u8>, marker: [u8; 4]) {
     let record = stream
         .windows(marker.len())
         .position(|window| window == marker)
         .expect("compact geometry record");
-    for index in 0..5 {
-        let at = record + 8 + index * 4;
-        stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
-    }
-}
-
-/// Append an XMT-encoded schema reference, wide references split into a
-/// negated remainder and a quotient.
-pub(crate) fn push_xmt(bytes: &mut Vec<u8>, reference: u32) {
-    if i16::try_from(reference).is_ok() {
-        bytes.extend_from_slice(
-            &(u16::try_from(reference).expect("fixture value fits u16")).to_be_bytes(),
-        );
-        return;
-    }
-    let quotient = reference / 32_767;
-    let remainder = reference % 32_767;
-    bytes.extend_from_slice(
-        &(-(i16::try_from(remainder).expect("fixture value fits i16"))).to_be_bytes(),
-    );
-    bytes.extend_from_slice(
-        &(u16::try_from(quotient).expect("fixture value fits u16")).to_be_bytes(),
-    );
+    let sites = [0, 1, 2, 3, 4].map(|index| (record + 8 + index * 2, WIDE_DANGLING));
+    rewrite_cells(stream, &sites);
 }

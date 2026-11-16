@@ -55,16 +55,16 @@ impl super::Builder<'_, '_, '_, '_> {
         }
         let mut annotation: PmiAnnotation = serde_json::from_value(serde_json::Value::Object(wire))
             .map_err(|error| format!("the annotation does not deserialize: {error}"))?;
-        let model = &self.ir.model;
-        let held: BTreeSet<&str> = model
+        let (model, geometry) = (&self.ir.model, &self.ir.geometry);
+        let held: BTreeSet<&str> = geometry
             .bodies
             .iter()
             .map(|record| record.id.as_str())
-            .chain(model.faces.iter().map(|record| record.id.as_str()))
-            .chain(model.edges.iter().map(|record| record.id.as_str()))
-            .chain(model.vertices.iter().map(|record| record.id.as_str()))
-            .chain(model.points.iter().map(|record| record.id.as_str()))
-            .chain(model.curves.iter().map(|record| record.id.as_str()))
+            .chain(geometry.faces.iter().map(|record| record.id.as_str()))
+            .chain(geometry.edges.iter().map(|record| record.id.as_str()))
+            .chain(geometry.vertices.iter().map(|record| record.id.as_str()))
+            .chain(geometry.points.iter().map(|record| record.id.as_str()))
+            .chain(geometry.curves.iter().map(|record| record.id.as_str()))
             .chain(
                 model
                     .product_definitions

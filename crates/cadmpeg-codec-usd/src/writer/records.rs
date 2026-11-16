@@ -6,6 +6,7 @@
 //! whose surface has no record, and an edge whose curve has no record, are
 //! counted and the B-rep is written with `brep:valid = false`.
 
+use cadmpeg_ir::math::portable::Portable;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
@@ -462,7 +463,7 @@ fn solved_surface(geometry: &SolvedSurfaceGeometry) -> Option<(SurfaceRecord, Ch
             }
             if radius <= 0.0 {
                 origin = [0, 1, 2].map(|k| origin[k] + APEX_OFFSET * axis[k]);
-                radius = APEX_OFFSET * angle.tan();
+                radius = APEX_OFFSET * angle.portable_tan();
                 chart.v.offset -= APEX_OFFSET;
             }
             Some((
@@ -731,7 +732,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
     fn procedural_surface(&mut self, construction: &str) -> Option<(SurfaceRecord, Chart)> {
         let procedural = self
             .ir
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.id.as_str() == construction)?;
@@ -810,13 +811,13 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             return Some(*index);
         }
         let edge = self.index.edges(id.as_str(), StandardIndex)?;
-        let vertices = [self.vertex(&edge.start)?, self.vertex(&edge.end)?];
+        let vertices = [self.vertex(edge.start()?)?, self.vertex(edge.end()?)?];
         let curve = edge.curve().and_then(|curve| self.curve(curve));
         let range = edge
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::finite_components)
             .map(|range| [range[0].get(), range[1].get()]);
-        let closed = edge.start == edge.end;
+        let closed = edge.start() == edge.end();
         let ends = curve.and_then(|(reference, map)| {
             let ends = match range {
                 Some([start, end]) => [map.apply(start), map.apply(end)],
@@ -893,10 +894,10 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                     let param = |at: usize| curve.params.get(at).copied().unwrap_or(1.0);
                     match curve.kind {
                         CurveKind::Line => z,
-                        CurveKind::Circle => y.atan2(x),
-                        CurveKind::Ellipse => (y / param(1)).atan2(x / param(0)),
+                        CurveKind::Circle => y.portable_atan2(x),
+                        CurveKind::Ellipse => (y / param(1)).portable_atan2(x / param(0)),
                         CurveKind::Parabola => y / (2.0 * param(0)),
-                        CurveKind::Hyperbola => (y / param(1)).asinh(),
+                        CurveKind::Hyperbola => (y / param(1)).portable_asinh(),
                     }
                 };
                 let period = matches!(curve.kind, CurveKind::Circle | CurveKind::Ellipse)
@@ -1185,7 +1186,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             }
             SurfaceKind::Cone => {
                 let [radius, angle] = [record.params[0], record.params[1]];
-                (radius + uv[1] * angle.tan()).abs() <= POLE_TOLERANCE * radius.max(1.0)
+                (radius + uv[1] * angle.portable_tan()).abs() <= POLE_TOLERANCE * radius.max(1.0)
             }
             _ => false,
         }
@@ -1249,7 +1250,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         }
         let mut lengths = vec![0.0];
         for pair in points.windows(2) {
-            let step = (pair[1][0] - pair[0][0]).hypot(pair[1][1] - pair[0][1]);
+            let step = (pair[1][0] - pair[0][0]).portable_hypot(pair[1][1] - pair[0][1]);
             lengths.push(lengths.last().copied().unwrap_or_default() + step);
         }
         let total = lengths.last().copied().unwrap_or_default();
@@ -1306,7 +1307,7 @@ fn analytic_pcurve(
     b: [f64; 2],
     range: [f64; 2],
 ) -> Option<AnalyticPcurve> {
-    let (length_a, length_b) = (a[0].hypot(a[1]), b[0].hypot(b[1]));
+    let (length_a, length_b) = (a[0].portable_hypot(a[1]), b[0].portable_hypot(b[1]));
     if !(length_a > 0.0 && length_b > 0.0) {
         return None;
     }
@@ -1351,21 +1352,23 @@ pub(super) fn export<'ir>(
     meshes_wanted: bool,
 ) -> Option<Exported> {
     let mut exporter = Exporter::new(ir, index, tessellator, meshes_wanted);
-    for region_id in &body.regions {
-        let Some(region) = index.regions(region_id.as_str(), StandardIndex) else {
-            continue;
-        };
+    for region in index.ir().geometry.body_regions(&body.id) {
         let mut region_shells = Vec::new();
         for shell_id in &region.shells {
             let Some(shell) = index.shells(shell_id.as_str(), StandardIndex) else {
                 continue;
             };
-            if shell.faces().is_empty() {
+            let shell_faces = index
+                .ir()
+                .geometry
+                .shell_faces(&shell.id)
+                .collect::<Vec<_>>();
+            if shell_faces.is_empty() {
                 continue;
             }
             let start = exporter.brep.faces.len();
-            for face in shell.faces() {
-                exporter.face(face);
+            for face in shell_faces {
+                exporter.face(&face.id);
             }
             let faces: Vec<usize> = (start..exporter.brep.faces.len()).collect();
             if faces.is_empty() {

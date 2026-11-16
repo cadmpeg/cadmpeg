@@ -119,6 +119,12 @@ pub(crate) enum StepLossCode {
     PmiAngleUnitUnresolved,
     /// A datum system has inconsistent precedence compartments.
     PmiDatumSystemInvalid,
+    /// A tolerance-zone constraint has no complete semantic interpretation.
+    PmiZoneUnresolved,
+    /// A dimensional modifier has no complete semantic value.
+    PmiDimensionModifierUnresolved,
+    /// Dimensional limit measures do not form one lower and one upper limit.
+    DimensionalLimitsOmitted,
     /// Independent styled items assign conflicting scalar colors.
     ConflictingScalarColors,
     /// A surface style usage has an invalid `surface_side` enumeration value.
@@ -155,6 +161,8 @@ pub(crate) enum StepLossCode {
     TessellationPlacementAmbiguous,
     /// A geometric validation measure unit scale did not resolve.
     ValidationMeasureUnitUnresolved,
+    /// A geometric validation item states no quantity that a declared measure carries.
+    ValidationItemUnsupported,
     /// The IR document has bodies but no exportable solids.
     NoExportableSolids,
     /// A layer item has no writable STEP carrier.
@@ -270,6 +278,8 @@ pub(crate) enum StepLossCode {
     OccurrenceMetadataOmitted,
     /// PMI annotations were not written.
     PmiAnnotationNotWritten,
+    /// An all-around scope has fewer than two writable geometric components.
+    PmiAllAroundComponentsUnresolved,
     /// Source-object associations were not represented.
     SourceAssociationOmitted,
     /// Uninterpreted passthrough records were not represented.
@@ -361,6 +371,8 @@ pub(crate) enum StepLossCode {
     EdgeStartVertexMissing,
     /// An edge was omitted because its end vertex is missing.
     EdgeEndVertexMissing,
+    /// An edge was omitted because it has no vertex.
+    EdgeNoVertex,
     /// An anchor or REFERENCE expansion passed its value-node limit; the
     /// binding or instance remains source-only.
     ParseExpansionBounded,
@@ -433,6 +445,9 @@ impl StepLossCode {
         Self::PmiLengthUnitUnresolved,
         Self::PmiAngleUnitUnresolved,
         Self::PmiDatumSystemInvalid,
+        Self::PmiZoneUnresolved,
+        Self::PmiDimensionModifierUnresolved,
+        Self::DimensionalLimitsOmitted,
         Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
         Self::SurfaceTransparencyConflict,
@@ -451,6 +466,7 @@ impl StepLossCode {
         Self::TessellationPlacementUnresolved,
         Self::TessellationPlacementAmbiguous,
         Self::ValidationMeasureUnitUnresolved,
+        Self::ValidationItemUnsupported,
         Self::NoExportableSolids,
         Self::LayerItemWithoutCarrier,
         Self::AssemblyGraphInvalid,
@@ -508,6 +524,7 @@ impl StepLossCode {
         Self::OccurrenceNoWritableProduct,
         Self::OccurrenceMetadataOmitted,
         Self::PmiAnnotationNotWritten,
+        Self::PmiAllAroundComponentsUnresolved,
         Self::SourceAssociationOmitted,
         Self::PassthroughRecordOmitted,
         Self::DisplayColorUnstyled,
@@ -552,6 +569,7 @@ impl StepLossCode {
         Self::EdgeRecordMissing,
         Self::EdgeStartVertexMissing,
         Self::EdgeEndVertexMissing,
+        Self::EdgeNoVertex,
         Self::ParseExpansionBounded,
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
@@ -616,6 +634,9 @@ impl StepLossCode {
             Self::PmiLengthUnitUnresolved => "pmi.length-unit-unresolved",
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
             Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
+            Self::PmiZoneUnresolved => "pmi.zone-unresolved",
+            Self::PmiDimensionModifierUnresolved => "pmi.dimension-modifier-unresolved",
+            Self::DimensionalLimitsOmitted => "pmi.dimensional-limits-omitted",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
             Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
@@ -638,6 +659,7 @@ impl StepLossCode {
             Self::TessellationPlacementUnresolved => "tessellation.placement-unresolved",
             Self::TessellationPlacementAmbiguous => "tessellation.placement-ambiguous",
             Self::ValidationMeasureUnitUnresolved => "validation.measure-unit-unresolved",
+            Self::ValidationItemUnsupported => "validation.item-unsupported",
             Self::NoExportableSolids => "export.no-exportable-solids",
             Self::LayerItemWithoutCarrier => "layer.item-without-carrier",
             Self::AssemblyGraphInvalid => "assembly.graph-invalid",
@@ -703,6 +725,7 @@ impl StepLossCode {
             Self::OccurrenceNoWritableProduct => "occurrence.no-writable-product",
             Self::OccurrenceMetadataOmitted => "occurrence.metadata-omitted",
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
+            Self::PmiAllAroundComponentsUnresolved => "pmi.all-around-components-unresolved",
             Self::SourceAssociationOmitted => "source.association-omitted",
             Self::PassthroughRecordOmitted => "native.passthrough-record-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
@@ -749,6 +772,7 @@ impl StepLossCode {
             Self::EdgeRecordMissing => "topology.edge-record-missing",
             Self::EdgeStartVertexMissing => "topology.edge-start-vertex-missing",
             Self::EdgeEndVertexMissing => "topology.edge-end-vertex-missing",
+            Self::EdgeNoVertex => "topology.edge-no-vertex",
             Self::ParseExpansionBounded => "parse.expansion-bounded",
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
@@ -862,7 +886,8 @@ impl StepLossCode {
             | Self::ProductNonPartKind
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceNoWritableProduct
-            | Self::OccurrenceMetadataOmitted => LossTaxonomy::MetadataNotTransferred,
+            | Self::OccurrenceMetadataOmitted
+            | Self::ValidationItemUnsupported => LossTaxonomy::MetadataNotTransferred,
             Self::AttributeStringInvalid
             | Self::LayerItemWithoutCarrier
             | Self::HiddenBodyVisibilityUnsupported
@@ -934,6 +959,7 @@ impl StepLossCode {
             | Self::EdgeRecordMissing
             | Self::EdgeStartVertexMissing
             | Self::EdgeEndVertexMissing
+            | Self::EdgeNoVertex
             | Self::NonManifoldEdgeSplit => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
@@ -987,7 +1013,11 @@ impl StepLossCode {
             }
             Self::SemanticAnnotationOmitted
             | Self::PmiAnnotationNotWritten
-            | Self::PmiDatumSystemInvalid => LossTaxonomy::PmiOmitted,
+            | Self::PmiAllAroundComponentsUnresolved
+            | Self::PmiDatumSystemInvalid
+            | Self::PmiZoneUnresolved
+            | Self::PmiDimensionModifierUnresolved
+            | Self::DimensionalLimitsOmitted => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
@@ -1075,6 +1105,9 @@ mod tests {
                 "pmi.length-unit-unresolved",
                 "pmi.angle-unit-unresolved",
                 "pmi.datum-system-invalid",
+                "pmi.zone-unresolved",
+                "pmi.dimension-modifier-unresolved",
+                "pmi.dimensional-limits-omitted",
                 "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",
                 "presentation.surface-transparency-conflict",
@@ -1093,6 +1126,7 @@ mod tests {
                 "tessellation.placement-unresolved",
                 "tessellation.placement-ambiguous",
                 "validation.measure-unit-unresolved",
+                "validation.item-unsupported",
                 "export.no-exportable-solids",
                 "layer.item-without-carrier",
                 "assembly.graph-invalid",
@@ -1150,6 +1184,7 @@ mod tests {
                 "occurrence.no-writable-product",
                 "occurrence.metadata-omitted",
                 "pmi.annotation-not-written",
+                "pmi.all-around-components-unresolved",
                 "source.association-omitted",
                 "native.passthrough-record-omitted",
                 "appearance.display-color-unstyled",
@@ -1194,6 +1229,7 @@ mod tests {
                 "topology.edge-record-missing",
                 "topology.edge-start-vertex-missing",
                 "topology.edge-end-vertex-missing",
+                "topology.edge-no-vertex",
                 "parse.expansion-bounded",
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",

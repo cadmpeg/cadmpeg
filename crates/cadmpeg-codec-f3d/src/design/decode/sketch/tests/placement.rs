@@ -232,6 +232,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
                 .expect("valid entity ID"),
 
             visibility: None,
+            display_name: None,
 
             class_tag: crate::records::references::DesignClassTag::try_from("293".to_owned())
                 .unwrap(),
@@ -247,6 +248,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         id: "f3d:native:sketch-point#0".into(),
         record_index: 20,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 141,
@@ -864,6 +866,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         &bytes,
         &meta,
         "Design/BulkStream.dat",
+        &mut Vec::new(),
     )
     .expect("primary NURBS frame with a nested subtype header");
     let [curve] = curves.as_slice() else {
@@ -940,6 +943,7 @@ fn sketch_graph_point(record_index: u32) -> SketchPoint {
         id: format!("f3d:native:sketch-point#{record_index}"),
         record_index,
         owner_reference: None,
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: u64::from(record_index),
         coordinate_offset: 141,
@@ -959,6 +963,122 @@ fn sketch_graph_point(record_index: u32) -> SketchPoint {
 }
 
 #[test]
+fn sketch_member_run_counts_base_point_and_stops_at_count() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"282");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 41]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    for value in [1130u32, 1131, 1179] {
+        bytes.push(1);
+        bytes.extend_from_slice(&value.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&[1, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let values = |bytes: &[u8]| {
+        tested_parse_sketch_member_run(bytes, 0, 100)
+            .into_iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(values(&bytes), vec![1130, 1131, 1179]);
+    bytes[52..56].copy_from_slice(&2u32.to_le_bytes());
+    bytes.truncate(78);
+    bytes.extend_from_slice(&[1, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(values(&bytes), vec![1130, 1131]);
+    bytes[52..56].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(values(&bytes), Vec::<u32>::new());
+}
+
+fn push_typed_member_reference(bytes: &mut Vec<u8>, target: u32, guid: &str) {
+    bytes.push(1);
+    bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+    bytes.extend_from_slice(&36u32.to_le_bytes());
+    bytes.extend_from_slice(guid.as_bytes());
+    bytes.extend_from_slice(&[0, 0]);
+}
+
+/// A typed member-run record for sketch container 100 with `name`.
+fn typed_member_run_record(name: &str, members: &[u32]) -> Vec<u8> {
+    const HEAD: &str = "F47A46FB-DA27-4AFA-8A72-1B38FA596E23";
+    const POINT: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"306");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    push_typed_member_reference(&mut bytes, 316, HEAD);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1]);
+    let units: Vec<u16> = name.encode_utf16().collect();
+    bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+    for unit in units {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes.push(0);
+    bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+    for member in members {
+        push_typed_member_reference(&mut bytes, *member, POINT);
+    }
+    bytes
+}
+
+#[test]
+fn typed_legacy_sketch_pair_counts_members_after_the_sketch_name() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"305");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.resize(40, 0);
+    let paired_at = bytes.len();
+    bytes.extend_from_slice(&typed_member_run_record(
+        "Reconstructed-Sketch1",
+        &[317, 319],
+    ));
+    let members =
+        tested_parse_legacy_sketch_member_run(&bytes, 0, 100).expect("named typed member run");
+    assert_eq!(
+        members.iter().map(|row| row.value).collect::<Vec<_>>(),
+        [317, 319]
+    );
+    let first = paired_at + 81 + 2 * "Reconstructed-Sketch1".len() + 4;
+    assert_eq!(members[0].offset, u64_from_index(first + 1));
+}
+
+#[test]
+fn typed_sketch_member_run_follows_the_name_and_counts_typed_references() {
+    let values = |bytes: &[u8]| {
+        tested_parse_sketch_member_run(bytes, 0, 100)
+            .into_iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        values(&typed_member_run_record("", &[317, 319])),
+        [317, 319]
+    );
+    let named = typed_member_run_record("Reconstructed-Sketch1", &[317, 319, 321]);
+    assert_eq!(values(&named), [317, 319, 321]);
+    let located = tested_parse_sketch_member_run(&named, 0, 100);
+    let first = 81 + 2 * "Reconstructed-Sketch1".len() + 4;
+    assert_eq!(located[0].offset, u64_from_index(first + 1));
+    assert_eq!(located[1].offset, u64_from_index(first + 51 + 1));
+    // The container suffix must equal the record index of the paired record.
+    assert_eq!(tested_parse_sketch_member_run(&named, 0, 101), vec![]);
+    // A run that overruns the stream names no members.
+    let mut short = named.clone();
+    short.truncate(short.len() - 1);
+    assert_eq!(values(&short), Vec::<u32>::new());
+    // A name followed by a nonzero byte is not this form.
+    let mut broken = named;
+    let terminator = 80 + 2 * "Reconstructed-Sketch1".len();
+    broken[terminator] = 1;
+    assert_eq!(values(&broken), Vec::<u32>::new());
+}
+
+#[test]
 fn sketch_member_run_backfills_relation_free_owners() {
     let mut bytes = vec![0u8; 40];
     let paired_at = bytes.len();
@@ -966,7 +1086,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
     bytes.extend_from_slice(b"282");
     bytes.extend_from_slice(&100u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 41]);
-    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&3u32.to_le_bytes());
     let mut member_offsets = Vec::new();
     member_offsets.push(u64_from_index(bytes.len() + 1));
     bytes.push(1);
@@ -1120,8 +1240,8 @@ fn compact_planar_line_admits_a_typed_trailing_reference() {
     assert!(truncated.is_none());
 }
 
-/// A compact planar line's z component is zero when it is at most one
-/// floating-point epsilon of the same vector's largest planar coordinate,
+/// A compact planar line's z component is zero when it is at most 1024
+/// floating-point epsilons of the same vector's largest planar coordinate,
 /// floored at 1 cm; a larger z keeps the line rejected.
 #[test]
 fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
@@ -1133,13 +1253,18 @@ fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
         0.5,
         f64::EPSILON
     ));
+    assert!(crate::design::decode::sketch::planar_z_is_zero(
+        0.0,
+        0.5,
+        1024.0 * f64::EPSILON
+    ));
     assert!(!crate::design::decode::sketch::planar_z_is_zero(
         0.0,
         0.5,
-        2.0 * f64::EPSILON
+        2048.0 * f64::EPSILON
     ));
     assert!(!crate::design::decode::sketch::planar_z_is_zero(
-        100.0, 0.0, 1.0e-12
+        100.0, 0.0, 1.0e-9
     ));
 
     let line = |z: f64| {
@@ -1215,6 +1340,7 @@ fn member_run_test_scope(
             kind_offset: byte_offset + 110,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
@@ -1225,15 +1351,17 @@ fn member_run_test_scope(
                 "reference_members",
             )
             .unwrap(),
-            payload: DesignFeatureKind::Skizze.try_into().unwrap(),
+            payload: DesignFeatureKind::Sketch.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_members: None,
             paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
             paired_byte_offset: byte_offset + 200,
         }
         .with_fixture_layout(),
     )
     .unwrap();
-    if let (Some(entity_id), DesignScopePayloadMut::Skizze(slot)) =
+    scope.source_kind = Some("Skizze".to_owned());
+    if let (Some(entity_id), DesignScopePayloadMut::Sketch(slot)) =
         (bound_entity, scope.payload_mut())
     {
         *slot = Some(DesignSketchEntityBinding {

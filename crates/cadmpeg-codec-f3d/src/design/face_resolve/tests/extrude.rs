@@ -77,6 +77,7 @@ fn start_binder_fixture(
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     }];
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#start-sketch").unwrap(),
@@ -273,6 +274,7 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
         id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
@@ -285,6 +287,7 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let faces = [
         face("coincident", "surface-coincident"),
@@ -420,6 +423,7 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
         id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
@@ -432,6 +436,7 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let faces = [
         face_with_surface(1, "surface-forward"),
@@ -480,6 +485,18 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
     assert_eq!(candidate(&[1, 3, 4]), Some(face(1)));
     assert!(candidate(&[1, 2, 3, 4]).is_none());
     assert!(candidate(&[3, 4]).is_none());
+
+    let mut operands = [target_plane_operand(&[1])];
+    operands[0].recipe_references = vec![super::reference(3, "selected", 201)];
+    let resolution = ExtrudeFaceResolution {
+        faces: &faces,
+        surfaces: &surfaces,
+        groups: &[],
+        operands: &mut operands,
+        linear_tolerance: TARGET_LINEAR_TOLERANCE,
+        angular_tolerance: TARGET_ANGULAR_TOLERANCE,
+    };
+    assert!(extrude_target_plane_candidate(&group, &resolution, origin, sweep_direction).is_none());
 }
 
 fn extrude_root_fixture() -> (DesignParameterScope, [DesignConstructionOperandGroup; 2]) {

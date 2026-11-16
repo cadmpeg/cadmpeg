@@ -26,10 +26,10 @@ use super::super::surfaces::brep::{
     NativeBrepCurveEvidence, NativeBrepTransferSummary,
 };
 use super::super::surfaces::cylinders::{
-    transfer_active_datum_cylinders, transfer_circular_sweep_cylinders,
-    transfer_constrained_slot_fillet_cylinders, transfer_cross_section_planes,
-    transfer_hole_cylinders, transfer_positional_cones, transfer_positional_cylinders,
-    transfer_rowless_round_cylinders, transfer_split_outline_cylinders,
+    report_unresolved_round_carriers, transfer_active_datum_cylinders,
+    transfer_circular_sweep_cylinders, transfer_constrained_slot_fillet_cylinders,
+    transfer_cross_section_planes, transfer_hole_cylinders, transfer_positional_cones,
+    transfer_positional_cylinders, transfer_split_outline_cylinders,
 };
 use super::super::surfaces::positional::{
     transfer_paired_envelope_spheres, transfer_positional_line_extrusion_planes,
@@ -198,8 +198,6 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let hole_cylinder_count = transfer_hole_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let constrained_slot_fillet_cylinder_count =
         transfer_constrained_slot_fillet_cylinders(ctx, scan, ir, annotations, source_carriers)?;
-    let rowless_round_cylinder_count =
-        transfer_rowless_round_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let support_apex_cone_branch_count = reconcile_support_apex_cone_parameter_branches(
         ctx,
         scan,
@@ -309,6 +307,24 @@ pub(super) fn transfer_and_record_scanned_geometry(
     retain_unresolved_surface_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let transferred_part_product =
         transfer_part_product(ctx, scan, ir, annotations, source_carriers)?;
+    report_unresolved_round_carriers(scan, ir, transfer_losses);
+    let root_occurrence = transferred_part_product
+        .then(|| {
+            crate::identity::compose_checked::<cadmpeg_ir::ids::OccurrenceId>(
+                &crate::identity::MODEL_OCCURRENCE,
+                "root",
+            )
+        })
+        .transpose()?;
+    super::super::assembly::transfer_assembly_members(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+        root_occurrence.as_ref(),
+    )?;
     let decoded_feature_skamp_count = scan
         .features
         .definitions
@@ -385,8 +401,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
     );
     let surface_coverage = surface_transfer_coverage(
         &scan.surfaces.rows,
-        &ir.model.surfaces,
-        &ir.model.procedural_surfaces,
+        &ir.geometry.surfaces,
+        &ir.geometry.procedural_surfaces,
     )?;
     let decoded_type24_round_edge_envelope_count = scan
         .surfaces
@@ -403,7 +419,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             record.type24_round_edge_envelope()
         })
         .count();
-    let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves)?;
+    let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.geometry.curves)?;
     {
         coverage.record(
             crate::coverage::UNIQUE_VISIBLE_SURFACE_ROW_COUNT,
@@ -670,10 +686,6 @@ pub(super) fn transfer_and_record_scanned_geometry(
             constrained_slot_fillet_cylinder_count,
         );
         coverage.record(
-            crate::coverage::TRANSFERRED_ROWLESS_ROUND_CYLINDER_COUNT,
-            rowless_round_cylinder_count,
-        );
-        coverage.record(
             crate::coverage::TRANSFERRED_FEATURE_REVOLUTION_BREP_COUNT,
             feature_revolution_brep_count,
         );
@@ -930,7 +942,7 @@ mod tests {
         ));
 
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -943,8 +955,9 @@ mod tests {
                 .expect("valid CircleCurve fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -956,6 +969,7 @@ mod tests {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
 
         let arena = DecodeArena::new();
@@ -976,7 +990,7 @@ mod tests {
         .expect("synthetic geometry transfer");
 
         let curve = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| {

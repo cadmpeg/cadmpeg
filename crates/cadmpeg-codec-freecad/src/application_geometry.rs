@@ -70,10 +70,10 @@ pub(crate) fn transfer(
                 ctx,
                 property,
                 entry.data(),
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                cadmpeg_core::decode::u64_from_index(ir.entity_count()),
                 admitted_entities,
             )?;
-            ir.model.points.extend(points);
+            ir.geometry.points.extend(points);
             transferred = true;
         }
     }
@@ -606,17 +606,66 @@ pub(crate) mod tests {
                 .map(|source| source.object_id.as_str()),
             Some("fcstd:native:object#Mesh")
         );
-        assert_eq!(result.ir().model.points.len(), 2);
+        assert_eq!(result.ir().geometry.points.len(), 2);
         assert_eq!(
-            result.ir().model.points[0].position().get(),
+            result.ir().geometry.points[0].position().get(),
             cadmpeg_ir::math::Point3::new(11.0, 22.0, 33.0)
         );
         assert_eq!(
-            result.ir().model.points[1].position().get(),
+            result.ir().geometry.points[1].position().get(),
             cadmpeg_ir::math::Point3::new(9.0, 18.0, 27.0)
         );
         assert!(result.report().geometry_transferred());
         assert!(result.report().losses.is_empty());
+    }
+
+    #[test]
+    fn authored_application_payloads_keep_mesh_and_point_cloud_geometry() {
+        const COORDINATE_TOLERANCE: f64 = 1.0e-12;
+        let bytes =
+            include_bytes!("../../../corpus/freecad_fcstd/fixtures/application_payloads.FCStd");
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let model = &decoded.ir().model;
+        let geometry = &decoded.ir().geometry;
+        assert_eq!(model.tessellations.len(), 1);
+        let mesh = &model.tessellations[0];
+        assert_eq!(
+            mesh.source_object.as_ref().unwrap().object_id.as_str(),
+            "fcstd:native:object#Mesh"
+        );
+        assert_eq!(mesh.triangle_count(), 2);
+        let vertices = mesh.vertices();
+        let triangles = mesh.triangles();
+        let expected = [
+            [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]],
+            [[10.0, 0.0, 0.0], [10.0, 10.0, 0.0], [0.0, 10.0, 0.0]],
+        ];
+        let same = |point: cadmpeg_ir::math::Point3, expected: [f64; 3]| {
+            [point.x, point.y, point.z]
+                .into_iter()
+                .zip(expected)
+                .all(|(a, b)| (a - b).abs() < COORDINATE_TOLERANCE)
+        };
+        for expected_triangle in expected {
+            assert!(triangles.iter().any(|triangle| {
+                (0..3).any(|start| {
+                    (0..3).all(|offset| {
+                        let index = usize::try_from(triangle[(start + offset) % 3]).unwrap();
+                        same(vertices[index].get(), expected_triangle[offset])
+                    })
+                })
+            }));
+        }
+        assert_eq!(geometry.points.len(), 3);
+        for expected in [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [-1.0, 0.0, 2.0]] {
+            assert!(geometry.points.iter().any(|point| {
+                point.source_object.as_ref().is_some_and(|source| {
+                    source.object_id.as_str() == "fcstd:native:object#PointCloud"
+                }) && same(point.position().get(), expected)
+            }));
+        }
     }
 
     #[test]
@@ -782,7 +831,7 @@ pub(crate) mod tests {
             )
             .expect("custom application property is retained");
         assert!(result.ir().model.tessellations.is_empty());
-        assert!(result.ir().model.points.is_empty());
+        assert!(result.ir().geometry.points.is_empty());
         let property = result
             .ir()
             .native

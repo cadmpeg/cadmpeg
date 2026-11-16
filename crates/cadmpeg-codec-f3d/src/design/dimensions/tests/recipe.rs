@@ -26,6 +26,7 @@ use cadmpeg_ir::sketches::SketchId;
 fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
@@ -265,6 +266,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             id: format!("{stream}:sketch-point#50"),
             record_index: 50,
             owner_reference: Some(100),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),
             byte_offset: 0,
@@ -286,6 +288,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:sketch-curve#51"),
         record_index: 51,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
@@ -294,6 +297,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         secondary_id: 0,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     };
     let annotation_point_entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#radial-extension-point").unwrap(),
@@ -384,6 +388,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:sketch-curve#{record_index}"),
         record_index,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
@@ -392,6 +397,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         secondary_id: 0,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     });
     let mut entities_with_refs = entities.clone();
     for (entity, curve) in entities_with_refs.iter_mut().zip(&curves) {
@@ -1210,3 +1216,5 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
 mod candidate_entities;
 
 mod extension_points;
+
+mod presentation_precedence;

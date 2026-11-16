@@ -44,11 +44,11 @@ fn decode_resolves_feature_topology_selections() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(base.ir().model.bodies.len(), 2);
-    let body = &base.ir().model.bodies[0].id.as_str();
-    let tool_body = &base.ir().model.bodies[1].id.as_str();
-    let face = &base.ir().model.faces[0].id.as_str();
-    let edge = &base.ir().model.edges[0].id.as_str();
+    assert_eq!(base.ir().geometry.bodies.len(), 2);
+    let body = &base.ir().geometry.bodies[0].id.as_str();
+    let tool_body = &base.ir().geometry.bodies[1].id.as_str();
+    let face = &base.ir().geometry.faces[0].id.as_str();
+    let edge = &base.ir().geometry.edges[0].id.as_str();
     let keywords = format!(
         r#"<Keywords>
             <Fillet Name="Round" Type="Fillet" id="1" Edges="{edge}"><Dimension Name="Radius">1mm</Dimension></Fillet>
@@ -65,10 +65,10 @@ fn decode_resolves_feature_topology_selections() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let edge_id = decoded.ir().model.edges[0].id.clone();
-    let face_id = decoded.ir().model.faces[0].id.clone();
-    let body_id = decoded.ir().model.bodies[0].id.clone();
-    let tool_body_id = decoded.ir().model.bodies[1].id.clone();
+    let edge_id = decoded.ir().geometry.edges[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
+    let body_id = decoded.ir().geometry.bodies[0].id.clone();
+    let tool_body_id = decoded.ir().geometry.bodies[1].id.clone();
 
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
@@ -76,14 +76,14 @@ fn decode_resolves_feature_topology_selections() {
             groups,
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: EdgeSelection::Resolved { edges, native }, ..
-        }] if edges == &[base.ir().model.edges[0].id.clone()] && native == edge)
+        }] if edges == &[base.ir().geometry.edges[0].id.clone()] && native == edge)
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
             faces: FaceSelection::Resolved { faces, native },
             ..
-        }) if faces == &[base.ir().model.faces[0].id.clone()] && native == face
+        }) if faces == &[base.ir().geometry.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
     decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
@@ -92,7 +92,7 @@ fn decode_resolves_feature_topology_selections() {
     }) if matches!(
         (operands.target(), operands.tools(),),
         (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },)
-            if bodies.as_slice() == [base.ir().model.bodies[0].id.clone()] && native == body
+            if bodies.as_slice() == [base.ir().geometry.bodies[0].id.clone()] && native == body
     )));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
@@ -108,15 +108,15 @@ fn decode_resolves_feature_topology_selections() {
                 }
             },
             ..
-        }) if profile_faces == &[base.ir().model.faces[0].id.clone()]
-            && faces == &[base.ir().model.faces[0].id.clone()] && native == face
+        }) if profile_faces == &[base.ir().geometry.faces[0].id.clone()]
+            && faces == &[base.ir().geometry.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
         decoded.ir().model.features[4].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
             ..
-        }) if faces == &[base.ir().model.faces[0].id.clone()] && native == face
+        }) if faces == &[base.ir().geometry.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
     decoded.ir().model.features[5].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
@@ -631,8 +631,8 @@ fn decode_projects_compact_solid_sweep_join_operation() {
 }
 
 #[test]
-fn decode_projects_compact_solid_sweep_general_curve_path() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
+fn decode_projects_compact_solid_sweep_general_curve_section() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -658,15 +658,16 @@ fn decode_projects_compact_solid_sweep_general_curve_path() {
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            path: Some(PathRef::Native(path)),
+            shape,
+            path: None,
             ..
-        }) if path.ends_with(&format!(":{path_offset}"))
+        }) if matches!(shape.referenced_profile(), Some(PlanarProfileRef::Native(section)) if section.ends_with(&format!(":{path_offset}")))
     ));
 }
 
 #[test]
-fn decode_does_not_globalize_configuration_local_sweep_path() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
+fn decode_does_not_globalize_configuration_local_sweep_section() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
 
     fn sweep_payload(has_path: bool) -> Vec<u8> {
         let mut payload = resolved_feature_classes_with_ids(&[("moSweep_c", "Sweep", 137)]);
@@ -701,25 +702,26 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
         .unwrap();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Sweep { path: None, .. })
+        FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path: None, .. }) if shape.section_is_unresolved()
     ));
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            path: Some(PathRef::Native(path)),
+            shape,
+            path: None,
             ..
-        }) if path.starts_with("sldprt:feature-input:general-curve-ref:")
+        }) if matches!(shape.referenced_profile(), Some(PlanarProfileRef::Native(section)) if section.starts_with("sldprt:feature-input:general-curve-ref:"))
     ));
     assert!(matches!(
-        decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
-        FeatureDefinition::Operation(FeatureOperation::Sweep { path: None, .. })
+        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
+        FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path: None, .. }) if shape.section_is_unresolved()
     ));
 }
 
 #[test]
 fn decode_projects_native_surface_sweep_class_without_localized_type() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, SweepMode};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, SweepMode};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -746,14 +748,14 @@ fn decode_projects_native_surface_sweep_class_without_localized_type() {
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
-            path: Some(PathRef::Native(ref path)),
+            path: None,
             ..
-        }) if matches!((shape.mode(),), (SweepMode::Surface {},) if path.ends_with(&format!(":{path_offset}")))));
+        }) if matches!(shape.mode(), SweepMode::Surface {}) && matches!(shape.referenced_profile(), Some(PlanarProfileRef::Native(section)) if section.ends_with(&format!(":{path_offset}")))));
 }
 
 #[test]
-fn decode_projects_surface_sweep_reference_curve_profile() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+fn decode_projects_surface_sweep_reference_curve_path() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -817,8 +819,9 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     assert!(matches!(
         sweep.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
+            path: Some(PathRef::Native(native)),
             ..
-        }) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Feature(feature)),) if feature == &helix.id)));
+        }) if shape.section_is_unresolved() && native.starts_with("sldprt:feature-input:component-reference-curve:")));
     assert!(sweep.dependencies.contains(&helix.id));
 
     let mut changed_profile = decoded.ir().clone();
@@ -831,14 +834,12 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         .evaluation;
     let mut updated_changed_profile_definition =
         updated_changed_profile_evaluation.definition().clone();
-    let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
+    let FeatureDefinition::Operation(FeatureOperation::Sweep { path, .. }) =
         &mut updated_changed_profile_definition
     else {
         unreachable!("typed surface sweep");
     };
-    shape.set_referenced_profile(cadmpeg_ir::features::PlanarProfileRef::Native(
-        "other".into(),
-    ));
+    *path = Some(PathRef::Native("other".into()));
     updated_changed_profile_evaluation.set_definition(updated_changed_profile_definition);
     let error = crate::test_support::plan_fixture_write_with_native_envelope(
         &changed_profile,
@@ -848,7 +849,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     .unwrap_err();
     assert!(error
         .to_string()
-        .contains("changes a reference-curve sweep profile"));
+        .contains("changes a reference-curve sweep path"));
 
     decoded
         .ir_mut()
@@ -876,14 +877,14 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Renamed surface sweep"))
             .map(|feature| feature.evaluation.definition()), Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape,
+            path: Some(PathRef::Native(native)),
             ..
-        })) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Feature(_)),))));
+        })) if native.starts_with("sldprt:feature-input:component-reference-curve:")));
 }
 
 #[test]
 fn decode_projects_generated_surface_sweep_profile_path() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -950,14 +951,9 @@ fn decode_projects_generated_surface_sweep_profile_path() {
     assert!(matches!(
         second.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
+            path: Some(PathRef::Native(native)),
             ..
-        }) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Generated {
-                curves,
-                native,
-            }),) if curves.len() == 1
-            && curves[0].feature == first.id
-            && curves[0].local_id == "7"
-            && native.ends_with(&wrapper.to_string()))));
+        }) if shape.section_is_unresolved() && native.ends_with(&wrapper.to_string())));
     assert!(second.dependencies.contains(&first.id));
 }
 

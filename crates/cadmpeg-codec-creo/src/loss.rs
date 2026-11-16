@@ -45,6 +45,10 @@ pub(crate) enum CreoLossCode {
     ContainerCensus,
     /// A byte-bounded compressed section has invalid or incomplete LZW data.
     CompressedSectionUnexpanded,
+    /// Geometry-looking bytes in a physical section have no visible-namespace ownership.
+    PhysicalGeometryOwnerUnresolved,
+    /// A positional ellipse flip is not a complete compact integer.
+    ReferenceConicPrefixUnresolved,
     /// No persistence-layout discriminant matched, so no layout-specific
     /// decode strategy was applied.
     SourceDialectUnverified,
@@ -70,6 +74,44 @@ pub(crate) enum CreoLossCode {
     LegacyStringContinuationUndefined,
     /// Legacy type-10 string element retains non-UTF-8 source bytes.
     LegacyStringEncodingRetained,
+    /// PMI datum or target associations remain unresolved.
+    PmiAssociationsUnresolved,
+    /// The neutral PMI attribute or annotation-element table is incomplete.
+    PmiTableIncomplete,
+    /// A PMI type, value, or owner join is unresolved.
+    PmiRecordUnresolved,
+    /// PMI modifiers or geometric-tolerance zone constraints remain unresolved.
+    PmiModifiersUnresolved,
+    /// A PMI length value uses the default millimetre assumption.
+    PmiLengthUnitAssumed,
+    /// A PMI attribute uses the model length unit or stored radians.
+    PmiAttributeUnitAssumed,
+    /// A composite tolerance segment uses its formatted magnitude.
+    PmiTextMagnitudeInferred,
+    /// Datum references with the same label use an inferred shared identity.
+    PmiDatumIdentityInferred,
+    /// A datum-reference label could not be decoded.
+    PmiDatumLabelUnresolved,
+    /// Conflicting same-owner attributes use the first stored value.
+    PmiFirstAttributeAssumed,
+    /// A datum-tag leader is interpreted as the target of a datum feature.
+    PmiDatumTargetInferred,
+    /// A tolerance's surface attachment selects its unique bounded face.
+    PmiToleranceTargetInferred,
+    /// A dimension's surface or edge references select its target faces.
+    PmiDimensionTargetInferred,
+    /// A surface link names a visible surface with faces and a datum surface.
+    PmiTargetNamespaceAmbiguous,
+    /// A datum tag's definition or geometric target remains unresolved.
+    PmiDatumTargetUnresolved,
+    /// A datum-tag prototype uses a class-qualified boundary candidate.
+    PmiDatumTagBoundaryAssumed,
+    /// Datum-tag identities use a candidate datum-definition row boundary.
+    PmiDatumDefinitionSlotAssumed,
+    /// A dimension kind or its quantity is inferred.
+    PmiDimensionKindInferred,
+    /// An angular dimension uses the default stored-radian assumption.
+    PmiAngularUnitAssumed,
     /// Primitive triangle-strip records carry disagreeing position representations.
     TriangleStripRepresentationConflict,
     /// General model B-rep transfer remains incomplete for later instances.
@@ -113,6 +155,9 @@ pub(crate) enum CreoLossCode {
     PcurveScalarFrameUnresolved,
     PcurveChartUnresolved,
     SampledPcurveCarrierUnresolved,
+    CylinderIntersectionPcurveUnresolved,
+    /// Model curves transferred from rows that only their sample count frames.
+    CountFramedCurveCarrierUnverified,
     HoleCircleIntervalUnresolved,
     HoleGeneratorUnresolved,
     SweepEnvelopeReplayUnresolved,
@@ -121,6 +166,10 @@ pub(crate) enum CreoLossCode {
     SampledPcurveEvaluationUnresolved,
     /// Unique `VisibGeom` curve-topology rows were not transferred as carriers.
     VisibGeomCurveUntransferred,
+    /// Cross-section curve parameter bodies retain unclassified bytes.
+    CrossSectionCurveBodyOpaque,
+    /// A generated round entry has no independently owned surface carrier.
+    RoundCarrierOwnerUnresolved,
     /// A legacy ASCII surface carrier refused a lane, so its geometry stays a
     /// structural record.
     LegacySurfaceCarrierUnresolved,
@@ -177,6 +226,10 @@ pub(crate) enum CreoLossCode {
     CarrierTorusParameterRetention,
     /// Remaining topology components lack complete face, curve, or vertex data.
     TopologyIncompleteComponents,
+    /// A face component whose faces have no visible surface row stays native.
+    TopologyUnownedComponent,
+    /// A visible face row with a null body and quilt owner stays native.
+    TopologyExplicitUnownedSurface,
     /// A half-edge orbit is past the stated topological vertex identifier width.
     TopologyVertexIdentifierUnstatable,
     /// Neutral feature, configuration, graph, material, and display data remain open.
@@ -209,10 +262,8 @@ pub(crate) enum CreoLossCode {
     SectionIncidenceNative,
     /// Active section dimension relations retain native operands.
     SectionRelationNative,
-    /// Dimension-driven section solver variables retain unresolved exact values.
-    SectionDimensionVariableUnresolved,
-    /// Section solver pre-solve estimates use an unresolved dimension sentinel.
-    SectionDimensionGuessUnresolved,
+    /// Full-width section variable lanes retain opaque scalar roles.
+    SectionVariableScalarOpaque,
     /// Declared section solver variable rows did not decode.
     SectionSolverVariableMissing,
     /// Section dimensions retain source-native value tokens.
@@ -238,6 +289,16 @@ pub(crate) enum CreoLossCode {
     /// TOC headers past the input length in visited header and row bytes
     /// were not read.
     TocScanCapped,
+    /// Component occurrences reference model files the decode does not open.
+    AssemblyComponentsExternal,
+    /// The component table is missing or ends before its declared rows.
+    AssemblyMemberTableIncomplete,
+    /// A component frame is not a proper rigid placement.
+    AssemblyPlacementUnresolved,
+    /// A component row names no model file the row grammar resolves.
+    AssemblyMemberReferenceUnresolved,
+    /// Component placement constraints are not decoded.
+    AssemblyConstraintsNotTransferred,
 }
 }
 
@@ -248,6 +309,8 @@ impl CreoLossCode {
         match self {
             Self::ContainerCensus => "container.census",
             Self::CompressedSectionUnexpanded => "container.compressed-section-unexpanded",
+            Self::PhysicalGeometryOwnerUnresolved => "container.physical-geometry-owner-unresolved",
+            Self::ReferenceConicPrefixUnresolved => "reference.conic-prefix-unresolved",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::LegacyRealValueUnresolved => "legacy.real-value-unresolved",
             Self::LegacyIntegerValueUnresolved => "legacy.integer-value-unresolved",
@@ -260,6 +323,25 @@ impl CreoLossCode {
             Self::LegacyStringArrayIncomplete => "legacy.string-array-incomplete",
             Self::LegacyStringContinuationUndefined => "legacy.string-continuation-undefined",
             Self::LegacyStringEncodingRetained => "legacy.string-encoding-retained",
+            Self::PmiAssociationsUnresolved => "pmi.associations-unresolved",
+            Self::PmiTableIncomplete => "pmi.table-incomplete",
+            Self::PmiRecordUnresolved => "pmi.record-unresolved",
+            Self::PmiModifiersUnresolved => "pmi.modifiers-unresolved",
+            Self::PmiLengthUnitAssumed => "pmi.length-unit-assumed",
+            Self::PmiAttributeUnitAssumed => "pmi.attribute-unit-assumed",
+            Self::PmiTextMagnitudeInferred => "pmi.text-magnitude-inferred",
+            Self::PmiDatumIdentityInferred => "pmi.datum-identity-inferred",
+            Self::PmiDatumLabelUnresolved => "pmi.datum-label-unresolved",
+            Self::PmiFirstAttributeAssumed => "pmi.first-attribute-assumed",
+            Self::PmiDatumTargetInferred => "pmi.datum-target-inferred",
+            Self::PmiToleranceTargetInferred => "pmi.tolerance-target-inferred",
+            Self::PmiDimensionTargetInferred => "pmi.dimension-target-inferred",
+            Self::PmiTargetNamespaceAmbiguous => "pmi.target-namespace-ambiguous",
+            Self::PmiDatumTargetUnresolved => "pmi.datum-target-unresolved",
+            Self::PmiDatumTagBoundaryAssumed => "pmi.datum-tag-boundary-assumed",
+            Self::PmiDatumDefinitionSlotAssumed => "pmi.datum-definition-slot-assumed",
+            Self::PmiDimensionKindInferred => "pmi.dimension-kind-inferred",
+            Self::PmiAngularUnitAssumed => "pmi.angular-unit-assumed",
             Self::TriangleStripRepresentationConflict => "geometry.triangle-strip-conflict",
             Self::BrepTransferIncomplete => "geometry.brep-incomplete",
             Self::BrepCompactFrameComponentUnresolved => {
@@ -298,12 +380,20 @@ impl CreoLossCode {
             Self::PcurveScalarFrameUnresolved => "geometry.pcurve-scalar-frame-unresolved",
             Self::PcurveChartUnresolved => "geometry.pcurve-chart-unresolved",
             Self::SampledPcurveCarrierUnresolved => "geometry.sampled-pcurve-carrier-unresolved",
+            Self::CylinderIntersectionPcurveUnresolved => {
+                "geometry.cylinder-intersection-pcurve-unresolved"
+            }
+            Self::CountFramedCurveCarrierUnverified => {
+                "geometry.count-framed-curve-carrier-unverified"
+            }
             Self::HoleCircleIntervalUnresolved => "geometry.hole-circle-interval-unresolved",
             Self::HoleGeneratorUnresolved => "geometry.hole-generator-unresolved",
             Self::SampledPcurveEvaluationUnresolved => {
                 "geometry.sampled-pcurve-evaluation-unresolved"
             }
             Self::VisibGeomCurveUntransferred => "geometry.visibgeom-curve-untransferred",
+            Self::CrossSectionCurveBodyOpaque => "curve.cross-section-body-opaque",
+            Self::RoundCarrierOwnerUnresolved => "geometry.round-carrier-owner-unresolved",
             Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
             Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
@@ -332,6 +422,8 @@ impl CreoLossCode {
             Self::CarrierSharedExtrusionGenerators => "carrier.shared-extrusion-generators",
             Self::CarrierTorusParameterRetention => "carrier.torus-parameter-retention",
             Self::TopologyIncompleteComponents => "topology.incomplete-components",
+            Self::TopologyUnownedComponent => "topology.unowned-component",
+            Self::TopologyExplicitUnownedSurface => "topology.explicit-unowned-surface",
             Self::TopologyVertexIdentifierUnstatable => "topology.vertex-identifier-unstatable",
             Self::FeatureNeutralSemanticsIncomplete => "feature.neutral-semantics-incomplete",
             Self::FeatureSweepIncomplete => "feature.sweep-incomplete",
@@ -348,8 +440,7 @@ impl CreoLossCode {
             Self::SectionRelationJoinMissing => "section.relation-join-missing",
             Self::SectionIncidenceNative => "section.incidence-native",
             Self::SectionRelationNative => "section.relation-native",
-            Self::SectionDimensionVariableUnresolved => "section.dimension-variable-unresolved",
-            Self::SectionDimensionGuessUnresolved => "section.dimension-guess-unresolved",
+            Self::SectionVariableScalarOpaque => "section.variable-scalar-opaque",
             Self::SectionSolverVariableMissing => "section.solver-variable-missing",
             Self::SectionDimensionValueUnresolved => "section.dimension-value-unresolved",
             Self::SectionDiameterValueUnresolved => "section.diameter-value-unresolved",
@@ -364,6 +455,11 @@ impl CreoLossCode {
             Self::SectionSignBranchesCapped => "section.sign-branches-capped",
             Self::CurveExpressionTextCapped => "curve-expression.text-capped",
             Self::TocScanCapped => "container.toc-scan-capped",
+            Self::AssemblyComponentsExternal => "assembly.components-external",
+            Self::AssemblyMemberTableIncomplete => "assembly.member-table-incomplete",
+            Self::AssemblyPlacementUnresolved => "assembly.placement-unresolved",
+            Self::AssemblyMemberReferenceUnresolved => "assembly.member-reference-unresolved",
+            Self::AssemblyConstraintsNotTransferred => "assembly.constraints-not-transferred",
         }
     }
 
@@ -395,16 +491,40 @@ impl CreoLossCode {
             | Self::CarrierExtrusionBoundaryCurves
             | Self::CarrierExtrusionSectionGenerators
             | Self::CarrierSharedExtrusionGenerators
-            | Self::CarrierTorusParameterRetention => Severity::Info,
+            | Self::CarrierTorusParameterRetention
+            | Self::AssemblyComponentsExternal => Severity::Info,
             Self::BrepTransferIncomplete
             | Self::BrepCompactFrameComponentUnresolved
             | Self::BrepCompactFrameBoundaryUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::TopologyIncompleteComponents
+            | Self::TopologyUnownedComponent
+            | Self::TopologyExplicitUnownedSurface
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => Severity::Blocking,
-            Self::SectionSplineUnresolved
+            Self::PmiAssociationsUnresolved
+            | Self::PmiTableIncomplete
+            | Self::PmiRecordUnresolved
+            | Self::PmiModifiersUnresolved
+            | Self::PmiLengthUnitAssumed
+            | Self::PmiAttributeUnitAssumed
+            | Self::PmiTextMagnitudeInferred
+            | Self::PmiDatumIdentityInferred
+            | Self::PmiDatumLabelUnresolved
+            | Self::PmiFirstAttributeAssumed
+            | Self::PmiDatumTargetInferred
+            | Self::PmiToleranceTargetInferred
+            | Self::PmiDimensionTargetInferred
+            | Self::PmiTargetNamespaceAmbiguous
+            | Self::PmiDatumTargetUnresolved
+            | Self::PmiDatumTagBoundaryAssumed
+            | Self::PmiDatumDefinitionSlotAssumed
+            | Self::PmiDimensionKindInferred
+            | Self::PmiAngularUnitAssumed
+            | Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
+            | Self::PhysicalGeometryOwnerUnresolved
+            | Self::ReferenceConicPrefixUnresolved
             | Self::SurfacePrototypeFieldRetained
             | Self::SweepEnvelopeReplayUnresolved
             | Self::PcurveSampleCoordinatesDropped
@@ -439,10 +559,14 @@ impl CreoLossCode {
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::CylinderIntersectionPcurveUnresolved
+            | Self::CountFramedCurveCarrierUnverified
             | Self::HoleCircleIntervalUnresolved
             | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
             | Self::VisibGeomCurveUntransferred
+            | Self::CrossSectionCurveBodyOpaque
+            | Self::RoundCarrierOwnerUnresolved
             | Self::LegacySurfaceCarrierUnresolved
             | Self::NurbsBoundaryCarrierUnresolved
             | Self::SectionSegmentGeometryUnresolved
@@ -461,8 +585,7 @@ impl CreoLossCode {
             | Self::SectionRelationJoinMissing
             | Self::SectionIncidenceNative
             | Self::SectionRelationNative
-            | Self::SectionDimensionVariableUnresolved
-            | Self::SectionDimensionGuessUnresolved
+            | Self::SectionVariableScalarOpaque
             | Self::SectionSolverVariableMissing
             | Self::SectionDimensionValueUnresolved
             | Self::SectionDiameterValueUnresolved
@@ -474,7 +597,11 @@ impl CreoLossCode {
             | Self::PlaneSupportVariantsCapped
             | Self::SectionSignBranchesCapped
             | Self::CurveExpressionTextCapped
-            | Self::TocScanCapped => Severity::Warning,
+            | Self::TocScanCapped
+            | Self::AssemblyMemberTableIncomplete
+            | Self::AssemblyPlacementUnresolved
+            | Self::AssemblyMemberReferenceUnresolved
+            | Self::AssemblyConstraintsNotTransferred => Severity::Warning,
         }
     }
 
@@ -504,8 +631,29 @@ impl CreoLossCode {
             | Self::CarrierExtrusionSectionGenerators
             | Self::CarrierSharedExtrusionGenerators
             | Self::CarrierTorusParameterRetention => LossTaxonomy::CarrierSummary,
+            Self::PmiAssociationsUnresolved
+            | Self::PmiTableIncomplete
+            | Self::PmiRecordUnresolved
+            | Self::PmiModifiersUnresolved
+            | Self::PmiDatumLabelUnresolved
+            | Self::PmiDatumTargetUnresolved
+            | Self::PmiTargetNamespaceAmbiguous => LossTaxonomy::PmiOmitted,
+            Self::PmiLengthUnitAssumed
+            | Self::PmiAttributeUnitAssumed
+            | Self::PmiTextMagnitudeInferred
+            | Self::PmiDatumIdentityInferred
+            | Self::PmiFirstAttributeAssumed
+            | Self::PmiDatumTargetInferred
+            | Self::PmiToleranceTargetInferred
+            | Self::PmiDimensionTargetInferred
+            | Self::PmiDatumTagBoundaryAssumed
+            | Self::PmiDatumDefinitionSlotAssumed
+            | Self::PmiDimensionKindInferred
+            | Self::PmiAngularUnitAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
+            | Self::PhysicalGeometryOwnerUnresolved
+            | Self::ReferenceConicPrefixUnresolved
             | Self::TocScanCapped
             | Self::LegacyIntegerValueUnresolved
             | Self::LegacyContinuationFormUndefined
@@ -533,10 +681,13 @@ impl CreoLossCode {
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::CylinderIntersectionPcurveUnresolved
             | Self::HoleCircleIntervalUnresolved
             | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
             | Self::VisibGeomCurveUntransferred
+            | Self::CrossSectionCurveBodyOpaque
+            | Self::RoundCarrierOwnerUnresolved
             | Self::LegacySurfaceCarrierUnresolved
             | Self::NurbsBoundaryCarrierUnresolved
             | Self::VisibGeomSurfaceAmbiguous
@@ -555,7 +706,10 @@ impl CreoLossCode {
             | Self::RevolutionCarrierUnresolved
             | Self::RevolutionBoundaryIntervalUnresolved
             | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
+            Self::CountFramedCurveCarrierUnverified => LossTaxonomy::CarrierAxisInferred,
             Self::TopologyIncompleteComponents
+            | Self::TopologyUnownedComponent
+            | Self::TopologyExplicitUnownedSurface
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => LossTaxonomy::TopologyNotTransferred,
             Self::FeatureNeutralSemanticsIncomplete
@@ -573,8 +727,7 @@ impl CreoLossCode {
             | Self::SectionRelationJoinMissing
             | Self::SectionIncidenceNative
             | Self::SectionRelationNative
-            | Self::SectionDimensionVariableUnresolved
-            | Self::SectionDimensionGuessUnresolved
+            | Self::SectionVariableScalarOpaque
             | Self::SectionSolverVariableMissing
             | Self::SectionDimensionValueUnresolved
             | Self::SectionDiameterValueUnresolved
@@ -585,6 +738,14 @@ impl CreoLossCode {
             | Self::CurveExpressionKindProhibited
             | Self::SectionSignBranchesCapped
             | Self::CurveExpressionTextCapped => LossTaxonomy::FeatureHistoryRetained,
+            Self::AssemblyComponentsExternal | Self::AssemblyMemberReferenceUnresolved => {
+                LossTaxonomy::AssemblyComponentsExternal
+            }
+            Self::AssemblyMemberTableIncomplete
+            | Self::AssemblyPlacementUnresolved
+            | Self::AssemblyConstraintsNotTransferred => {
+                LossTaxonomy::AssemblyPlacementsNotTransferred
+            }
         }
     }
 
@@ -627,6 +788,8 @@ mod tests {
             [
                 "container.census",
                 "container.compressed-section-unexpanded",
+                "container.physical-geometry-owner-unresolved",
+                "reference.conic-prefix-unresolved",
                 "source.dialect-unverified",
                 "legacy.real-value-unresolved",
                 "legacy.integer-value-unresolved",
@@ -639,6 +802,25 @@ mod tests {
                 "legacy.string-array-incomplete",
                 "legacy.string-continuation-undefined",
                 "legacy.string-encoding-retained",
+                "pmi.associations-unresolved",
+                "pmi.table-incomplete",
+                "pmi.record-unresolved",
+                "pmi.modifiers-unresolved",
+                "pmi.length-unit-assumed",
+                "pmi.attribute-unit-assumed",
+                "pmi.text-magnitude-inferred",
+                "pmi.datum-identity-inferred",
+                "pmi.datum-label-unresolved",
+                "pmi.first-attribute-assumed",
+                "pmi.datum-target-inferred",
+                "pmi.tolerance-target-inferred",
+                "pmi.dimension-target-inferred",
+                "pmi.target-namespace-ambiguous",
+                "pmi.datum-target-unresolved",
+                "pmi.datum-tag-boundary-assumed",
+                "pmi.datum-definition-slot-assumed",
+                "pmi.dimension-kind-inferred",
+                "pmi.angular-unit-assumed",
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
                 "geometry.brep-compact-frame-component-unresolved",
@@ -664,6 +846,8 @@ mod tests {
                 "geometry.pcurve-scalar-frame-unresolved",
                 "geometry.pcurve-chart-unresolved",
                 "geometry.sampled-pcurve-carrier-unresolved",
+                "geometry.cylinder-intersection-pcurve-unresolved",
+                "geometry.count-framed-curve-carrier-unverified",
                 "geometry.hole-circle-interval-unresolved",
                 "geometry.hole-generator-unresolved",
                 "geometry.sweep-envelope-replay-unresolved",
@@ -671,6 +855,8 @@ mod tests {
                 "geometry.angular-pcurve-pair-unresolved",
                 "geometry.sampled-pcurve-evaluation-unresolved",
                 "geometry.visibgeom-curve-untransferred",
+                "curve.cross-section-body-opaque",
+                "geometry.round-carrier-owner-unresolved",
                 "geometry.legacy-surface-carrier-unresolved",
                 "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",
@@ -699,6 +885,8 @@ mod tests {
                 "carrier.shared-extrusion-generators",
                 "carrier.torus-parameter-retention",
                 "topology.incomplete-components",
+                "topology.unowned-component",
+                "topology.explicit-unowned-surface",
                 "topology.vertex-identifier-unstatable",
                 "feature.neutral-semantics-incomplete",
                 "feature.sweep-incomplete",
@@ -715,8 +903,7 @@ mod tests {
                 "section.relation-join-missing",
                 "section.incidence-native",
                 "section.relation-native",
-                "section.dimension-variable-unresolved",
-                "section.dimension-guess-unresolved",
+                "section.variable-scalar-opaque",
                 "section.solver-variable-missing",
                 "section.dimension-value-unresolved",
                 "section.diameter-value-unresolved",
@@ -729,6 +916,11 @@ mod tests {
                 "section.sign-branches-capped",
                 "curve-expression.text-capped",
                 "container.toc-scan-capped",
+                "assembly.components-external",
+                "assembly.member-table-incomplete",
+                "assembly.placement-unresolved",
+                "assembly.member-reference-unresolved",
+                "assembly.constraints-not-transferred",
             ]
         );
     }

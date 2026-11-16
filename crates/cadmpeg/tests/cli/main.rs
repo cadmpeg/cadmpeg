@@ -13,6 +13,7 @@ mod diff;
 mod inspect;
 mod measure;
 mod refusals;
+#[cfg(feature = "rhino")]
 mod registry;
 mod reports;
 mod resource_refusals;

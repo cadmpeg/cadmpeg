@@ -27,9 +27,11 @@ mod drawings;
 pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
 mod geometry_payloads;
+mod history_bodies;
 mod identity_order;
 mod physics;
 mod pmi;
+mod point_clouds;
 mod presentation;
 mod products;
 mod referential_integrity;
@@ -55,8 +57,13 @@ use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
-use topology::graphs::{check_coedge_pairing, check_shell_connectivity, check_wire_topology};
-use topology::{check_references, check_tolerances, check_topology_tolerances};
+use topology::graphs::{
+    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing,
+    check_shell_connectivity, check_wire_topology,
+};
+use topology::{
+    check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,
+};
 
 fn record_finding(
     findings: &mut Vec<Finding>,
@@ -127,9 +134,16 @@ fn validate_model_with_index<'ir>(
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings)?;
+    check_child_list_reciprocity(ir, &mut findings);
+    check_closed_edges(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
-    check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
+    if ir.fragment {
+        record_finding(&mut findings, Check::FragmentSkipped, Severity::Info, None,
+            format_args!("skipped carrier_reachability: document-wide ownership requires a complete document"));
+    } else {
+        check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
+    }
     check_native_links(ids.native_view(), ids, &mut findings);
     check_parameter_domains(ctx, ir, &mut findings)?;
     check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
@@ -138,15 +152,18 @@ fn validate_model_with_index<'ir>(
     check_procedural_support_consistency(ctx, ids, &evaluations, &mut findings)?;
     evaluations.report(&mut findings);
     check_topology_tolerances(ir, &mut findings);
+    check_subdivision_schemes(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
     physics::check_physics(ir, &mut findings);
+    point_clouds::check_point_clouds(ir, &mut findings);
     check_presentation(ids, &mut findings);
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
+    history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),
@@ -516,6 +533,69 @@ mod tests {
     }
 
     #[test]
+    fn plane_trim_requires_an_existing_datum_plane_feature() {
+        let feature = |id: FeatureId,
+                       ordinal,
+                       dependencies: Vec<FeatureId>,
+                       definition: FeatureDefinition| Feature {
+            product_definition: None,
+            id,
+            ordinal,
+            name: None,
+            suppressed: Some(false),
+            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            native_ref: None,
+        };
+        let plane = FeatureId::mint("test:model:feature#a-plane").expect("identity grammar");
+        let other = FeatureId::mint("test:model:feature#b-other").expect("identity grammar");
+        let trim = FeatureId::mint("test:model:feature#c-trim").expect("identity grammar");
+        for (tool, admitted) in [(plane.clone(), true), (other.clone(), false)] {
+            let mut ir = CadIr::empty();
+            ir.model.features = vec![
+                feature(
+                    plane.clone(),
+                    0,
+                    Vec::new(),
+                    FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+                        plane: PrincipalPlane::Right,
+                    }),
+                ),
+                feature(
+                    other.clone(),
+                    1,
+                    Vec::new(),
+                    FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                        targets: BodySelection::Unresolved,
+                        tool: SplitBodyTool::Faces(FaceSelection::Unresolved),
+                    }),
+                ),
+                feature(
+                    trim.clone(),
+                    2,
+                    vec![plane.clone(), other.clone()],
+                    FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane {
+                        targets: BodySelection::Unresolved,
+                        plane: tool,
+                        keep: crate::features::BodyTrimSide::Reverse,
+                    }),
+                ),
+            ];
+            let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+            assert_eq!(
+                report.findings.is_empty(),
+                admitted,
+                "{:?}",
+                report.findings
+            );
+        }
+    }
+
+    #[test]
     fn split_body_tool_wire_forms_round_trip() {
         let plane = FeatureId::mint("test:model:feature#plane").expect("identity grammar");
         for tool in [
@@ -557,7 +637,7 @@ mod caller_policy_tests {
                 validate_neutral_with_source_fidelity_for_decode(
                     &ctx,
                     &ir,
-                    &SourceFidelity::default(),
+                    &SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(&[])),
                     Vec::new(),
                 )
             } else {

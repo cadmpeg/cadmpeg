@@ -48,7 +48,11 @@ pub(super) fn termination(
                         .as_ref()?;
                     let (plane, native) =
                         target_plane(plane.origin, plane.u_axis, plane.v_axis, plane.id())?;
-                    Some(LinearTermination::ToPlane { plane, native })
+                    Some(LinearTermination::ToPlane {
+                        plane,
+                        native,
+                        source: None,
+                    })
                 }
                 (0, face, 0) if face != 0 => {
                     let record = slot_property(source, 14, index)?;

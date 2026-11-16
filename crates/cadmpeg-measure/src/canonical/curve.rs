@@ -230,6 +230,51 @@ impl<'ir> CurveChart<'ir> {
         }
     }
 
+    /// Arithmetic scale of a continuous, nonperiodic spline of degree one to three.
+    pub(crate) fn cubic_box_magnitude(&self) -> Option<f64> {
+        let (SolvedCurveGeometry::Nurbs(nurbs), _) = self
+            .curve
+            .geometry
+            .solved()
+            .and_then(|geometry| leaf(geometry).ok())?
+        else {
+            return None;
+        };
+        let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } = nurbs.pole_rows()
+        else {
+            return None;
+        };
+        if nurbs.periodic() || !matches!(nurbs.degree(), 1..=3) {
+            return None;
+        }
+        let degree = usize::try_from(nurbs.degree()).ok()?;
+        let knots = nurbs.knots();
+        let low = *knots.get(degree)?;
+        let high = *knots.get(nurbs.pole_count())?;
+        let mut run = 0;
+        let mut previous = None;
+        for knot in knots {
+            run = if previous == Some(knot) { run + 1 } else { 1 };
+            if *knot > low && *knot < high && run > degree {
+                return None;
+            }
+            previous = Some(knot);
+        }
+        let origin = self.placement.point(Point3::new(0.0, 0.0, 0.0));
+        let translation = origin.x.abs().max(origin.y.abs()).max(origin.z.abs());
+        let magnitude = points
+            .iter()
+            .map(|point| {
+                let point = point.get();
+                (point.x.abs() + point.y.abs() + point.z.abs())
+                    * self.placement.scale
+                    * 3.0_f64.sqrt()
+                    + translation
+            })
+            .fold(0.0, f64::max);
+        magnitude.is_finite().then_some(magnitude)
+    }
+
     /// The model-space point at `t`.
     pub(crate) fn point(&self, eval: &Eval<'_, '_>, t: f64) -> Measure<Point3> {
         match &self.shape {

@@ -367,6 +367,18 @@ impl<'ir> FaceFrame<'_, 'ir> {
             }
         }
         let (Some(first), Some(last)) = (pieces.first(), pieces.last()) else {
+            if let (Some(_), Some((_, apex))) = (pending_pole, self.chart.apex()) {
+                return Ok(ResolvedLoop {
+                    kind: LoopKind::Vertex(apex),
+                    pieces: Vec::new(),
+                    net_shift: [0, 0],
+                    max_gap: 0.0,
+                    off_surface: 0.0,
+                    deviations: Vec::new(),
+                    directed: true,
+                    pcurve_order: Vec::new(),
+                });
+            }
             return Err(MeasureFailure::unavailable(
                 UnavailableReason::BoundaryCoedgeUnresolved,
                 None,

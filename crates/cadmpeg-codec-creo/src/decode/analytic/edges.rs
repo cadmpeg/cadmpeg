@@ -11,7 +11,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use super::super::surfaces::intersection_resolve::curve_contains_points;
 
 use super::planes::valid_positive_nurbs_curve;
-use super::vertices::finite_model_point;
+use super::vertices::{finite_model_point, model_points_agree};
 use crate::vecmath::{cross, dot};
 
 macro_rules! require_some {
@@ -660,8 +660,11 @@ pub(in crate::decode) fn nonperiodic_conic_parameter(
     (parameter.is_finite() && (x - expected_x).abs() <= EPS_ON_CONIC * scale).then_some(parameter)
 }
 
-pub(in crate::decode) fn nonperiodic_conic_edge_parameter_range(
-    geometry: &CurveGeometry,
+/// The interval from `points[0]` to `points[1]` on a parabola or hyperbola.
+/// When the native parameter decreases along the edge, the carrier reverses
+/// so that the interval increases.
+pub(in crate::decode) fn orient_nonperiodic_conic_edge_carrier(
+    geometry: &mut CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
     let [Some(first), Some(second)] =
@@ -669,12 +672,56 @@ pub(in crate::decode) fn nonperiodic_conic_edge_parameter_range(
     else {
         return None;
     };
-    let parameters = if first <= second {
-        [first, second]
+    if second - first > EPS_NEAR_ZERO {
+        return Some([first, second]);
+    }
+    (first - second > EPS_NEAR_ZERO).then_some(())?;
+    reverse_conic_parameterization(geometry)?;
+    Some([-first, -second])
+}
+
+/// Reverse a conic carrier's parameter direction: its frame axis turns, so
+/// parameter `t` maps to the point that `-t` mapped to.
+fn reverse_conic_parameterization(geometry: &mut CurveGeometry) -> Option<()> {
+    match geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
+            circle.reverse_parameterization();
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) => {
+            ellipse.reverse_parameterization();
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola)) => {
+            let mut frame = *parabola.frame();
+            frame.reverse_axis();
+            *parabola = cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
+                parabola.vertex(),
+                frame,
+                parabola.focal_distance(),
+            );
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola)) => {
+            let mut frame = *hyperbola.frame();
+            frame.reverse_axis();
+            *hyperbola = cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                hyperbola.center(),
+                frame,
+                hyperbola.major_radius(),
+                hyperbola.minor_radius(),
+            );
+        }
+        _ => return None,
+    }
+    Some(())
+}
+
+/// `angle` wrapped into the canonical turn `[0, tau)`.
+fn canonical_angle(angle: f64) -> f64 {
+    let wrapped = angle.rem_euclid(std::f64::consts::TAU);
+    if wrapped < std::f64::consts::TAU {
+        wrapped
     } else {
-        [second, first]
-    };
-    (parameters[1] - parameters[0] > EPS_NEAR_ZERO).then_some(parameters)
+        0.0
+    }
 }
 
 pub(super) fn periodic_conic_edge_parameter_range(
@@ -697,9 +744,7 @@ pub(super) fn periodic_conic_edge_parameter_range(
     } = require_some!(periodic_conic_frame(geometry));
     let parameter = |point: [f64; 3]| {
         let relative = std::array::from_fn(|index| point[index] - center[index]);
-        (dot(relative, y_axis) / radii[1])
-            .atan2(dot(relative, x_axis) / radii[0])
-            .rem_euclid(std::f64::consts::TAU)
+        canonical_angle((dot(relative, y_axis) / radii[1]).atan2(dot(relative, x_axis) / radii[0]))
     };
     let [first, second] = points.map(parameter);
     let increasing = |start: f64, end: f64| {
@@ -747,6 +792,39 @@ pub(super) fn periodic_conic_edge_parameter_range(
     Ok((selected[1] - selected[0] > EPS_NEAR_ZERO).then_some(selected))
 }
 
+/// Orient a periodic conic so that `range` starts at `points[0]`. An arc that
+/// starts at `points[1]` reverses the carrier and becomes `[tau - end,
+/// tau - start]`, moved by one turn when its start is negative.
+pub(in crate::decode) fn orient_periodic_conic_edge_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &mut CurveGeometry,
+    range: [f64; 2],
+    points: [[f64; 3]; 2],
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    let start = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+            ctx, geometry, range[0],
+        ))?
+    )?);
+    let start = require_some!(finite_model_point([start.x, start.y, start.z]));
+    let [Some(first), Some(second)] = points.map(finite_model_point) else {
+        return Ok(None);
+    };
+    match [
+        model_points_agree(start, first),
+        model_points_agree(start, second),
+    ] {
+        [true, _] => Ok(Some(range)),
+        [false, true] => {
+            require_some!(reverse_conic_parameterization(geometry));
+            let tau = std::f64::consts::TAU;
+            let turn = if tau - range[1] < 0.0 { tau } else { 0.0 };
+            Ok(Some([tau - range[1] + turn, tau - range[0] + turn]))
+        }
+        _ => Ok(None),
+    }
+}
+
 pub(in crate::decode) fn full_periodic_conic_edge_parameter_range(
     geometry: &CurveGeometry,
     point: [f64; 3],
@@ -760,9 +838,8 @@ pub(in crate::decode) fn full_periodic_conic_edge_parameter_range(
         ..
     } = periodic_conic_frame(geometry)?;
     let relative = std::array::from_fn(|index| point[index] - center[index]);
-    let start = (dot(relative, y_axis) / radii[1])
-        .atan2(dot(relative, x_axis) / radii[0])
-        .rem_euclid(std::f64::consts::TAU);
+    let start =
+        canonical_angle((dot(relative, y_axis) / radii[1]).atan2(dot(relative, x_axis) / radii[0]));
     Some([start, start + std::f64::consts::TAU])
 }
 

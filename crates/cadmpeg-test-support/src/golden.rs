@@ -48,6 +48,10 @@
 //! magnitude. It does not make decode reproducible across platforms; it only
 //! stops the goldens from reporting that as codec drift.
 //!
+//! A [`Branch::exact`] snapshot compares byte for byte on every platform. Its
+//! path computes every elementary function through
+//! [`cadmpeg_ir::math::portable`], so there is no libm drift to tolerate.
+//!
 //! ## What this does not cover
 //!
 //! Perturbing every libm transcendental by one unit in the last place, which
@@ -75,6 +79,8 @@ pub struct Branch {
     kind: Option<&'static str>,
     /// Serializes one fixture's bytes as the snapshot text.
     pub snapshot: fn(&[u8]) -> String,
+    /// Whether the golden text must match byte for byte on every platform.
+    exact: bool,
 }
 
 impl Branch {
@@ -84,6 +90,19 @@ impl Branch {
         Self {
             kind: Some(kind),
             snapshot,
+            exact: false,
+        }
+    }
+
+    /// Names a branch whose snapshot computes no platform libm result, so its
+    /// golden text compares byte for byte instead of through
+    /// [`snapshots_agree`].
+    #[must_use]
+    pub const fn exact(kind: &'static str, snapshot: fn(&[u8]) -> String) -> Self {
+        Self {
+            kind: Some(kind),
+            snapshot,
+            exact: true,
         }
     }
 
@@ -93,6 +112,7 @@ impl Branch {
         Self {
             kind: None,
             snapshot,
+            exact: false,
         }
     }
 }
@@ -321,14 +341,19 @@ impl Harness {
             let actual = (branch.snapshot)(bytes);
             let path = dir.join(format!("{name}.json"));
             let failure = match read_golden(&path) {
-                Ok(expected) => compare_branch_snapshot(&expected, &actual).err().map(
-                    |mismatch| {
+                Ok(expected) => {
+                    let compared = if branch.exact {
+                        texts_identical(&expected, &actual)
+                    } else {
+                        compare_branch_snapshot(&expected, &actual)
+                    };
+                    compared.err().map(|mismatch| {
                         format!(
                             "fixture `{name}`: {kind} diverged from {}\n    {mismatch}",
                             path.display()
                         )
-                    },
-                ),
+                    })
+                }
                 Err(error) => Some(format!(
                     "fixture `{name}`: cannot read {kind} golden {} ({error}); regenerate with `{}`",
                     path.display(),
@@ -397,15 +422,21 @@ fn read_golden(path: &Path) -> std::io::Result<String> {
 /// differing line. Otherwise delegates to [`snapshots_agree`].
 fn compare_branch_snapshot(expected: &str, actual: &str) -> Result<(), String> {
     if std::env::var_os("GOLDEN_STRICT").is_some() {
-        if expected == actual {
-            return Ok(());
-        }
-        let (line, golden_line, actual_line) = first_line_diff(expected, actual);
-        return Err(format!(
-            "at line {line}\n    golden: {golden_line}\n    actual: {actual_line}"
-        ));
+        return texts_identical(expected, actual);
     }
     snapshots_agree(expected, actual)
+}
+
+/// Compares two snapshot texts byte for byte and reports the first differing
+/// line.
+fn texts_identical(expected: &str, actual: &str) -> Result<(), String> {
+    if expected == actual {
+        return Ok(());
+    }
+    let (line, golden_line, actual_line) = first_line_diff(expected, actual);
+    Err(format!(
+        "at line {line}\n    golden: {golden_line}\n    actual: {actual_line}"
+    ))
 }
 
 /// Compares a golden against a fresh snapshot, tolerating only last-place
@@ -666,6 +697,34 @@ mod tests {
         assert!(error.contains("at line 1"), "{error}");
         assert!(error.contains("golden:"), "{error}");
         assert!(error.contains("actual:"), "{error}");
+    }
+
+    #[test]
+    fn exact_branch_rejects_drift_the_comparison_accepts() {
+        let tree = TempTree::named("exact-branch");
+        std::fs::write(tree.golden("fixture"), committed_text()).expect("write the golden");
+        let harness = Harness::new(tree.manifest_dir(), "bin", "regenerate");
+        let names = ["fixture".to_owned()];
+        let _unset = EnvGuard::set("GOLDEN_STRICT", None);
+
+        let tolerant = harness.compare_branch(
+            &Branch::named("decode", last_place_snapshot),
+            &one_input(),
+            &names,
+            false,
+            false,
+        );
+        assert!(tolerant.is_empty(), "{tolerant:?}");
+
+        let exact = harness.compare_branch(
+            &Branch::exact("decode", last_place_snapshot),
+            &one_input(),
+            &names,
+            false,
+            false,
+        );
+        assert_eq!(exact.len(), 1, "{exact:?}");
+        assert!(exact[0].contains("at line 2"), "{}", exact[0]);
     }
 
     #[test]

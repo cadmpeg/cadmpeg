@@ -34,6 +34,8 @@ pub(crate) enum SatLossCode {
     GeometryProceduralSurfaceUntyped,
     /// A tolerant-coedge use curve has decreasing carrier endpoints.
     GeometryUseCurveIntervalInvalid,
+    /// A native support pcurve has no surface in its construction chart.
+    GeometrySupportChartUnresolved,
     /// A tolerant vertex has no positive finite evaluated tolerance.
     VertexToleranceUnresolved,
     /// Tolerant-edge tolerance cannot enter the positive neutral scalar.
@@ -75,6 +77,7 @@ impl SatLossCode {
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
         Self::GeometryUseCurveIntervalInvalid,
+        Self::GeometrySupportChartUnresolved,
         Self::VertexToleranceUnresolved,
         Self::EdgeToleranceUnresolved,
         Self::TopologyShellUnprojected,
@@ -99,6 +102,7 @@ impl SatLossCode {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
             Self::GeometryUseCurveIntervalInvalid => "geometry.use-curve-interval-invalid",
+            Self::GeometrySupportChartUnresolved => "geometry.support-chart-unresolved",
             Self::VertexToleranceUnresolved => "vertex.tolerance-unresolved",
             Self::EdgeToleranceUnresolved => "edge.tolerance-unresolved",
             Self::TopologyShellUnprojected => "topology.shell-unprojected",
@@ -124,6 +128,7 @@ impl SatLossCode {
             Self::GeometryFramedWithoutCarriers => Severity::Blocking,
             Self::GeometryProceduralSurfaceUntyped
             | Self::GeometryUseCurveIntervalInvalid
+            | Self::GeometrySupportChartUnresolved
             | Self::EdgeToleranceUnresolved
             | Self::VertexToleranceUnresolved
             | Self::TopologyShellUnprojected
@@ -148,6 +153,7 @@ impl SatLossCode {
             | Self::GeometryProceduralSurfaceUntyped
             | Self::HeaderToleranceUnresolved
             | Self::GeometryUseCurveIntervalInvalid
+            | Self::GeometrySupportChartUnresolved
             | Self::EdgeToleranceUnresolved
             | Self::VertexToleranceUnresolved
             | Self::TopologyShellUnprojected
@@ -242,6 +248,7 @@ mod tests {
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
                 "geometry.use-curve-interval-invalid",
+                "geometry.support-chart-unresolved",
                 "vertex.tolerance-unresolved",
                 "edge.tolerance-unresolved",
                 "topology.shell-unprojected",

@@ -32,7 +32,7 @@ fn round_tripped(ir: &CadIr) -> CadIr {
 fn source_less_solid_cylinder_keeps_measured_geometry() {
     let ir = cadmpeg_test_support::solids::solid_cylinder();
     let written = round_tripped(&ir);
-    assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
+    assert_eq!(written.geometry.bodies.len(), ir.geometry.bodies.len());
     measures_agree("cylinder", &ir, &written).expect("the round trip keeps its measured geometry");
 }
 
@@ -40,7 +40,7 @@ fn source_less_solid_cylinder_keeps_measured_geometry() {
 #[test]
 fn source_less_placed_cube_keeps_measured_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].transform = Some(
+    ir.geometry.bodies[0].transform = Some(
         cadmpeg_ir::transform::Transform::affine([
             [0.0, -1.0, 0.0, 20.0],
             [1.0, 0.0, 0.0, -30.0],
@@ -49,7 +49,7 @@ fn source_less_placed_cube_keeps_measured_geometry() {
         .expect("affine transform"),
     );
     let written = round_tripped(&ir);
-    assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
+    assert_eq!(written.geometry.bodies.len(), ir.geometry.bodies.len());
     measures_agree("placed cube", &ir, &written)
         .expect("the round trip keeps its measured geometry");
 }

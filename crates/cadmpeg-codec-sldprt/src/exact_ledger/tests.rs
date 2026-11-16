@@ -44,9 +44,9 @@ fn spans_with(ledger: &ExactReadLedger, tag: u8) -> Vec<&ExactReadSpan> {
 
 #[test]
 fn ledger_versions_its_contract_and_collects_nothing_from_empty_input() {
-    assert_eq!(EXACT_READ_LEDGER_VERSION, 1);
+    assert_eq!(EXACT_READ_LEDGER_VERSION, 2);
     let ledger = collect(&[]);
-    assert_eq!(ledger.version, 1);
+    assert_eq!(ledger.version, 2);
     assert!(ledger.is_empty());
     assert_eq!(ledger.len(), 0);
 }
@@ -62,7 +62,7 @@ fn triangle_topology_spans_name_every_record_family() {
             "missing topology tag {tag:#04x}"
         );
     }
-    let records: std::collections::BTreeSet<u16> =
+    let records: std::collections::BTreeSet<u32> =
         ledger.spans.iter().map(|span| span.record).collect();
     for attr in [10, 20, 30, 31, 32, 40, 41, 42, 50, 51, 52, 60, 61, 62, 100] {
         assert!(records.contains(&attr), "missing record {attr}");
@@ -227,7 +227,10 @@ fn decode_with_exact_read_ledger_matches_plain_decode() {
     let (result, ledgers) = SldprtCodec
         .decode_with_exact_read_ledger(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("ledger decode should succeed");
-    assert_eq!(result.ir().model.faces.len(), plain.ir().model.faces.len());
+    assert_eq!(
+        result.ir().geometry.faces.len(),
+        plain.ir().geometry.faces.len()
+    );
     assert_eq!(result.report().losses.len(), plain.report().losses.len());
     assert!(!ledgers.is_empty());
     for ledger in &ledgers {
@@ -238,19 +241,24 @@ fn decode_with_exact_read_ledger_matches_plain_decode() {
 }
 
 #[test]
-fn a_plain_stream_face_framed_on_a_stored_tolerance_has_a_span() {
+fn a_face_with_a_stored_tolerance_has_a_span_in_each_stream_mode() {
+    // An ownership-only typed FACE does not replace the bridge FACE 10.
     let mut body = syn::triangle_body();
     let sentinel = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
-    let at = (0..body.len() - 18)
+    let bridge = (0..body.len() - 18)
         .find(|&at| body[at..at + 2] == [0x00, 0x0e] && body[at + 10..at + 18] == sentinel)
         .unwrap();
-    body[at + 10..at + 18].copy_from_slice(&1.0e-8f64.to_be_bytes());
+    let typed = (0..body.len() - 19)
+        .find(|&at| body[at..at + 3] == [0x00, 0x0e, 0xff] && body[at + 11..at + 19] == sentinel)
+        .unwrap();
+    body[bridge + 10..bridge + 18].copy_from_slice(&1.0e-8f64.to_be_bytes());
+    body[typed + 11..typed + 19].copy_from_slice(&1.0e-8f64.to_be_bytes());
 
-    let plain = ExactReadLedger::collect_plain("", &body);
-    assert_ledger_sound(&body, &plain);
-    assert!(plain
-        .spans
-        .iter()
-        .any(|span| span.tag == 0x0e && span.offset == at));
-    assert!(!collect(&body).spans.iter().any(|span| span.tag == 0x0e));
+    for ledger in [ExactReadLedger::collect_plain("", &body), collect(&body)] {
+        assert_ledger_sound(&body, &ledger);
+        assert!(ledger
+            .spans
+            .iter()
+            .any(|span| span.tag == 0x0e && span.offset == bridge));
+    }
 }

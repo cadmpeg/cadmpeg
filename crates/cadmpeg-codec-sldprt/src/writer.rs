@@ -6,6 +6,8 @@ use std::io::Write;
 use std::num::NonZeroU16;
 
 mod accounting;
+mod configuration_manager;
+mod default_properties;
 mod edge_direction;
 mod envelope;
 mod ownership;
@@ -45,12 +47,12 @@ pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 
 /// Opaque solved carriers require a retained native partition.
 pub(crate) fn requires_native_partition(ir: &CadIr) -> bool {
-    ir.model.curves.iter().any(|curve| {
+    ir.geometry.curves.iter().any(|curve| {
         matches!(
             curve.geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         )
-    }) || ir.model.surfaces.iter().any(|surface| {
+    }) || ir.geometry.surfaces.iter().any(|surface| {
         matches!(
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
@@ -115,7 +117,30 @@ pub(crate) fn write_semantic_with_records(
         .as_ref()
         .map(|(ctx, root)| crate::container::scan(ctx, *root))
         .transpose()?;
+    if source_scan.as_ref().is_some_and(|scan| {
+        scan.sections()
+            .any(|section| section.ps_auxiliary_refusal().is_some())
+    }) {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT semantic writes require parsed retained auxiliary Parasolid owners".into(),
+        ));
+    }
     let mut source_baseline = None;
+    if default_properties::requires_guard(&normalized, source_scan.as_ref()) {
+        let scan = source_scan.as_ref().ok_or_else(|| {
+            CodecError::NotImplemented(
+                "SLDPRT saved properties require their retained source carrier".into(),
+            )
+        })?;
+        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "SLDPRT saved properties require their retained source document".into(),
+                )
+            })?;
+        default_properties::validate(&normalized, &baseline.ir, scan)?;
+        default_properties::validate_retention(scan, retained_records, annotations)?;
+    }
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
     let feature_name_changes =
@@ -134,10 +159,19 @@ pub(crate) fn write_semantic_with_records(
         &mut native,
         feature_parameter_changes_authorized,
     )?;
+    // The configuration states are projected again with the profile bodies
+    // the decode bound, read from the retained source image.
     crate::history::write::configurations::prepare_configurations_for_write(
         ir,
         &mut native,
         annotations,
+        |lanes| {
+            source_image(retained_records)
+                .map(|image| {
+                    crate::resolved_features::assembly::source_image_profiles(image, lanes)
+                })
+                .transpose()
+        },
     )?;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     if !validation.is_ok() {
@@ -151,7 +185,7 @@ pub(crate) fn write_semantic_with_records(
         return Err(CodecError::Malformed(detail.into()));
     }
     check_semantic_support(ir, annotations)?;
-    if ir.model.faces.is_empty() {
+    if ir.geometry.faces.is_empty() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writing requires a B-rep".into(),
         ));
@@ -178,7 +212,7 @@ pub(crate) fn write_semantic_with_records(
         configuration_partitions(ir, length_scale)?
     } else {
         let schema_32001 = ir
-            .model
+            .geometry
             .bodies
             .iter()
             .any(|body| body.kind == BodyKind::Sheet);
@@ -239,6 +273,7 @@ pub(crate) fn write_semantic_with_records(
         }
         true
     };
+    configuration_manager::validate(ir, annotations, &retained_swobjects)?;
     let (objects, units) = metadata_payloads(ir, length_scale, replay_swobjects)?;
     if replay_swobjects {
         generated_partition_sections
@@ -384,6 +419,9 @@ pub(crate) fn write_semantic_with_records(
     let written_dialect =
         crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
+    if let Some(scan) = source_scan.as_ref() {
+        default_properties::validate_emitted(scan, &sections)?;
+    }
     let type_ids = section_type_ids(source_scan.as_ref(), &sections)?;
     let envelope = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
     writer.write_all(&envelope.bytes)?;
@@ -416,7 +454,7 @@ pub(crate) fn write_semantic_with_records(
 /// `tessellations` stays `Written`: every mesh is written, and
 /// `WriterTessellationMetadataOmitted` charges only fields of written meshes.
 fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
-    use ArenaDisposition::{Dropped, Omitted, Reported, Written};
+    use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
     let brep_carried = if retained_brep { Written } else { Omitted };
     ArenaDispositions {
         bodies: Written,
@@ -455,6 +493,8 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         presentation_documents: Omitted,
         view_presentations: Omitted,
         tessellations: Written,
+        point_clouds: Omitted,
+        history_bodies: Ignored,
         appearances: Reported,
         appearance_bindings: Reported,
         attributes: Reported,
@@ -467,6 +507,7 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         articulations: Omitted,
         physics_scenes: Omitted,
         solver_settings: Omitted,
+        declared_measures: Omitted,
     }
 }
 
@@ -565,21 +606,25 @@ pub(crate) fn configurations_without_synthesized_snapshot(
 }
 
 fn sort_arenas(ir: &mut CadIr) {
-    ir.model.bodies.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.regions.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.shells.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.faces.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.loops.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.coedges.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.edges.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.vertices.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.points.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.curves.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.subds.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.procedural_surfaces.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.procedural_curves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.bodies.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.regions.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.shells.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.faces.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.loops.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.coedges.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.edges.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.vertices.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.points.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.curves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.subds.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry
+        .procedural_surfaces
+        .sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry
+        .procedural_curves
+        .sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.tessellations.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.appearances.sort_by(|a, b| a.id.cmp(&b.id));
@@ -729,12 +774,12 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             "SLDPRT writing requires exactly one active configuration".into(),
         ));
     }
-    if !ir.model.subds.is_empty() {
+    if !ir.geometry.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not support SubD surfaces".into(),
         ));
     }
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let ratio = cone_surface.ratio().get();
@@ -781,19 +826,19 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             _ => {}
         }
     }
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         if body.name.is_some() && body.color.is_none() {
             return Err(CodecError::NotImplemented(
                 "SLDPRT semantic writer cannot encode a body name without a material".into(),
             ));
         }
     }
-    if ir.model.faces.iter().any(|face| face.name.is_some()) {
+    if ir.geometry.faces.iter().any(|face| face.name.is_some()) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode face names".into(),
         ));
     }
-    if ir.model.edges.iter().any(|edge| {
+    if ir.geometry.edges.iter().any(|edge| {
         edge.param_range().is_some()
             && annotations
                 .exactness()
@@ -847,7 +892,7 @@ fn configuration_partitions(
         })
         .collect::<HashSet<_>>();
     if let Some(body) = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| !configured.contains(&body.id))
@@ -862,8 +907,10 @@ fn configuration_partitions(
     configurations
         .into_iter()
         .filter_map(|configuration| {
-            let bodies = configuration.bodies.as_deref()?;
-            (!bodies.is_empty()).then_some((configuration, bodies))
+            configuration
+                .bodies
+                .as_deref()
+                .map(|bodies| (configuration, bodies))
         })
         .map(|(configuration, bodies)| {
             let index = configuration.source_index.ok_or_else(|| {
@@ -872,9 +919,18 @@ fn configuration_partitions(
                     configuration.id.as_str()
                 ))
             })?;
+            if bodies.is_empty() {
+                let mut payload = parasolid_stream(&[], "SCH_SW_33103_11000")?;
+                payload.extend(parasolid_stream_named(
+                    &[],
+                    "SCH_SW_33103_11000",
+                    "deltas body",
+                )?);
+                return Ok((format!("Contents/Config-{index}-Partition"), payload));
+            }
             let subset = body_subset(ir, bodies)?;
             let schema_32001 = subset
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .any(|body| body.kind == BodyKind::Sheet);
@@ -916,7 +972,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     let selected = selected.iter().cloned().collect::<HashSet<_>>();
     if let Some(id) = selected
         .iter()
-        .find(|id| !ir.model.bodies.iter().any(|body| &body.id == *id))
+        .find(|id| !ir.geometry.bodies.iter().any(|body| &body.id == *id))
     {
         return Err(CodecError::malformed(format_args!(
             "configuration references missing body {}",
@@ -925,117 +981,114 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     }
     let mut subset = ir.clone();
     subset
-        .model
+        .geometry
         .bodies
         .retain(|body| selected.contains(&body.id));
-    let regions = subset
-        .model
-        .bodies
-        .iter()
-        .flat_map(|body| body.regions.iter().cloned())
-        .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .regions
-        .retain(|region| regions.contains(&region.id));
+        .retain(|region| selected.contains(&region.body));
     let shells = subset
-        .model
+        .geometry
         .regions
         .iter()
         .flat_map(|region| region.shells.iter().cloned())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .shells
         .retain(|shell| shells.contains(&shell.id));
-    let faces = subset
-        .model
-        .shells
-        .iter()
-        .flat_map(|shell| shell.faces().iter().cloned())
-        .collect::<HashSet<_>>();
-    subset.model.faces.retain(|face| faces.contains(&face.id));
+    subset
+        .geometry
+        .faces
+        .retain(|face| shells.contains(&face.shell));
     let loops = subset
-        .model
+        .geometry
         .faces
         .iter()
         .flat_map(|face| face.loops.iter().cloned())
         .collect::<HashSet<_>>();
-    subset.model.loops.retain(|loop_| loops.contains(&loop_.id));
+    subset
+        .geometry
+        .loops
+        .retain(|loop_| loops.contains(&loop_.id));
     let coedges = subset
-        .model
+        .geometry
         .loops
         .iter()
         .flat_map(|loop_| loop_.coedges().iter().cloned())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .coedges
         .retain(|coedge| coedges.contains(&coedge.id));
     let mut edges = subset
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| coedge.edge.clone())
         .collect::<HashSet<_>>();
-    for shell in &subset.model.shells {
-        edges.extend(shell.wire_edges().iter().cloned());
-    }
-    subset.model.edges.retain(|edge| edges.contains(&edge.id));
-    let mut vertices = subset
-        .model
-        .edges
-        .iter()
-        .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
-        .collect::<HashSet<_>>();
-    for shell in &subset.model.shells {
-        vertices.extend(shell.free_vertices().iter().cloned());
+    for shell in &subset.geometry.shells {
+        edges.extend(shell.wire_edges().cloned());
     }
     subset
-        .model
+        .geometry
+        .edges
+        .retain(|edge| edges.contains(&edge.id));
+    let mut vertices = subset
+        .geometry
+        .edges
+        .iter()
+        .flat_map(|edge| edge.vertices().cloned())
+        .collect::<HashSet<_>>();
+    for shell in &subset.geometry.shells {
+        vertices.extend(shell.free_vertices().cloned());
+    }
+    subset
+        .geometry
         .vertices
         .retain(|vertex| vertices.contains(&vertex.id));
     let points = subset
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| vertex.point.clone())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .points
         .retain(|point| points.contains(&point.id));
     let surfaces = subset
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| face.surface.clone())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .surfaces
         .retain(|surface| surfaces.contains(&surface.id));
     let curves = subset
-        .model
+        .geometry
         .edges
         .iter()
         .filter_map(|edge| edge.curve().cloned())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .curves
         .retain(|curve| curves.contains(&curve.id));
     let pcurves = subset
-        .model
+        .geometry
         .coedges
         .iter()
         .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.clone()))
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
-    subset.model.finalize();
+    subset.finalize();
     Ok(subset)
 }
 
@@ -1307,6 +1360,13 @@ fn patch_retained_swobjects_metadata(
             }
             Ok(())
         };
+        if attribute.name == "configuration_manager"
+            && attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
+            && crate::metadata::configuration_manager::values(payload, offset)
+                .is_some_and(|values| attribute.values == values.map(AttributeValue::Integer))
+        {
+            continue;
+        }
         match MetadataRecord::project(attribute, length_scale, retained)? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
                 let [AttributeValue::Vector(current)] = attribute.values.as_slice() else {
@@ -1389,20 +1449,32 @@ fn patch_retained_swobjects_metadata(
                     &bytes,
                 )?;
             }
-            Some(MetadataRecord::PartRecord { id, version }) => {
-                let start = offset + PART_RECORD_TOKEN.len();
-                overwrite_bytes(payload, start, &id.to_le_bytes())?;
-                overwrite_bytes(payload, start + 8, &version.to_le_bytes())?;
-            }
-            Some(MetadataRecord::ConfigurationManager {
-                minor,
-                states,
-                filetime,
+            Some(MetadataRecord::PartRecord {
+                first_word,
+                trailing_word,
             }) => {
-                let start = offset + CONFIGURATION_MANAGER_TOKEN.len();
-                overwrite_bytes(payload, start + 66, &minor.to_le_bytes())?;
-                overwrite_bytes(payload, start + 107, &[states])?;
-                overwrite_bytes(payload, start + 117, &filetime.to_le_bytes())?;
+                let crate::metadata::part::Root::Supported(resident) =
+                    crate::metadata::part::parse(payload)
+                else {
+                    return Err(CodecError::NotImplemented(
+                        "SLDPRT Part edit requires a supported root scalar prefix".into(),
+                    ));
+                };
+                if offset != resident.token_offset
+                    || trailing_word.is_some() != resident.trailing_word.is_some()
+                {
+                    return Err(CodecError::NotImplemented(
+                        "SLDPRT Part edit cannot change root ownership or scalar form".into(),
+                    ));
+                }
+                overwrite_bytes(payload, resident.body_offset, &first_word.to_le_bytes())?;
+                if let Some(word) = trailing_word {
+                    overwrite_bytes(
+                        payload,
+                        resident.body_offset + crate::layout::part_root_long::TRAILING_WORD,
+                        &word.to_le_bytes(),
+                    )?;
+                }
             }
             Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
                 let marker = offset + UNIT_NAME_TOKEN.len();
@@ -1513,10 +1585,23 @@ fn patch_active_configuration_xml(
     if document.root_element().tag_name().name() != "swSolidWorks" {
         return Ok(None);
     }
-    let attribute = document
+    let mut models = document
         .descendants()
-        .find(|node| node.has_tag_name("swModel"))
-        .ok_or_else(|| CodecError::Malformed("SolidWorks XML has no model record".into()))?
+        .filter(|node| node.has_tag_name("swModel"));
+    let model = models
+        .next()
+        .ok_or_else(|| CodecError::Malformed("SolidWorks XML has no model record".into()))?;
+    if models.next().is_some()
+        || document
+            .descendants()
+            .any(|node| node.has_tag_name("swConfiguration"))
+    {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT active configuration edits require a complete configuration manifest rewrite"
+                .into(),
+        ));
+    }
+    let attribute = model
         .attributes()
         .find(|attribute| attribute.name() == "swConfigurationName")
         .ok_or_else(|| {
@@ -1850,7 +1935,6 @@ const BOUNDING_ENVELOPE_TOKEN: &[u8] = b"moBBoxCenterData_c";
 const DEFAULT_REFERENCE_PLANE_TOKEN: &[u8] = b"moDefaultRefPlnData_c";
 const TRANSFORMED_REFERENCE_PLANE_TOKEN: &[u8] = b"moTransRefPlaneData_c";
 const PART_RECORD_TOKEN: &[u8] = b"moPart_c";
-const CONFIGURATION_MANAGER_TOKEN: &[u8] = b"moConfigurationMgr_c";
 const UNIT_NAME_TOKEN: &[u8] = b"moLengthUserUnits_c";
 
 /// One `SWObjects` metadata attribute admitted for writing. Its values have
@@ -1868,13 +1952,9 @@ enum MetadataRecord {
         lower: [f64; 3],
         radius: f64,
     },
-    /// Part identity and version.
-    PartRecord { id: u32, version: u32 },
-    /// Configuration-manager version, state count and timestamp.
-    ConfigurationManager {
-        minor: u32,
-        states: u8,
-        filetime: u64,
+    PartRecord {
+        first_word: u32,
+        trailing_word: Option<u32>,
     },
     /// Source linear unit code.
     SourceLinearUnitCode(i64),
@@ -1950,30 +2030,26 @@ impl MetadataRecord {
                 }
             }
             "part_record" => {
-                let [AttributeValue::Integer(id), AttributeValue::Integer(version)] = values else {
-                    return Err(invalid("part record"));
-                };
                 retained(PART_RECORD_TOKEN)?;
+                let (first, trailing) = match values {
+                    [AttributeValue::Integer(first)] => (*first, None),
+                    [AttributeValue::Integer(first), AttributeValue::Integer(last)] => {
+                        (*first, Some(*last))
+                    }
+                    _ => return Err(invalid("part scalar prefix")),
+                };
                 Self::PartRecord {
-                    id: u32::try_from(*id).map_err(|_| invalid("part id"))?,
-                    version: u32::try_from(*version).map_err(|_| invalid("part version"))?,
+                    first_word: u32::try_from(first).map_err(|_| invalid("Part first word"))?,
+                    trailing_word: trailing
+                        .map(u32::try_from)
+                        .transpose()
+                        .map_err(|_| invalid("Part trailing word"))?,
                 }
             }
             "configuration_manager" => {
-                let [AttributeValue::Integer(minor), AttributeValue::Integer(states), AttributeValue::Integer(filetime)] =
-                    values
-                else {
-                    return Err(invalid("configuration manager"));
-                };
-                retained(CONFIGURATION_MANAGER_TOKEN)?;
-                Self::ConfigurationManager {
-                    minor: u32::try_from(*minor)
-                        .map_err(|_| invalid("configuration minor version"))?,
-                    states: u8::try_from(*states)
-                        .map_err(|_| invalid("configuration state count"))?,
-                    filetime: u64::try_from(*filetime)
-                        .map_err(|_| invalid("configuration timestamp"))?,
-                }
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT configuration-manager edits and generation require an owned version-specific serializer and proven scalar roles".into(),
+                ));
             }
             "source_linear_unit_code" => {
                 let [AttributeValue::Integer(code)] = values else {
@@ -2025,7 +2101,9 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
 fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribute> {
     let mut positioned = Vec::new();
     for attribute in &ir.model.attributes {
-        if attribute.id.as_str().starts_with("sldprt:") {
+        if attribute.id.as_str().starts_with("sldprt:")
+            && !crate::metadata::is_saved_property_attribute(attribute)
+        {
             let position = metadata_source_position(attribute.id.as_str());
             positioned.push(((position.is_none(), position), attribute));
         }
@@ -2052,6 +2130,9 @@ fn metadata_payloads(
                 "SLDPRT semantic writer does not support entity attributes".into(),
             ));
         }
+        if retained_swobjects && attribute.name == "configuration_manager" {
+            continue;
+        }
         match MetadataRecord::project(attribute, length_scale, |_| Ok(()))? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
                 objects.extend_from_slice(BOUNDING_ENVELOPE_TOKEN);
@@ -2073,24 +2154,11 @@ fn metadata_payloads(
                         .into(),
                 ));
             }
-            Some(MetadataRecord::PartRecord { id, version }) => {
-                objects.extend_from_slice(PART_RECORD_TOKEN);
-                objects.extend_from_slice(&id.to_le_bytes());
-                objects.extend_from_slice(&0u32.to_le_bytes());
-                objects.extend_from_slice(&version.to_le_bytes());
-                objects.push(0);
-            }
-            Some(MetadataRecord::ConfigurationManager {
-                minor,
-                states,
-                filetime,
-            }) => {
-                let mut record = [0u8; 125];
-                record[66..70].copy_from_slice(&minor.to_le_bytes());
-                record[107] = states;
-                record[117..125].copy_from_slice(&filetime.to_le_bytes());
-                objects.extend_from_slice(CONFIGURATION_MANAGER_TOKEN);
-                objects.extend_from_slice(&record);
+            Some(MetadataRecord::PartRecord { .. }) if retained_swobjects => {}
+            Some(MetadataRecord::PartRecord { .. }) => {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT Part generation requires a retained supported root serializer".into(),
+                ));
             }
             Some(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
             Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
@@ -2817,7 +2885,7 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
         selected = Some(material);
     }
     if selected.is_none() {
-        for body in &ir.model.bodies {
+        for body in &ir.geometry.bodies {
             let Some(color) = body.color else {
                 continue;
             };
@@ -2878,8 +2946,8 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     let mut out = b"moVisualProperties_c".to_vec();
     // Every `Color` construction path admits components in [0, 1], so the
     // rounded product is in [0, 255].
-    let component = |value: f32| {
-        truncate_f64_to_u8(f64::from((value * 255.0).round())).ok_or_else(|| {
+    let component = |value: f64| {
+        truncate_f64_to_u8((value * 255.0).round()).ok_or_else(|| {
             CodecError::Malformed("SLDPRT material color component is out of range".into())
         })
     };
@@ -2905,7 +2973,7 @@ pub(crate) fn brep_body(
     schema_32001: bool,
 ) -> Result<Vec<u8>, CodecError> {
     if let Some(body) = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| matches!(body.kind, BodyKind::Wire | BodyKind::General))
@@ -2917,7 +2985,7 @@ pub(crate) fn brep_body(
     }
     let mut next = 2u16;
     let derived_sphere_seam_curves = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -2932,56 +3000,56 @@ pub(crate) fn brep_body(
         .map(|curve| curve.id.clone())
         .collect::<HashSet<_>>();
     let surfaces = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let curves = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|item| !derived_sphere_seam_curves.contains(&item.id))
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let points = ir
-        .model
+        .geometry
         .points
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let vertices = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let edges = ir
-        .model
+        .geometry
         .edges
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let coedges = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let loops = ir
-        .model
+        .geometry
         .loops
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let faces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let body_attrs = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| Ok((body.id.clone(), take_attr(&mut next)?)))
@@ -2989,7 +3057,7 @@ pub(crate) fn brep_body(
     let vertex_owners = ownership::vertex_body_owners(ir, &body_attrs)?;
     let reversed_edges = edge_direction::reversed_compact_edges(ir)?;
     let mut out = Vec::new();
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = &surface.geometry {
             write_nurbs_surface(
                 &mut out,
@@ -3013,7 +3081,7 @@ pub(crate) fn brep_body(
             &values,
         );
     }
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         if derived_sphere_seam_curves.contains(&curve.id) {
             continue;
         }
@@ -3042,7 +3110,7 @@ pub(crate) fn brep_body(
         );
     }
     let face_owners = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| Ok((face.id.clone(), take_attr(&mut next)?)))
@@ -3061,7 +3129,7 @@ pub(crate) fn brep_body(
         let definition_node = take_attr(&mut next)?;
         Some((key_node, definition_node))
     };
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         tag(&mut out, 0x1d);
         be16(&mut out, points[&point.id]);
         be32(&mut out, 0);
@@ -3074,7 +3142,7 @@ pub(crate) fn brep_body(
             bef64(&mut out, value * length_scale);
         }
     }
-    for vertex in &ir.model.vertices {
+    for vertex in &ir.geometry.vertices {
         tag(&mut out, 0x12);
         be16(&mut out, vertices[&vertex.id]);
         be32(&mut out, 0);
@@ -3094,11 +3162,12 @@ pub(crate) fn brep_body(
         }
         be16(&mut out, vertex_owners[&vertex.id]);
     }
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
+        let ends = edge_ends(edge)?;
         let owner = vertex_owners
-            .get(&edge.start)
+            .get(&ends.start)
             .ok_or_else(|| CodecError::Malformed("SLDPRT EDGE start has no BODY owner".into()))?;
-        if vertex_owners.get(&edge.end) != Some(owner) {
+        if vertex_owners.get(&ends.end) != Some(owner) {
             return Err(CodecError::NotImplemented(
                 "SLDPRT EDGE endpoints do not have one BODY owner".into(),
             ));
@@ -3123,27 +3192,30 @@ pub(crate) fn brep_body(
         }
         be16(&mut out, *owner);
     }
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         tag(&mut out, 0x11);
         be16(&mut out, coedges[&coedge.id]);
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .ok_or_else(|| CodecError::Malformed("coedge references missing edge".into()))?;
+        let ends = edge_ends(edge)?;
         let forward_vertex = if coedge.sense == Sense::Forward {
-            &edge.end
+            &ends.end
         } else {
-            &edge.start
+            &ends.start
         };
-        let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.model.loops, coedge)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "coedge {} is absent from its owning loop ring",
-                    coedge.id
-                ))
-            })?;
+        let (next, previous) =
+            cadmpeg_ir::topology::coedge_ring_neighbors(&ir.geometry.loops, coedge).ok_or_else(
+                || {
+                    CodecError::malformed(format_args!(
+                        "coedge {} is absent from its owning loop ring",
+                        coedge.id
+                    ))
+                },
+            )?;
         for value in [
             0,
             loops[&coedge.owner_loop],
@@ -3165,9 +3237,9 @@ pub(crate) fn brep_body(
             },
         );
     }
-    for lp in &ir.model.loops {
+    for lp in &ir.geometry.loops {
         let face = ir
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == lp.face)
@@ -3197,7 +3269,7 @@ pub(crate) fn brep_body(
             be16(&mut out, value);
         }
     }
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         tag(&mut out, 0x0e);
         be16(&mut out, faces[&face.id]);
         be32(&mut out, 0);
@@ -3269,25 +3341,16 @@ fn write_body_hierarchy(
         schema_32001,
     } = *identities;
     let shells = ir
-        .model
+        .geometry
         .shells
         .iter()
         .map(|shell| (shell.id.clone(), shell))
         .collect::<HashMap<_, _>>();
-    let regions = ir
-        .model
-        .regions
-        .iter()
-        .map(|region| (region.id.clone(), region))
-        .collect::<HashMap<_, _>>();
     let mut assigned = HashSet::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         let root = take_attr(next)?;
         let mut native_regions = Vec::new();
-        for region_id in &body.regions {
-            let region = regions
-                .get(region_id)
-                .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
+        for region in ir.geometry.body_regions(&body.id) {
             if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT sheet regions require exactly one shell".into(),
@@ -3301,7 +3364,8 @@ fn write_body_hierarchy(
                     CodecError::Malformed("region references missing shell".into())
                 })?;
                 let mut owned = Vec::new();
-                for face in shell.faces() {
+                for face in ir.geometry.shell_faces(&shell.id) {
+                    let face = &face.id;
                     if !faces.contains_key(face) {
                         return Err(CodecError::Malformed(
                             "shell references missing face".into(),
@@ -3354,7 +3418,7 @@ fn write_body_hierarchy(
         root_refs[1..=native_regions.len()].copy_from_slice(&native_regions);
         entity51(out, 2, root, 0x0017, &root_refs)?;
     }
-    if assigned.len() != ir.model.faces.len() {
+    if assigned.len() != ir.geometry.faces.len() {
         return Err(CodecError::Malformed(
             "face is not assigned to a body".into(),
         ));
@@ -3400,42 +3464,35 @@ fn write_typed_body_hierarchy(
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let region_attrs = ir
-        .model
+        .geometry
         .regions
         .iter()
         .map(|region| Ok((region.id.clone(), take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let shell_attrs = ir
-        .model
+        .geometry
         .shells
         .iter()
         .map(|shell| Ok((shell.id.clone(), take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut face_shells = HashMap::new();
-    for shell in &ir.model.shells {
-        let shell_attr = shell_attrs[&shell.id];
-        for face in shell.faces() {
-            if face_shells.insert(face.clone(), shell_attr).is_some() {
-                return Err(CodecError::Malformed(
-                    "face belongs to multiple typed shells".into(),
-                ));
-            }
+    for face in &ir.geometry.faces {
+        if let Some(shell_attr) = shell_attrs.get(&face.shell) {
+            face_shells.insert(face.id.clone(), *shell_attr);
         }
     }
 
-    for (index, body) in ir.model.bodies.iter().enumerate() {
+    for (index, body) in ir.geometry.bodies.iter().enumerate() {
         let body_attr = body_attrs[&body.id];
-        let first_region = body
-            .regions
-            .first()
+        let first_body_region = ir
+            .geometry
+            .body_regions(&body.id)
+            .next()
             .ok_or_else(|| CodecError::Malformed("body has no typed region".into()))?;
-        let first_region = region_attrs[first_region];
-        let first_shell = ir
-            .model
-            .regions
-            .iter()
-            .find(|region| region.id.as_str() == body.regions[0].as_str())
-            .and_then(|region| region.shells.first())
+        let first_region = region_attrs[&first_body_region.id];
+        let first_shell = first_body_region
+            .shells
+            .first()
             .map(|shell| shell_attrs[shell])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
         typed_prefix(
@@ -3476,16 +3533,16 @@ fn write_typed_body_hierarchy(
         }
     }
 
-    for (index, shell) in ir.model.shells.iter().enumerate() {
+    for (index, shell) in ir.geometry.shells.iter().enumerate() {
         let body = ir
-            .model
+            .geometry
             .regions
             .iter()
             .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
             .map(|region| &region.body)
             .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
         let region = ir
-            .model
+            .geometry
             .regions
             .iter()
             .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
@@ -3508,27 +3565,24 @@ fn write_typed_body_hierarchy(
         }
     }
 
-    for (index, region) in ir.model.regions.iter().enumerate() {
+    for (index, region) in ir.geometry.regions.iter().enumerate() {
         let body = body_attrs[&region.body];
         let body_regions = ir
-            .model
-            .bodies
-            .iter()
-            .find(|candidate| candidate.id == region.body)
-            .ok_or_else(|| CodecError::Malformed("typed region has no body".into()))?;
+            .geometry
+            .body_regions(&region.body)
+            .map(|candidate| &candidate.id)
+            .collect::<Vec<_>>();
         let position = body_regions
-            .regions
             .iter()
-            .position(|candidate| candidate == &region.id)
+            .position(|candidate| *candidate == &region.id)
             .ok_or_else(|| CodecError::Malformed("body does not reference typed region".into()))?;
         let next_region = body_regions
-            .regions
             .get(position + 1)
-            .map_or(1, |id| region_attrs[id]);
+            .map_or(1, |id| region_attrs[*id]);
         let previous_region = position
             .checked_sub(1)
-            .and_then(|position| body_regions.regions.get(position))
-            .map_or(1, |id| region_attrs[id]);
+            .and_then(|position| body_regions.get(position))
+            .map_or(1, |id| region_attrs[*id]);
         let shell_head = region
             .shells
             .first()
@@ -3553,7 +3607,7 @@ fn write_typed_body_hierarchy(
         out.push(b'S');
     }
 
-    for (index, face) in ir.model.faces.iter().enumerate() {
+    for (index, face) in ir.geometry.faces.iter().enumerate() {
         let shell = face_shells
             .get(&face.id)
             .copied()
@@ -3591,34 +3645,11 @@ fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
     be32(out, node_id);
 }
 
-/// Emit one Parasolid XT pointer in its compact or extended two-cell form.
-///
-/// The high bit of the first cell is the form discriminator, so `0x7fff` is
-/// the first value that requires two cells. Two u16 cells provide 31 payload
-/// bits; refusing a larger value keeps the writer from emitting a truncated
-/// pointer.
+/// Emit one Parasolid XT pointer in its shortest encoded form (`parasolid.md` §1).
 fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
-    let value = value.into();
-    if value > 0x7fff_ffff {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
-        ));
-    }
-    let refuse = || {
-        CodecError::NotImplemented(
-            "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
-        )
-    };
-    if value <= 0x7ffe {
-        be16(out, u16::try_from(value).map_err(|_| refuse())?);
-    } else {
-        be16(
-            out,
-            0x8000 | u16::try_from(value & 0x7fff).map_err(|_| refuse())?,
-        );
-        be16(out, u16::try_from(value >> 15).map_err(|_| refuse())?);
-    }
-    Ok(())
+    cadmpeg_parasolid::pointer::write(out, value.into()).ok_or_else(|| {
+        CodecError::NotImplemented("SLDPRT typed reference exceeds the XT pointer range".into())
+    })
 }
 
 fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
@@ -3640,7 +3671,7 @@ pub(crate) fn face_colors(
         .map(|appearance| (&appearance.id, appearance))
         .collect::<HashMap<_, _>>();
     let mut colors = ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter_map(|face| face.color.map(|color| (face.id.clone(), color)))
@@ -3672,7 +3703,7 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     be32(out, 3);
     be16(out, attr);
     for value in [color.r(), color.g(), color.b()] {
-        bef64(out, f64::from(value));
+        bef64(out, value);
     }
 }
 
@@ -3932,6 +3963,13 @@ fn write_nurbs_curve(
             "SLDPRT NURBS curve {entity} pole count exceeds the native u32 field"
         ))
     })?;
+    let unique = unique_knots(nurbs.knots(), entity)?;
+    let knot_count = u32::try_from(unique.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS curve {entity} distinct-knot count exceeds the native u32 field"
+        ))
+    })?;
+    let rational = nurbs.weights().is_some();
     tag(out, 0x86);
     be16(out, wrapper);
     be16(out, descriptor);
@@ -3940,16 +3978,15 @@ fn write_nurbs_curve(
     be16(out, descriptor);
     be16(out, degree);
     be32(out, control_count);
-    be16(out, if nurbs.weights().is_some() { 4 } else { 3 });
-    be32(out, 2);
+    be16(out, if rational { 4 } else { 3 });
+    be32(out, knot_count);
     out.push(0);
-    be32(out, 0);
+    out.extend_from_slice(&[0, 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
     let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
-    let unique = unique_knots(nurbs.knots(), entity)?;
     u16_array(
         out,
         multiplicity,
@@ -4028,7 +4065,7 @@ fn write_nurbs_surface(
     be16(out, wrapper);
     be32(out, 1);
     out.extend_from_slice(&[0; 10]);
-    out.push(0x2b);
+    out.push(if nurbs.normal_reversed() { b'-' } else { b'+' });
     be16(out, descriptor);
     be16(out, 0);
     tag(out, 0x7e);
@@ -4080,6 +4117,12 @@ fn write_nurbs_surface(
 
 fn take_attr(next: &mut u16) -> Result<u16, CodecError> {
     let attr = *next;
+    // Bare records receive each attr and reference as a one-word cell.
+    if attr > 0x7fff {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT attribute space exhausted".into(),
+        ));
+    }
     *next = next
         .checked_add(1)
         .ok_or_else(|| CodecError::NotImplemented("SLDPRT attribute space exhausted".into()))?;
@@ -4473,8 +4516,8 @@ fn bef64(out: &mut Vec<u8>, value: f64) {
 #[cfg(test)]
 mod nurbs_write_tests {
     use super::{
-        check_semantic_support, pmi_local_sha256, typed_ref, unique_knots, write_nurbs_surface,
-        PMI_LOCAL_DIGEST_ATTRIBUTE,
+        check_semantic_support, pmi_local_sha256, take_attr, typed_ref, unique_knots,
+        write_nurbs_surface, PMI_LOCAL_DIGEST_ATTRIBUTE,
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
@@ -4621,9 +4664,11 @@ mod nurbs_write_tests {
     fn writes_typed_reference_boundaries() {
         for (value, expected) in [
             (0x7ffe_u32, vec![0x7f, 0xfe]),
-            (0x7fff_u32, vec![0xff, 0xff, 0, 0]),
-            (0x8000_u32, vec![0x80, 0, 0, 1]),
-            (0x7fff_ffff_u32, vec![0xff, 0xff, 0xff, 0xff]),
+            (0x7fff_u32, vec![0x7f, 0xff]),
+            (0x8000_u32, vec![0xff, 0xff, 0, 1]),
+            (36_225_u32, vec![0xf2, 0x7e, 0, 1]),
+            (65_535_u32, vec![0xff, 0xff, 0, 2]),
+            (32_768 * 32_767_u32, vec![0x80, 0x01, 0x7f, 0xff]),
         ] {
             let mut bytes = Vec::new();
             typed_ref(&mut bytes, value).expect("reference is representable");
@@ -4631,9 +4676,19 @@ mod nurbs_write_tests {
         }
 
         assert!(matches!(
-            typed_ref(&mut Vec::new(), 0x8000_0000_u32),
+            typed_ref(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX_VALUE + 1),
             Err(CodecError::NotImplemented(message))
-                if message.contains("31-bit XT pointer range")
+                if message.contains("XT pointer range")
+        ));
+    }
+
+    #[test]
+    fn attribute_space_ends_at_the_one_word_cell_range() {
+        let mut next = 0x7fff;
+        assert_eq!(take_attr(&mut next).expect("one-word attr"), 0x7fff);
+        assert!(matches!(
+            take_attr(&mut next),
+            Err(CodecError::NotImplemented(message)) if message.contains("attribute space")
         ));
     }
 
@@ -4652,6 +4707,18 @@ mod nurbs_write_tests {
                     && message.contains("knot multiplicity")
         ));
     }
+}
+
+/// The two vertices that bound an edge. A `SolidWorks` edge record names both.
+fn edge_ends(
+    edge: &cadmpeg_ir::topology::Edge,
+) -> Result<&cadmpeg_ir::topology::EdgeEnds, CodecError> {
+    edge.ends.as_ref().ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT writer does not encode edge {} with no vertex",
+            edge.id
+        ))
+    })
 }
 
 #[cfg(test)]

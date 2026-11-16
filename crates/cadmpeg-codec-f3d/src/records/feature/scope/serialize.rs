@@ -86,7 +86,12 @@ impl Serialize for DesignParameterScope {
             };
         }
 
+        emit_opt!("captured_positions", self.captured_positions.as_ref());
         emit_opt!("occurrence_transfer", self.occurrence_transfer.as_ref());
+        emit_opt!(
+            "occurrence_transfer_intent",
+            self.occurrence_transfer_intent.as_ref()
+        );
         emit!("id", &self.id);
         emit!("byte_offset", self.byte_offset);
         emit!("class_tag", self.class_tag.as_str());
@@ -103,6 +108,10 @@ impl Serialize for DesignParameterScope {
                 extrude.fixed_extrude_parameters.as_ref()
             );
             emit_opt!("extrude_profile", extrude.extrude_profile.as_ref());
+            emit_opt!(
+                "extrude_native_profiles",
+                extrude.extrude_native_profiles.as_ref()
+            );
         }
         if let Some(coil) = self.coil() {
             if let Some(value) = coil.operation.as_ref() {
@@ -131,6 +140,8 @@ impl Serialize for DesignParameterScope {
 
         emit!("feature_ordinal", self.feature_ordinal.get());
         emit!("feature_ordinal_offset", self.feature_ordinal_offset);
+        emit_opt!("label", self.label.as_ref());
+        emit_opt!("display_name", self.display_name.as_deref());
         emit_opt!("history_state_id", self.history_state_id);
         emit!("history_state_id_offset", self.history_state_id_offset());
         emit_opt!("previous_history_state_id", self.previous_history_state_id);
@@ -161,24 +172,30 @@ impl Serialize for DesignParameterScope {
             DesignScopePayload::CylinderPrimitive(Some(value)) => {
                 emit!("solid_primitive", SolidPrimitiveRef::Cylinder(value));
             }
-            DesignScopePayload::OffsetFaces(Some(value))
-            | DesignScopePayload::DecalerLesFaces(Some(value)) => {
+            DesignScopePayload::OffsetFaces(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::OffsetFaces(value));
             }
-            DesignScopePayload::Shell(Some(value)) | DesignScopePayload::Schale(Some(value)) => {
+            DesignScopePayload::Shell(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::Shell(value));
             }
             DesignScopePayload::Thicken(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::Thicken(value));
             }
+            DesignScopePayload::Move(Some(value)) | DesignScopePayload::MoveFace(Some(value)) => {
+                emit!("move_operation", value);
+            }
             _ => {}
         }
 
         emit_opt!("align_envelope", self.align_envelope());
-        emit_opt!("move_operation", self.move_operation());
+        emit_opt!("modify_operation", self.modify_operation());
         emit_opt!("scale_operation", self.scale_operation());
+        emit_opt!("reverse_normal_operation", self.reverse_normal_operation());
+        emit_opt!("path_pattern_settings", self.path_pattern_settings());
+        emit_opt!("mesh_face_groups", self.mesh_face_groups());
         emit_opt!("surface_stitch_operation", self.surface_stitch_operation());
         emit_opt!("surface_extend_operation", self.surface_extend_operation());
+        emit_opt!("surface_untrim_operation", self.surface_untrim_operation());
         emit_opt!("surface_offset_operation", self.surface_offset_operation());
         emit_opt!("ruled_surface_operation", self.ruled_surface_operation());
         if let Some(base_flange) = self.base_flange() {
@@ -196,11 +213,18 @@ impl Serialize for DesignParameterScope {
                 emit!("surface_patch_boundaries", &patch.boundaries);
             }
             emit_opt!("surface_patch_normal", patch.normal.as_ref());
+            emit_opt!("surface_patch_selection", patch.selection.as_ref());
         }
         emit_opt!("edge_flange_operation", self.edge_flange_operation());
+        emit_opt!("edge_flange_construction", self.edge_flange_construction());
         emit_opt!("hem_operation", self.hem_operation());
+        emit_opt!("contour_flange_operation", self.contour_flange_operation());
+        emit_opt!("unfold_operation", self.unfold_operation());
+        emit_opt!("refold_operation", self.refold_operation());
         emit_opt!("fixed_fillet_parameters", self.fixed_fillet_parameters());
+        emit_opt!("fillet_sets", self.fillet_sets());
         emit_opt!("fixed_chamfer_parameters", self.fixed_chamfer_parameters());
+        emit_opt!("chamfer_sets", self.chamfer_sets());
 
         match &self.payload {
             DesignScopePayload::Revolve(Some(value)) => {
@@ -232,13 +256,12 @@ impl Serialize for DesignParameterScope {
         }
 
         emit_opt!("combine_operation", self.combine_operation());
+        emit_opt!("combine_named_tail", self.combine_named_tail());
         emit_opt!("thread_construction", self.thread_construction());
         emit_opt!("emboss_construction", self.emboss_construction());
         emit_opt!("draft_operation", self.draft_operation());
         match &self.payload {
-            DesignScopePayload::CPattern(value)
-            | DesignScopePayload::CircularPattern(value)
-            | DesignScopePayload::ReseauC(value) => {
+            DesignScopePayload::CPattern(value) | DesignScopePayload::CircularPattern(value) => {
                 emit_opt!("circular_pattern_construction", value.as_ref());
             }
             DesignScopePayload::RPattern(value) | DesignScopePayload::RectangularPattern(value) => {
@@ -249,7 +272,11 @@ impl Serialize for DesignParameterScope {
         emit_opt!("assembly_alignment", self.assembly_alignment());
         match &self.payload {
             DesignScopePayload::ComponentInsert(value) => {
-                emit_opt!("component_insert_construction", value.as_ref());
+                emit_opt!("component_insert_construction", value.construction.as_ref());
+                emit_opt!(
+                    "component_insert_placement",
+                    value.unresolved_placement.as_ref()
+                );
             }
             DesignScopePayload::DerivedInstance(value) => {
                 emit_opt!("derived_instance_construction", value.as_ref());
@@ -307,6 +334,9 @@ impl Serialize for DesignParameterScope {
                 "unclosed_construction_operand_groups",
                 &self.unclosed_construction_operand_groups
             );
+        }
+        if let Some(deleted_members) = &self.deleted_members {
+            emit!("deleted_members", deleted_members);
         }
         emit_opt!("hole_construction", self.hole_construction());
         emit_opt!("hole_extent", self.hole_extent());

@@ -106,7 +106,7 @@ impl Serialize for NativeCard<'_> {
             ScannedLine::Card {
                 section, sequence, ..
             } => (Some(*section), Some(*sequence)),
-            ScannedLine::Trailing(_) => (None, None),
+            ScannedLine::Trailing(_) | ScannedLine::DroppedFinal(_) => (None, None),
         };
         let line = self.line.physical();
         Wire {
@@ -2243,6 +2243,37 @@ pub(crate) struct NativeStoreInputs<'a, 'b> {
     pub(crate) structure_admitted: Option<&'a crate::entities::geometry::Projection>,
     pub(crate) sequences: &'a crate::entities::geometry::SourceSequences,
     pub(crate) boundary_vertex_derivations: &'a [BoundaryVertexDerivation],
+}
+
+pub(crate) fn store_physical_cards(
+    ir: &mut CadIr,
+    scan: &CardScan<'_>,
+    ctx: &DecodeContext<'_>,
+) -> Result<NativeStoreResult, CodecError> {
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(scan.lines.len()),
+        "iges_native_entities",
+    )?;
+    let cards = scan
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| NativeCard { index, line })
+        .collect::<Vec<_>>();
+    ir.native
+        .namespace_mut("iges")
+        .set_arena_from(ctx, "cards", cards)?;
+    Ok(NativeStoreResult {
+        occurrence_expansion: ProductOccurrenceExpansion {
+            output_truncated_at: None,
+            depth_truncated_at: None,
+            malformed_definition_sequences: Vec::new(),
+            malformed_placement_sequences: Vec::new(),
+        },
+        ambiguous_parameter_boundaries: Vec::new(),
+        overdeclared_counts: BTreeMap::new(),
+        unstatable_attribute_tables: BTreeMap::new(),
+    })
 }
 
 pub(crate) fn store(
@@ -5521,7 +5552,7 @@ pub(crate) fn store(
         occurrence_definitions.insert(sequence, definition);
     }
     let mut occurrence_neutral_links = BTreeMap::<u32, Vec<String>>::new();
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         if let Some(sequence) = curve
             .source_object
             .as_ref()
@@ -5535,7 +5566,7 @@ pub(crate) fn store(
             );
         }
     }
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         if let Some(sequence) = surface
             .source_object
             .as_ref()
@@ -5549,12 +5580,12 @@ pub(crate) fn store(
             );
         }
     }
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         if let Some(sequence) = sequences.body_neutral_form(&body.id) {
             push_occurrence_neutral_link(&mut occurrence_neutral_links, sequence, body.id.as_str());
         }
     }
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         if let Some(sequence) = sequences.point(&point.id) {
             push_occurrence_neutral_link(
                 &mut occurrence_neutral_links,

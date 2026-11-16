@@ -19,11 +19,13 @@ impl Serialize for PmiDimension {
             nominal: Option<PmiValue>,
             #[serde(skip_serializing_if = "Option::is_none")]
             tolerance: Option<&'a DimensionTolerance>,
+            modifiers: &'a [String],
         }
         Wire {
             dimension: &self.kind,
             nominal: self.nominal,
             tolerance: self.tolerance.as_ref(),
+            modifiers: &self.modifiers,
         }
         .serialize(serializer)
     }

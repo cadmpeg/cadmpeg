@@ -95,7 +95,7 @@ fn intrinsic_primitives_are_exact_bodies() {
 #[test]
 fn a_capsule_with_unequal_radii_is_reported() {
     let result = decode("#usda 1.0\ndef Capsule_1 \"C\"\n{\n    double radiusTop = 1\n    double radiusBottom = 2\n}\n");
-    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
     assert!(result
         .report()
         .losses
@@ -103,10 +103,10 @@ fn a_capsule_with_unequal_radii_is_reported() {
         .any(|loss| loss.message.contains("unequal radii")));
 }
 
-/// The carrier kind of each face and edge of `model`, and the number of
+/// The carrier kind of each face and edge of `geometry`, and the number of
 /// pcurves of each coedge, by entity identity.
-fn carriers(model: &cadmpeg_ir::document::Model) -> Vec<(String, String)> {
-    let json = serde_json::to_value(model).expect("a model serializes");
+fn carriers(geometry: &cadmpeg_ir::document::Topology) -> Vec<(String, String)> {
+    let json = serde_json::to_value(geometry).expect("the geometry serializes");
     let kinds = |arena: &str| -> std::collections::BTreeMap<String, String> {
         json[arena]
             .as_array()
@@ -145,8 +145,8 @@ fn analytic_carriers_survive_a_write() {
     let (text, _) = crate::test_support::encode(first.ir());
     assert!(text.contains("CadBrepAnalyticAPI"), "{text}");
     let second = decode(&text);
-    let (before, after) = (&first.ir().model, &second.ir().model);
+    let (before, after) = (&first.ir().geometry, &second.ir().geometry);
     assert_eq!(carriers(before), carriers(after));
-    let loops = |model: &cadmpeg_ir::document::Model| model.loops.len();
+    let loops = |geometry: &cadmpeg_ir::document::Topology| geometry.loops.len();
     assert_eq!(loops(before), loops(after));
 }

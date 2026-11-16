@@ -16,6 +16,10 @@ const CHORD_RATIO: f64 = 2e-3;
 const MIN_CHORD_TOLERANCES: f64 = 10.0;
 /// Largest normal turn across one mesh triangle, in radians.
 const MESH_ANGLE: f64 = 0.3;
+/// Largest vertex count of one face mesh. Angle refinement cannot converge
+/// across a singular parametrization, so the cap bounds that grind; the
+/// reported deviation stays honest for the returned mesh.
+const MESH_MAX_VERTICES: usize = 4096;
 
 /// Expands `grow` by the axis-aligned box of an untrimmed analytic sphere or
 /// the control net of a NURBS face. A complete sphere has no vertices.
@@ -56,14 +60,11 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
             high[axis] = high[axis].max(value);
         }
     };
-    let faces = body
-        .regions
-        .iter()
-        .filter_map(|region| index.regions(region.as_str(), query))
+    let geometry = &index.ir().geometry;
+    let faces = geometry
+        .body_regions(&body.id)
         .flat_map(|region| region.shells.iter())
-        .filter_map(|shell| index.shells(shell.as_str(), query))
-        .flat_map(|shell| shell.faces().iter())
-        .filter_map(|face| index.faces(face.as_str(), query));
+        .flat_map(|shell| geometry.shell_faces(shell));
     for face in faces {
         if let Some(geometry) = index
             .surfaces(face.surface.as_str(), query)
@@ -78,7 +79,7 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
             .flat_map(|loop_| loop_.coedges().iter())
             .filter_map(|coedge| index.coedges(coedge.as_str(), query))
             .filter_map(|coedge| index.edges(coedge.edge.as_str(), query));
-        for vertex in edges.flat_map(|edge| [&edge.start, &edge.end]) {
+        for vertex in edges.flat_map(cadmpeg_ir::topology::Edge::vertices) {
             if let Some(point) = index
                 .vertices(vertex.as_str(), query)
                 .and_then(|vertex| index.points(vertex.point.as_str(), query))
@@ -101,7 +102,7 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
         chord,
         angle: MESH_ANGLE,
         pcurve_tolerance: Some(tolerance / 2.0),
-        ..cadmpeg_tessellate::Options::default()
+        max_vertices: MESH_MAX_VERTICES,
     }
 }
 

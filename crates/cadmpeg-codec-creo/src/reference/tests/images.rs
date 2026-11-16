@@ -33,7 +33,7 @@ fn named_conic_image_decodes_one_conic() {
 #[test]
 fn positional_conic_image_decodes_one_conic() {
     assert_eq!(
-        super::super::positional_conics(POSITIONAL_CONIC)
+        super::super::positional_conics(POSITIONAL_CONIC, &mut false)
             .expect("positional conic image decodes")
             .len(),
         1

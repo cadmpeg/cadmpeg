@@ -75,12 +75,11 @@ mod tests {
             .limits
             .max_recursion_depth;
         let depth = usize::try_from(limit).expect("default depth fits usize");
-        assert!(matches!(
-            super::parse_entity_count(exchange(depth).as_bytes()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
-                    && refusal.limit == limit
-        ));
+        assert_eq!(
+            super::parse_entity_count(exchange(depth).as_bytes())
+                .expect("a record past the depth limit is given up alone"),
+            0
+        );
     }
 
     #[test]

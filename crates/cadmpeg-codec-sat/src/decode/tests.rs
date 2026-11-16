@@ -26,7 +26,7 @@ fn decode_bytes(bytes: &[u8]) -> DecodeResult {
 }
 
 fn sphere_radius(result: &DecodeResult) -> f64 {
-    let surface = &result.ir().model.surfaces[0];
+    let surface = &result.ir().geometry.surfaces[0];
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
@@ -50,6 +50,7 @@ fn binary_product_encoding_recovery_keeps_geometry_and_exact_header() {
             let mut bytes = original.clone();
             bytes[position] = 0xff;
             let recovered = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&bytes));
+            assert_eq!(recovered.ir().geometry, expected.ir().geometry);
             assert_eq!(recovered.ir().model, expected.ir().model);
             assert_eq!(recovered.ir().tolerances, expected.ir().tolerances);
             assert!(recovered
@@ -86,6 +87,7 @@ fn text_record_count_metadata_recovery_keeps_geometry_and_exact_header() {
             let source = original.replacen(" 0 2 2", &format!(" {value} 2 2"), 1);
             let recovered =
                 cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+            assert_eq!(recovered.ir().geometry, expected.ir().geometry);
             assert_eq!(recovered.ir().model, expected.ir().model);
             assert!(recovered
                 .report()
@@ -125,6 +127,7 @@ fn text_header_metadata_recovery_preserves_geometry_and_exact_header() {
         ] {
             let recovered =
                 cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+            assert_eq!(recovered.ir().geometry, expected.ir().geometry);
             assert_eq!(recovered.ir().model, expected.ir().model);
             assert!(!recovered.report().losses.is_empty());
             let header_end = source.match_indices('\n').nth(2).unwrap().0 + 1;
@@ -151,10 +154,10 @@ fn both_encodings_decode_the_same_solid() {
     let asm_binary = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::Asm));
     let acis_binary = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::Acis));
     for result in [&text, &asm_binary, &acis_binary] {
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.shells.len(), 1);
-        assert_eq!(result.ir().model.faces.len(), 1);
-        assert_eq!(result.ir().model.surfaces.len(), 1);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.shells.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
+        assert_eq!(result.ir().geometry.surfaces.len(), 1);
         assert!(result.report().geometry_transferred());
     }
     // 25 stream units at scale 1 (mm) and 2.5 binary centimetres are both
@@ -185,7 +188,7 @@ const EPS_VERTEX_MM: f64 = 1.0e-9;
 /// and u along `+x`, so v runs along `-y`. Its vertices are at native plane
 /// coordinates `(0, 0)`, `(2, 0)`, and `(0, 1)`, and each coedge carries the
 /// pcurve of its edge in those coordinates.
-fn text_plane_triangle_stream(scale: f64) -> Vec<u8> {
+fn text_plane_triangle_stream(scale: f64, [du, dv]: [f64; 2]) -> Vec<u8> {
     use std::fmt::Write as _;
     let mut text = format!(
         "23200 0 2 2 \n16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n\
@@ -209,11 +212,16 @@ fn text_plane_triangle_stream(scale: f64) -> Vec<u8> {
          vertex $-1 -1 $-1 $11 0 $23 #\n\
          vertex $-1 -1 $-1 $12 0 $24 #\n",
     );
-    for (end, poles) in [(2, "0 0 2 0"), (1, "2 0 0 1"), (1, "0 1 0 0")] {
+    for (end, [u0, v0, u1, v1]) in [
+        (2, [0.0, 0.0, 2.0, 0.0]),
+        (1, [2.0, 0.0, 0.0, 1.0]),
+        (1, [0.0, 1.0, 0.0, 0.0]),
+    ] {
+        let poles = format!("{} {} {} {}", u0 - du, v0 - dv, u1 - du, v1 - dv);
         writeln!(
             text,
             "pcurve $-1 -1 $-1 0 forward {{ exp_par_cur nubs 1 open 2 0 1 {end} 1 {poles} 0 \
-             spline forward {{ ref 99 }} I I I I }} 0 0 #"
+             spline forward {{ ref 99 }} I I I I }} {du} {dv} #"
         )
         .expect("writing to a String does not fail");
     }
@@ -232,18 +240,24 @@ fn text_plane_triangle_stream(scale: f64) -> Vec<u8> {
 #[test]
 fn text_plane_pcurves_reach_their_vertices_in_the_stream_unit() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    for scale in [1.0, 25.4, 10.0] {
-        let result = decode_bytes(&text_plane_triangle_stream(scale));
-        let model = &result.ir().model;
-        let plane = model.surfaces[0].geometry.solved().expect("plane carrier");
-        let vertices: Vec<_> = model
+    for (scale, offset) in [1.0, 25.4, 10.0]
+        .into_iter()
+        .flat_map(|scale| [[0.0, 0.0], [3.0, -2.0]].map(|offset| (scale, offset)))
+    {
+        let result = decode_bytes(&text_plane_triangle_stream(scale, offset));
+        let geometry = &result.ir().geometry;
+        let plane = geometry.surfaces[0]
+            .geometry
+            .solved()
+            .expect("plane carrier");
+        let vertices: Vec<_> = geometry
             .points
             .iter()
             .map(|point| point.position().get())
             .collect();
         assert_eq!(vertices.len(), 3);
-        assert_eq!(model.pcurves.len(), 3, "scale {scale}");
-        for pcurve in &model.pcurves {
+        assert_eq!(geometry.pcurves.len(), 3, "scale {scale}");
+        for pcurve in &geometry.pcurves {
             let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry
             else {
                 panic!("NURBS pcurve expected");
@@ -315,14 +329,14 @@ fn text_decode_preflights_header_entities_and_counts_actual_records() {
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit SAT native records"
     ));
-    assert_eq!(decode_bytes(&bytes).ir().model.bodies.len(), 1);
+    assert_eq!(decode_bytes(&bytes).ir().geometry.bodies.len(), 1);
 }
 
 #[test]
 fn known_sphere_record_retains_source_offset_tag_and_derived_fields() {
     let bytes = text_sphere_stream(1.0);
     let result = decode_bytes(&bytes);
-    let surface_id = result.ir().model.surfaces[0].id.to_string();
+    let surface_id = result.ir().geometry.surfaces[0].id.to_string();
     let (_, _, fidelity) = result.into_parts();
     let provenance = fidelity
         .annotations
@@ -353,7 +367,7 @@ fn known_sphere_record_retains_source_offset_tag_and_derived_fields() {
 #[test]
 fn ids_use_the_sat_format_scheme() {
     let result = decode_bytes(&text_sphere_stream(1.0));
-    let body_id = &result.ir().model.bodies[0].id;
+    let body_id = &result.ir().geometry.bodies[0].id;
     assert!(
         body_id.as_str().starts_with("sat:brep:entity#"),
         "unexpected id scheme: {body_id:?}"
@@ -374,7 +388,7 @@ fn an_unverified_acis_binary_band_is_decoded_and_marked() {
     // verified one; only the mark on the result differs.
     let result = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::AcisUnverifiedBand));
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
     assert!(result
         .report()
@@ -393,7 +407,7 @@ fn an_unverified_acis_binary_band_is_decoded_and_marked() {
 fn an_unverified_acis_text_band_is_decoded_and_marked() {
     let result = decode_bytes(&acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT));
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
     assert!(result
         .report()
@@ -560,7 +574,7 @@ fn zero_header_resabs_preserves_default_and_records_loss() {
     let source = String::from_utf8(text_sphere_stream(1.0)).unwrap();
     let source = source.replacen("9.999999999999999547e-07", "0", 1);
     let result = decode_bytes(source.as_bytes());
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(
         result.ir().tolerances.linear,
         cadmpeg_ir::units::Tolerances::default().linear
@@ -585,8 +599,8 @@ fn sat_encodings_admit_declared_and_actual_entities_once() {
         let decoded = SatCodec
             .decode(&mut Cursor::new(bytes), &options)
             .expect("declared records share the actual population admission");
-        assert_eq!(decoded.ir().model.bodies.len(), 1);
-        assert_eq!(decoded.ir().model.surfaces.len(), 1);
+        assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+        assert_eq!(decoded.ir().geometry.surfaces.len(), 1);
     }
 }
 
@@ -608,11 +622,11 @@ fn sat_container_only_stops_before_entity_decode_for_all_encodings() {
             .expect("container facts require no entity admission");
         assert!(result.report().container_only());
         assert!(!result.report().geometry_transferred());
-        assert!(result.ir().model.surfaces.is_empty());
-        assert!(result.ir().model.faces.is_empty());
-        assert!(result.ir().model.shells.is_empty());
-        assert!(result.ir().model.bodies.is_empty());
-        assert!(result.ir().model.points.is_empty());
+        assert!(result.ir().geometry.surfaces.is_empty());
+        assert!(result.ir().geometry.faces.is_empty());
+        assert!(result.ir().geometry.shells.is_empty());
+        assert!(result.ir().geometry.bodies.is_empty());
+        assert!(result.ir().geometry.points.is_empty());
         assert!(result.report().losses.is_empty());
     }
 }
@@ -632,7 +646,7 @@ fn sat_container_only_ignores_malformed_entity_payload() {
     let result = SatCodec
         .decode(&mut Cursor::new(source.as_bytes()), &options)
         .expect("container scope does not parse entities");
-    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result.ir().geometry.surfaces.is_empty());
     options.depth = cadmpeg_core::decode::DecodeDepth::Full;
     assert!(SatCodec
         .decode(&mut Cursor::new(source.as_bytes()), &options)
@@ -669,7 +683,10 @@ fn sat_header_conversion_keeps_geometry_with_default_tolerance() {
                 .losses
                 .iter()
                 .any(|loss| loss.code == SatLossCode::HeaderToleranceUnresolved.kind()));
-            assert_eq!(result.ir().model.faces.len(), usize::from(!container_only));
+            assert_eq!(
+                result.ir().geometry.faces.len(),
+                usize::from(!container_only)
+            );
         }
     }
 }
@@ -712,7 +729,7 @@ fn sat_unusable_header_values_keep_independent_records() {
                 "{line}"
             );
             assert_eq!(
-                recovered.ir().model.faces.len(),
+                recovered.ir().geometry.faces.len(),
                 usize::from(!container_only)
             );
         }
@@ -734,10 +751,10 @@ tvertex $-1 -1 $-1 $7 $10 0 #\n\
 ellipse-curve $-1 -1 $-1 0 0 0 0 0 1 10 0 0 1 I I #\n\
 point $-1 -1 $-1 10 0 0 #\nEnd-of-ACIS-data\n";
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
-    assert_eq!(result.ir().model.vertices.len(), 1);
-    assert!(result.ir().model.vertices[0].tolerance.is_none());
-    assert_eq!(result.ir().model.edges.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 1);
+    assert!(result.ir().geometry.vertices[0].tolerance.is_none());
+    assert_eq!(result.ir().geometry.edges.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert!(result
         .report()
         .losses
@@ -751,6 +768,12 @@ point $-1 -1 $-1 10 0 0 #\nEnd-of-ACIS-data\n";
             .data(),
         Some(b"tvertex $-1 -1 $-1 $7 $10 0 #".as_slice())
     );
+    assert!(result
+        .source_fidelity()
+        .retained_record("sat:brep:tvertex#8")
+        .unwrap()
+        .untyped()
+        .is_empty());
 }
 
 #[test]
@@ -760,6 +783,7 @@ fn attachment_headers_keep_record_offsets_and_source_bytes() {
     source.extend(text_sphere_stream(1.0));
     let expected = decode_bytes(&text_sphere_stream(1.0));
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
+    assert_eq!(result.ir().geometry, expected.ir().geometry);
     assert_eq!(result.ir().model, expected.ir().model);
     assert!(result
         .report()
@@ -773,6 +797,12 @@ fn attachment_headers_keep_record_offsets_and_source_bytes() {
         .data()
         .unwrap();
     assert!(retained.starts_with(prefix));
+    assert!(result
+        .source_fidelity()
+        .retained_record("sat:source:header#0")
+        .unwrap()
+        .untyped()
+        .is_empty());
 }
 
 #[test]
@@ -781,7 +811,7 @@ fn empty_leading_record_name_uses_its_table_index_and_keeps_the_source() {
         .unwrap()
         .replace("End-of-ASM-data", "-opaque $-1 #\nEnd-of-ASM-data");
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert!(result
         .report()
         .losses
@@ -795,6 +825,17 @@ fn empty_leading_record_name_uses_its_table_index_and_keeps_the_source() {
             .data(),
         Some(b"-opaque $-1 #".as_slice())
     );
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:brep:untyped-record#6")
+            .unwrap()
+            .untyped()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [cadmpeg_core::decode::ArenaClass::Model]
+    );
 }
 
 #[test]
@@ -807,6 +848,7 @@ fn acis_base_extensions_do_not_shift_shared_entity_fields() {
         .replace("End-of-ASM-data", "End-of-ACIS-data");
     let expected = decode_bytes(&text_sphere_stream(1.0));
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+    assert_eq!(result.ir().geometry, expected.ir().geometry);
     assert_eq!(result.ir().model, expected.ir().model);
     assert!(result
         .report()
@@ -821,6 +863,14 @@ fn acis_base_extensions_do_not_shift_shared_entity_fields() {
             .data(),
         Some(source.as_bytes())
     );
+    assert_eq!(
+        result
+            .source_fidelity()
+            .unrepresented()
+            .into_iter()
+            .collect::<Vec<_>>(),
+        [cadmpeg_core::decode::ArenaClass::Model]
+    );
 }
 
 #[test]
@@ -833,9 +883,9 @@ face $-1 $-1 $-1 $2 $-1 $4 0 0 #\n\
 spline-surface $-1 0 { exactsur nubs 1 1 open open none none 2 2 0 1 1 1 0 1 1 1 0 0 0 10 0 0 0 10 0 10 10 0 0 } #\n\
 End-of-ACIS-data\n";
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry.solved(),
+        result.ir().geometry.surfaces[0].geometry.solved(),
         Some(SolvedSurfaceGeometry::Nurbs(_))
     ));
     assert!(result
@@ -859,8 +909,8 @@ fn standalone_face_is_retained_when_the_ir_requires_a_shell_owner() {
 face $-1 $-1 $-1 $-1 $-1 $1 forward single #\n\
 plane-surface $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\nEnd-of-ACIS-data\n";
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
-    assert!(result.ir().model.faces.is_empty());
-    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
+    assert!(result.ir().geometry.surfaces.is_empty());
     assert!(result
         .report()
         .losses
@@ -897,11 +947,11 @@ shell $-1 $-1 $-1 $4 $1 #\n\
 face $-1 $-1 $-1 $3 $-1 $5 0 0 #\n\
 plane-surface $-1 0 0 0 0 0 1 1 0 0 0 #\nEnd-of-ACIS-data\n";
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
-    let model = &result.ir().model;
-    assert_eq!(model.faces.len(), 1);
-    assert_eq!(model.shells.len(), 1);
-    assert_eq!(model.shells[0].id.as_str(), "sat:brep:entity#3");
-    assert_eq!(model.regions[0].shells, [model.shells[0].id.clone()]);
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.shells.len(), 1);
+    assert_eq!(geometry.shells[0].id.as_str(), "sat:brep:entity#3");
+    assert_eq!(geometry.regions[0].shells, [geometry.shells[0].id.clone()]);
     assert!(result
         .report()
         .losses
@@ -962,7 +1012,6 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
         branch: stream.terminator,
         header: &header,
     }));
-    let (matched, kernel) = super::layers(&evidence);
     let mut graph = AsmBrep::default();
     graph
         .stats
@@ -970,12 +1019,12 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
         .insert("tcoedge-use-curve-invalid-interval".into(), 1);
     let result = super::build_result(
         &ctx,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes),
         Some(graph),
         BTreeMap::new(),
         &header,
         Some(stream.terminator),
-        matched,
-        &kernel,
+        super::layers(&evidence),
     )
     .unwrap();
     assert!(result
@@ -996,9 +1045,9 @@ fn invalid_edge_tolerance_has_a_loss_and_retains_its_source_record() {
             .replace("End-of-ASM-data", &format!("{record}\nEnd-of-ASM-data"));
         let result =
             cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
-        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
         assert!(
-            matches!(result.ir().model.surfaces[0].geometry.solved(), Some(SolvedSurfaceGeometry::Sphere(sphere)) if sphere.radius().get() == 25.0)
+            matches!(result.ir().geometry.surfaces[0].geometry.solved(), Some(SolvedSurfaceGeometry::Sphere(sphere)) if sphere.radius().get() == 25.0)
         );
         assert!(result
             .report()
@@ -1013,5 +1062,69 @@ fn invalid_edge_tolerance_has_a_loss_and_retains_its_source_record() {
                 .data(),
             Some(record.as_bytes())
         );
+    }
+}
+
+#[test]
+fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
+    use cadmpeg_ir::geometry::{
+        pcurve::{PcurveGeometry, PcurveNurbs},
+        IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition,
+        SupportPcurve,
+    };
+    use cadmpeg_ir::ids::{ProceduralCurveId, SurfaceId};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::CadIr;
+
+    let pcurve = SupportPcurve::from(PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+            None,
+            false,
+        )
+        .unwrap(),
+    });
+    for surface_present in [false, true] {
+        for pcurve_present in [false, true] {
+            let context = IntcurveSupportContext::try_new(
+                [
+                    IntcurveSupportSide {
+                        surface: surface_present
+                            .then(|| SurfaceId::mint("test:model:surface#0").unwrap()),
+                        pcurve: pcurve_present.then(|| pcurve.clone()),
+                    },
+                    IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                    },
+                ],
+                [0.0, 1.0],
+                std::array::from_fn(|_| Vec::new()),
+            )
+            .unwrap();
+            let mut ir = CadIr::empty();
+            ir.geometry.procedural_curves.push(ProceduralCurve::new(
+                ProceduralCurveId::mint("test:model:construction#0").unwrap(),
+                ProceduralCurveDefinition::Intersection {
+                    context,
+                    discontinuity_flag: false,
+                    cache: None,
+                },
+            ));
+            let losses = super::unmapped_support_chart_losses(&ir);
+            assert_eq!(
+                losses.len(),
+                usize::from(pcurve_present && !surface_present)
+            );
+            if let Some(loss) = losses.first() {
+                assert_eq!(
+                    loss.code,
+                    SatLossCode::GeometrySupportChartUnresolved.kind()
+                );
+                assert!(loss.message.contains("support side 0"));
+            }
+        }
     }
 }

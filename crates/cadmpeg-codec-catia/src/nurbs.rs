@@ -91,6 +91,105 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn push_owned_patch_sense_inferred(&mut self, count: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyOwnedPatchSenseInferred.note(format!(
+                "Inferred the face sense of {count} non-rolling-ball sheet faces from their roster member bits and carrier chart parity."
+            )),
+        );
+    }
+
+    pub(crate) fn push_endpoint_station_reading_inferred(
+        &mut self,
+        record: usize,
+        curve: usize,
+        parameter: f64,
+        first_tag: bool,
+    ) {
+        let reading = if first_tag {
+            "first-scalar tag"
+        } else {
+            "final-scalar tag"
+        };
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyEndpointStationReadingInferred.note(format!(
+                "For incidence allocation {record} and curve allocation {curve}, chose the {reading} reading of an ambiguous three-lane endpoint station; native parameter {parameter}."
+            )),
+        );
+    }
+
+    pub(crate) fn push_shared_boundary_reconciled(
+        &mut self,
+        [vertex, seed, retry, replaced]: [usize; 4],
+        max_gap_mm: f64,
+    ) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologySharedBoundaryReconciled.note(format!(
+                "Chose reconciled native shared-boundary readings for emitted faces with vertex repair on {vertex} faces, seed alignment on {seed} faces, and shared-edge retry on {retry} faces. Replaced shared curves on {replaced} previously admitted faces. Largest discrepancy was {max_gap_mm:.9} mm. Faces can occur in more than one path count."
+            )),
+        );
+    }
+
+    pub(crate) fn push_two_edge_binding_inferred(&mut self, owner_pos: usize, singleton: bool) {
+        let sense_evidence = if singleton {
+            "the class-61 singleton occurrence bit"
+        } else {
+            "the recovered loop winding"
+        };
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyTwoEdgeBindingInferred.note(format!(
+                "For the two-edge face at owner offset {owner_pos}, inferred pcurve binding from endpoint proximity and face sense from {sense_evidence}."
+            )),
+        );
+    }
+
+    pub(crate) fn push_sheet_surface_fitted(
+        &mut self,
+        rolling_ball: usize,
+        offset: usize,
+        ruled: usize,
+        extrusion: usize,
+    ) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySheetSurfaceFitted.note(format!(
+            "Transferred fitted B-spline surfaces for {rolling_ball} rolling-ball, {offset} offset, {ruled} ruled, and {extrusion} extrusion sheet faces. The fits use sampled geometric checks."
+        )));
+    }
+
+    pub(crate) fn push_sheet_boundary_recovery(
+        &mut self,
+        code: crate::loss::CatiaLossCode,
+        faces: usize,
+        max_gap_mm: f64,
+    ) {
+        let choice = match code {
+            crate::loss::CatiaLossCode::GeometryRollingSheetExtended => "Extended the stored transverse rolling section within 0.01 in parameter space and 0.005 mm in model space",
+            crate::loss::CatiaLossCode::TopologyAffineVertexReconciled => "Chose corroborated affine stations and reconciled incident fitted vertex positions",
+            crate::loss::CatiaLossCode::GeometryParameterMapAccuracyInferred => "Interpreted the parameter-map fit tolerance as a model-space bound in mm for corroborated planar shared-edge lifts, added the model gap, and retained the inferred bound as edge accuracy",
+            _ => return,
+        };
+        self.notes.push(code.note(format!("{choice} on {faces} emitted sheet faces; largest sampled discrepancy {max_gap_mm:.9} mm.")));
+    }
+
+    pub(crate) fn push_rolling_ball_rails_adjusted(&mut self, faces: usize, max_shift_mm: f64) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryRollingBallRailsAdjusted.note(format!(
+            "Fitted {faces} rolling-ball sheet faces after moving rail points onto the construction radius. The largest rail-point movement was {max_shift_mm} mm."
+        )));
+    }
+
+    /// Report exhaustion of a bounded sheet patch search.
+    pub(crate) fn push_sheet_patch_search_bounded(
+        &mut self,
+        search: &str,
+        limit: usize,
+        unit: &str,
+    ) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologySheetPatchSearchBounded.note(format!(
+                "The {search} reached its work bound of {limit} {unit}. Later candidates were skipped."
+            )),
+        );
+    }
+
     /// Record the `7C02` catalog candidates the catalog scan skipped at its
     /// walk allowance.
     pub(crate) fn push_catalog_scan_bounded(&mut self, bounded_candidates: usize) {
@@ -135,6 +234,19 @@ impl LaneRefusals {
                  per input byte; {bounded_relations} relations keep no parameter dependencies, \
                  and their program inputs stay unresolved.",
                 crate::native::MAX_RELATION_DEPENDENCY_BYTES_PER_INPUT_BYTE
+            )),
+        );
+    }
+
+    /// Record the B5 faces whose carrier sense or loop orientation withheld the
+    /// complete topology plan.
+    pub(crate) fn push_b5_faces_withheld(&mut self, face_object_ids: &[u32]) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyB5FacesWithheld.note(format!(
+                "The B5 topology plan is withheld: {} b5 03 5f face record(s) have no admitted \
+                 carrier sense or a flipped loop, by object id: {}. The graph stays native.",
+                face_object_ids.len(),
+                crate::loss::identity_statement(face_object_ids)
             )),
         );
     }

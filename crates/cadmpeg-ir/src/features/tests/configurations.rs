@@ -23,7 +23,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         ConfigurationId::mint("synthetic:test:configuration#0").expect("identity grammar");
     let parameter_id =
         ParameterId::mint("synthetic:test:parameter#width").expect("identity grammar");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.parameters.push(DesignParameter {
         product_definition: None,
         id: parameter_id.clone(),
@@ -209,6 +209,29 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].active = false;
     ir.model.features[0].suppressed = Some(false);
 
+    ir.model.configurations[0].active = true;
+    ir.model.features[0].suppressed = None;
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        first_feature.clone(),
+        ConfigurationFeatureState {
+            evaluation: ConfigurationEvaluation::Suppressed {},
+            dependencies: DistinctMembers::default(),
+            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                construction: None,
+            }),
+        },
+    )]);
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message
+                == "active configuration suppression disagrees with current feature state"
+    }));
+    ir.model.configurations[0].active = false;
+    ir.model.features[0].suppressed = Some(false);
+    ir.model.configurations[0].feature_states.clear();
+
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         later_feature.clone(),
         ConfigurationFeatureState {
@@ -308,30 +331,32 @@ fn configuration_body_membership_round_trips_and_validates() {
 fn configuration_name_preserves_resolution_state() {
     use crate::features::DesignConfiguration;
 
-    let configuration: DesignConfiguration = serde_json::from_value(serde_json::json!({
-        "id": "synthetic:test:configuration#0"
-    }))
-    .expect("legacy configuration");
+    let unresolved = serde_json::json!({
+        "id": "synthetic:test:configuration#0",
+        "ordinal": 0,
+        "active": false,
+        "properties": {},
+        "parameter_overrides": {},
+        "parameter_values": {},
+        "feature_states": {}
+    });
+    let configuration: DesignConfiguration =
+        serde_json::from_value(unresolved.clone()).expect("unresolved configuration");
     assert_eq!(configuration.name, None);
     assert!(!configuration.active);
 
     let encoded = serde_json::to_value(&configuration).expect("unresolved configuration");
     assert!(encoded.get("name").is_none());
-    assert!(encoded.get("active").is_none());
-    let round_trip: DesignConfiguration =
-        serde_json::from_value(encoded).expect("round-trip unresolved configuration");
-    assert_eq!(round_trip.name, None);
-    assert!(!round_trip.active);
+    assert_eq!(encoded, unresolved);
 
     // The absent key is the one spelling of an unresolved name; a stated null
     // is refused by name, and so is a stated null body list.
     for key in ["name", "bodies"] {
-        let error = serde_json::from_value::<DesignConfiguration>(serde_json::json!({
-            "id": "synthetic:test:configuration#0",
-            key: serde_json::Value::Null
-        }))
-        .expect_err("a stated null is not a second spelling of absence")
-        .to_string();
+        let mut stated_null = unresolved.clone();
+        stated_null[key] = serde_json::Value::Null;
+        let error = serde_json::from_value::<DesignConfiguration>(stated_null)
+            .expect_err("a stated null is not a second spelling of absence")
+            .to_string();
         assert!(error.contains("does not state null"), "{key}: {error}");
     }
 }
@@ -460,11 +485,13 @@ fn active_configuration_evaluation_can_have_no_body_outputs() {
     };
     assert_eq!(
         serde_json::to_value(&active).unwrap(),
-        serde_json::json!({"kind": "active"})
+        serde_json::json!({"kind": "active", "outputs": []})
     );
     assert_eq!(
-        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({"kind": "active"}))
-            .unwrap(),
+        serde_json::from_value::<ConfigurationEvaluation>(
+            serde_json::json!({"kind": "active", "outputs": []})
+        )
+        .unwrap(),
         active,
     );
 }

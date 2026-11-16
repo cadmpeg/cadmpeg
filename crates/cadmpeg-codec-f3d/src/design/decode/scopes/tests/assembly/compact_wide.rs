@@ -179,7 +179,10 @@ fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
     ]);
     let read = |bytes: &[u8], scope: &DesignParameterScope, owners: &[DesignParameterOwner]| {
         let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
-        exact_assembly_alignment_with_types(bytes, &records, scope, owners, &types).unwrap()
+        crate::test_support::with_decode_context(|ctx| {
+            exact_assembly_alignment_with_types(ctx, bytes, &records, scope, owners, &types)
+        })
+        .unwrap()
     };
 
     let (bytes, scope, owners) = compact_wide_scope_fixture(true);
@@ -225,7 +228,10 @@ fn compact_wide_operand_flag_is_the_frame_sense() {
         let (mut bytes, scope, owners) = compact_wide_scope_fixture(true);
         bytes[21] = flag;
         let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
-        exact_assembly_alignment_with_types(&bytes, &records, &scope, &owners, &types).unwrap()
+        crate::test_support::with_decode_context(|ctx| {
+            exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &owners, &types)
+        })
+        .unwrap()
     };
     // 0: the operand frames mate with their z axes aligned; 1: opposed.
     for (flag, sense) in [

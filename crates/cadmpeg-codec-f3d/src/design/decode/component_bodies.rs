@@ -7,7 +7,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::records::body_ownership::{
-    membership, terminal_membership, BodyOwnership, CONTAINER_BASE_GUID, CONTAINER_GUID,
+    membership, terminal_membership_for_bodies, BodyOwnership, CONTAINER_BASE_GUID, CONTAINER_GUID,
 };
 use crate::records::entity_header::SegmentTypeData;
 
@@ -82,12 +82,30 @@ pub(crate) fn valid_owner<'a>(
         })
 }
 
+/// Body-container memberships of one Design stream.
+pub(crate) struct BodyMemberships {
+    /// Owner resolution of each listed Body entity.
+    pub(crate) owners: BTreeMap<u64, OwnerResolution>,
+    /// Whether the stream registers a Body container and every registered
+    /// container has a primary frame with an admitted membership, so an entity
+    /// absent from `owners` is absent from every list.
+    pub(crate) complete: bool,
+}
+
 pub(crate) fn owners(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-) -> Result<BTreeMap<u64, OwnerResolution>, CodecError> {
+) -> Result<BodyMemberships, CodecError> {
     let mut result: BTreeMap<u64, OwnerResolution> = BTreeMap::new();
+    let registered_containers = meta
+        .types
+        .iter()
+        .filter(|data| data.type_guid.as_str().eq_ignore_ascii_case(CONTAINER_GUID))
+        .map(|data| data.entities.len())
+        .sum::<usize>();
+    let mut admitted_containers = 0_usize;
+    let mut complete = true;
     let mut registered: BTreeMap<u64, Option<&SegmentTypeData>> = BTreeMap::new();
     for data in meta.types.iter().filter(|data| ownership_type(data)) {
         for entity in data.entities.values() {
@@ -112,19 +130,29 @@ pub(crate) fn owners(
             continue;
         }
         let record = &bytes[frame.start..frame.end];
-        let Some(start) = terminal_membership(record) else {
+        let Some(start) = terminal_membership_for_bodies(record, |body| {
+            lookup(body).is_some_and(|data| {
+                data.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(crate::design::presentation::BODY_PRESENTATION_TYPE_GUID)
+            })
+        }) else {
+            complete = false;
             continue;
         };
         let tail = &record[start..];
         let Some(join) = membership(tail) else {
+            complete = false;
             continue;
         };
+        admitted_containers += 1;
         for (ordinal, body) in join.bodies().enumerate() {
             let Some(owner) = join.proof(
                 frame.entity_id,
                 cadmpeg_core::decode::u64_from_index(frame.start + start),
                 ordinal,
             ) else {
+                complete = false;
                 continue;
             };
             let incoming = if valid_owner(&owner, body, lookup)
@@ -132,6 +160,7 @@ pub(crate) fn owners(
             {
                 OwnerResolution::Admitted(owner)
             } else {
+                complete = false;
                 OwnerResolution::Unadmitted
             };
             ctx.retain_bytes(
@@ -148,5 +177,10 @@ pub(crate) fn owners(
             }
         }
     }
-    Ok(result)
+    Ok(BodyMemberships {
+        owners: result,
+        complete: complete
+            && admitted_containers != 0
+            && admitted_containers == registered_containers,
+    })
 }

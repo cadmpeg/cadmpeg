@@ -1,0 +1,93 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {},
+      "kind": "stored",
+      "name": "Manifest.dat",
+      "role": "manifest",
+      "size": {
+        "kind": "exact",
+        "size": 571
+      }
+    },
+    {
+      "attributes": {},
+      "kind": "stored",
+      "name": "FusionAssetName[Active]/Manifest.dat",
+      "role": "manifest",
+      "size": {
+        "kind": "exact",
+        "size": 589
+      }
+    },
+    {
+      "attributes": {
+        "acis_save_format_version": "23100",
+        "asm_entity_count": "5",
+        "asm_flags": "3",
+        "asm_magic": "ASM BinaryFile8",
+        "asm_width": "8",
+        "history_partition_offset": "1597",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 231.6.3.65535 OSX",
+        "resabs": "0.000001",
+        "resnor": "0.0000000001",
+        "save_date": "Tue Mar 31 16:16:19 2026",
+        "scale": "60",
+        "sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
+        "solved_record_len": "1597"
+      },
+      "kind": "stored",
+      "name": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+      "role": "brep-smbh",
+      "size": {
+        "kind": "exact",
+        "size": 1610
+      }
+    },
+    {
+      "attributes": {},
+      "expanded": 229,
+      "kind": "deflate",
+      "name": "FusionAssetName[Active]/OGS.BlobFolder/OGS/DefaultScene/world",
+      "role": "ogs-cache",
+      "stored": 124
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [
+        {
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {
+            "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+            "reference_width": "8",
+            "save_format_major": "231",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:asm-binaryfile-8"
+        }
+      ],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "top_level_manifest_version": "3-2-0-0"
+        },
+        "dialect": "f3d:manifest-3-2-0-0"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "Design asset folder (from manifests): FusionAssetName[Active]",
+    "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
+    "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (1610 bytes uncompressed)",
+    "container-level inspection only; run `decode` to resolve Design body bindings and build each referenced BREP graph"
+  ]
+}

@@ -11,6 +11,7 @@ use crate::records::feature::scope::DesignParameterScopeDraft;
 use crate::records::feature::scope::DesignScopePayloadMut;
 use crate::records::identity::Located;
 use crate::records::identity::ReferenceRun;
+use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::parameters::DesignParameterOwnerWire;
 use crate::records::parameters::DesignParameterSource;
@@ -86,6 +87,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 kind_offset: byte_offset + 100,
                 feature_ordinal: std::num::NonZeroU32::MIN,
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: None,
 
                 previous_history_state_id: None,
@@ -102,6 +104,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                     .try_into()
                     .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
                 paired_byte_offset: byte_offset + 200,
             }
@@ -119,6 +122,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             leading_word: None,
             extent_control: Some(0),
             saved_non_distance_depth: None,
+            direction_control: Some(Located {
+                value: 0,
+                offset: 9,
+            }),
+            standard: None,
+            hole_type: None,
         });
         slot.point = Some(DesignHoleConstruction {
             point_record_index: 378,
@@ -132,7 +141,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             reference_type: 19,
             reference_type_offset: 99,
             tangent_point_data: Some(DesignHoleTangentPoint {
-                prefix: 0,
+                prefix: Some(0),
                 data: Located {
                     value: crate::test_support::reals([-1.0, -1.0, -1.0]),
                     offset: 104,
@@ -143,6 +152,13 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 offset: 129,
             }],
             face_selection: None,
+            locations: vec![crate::records::feature::hole::DesignHoleLocation {
+                record_index: 375,
+                position: crate::test_support::reals([1.25, -2.5, 3.75]),
+                position_offset: 200,
+                reference_type: 17,
+                vertex_input: None,
+            }],
         });
     }
     scopes[2]
@@ -385,27 +401,56 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     hole_parameters[2]
         .try_set_unit_value("deg".to_owned())
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&scopes[2]);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &hole_parameters,
-                    owners: &[
-                        owner(94, 32, 95, 0),
-                        owner(104, 32, 105, 1),
-                        owner(114, 32, 115, 2),
-                    ],
-                    scopes,
-                    face_operands: &hole_face_operands,
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters: neutral_hole_parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&scopes[2]);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &hole_parameters,
+                owners: &[
+                    owner(94, 32, 95, 0),
+                    owner(104, 32, 105, 1),
+                    owner(114, 32, 115, 2),
+                ],
+                scopes,
+                face_operands: &hole_face_operands,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    for (name, expression, value) in [("d4", "10 mm", 10.0), ("d5", "4 mm", 4.0)] {
+        let parameter = neutral_hole_parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap();
+        assert_eq!(parameter.expression, expression);
+        assert_eq!(parameter.owner.as_ref(), Some(&features[0].id));
+        assert!(
+            matches!(parameter.value,Some(cadmpeg_ir::features::ParameterValue::Length(length)) if length.get()==value)
+        );
+        assert_eq!(
+            features[0]
+                .source_properties
+                .get(format!("parameter:{name}").as_str())
+                .map(String::as_str),
+            Some(expression)
+        );
+    }
+    let tip = neutral_hole_parameters
+        .iter()
+        .find(|parameter| parameter.name == "d6")
+        .unwrap();
+    assert_eq!(tip.expression, "180 deg");
+    assert!(
+        matches!(tip.value,Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) if angle.get()==std::f64::consts::PI)
+    );
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
@@ -422,7 +467,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             && native == &scopes[2].id
             && placements == &vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3 { x: 12.5, y: -25.0, z: 37.5 }).unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3 { x: 0.0, y: 0.0, z: 1.0 }).unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3 { x: -0.0, y: -0.0, z: -1.0 }).unwrap(),
             }]) && actual_diameter.get() == 4.0 && actual_length.get() == 10.0)));
 
     hole_parameters[2]
@@ -670,11 +715,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         });
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
-            parameters,
-        }) if parameters.len() == 3
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
+            if groups.as_slice().iter().all(|group| group.spec.is_unresolved())
     ));
+    let retained: Vec<DesignParameter> =
+        serde_json::from_str(&features[0].source_properties["chamfer:parameters"]).unwrap();
+    assert_eq!(retained.len(), 3);
 
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
         crate::test_support::with_decode_context(|ctx| {
@@ -698,11 +744,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         });
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
-            parameters,
-        }) if parameters.len() == 2
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
+            if groups.as_slice().iter().all(|group| group.spec.is_unresolved())
     ));
+    let retained: Vec<DesignParameter> =
+        serde_json::from_str(&features[0].source_properties["chamfer:parameters"]).unwrap();
+    assert_eq!(retained.len(), 2);
 
     let mut construction_groups = [construction_group(90, 17), construction_group(80, 4)];
     construction_groups[1]

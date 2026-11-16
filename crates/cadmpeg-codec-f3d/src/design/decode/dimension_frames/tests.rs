@@ -86,6 +86,78 @@ fn standard_recipe_references_refuse_nested_items_and_token_text() {
 }
 
 #[test]
+fn counted_recipe_operands_keep_every_name_in_one_operand_lane() {
+    // Two operands: the first names its face once, the second three times.
+    let name = |prefix: &mut Vec<u8>, lead: u32, token: &[u8], reference: u32| {
+        prefix.extend_from_slice(&lead.to_le_bytes());
+        prefix.extend_from_slice(&u32::try_from(token.len()).unwrap().to_le_bytes());
+        prefix.extend_from_slice(token);
+        prefix.extend_from_slice(&[0; 4]);
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&reference.to_le_bytes());
+        prefix.extend_from_slice(&[0; 4]);
+    };
+    let packed = |prefix: &mut Vec<u8>, token: &[u8], reference: u32| {
+        prefix.extend_from_slice(&u32::try_from(token.len()).unwrap().to_le_bytes());
+        prefix.extend_from_slice(token);
+        prefix.extend_from_slice(&[0; 4]);
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&reference.to_le_bytes());
+        prefix.extend_from_slice(&[0; 4]);
+    };
+    let mut prefix = vec![0; 10];
+    for word in [1u32, 3, 2] {
+        prefix.extend_from_slice(&word.to_le_bytes());
+    }
+    let first = prefix.len();
+    name(&mut prefix, 1, b"2", 303);
+    let second = prefix.len();
+    name(&mut prefix, 3, b"4", 301);
+    packed(&mut prefix, b"4", 316);
+    packed(&mut prefix, b"10", 303);
+    prefix.extend_from_slice(&[0; 4]);
+
+    let references =
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+    let read: Vec<_> = references
+        .iter()
+        .map(|reference| {
+            (
+                reference.operand_offset,
+                reference.token.as_str(),
+                reference.design_reference,
+            )
+        })
+        .collect();
+    let (first, second) = (
+        Some(1_000 + u64_from_index(first)),
+        Some(1_000 + u64_from_index(second)),
+    );
+    assert_eq!(
+        read,
+        [
+            (first, "2", 303),
+            (second, "4", 301),
+            (second, "4", 316),
+            (second, "10", 303),
+        ]
+    );
+    assert_eq!(
+        crate::records::topology::face::prefix_operand_ordinals(&references),
+        Some(vec![0, 1, 1, 1])
+    );
+
+    // A truncated second operand is not a counted frame.
+    let mut short = prefix[..prefix.len() - 4].to_vec();
+    short.truncate(short.len() - 4);
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(&short, 0)
+            .iter()
+            .all(|reference| reference.operand_offset.is_none())
+    );
+}
+
+#[test]
 fn paired_recipe_references_refuse_operand_and_flattened_runs() {
     let mut prefix = vec![0; 10];
     for word in [1u32, 2, 1, 1] {
@@ -214,6 +286,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ),
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
+            token_integer: 0,
             design_references: vec![331],
             ordinal: 0,
         },
@@ -224,6 +297,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ),
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
+            token_integer: 0,
             design_references: vec![999],
             ordinal: 0,
         },
@@ -234,6 +308,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ),
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
+            token_integer: 0,
             design_references: vec![331],
             ordinal: 0,
         },
@@ -244,6 +319,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ),
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
+            token_integer: 0,
             design_references: vec![331],
             ordinal: 0,
         },
@@ -254,6 +330,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ),
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
+            token_integer: 0,
             design_references: vec![331],
             ordinal: 0,
         },
@@ -288,6 +365,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ),
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
+            token_integer: 0,
             design_references: vec![331],
             ordinal: 0,
         },
@@ -298,6 +376,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ),
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
+            token_integer: 0,
             design_references: vec![331],
             ordinal: 0,
         },
@@ -796,6 +875,7 @@ fn companion_interval_ends_before_a_foreign_scope_member() {
             kind_offset: 180,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
@@ -810,6 +890,7 @@ fn companion_interval_ends_before_a_foreign_scope_member() {
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_members: None,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
@@ -896,6 +977,7 @@ fn recipe_references_preserve_signed_design_keys_and_refuse_truncation() {
         target: AttributeTarget::Face(face.clone()),
         selector: 2,
         token: cadmpeg_core::text::NonBlankString::new("37").unwrap(),
+        token_integer: 0,
         design_references: vec![-73],
         ordinal: 0,
     };
@@ -907,4 +989,94 @@ fn recipe_references_preserve_signed_design_keys_and_refuse_truncation() {
     }
 }
 
+#[test]
+fn recipe_reference_retains_token_integer_and_joins_equal_pair() {
+    for token_integer in [0u32, 4012, u32::MAX] {
+        let mut prefix = vec![0; 10];
+        for word in [1u32, 3, 4, 2, 2] {
+            prefix.extend_from_slice(&word.to_le_bytes());
+        }
+        prefix.extend_from_slice(b"37");
+        prefix.extend_from_slice(&token_integer.to_le_bytes());
+        for word in [1i32, -73, 0, 0] {
+            prefix.extend_from_slice(&word.to_le_bytes());
+        }
+        let mut references = super::decode_recipe_references(&prefix, 0);
+        assert_eq!(references.len(), 1);
+        let reference = &mut references[0];
+        assert_eq!(reference.token_integer, token_integer);
+        assert_eq!(reference.design_reference, -73);
+        let wire = serde_json::to_value(&*reference).unwrap();
+        assert_eq!(wire.get("token_integer").is_none(), token_integer == 0);
+        assert_eq!(
+            serde_json::from_value::<crate::records::dimensions::DesignRecipeReference>(wire)
+                .unwrap(),
+            *reference
+        );
+        let face = FaceId::mint("test:model:face#pair").unwrap();
+        let tag = PersistentSubentityTag {
+            id: "pair".into(),
+            target: AttributeTarget::Face(face.clone()),
+            selector: 2,
+            token: cadmpeg_core::text::NonBlankString::new("37").unwrap(),
+            token_integer,
+            design_references: vec![-73],
+            ordinal: 0,
+        };
+
+        let wire = serde_json::to_value(&tag).unwrap();
+        assert_eq!(wire.get("token_integer").is_none(), token_integer == 0);
+        assert_eq!(
+            serde_json::from_value::<PersistentSubentityTag>(wire).unwrap(),
+            tag
+        );
+        let mut other_integer = tag.clone();
+        other_integer.token_integer = token_integer.wrapping_add(1);
+        let mut other_token = tag.clone();
+        other_token.token = cadmpeg_core::text::NonBlankString::new("38").unwrap();
+        super::bind_recipe_reference_candidates(reference, &[other_integer, other_token], None);
+        assert!(reference.candidate_faces.is_empty());
+        super::bind_recipe_reference_candidates(reference, &[tag], None);
+        assert_eq!(reference.candidate_faces, [face]);
+    }
+}
+
 mod metadata;
+
+#[test]
+fn recipe_reference_unframed_token_integer_uses_the_complete_operand_frame() {
+    for token in ["5", "-37", "15095"] {
+        for integer in [
+            0u32,
+            4012,
+            82_902_527,
+            1_773_368_033,
+            1_437_049_394,
+            1_888_070_796,
+            u32::MAX,
+        ] {
+            let mut prefix = vec![0; 10];
+            for word in [1u32, 3, 2, 1, 1] {
+                prefix.extend_from_slice(&word.to_le_bytes());
+            }
+            prefix.extend_from_slice(b"9");
+            for word in [0i32, 1, -73, 0, 2] {
+                prefix.extend_from_slice(&word.to_le_bytes());
+            }
+            prefix.extend_from_slice(token.as_bytes());
+            prefix.extend_from_slice(&integer.to_le_bytes());
+            for word in [1i32, -74, 0, 0] {
+                prefix.extend_from_slice(&word.to_le_bytes());
+            }
+            let references = super::decode_recipe_references(&prefix, 100);
+            assert_eq!(references.len(), 2, "{token} {integer}");
+            assert_eq!(references[1].token, token);
+            assert_eq!(references[1].token_integer, integer);
+            assert_eq!(references[1].design_reference, -74);
+            assert_eq!(references[1].selector, 2);
+            for end in 0..prefix.len() {
+                assert!(super::decode_recipe_references(&prefix[..end], 100).is_empty());
+            }
+        }
+    }
+}

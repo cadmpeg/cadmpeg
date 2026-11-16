@@ -215,6 +215,24 @@ fn container_only_stops_before_geometry() {
         .expect("retained record");
     assert_eq!(retained.sha256().len(), 64);
     assert!(retained.data().is_some());
+    assert_eq!(
+        retained.untyped().iter().copied().collect::<Vec<_>>(),
+        [cadmpeg_core::decode::ArenaClass::Model]
+    );
+}
+
+#[test]
+fn records_a_route_decoded_carry_no_untyped_mark() {
+    let result = EditableDecodeResult::from(
+        CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
+    assert!(result.report().geometry_transferred());
+    assert!(result.source_fidelity().unrepresented().is_empty());
 }
 
 /// A route that refuses a carrier record and then leaves through a `?` between
@@ -338,4 +356,43 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         refusal.take_notes().is_empty(),
         "the sink is drained into the report"
     );
+}
+
+#[test]
+fn unresolved_outer_stream_identity_withholds_every_modeling_graph() {
+    let (mut bytes, _) = outer_container_object_graph_catpart();
+    let name = "4bbc295c_1048_62eb7b6f_1825"
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    let offset = bytes
+        .windows(name.len())
+        .position(|window| window == name.as_slice())
+        .expect("synthetic outer stream descriptor");
+    bytes[offset] = b'x';
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("complete container");
+    assert!(scan.has_outer_container_declarations);
+    assert!(scan.outer_container_declarations.is_empty());
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("complete source without an admitted part stream");
+    for (key, expected) in [
+        (crate::coverage::DECODED_OBJECT_GRAPH_COUNT, 1),
+        (crate::coverage::DECODED_OBJECT_RECORD_COUNT, 2),
+        (crate::coverage::MODELING_OBJECT_GRAPH_COUNT, 0),
+        (crate::coverage::MODELING_OBJECT_RECORD_COUNT, 0),
+        (crate::coverage::RETAINED_UNSCOPED_OBJECT_GRAPH_COUNT, 1),
+        (crate::coverage::RETAINED_UNSCOPED_OBJECT_RECORD_COUNT, 2),
+    ] {
+        assert_eq!(
+            wire::coverage_count(decoded.report(), key.as_str()),
+            expected
+        );
+    }
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::CatiaLossCode::HistoryModelingScopeUnresolved.kind()
+    }));
 }

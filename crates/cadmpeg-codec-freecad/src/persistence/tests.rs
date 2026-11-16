@@ -389,8 +389,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(shape_payloads.len(), 1);
     assert_eq!(shape_payloads[0].payload.topology_version(), Some(1));
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.curves.len(), 8);
-    match &result.ir().model.curves[0].geometry {
+    assert_eq!(result.ir().geometry.curves.len(), 8);
+    match &result.ir().geometry.curves[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
@@ -399,7 +399,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected curve {other:?}"),
     }
-    match &result.ir().model.curves[1].geometry {
+    match &result.ir().geometry.curves[1].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             assert_eq!(nurbs.degree(), 2);
             assert_eq!(nurbs.control_points().len(), 3);
@@ -408,15 +408,15 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected curve {other:?}"),
     }
-    assert_eq!(result.ir().model.procedural_curves.len(), 2);
-    match result.ir().model.procedural_curves[0].definition() {
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 2);
+    match result.ir().geometry.procedural_curves[0].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
             let parameter_range = definition_payload.parameter_range();
             assert_eq!(parameter_range.endpoints(), [0.0, 5.0]);
         }
         other => panic!("unexpected trimmed construction {other:?}"),
     }
-    match result.ir().model.procedural_curves[1].definition() {
+    match result.ir().geometry.procedural_curves[1].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(payload) => {
             let distance = wire::field::<f64>(&payload, "distance");
             let cadmpeg_ir::geometry::OffsetSide::Direction {
@@ -431,8 +431,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected offset construction {other:?}"),
     }
-    assert_eq!(result.ir().model.surfaces.len(), 7);
-    match &result.ir().model.surfaces[0].geometry {
+    assert_eq!(result.ir().geometry.surfaces.len(), 7);
+    match &result.ir().geometry.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             plane_surface,
         )) => {
@@ -445,20 +445,20 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected surface {other:?}"),
     }
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 4);
     assert!(matches!(
-        result.ir().model.procedural_surfaces[0].definition(),
+        result.ir().geometry.procedural_surfaces[0].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
     ));
     assert!(
-        match result.ir().model.procedural_surfaces[1].definition() {
+        match result.ir().geometry.procedural_surfaces[1].definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
                 matches!((&matched_payload.parameter_interval(),), (None,)),
             _ => false,
         }
     );
     assert!(
-        match result.ir().model.procedural_surfaces[2].definition() {
+        match result.ir().geometry.procedural_surfaces[2].definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
                 (matched_payload.u_sense(), matched_payload.v_sense(),),
                 (None, None,)
@@ -467,10 +467,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
     );
     assert!(matches!(
-        result.ir().model.procedural_surfaces[3].definition(),
+        result.ir().geometry.procedural_surfaces[3].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(_)
     ));
-    match &result.ir().model.surfaces[1].geometry {
+    match &result.ir().geometry.surfaces[1].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
             assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));

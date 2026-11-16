@@ -4,7 +4,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PayloadText<S>(S);
 
-impl<S: crate::immutable_text::ImmutableText> PayloadText<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> PayloadText<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
         let text = value.as_ref();
         if text.is_empty() || text.chars().any(char::is_control) {
@@ -25,7 +25,7 @@ impl PayloadText<&str> {
     }
 }
 
-impl<S: crate::immutable_text::ImmutableText> serde::Serialize for PayloadText<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> serde::Serialize for PayloadText<S> {
     fn serialize<T: serde::Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
         serializer.serialize_str(self.as_str())
     }

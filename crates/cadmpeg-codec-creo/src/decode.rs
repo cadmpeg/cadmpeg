@@ -14,6 +14,7 @@ use cadmpeg_ir::codec::Decoded;
 use crate::container;
 
 mod analytic;
+mod assembly;
 mod build;
 mod coverage;
 mod curve_expressions;
@@ -22,6 +23,7 @@ mod feature_history;
 mod holes;
 mod native;
 mod native_records;
+mod pmi;
 mod quadratic;
 mod records;
 mod sketch;
@@ -54,7 +56,9 @@ pub(crate) fn with_service_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T)
 /// container, the returned IR contains source metadata and preserved geometry
 /// sections but no transferred entities.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let scan = container::scan_bytes(ctx, root.window())?;
+    let mut scan = container::scan_bytes(ctx, root.window())?;
+    surfaces::cap_envelopes::withhold_unresolved_cap_envelopes(ctx, &mut scan)?;
+    surfaces::cone_origins::withhold_unresolved_cone_origins(ctx, &mut scan)?;
     let classification = crate::dialect::classify(&scan)?;
     // Admit section identities before model construction.
     ctx.charge_entities(
@@ -82,8 +86,17 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ctx.container_only(),
     )?;
     body.losses.extend(transfer_losses);
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
+    source_fidelity.annotations = annotations;
+    let (unknowns, classes): (Vec<_>, Vec<_>) = unknowns.into_iter().unzip();
+    let ids = unknowns
+        .iter()
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns, ctx)?;
+    for (id, classes) in ids.iter().zip(classes) {
+        source_fidelity.mark_untyped(id.as_str(), classes)?;
+    }
     Ok(Decoded {
         ir,
         body,

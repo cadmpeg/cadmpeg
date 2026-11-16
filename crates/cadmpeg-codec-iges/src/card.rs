@@ -50,6 +50,56 @@ impl Section {
     }
 }
 
+/// A section a file can end in when it has no Terminate card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OpenSection {
+    Start,
+    Global,
+    Directory,
+    Parameter,
+}
+
+impl OpenSection {
+    const fn from_section(section: Section) -> Option<Self> {
+        match section {
+            Section::Start => Some(Self::Start),
+            Section::Global => Some(Self::Global),
+            Section::Directory => Some(Self::Directory),
+            Section::Parameter => Some(Self::Parameter),
+            Section::Terminate => None,
+        }
+    }
+
+    const fn ends_before_directory(self) -> bool {
+        matches!(self, Self::Start | Self::Global)
+    }
+
+    const fn section(self) -> Section {
+        match self {
+            Self::Start => Section::Start,
+            Self::Global => Section::Global,
+            Self::Directory => Section::Directory,
+            Self::Parameter => Section::Parameter,
+        }
+    }
+}
+
+/// How the Fixed ASCII scan ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SourceEnd {
+    Terminated,
+    EndsIn(OpenSection),
+}
+
+impl SourceEnd {
+    pub(crate) const fn ends_before_directory(self) -> bool {
+        match self {
+            Self::Terminated => false,
+            Self::EndsIn(section) => section.ends_before_directory(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LineEnding {
     Lf,
@@ -90,12 +140,13 @@ pub(crate) enum ScannedLine {
         line: PhysicalLine,
     },
     Trailing(PhysicalLine),
+    DroppedFinal(PhysicalLine),
 }
 
 impl ScannedLine {
     pub(crate) fn physical(&self) -> &PhysicalLine {
         match self {
-            Self::Card { line, .. } | Self::Trailing(line) => line,
+            Self::Card { line, .. } | Self::Trailing(line) | Self::DroppedFinal(line) => line,
         }
     }
 }
@@ -112,6 +163,7 @@ pub(crate) struct CardScan<'a> {
     source: &'a [u8],
     pub(crate) lines: Vec<ScannedLine>,
     pub(crate) recoveries: FramingRecoveries,
+    pub(crate) source_end: SourceEnd,
 }
 
 /// One class of card-framing declaration the decoder took from the census.
@@ -144,6 +196,21 @@ impl FramingDefect {
             | Self::UnclaimedParameterCard => "card",
         }
     }
+}
+
+/// The final physical line omitted from section framing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DroppedFinalCard {
+    pub(crate) offset: u64,
+    pub(crate) byte_length: u64,
+}
+
+/// The one framing record for a file that has no Terminate card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AbsentTerminate {
+    pub(crate) section: OpenSection,
+    pub(crate) file_end: u64,
+    pub(crate) dropped_final_card: Option<DroppedFinalCard>,
 }
 
 struct DeclaredSequence(Option<u32>);
@@ -198,7 +265,10 @@ struct FramingRecovery {
 
 /// Recovered framing declarations, at most one per section and defect class.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct FramingRecoveries(BTreeMap<(Section, FramingDefect), FramingRecovery>);
+pub(crate) struct FramingRecoveries {
+    records: BTreeMap<(Section, FramingDefect), FramingRecovery>,
+    absent_terminate: Option<AbsentTerminate>,
+}
 
 impl FramingRecoveries {
     pub(crate) fn record(
@@ -209,7 +279,7 @@ impl FramingRecoveries {
         declared: fmt::Arguments<'_>,
         used: fmt::Arguments<'_>,
     ) -> Result<(), CodecError> {
-        if let Some(recovery) = self.0.get_mut(&key) {
+        if let Some(recovery) = self.records.get_mut(&key) {
             recovery.count = recovery
                 .count
                 .checked_add(1)
@@ -218,7 +288,7 @@ impl FramingRecoveries {
         }
         let declared = declared.to_string();
         let used = used.to_string();
-        self.0.insert(
+        self.records.insert(
             key,
             FramingRecovery {
                 position,
@@ -231,9 +301,18 @@ impl FramingRecoveries {
         Ok(())
     }
 
+    pub(crate) fn set_absent_terminate(&mut self, absent: AbsentTerminate) {
+        self.absent_terminate = Some(absent);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn absent_terminate(&self) -> Option<AbsentTerminate> {
+        self.absent_terminate
+    }
+
     pub(crate) fn merge(&mut self, other: Self) -> Result<(), CodecError> {
-        for (key, recovery) in other.0 {
-            match self.0.get_mut(&key) {
+        for (key, recovery) in other.records {
+            match self.records.get_mut(&key) {
                 Some(held) => {
                     held.count = held
                         .count
@@ -247,7 +326,7 @@ impl FramingRecoveries {
                     }
                 }
                 None => {
-                    self.0.insert(key, recovery);
+                    self.records.insert(key, recovery);
                 }
             }
         }
@@ -256,7 +335,7 @@ impl FramingRecoveries {
 
     pub(crate) fn notes(&self) -> Vec<LossNote> {
         let mut notes = Vec::new();
-        for ((section, defect), recovery) in &self.0 {
+        for ((section, defect), recovery) in &self.records {
             let message = format!(
                 "IGES {} section recovered {} from the card census: the first offending \
                  {} is at position {} in the section, which declared {}, and the decoder \
@@ -284,7 +363,38 @@ impl FramingRecoveries {
                 ),
             );
         }
+        if let Some(absent) = self.absent_terminate {
+            let section = absent.section.section();
+            let message = absent_terminate_message(absent);
+            let tag = format!("{}:framing", section.name());
+            let code = IgesLossCode::CardFramingRecovered;
+            notes.push(
+                code.note(message).with_provenance(
+                    SourceProvenance::in_stream(
+                        "iges",
+                        cadmpeg_ir::stream_name!("iges"),
+                        absent.file_end,
+                    )
+                    .with_tag(tag),
+                ),
+            );
+        }
         notes
+    }
+}
+
+fn absent_terminate_message(absent: AbsentTerminate) -> String {
+    let ended = format!(
+        "IGES Fixed ASCII file ends in the {} section at byte offset {} and has no Terminate card",
+        absent.section.section().name(),
+        absent.file_end
+    );
+    match absent.dropped_final_card {
+        Some(dropped) => format!(
+            "{ended}; the final physical line at byte offset {} has {} bytes",
+            dropped.offset, dropped.byte_length
+        ),
+        None => ended,
     }
 }
 
@@ -354,6 +464,50 @@ fn second_card_image<'a>(first: &'a [u8], rest: &'a [u8]) -> Option<&'a [u8]> {
         return first.get(CARD_WIDTH..CARD_WIDTH * 2);
     }
     take_line(rest).map(|(second, _)| second)
+}
+
+fn exactly_one_start_card(bytes: &[u8]) -> bool {
+    let payload = match memchr::memchr2(b'\r', b'\n', bytes) {
+        Some(at) => {
+            let ending_len =
+                usize::from(bytes[at] == b'\r' && bytes.get(at + 1) == Some(&b'\n')) + 1;
+            if at.checked_add(ending_len) != Some(bytes.len()) {
+                return false;
+            }
+            &bytes[..at]
+        }
+        None => bytes,
+    };
+    payload.len() == CARD_WIDTH && matches!(header(payload), Some((b'S', 1..)))
+}
+
+/// Whole-file Fixed ASCII for a read that reached end of file.
+///
+/// One Start card, or that card plus one final physical line shorter than 80
+/// bytes. A second physical line of 80 bytes stays with the two-card rule.
+pub(crate) fn whole_file_fixed_ascii(bytes: &[u8]) -> bool {
+    if exactly_one_start_card(bytes) {
+        return true;
+    }
+    let Some(at) = memchr::memchr2(b'\r', b'\n', bytes) else {
+        return false;
+    };
+    let ending_len = usize::from(bytes[at] == b'\r' && bytes.get(at + 1) == Some(&b'\n')) + 1;
+    let Some(rest) = at.checked_add(ending_len).and_then(|end| bytes.get(end..)) else {
+        return false;
+    };
+    let first = &bytes[..at];
+    if first.len() != CARD_WIDTH || !matches!(header(first), Some((b'S', 1..))) {
+        return false;
+    }
+    let Some(second_at) = memchr::memchr2(b'\r', b'\n', rest) else {
+        return !rest.is_empty() && rest.len() < CARD_WIDTH;
+    };
+    let second_ending =
+        usize::from(rest[second_at] == b'\r' && rest.get(second_at + 1) == Some(&b'\n')) + 1;
+    second_at > 0
+        && second_at < CARD_WIDTH
+        && second_at.checked_add(second_ending) == Some(rest.len())
 }
 
 pub(crate) fn detect_fixed_ascii(prefix: &[u8]) -> Confidence {
@@ -476,12 +630,35 @@ fn physical_lines(source: &[u8]) -> Result<Vec<UnframedLine>, CodecError> {
     Ok(lines)
 }
 
+fn dropped_final_card(line: &UnframedLine) -> Result<DroppedFinalCard, CodecError> {
+    let payload = u64_from_index(line.line.payload.len());
+    let ending = u64_from_index(line.line.ending.bytes().len());
+    let byte_length = payload
+        .checked_add(ending)
+        .ok_or_else(|| malformed("IGES dropped card length overflows"))?;
+    Ok(DroppedFinalCard {
+        offset: line.line.offset,
+        byte_length,
+    })
+}
+
 /// Order the sections and make each card's position inside its section its
 /// sequence, recording every declaration the position replaced.
 fn frame_sections(
-    lines: Vec<UnframedLine>,
+    mut lines: Vec<UnframedLine>,
     recoveries: &mut FramingRecoveries,
-) -> Result<Vec<ScannedLine>, CodecError> {
+    file_end: u64,
+) -> Result<(Vec<ScannedLine>, SourceEnd), CodecError> {
+    let has_terminate = lines
+        .iter()
+        .any(|line| line.section == Some(Section::Terminate));
+    let dropped = if has_terminate {
+        None
+    } else if lines.last().is_some_and(|line| line.section.is_none()) {
+        lines.pop()
+    } else {
+        None
+    };
     let mut scanned = Vec::new();
 
     let mut section = None;
@@ -548,13 +725,34 @@ fn frame_sections(
             section: Section::Start,
             ..
         })
-    ) || !terminated
-    {
+    ) {
         return Err(CodecError::Malformed(
-            "IGES Fixed ASCII requires Start through Terminate sections".into(),
+            "IGES Fixed ASCII requires a Start section".into(),
         ));
     }
-    Ok(scanned)
+    if terminated {
+        return Ok((scanned, SourceEnd::Terminated));
+    }
+    let last = match scanned.last() {
+        Some(ScannedLine::Card { section, .. }) => *section,
+        Some(ScannedLine::Trailing(_) | ScannedLine::DroppedFinal(_)) | None => {
+            return Err(CodecError::Malformed(
+                "IGES Fixed ASCII requires a Start section".into(),
+            ));
+        }
+    };
+    let open = OpenSection::from_section(last)
+        .ok_or_else(|| CodecError::Malformed("IGES Fixed ASCII requires a Start section".into()))?;
+    let dropped_card = dropped.as_ref().map(dropped_final_card).transpose()?;
+    recoveries.set_absent_terminate(AbsentTerminate {
+        section: open,
+        file_end,
+        dropped_final_card: dropped_card,
+    });
+    if let Some(line) = dropped {
+        scanned.push(ScannedLine::DroppedFinal(line.line));
+    }
+    Ok((scanned, SourceEnd::EndsIn(open)))
 }
 
 /// Replace each Terminate count that disagrees with the card census.
@@ -610,12 +808,14 @@ pub(crate) fn scan(source: &[u8]) -> Result<CardScan<'_>, CodecError> {
     }
     let lines = physical_lines(source)?;
     let mut recoveries = FramingRecoveries::default();
-    let lines = frame_sections(lines, &mut recoveries)?;
+    let file_end = u64_from_index(source.len());
+    let (lines, source_end) = frame_sections(lines, &mut recoveries, file_end)?;
     terminate_counts(&lines, &mut recoveries)?;
     Ok(CardScan {
         source,
         lines,
         recoveries,
+        source_end,
     })
 }
 
@@ -737,7 +937,9 @@ impl CardScan<'_> {
                 sequence,
                 line,
             } if *current == section => Some((*sequence, line)),
-            ScannedLine::Card { .. } | ScannedLine::Trailing(_) => None,
+            ScannedLine::Card { .. } | ScannedLine::Trailing(_) | ScannedLine::DroppedFinal(_) => {
+                None
+            }
         })
     }
 

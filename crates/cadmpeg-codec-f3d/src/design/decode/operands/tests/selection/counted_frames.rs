@@ -49,6 +49,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 kind_offset: 1100,
                 feature_ordinal: std::num::NonZeroU32::MIN,
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: None,
 
                 previous_history_state_id: None,
@@ -64,6 +65,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     .try_into()
                     .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "261".to_owned(),
                 )
@@ -232,7 +234,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             assert_eq!(member.tail_slot_present, slot == 1);
             assert!(member.scope_tail.is_none());
             // An incomplete header is not a boundary: the tail then runs to
-            // the end of the stream, or is refused when that exceeds the bound.
+            // the end of the stream.
             let header_at = 190 + tail.len();
             let mut incomplete = Vec::new();
             let mut broken = bytes.clone();
@@ -240,13 +242,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             incomplete.push(broken);
             incomplete.push(bytes[..bytes.len() - 1].to_vec());
             for broken in incomplete {
-                match parse_extrude_selection_member(&broken, &group, 0, &member_record) {
-                    Some(ended) => {
-                        assert_eq!(ended.next_record_index, 0);
-                        assert_eq!(ended.next_byte_offset(), u64_from_index(broken.len()));
-                    }
-                    None => assert!(broken.len() - 190 > 1024),
-                }
+                let ended = parse_extrude_selection_member(&broken, &group, 0, &member_record)
+                    .expect("selection member whose tail runs to the stream end");
+                assert_eq!(ended.next_record_index, 0);
+                assert_eq!(ended.next_byte_offset(), u64_from_index(broken.len()));
             }
         }
         // A tail past the length bound, and the typed tail lengths, are not extended.
@@ -265,10 +264,16 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 .expect("selection member with an extended tail at the stream end");
         assert_eq!(terminal_extended.next_byte_offset(), 320);
         assert_eq!(terminal_extended.next_record_index, 0);
-        terminal_tail.extend_from_slice(&vec![0x55; 1024]);
-        assert!(
-            parse_extrude_selection_member(&terminal_tail, &group, 0, &member_record).is_none()
+        // The header-bounded length limit does not apply at the stream end.
+        terminal_tail.extend_from_slice(&vec![0; 1024]);
+        let long_terminal =
+            parse_extrude_selection_member(&terminal_tail, &group, 0, &member_record)
+                .expect("selection member with a long tail at the stream end");
+        assert_eq!(
+            long_terminal.next_byte_offset(),
+            u64_from_index(terminal_tail.len())
         );
+        assert_eq!(long_terminal.next_record_index, 0);
 
         let mut edge_identity_bytes = Vec::new();
         indexed_header(&mut edge_identity_bytes, *b"278", 5887);
@@ -377,14 +382,13 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         );
         assert_eq!(member.operand_identity_ids, [identity.id]);
         let mut owning_scope = scope;
-        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-        | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-        | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
             owning_scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).extrude_profile = Some(
                 DesignSketchProfileOperand::try_new(
                     crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                        sketch_absent: false,
                         scope_reference_ordinal: 1,
                         record_index: 300,
                         byte_offset: 3000,
@@ -402,6 +406,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                         )
                         .expect("valid entity identity"),
                         entity_reference_offset: 3120,
+                        compact_tail_flags: None,
                         region_selection: None,
                         paired_class_tag: crate::records::references::DesignClassTag::try_from(
                             "259".to_owned(),
@@ -417,6 +422,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
             record_index: 400,
             owner_reference: Some(172),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("270".to_owned())
                 .unwrap(),
             byte_offset: 4000,
@@ -426,6 +432,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             secondary_id: 0,
             geometry: None,
             planar_z_noise: None,
+            tail_marker: None,
         };
         bind_extrude_selection_geometry(
             std::slice::from_mut(&mut member),
@@ -482,6 +489,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             id: "f3d:Design/BulkStream.dat:sketch-point#500".into(),
             record_index: 500,
             owner_reference: None,
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
                 .unwrap(),
             byte_offset: 5000,
@@ -522,6 +530,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 id: "f3d:Design/BulkStream.dat:sketch-point#501".into(),
                 record_index: 501,
                 owner_reference: Some(172),
+                geometry_group: None,
                 class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
                     .unwrap(),
                 byte_offset: 5100,
@@ -577,12 +586,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         };
         let profile_work = ProfileGeometryWork::new();
         assert!(matches!(
-            resolved_extrude_profile_selection(
-                &sketch_id,
-                &group,
-                std::slice::from_ref(&member),
-                &sketch,
-                crate::design::profile_select::ExtrudeProfileResolution {
+            resolved_extrude_profile_selection(&sketch_id, &group, std::slice::from_ref(&member), &sketch, crate::design::profile_select::ExtrudeProfileResolution {
                     entities: &[],
                     spatial_sketches: &[],
                     spatial_entities: &[],
@@ -593,10 +597,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
-                .scoped(&[]),
-                None,
-                None,
-            ).unwrap(),
+                .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
             cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,
@@ -653,12 +654,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         );
         let profile_entities = [line_entity, second_profile_entity, point_entity];
         assert!(matches!(
-            resolved_extrude_profile_selection(
-                &sketch_id,
-                &group,
-                &[member.clone(), point_member],
-                &sketch,
-                crate::design::profile_select::ExtrudeProfileResolution {
+            resolved_extrude_profile_selection(&sketch_id, &group, &[member.clone(), point_member], &sketch, crate::design::profile_select::ExtrudeProfileResolution {
                     entities: &profile_entities,
                     spatial_sketches: &[],
                     spatial_entities: &[],
@@ -669,10 +665,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
-                .scoped(&[]),
-                None,
-                None,
-            ).unwrap(),
+                .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
             cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,
@@ -680,12 +673,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         ));
         member.resolved_geometry = None;
         assert!(matches!(
-            resolved_extrude_profile_selection(
-                &sketch_id,
-                &group,
-                std::slice::from_ref(&member),
-                &sketch,
-                crate::design::profile_select::ExtrudeProfileResolution {
+            resolved_extrude_profile_selection(&sketch_id, &group, std::slice::from_ref(&member), &sketch, crate::design::profile_select::ExtrudeProfileResolution {
                     entities: &[],
                     spatial_sketches: &[],
                     spatial_entities: &[],
@@ -696,10 +684,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
-                .scoped(&[]),
-                None,
-                None,
-            ).unwrap(),
+                .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
             cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchSelection {
                 sketch: ref actual_sketch,
                 selections: ref actual_selections,
@@ -711,12 +696,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             .edit(|profiles| profiles.truncate(1))
             .unwrap();
         assert!(matches!(
-            resolved_extrude_profile_selection(
-                &sketch_id,
-                &group,
-                std::slice::from_ref(&member),
-                &single_profile_sketch,
-                crate::design::profile_select::ExtrudeProfileResolution {
+            resolved_extrude_profile_selection(&sketch_id, &group, std::slice::from_ref(&member), &single_profile_sketch, crate::design::profile_select::ExtrudeProfileResolution {
                     entities: &[],
                     spatial_sketches: &[],
                     spatial_entities: &[],
@@ -727,10 +707,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
-                .scoped(&[]),
-                None,
-                None,
-            ).unwrap(),
+                .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
             cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,

@@ -136,15 +136,26 @@ pub(crate) fn operands<'a>(
             }
         }
         let collection = property(*edges).ok_or(NativeReason::Edges)?;
-        super::edge_selection::check_items(collection, &property).map_err(
-            |reason| match reason {
-                super::edge_selection::ItemReason::Empty => NativeReason::EmptyItems,
-                super::edge_selection::ItemReason::Unresolved => NativeReason::Edges,
-            },
-        )?;
+        let empty = match super::edge_selection::check_items(collection, &property) {
+            Ok(()) => false,
+            Err(super::edge_selection::ItemReason::Empty) => {
+                if !super::edge_selection::all_items_empty(collection, &property) {
+                    return Err(NativeReason::EmptyItems);
+                }
+                true
+            }
+            Err(super::edge_selection::ItemReason::Unresolved) => {
+                return Err(NativeReason::Edges);
+            }
+        };
         let radius = length(*radius)
             .and_then(|value| PositiveLength::new(value.get()))
             .ok_or(NativeReason::Radius)?;
+        // An edge set whose items all store empty index-reference lists
+        // selects no edge and adds no blend.
+        if empty {
+            continue;
+        }
         operands.push(Operand {
             set,
             collection,
@@ -152,7 +163,43 @@ pub(crate) fn operands<'a>(
             radius,
         });
     }
+    if operands.is_empty() {
+        return Err(NativeReason::EmptyItems);
+    }
     Ok(operands)
+}
+
+/// Number of edge sets of a fillet whose items all store empty index-reference lists.
+pub(crate) fn empty_sets<'a>(
+    source: &PmDcFeature,
+    property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> usize {
+    let Some(PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::FilletEdgeSets,
+        items,
+    }) = source
+        .properties
+        .references()
+        .first()
+        .and_then(|slot| property(*slot))
+        .map(|p| &p.kind)
+    else {
+        return 0;
+    };
+    items
+        .references()
+        .iter()
+        .filter(|reference| {
+            let Some(PmDcFeaturePropertyKind::FilletEdgeSet { edges, .. }) =
+                property(**reference).map(|p| &p.kind)
+            else {
+                return false;
+            };
+            property(*edges).is_some_and(|collection| {
+                super::edge_selection::all_items_empty(collection, &property)
+            })
+        })
+        .count()
 }
 
 pub(crate) fn matches(expected: &[Operand<'_>], groups: &[FilletGroup]) -> bool {
@@ -173,6 +220,38 @@ pub(crate) fn matches(expected: &[Operand<'_>], groups: &[FilletGroup]) -> bool 
                     expected.direct,
                 )
         })
+}
+
+pub(crate) fn explicit_selection_controls<'a>(
+    source: &PmDcFeature,
+    corner: bool,
+    property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> bool {
+    let value = |slot: usize| {
+        let reference = *source.properties.references().get(slot)?;
+        if !reference.qualified() {
+            return None;
+        }
+        let PmDcFeaturePropertyKind::Boolean { value, .. } = &property(reference)?.kind else {
+            return None;
+        };
+        Some(*value)
+    };
+    let [Some(slot_2), Some(slot_3), Some(slot_4), Some(slot_5), Some(slot_8)] =
+        [value(2), value(3), value(4), value(5), value(8)]
+    else {
+        return false;
+    };
+    let values = [slot_2, slot_3, slot_4, slot_5, slot_8];
+    if corner {
+        [[false, true, true, false, false]].contains(&values)
+    } else {
+        [
+            [true, true, true, false, false],
+            [true, true, true, true, false],
+        ]
+        .contains(&values)
+    }
 }
 
 #[cfg(test)]

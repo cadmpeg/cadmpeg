@@ -18,18 +18,18 @@ fn failed_face_keeps_source_supports_without_exporting_them_as_roots() {
     let decoded = crate::StepCodec::default()
         .decode(&mut Cursor::new(changed), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir().model.faces.is_empty());
-    assert_eq!(decoded.ir().model.surfaces.len(), 1);
+    assert!(decoded.ir().geometry.faces.is_empty());
+    assert_eq!(decoded.ir().geometry.surfaces.len(), 1);
     for source in decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter_map(|s| s.source_object.as_ref())
         .chain(
             decoded
                 .ir()
-                .model
+                .geometry
                 .curves
                 .iter()
                 .filter_map(|c| c.source_object.as_ref()),
@@ -37,7 +37,7 @@ fn failed_face_keeps_source_supports_without_exporting_them_as_roots() {
         .chain(
             decoded
                 .ir()
-                .model
+                .geometry
                 .points
                 .iter()
                 .filter_map(|p| p.source_object.as_ref()),
@@ -78,9 +78,9 @@ fn an_explicit_source_geometry_root_remains_independent_of_a_failed_face() {
     let decoded = crate::StepCodec::default()
         .decode(&mut Cursor::new(changed), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir().model.faces.is_empty());
+    assert!(decoded.ir().geometry.faces.is_empty());
     assert_eq!(
-        decoded.ir().model.surfaces[0]
+        decoded.ir().geometry.surfaces[0]
             .source_object
             .as_ref()
             .unwrap()

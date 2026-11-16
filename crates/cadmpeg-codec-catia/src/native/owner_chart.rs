@@ -427,6 +427,14 @@ impl CatiaOwnerChartBridgeWire {
                 controls,
                 terminal_controls,
             } => {
+                if references[0].value != 1
+                    || references[0].encoding()
+                        != CatiaAllocationReferenceEncoding::BackwardDistance
+                {
+                    return Err(
+                        "extended owner-chart carrier must be backward distance one".to_owned()
+                    );
+                }
                 if controls != [carrier.selector(), 0x09, 0x05, 0x05]
                     || terminal_controls != [0x01, 0x05]
                 {
@@ -605,6 +613,36 @@ mod tests {
             .owner_chart()
             .expect("owner chart")
             .clone()
+    }
+
+    #[test]
+    fn extended_bridge_wire_requires_backward_distance_one() {
+        let native = crate::native::CatiaNative::decode(
+            &crate::test_support::test_b2::b2_owner_chart_stream_with_extended_bridge(),
+        );
+        let relation = native.consolidated_owner_packets[0]
+            .owner_chart()
+            .expect("source-closed extended chart");
+        let wire = serde_json::to_value(relation).expect("serialize extended chart");
+        let decoded: CatiaOwnerChartRelation =
+            serde_json::from_value(wire.clone()).expect("backward-distance-one carrier");
+        assert_eq!(&decoded, relation);
+        for value in [0, 2] {
+            let mut invalid = wire.clone();
+            invalid["bridge"]["references"][0]["value"] = json!(value);
+            assert!(serde_json::from_value::<CatiaOwnerChartRelation>(invalid).is_err());
+        }
+        for encoding in [
+            "owned_child",
+            "width_coded",
+            "selector2",
+            "tagged_u8",
+            "tagged_u16",
+        ] {
+            let mut invalid = wire.clone();
+            invalid["bridge"]["references"][0]["encoding"] = json!(encoding);
+            assert!(serde_json::from_value::<CatiaOwnerChartRelation>(invalid).is_err());
+        }
     }
 
     #[test]

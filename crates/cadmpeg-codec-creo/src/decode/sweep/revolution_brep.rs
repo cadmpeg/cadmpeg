@@ -16,7 +16,8 @@ use super::surfaces::revolved_section_circle;
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
     current_additive_feature_recipe, feature_is_first_material_operation,
-    feature_revolution_extent, unique_feature_revolution_extent,
+    feature_revolution_extent, feature_section_sweep_semantics_conflict,
+    unique_feature_revolution_extent,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, Surface};
@@ -100,8 +101,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         if super::revolution_carriers::native_solid_contains_feature(scan, ir, feature_id) {
             continue;
         }
-        if current_additive_feature_recipe(&scan.features.operations, feature_id)
-            != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
+        if feature_section_sweep_semantics_conflict(scan, feature_id)
+            || current_additive_feature_recipe(&scan.features.operations, feature_id)
+                != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
             || !feature_is_first_material_operation(scan, feature_id)
             || unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id)
                 .is_none()
@@ -270,7 +272,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             continue;
         };
         let body_id: BodyId = revolution_identity(feature_id, "body")?;
-        if ir.model.bodies.iter().any(|body| body.id == body_id) {
+        if ir.geometry.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
         let region_id: RegionId = revolution_identity(feature_id, "region")?;
@@ -303,6 +305,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     id: curve_id.clone(),
                     geometry: curve_geometry,
                     source_object: None,
+                    native_ref: None,
                 },
             )?;
             let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(position))
@@ -317,6 +320,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     id: vertex_id.clone(),
                     point: point_id,
                     tolerance: None,
+                    native_ref: None,
                 },
             )?;
             ctx.charge_entities(1, "admit Creo model edges")?;
@@ -330,9 +334,12 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         Some([0.0, std::f64::consts::TAU]),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-                    start: vertex_id.clone(),
-                    end: vertex_id,
+                    ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                        vertex_id.clone(),
+                        vertex_id,
+                    )),
                     tolerance: None,
+                    native_ref: None,
                 },
             )?;
             edges[index] = Some(edge_id);
@@ -356,6 +363,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     id: surface_id.clone(),
                     geometry: surface_geometry,
                     source_object: None,
+                    native_ref: None,
                 },
             )?;
             let mut loops = Vec::new();
@@ -395,13 +403,14 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 )?;
                 let ring_coedges = vec![coedge_id.clone()];
                 ctx.charge_entities(1, "admit Creo model loops")?;
-                ir.model.loops.push(IrLoop {
+                ir.geometry.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                         cadmpeg_ir::topology::LoopRing::new(ring_coedges, Vec::new())
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
+                    native_ref: None,
                 });
                 let pcurve_uses = vec![PcurveUse {
                     pcurve,
@@ -423,6 +432,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         sense,
                         pcurves: pcurve_uses,
                         use_curve: None,
+                        native_ref: None,
                     },
                 )?;
                 loops.push(loop_id);
@@ -439,40 +449,36 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     name: None,
                     color: None,
                     tolerance: None,
+                    native_ref: None,
                 },
             )?;
             faces.push(face_id);
         }
-        let Ok(shell) = Shell::new(
-            shell_id.clone(),
-            region_id.clone(),
-            faces,
-            Vec::new(),
-            Vec::new(),
-        ) else {
+        if faces.is_empty() {
             continue;
-        };
+        }
+        let shell = Shell::new(shell_id.clone(), region_id.clone());
         ctx.charge_entities(1, "admit Creo model shells")?;
-        ir.model.shells.push(shell);
+        ir.geometry.shells.push(shell);
         let region_shells = vec![shell_id];
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.model.regions.push(Region {
+        ir.geometry.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: region_shells,
+            native_ref: None,
         });
-        let body_regions = vec![region_id];
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
             ir,
             Body {
                 id: body_id,
                 kind: BodyKind::Solid,
-                regions: body_regions,
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             },
         )?;
         transferred += 1;

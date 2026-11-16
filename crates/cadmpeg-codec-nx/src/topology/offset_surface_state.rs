@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Offset-surface support and finite signed distance in model millimetres.
 
-use crate::framing::xmt_reference::NonNullXmt;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

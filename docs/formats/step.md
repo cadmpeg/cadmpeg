@@ -747,6 +747,9 @@ The writer's supported schema identifiers are:
 | `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }`                                    | AP242 edition 2      |
 | `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }`                                    | AP242 edition 3      |
 
+`AUTOMOTIVE_DESIGN_CC2` is the schema name of the AP214 committee draft. Its
+schema identity is AP214, with or without an object identifier.
+
 For the CADIR AP242 edition report, the first identifier must have the exact
 long-form name and one of the exact numeric object identifiers in the table.
 An AP242 identifier with no object identifier, an ASN.1 named object
@@ -1572,6 +1575,31 @@ face with no `FACE_OUTER_BOUND` follows the same rule, and a single
 `PLANE`, the region to the left of one bound that runs clockwise about `n` is
 not finite, so that bound set is not a face.
 
+An `ADVANCED_FACE` in an advanced BREP retains the nonempty `FACE.bounds`
+cardinality. A whole spherical face can have a `VERTEX_LOOP` at a pole. A
+whole ring-torus face can have one seam loop: two closed edges meet at one
+vertex, and the loop uses each edge once in each direction. Each seam curve
+has two pcurves on the face surface, one at each end of the corresponding
+periodic parameter interval. A `SEAM_EDGE` selects the pcurve of its use.
+The same topology applies to a doubly periodic B-spline surface, with exact
+B-spline isolines as the seam curves. A periodic B-spline surface whose two
+remaining domain sides collapse to poles has vertex boundaries at those
+poles. A closed shell over one such whole face has zero open edge uses.
+
+A `DEGENERATE_TOROIDAL_SURFACE` has positive major radius `R`, tube radius
+`r > R`, and a boolean `select_outer`. Its parameterization is
+`P(u,v) = C + (R + r cos v)(cos u X + sin u Y) + r sin v Z`.
+For `a = acos(-R/r)`, the outer sheet has `v` in `[-a,a]`; the inner sheet
+has `v` in `[a,2π-a]`. Each sheet has full angular range `u` in `[0,2π]`
+and poles at `C ± sqrt(r²-R²) Z`. The natural normal points outward on
+the outer sheet and inward on the inner sheet. A whole sheet has two
+`VERTEX_LOOP` bounds and a seam loop. The seam loop uses one exact circular
+meridian edge twice in opposite directions. Its two pcurves have constant
+`u` values zero and `2π`. The meridian and both pcurves are trimmed to
+the selected profile interval. Each `SEAM_EDGE` selects its corresponding pcurve. The resulting
+face is a closed two-dimensional manifold with singular surface parameters
+at its poles.
+
 Section §5.5.17 defines the inherited `FACE_BOUND` attributes `bound` and
 `orientation`. Section §5.5.18 declares `FACE_OUTER_BOUND` as a subtype with
 no additional explicit attributes. Therefore, in a complex instance, the
@@ -2143,9 +2171,12 @@ geometry arena retains its carrier identity as the style target. Semantic PMI
 retains every supported STEP `SHAPE_ASPECT` subtype as a shape-aspect target,
 including a simple leaf subtype and a shape-aspect partial in a complex datum
 feature. ISO 10303-47 defines `DATUM` as a `SHAPE_ASPECT` subtype with the
-explicit `identification` attribute. In external mapping, the `DATUM` partial
-supplies `identification`; the inherited `SHAPE_ASPECT` partial supplies
-`name`, `description`, `of_shape`, and `product_definitional`. A datum requires
+explicit `identification` attribute. A simple `DATUM` instance lists the
+inherited `name`, `description`, `of_shape`, and `product_definitional`
+attributes and then `identification` as its fifth attribute. In external
+mapping, the `DATUM` partial supplies `identification`; the inherited
+`SHAPE_ASPECT` partial supplies `name`, `description`, `of_shape`, and
+`product_definitional`. A datum requires
 an empty `name` and `product_definitional = .F.`. CADIR reads these fields by
 partial name, retains the source datum identity as a shape-aspect target, and
 does not use the first complex partial as an attribute source. A complex datum
@@ -2164,20 +2195,40 @@ Practices 4.1 §5.2.1 identifies a nominal value by a
 `nominal value`, and requires that value even when no range is present. For a
 value range, §5.2.4 identifies the items by `nominal value`, `upper limit`, and
 `lower limit`.
-CADIR decision: the reader traverses the complete item graph and compares the
-specified names case-insensitively. One named nominal item supplies the
-nominal. Multiple named nominal items are ambiguous and produce
-`pmi.dimensional-nominal-ambiguous`. If no named nominal item exists, exactly
-one reachable measure is accepted as malformed-source salvage; multiple
-measures are ambiguous and produce
-`pmi.dimensional-unnamed-measure-ambiguous`. Neither aggregate order nor
-entity identity selects a value. Complex measure records referenced by a
-characteristic representation remain typed measure carriers.
+The item names are case-insensitive. One item named `nominal value` supplies
+an explicit nominal. One `lower limit` item and one `upper limit` item supply
+absolute lower and upper limits, in compatible measure units. The lower limit
+is at most the upper limit. Limit values are not signed deviations from a
+nominal. The bounds are independent of the nominal. Multiple items with the
+same role are ambiguous. An incomplete pair does not define limits. An unnamed
+measure supplies a nominal only when it is the sole measure outside the limit
+items. Aggregate order and entity identity do not assign measure roles.
+Complex measure records referenced by a characteristic representation are
+typed measure carriers.
+The name of a `DIMENSIONAL_SIZE` distinguishes `diameter`, `radius`,
+`spherical diameter`, and `spherical radius`. Each has a length quantity.
+A `DESCRIPTIVE_REPRESENTATION_ITEM` named `dimensional note` supplies a
+dimension modifier through its `description`. `theoretical` denotes a basic
+dimension and `auxiliary` denotes a reference dimension. Other modifiers
+include `statistical` and `controlled radius`. A
+`COMPOUND_REPRESENTATION_ITEM` groups secondary modifiers. The modifier
+belongs to the dimensional characteristic whose representation contains the
+item. Numeric measure selection does not consume a modifier as a nominal.
 `GEOMETRIC_ITEM_SPECIFIC_USAGE` resolves a shape-aspect definition, including a
 definition reached through a `SHAPE_ASPECT_RELATIONSHIP`, to its identified
 geometric or topology item. A resolved face, edge, vertex, body, point, or curve
 is added as a typed PMI target while the source shape-aspect target remains. An
 unresolved usage remains source-native with its identity and links.
+`DIMENSIONAL_SIZE.applies_to` identifies a product-definitional shape aspect.
+Geometric usages of that aspect identify the sized feature's geometry.
+`GEOMETRIC_TOLERANCE.toleranced_shape_aspect` identifies the tolerance's
+target. An `ALL_AROUND_SHAPE_ASPECT` target specifies all-around scope and
+inherits the four explicit `SHAPE_ASPECT` attributes. This scope is separate
+from the geometric-tolerance modifier enumeration. Its component
+relationships have the enclosing aspect as `relating_shape_aspect` and each
+member as `related_shape_aspect`. A composite aspect has at least two such
+relationships. Composite membership can nest; a member belongs to its enclosing
+aspects without inheriting a sibling member's tolerance association.
 `DATUM_TARGET` and `PLACED_DATUM_TARGET_FEATURE` transfer as typed datum-target
 definitions with their target form and identification, while their source
 shape-aspect identity remains a PMI target. Standard placed-target forms are
@@ -2188,22 +2239,49 @@ the datum target basis; the writer emits the relationship for each shape-aspect
 basis target. A relationship without a resolvable datum target remains
 source-native. Geometric-item usages whose identified item is a Cartesian point
 transfer that point as a typed PMI target.
-Geometric validation properties read area, volume, and centroid values through
-inherited `REPRESENTATION`, `MEASURE_REPRESENTATION_ITEM`, and
-`MEASURE_WITH_UNIT` partials. Direct `AREA_UNIT` and `VOLUME_UNIT` subtypes and
-their inherited `DERIVED_UNIT_ELEMENT` factors are typed. ISO 10303-43 defines
-`representation.items` as `SET[1:?]`; a geometric-validation representation
-is not limited to one item. CAx-IF Recommended Practices for Geometric and
-Assembly Validation Properties permit one representation to combine validation
-properties when they have the same `PROPERTY_DEFINITION.name` and definition.
-The combined representation has an empty name, and each property is
-instantiated at most once for the model element. A solid may therefore carry
-one volume, one surface-area, and one centroid item in one combined
-representation. Every referenced area, volume, or centroid item is evaluated;
-derived-unit factors scale area and volume by their dimensions. CADIR decision:
-a repeated reference to one item is evaluated once, and an unsupported item
-produces a warning without suppressing supported siblings. Item order does not
-select a validation value.
+A geometric validation property is a `PROPERTY_DEFINITION` named
+`geometric validation property`, linked to a representation by
+`PROPERTY_DEFINITION_REPRESENTATION`. Its definition is either a
+`PRODUCT_DEFINITION_SHAPE` for a part or a `SHAPE_ASPECT` for geometric items.
+At part level the scope contains visible solid bodies for solid properties and
+visible independent sheet bodies for surface properties. Geometry-level scope
+uses the items associated with the shape aspect by
+`SHAPE_DEFINITION_REPRESENTATION` through a property definition, or by
+`GEOMETRIC_ITEM_SPECIFIC_USAGE` or `ITEM_IDENTIFIED_REPRESENTATION_USAGE`.
+A placement item does not add geometry to that scope. A face or shell scope is
+not interchangeable with the whole body that contains it.
+
+The measure item names distinguish the quantities:
+
+| Item name | Value | Geometry class |
+| --- | --- | --- |
+| `volume measure` | `VOLUME_MEASURE` | Solid volume |
+| `surface area measure` | `AREA_MEASURE` | Solid area, including void faces |
+| `wetted area measure` | `AREA_MEASURE` | Solid area, excluding void faces |
+| `centre point` | `CARTESIAN_POINT` | Volume centroid of solids |
+| `independent surface area measure` | `AREA_MEASURE` | Independent surface area |
+| `surface centre point` | `CARTESIAN_POINT` | Area centroid of independent surfaces |
+
+Names are case-insensitive. Area and volume values use their explicit measure
+units; point coordinates use the representation context's length unit. Derived
+unit factors have total length exponents two for area and three for volume.
+Simple instances list inherited attributes in schema order. Complex
+instances place each attribute in its declaring partial. `REPRESENTATION`
+carries items and context; `REPRESENTATION_ITEM` carries the item name;
+`MEASURE_WITH_UNIT` carries the value and unit; `CARTESIAN_POINT` carries only
+its coordinate list. In a complex `GEOMETRIC_ITEM_SPECIFIC_USAGE`,
+`ITEM_IDENTIFIED_REPRESENTATION_USAGE` carries the definition, used
+representation, and identified items. In a complex
+`SHAPE_DEFINITION_REPRESENTATION`, `PROPERTY_DEFINITION_REPRESENTATION`
+carries the definition and used representation.
+
+`representation.items` is a `SET[1:?]`. One representation can combine
+validation properties with the same property name and definition. Its name is
+empty, and each quantity occurs at most once for a model element. A repeated
+reference to one item is one set member. Item order does not select a value.
+A validation point belongs to the property; it is also model geometry only
+when another geometric record references it.
+
 ISO 10303-47 §6.2 defines the first compartment of a tolerance frame with one
 specific characteristic entity: `ANGULARITY_TOLERANCE`,
 `CIRCULAR_RUNOUT_TOLERANCE`, `COAXIALITY_TOLERANCE`,
@@ -2220,9 +2298,28 @@ characteristic leaf partial supplies the kind. CAx-IF AP242 PMI Recommended
 Practices 4.1 §6.9.3 shows the same complex form with
 `GEOMETRIC_TOLERANCE_WITH_MODIFIERS` and `POSITION_TOLERANCE` partials.
 `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` supplies the datum-system link and
-does not add a shape-aspect target. The defined-unit and defined-area-unit
+does not add a shape-aspect target. Its subtypes are `ANGULARITY_TOLERANCE`,
+`CIRCULAR_RUNOUT_TOLERANCE`, `COAXIALITY_TOLERANCE`,
+`CONCENTRICITY_TOLERANCE`, `PARALLELISM_TOLERANCE`,
+`PERPENDICULARITY_TOLERANCE`, `SYMMETRY_TOLERANCE`, and
+`TOTAL_RUNOUT_TOLERANCE`. A simple instance of one of these subtypes lists the
+four inherited `GEOMETRIC_TOLERANCE` attributes and then `datum_system` as its
+fifth attribute. Another tolerance kind references a datum system only through
+a `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` partial in a complex instance. The defined-unit and defined-area-unit
 partials retain their unit sizes and area shape; modifier aggregates retain
 their enumeration values.
+`UNEQUALLY_DISPOSED_GEOMETRIC_TOLERANCE.displacement` is a signed length.
+`GEOMETRIC_TOLERANCE_WITH_MAXIMUM_TOLERANCE.maximum_upper_tolerance` is a
+positive length greater than the tolerance magnitude and requires a maximum-
+or least-material modifier. These attributes follow the inherited attributes
+in a simple instance and occupy their declaring partials in a complex one.
+`TOLERANCE_ZONE.defining_tolerance` associates each zone with its tolerances.
+`TOLERANCE_ZONE_FORM.name` states the zone form, including `cylindrical or
+circular` and `spherical`. `PROJECTED_ZONE_DEFINITION` adds a boundary set,
+projection-end shape aspect, and positive projected length to a zone.
+`PROJECTED_ZONE_DEFINITION_WITH_OFFSET` adds a signed offset. A zone can have
+more than one projected definition. Zone references supply ownership;
+aggregate order does not. All length values use their explicit measure units.
 CADIR decision: the reader recognizes only the exact characteristic leaf
 names above. An unrecognized direct entity name ending in `_TOLERANCE`,
 including the abstract `GEOMETRIC_TOLERANCE` name, is not a kind and remains a

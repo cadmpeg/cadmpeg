@@ -1,131 +1,153 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {},
+    "fragment": false,
+    "geometry": {
       "bodies": [],
       "coedges": [],
-      "configurations": [],
       "curves": [],
-      "drawings": [],
       "edges": [],
       "faces": [],
-      "features": [],
       "loops": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "pmi": [],
       "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [],
-      "semantic_annotations": [],
       "shells": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 1.0,
-                    "y": 0.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 2.0,
-                    "y": 0.0,
-                    "z": 2.0
-                  }
-                ],
-                [
-                  {
-                    "x": 3.0,
-                    "y": 1.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 4.0,
-                    "y": 1.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 5.0,
-                    "y": 1.0,
-                    "z": 2.0
-                  }
-                ],
-                [
-                  {
-                    "x": 6.0,
-                    "y": 2.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 7.0,
-                    "y": 2.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 8.0,
-                    "y": 2.0,
-                    "z": 2.0
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 1.0,
+                      "y": 0.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 2.0,
+                      "y": 0.0,
+                      "z": 2.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 3.0,
+                      "y": 1.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 4.0,
+                      "y": 1.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 5.0,
+                      "y": 1.0,
+                      "z": 2.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 6.0,
+                      "y": 2.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 7.0,
+                      "y": 2.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 8.0,
+                      "y": 2.0,
+                      "z": 2.0
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 2,
-            "u_knots": [
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "u_periodic": false,
-            "v_degree": 2,
-            "v_knots": [
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 2,
+              "u_knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "u_periodic": false,
+              "v_degree": 2,
+              "v_knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "v_periodic": false
+            }
           },
           "id": "catia:a8:surf#0",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-surface:decafbad"
           }
         }
       ],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -133,6 +155,8 @@
         "alias_rows": [],
         "catalog_entries": [],
         "catalogs": [],
+        "consolidated_a5_charts": [],
+        "consolidated_a_class25_maps": [],
         "consolidated_chamfers": [],
         "consolidated_circles": [],
         "consolidated_class5b5c_records": [],
@@ -143,6 +167,7 @@
         "consolidated_domain_relations": [],
         "consolidated_edge_nodes": [],
         "consolidated_edge_runs": [],
+        "consolidated_four_reference_edges": [],
         "consolidated_line_profiles": [],
         "consolidated_owner_packets": [],
         "consolidated_parameter_points": [],
@@ -150,11 +175,15 @@
         "consolidated_plane_carriers": [],
         "consolidated_reference_lists": [],
         "consolidated_revolutions": [],
+        "consolidated_rolling_ball_constructions": [],
+        "consolidated_rolling_ball_continuations": [],
         "consolidated_spheres": [],
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
         "e5_curve_supports": [],
+        "e5_edges": [],
+        "e5_nurbs_limit_programs": [],
         "entity_records": [],
         "external_references": [],
         "finjpl_segments": [],
@@ -187,25 +216,26 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
-      "attributes": {
-        "external_reference_count": "0",
-        "file_size": "539",
-        "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "539",
-        "preview_count": "0",
-        "stream_count": "2"
-      },
+      "attributes": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {},
             "dialect": "catia:inner-no-directory"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -213,7 +243,10 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
@@ -553,23 +586,28 @@
       "unselected_object_stream_run_count": 0
     },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {},
           "dialect": "catia:inner-no-directory"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "topology.b5-graph-unclosed",
-          "kind": "topology_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.b5-graph-unclosed",
+            "kind": "topology_not_transferred",
+            "namespace": "catia",
+            "strict_floor": "warning"
+          }
         },
         "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object id (0): . The records stay inside retained record catia:payload:unknown#freeform.",
         "severity": "blocking"
@@ -582,7 +620,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -593,7 +634,7 @@
           "fields": {
             "links": "derived"
           },
-          "scope": "entity"
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -609,15 +650,19 @@
         }
       }
     },
+    "decode_digest": "f3373383af38ab949d2ea0c075daefa0e5e938f4984cb4d22d0a69ea685a7d08",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#freeform": {
         "bytes": {
           "data": "VjVfQ0ZWMgAAAAIbAAAAAFY1X0NGVjIAAAABJAAAAOeoAzQIAQAArfvK3gAJAAAJAQAAAAAAAAAAAAAAAAAA8D8NDQkAAAkBAAAAAAAAAAAAAAAAAADwPw0NAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAhAAAAAAAAA8D8AAAAAAAAAAAAAAAAAABBAAAAAAAAA8D8AAAAAAADwPwAAAAAAABRAAAAAAAAA8D8AAAAAAAAAQAAAAAAAABhAAAAAAAAAAEAAAAAAAAAAAAAAAAAAABxAAAAAAAAAAEAAAAAAAADwPwAAAAAAACBAAAAAAAAAAEAAAAAAAAAAQABDQVRJQV9WNSBDQjAwMDEAAAAAAAAAAAAAAAAAAAABE1gAYQBpAG4ARABhAHQAYQBTAHQAcgBlAGEAbQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAEAAAARMAAAETAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABUwB1AHIAZgBhAGMAaQBjAFIAZQBwAHMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAEjAAAAAQAAAAEAAAAAAAAAAENCX19FTkQ=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

@@ -5,6 +5,7 @@ use crate::records::feature::scope::{
 };
 use crate::records::feature::surface_ops::{
     DesignPatchContinuity, DesignSurfacePatchBoundary, DesignSurfacePatchNormalState,
+    DesignSurfacePatchSelection,
 };
 use crate::records::identity::Located;
 
@@ -174,4 +175,132 @@ fn typed_local_boundary_reference_preserves_the_group_and_rejects_nonlocal_or_tr
     bytes[88] = 1;
     bytes.extend_from_slice(&7_u32.to_le_bytes());
     assert!(super::exact_surface_patch_boundary(&bytes, 0).is_none());
+}
+
+fn surface_patch_selection(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    type_info: Option<(&str, u32)>,
+) -> Option<DesignSurfacePatchSelection> {
+    crate::test_support::with_decode_context(|ctx| {
+        super::surface_patch_selection(ctx, bytes, scope, type_info).unwrap()
+    })
+}
+
+fn marked_reference(bytes: &mut Vec<u8>, record: u64) {
+    bytes.push(1);
+    bytes.extend_from_slice(&record.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0]);
+}
+
+fn selection_frame(version: u32, settings: &[u64], interior: &[u64], tool: u64) -> Vec<u8> {
+    let (start, interior_zeros, tool_zeros) = match version {
+        5 => (31, 8, 4),
+        6 => (31, 12, 8),
+        _ => (32, 12, 8),
+    };
+    let mut frame = vec![0; start];
+    frame.extend_from_slice(&4_u32.to_le_bytes());
+    frame.extend_from_slice(&1_u32.to_le_bytes());
+    frame.extend_from_slice(&u32::try_from(settings.len()).unwrap().to_le_bytes());
+    for record in settings {
+        marked_reference(&mut frame, *record);
+    }
+    frame.resize(frame.len() + interior_zeros, 0);
+    frame.extend_from_slice(&u32::try_from(interior.len()).unwrap().to_le_bytes());
+    for record in interior {
+        marked_reference(&mut frame, *record);
+    }
+    frame.resize(frame.len() + tool_zeros, 0);
+    marked_reference(&mut frame, tool);
+    frame
+}
+
+fn selection_scope(frame_length: u64) -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#353",
+        DesignFeatureKind::SurfacePatch,
+        353,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = 17;
+            draft.reference_count_offset = 26;
+            draft.frame_length = frame_length;
+            draft.paired_byte_offset = 17 + frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+#[test]
+fn selection_prefix_names_settings_interior_groups_and_tool_body_in_each_version() {
+    let expected = DesignSurfacePatchSelection {
+        settings: vec![360, 369],
+        interior_groups: vec![371, 380],
+        tool_body: 390,
+    };
+    for (version, frame_bytes, start, interior_prefix) in [
+        (5_u32, 114_usize, 31, 12),
+        (6, 122, 31, 16),
+        (7, 123, 32, 16),
+    ] {
+        let frame = selection_frame(version, &[360, 369], &[371, 380], 390);
+        assert_eq!(frame.len(), frame_bytes);
+        let scope = selection_scope(200);
+        let mut bytes = vec![0; 17];
+        bytes.extend_from_slice(&frame);
+        bytes.resize(217, 0);
+        assert_eq!(
+            surface_patch_selection(&bytes, &scope, Some((PATCH_GUID, version))),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            surface_patch_selection(
+                &bytes,
+                &scope,
+                Some(("00000000-0000-0000-0000-000000000000", version))
+            ),
+            None
+        );
+        assert_eq!(surface_patch_selection(&bytes, &scope, None), None);
+        let other_version = if version == 5 { 6 } else { 5 };
+        assert_eq!(
+            surface_patch_selection(&bytes, &scope, Some((PATCH_GUID, other_version))),
+            None
+        );
+        let short = u64::try_from(frame_bytes - 1).unwrap();
+        assert_eq!(
+            surface_patch_selection(
+                &bytes[..17 + frame_bytes - 1],
+                &selection_scope(short),
+                Some((PATCH_GUID, version))
+            ),
+            None
+        );
+        let at = 17 + start;
+        let settings_end = at + 12 + 22;
+        let interior_end = settings_end + interior_prefix + 22;
+        for corrupt in [at, at + 4, settings_end + 1, interior_end + 1] {
+            let mut invalid = bytes.clone();
+            invalid[corrupt] ^= 0x10;
+            assert_eq!(
+                surface_patch_selection(&invalid, &scope, Some((PATCH_GUID, version))),
+                None,
+                "byte {corrupt} of version {version}"
+            );
+        }
+    }
+    for version in [1, 4, 8] {
+        let frame = selection_frame(5, &[360], &[371], 390);
+        let mut bytes = vec![0; 17];
+        bytes.extend_from_slice(&frame);
+        bytes.resize(217, 0);
+        assert_eq!(
+            surface_patch_selection(&bytes, &selection_scope(200), Some((PATCH_GUID, version))),
+            None
+        );
+    }
 }

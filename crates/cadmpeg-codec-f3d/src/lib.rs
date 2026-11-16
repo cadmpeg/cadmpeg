@@ -110,6 +110,8 @@ mod native;
 mod paramesh;
 mod records;
 mod report;
+mod repro;
+mod scene;
 mod tsm;
 mod validate;
 mod writer;
@@ -169,6 +171,12 @@ impl F3dCodec {
 }
 
 impl CodecBackend for F3dCodec {
+    fn repro_redactions(
+        ir: &CadIr,
+    ) -> Result<std::collections::BTreeMap<String, String>, CodecError> {
+        repro::redactions(ir)
+    }
+
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn validate_native(

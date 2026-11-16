@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Homogeneous Bezier control-polygon splitting, restriction, and chord bounds.
 
+use crate::math::portable::Portable;
 use crate::math::Point3;
 use cadmpeg_core::convert::f64_from_index;
 
@@ -19,30 +20,16 @@ impl HomogeneousBezierSplit {
     }
 }
 
-fn split_homogeneous_bezier(
+pub(super) fn split_homogeneous_bezier(
     controls: &[[f64; 4]],
     parameter: f64,
 ) -> Option<HomogeneousBezierSplit> {
     if !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
         return None;
     }
-    split_homogeneous_bezier_with(controls, |left, right| {
+    let blend = |left: [f64; 4], right: [f64; 4]| -> [f64; 4] {
         std::array::from_fn(|axis| (1.0 - parameter) * left[axis] + parameter * right[axis])
-    })
-}
-
-pub(super) fn split_homogeneous_bezier_midpoint(
-    controls: &[[f64; 4]],
-) -> Option<HomogeneousBezierSplit> {
-    split_homogeneous_bezier_with(controls, |left, right| {
-        std::array::from_fn(|axis| 0.5 * (left[axis] + right[axis]))
-    })
-}
-
-fn split_homogeneous_bezier_with(
-    controls: &[[f64; 4]],
-    blend: impl Fn([f64; 4], [f64; 4]) -> [f64; 4],
-) -> Option<HomogeneousBezierSplit> {
+    };
     let (&first, input_rest) = controls.split_first()?;
     let mut first = first;
     let mut rest = input_rest.to_vec();
@@ -158,7 +145,7 @@ pub(super) fn rational_curve_chord_bound(controls: &[[f64; 4]], chord: [Point3; 
             if !residual.is_finite() {
                 return None;
             }
-            residual_norm = residual_norm.hypot(residual);
+            residual_norm = residual_norm.portable_hypot(residual);
             coordinate_scale = coordinate_scale.max((coordinate / weight).abs());
         }
         bound = bound.max(residual_norm);
@@ -169,12 +156,12 @@ pub(super) fn rational_curve_chord_bound(controls: &[[f64; 4]], chord: [Point3; 
 
 #[cfg(test)]
 mod tests {
-    use super::{restrict_homogeneous_bezier, split_homogeneous_bezier_midpoint};
+    use super::{restrict_homogeneous_bezier, split_homogeneous_bezier};
 
     #[test]
     fn homogeneous_split_returns_both_polygons() {
         let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
-        let [left, right] = split_homogeneous_bezier_midpoint(&controls)
+        let [left, right] = split_homogeneous_bezier(&controls, 0.5)
             .expect("nonempty")
             .into_polygons();
         assert_eq!(&*left, &[[0.0, 0.0, 0.0, 1.0], [0.5, 0.0, 0.0, 1.0]]);

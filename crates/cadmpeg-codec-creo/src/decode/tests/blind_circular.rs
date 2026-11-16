@@ -621,7 +621,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
         (3, [-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -632,6 +632,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
 
@@ -694,6 +695,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 200,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 201,
         });
     let scalar = |name: &str, value: f64| crate::surface::SurfaceNamedParameter {
@@ -714,7 +716,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         });
 
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#11".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -726,6 +728,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
             .expect("valid CylinderSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     scan.features
         .affected_ids
@@ -736,7 +739,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
             offset: 0,
         });
     for (id, x) in [(3, -9.0), (4, -8.0)] {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -747,6 +750,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
 
@@ -765,7 +769,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     if let Some(Surface {
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
         ..
-    }) = ir.model.surfaces.first_mut()
+    }) = ir.geometry.surfaces.first_mut()
     {
         let origin = cylinder_surface.origin();
         let axis = cylinder_surface.frame().axis().as_raw();
@@ -794,7 +798,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
 }
 
 #[test]
-fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
+fn unequal_cylinder_samples_do_not_identify_a_radius_law() {
     let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (11, crate::surface::SurfaceKind::Cylinder),
@@ -813,7 +817,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     }
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -825,6 +829,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
 
@@ -845,7 +850,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
         }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::edge_treatments::FilletGroup {
-                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
+                radius: RadiusSpec::Unresolved { form: None },
                 ..
             }]
         )
@@ -930,6 +935,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
                     ),
                     boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
                     offset: usize::try_from(id).expect("fixture index fits usize"),
+                    type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
                     body_offset: usize::try_from(id).expect("fixture index fits usize") + 1,
                 });
         }
@@ -950,7 +956,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         (3, [-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -961,6 +967,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
 
@@ -1003,7 +1010,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::edge_treatments::FilletGroup {
-                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
+                radius: RadiusSpec::Unresolved { form: None },
                 ..
             }]
         )
@@ -1035,7 +1042,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
 
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (12, 1.0)] {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1047,6 +1054,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     for (id, origin, normal) in [
@@ -1055,7 +1063,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         (3, [-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1066,6 +1074,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
 
@@ -1116,7 +1125,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::edge_treatments::FilletGroup {
-                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
+                radius: RadiusSpec::Unresolved { form: None },
                 ..
             }]
         )
@@ -1152,7 +1161,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
 
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1164,6 +1173,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     for (id, origin, normal) in [
@@ -1172,7 +1182,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         (3, [-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1183,6 +1193,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
 
@@ -1233,7 +1244,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::edge_treatments::FilletGroup {
-                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
+                radius: RadiusSpec::Unresolved { form: None },
                 ..
             }]
         )

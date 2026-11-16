@@ -194,8 +194,16 @@ fn swift_rendered_annotation_limit_error(
     let (ctx, _) =
         DecodeContext::from_root_bytes(&source, &arena, &policy).expect("source fits policy");
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    crate::swift::annotations(&ctx, &scan, &mut annotations, None, None, &mut Vec::new())
-        .expect_err("SWIFT annotations must refuse")
+    crate::swift::annotations(
+        &ctx,
+        &scan,
+        &mut annotations,
+        None,
+        &[],
+        &[],
+        &mut Vec::new(),
+    )
+    .expect_err("SWIFT annotations must refuse")
 }
 
 #[test]
@@ -534,7 +542,7 @@ fn assert_malformed_swift_projection(annotation: Entity, reason: &str) {
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
     let expected = format!("SWIFT annotation A42 ({class}): {reason}");
     assert!(
-        matches!(crate::swift::annotations(&ctx, &scan, &mut provenance, None, None, &mut Vec::new()),
+        matches!(crate::swift::annotations(&ctx, &scan, &mut provenance, None, &[], &[], &mut Vec::new()),
         Err(CodecError::Malformed(message)) if message == expected)
     );
     assert!(
@@ -603,9 +611,16 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
         let scan = crate::test_support::container::scan(&source);
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut provenance = cadmpeg_ir::annotations::Annotations::default();
-        let projected =
-            crate::swift::annotations(&ctx, &scan, &mut provenance, None, None, &mut Vec::new())
-                .unwrap();
+        let projected = crate::swift::annotations(
+            &ctx,
+            &scan,
+            &mut provenance,
+            None,
+            &[],
+            &[],
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert_eq!(projected.len(), 1);
         let annotation = projected.first().unwrap();
         assert_eq!(annotation.id, pmi_id("A42").unwrap());
@@ -629,7 +644,8 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
             &scan,
             &mut provenance,
             None,
-            None,
+            &[],
+            &[],
             &mut Vec::new()
         )
         .unwrap()
@@ -646,11 +662,17 @@ fn swift_recognized_unprojected_annotation_records_unsupported_loss() {
     let scan = crate::test_support::container::scan(&source);
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
-    assert!(
-        crate::swift::annotations(&ctx, &scan, &mut provenance, None, None, &mut Vec::new())
-            .unwrap()
-            .is_empty()
-    );
+    assert!(crate::swift::annotations(
+        &ctx,
+        &scan,
+        &mut provenance,
+        None,
+        &[],
+        &[],
+        &mut Vec::new()
+    )
+    .unwrap()
+    .is_empty());
     assert_eq!(
         crate::swift::unsupported_annotation_classes(&ctx, &scan).unwrap(),
         BTreeMap::from([("GdtWidth".into(), 1)])
@@ -666,4 +688,80 @@ fn swift_recognized_unprojected_annotation_records_unsupported_loss() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("GdtWidth (1)")));
+}
+
+#[test]
+fn swift_spherical_zone_type_is_scoped_to_position() {
+    let mut root = super::semantic_root();
+    root.annotations
+        .entities
+        .get_mut(1)
+        .expect("position annotation")
+        .integers
+        .insert("ZoneType".into(), 2);
+    let mut straightness = super::entity("GdtStraightness");
+    straightness.doubles.insert("Tolerance".into(), 0.025);
+    straightness.integers.insert("ZoneType".into(), 2);
+    root.annotations
+        .references
+        .push(super::reference("A50", "GdtStraightness"));
+    root.annotations.entities.push(straightness);
+
+    let projected = project(&root);
+    let position = projected
+        .iter()
+        .find(|annotation| annotation.id == pmi_id("A20").unwrap())
+        .expect("position");
+    let PmiDefinition::GeometricTolerance { constraints, .. } = &position.definition else {
+        panic!("position tolerance")
+    };
+    let [zone] = constraints.zones.as_slice() else {
+        panic!("one spherical zone")
+    };
+    assert_eq!(zone.form.as_str(), "spherical");
+
+    let straightness = projected
+        .iter()
+        .find(|annotation| annotation.id == pmi_id("A50").unwrap())
+        .expect("straightness");
+    let PmiDefinition::GeometricTolerance { constraints, .. } = &straightness.definition else {
+        panic!("straightness tolerance")
+    };
+    assert!(constraints.zones.is_empty());
+}
+
+fn class_declaration(class: &str) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xff, 0x01, 0x00];
+    bytes.extend_from_slice(
+        &u16::try_from(class.len())
+            .expect("class length")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(class.as_bytes());
+    bytes
+}
+
+#[test]
+fn a_declared_display_list_that_its_head_does_not_frame_reports_its_loss() {
+    let mut payload = 11000u32.to_le_bytes().to_vec();
+    payload.extend(class_declaration("moSwiftSchema_c"));
+    payload.extend(class_declaration("moUnframedHead_c"));
+    payload.extend_from_slice(&1u16.to_le_bytes());
+    payload.extend(class_declaration("moDisplayGtol_c"));
+    payload.extend(encoded_root());
+    let mut source = crate::test_support::container::synthetic_sldprt();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        &payload,
+    ));
+    let scan = crate::test_support::container::scan(&source);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+    let mut losses = Vec::new();
+    crate::swift::annotations(&ctx, &scan, &mut provenance, None, &[], &[], &mut losses)
+        .expect("SWIFT annotations");
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "pmi.swift-presentation-unframed"));
 }

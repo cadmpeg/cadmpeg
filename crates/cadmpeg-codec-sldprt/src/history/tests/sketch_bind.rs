@@ -153,6 +153,119 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
         }) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Sketch(id)),) if id == &sketch.id)));
 }
 
+fn sweep_with_enclosed_general_curve_profiles(count: usize, alternate: bool) -> Vec<u8> {
+    let mut source = sldprt_with_body(&triangle_body());
+    let mut payload = crate::test_support::history::resolved_feature_classes_with_ids(&[(
+        "moSweep_c",
+        "Sweep",
+        137,
+    )]);
+    let class = b"moGeneralCurveRef_w";
+    payload.extend_from_slice(&[0xff, 0xff, 1, 0]);
+    payload.extend_from_slice(&u16::try_from(class.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(class);
+    for _ in 0..count {
+        payload.extend(parasolid_with_body(
+            "feature input sketch",
+            "SCH_SW_33103_11000",
+            &triangle_body(),
+        ));
+    }
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+    if alternate {
+        source.extend(make_block(
+            0x45,
+            "Contents/Config-1-ResolvedFeatures",
+            &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+                "moSweep_c",
+                "Sweep",
+                137,
+            )]),
+        ));
+    }
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        if alternate {
+            br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Sweep Name="Sweep" Type="Sweep" id="137"/></Keywords>"#
+        } else {
+            br#"<Keywords><Sweep Name="Sweep" Type="Sweep" id="137"/></Keywords>"#
+        },
+    ));
+    source
+}
+
+#[test]
+fn decode_binds_owned_general_curve_wrapper_to_unique_enclosed_profile() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    let source = sweep_with_enclosed_general_curve_profiles(1, false);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let [sketch] = decoded.ir().model.sketches.as_slice() else {
+        panic!("one enclosed profile")
+    };
+    let sweep = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sweep"))
+        .unwrap();
+    assert!(
+        matches!(sweep.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path: None, .. }) if matches!(shape.referenced_profile(), Some(PlanarProfileRef::Sketch(id)) if id == &sketch.id))
+    );
+}
+
+#[test]
+fn decode_preserves_general_curve_wrapper_when_enclosed_profiles_are_ambiguous() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    let source = sweep_with_enclosed_general_curve_profiles(2, false);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.sketches.len(), 2);
+    let sweep = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sweep"))
+        .unwrap();
+    assert!(
+        matches!(sweep.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path: None, .. }) if matches!(shape.referenced_profile(), Some(PlanarProfileRef::Native(native)) if native.starts_with("sldprt:feature-input:general-curve-ref:")))
+    );
+}
+
+#[test]
+fn decode_keeps_enclosed_sweep_profile_configuration_local() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    let source = sweep_with_enclosed_general_curve_profiles(1, true);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let sweep = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sweep"))
+        .unwrap();
+    assert!(
+        matches!(sweep.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) if shape.section_is_unresolved())
+    );
+    assert!(
+        matches!(&decoded.ir().model.configurations[0].feature_states[&sweep.id].definition, FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) if matches!(shape.referenced_profile(), Some(PlanarProfileRef::Sketch(_))))
+    );
+    assert!(
+        matches!(&decoded.ir().model.configurations[1].feature_states[&sweep.id].definition, FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) if shape.section_is_unresolved())
+    );
+}
+
 #[test]
 fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
