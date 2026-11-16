@@ -23,14 +23,17 @@ fn native_cylinder_faces_follow_outer_control_in_the_preserved_chart() {
     );
     for (result, expected) in [(&positive, Sense::Forward), (&negative, Sense::Reversed)] {
         assert_valid(result);
-        assert_eq!(result.ir().model.faces.len(), 1);
-        assert_eq!(result.ir().model.faces[0].sense, expected);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
+        assert_eq!(result.ir().geometry.faces[0].sense, expected);
         assert!(matches!(
-            result.ir().model.surfaces[0].geometry,
+            result.ir().geometry.surfaces[0].geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
         ));
     }
-    assert_eq!(positive.ir().model.surfaces, negative.ir().model.surfaces);
+    assert_eq!(
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
 }
 
 #[test]
@@ -51,10 +54,10 @@ fn native_nurbs_faces_follow_outer_control_without_transposing_the_carrier() {
     );
     for (result, expected) in [(&positive, Sense::Forward), (&negative, Sense::Reversed)] {
         assert_valid(result);
-        assert_eq!(result.ir().model.faces.len(), 1);
-        assert_eq!(result.ir().model.faces[0].sense, expected);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
+        assert_eq!(result.ir().geometry.faces[0].sense, expected);
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
-            &result.ir().model.surfaces[0].geometry
+            &result.ir().geometry.surfaces[0].geometry
         else {
             panic!("direct native NURBS carrier");
         };
@@ -62,7 +65,10 @@ fn native_nurbs_faces_follow_outer_control_without_transposing_the_carrier() {
         assert_eq!(surface.u_degree(), 2);
         assert_eq!(surface.v_degree(), 2);
     }
-    assert_eq!(positive.ir().model.surfaces, negative.ir().model.surfaces);
+    assert_eq!(
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
 }
 
 #[test]
@@ -84,21 +90,21 @@ fn native_revolution_line_faces_follow_outer_control_in_profile_angle_order() {
     );
     for (result, expected) in [(&positive, Sense::Forward), (&negative, Sense::Reversed)] {
         assert_valid(result);
-        let model = &result.ir().model;
-        assert_eq!(model.faces.len(), 1);
-        assert_eq!(model.edges.len(), 4);
-        assert_eq!(model.loops.len(), 1);
-        assert_eq!(model.vertices.len(), 4);
-        assert_eq!(model.faces[0].sense, expected);
-        assert_eq!(model.procedural_surfaces.len(), 1);
+        let geometry = &result.ir().geometry;
+        assert_eq!(geometry.faces.len(), 1);
+        assert_eq!(geometry.edges.len(), 4);
+        assert_eq!(geometry.loops.len(), 1);
+        assert_eq!(geometry.vertices.len(), 4);
+        assert_eq!(geometry.faces[0].sense, expected);
+        assert_eq!(geometry.procedural_surfaces.len(), 1);
         assert!(matches!(
-            model.procedural_surfaces[0].definition(),
+            geometry.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Revolution(_)
         ));
         let SurfaceGeometry::Procedural {
             cache: Some(SolvedSurfaceGeometry::Nurbs(surface)),
             ..
-        } = &model.surfaces[0].geometry
+        } = &geometry.surfaces[0].geometry
         else {
             panic!("revolution cache");
         };
@@ -106,10 +112,13 @@ fn native_revolution_line_faces_follow_outer_control_in_profile_angle_order() {
         assert_eq!(surface.v_degree(), 2);
         assert!(!surface.normal_reversed());
     }
-    assert_eq!(positive.ir().model.surfaces, negative.ir().model.surfaces);
     assert_eq!(
-        positive.ir().model.procedural_surfaces,
-        negative.ir().model.procedural_surfaces
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
+    assert_eq!(
+        positive.ir().geometry.procedural_surfaces,
+        negative.ir().geometry.procedural_surfaces
     );
 }
 
@@ -129,8 +138,8 @@ fn native_revolution_arc_source_abstentions_remain_native() {
     ] {
         let result = decode(bytes.to_vec());
         assert_valid(&result);
-        assert!(result.ir().model.faces.is_empty());
-        assert!(result.ir().model.surfaces.is_empty());
+        assert!(result.ir().geometry.faces.is_empty());
+        assert!(result.ir().geometry.surfaces.is_empty());
         assert!(result
             .source_fidelity()
             .retained_records()
@@ -149,15 +158,15 @@ fn native_positive_torus_face_keeps_major_minor_chart_order() {
         .to_vec(),
     );
     assert_valid(&result);
-    let model = &result.ir().model;
-    assert_eq!(model.faces.len(), 1);
-    assert_eq!(model.faces[0].sense, Sense::Forward);
-    assert_eq!(model.edges.len(), 4);
-    assert_eq!(model.coedges.len(), 4);
-    assert_eq!(model.loops.len(), 1);
-    assert_eq!(model.vertices.len(), 4);
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.faces[0].sense, Sense::Forward);
+    assert_eq!(geometry.edges.len(), 4);
+    assert_eq!(geometry.coedges.len(), 4);
+    assert_eq!(geometry.loops.len(), 1);
+    assert_eq!(geometry.vertices.len(), 4);
     assert!(matches!(
-        model.surfaces[0].geometry,
+        geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
     ));
 }
@@ -180,12 +189,15 @@ fn native_negative_torus_face_keeps_carrier_and_reverses_sense() {
     );
     assert_valid(&positive);
     assert_valid(&negative);
-    assert_eq!(negative.ir().model.faces.len(), 1);
-    assert_eq!(negative.ir().model.faces[0].sense, Sense::Reversed);
-    assert_eq!(positive.ir().model.surfaces, negative.ir().model.surfaces);
+    assert_eq!(negative.ir().geometry.faces.len(), 1);
+    assert_eq!(negative.ir().geometry.faces[0].sense, Sense::Reversed);
     assert_eq!(
-        positive.ir().model.faces[0].surface,
-        negative.ir().model.faces[0].surface
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
+    assert_eq!(
+        positive.ir().geometry.faces[0].surface,
+        negative.ir().geometry.faces[0].surface
     );
 }
 
@@ -207,14 +219,17 @@ fn native_cone_source_controls_preserve_positive_chart_sense() {
     );
     for (result, sense) in [(&positive, Sense::Forward), (&negative, Sense::Reversed)] {
         assert_valid(result);
-        assert_eq!(result.ir().model.faces.len(), 1);
-        assert_eq!(result.ir().model.faces[0].sense, sense);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
+        assert_eq!(result.ir().geometry.faces[0].sense, sense);
         assert!(matches!(
-            result.ir().model.surfaces[0].geometry,
+            result.ir().geometry.surfaces[0].geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
         ));
     }
-    assert_eq!(positive.ir().model.surfaces, negative.ir().model.surfaces);
+    assert_eq!(
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
 }
 
 #[test]
@@ -235,12 +250,15 @@ fn native_cone_source_controls_reverse_negative_chart_sense() {
     );
     for (result, sense) in [(&positive, Sense::Reversed), (&negative, Sense::Forward)] {
         assert_valid(result);
-        assert_eq!(result.ir().model.faces.len(), 1);
-        assert_eq!(result.ir().model.faces[0].sense, sense);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
+        assert_eq!(result.ir().geometry.faces[0].sense, sense);
         assert!(matches!(
-            result.ir().model.surfaces[0].geometry,
+            result.ir().geometry.surfaces[0].geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
         ));
     }
-    assert_eq!(positive.ir().model.surfaces, negative.ir().model.surfaces);
+    assert_eq!(
+        positive.ir().geometry.surfaces,
+        negative.ir().geometry.surfaces
+    );
 }

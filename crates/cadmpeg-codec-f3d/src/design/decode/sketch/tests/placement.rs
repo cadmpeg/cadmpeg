@@ -1240,8 +1240,8 @@ fn compact_planar_line_admits_a_typed_trailing_reference() {
     assert!(truncated.is_none());
 }
 
-/// A compact planar line's z component is zero when it is at most one
-/// floating-point epsilon of the same vector's largest planar coordinate,
+/// A compact planar line's z component is zero when it is at most 1024
+/// floating-point epsilons of the same vector's largest planar coordinate,
 /// floored at 1 cm; a larger z keeps the line rejected.
 #[test]
 fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
@@ -1253,13 +1253,18 @@ fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
         0.5,
         f64::EPSILON
     ));
+    assert!(crate::design::decode::sketch::planar_z_is_zero(
+        0.0,
+        0.5,
+        1024.0 * f64::EPSILON
+    ));
     assert!(!crate::design::decode::sketch::planar_z_is_zero(
         0.0,
         0.5,
-        2.0 * f64::EPSILON
+        2048.0 * f64::EPSILON
     ));
     assert!(!crate::design::decode::sketch::planar_z_is_zero(
-        100.0, 0.0, 1.0e-12
+        100.0, 0.0, 1.0e-9
     ));
 
     let line = |z: f64| {

@@ -109,7 +109,7 @@ fn metadata_edit_in_a_shared_feature_member_is_written_once() {
     let readback = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(readback.ir().model.vertices.len(), 3);
+    assert_eq!(readback.ir().geometry.vertices.len(), 3);
     let native = sldprt_native(readback.ir());
     assert_eq!(native.feature_input_lanes.len(), 1);
     assert_eq!(
@@ -499,7 +499,7 @@ fn legacy_marker_metadata_edits_preserve_the_complete_marker_bytes() {
         let readback = SldprtCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(readback.ir().model.vertices.len(), 3);
+        assert_eq!(readback.ir().geometry.vertices.len(), 3);
         assert_eq!(
             sldprt_native(readback.ir()).feature_input_lanes[0]
                 .sketch_entities
@@ -586,7 +586,7 @@ fn metadata_edits_preserve_unemitted_named_members_and_physical_duplicates() {
     let readback = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(readback.ir().model.vertices.len(), 3);
+    assert_eq!(readback.ir().geometry.vertices.len(), 3);
 }
 
 #[test]

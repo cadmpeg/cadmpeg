@@ -103,7 +103,7 @@ fn physics_records_survive_a_write() {
 #[test]
 fn a_collider_of_a_brep_body_is_written_on_its_mesh_and_read_back() {
     let mut ir = decode("#usda 1.0\ndef Cylinder \"C\"\n{\n}\n").ir().clone();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.colliders.push(cadmpeg_ir::physics::Collider {
         id: crate::ids::collider("collider"),
         target: PhysicsTarget::Body { body },

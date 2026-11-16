@@ -974,7 +974,7 @@ fn native_attribute_target_rewrite_preserves_every_wire_kind() {
     ] {
         let mut value = serde_json::json!({"kind": kind});
         if kind != "document" {
-            value["id"] = serde_json::json!(format!("test:model:{kind}#one"));
+            value["value"] = serde_json::json!(format!("test:model:{kind}#one"));
         }
         let expected: AttributeTarget = serde_json::from_value(value.clone()).unwrap();
         let remap = |id: &str| {

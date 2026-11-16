@@ -3,11 +3,11 @@
   "entries": [
     {
       "attributes": {},
-      "compression": "none",
+      "kind": "none",
       "name": "HEADER",
       "role": "metadata",
       "size": {
-        "form": "unreported"
+        "kind": "unreported"
       }
     },
     {
@@ -15,36 +15,40 @@
         "entity_count": "13",
         "unknown_entities": ""
       },
-      "compression": "none",
+      "kind": "none",
       "name": "DATA[0]",
       "role": "entity-records",
       "size": {
-        "form": "unreported"
+        "kind": "unreported"
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
           "implementation_level": "2;1"
         },
         "dialect": "step:ap242"
       }
-    }
+    },
+    "kind": "classified"
   },
   "losses": [
     {
       "code": {
-        "code": "geometry.document-angle-unit-unresolved",
-        "kind": "geometry_not_transferred",
-        "namespace": "step",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "kind": "namespaced",
+        "value": {
+          "code": "geometry.document-angle-unit-unresolved",
+          "kind": "geometry_not_transferred",
+          "namespace": "step",
+          "strict_floor": "warning"
+        }
       },
       "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
       "severity": "error"

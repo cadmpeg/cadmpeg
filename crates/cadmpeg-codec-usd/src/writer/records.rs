@@ -727,7 +727,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
     fn procedural_surface(&mut self, construction: &str) -> Option<(SurfaceRecord, Chart)> {
         let procedural = self
             .ir
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.id.as_str() == construction)?;

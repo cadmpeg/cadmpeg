@@ -27,7 +27,7 @@ impl<'ir> Arenas<'ir> {
         let model = &ir.model;
         Self {
             bodies: BorrowedIdentities::build(|add| {
-                for body in &model.bodies {
+                for body in &ir.geometry.bodies {
                     add(body.id.as_str(), ());
                 }
             }),

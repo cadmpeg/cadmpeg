@@ -20,10 +20,7 @@ pub mod options;
 pub mod read;
 pub mod refs;
 pub mod selection;
-pub mod topology;
 pub mod units;
-
-mod wire;
 
 #[cfg(test)]
 mod tests;

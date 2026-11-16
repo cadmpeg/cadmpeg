@@ -50,7 +50,7 @@ fn a_blend_surface_curve_tail_refuses_the_parametric_second_flag() {
         }),
     };
     let wire = serde_json::to_value(&blend).expect("serializes");
-    assert_eq!(wire["family"], "blend");
+    assert_eq!(wire["kind"], "blend");
     assert_eq!(wire["tail"]["flags"], serde_json::json!(true));
     assert_eq!(wire["tail"]["form"]["extension"], serde_json::json!(7));
     assert_eq!(
@@ -89,7 +89,7 @@ fn a_blend_surface_curve_tail_refuses_the_parametric_second_flag() {
         }),
     };
     let wire = serde_json::to_value(&parametric).expect("serializes");
-    assert_eq!(wire["family"], "parametric");
+    assert_eq!(wire["kind"], "parametric");
     assert_eq!(wire["tail"]["flags"]["flag"], serde_json::json!(true));
     assert_eq!(
         wire["tail"]["flags"]["second_flag"],

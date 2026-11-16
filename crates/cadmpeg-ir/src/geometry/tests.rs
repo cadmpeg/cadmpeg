@@ -861,18 +861,17 @@ fn composite_curve_requires_a_segment_on_construction_and_serde() {
         segments,
         self_intersect: None,
     });
-    let wire = serde_json::json!({
+    let wire = serde_json::json!({"kind": "solved", "value": {
         "kind": "composite",
         "segments": [{"curve": "synthetic:test:curve#child", "same_sense": false, "transition": "continuous"}],
-        "self_intersect": null,
-    });
+    }});
     assert_eq!(serde_json::to_value(&curve).unwrap(), wire);
     assert_eq!(
         serde_json::from_value::<CurveGeometry>(wire.clone()).unwrap(),
         curve
     );
     let mut empty = wire;
-    empty["segments"] = serde_json::json!([]);
+    empty["value"]["segments"] = serde_json::json!([]);
     assert!(serde_json::from_value::<CurveGeometry>(empty).is_err());
 }
 

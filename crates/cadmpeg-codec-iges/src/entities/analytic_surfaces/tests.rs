@@ -96,7 +96,7 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
             );
             let surface = result
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id.as_str() == surface_id)
@@ -190,7 +190,7 @@ fn decode_rejects_unresolved_form_one_analytic_surface_references() {
             .unwrap();
         assert!(result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .all(|surface| surface.id.as_str() != "iges:model:surface#D7"));
@@ -247,7 +247,7 @@ fn decode_rejects_unresolved_form_one_analytic_surface_references() {
             .unwrap();
         assert!(result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .all(|surface| surface.id.as_str() != "iges:model:surface#D7"));
@@ -272,7 +272,7 @@ fn decode_rejects_unresolved_form_one_analytic_surface_references() {
         .unwrap();
     assert!(result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "iges:model:surface#D7"));
@@ -303,7 +303,7 @@ fn iges_sphere_radius_remains_positive_when_the_ir_carrier_accepts_signed_radii(
     let result = IgesCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result.ir().geometry.surfaces.is_empty());
     assert!(result.report().losses.iter().any(|loss| loss
         .message
         .contains("sphere radius is not positive and finite")));

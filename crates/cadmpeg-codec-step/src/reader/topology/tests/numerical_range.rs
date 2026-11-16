@@ -15,7 +15,7 @@ fn with_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
 fn plane() -> (cadmpeg_ir::CadIr, SurfaceId) {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = SurfaceId::mint("test:audit:surface#1").unwrap();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -45,7 +45,7 @@ fn numerical_0922b_pcurve_knot_units() {
             .unwrap(),
         };
         let seeds = with_context(|ctx| {
-            pcurve_selection_seeds(&index, &id, &p, &ir.model.surfaces[0].geometry, ctx)
+            pcurve_selection_seeds(&index, &id, &p, &ir.geometry.surfaces[0].geometry, ctx)
         })
         .expect("seed collection fits policy");
         let r = pcurve_surface_closest(
@@ -89,7 +89,7 @@ fn pcurve_selection_keeps_interior_knots_and_seeds_in_a_wide_finite_domain() {
     .expect("break fractions fit policy");
     assert_eq!(fractions, vec![0.5]);
     let seeds = with_context(|ctx| {
-        pcurve_selection_seeds(&index, &id, &pcurve, &ir.model.surfaces[0].geometry, ctx)
+        pcurve_selection_seeds(&index, &id, &pcurve, &ir.geometry.surfaces[0].geometry, ctx)
     })
     .expect("seed collection fits policy");
     assert!(seeds
@@ -116,7 +116,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
         false,
     )
     .expect("wide periodic surface");
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
         source_object: None,
@@ -130,7 +130,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
     );
     let index = ModelIndex::new_model_only(&ir);
     let seeds = with_context(|ctx| {
-        pcurve_selection_seeds(&index, &id, &pcurve, &ir.model.surfaces[0].geometry, ctx)
+        pcurve_selection_seeds(&index, &id, &pcurve, &ir.geometry.surfaces[0].geometry, ctx)
     })
     .expect("seed collection fits policy");
     assert!(seeds
@@ -145,7 +145,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
 fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
     let (mut ir, surface_id) = plane();
     let curve_id = CurveId::from(ids::data(kind!("curve"), 54));
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+    ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
         id: curve_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -222,7 +222,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
     let controls = (0..control_count)
         .map(|index| Point3::new(if index == control_count / 2 { 1.0 } else { 0.0 }, 0.0, 0.0))
         .collect();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+    ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -315,7 +315,7 @@ fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
 /// A plane whose origin x coordinate is `origin_x`.
 fn plane_at(origin_x: f64) -> (cadmpeg_ir::CadIr, SurfaceId) {
     let (mut ir, id) = plane();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(origin_x, 0., 0.),
             Vector3::new(0., 0., 1.),
@@ -400,10 +400,10 @@ fn a_declared_pcurve_fit_with_an_overflowing_placed_end_misses_by_an_infinite_di
     // largest finite x coordinate: the line end u = MAX has no finite point
     // and the start u = -MAX maps to the model origin.
     let (mut ir, id) = plane();
-    let SurfaceGeometry::Solved(plane) = ir.model.surfaces[0].geometry.clone() else {
+    let SurfaceGeometry::Solved(plane) = ir.geometry.surfaces[0].geometry.clone() else {
         panic!("the plane fixture is solved");
     };
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
         cadmpeg_ir::geometry::PlacedSurface::try_new(
             Box::new(plane),
             cadmpeg_ir::transform::Transform::affine([
@@ -510,7 +510,7 @@ fn certified_pcurve_endpoint_does_not_repeat_tangents_or_seed_searches() {
 #[test]
 fn established_curve_locus_witness_does_not_repeat_other_seed_inversions() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let curve = &ir.model.curves[0];
+    let curve = &ir.geometry.curves[0];
     let index = ModelIndex::new_model_only(&ir);
     let point = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,

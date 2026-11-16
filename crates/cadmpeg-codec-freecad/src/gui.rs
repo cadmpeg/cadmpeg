@@ -73,7 +73,12 @@ enum Assignment<T> {
 impl AppearancePlan {
     fn apply(self, ir: &mut CadIr) {
         for update in self.body_updates {
-            if let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == update.id) {
+            if let Some(body) = ir
+                .geometry
+                .bodies
+                .iter_mut()
+                .find(|body| body.id == update.id)
+            {
                 if let Assignment::Set(visible) = update.visible {
                     body.visible = visible;
                 }
@@ -1051,13 +1056,13 @@ fn transfer_primitive_appearance(
     match style {
         PrimitiveStyle::Line(_) => {
             for index in topology.edges.under(payload_ids) {
-                targets.push(AppearanceTarget::Edge(ir.model.edges[index].id.clone()));
+                targets.push(AppearanceTarget::Edge(ir.geometry.edges[index].id.clone()));
             }
         }
         PrimitiveStyle::Point(_) => {
             for index in topology.vertices.under(payload_ids) {
                 targets.push(AppearanceTarget::Vertex(
-                    ir.model.vertices[index].id.clone(),
+                    ir.geometry.vertices[index].id.clone(),
                 ));
             }
         }
@@ -3905,10 +3910,10 @@ struct TopologyIndex<'i> {
 impl<'i> TopologyIndex<'i> {
     fn new(ir: &'i CadIr) -> Self {
         Self {
-            bodies: IdIndex::new(ir.model.bodies.iter().map(|body| body.id.as_str())),
-            faces: IdIndex::new(ir.model.faces.iter().map(|face| face.id.as_str())),
-            edges: IdIndex::new(ir.model.edges.iter().map(|edge| edge.id.as_str())),
-            vertices: IdIndex::new(ir.model.vertices.iter().map(|vertex| vertex.id.as_str())),
+            bodies: IdIndex::new(ir.geometry.bodies.iter().map(|body| body.id.as_str())),
+            faces: IdIndex::new(ir.geometry.faces.iter().map(|face| face.id.as_str())),
+            edges: IdIndex::new(ir.geometry.edges.iter().map(|edge| edge.id.as_str())),
+            vertices: IdIndex::new(ir.geometry.vertices.iter().map(|vertex| vertex.id.as_str())),
         }
     }
 
@@ -3920,7 +3925,7 @@ impl<'i> TopologyIndex<'i> {
         let mut body_ids = Vec::new();
         for payload_id in payload_ids {
             for index in self.bodies.under(&[payload_id]) {
-                body_ids.push(ir.model.bodies[index].id.clone());
+                body_ids.push(ir.geometry.bodies[index].id.clone());
             }
         }
         body_ids
@@ -3976,7 +3981,7 @@ pub(crate) fn select_shape_bodies<'a>(
     let mut body_ids = Vec::new();
     for payload_id in payload_ids {
         let payload_key = crate::native::id_key(payload_id);
-        for body in &ir.model.bodies {
+        for body in &ir.geometry.bodies {
             let body_key = crate::native::id_key(body.id.as_str());
             if body_key
                 .strip_prefix(payload_key)
@@ -4108,7 +4113,7 @@ fn bind_material_faces(
         let Some(index) = topology.faces.position(topology_id) else {
             continue;
         };
-        let face = ir.model.faces[index].id.clone();
+        let face = ir.geometry.faces[index].id.clone();
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         plan.bindings.push(AppearanceBinding {
             id: binding_id(format_args!(
@@ -4260,17 +4265,17 @@ fn transfer_topology_colors(
                     .topology
                     .faces
                     .position(topology_id)
-                    .map(|index| AppearanceTarget::Face(ir.model.faces[index].id.clone())),
+                    .map(|index| AppearanceTarget::Face(ir.geometry.faces[index].id.clone())),
                 TopologyColorKind::Edge => lookups
                     .topology
                     .edges
                     .position(topology_id)
-                    .map(|index| AppearanceTarget::Edge(ir.model.edges[index].id.clone())),
+                    .map(|index| AppearanceTarget::Edge(ir.geometry.edges[index].id.clone())),
                 TopologyColorKind::Vertex => lookups
                     .topology
                     .vertices
                     .position(topology_id)
-                    .map(|index| AppearanceTarget::Vertex(ir.model.vertices[index].id.clone())),
+                    .map(|index| AppearanceTarget::Vertex(ir.geometry.vertices[index].id.clone())),
             };
             let Some(target) = target else {
                 continue;
@@ -4478,7 +4483,7 @@ mod shape_association_tests {
 
     fn shape_ir() -> cadmpeg_ir::CadIr {
         let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
             id: cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#payload:1").expect("body identity"),
             kind: cadmpeg_ir::topology::BodyKind::default(),
             regions: Vec::new(),
@@ -4515,7 +4520,10 @@ mod shape_association_tests {
         let body_ids = select_shape_bodies(&ir, ["payload", "payload"]);
         assert_eq!(
             body_ids,
-            [ir.model.bodies[0].id.clone(), ir.model.bodies[0].id.clone()]
+            [
+                ir.geometry.bodies[0].id.clone(),
+                ir.geometry.bodies[0].id.clone()
+            ]
         );
     }
 

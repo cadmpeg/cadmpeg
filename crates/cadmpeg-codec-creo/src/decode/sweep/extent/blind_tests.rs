@@ -155,7 +155,9 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     scan.features.entity_tables.push(table.clone());
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
+    ir.geometry
+        .surfaces
+        .extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert_eq!(
         generated_cap_plane_extent(
@@ -236,7 +238,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             source_object: None,
         };
         let mut ir = CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#37".to_string())
                     .expect("identity grammar"),
@@ -367,7 +369,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         .expect("admitted extent")
         .is_none());
         scan.surfaces.rows[3].reversed = true;
-        ir.model.surfaces.pop();
+        ir.geometry.surfaces.pop();
         assert!(generated_rectilinear_plane_extent(
             &scan,
             &ir,
