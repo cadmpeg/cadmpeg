@@ -1106,11 +1106,12 @@ fn form_native_endpoint_width_is_independent_of_indexed_frame_lookup() {
             .collect::<Vec<_>>(),
         ["f3d:model:subd#1"]
     );
-    assert!(construction.observations()[0].paths.iter().any(|path| path
-        .references
-        .iter()
-        .any(|reference| reference.as_str()
-            == "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record#4294967297")));
+    assert!(construction.observations()[0].paths.iter().any(|path| {
+        path.references.iter().any(|reference| {
+            reference.as_str()
+                == "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record#4294967297"
+        })
+    }));
     meta.types[0].entities = crate::records::identity::ReferenceRun::unlocated(vec![300, wide]);
     let construction = body_construction(&bytes, &meta, &form_scope(201, vec![]), &cages);
     assert!(!construction.membership_is_complete());

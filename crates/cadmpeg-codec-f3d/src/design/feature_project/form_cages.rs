@@ -822,6 +822,7 @@ impl FormFacts {
             self.capture_membership(&right);
         }
         let mut membership = merge_memberships(left, right);
+        let mut order_refined = false;
         for claim in self.inputs.closure_evidence.clone() {
             let historical = FormMembership::Complete {
                 members: claim.members,
@@ -852,6 +853,29 @@ impl FormFacts {
                 .any(|claim| claim.order == FormKnownOrder::Source && claim.members == *members)
             {
                 *order = FormKnownOrder::Source;
+            }
+            if *order == FormKnownOrder::Assumed && members.len() > 1 {
+                let candidates = members
+                    .iter()
+                    .map(|&observation| FormMember {
+                        observation,
+                        ordinal: None,
+                    })
+                    .collect::<Vec<_>>();
+                if ordered_observations(
+                    &candidates,
+                    &self.inputs.order_evidence,
+                    &self.inputs.closure_evidence,
+                    true,
+                    false,
+                    true,
+                )
+                .as_deref()
+                    == Some(members.as_slice())
+                {
+                    *order = FormKnownOrder::Source;
+                    order_refined = true;
+                }
             }
             let conflicts = self
                 .inputs
@@ -884,6 +908,9 @@ impl FormFacts {
                     members,
                 };
             }
+        }
+        if order_refined && matches!(membership, FormMembership::Complete { .. }) {
+            self.capture_membership(&membership);
         }
         if matches!(membership, FormMembership::Partial { .. }) {
             for claim in &closure_claims {
@@ -1692,7 +1719,12 @@ impl FormFacts {
                     )
                 })) {
                     if fixed_slots {
-                        note(losses, F3dLossCode::FeatureFormTrackingFixedSlotsAssumed, &source.scope.id, "a sparse tracking run also admits independently framed fixed-width slots");
+                        note(
+                            losses,
+                            F3dLossCode::FeatureFormTrackingFixedSlotsAssumed,
+                            &source.scope.id,
+                            "a sparse tracking run also admits independently framed fixed-width slots",
+                        );
                     }
                     let mut local =
                         ctx.alloc_filled(members.len(), None, "Form tracking local targets")?;
@@ -1750,7 +1782,12 @@ impl FormFacts {
                                     inline,
                                 );
                                 if !valid {
-                                    note(losses, F3dLossCode::FeatureFormReferenceTypeConflict, &source.scope.id, "a tracking member type conflicts with its target role or registration");
+                                    note(
+                                        losses,
+                                        F3dLossCode::FeatureFormReferenceTypeConflict,
+                                        &source.scope.id,
+                                        "a tracking member type conflicts with its target role or registration",
+                                    );
                                 }
                                 valid.then_some(target)
                             }
@@ -2567,7 +2604,12 @@ fn body_membership(
                         if valid_type {
                             local[ordinal] = Some(target);
                         } else {
-                            note(losses, F3dLossCode::FeatureFormReferenceTypeConflict, &scope.id, "an inline reference type conflicts with its target role or registration");
+                            note(
+                                losses,
+                                F3dLossCode::FeatureFormReferenceTypeConflict,
+                                &scope.id,
+                                "an inline reference type conflicts with its target role or registration",
+                            );
                         }
                     }
                 }
