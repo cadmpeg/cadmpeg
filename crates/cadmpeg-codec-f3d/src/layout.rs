@@ -5140,8 +5140,8 @@ pub(crate) mod thread_standard_construction_tail {
     pub(crate) const MAJOR_DIAMETER: usize = 5;
     /// Offset of `minor_diameter` (`f64`, little-endian). Spec §3.1.
     pub(crate) const MINOR_DIAMETER: usize = 13;
-    /// Offset of `pitch_marker` (`u8`). Spec §3.1.
-    pub(crate) const PITCH_MARKER: usize = 21;
+    /// Offset of `modeled_flag` (`u8`). Spec §3.1.
+    pub(crate) const MODELED_FLAG: usize = 21;
     /// Offset of `pitch` (`f64`, little-endian). Spec §3.1.
     pub(crate) const PITCH: usize = 22;
     /// Offset of `pitch_diameter` (`f64`, little-endian). Spec §3.1.

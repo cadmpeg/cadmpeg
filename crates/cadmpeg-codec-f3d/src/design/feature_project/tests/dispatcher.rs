@@ -984,10 +984,10 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 0.35995, 0.293, 0.3166,
             )
             .unwrap(),
+            modeled: true,
             extended: Some(crate::records::feature::thread::DesignThreadExtended {
                 class: "6g".into(),
                 external: true,
-                modeled: true,
                 full_length: Some(true),
                 right_handed: Some(true),
             }),
@@ -1184,7 +1184,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     else {
         panic!("the Thread scope carries its construction");
     };
-    cosmetic.extended.as_mut().expect("extended fields").modeled = false;
+    cosmetic.modeled = false;
     let cosmetic = project(&cosmetic_scopes, &[]);
     assert!(cosmetic.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),

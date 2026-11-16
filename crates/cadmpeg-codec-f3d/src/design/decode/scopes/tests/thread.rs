@@ -49,24 +49,13 @@ fn thread_scope_decodes_standard_size_and_face_group() {
             2.97345, 2.5732, 2.7568,
         )
         .unwrap(),
+        modeled: true,
         extended: None,
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![988]),
         &expected,
     );
-    let mut invalid_standard_pitch_marker = bytes.clone();
-    invalid_standard_pitch_marker[129] = 0;
-    assert_eq!(
-        parse_thread_payload(
-            &invalid_standard_pitch_marker,
-            38,
-            &ThreadPrefix::Standard,
-            vec![988]
-        ),
-        None
-    );
-
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#standard-thread",
         crate::records::feature::scope::DesignFeatureKind::Thread,
@@ -152,6 +141,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
             0.71472, 0.60355, 0.64255,
         )
         .unwrap(),
+        modeled: false,
         extended: None,
     };
     assert_thread_construction(
@@ -231,6 +221,7 @@ fn thread_scope_decodes_standard_prefix_compact_marker_form() {
             0.4891, 0.4213, 0.4529,
         )
         .unwrap(),
+        modeled: false,
         extended: None,
     };
     for zero_run in [2, 3] {
@@ -288,11 +279,6 @@ fn thread_scope_refuses_standard_prefix_compact_marker_trailer_deviations() {
         bytes[at] = value;
         assert_eq!(admit(&bytes), None, "byte {at} set to {value}");
     }
-    // The pitch marker is zero.
-    let pitch_marker_at = flag_at - 2 - 8 - 8 - 1;
-    let mut bytes = base.clone();
-    bytes[pitch_marker_at] = 1;
-    assert_eq!(admit(&bytes), None);
     // The reference padding is four zero bytes.
     let mut bytes = base.clone();
     *bytes.last_mut().unwrap() = 1;
@@ -306,6 +292,58 @@ fn thread_scope_refuses_standard_prefix_compact_marker_trailer_deviations() {
     );
 }
 
+/// A Thread payload at offset 38 with the given construction marker, modeled
+/// flag, and trailer.
+fn flagged_thread_bytes(marker: [u8; 5], modeled_flag: u8, trailer: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0; 38];
+    lp_utf16(&mut bytes, "M6x1");
+    lp_utf16(&mut bytes, "6.0");
+    lp_utf16(&mut bytes, "ISO Metric profile");
+    bytes.extend_from_slice(&marker);
+    bytes.extend_from_slice(&0.5974f64.to_le_bytes());
+    bytes.extend_from_slice(&0.4891f64.to_le_bytes());
+    bytes.push(modeled_flag);
+    bytes.extend_from_slice(&0.1f64.to_le_bytes());
+    bytes.extend_from_slice(&0.5324f64.to_le_bytes());
+    bytes.extend_from_slice(trailer);
+    bytes
+}
+
+#[test]
+fn the_byte_at_marker_offset_21_states_the_modeled_flag_in_every_form() {
+    let forms = [
+        (ThreadPrefix::Standard, [0, 1, 0, 0, 0], &[0, 1][..]),
+        (ThreadPrefix::Standard, [1, 1, 0, 0, 0], &[0, 0, 0, 1][..]),
+        (ThreadPrefix::Compact, [1, 2, 0, 0, 0], &[0, 0, 0, 1][..]),
+        (ThreadPrefix::Compact, [1, 1, 0, 0, 0], &[0, 0, 0, 1][..]),
+    ];
+    for (prefix, marker, trailer) in forms {
+        for (flag, modeled) in [(0, false), (1, true)] {
+            let bytes = flagged_thread_bytes(marker, flag, trailer);
+            let construction = parse_thread_payload(&bytes, 38, &prefix, vec![988])
+                .unwrap_or_else(|| panic!("{prefix:?} {marker:?} flag {flag}"));
+            assert_eq!(construction.modeled, modeled, "{prefix:?} {marker:?}");
+            assert!((construction.pitch.get() - 0.1).abs() < 1.0e-12);
+            assert!(construction.extended.is_none());
+        }
+        let refused = flagged_thread_bytes(marker, 2, trailer);
+        assert_eq!(
+            parse_thread_payload(&refused, 38, &prefix, vec![988]),
+            None,
+            "{prefix:?} {marker:?} flag 2"
+        );
+    }
+    for (flag, modeled) in [(0, false), (1, true)] {
+        let mut bytes = standard_compact_thread_bytes(2, 612);
+        let flag_at = bytes.len() - (2 + 1 + 4 + 1 + 4 + 4) - 8 - 8 - 1;
+        bytes[flag_at] = flag;
+        let construction = parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![612])
+            .expect("standard-prefix compact-marker thread");
+        assert_eq!(construction.form, DesignThreadForm::StandardCompact);
+        assert_eq!(construction.modeled, modeled);
+    }
+}
+
 fn assert_thread_construction(
     actual: Option<DesignThreadConstruction>,
     expected: &DesignThreadConstruction,
@@ -316,6 +354,7 @@ fn assert_thread_construction(
     assert_eq!(actual.designation, expected.designation);
     assert_eq!(actual.nominal_size.text(), expected.nominal_size.text());
     assert_eq!(actual.profile, expected.profile);
+    assert_eq!(actual.modeled, expected.modeled);
     assert_eq!(
         actual.face_group_record_indices,
         expected.face_group_record_indices
@@ -373,6 +412,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
             0.35995, 0.293, 0.3166,
         )
         .unwrap(),
+        modeled: false,
         extended: None,
     };
     assert_thread_construction(
@@ -491,6 +531,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
             19.08149, 18.18397, 18.50413,
         )
         .unwrap(),
+        modeled: false,
         extended: None,
     };
     assert_thread_construction(

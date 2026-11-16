@@ -180,12 +180,12 @@ fn the_extended_prefix_reads_its_class_designation_copy_and_sense() {
         u64_from_index(34 + (4 + 4) + (4 + 14))
     );
     assert_eq!(construction.face_group_record_indices, [101]);
+    assert!(!construction.modeled);
     assert_eq!(
         extended(&construction),
         &DesignThreadExtended {
             class: "6g".into(),
             external: true,
-            modeled: false,
             full_length: Some(true),
             right_handed: Some(true),
         }
@@ -225,7 +225,7 @@ fn the_extended_prefix_reads_its_class_designation_copy_and_sense() {
 #[test]
 fn the_entry_count_and_the_tail_flag_state_a_modeled_thread() {
     let construction = Fixture::modeled().decode().expect("modeled thread");
-    assert!(extended(&construction).modeled);
+    assert!(construction.modeled);
     assert_eq!(
         construction.designation_offset,
         u64_from_index(34 + 16 + (4 + 4) + (4 + 14))
@@ -233,7 +233,12 @@ fn the_entry_count_and_the_tail_flag_state_a_modeled_thread() {
     // A modeled thread whose scope has no result stores result flag 0.
     let mut unflagged = Fixture::modeled();
     unflagged.modeled_flag = 0;
-    assert!(extended(&unflagged.decode().expect("modeled thread without a result")).modeled);
+    assert!(
+        unflagged
+            .decode()
+            .expect("modeled thread without a result")
+            .modeled
+    );
     let mut cases = Vec::new();
     let mut flagged = Fixture::cosmetic();
     flagged.modeled_flag = 1;
@@ -301,12 +306,12 @@ fn owner_marked_extended_thread_retains_sense_modeled_state_and_face_pairs() {
             38 + u64::from(modeled) * 2 * 16 + 8 + 4 + copy_bytes
         );
         assert_eq!(construction.face_group_record_indices, [101, 105]);
+        assert_eq!(construction.modeled, modeled);
         assert_eq!(
             extended(&construction),
             &DesignThreadExtended {
                 class: "6H".into(),
                 external: false,
-                modeled,
                 full_length: Some(true),
                 right_handed: Some(true),
             }
@@ -354,10 +359,22 @@ fn compact_owned_thread_validates_prefix_scalar_marker_and_trailer() {
             ..Fixture::cosmetic()
         };
         let bytes = fixture.bytes();
-        for offset in [20, 24, 33, 37, 38, 42, bytes.len() - 41, bytes.len() - 1] {
+        for offset in [20, 24, 33, 37, 38, 42, bytes.len() - 1] {
             let mut damaged = bytes.clone();
             damaged[offset] ^= 1;
             assert!(fixture.decode_bytes(&damaged).is_none(), "offset {offset}");
+        }
+        let modeled_flag_at = bytes.len() - 41;
+        for (flag, modeled) in [(0, Some(false)), (1, Some(true)), (2, None)] {
+            let mut flagged = bytes.clone();
+            flagged[modeled_flag_at] = flag;
+            assert_eq!(
+                fixture
+                    .decode_bytes(&flagged)
+                    .map(|construction| construction.modeled),
+                modeled,
+                "modeled flag {flag}"
+            );
         }
         assert!(fixture.decode_bytes(&bytes[..bytes.len() - 1]).is_none());
     }
