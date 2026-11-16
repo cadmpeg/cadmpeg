@@ -13,18 +13,12 @@
           },
           "id": "usd:stage:body#/Surfaces/Bilinear",
           "kind": "sheet",
-          "name": "Bilinear",
-          "regions": [
-            "usd:stage:region#/Surfaces/Bilinear"
-          ]
+          "name": "Bilinear"
         },
         {
           "id": "usd:stage:body#/Surfaces/Trimmed",
           "kind": "sheet",
-          "name": "Trimmed",
-          "regions": [
-            "usd:stage:region#/Surfaces/Trimmed"
-          ]
+          "name": "Trimmed"
         }
       ],
       "coedges": [],
@@ -76,22 +70,12 @@
       "shells": [
         {
           "id": "usd:stage:shell#/Surfaces/Bilinear",
-          "members": [
-            {
-              "id": "usd:stage:face#/Surfaces/Bilinear",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/Surfaces/Bilinear"
         },
         {
           "id": "usd:stage:shell#/Surfaces/Trimmed",
-          "members": [
-            {
-              "id": "usd:stage:face#/Surfaces/Trimmed",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/Surfaces/Trimmed"
         }
       ],

@@ -49,7 +49,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
             .unwrap(),
         ));
     }
-    set_shell_faces(&mut ir, vec![target.clone(), competitor]);
+    set_shell_faces(&mut ir, &[target.clone(), competitor]);
     ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(

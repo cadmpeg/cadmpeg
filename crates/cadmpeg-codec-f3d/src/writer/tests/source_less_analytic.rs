@@ -23,7 +23,7 @@ use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::configuration_table::{project, set_active_row};
-use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native, TestEncode};
+use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::{f3d_with_configuration, f3d_with_smbh};
 use crate::F3dCodec;
@@ -684,202 +684,6 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 }
 
 #[test]
-fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
-    // The tedge tail carries the serializer revision stamp, then a trailing
-    // LONG present only in newer streams and taking the values 0, 1, and 2.
-    // The tvertex trailing LONG shares the gate and the value set. Each form
-    // must survive a write/decode cycle byte-for-byte.
-    for (edge_trailing, vertex_trailing) in [
-        (Some(0), Some(0)),
-        (Some(1), Some(1)),
-        (Some(2), Some(2)),
-        (None, None),
-    ] {
-        let source = f3d_with_smbh(&synthetic_geometry_smbh());
-        let decoded = F3dCodec
-            .decode(&mut Cursor::new(source), &DecodeOptions::default())
-            .expect("generated planar triangle decode");
-        let (mut source_less, _, _) = decoded.into_parts();
-        source_less.source = None;
-        source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-            .unwrap();
-        source_less.geometry.vertices[0].tolerance =
-            Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
-        source_less.geometry.edges[0].tolerance =
-            Some(cadmpeg_ir::scalar::PositiveReal::new(0.035).expect("positive finite tolerance"));
-        let tolerant_vertex = source_less.geometry.vertices[0].id.clone();
-        let tolerant_edge = source_less.geometry.edges[0].id.clone();
-        {
-            let mut native = f3d_native_mut(&mut source_less);
-            native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
-                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                    crate::ids::ID_FORMAT,
-                ),
-                vertex: tolerant_vertex,
-                record_index: 0,
-                leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
-                evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated {
-                    trailing: vertex_trailing,
-                },
-            }];
-            native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
-                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                    crate::ids::ID_FORMAT,
-                ),
-                edge: tolerant_edge,
-                record_index: 0,
-                entity_revision: 22800,
-                trailing_field: edge_trailing,
-            }];
-        }
-        let mut encoded = Vec::new();
-        F3dCodec
-            .encode(&source_less, &mut encoded)
-            .expect("tolerant tail encode");
-        let round_trip = F3dCodec
-            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-            .expect("tolerant tail round trip");
-        assert_eq!(
-            f3d_native(round_trip.ir()).tolerant_edge_tails[0].entity_revision,
-            22800
-        );
-        assert_eq!(
-            f3d_native(round_trip.ir()).tolerant_edge_tails[0].trailing_field,
-            edge_trailing
-        );
-        assert_eq!(
-            f3d_native(round_trip.ir()).tolerant_vertex_tails[0]
-                .evaluated_slot
-                .trailing(),
-            vertex_trailing
-        );
-    }
-}
-
-#[test]
-fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
-    // The `-1` unset evaluated slot is a marker rather than a length: the
-    // neutral vertex carries no tolerance, the native tail keeps the unset
-    // fact, and generation writes the sentinel back into a tvertex record.
-    let source = f3d_with_smbh(&synthetic_geometry_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("generated planar triangle decode");
-    let (mut source_less, _, _) = decoded.into_parts();
-    source_less.source = None;
-    source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .unwrap();
-    let tolerant_vertex = source_less.geometry.vertices[0].id.clone();
-    assert_eq!(source_less.geometry.vertices[0].tolerance, None);
-    {
-        let mut native = f3d_native_mut(&mut source_less);
-        native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
-            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                crate::ids::ID_FORMAT,
-            ),
-            vertex: tolerant_vertex,
-            record_index: 0,
-            leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
-            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset {
-                trailing: Some(0),
-            },
-        }];
-    }
-    let mut encoded = Vec::new();
-    F3dCodec
-        .encode(&source_less, &mut encoded)
-        .expect("unset tolerant vertex encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("unset tolerant vertex round trip");
-    let vertex = round_trip
-        .ir()
-        .geometry
-        .vertices
-        .iter()
-        .find(|vertex| {
-            f3d_native(round_trip.ir())
-                .tolerant_vertex_tails
-                .iter()
-                .any(|tail| tail.vertex == vertex.id)
-        })
-        .expect("tolerant vertex survives");
-    assert_eq!(vertex.tolerance, None);
-    let tail = &f3d_native(round_trip.ir()).tolerant_vertex_tails[0];
-    assert_eq!(
-        tail.evaluated_slot,
-        cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset { trailing: Some(0) }
-    );
-    assert_eq!(
-        tail.leading_tolerances
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [-1.0, -1.0]
-    );
-}
-#[test]
-fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
-    // A tvertex record that ends before the evaluated slot has no neutral
-    // tolerance; the native tail keeps the absent fact and generation writes
-    // only the leading slots back.
-    let source = f3d_with_smbh(&synthetic_geometry_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("generated planar triangle decode");
-    let (mut source_less, _, _) = decoded.into_parts();
-    source_less.source = None;
-    source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .unwrap();
-    let tolerant_vertex = source_less.geometry.vertices[0].id.clone();
-    assert_eq!(source_less.geometry.vertices[0].tolerance, None);
-    {
-        let mut native = f3d_native_mut(&mut source_less);
-        native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
-            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                crate::ids::ID_FORMAT,
-            ),
-            vertex: tolerant_vertex,
-            record_index: 0,
-            leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
-            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent {},
-        }];
-    }
-    let mut encoded = Vec::new();
-    F3dCodec
-        .encode(&source_less, &mut encoded)
-        .expect("absent tolerant vertex encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("absent tolerant vertex round trip");
-    let vertex = round_trip
-        .ir()
-        .geometry
-        .vertices
-        .iter()
-        .find(|vertex| {
-            f3d_native(round_trip.ir())
-                .tolerant_vertex_tails
-                .iter()
-                .any(|tail| tail.vertex == vertex.id)
-        })
-        .expect("tolerant vertex survives");
-    assert_eq!(vertex.tolerance, None);
-    let tail = &f3d_native(round_trip.ir()).tolerant_vertex_tails[0];
-    assert_eq!(
-        tail.evaluated_slot,
-        cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent {}
-    );
-    assert_eq!(tail.evaluated_slot.trailing(), None);
-    assert_eq!(
-        tail.leading_tolerances
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [-1.0, -1.0]
-    );
-}
-
-#[test]
 fn generated_source_less_f3d_rejects_subds() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
@@ -895,6 +699,7 @@ fn generated_source_less_f3d_rejects_subds() {
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::default(),
+        native_ref: None,
     });
 
     let error = F3dCodec
@@ -1211,6 +1016,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
                 .unwrap(),
             )),
             source_object: Some(association),
+            native_ref: None,
         });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1302,16 +1108,22 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: None,
+            native_ref: None,
         });
-    let first_vertex = source_less.geometry.edges[0].start.clone();
-    source_less.geometry.edges[2].end = vertex_id.clone();
+    let first_vertex = source_less.geometry.edges[0]
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .clone();
+    source_less.geometry.edges[2].ends.as_mut().unwrap().end = vertex_id.clone();
     let edge_id = EdgeId::mint("generated:test:edge#3").expect("identity grammar");
     source_less.geometry.edges.push(cadmpeg_ir::topology::Edge {
         id: edge_id.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0])).unwrap(),
-        start: vertex_id,
-        end: first_vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex_id, first_vertex)),
         tolerance: None,
+        native_ref: None,
     });
     let coedge_id = CoedgeId::mint("generated:test:coedge#3").expect("identity grammar");
     let loop_id = source_less.geometry.loops[0].id.clone();
@@ -1326,6 +1138,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             sense: cadmpeg_ir::topology::Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
     let mut coedges = source_less.geometry.loops[0].coedges().to_vec();
     coedges.push(coedge_id);
@@ -1387,7 +1200,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
             .geometry
             .vertices
             .iter()
-            .find(|vertex| vertex.id == edge.start)
+            .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
             .and_then(|vertex| {
                 source_less
                     .geometry
@@ -1402,7 +1215,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
             .geometry
             .vertices
             .iter()
-            .find(|vertex| vertex.id == edge.end)
+            .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().end)
             .and_then(|vertex| {
                 source_less
                     .geometry
@@ -1426,6 +1239,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(start, direction).unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         source_less.geometry.edges[index]
             .set_curve(Some(id))
@@ -1506,6 +1320,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         id: curve_id.clone(),
         geometry: expected.clone(),
         source_object: None,
+        native_ref: None,
     });
     source_less.geometry.edges[0]
         .set_curve(Some(curve_id))
@@ -1589,6 +1404,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         id: curve_id.clone(),
         geometry: expected.clone(),
         source_object: None,
+        native_ref: None,
     });
     source_less.geometry.edges[0]
         .set_curve(Some(curve_id))
@@ -1707,21 +1523,22 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
     source_less.geometry.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Sheet,
-        regions: vec![region.clone()],
         transform: None,
         name: Some("closed cylinder band".into()),
         color: None,
         visible: None,
+        native_ref: None,
     });
     source_less.geometry.regions.push(Region {
         id: region.clone(),
         body,
         shells: vec![shell.clone()],
+        native_ref: None,
     });
     source_less
         .geometry
         .shells
-        .push(Shell::with_face(shell.clone(), region, face.clone()));
+        .push(Shell::new(shell.clone(), region));
     source_less.geometry.faces.push(Face {
         id: face.clone(),
         shell,
@@ -1731,6 +1548,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     source_less.geometry.surfaces.push(Surface {
         id: surface,
@@ -1744,6 +1562,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     for index in 0..2 {
         let z = f64_from_index(index).expect("fixture index is exact in f64") * 10.0;
@@ -1754,6 +1573,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
                 cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
                     .expect("fixture ring admission"),
             ),
+            native_ref: None,
         });
         source_less.geometry.coedges.push(Coedge {
             id: coedges[index].clone(),
@@ -1767,6 +1587,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             },
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
         source_less.geometry.edges.push(Edge {
             id: edges[index].clone(),
@@ -1775,9 +1596,12 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
                 Some([-std::f64::consts::PI, std::f64::consts::PI]),
             )
             .unwrap(),
-            start: vertices[index].clone(),
-            end: vertices[index].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertices[index].clone(),
+                vertices[index].clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         source_less.geometry.curves.push(Curve {
             parameter_range: None,
@@ -1792,11 +1616,13 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         source_less.geometry.vertices.push(Vertex {
             id: vertices[index].clone(),
             point: points[index].clone(),
             tolerance: None,
+            native_ref: None,
         });
         source_less.geometry.points.push(Point::new(
             points[index].clone(),
@@ -1822,7 +1648,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
     assert_eq!(round_trip.ir().geometry.edges.len(), 2);
     assert!(
         round_trip.ir().geometry.edges.iter().all(|edge| {
-            edge.start == edge.end
+            edge.ends.as_ref().unwrap().start == edge.ends.as_ref().unwrap().end
                 && edge.param_range().is_some_and(|range| {
                     (range[0] + std::f64::consts::PI).abs() < 1.0e-12
                         && (range[1] - std::f64::consts::PI).abs() < 1.0e-12
@@ -1991,3 +1817,4 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
 mod closed_edges;
 mod family_changes;
+mod tolerant_tails;

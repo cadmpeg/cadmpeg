@@ -6,14 +6,7 @@
       "bodies": [
         {
           "id": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1",
-          "kind": "wire",
-          "regions": [
-            "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:7%40location1",
-            "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:11%40location1",
-            "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:14%40location1",
-            "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:18%40location1",
-            "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:22%40location1"
-          ]
+          "kind": "wire"
         }
       ],
       "coedges": [],
@@ -229,9 +222,11 @@
               7.653185307179586
             ]
           },
-          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:9%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:9%40location1",
+            "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:8%40location1"
+          },
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:10%40location1",
-          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:8%40location1",
           "tolerance": 1e-7
         },
         {
@@ -242,9 +237,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12%40location1",
+            "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:13%40location1",
-          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -255,9 +252,11 @@
               0.88
             ]
           },
-          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:15%40location1"
+          },
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:17%40location1",
-          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:15%40location1",
           "tolerance": 1e-7
         },
         {
@@ -268,9 +267,11 @@
               0.30000000000000004
             ]
           },
-          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:20%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:20%40location1",
+            "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:19%40location1"
+          },
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:21%40location1",
-          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:19%40location1",
           "tolerance": 1e-7
         },
         {
@@ -281,9 +282,11 @@
               1.46
             ]
           },
-          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2%40location1",
+            "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -294,9 +297,11 @@
               14.232237761025381
             ]
           },
-          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2%40location1",
+            "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4%40location1"
+          },
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:5%40location1",
-          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
@@ -307,9 +312,11 @@
               7.636889796298946
             ]
           },
-          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:6%40location1",
-          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1",
           "tolerance": 1e-7
         }
       ],

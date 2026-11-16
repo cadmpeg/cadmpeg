@@ -7,10 +7,6 @@
         {
           "id": "rhino:object:body#record-000000-offset-177.caps",
           "kind": "sheet",
-          "regions": [
-            "rhino:object:region#record-000000-offset-177.cap-0",
-            "rhino:object:region#record-000000-offset-177.cap-1"
-          ],
           "visible": true
         }
       ],
@@ -299,9 +295,11 @@
               4.0
             ]
           },
-          "end": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
-          "id": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0",
-          "start": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0"
+          "ends": {
+            "end": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
+            "start": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0"
+          },
+          "id": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0"
         },
         {
           "carrier": {
@@ -311,9 +309,11 @@
               4.0
             ]
           },
-          "end": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-1",
-          "id": "rhino:object:edge#record-000000-offset-177.cap-0.profile-1",
-          "start": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-1"
+          "ends": {
+            "end": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-1",
+            "start": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-1"
+          },
+          "id": "rhino:object:edge#record-000000-offset-177.cap-0.profile-1"
         },
         {
           "carrier": {
@@ -323,9 +323,11 @@
               4.0
             ]
           },
-          "end": "rhino:object:vertex#record-000000-offset-177.cap-1.profile-0",
-          "id": "rhino:object:edge#record-000000-offset-177.cap-1.profile-0",
-          "start": "rhino:object:vertex#record-000000-offset-177.cap-1.profile-0"
+          "ends": {
+            "end": "rhino:object:vertex#record-000000-offset-177.cap-1.profile-0",
+            "start": "rhino:object:vertex#record-000000-offset-177.cap-1.profile-0"
+          },
+          "id": "rhino:object:edge#record-000000-offset-177.cap-1.profile-0"
         },
         {
           "carrier": {
@@ -335,9 +337,11 @@
               4.0
             ]
           },
-          "end": "rhino:object:vertex#record-000000-offset-177.cap-1.profile-1",
-          "id": "rhino:object:edge#record-000000-offset-177.cap-1.profile-1",
-          "start": "rhino:object:vertex#record-000000-offset-177.cap-1.profile-1"
+          "ends": {
+            "end": "rhino:object:vertex#record-000000-offset-177.cap-1.profile-1",
+            "start": "rhino:object:vertex#record-000000-offset-177.cap-1.profile-1"
+          },
+          "id": "rhino:object:edge#record-000000-offset-177.cap-1.profile-1"
         }
       ],
       "faces": [
@@ -732,22 +736,12 @@
       "shells": [
         {
           "id": "rhino:object:shell#record-000000-offset-177.cap-0",
-          "members": [
-            {
-              "id": "rhino:object:face#record-000000-offset-177.cap-0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "rhino:object:region#record-000000-offset-177.cap-0"
         },
         {
           "id": "rhino:object:shell#record-000000-offset-177.cap-1",
-          "members": [
-            {
-              "id": "rhino:object:face#record-000000-offset-177.cap-1",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "rhino:object:region#record-000000-offset-177.cap-1"
         }
       ],

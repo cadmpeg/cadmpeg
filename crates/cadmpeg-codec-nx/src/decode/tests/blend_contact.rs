@@ -82,6 +82,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
                     .expect("finite support plane"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
         }
         let spine =
@@ -100,6 +101,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
                 .expect("finite wide spine"),
             )),
             source_object: None,
+            native_ref: None,
         });
         let surface = SurfaceId::mint("test:model:entity#nx:test:wide-blend-surface")
             .expect("identity grammar");
@@ -113,6 +115,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             construction,
@@ -228,6 +231,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: second.clone(),
@@ -240,6 +244,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let chart = vec![
@@ -315,6 +320,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: section_plane.clone(),
@@ -327,6 +333,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let circular_chart = [0.0_f64, 0.3, 0.8]
@@ -378,6 +385,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: tangent_plane.clone(),
@@ -390,6 +398,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let tangent_chart = [0.0, 1.0, 3.0, 6.0].map(|y| Point3::new(0.0, y, 0.0));
@@ -441,6 +450,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                     periodic_geometry.clone(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: nurbs_section.clone(),
@@ -453,6 +463,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let nurbs_chart = [3.8, 3.9, 4.1, 4.2].map(|u| {
@@ -503,6 +514,7 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: vertical.clone(),
@@ -515,6 +527,7 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let chart =
@@ -585,6 +598,7 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             constructions[side].clone(),
@@ -724,6 +738,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
 
         let actual = closest_spine_parameter(
@@ -929,6 +944,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     ir.geometry.surfaces.extend([
         cylinder(support.clone(), 294.0),
@@ -974,6 +990,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     ir.geometry.surfaces.extend([
         plane(support_plane.clone(), Point3::new(10.0, 20.0, 30.0)),
@@ -1017,6 +1034,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     ir.geometry.surfaces.extend([
         plane(
@@ -1064,6 +1082,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             construction,
@@ -1169,6 +1188,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         ir.geometry.surfaces.extend([
@@ -1194,6 +1214,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let _attached = ir.geometry.add_procedural_surface(
@@ -1251,6 +1272,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let contact_pcurve = test_pcurve(
             1,
@@ -1356,6 +1378,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
             id: ellipse.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         });
 
         let first = closest_spine_parameter(geometry_ctx, &ir, &ellipse, point, None).unwrap();

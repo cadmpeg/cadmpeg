@@ -142,8 +142,14 @@ fn a_face_ring_runs_in_traversal_order_whatever_the_wire_serialization() {
                 .find(|item| item.id == coedge.edge)
                 .expect("edge");
             match coedge.sense {
-                Sense::Forward => (point_of(&edge.start), point_of(&edge.end)),
-                Sense::Reversed => (point_of(&edge.end), point_of(&edge.start)),
+                Sense::Forward => (
+                    point_of(&edge.ends.as_ref().unwrap().start),
+                    point_of(&edge.ends.as_ref().unwrap().end),
+                ),
+                Sense::Reversed => (
+                    point_of(&edge.ends.as_ref().unwrap().end),
+                    point_of(&edge.ends.as_ref().unwrap().start),
+                ),
             }
         })
         .collect();

@@ -7,9 +7,6 @@
         {
           "id": "rhino:object:body#record-000000-offset-177",
           "kind": "general",
-          "regions": [
-            "rhino:object:region#record-000000-offset-177"
-          ],
           "visible": true
         }
       ],

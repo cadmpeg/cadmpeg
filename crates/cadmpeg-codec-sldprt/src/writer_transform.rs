@@ -23,21 +23,9 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         return Ok(());
     }
 
-    let regions = ir
-        .geometry
-        .regions
-        .iter()
-        .map(|value| (value.id.as_str(), value))
-        .collect::<HashMap<_, _>>();
     let shells = ir
         .geometry
         .shells
-        .iter()
-        .map(|value| (value.id.as_str(), value))
-        .collect::<HashMap<_, _>>();
-    let faces = ir
-        .geometry
-        .faces
         .iter()
         .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
@@ -72,18 +60,12 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     for body in &ir.geometry.bodies {
         let transform = body.transform.unwrap_or_default();
         check_rigid(transform)?;
-        for region_id in &body.regions {
-            let region = regions
-                .get(region_id.as_str())
-                .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
+        for region in ir.geometry.body_regions(&body.id) {
             for shell_id in &region.shells {
                 let shell = shells.get(shell_id.as_str()).ok_or_else(|| {
                     CodecError::Malformed("region references missing shell".into())
                 })?;
-                for face_id in shell.faces() {
-                    let face = faces.get(face_id.as_str()).ok_or_else(|| {
-                        CodecError::Malformed("shell references missing face".into())
-                    })?;
+                for face in ir.geometry.shell_faces(&shell.id) {
                     assign(&mut surface_transforms, face.surface.as_str(), transform)?;
                     for loop_id in &face.loops {
                         let lp = loops.get(loop_id.as_str()).ok_or_else(|| {
@@ -99,7 +81,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                             if let Some(curve) = edge.curve() {
                                 assign(&mut curve_transforms, curve.as_str(), transform)?;
                             }
-                            for vertex_id in [&edge.start, &edge.end] {
+                            for vertex_id in edge.vertices() {
                                 let vertex = vertices.get(vertex_id.as_str()).ok_or_else(|| {
                                     CodecError::Malformed("edge references missing vertex".into())
                                 })?;

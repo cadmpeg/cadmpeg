@@ -83,6 +83,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
             id: id.try_into().unwrap(),
             point: target.try_into().unwrap(),
             tolerance: None,
+            native_ref: None,
         });
         let suffix = if target == point_id {
             "accepted"
@@ -106,15 +107,16 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id],
+            native_ref: None,
         });
         candidate.geometry.bodies.push(crate::topology::Body {
             id: body_id,
             kind: crate::topology::BodyKind::General,
-            regions: vec![region_id],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         let before = session.document().clone();
         let result = session

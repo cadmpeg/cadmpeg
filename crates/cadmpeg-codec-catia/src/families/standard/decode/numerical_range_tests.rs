@@ -116,6 +116,7 @@ fn limit_curve_binding_keeps_a_finite_midpoint_on_large_same_sign_domains() {
                 .expect("plane"),
             )),
             source_object: None,
+            native_ref: None,
         });
         let mut knots = vec![domain[0]; 6];
         knots.extend([domain[1]; 6]);

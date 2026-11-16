@@ -243,6 +243,7 @@ fn owned_sheet_reports_actual_rolling_ball_rail_movement() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
 
     let corners = [[u[0], 0.0], [u[1], 0.0], [u[1], radius], [u[0], radius]];
@@ -353,8 +354,14 @@ fn assert_outer_winding(ir: &CadIr, face: &Face) {
                 .find(|edge| edge.id == coedge.edge)
                 .expect("emitted edge");
             let (start, end) = match coedge.sense {
-                Sense::Forward => (&edge.start, &edge.end),
-                Sense::Reversed => (&edge.end, &edge.start),
+                Sense::Forward => (
+                    &edge.ends.as_ref().expect("edge has vertices").start,
+                    &edge.ends.as_ref().expect("edge has vertices").end,
+                ),
+                Sense::Reversed => (
+                    &edge.ends.as_ref().expect("edge has vertices").end,
+                    &edge.ends.as_ref().expect("edge has vertices").start,
+                ),
             };
             point(start)
                 .vector_from(origin)

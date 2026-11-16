@@ -174,20 +174,19 @@ fn generated_wire_and_general_bodies_refuse_solid_lump_conversion() {
 fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
     let mut ir = cube();
     let shell = &ir.geometry.shells[0];
-    ir.geometry.shells[0] = cadmpeg_ir::topology::Shell::new(
+    ir.geometry.shells[0] = cadmpeg_ir::topology::Shell::with_members(
         shell.id.clone(),
         shell.region.clone(),
-        shell.faces().to_vec(),
         vec![ir.geometry.edges[0].id.clone()],
         vec![ir.geometry.vertices[0].id.clone()],
-    )
-    .unwrap();
+    );
     let pcurve = Pcurve {
         id: "test:model:pcurve#use".try_into().unwrap(),
         geometry: PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
         ),
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     };
     ir.geometry.coedges[0]
         .pcurves

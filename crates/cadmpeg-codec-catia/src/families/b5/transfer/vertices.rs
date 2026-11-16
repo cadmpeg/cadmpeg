@@ -126,6 +126,7 @@ pub(super) fn emit_vertices(
             id: vertex_id,
             point: point_id,
             tolerance: vertex_tolerances.get(&index).copied(),
+            native_ref: None,
         });
     }
     for (rank, vertex) in graph.vertices.logical_vertices().iter().enumerate() {
@@ -169,6 +170,7 @@ pub(super) fn emit_vertices(
             id: vertex_id,
             point: point_id,
             tolerance: vertex_tolerances.get(&index).copied(),
+            native_ref: None,
         });
     }
     Ok(())

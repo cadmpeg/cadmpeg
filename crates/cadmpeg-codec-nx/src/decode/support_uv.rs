@@ -2680,6 +2680,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             id: pcurve_id.clone(),
             geometry,
             metadata,
+            native_ref: None,
         });
         if let Some(coedge) = ir
             .geometry
@@ -2763,6 +2764,7 @@ mod tests {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let budget = GeometryWorkBudget::from_context(ctx, 10_000);
@@ -2969,6 +2971,7 @@ mod tests {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let points = vec![Point3::new(0.0, 0.0, 0.0); MAX_SUPPORT_UV_SAMPLES + 1];
@@ -3067,6 +3070,7 @@ mod tests {
                     id: surface_id.clone(),
                     geometry: geometry.clone(),
                     source_object: None,
+                    native_ref: None,
                 });
                 let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 

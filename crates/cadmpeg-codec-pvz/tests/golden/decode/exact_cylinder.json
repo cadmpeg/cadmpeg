@@ -7,10 +7,7 @@
         {
           "id": "pvz:model:body#part.ol",
           "kind": "solid",
-          "name": "part.ol",
-          "regions": [
-            "pvz:model:region#part.ol:0"
-          ]
+          "name": "part.ol"
         }
       ],
       "coedges": [
@@ -191,9 +188,11 @@
               6.283185307179586
             ]
           },
-          "end": "pvz:model:vertex#part.ol:0",
-          "id": "pvz:model:edge#part.ol:0",
-          "start": "pvz:model:vertex#part.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:0",
+            "start": "pvz:model:vertex#part.ol:0"
+          },
+          "id": "pvz:model:edge#part.ol:0"
         },
         {
           "carrier": {
@@ -203,9 +202,11 @@
               6.283185307179586
             ]
           },
-          "end": "pvz:model:vertex#part.ol:1",
-          "id": "pvz:model:edge#part.ol:1",
-          "start": "pvz:model:vertex#part.ol:1"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:1",
+            "start": "pvz:model:vertex#part.ol:1"
+          },
+          "id": "pvz:model:edge#part.ol:1"
         },
         {
           "carrier": {
@@ -215,9 +216,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:1",
-          "id": "pvz:model:edge#part.ol:2",
-          "start": "pvz:model:vertex#part.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:1",
+            "start": "pvz:model:vertex#part.ol:0"
+          },
+          "id": "pvz:model:edge#part.ol:2"
         }
       ],
       "faces": [
@@ -443,20 +446,7 @@
       "shells": [
         {
           "id": "pvz:model:shell#part.ol:0",
-          "members": [
-            {
-              "id": "pvz:model:face#part.ol:0:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#part.ol:1:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#part.ol:2:0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "pvz:model:region#part.ol:0"
         }
       ],

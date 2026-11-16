@@ -57,6 +57,7 @@ fn composite_coplanarity_refuses_recursion_depth() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let segments = CompositeCurveSegments::try_from(vec![CompositeCurveSegment {
         curve: child_id,
@@ -1259,8 +1260,11 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 5.0])
     );
-    assert_eq!(result.ir().geometry.shells[0].wire_edges().len(), 1);
-    assert!(result.ir().geometry.shells[0].free_vertices().is_empty());
+    assert_eq!(result.ir().geometry.shells[0].wire_edges().count(), 1);
+    assert!(result.ir().geometry.shells[0]
+        .free_vertices()
+        .next()
+        .is_none());
     assert_eq!(
         result.ir().geometry.curves[0]
             .source_object

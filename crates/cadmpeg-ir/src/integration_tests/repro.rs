@@ -243,6 +243,7 @@ fn repro_edge_closure_keeps_pcurves_and_use_curve_carriers() {
             .unwrap(),
         ),
         metadata: PcurveMetadata::default(),
+        native_ref: None,
     });
     let coedge = document
         .geometry

@@ -7,15 +7,12 @@
         {
           "color": {
             "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
+            "b": 0.6,
+            "g": 0.4,
+            "r": 0.2
           },
           "id": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
           "kind": "solid",
-          "regions": [
-            "fcstd:model:region#Box:Shape:Box.Shape.brp:34%40location1"
-          ],
           "visible": true
         }
       ],
@@ -704,9 +701,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:13%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -717,9 +716,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:15%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
@@ -730,9 +731,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:17%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
         {
@@ -743,9 +746,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:18%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -756,9 +761,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:21%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -769,9 +776,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:22%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -782,9 +791,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:25%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -795,9 +806,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:26%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
@@ -808,9 +821,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -821,9 +836,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:5%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -834,9 +851,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -847,9 +866,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:8%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         }
       ],
@@ -1693,32 +1714,7 @@
       "shells": [
         {
           "id": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:10%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:20%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:24%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:28%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:30%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:32%40location1",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#Box:Shape:Box.Shape.brp:34%40location1"
         }
       ],
@@ -2221,9 +2217,9 @@
         {
           "base_color": {
             "a": 1.0,
-            "b": 0.10196078568696976,
-            "g": 0.20000000298023224,
-            "r": 0.7019608020782471
+            "b": 0.10196078431372549,
+            "g": 0.2,
+            "r": 0.7019607843137254
           },
           "id": "fcstd:appearance:edge#Box",
           "name": "Box line appearance",
@@ -2236,9 +2232,9 @@
         {
           "base_color": {
             "a": 1.0,
-            "b": 0.10196078568696976,
-            "g": 0.20000000298023224,
-            "r": 0.7019608020782471
+            "b": 0.10196078431372549,
+            "g": 0.2,
+            "r": 0.7019607843137254
           },
           "id": "fcstd:appearance:edge#Box:1",
           "name": "Box Edge1 appearance",
@@ -2252,9 +2248,9 @@
           "asset_guid": "7f9fd73b-50c9-41d8-b7b2-575a030c1eeb",
           "base_color": {
             "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
+            "b": 0.6,
+            "g": 0.4,
+            "r": 0.2
           },
           "id": "fcstd:appearance:shape-material#Box:1",
           "name": "Box face 1 material",
@@ -2271,9 +2267,9 @@
         {
           "base_color": {
             "a": 1.0,
-            "b": 0.3019607961177826,
-            "g": 0.800000011920929,
-            "r": 0.10196078568696976
+            "b": 0.30196078431372547,
+            "g": 0.8,
+            "r": 0.10196078431372549
           },
           "id": "fcstd:appearance:vertex#Box",
           "name": "Box point appearance",
@@ -2286,9 +2282,9 @@
         {
           "base_color": {
             "a": 1.0,
-            "b": 0.3019607961177826,
-            "g": 0.800000011920929,
-            "r": 0.10196078568696976
+            "b": 0.30196078431372547,
+            "g": 0.8,
+            "r": 0.10196078431372549
           },
           "id": "fcstd:appearance:vertex#Box:1",
           "name": "Box Vertex1 appearance",

@@ -235,12 +235,14 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: generatrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(generatrix)),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.points.extend([
         Point::new(
@@ -259,20 +261,25 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
             id: start_vertex.clone(),
             point: start_point,
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: end_vertex.clone(),
             point: end_point,
             tolerance: None,
+            native_ref: None,
         },
     ]);
     ir.geometry.edges.push(Edge {
         id: edge_id,
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(generatrix_id), Some(interval))
             .unwrap(),
-        start: start_vertex,
-        end: end_vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex,
+            end_vertex,
+        )),
         tolerance: None,
+        native_ref: None,
     });
 
     let arena = DecodeArena::new();

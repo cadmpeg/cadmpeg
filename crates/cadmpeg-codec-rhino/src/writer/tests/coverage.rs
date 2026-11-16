@@ -25,31 +25,31 @@ fn placed_point_product() -> CadIr {
     ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::General,
-        regions: vec![region.clone()],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.geometry.regions.push(cadmpeg_ir::topology::Region {
         id: region.clone(),
         body: body.clone(),
         shells: vec![shell.clone()],
+        native_ref: None,
     });
-    ir.geometry.shells.push(
-        cadmpeg_ir::topology::Shell::new(
+    ir.geometry
+        .shells
+        .push(cadmpeg_ir::topology::Shell::with_members(
             shell,
             region,
             Vec::new(),
-            Vec::new(),
             vec![vertex.clone()],
-        )
-        .expect("free-vertex shell"),
-    );
+        ));
     ir.geometry.vertices.push(cadmpeg_ir::topology::Vertex {
         id: vertex,
         point: point.clone(),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         point,

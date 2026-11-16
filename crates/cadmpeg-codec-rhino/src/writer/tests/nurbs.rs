@@ -202,6 +202,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
                             .expect("finite non-negative fixture tolerance"),
                     ),
                 ),
+                native_ref: None,
             });
         ir.geometry.coedges[coedge].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -282,6 +283,7 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
                 ir.geometry.edges[0].param_range(),
                 None,
             ),
+            native_ref: None,
         });
     ir.geometry.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
@@ -336,6 +338,7 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
                     ),
                     None,
                 ),
+                native_ref: None,
             });
     }
     ir.geometry.coedges[0].pcurves = vec![
@@ -394,6 +397,7 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
                         .expect("finite non-negative fixture tolerance"),
                 ),
             ),
+            native_ref: None,
         });
     ir.geometry.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
@@ -847,6 +851,7 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
                     .expect("finite non-negative fixture tolerance"),
             ),
         ),
+        native_ref: None,
     };
     let surface = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
@@ -923,6 +928,7 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
                     .expect("finite non-negative fixture tolerance"),
             ),
         ),
+        native_ref: None,
     };
     let surface = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),

@@ -28,6 +28,7 @@ fn plane_pcurve_scaling_keeps_the_plane_surface() {
             plane,
         )),
         source_object: None,
+        native_ref: None,
     });
     let scale = crate::test_support::millimeter_scale(25.4);
     super::super::scale_plane_pcurves(&mut staged, scale).expect("scale plane pcurves");
@@ -56,6 +57,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     staged.draft.geometry_mut().surfaces.push(Surface {
         id: surface_id.clone(),
@@ -63,15 +65,16 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
             record: None,
         }),
         source_object: None,
+        native_ref: None,
     });
     staged.draft.geometry_mut().bodies.push(Body {
         id: "rhino:object:body#x".try_into().expect("valid identity"),
         kind: BodyKind::Sheet,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     staged = staged.free_carrier_fallback("C2 failure");
     assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
@@ -162,6 +165,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
         source_object: None,
+        native_ref: None,
     });
     let links = staged.links.clone();
     staged
@@ -199,6 +203,7 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
         id: curve_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
         source_object: None,
+        native_ref: None,
     };
     let mut live = CadIr::empty();
     live.geometry.curves.push(curve.clone());
@@ -366,7 +371,10 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     .expect("stage Brep with an isolated vertex");
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
     assert_eq!(
-        staged.draft.geometry().shells[0].free_vertices(),
+        staged.draft.geometry().shells[0]
+            .free_vertices()
+            .cloned()
+            .collect::<Vec<_>>(),
         vec!["rhino:object:vertex#free-vertex.slot-3"
             .try_into()
             .expect("valid identity")]
@@ -673,6 +681,7 @@ fn fallback_keeps_thousands_of_free_carriers() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         staged.links.push(id.to_string());
         staged.draft.exactness(&id, cadmpeg_ir::Exactness::Derived);

@@ -13,9 +13,6 @@
           },
           "id": "iges:model:body#D11",
           "kind": "sheet",
-          "regions": [
-            "iges:model:region#D11"
-          ],
           "visible": true
         }
       ],
@@ -26,9 +23,9 @@
         {
           "color": {
             "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
+            "b": 0.6,
+            "g": 0.4,
+            "r": 0.2
           },
           "id": "iges:model:face#D11:D9",
           "loops": {
@@ -77,12 +74,7 @@
       "shells": [
         {
           "id": "iges:model:shell#D11",
-          "members": [
-            {
-              "id": "iges:model:face#D11:D9",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D11"
         }
       ],
@@ -158,9 +150,9 @@
         {
           "base_color": {
             "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
+            "b": 0.6,
+            "g": 0.4,
+            "r": 0.2
           },
           "id": "iges:appearance:color#D13",
           "name": "custom",

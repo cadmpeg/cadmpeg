@@ -7,9 +7,6 @@
         {
           "id": "iges:model:body#D23",
           "kind": "sheet",
-          "regions": [
-            "iges:model:region#D23"
-          ],
           "visible": true
         }
       ],
@@ -186,9 +183,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D23:D15:2",
-          "id": "iges:model:edge#D23:D17:1",
-          "start": "iges:model:vertex#D23:D15:1"
+          "ends": {
+            "end": "iges:model:vertex#D23:D15:2",
+            "start": "iges:model:vertex#D23:D15:1"
+          },
+          "id": "iges:model:edge#D23:D17:1"
         },
         {
           "carrier": {
@@ -198,9 +197,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D23:D15:3",
-          "id": "iges:model:edge#D23:D17:2",
-          "start": "iges:model:vertex#D23:D15:2"
+          "ends": {
+            "end": "iges:model:vertex#D23:D15:3",
+            "start": "iges:model:vertex#D23:D15:2"
+          },
+          "id": "iges:model:edge#D23:D17:2"
         },
         {
           "carrier": {
@@ -210,9 +211,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D23:D15:4",
-          "id": "iges:model:edge#D23:D17:3",
-          "start": "iges:model:vertex#D23:D15:3"
+          "ends": {
+            "end": "iges:model:vertex#D23:D15:4",
+            "start": "iges:model:vertex#D23:D15:3"
+          },
+          "id": "iges:model:edge#D23:D17:3"
         },
         {
           "carrier": {
@@ -222,9 +225,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D23:D15:1",
-          "id": "iges:model:edge#D23:D17:4",
-          "start": "iges:model:vertex#D23:D15:4"
+          "ends": {
+            "end": "iges:model:vertex#D23:D15:1",
+            "start": "iges:model:vertex#D23:D15:4"
+          },
+          "id": "iges:model:edge#D23:D17:4"
         }
       ],
       "faces": [
@@ -305,12 +310,7 @@
       "shells": [
         {
           "id": "iges:model:shell#D23",
-          "members": [
-            {
-              "id": "iges:model:face#D23:D21",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D23"
         }
       ],

@@ -13,9 +13,9 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Edge;
 
 pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Option<Point3>, CodecError> {
-    if edge.start == edge.end {
+    let Some(ends) = edge.ends.as_ref().filter(|ends| ends.start != ends.end) else {
         return Ok(None);
-    }
+    };
     let position = |id: &cadmpeg_ir::ids::VertexId| {
         let vertex = index.vertices(id.as_str(), StandardIndex)?;
         Some(
@@ -25,7 +25,7 @@ pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Option<Poi
                 .get(),
         )
     };
-    let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
+    let (Some(start), Some(end)) = (position(&ends.start), position(&ends.end)) else {
         return Ok(None);
     };
     if !curve_endpoints_coincident([start, end], index.ir().tolerances.linear.get()) {

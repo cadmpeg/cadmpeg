@@ -117,14 +117,12 @@ fn solid_and_sheet_shell_wire_members_have_counted_export_losses() {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         ir.geometry.bodies[0].kind = kind;
         let shell = &ir.geometry.shells[0];
-        ir.geometry.shells[0] = cadmpeg_ir::topology::Shell::new(
+        ir.geometry.shells[0] = cadmpeg_ir::topology::Shell::with_members(
             shell.id.clone(),
             shell.region.clone(),
-            shell.faces().to_vec(),
             vec![ir.geometry.edges[0].id.clone()],
             vec![ir.geometry.vertices[0].id.clone()],
-        )
-        .unwrap();
+        );
         let report = write_step(
             &ir,
             &mut Vec::new(),

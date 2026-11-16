@@ -5965,11 +5965,11 @@ mod digest_tests {
         ir.geometry.bodies.push(Body {
             id: BodyId::mint("synthetic:test:id#digest-body").unwrap(),
             kind: BodyKind::default(),
-            regions: Vec::new(),
             transform: None,
             name: Some("digest body".to_owned()),
             color: None,
             visible: None,
+            native_ref: None,
         });
         ir
     }

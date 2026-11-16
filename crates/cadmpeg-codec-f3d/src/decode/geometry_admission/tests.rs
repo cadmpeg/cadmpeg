@@ -24,6 +24,7 @@ fn exact_curve(offset: f64) -> CadIr {
             id: VertexId::mint(format!("test:brep:vertex#{slot}")).unwrap(),
             point,
             tolerance: None,
+            native_ref: None,
         });
     }
     for (slot, start, end) in [
@@ -62,6 +63,7 @@ fn exact_curve(offset: f64) -> CadIr {
             )),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         ir.geometry
             .add_procedural_curves(vec![(
@@ -78,9 +80,12 @@ fn exact_curve(offset: f64) -> CadIr {
         ir.geometry.edges.push(Edge {
             id: EdgeId::mint(format!("test:brep:edge#{slot}")).unwrap(),
             carrier: EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
-            start: ir.geometry.vertices[slot].id.clone(),
-            end: ir.geometry.vertices[slot + 1].id.clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                ir.geometry.vertices[slot].id.clone(),
+                ir.geometry.vertices[slot + 1].id.clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     let body = cadmpeg_ir::ids::BodyId::mint("test:brep:body#0").unwrap();
@@ -89,31 +94,30 @@ fn exact_curve(offset: f64) -> CadIr {
     ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::Wire,
-        regions: vec![region.clone()],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.geometry.regions.push(cadmpeg_ir::topology::Region {
         id: region.clone(),
         body,
         shells: vec![shell.clone()],
+        native_ref: None,
     });
-    ir.geometry.shells.push(
-        cadmpeg_ir::topology::Shell::new(
+    ir.geometry
+        .shells
+        .push(cadmpeg_ir::topology::Shell::with_members(
             shell,
             region,
-            Vec::new(),
             ir.geometry
                 .edges
                 .iter()
                 .map(|edge| edge.id.clone())
                 .collect(),
             Vec::new(),
-        )
-        .unwrap(),
-    );
+        ));
     ir
 }
 

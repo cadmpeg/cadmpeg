@@ -43,6 +43,7 @@ fn direct_surface_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
@@ -58,6 +59,7 @@ fn direct_surface_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ];
     ir.geometry.surfaces.push(Surface {
@@ -67,6 +69,7 @@ fn direct_surface_fixture(
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: construction_id,

@@ -46,6 +46,7 @@ fn with_line_pcurves(mut ir: CadIr, arc: usize, swept: [Line; 2], meridian: [Lin
                 .unwrap(),
             ),
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
         let coedge = format!("test:model:coedge#swept-{arc}-{edge}");
         ir.geometry
@@ -105,7 +106,10 @@ fn assert_pcurves_reach_their_vertices(source: &CadIr) {
             .unwrap();
         let edge = geometry.edges.iter().find(|e| e.id == coedge.edge).unwrap();
         let [first, last] = edge.param_range().unwrap().get();
-        for (parameter, vertex) in [(first, &edge.start), (last, &edge.end)] {
+        for (parameter, vertex) in [
+            (first, &edge.ends.as_ref().unwrap().start),
+            (last, &edge.ends.as_ref().unwrap().end),
+        ] {
             let uv = pcurve_uv(EvaluationAdmission::Standard, &pcurve.geometry, parameter)
                 .unwrap()
                 .get();

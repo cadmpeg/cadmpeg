@@ -396,10 +396,10 @@ pub(in crate::families) fn attach(
         let Some(Some((node_index, node))) = nodes.get(&tag) else {
             continue;
         };
-        let Some(start) = vertices.get(&edge.start) else {
+        let Some(start) = edge.start().and_then(|vertex| vertices.get(vertex)) else {
             continue;
         };
-        let Some(end) = vertices.get(&edge.end) else {
+        let Some(end) = edge.end().and_then(|vertex| vertices.get(vertex)) else {
             continue;
         };
         let Some(start_tag) = source_tag(start.source_object.as_ref(), "vertex") else {
@@ -569,10 +569,13 @@ pub(in crate::families) fn attach(
                 continue;
             }
             let add_face_pcurve = ir.geometry.coedges[face_coedges[0]].pcurves.is_empty();
-            let Some(&start_index) = vertex_indices.get(&edge.start) else {
+            let Some(ends) = &edge.ends else {
                 continue;
             };
-            let Some(&end_index) = vertex_indices.get(&edge.end) else {
+            let Some(&start_index) = vertex_indices.get(&ends.start) else {
+                continue;
+            };
+            let Some(&end_index) = vertex_indices.get(&ends.end) else {
                 continue;
             };
             let endpoint_tolerances = [start_index, end_index].map(|index| {
@@ -817,10 +820,10 @@ pub(in crate::families) fn attach(
             for (parameter, vertex_id, stored) in [
                 (
                     curve_range.endpoints()[0],
-                    &edge.start,
+                    &ends.start,
                     start.position().get(),
                 ),
-                (curve_range.endpoints()[1], &edge.end, end.position().get()),
+                (curve_range.endpoints()[1], &ends.end, end.position().get()),
             ] {
                 let point =
                     cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
@@ -948,6 +951,7 @@ pub(in crate::families) fn attach(
                     cadmpeg_ir::units::FiniteVector::new(range.endpoints()),
                     None,
                 ),
+                native_ref: None,
             });
             ir.geometry.coedges[coedge_index].pcurves.push(PcurveUse {
                 pcurve: id,

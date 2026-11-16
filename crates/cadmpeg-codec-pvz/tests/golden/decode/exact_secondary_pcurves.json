@@ -7,10 +7,7 @@
         {
           "id": "pvz:model:body#part.ol",
           "kind": "solid",
-          "name": "part.ol",
-          "regions": [
-            "pvz:model:region#part.ol:0"
-          ]
+          "name": "part.ol"
         }
       ],
       "coedges": [
@@ -606,9 +603,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:1",
-          "id": "pvz:model:edge#part.ol:0",
-          "start": "pvz:model:vertex#part.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:1",
+            "start": "pvz:model:vertex#part.ol:0"
+          },
+          "id": "pvz:model:edge#part.ol:0"
         },
         {
           "carrier": {
@@ -618,9 +617,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:2",
-          "id": "pvz:model:edge#part.ol:1",
-          "start": "pvz:model:vertex#part.ol:1"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:2",
+            "start": "pvz:model:vertex#part.ol:1"
+          },
+          "id": "pvz:model:edge#part.ol:1"
         },
         {
           "carrier": {
@@ -630,9 +631,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:7",
-          "id": "pvz:model:edge#part.ol:10",
-          "start": "pvz:model:vertex#part.ol:1"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:7",
+            "start": "pvz:model:vertex#part.ol:1"
+          },
+          "id": "pvz:model:edge#part.ol:10"
         },
         {
           "carrier": {
@@ -642,9 +645,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:6",
-          "id": "pvz:model:edge#part.ol:11",
-          "start": "pvz:model:vertex#part.ol:2"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:6",
+            "start": "pvz:model:vertex#part.ol:2"
+          },
+          "id": "pvz:model:edge#part.ol:11"
         },
         {
           "carrier": {
@@ -654,9 +659,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:2",
-          "id": "pvz:model:edge#part.ol:2",
-          "start": "pvz:model:vertex#part.ol:3"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:2",
+            "start": "pvz:model:vertex#part.ol:3"
+          },
+          "id": "pvz:model:edge#part.ol:2"
         },
         {
           "carrier": {
@@ -666,9 +673,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:3",
-          "id": "pvz:model:edge#part.ol:3",
-          "start": "pvz:model:vertex#part.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:3",
+            "start": "pvz:model:vertex#part.ol:0"
+          },
+          "id": "pvz:model:edge#part.ol:3"
         },
         {
           "carrier": {
@@ -678,9 +687,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:5",
-          "id": "pvz:model:edge#part.ol:4",
-          "start": "pvz:model:vertex#part.ol:4"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:5",
+            "start": "pvz:model:vertex#part.ol:4"
+          },
+          "id": "pvz:model:edge#part.ol:4"
         },
         {
           "carrier": {
@@ -690,9 +701,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:6",
-          "id": "pvz:model:edge#part.ol:5",
-          "start": "pvz:model:vertex#part.ol:5"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:6",
+            "start": "pvz:model:vertex#part.ol:5"
+          },
+          "id": "pvz:model:edge#part.ol:5"
         },
         {
           "carrier": {
@@ -702,9 +715,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:6",
-          "id": "pvz:model:edge#part.ol:6",
-          "start": "pvz:model:vertex#part.ol:7"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:6",
+            "start": "pvz:model:vertex#part.ol:7"
+          },
+          "id": "pvz:model:edge#part.ol:6"
         },
         {
           "carrier": {
@@ -714,9 +729,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:7",
-          "id": "pvz:model:edge#part.ol:7",
-          "start": "pvz:model:vertex#part.ol:4"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:7",
+            "start": "pvz:model:vertex#part.ol:4"
+          },
+          "id": "pvz:model:edge#part.ol:7"
         },
         {
           "carrier": {
@@ -726,9 +743,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:5",
-          "id": "pvz:model:edge#part.ol:8",
-          "start": "pvz:model:vertex#part.ol:3"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:5",
+            "start": "pvz:model:vertex#part.ol:3"
+          },
+          "id": "pvz:model:edge#part.ol:8"
         },
         {
           "carrier": {
@@ -738,9 +757,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#part.ol:4",
-          "id": "pvz:model:edge#part.ol:9",
-          "start": "pvz:model:vertex#part.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#part.ol:4",
+            "start": "pvz:model:vertex#part.ol:0"
+          },
+          "id": "pvz:model:edge#part.ol:9"
         }
       ],
       "faces": [
@@ -1339,32 +1360,7 @@
       "shells": [
         {
           "id": "pvz:model:shell#part.ol:0",
-          "members": [
-            {
-              "id": "pvz:model:face#part.ol:0:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#part.ol:1:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#part.ol:2:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#part.ol:3:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#part.ol:4:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#part.ol:5:0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "pvz:model:region#part.ol:0"
         }
       ],
