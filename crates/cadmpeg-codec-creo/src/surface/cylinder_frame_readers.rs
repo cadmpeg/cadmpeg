@@ -162,7 +162,7 @@ pub(crate) fn counted_rotation_parameter_bounds(
         .map(|(next, _)| next.offset)
         .min()
         .unwrap_or(*frame_end);
-    let start = super::positional_body_start(payload, row)?;
+    let start = super::row_prefix::positional_body_start(payload, row)?;
     let cache = scalar::ScalarCache::from_section_checked(payload);
     bounded_rotation_parameter_bounds(payload.get(start..end)?, frame, &cache)
 }

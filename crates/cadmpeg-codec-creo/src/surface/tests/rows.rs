@@ -18,8 +18,8 @@ use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
 use crate::surface::paired_short_second_coordinate;
 use crate::surface::plane_envelopes_for_rows;
-use crate::surface::positional_body_start;
 use crate::surface::prototype_count;
+use crate::surface::row_prefix::positional_body_start;
 use crate::surface::rows;
 use crate::surface::scalar_tokens;
 use crate::surface::spline_replay_shape;
@@ -157,7 +157,7 @@ fn finds_one_byte_and_two_byte_surface_rows() {
 fn packed_three_byte_row_fields_decode_and_link() {
     // id 20000 = c0 4e 20, feature 17000 = c0 42 68, id 20001 = c0 4e 21.
     let payload = b"srf_array\0\xf8\x02\
-        \xc0\x4e\x20\x22\xc0\x42\x68\x01\x00\xc0\x4e\x21\
+        \xc0\x4e\x20\x22\xc0\x42\x68\x01\x00\xc0\x4e\x21\xe3\
         \xc0\x4e\x21\x22\xc0\x42\x68\xf6\x00\x00";
     let decoded = rows(payload);
     let first_offset = b"srf_array\0\xf8\x02".len();
@@ -180,12 +180,12 @@ fn packed_three_byte_row_fields_decode_and_link() {
                 reversed: true,
                 boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
-                offset: first_offset + 12,
+                offset: first_offset + 13,
             },
         ]
     );
     let successor = unique_surface_row(&decoded, decoded[0].next_surface).unwrap();
-    assert_eq!(successor.offset, first_offset + 12);
+    assert_eq!(successor.offset, first_offset + 13);
     assert_eq!(
         positional_body_start(payload, &decoded[0]),
         Some(first_offset + 12)
@@ -194,10 +194,99 @@ fn packed_three_byte_row_fields_decode_and_link() {
 }
 
 #[test]
+fn packed_named_row_fields_decode() {
+    let payload = b"srf_array\0\xf8\x01\
+        \xe0\x01geom_id\0\xc0\x4e\x20\xe0\x01geom_type\0\x22\
+        \xe0\x01feat_id\0\xc0\x42\x68\xe0\x01orient\0\x01\
+        \xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\xc0\x4e\x21";
+    let decoded = rows(payload);
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(
+        (
+            decoded[0].id,
+            decoded[0].feature_id,
+            decoded[0].next_surface
+        ),
+        (20_000, 17_000, 20_001)
+    );
+}
+
+#[test]
 fn packed_row_field_requires_its_canonical_range() {
     // c0 00 07 stores 7, which a canonical writer stores in one byte.
     let payload = b"srf_array\0\xf8\x01\x05\x22\xc0\x00\x07\x01\x00\x00";
     assert!(rows(payload).is_empty());
+}
+
+#[test]
+fn packed_id_needs_a_frame_start_or_row_close() {
+    // Row B's two-byte id 81 c5 follows row A's two-byte next pointer 81 c5,
+    // and row C's one-byte id 05 follows row B's packed next pointer c0 c5 12.
+    let payload = b"srf_array\0\xf8\x03\
+        \x81\x00\x22\x05\x01\x00\x81\xc5\
+        \x81\xc5\x22\x05\x01\x00\xc0\xc5\x12\
+        \x05\x22\x05\x01\x00\x00";
+    let decoded = rows(payload);
+    let links = decoded
+        .iter()
+        .map(|row| (row.id, row.next_surface))
+        .collect::<Vec<_>>();
+    assert_eq!(links, vec![(256, 453), (453, 0xc512), (5, 0)]);
+    assert!(unique_surface_row(&decoded, 453).is_some());
+}
+
+#[test]
+fn packed_id_stays_inside_its_frame() {
+    // The frame count 80 c0 ends at c0; c0 81 00 would start before the frame.
+    let payload = b"srf_array\0\xf8\x80\xc0\
+        \x81\x00\x22\x05\x01\x00\x81\x01\
+        \x81\x01\x22\x05\x01\x00\x00";
+    let ids = rows(payload).iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(ids, vec![256, 257]);
+}
+
+#[test]
+fn row_close_anchors_the_shorter_id_before_a_packed_one() {
+    // 05 follows a row close; c5 e3 05 does not.
+    let payload = b"srf_array\0\xf8\x02\
+        \x10\xc5\xe3\x05\x22\x05\x01\x00\x00\
+        \xe3\xc0\x4e\x20\x22\x05\x01\x00\x00";
+    let ids = rows(payload).iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(ids, vec![5, 20_000]);
+}
+
+#[test]
+fn unanchored_packed_bytes_add_no_row() {
+    let payload = b"srf_array\0\xf8\x01\x05\x22\x04\x01\x00\x00\xd1\xc0\xff\x22\x05\x01\x00\x00";
+    let ids = rows(payload).iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(ids, vec![5]);
+}
+
+#[test]
+fn feature_id_keeps_the_compact_reading_when_the_packed_one_fails() {
+    // c5 01 00 is a canonical packed value, but 00 is no orientation byte.
+    let payload = b"srf_array\0\xf8\x01\x05\x22\xc5\x01\x00\x00";
+    let decoded = rows(payload);
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].feature_id, 0xc5);
+}
+
+#[test]
+fn packed_next_pointer_stops_at_the_frame_label() {
+    let payload = b"srf_array\0\xf8\x01\x05\x22\x04\x01\x00\xc0\x4ecrv_array\0";
+    let decoded = rows(payload);
+    assert_eq!(decoded.len(), 1);
+    assert_ne!(decoded[0].next_surface, 0x4e63);
+}
+
+#[test]
+fn named_null_next_pointer_keeps_its_row() {
+    let payload = b"srf_array\0\xf8\x01\
+        \xe0\x01geom_id\0\x05\xe0\x01geom_type\0\x22\
+        \xe0\x01feat_id\0\x04\xe0\x01orient\0\x01\
+        \xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\xf6";
+    let ids = rows(payload).iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(ids, vec![5]);
 }
 
 #[test]

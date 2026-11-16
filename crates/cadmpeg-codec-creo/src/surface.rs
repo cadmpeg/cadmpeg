@@ -10,6 +10,7 @@ mod bends;
 pub(crate) mod cylinder_frame_readers;
 pub(crate) mod owners;
 pub(crate) mod revolution;
+pub(crate) mod row_prefix;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
@@ -24,6 +25,7 @@ use crate::layout::type24_segmented_first_coordinate_bounded_round as type24_seg
 use crate::psb::{self, compact_int};
 use crate::scalar;
 use crate::vecmath::local_system_lanes;
+use row_prefix::positional_body_start;
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_CYLINDER_GEOMETRY_RELATIVE: f64 = 1.0e-9;
@@ -3329,8 +3331,7 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
         namespace_start = start;
         let value = |label: &[u8]| {
             find_in(payload, label, start, end).and_then(|at| {
-                let value_start = at + label.len();
-                packed_row_field(payload, value_start).map(|(value, _)| (value, at))
+                row_prefix::row_field(payload, at + label.len(), end).map(|(value, _)| (value, at))
             })
         };
         let typed_kind = find_in(payload, b"geom_type\0", start, end)
@@ -3367,39 +3368,43 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
             });
         }
     }
+    let frame_starts: Vec<usize> = surface_array_frames(payload)
+        .map(|frame| frame.start)
+        .collect();
+    let labels = row_prefix::frame_label_offsets(payload);
     for type_offset in 1..payload.len() {
         let Some(kind) = SurfaceKind::from_byte(payload[type_offset]) else {
             continue;
         };
-        let Some((id, id_start)) = id_ending_at(payload, type_offset) else {
+        let limit = labels
+            .get(labels.partition_point(|label| *label <= type_offset))
+            .copied()
+            .unwrap_or(payload.len());
+        let lower = frame_starts
+            .iter()
+            .copied()
+            .filter(|start| *start <= type_offset)
+            .max()
+            .unwrap_or(0);
+        let short = id_ending_at(payload, type_offset);
+        let anchored = |start: usize| row_prefix::packed_id_anchored(payload, start, &frame_starts);
+        let packed =
+            row_prefix::packed_id_ending_at(payload, type_offset, lower).filter(|(_, start)| {
+                anchored(*start) && !short.is_some_and(|(_, short)| anchored(short))
+            });
+        let Some((id, id_start)) = packed.or(short) else {
             continue;
         };
-        let Some((feature_id, mut pos)) = packed_row_field(payload, type_offset + 1) else {
-            continue;
-        };
-        let Some(&orientation) = payload.get(pos) else {
-            continue;
-        };
-        if !matches!(orientation, 0x01 | 0xf6) {
-            continue;
-        }
-        let Some(&boundary_type) = payload.get(pos + 1) else {
-            continue;
-        };
-        let Some(boundary_type) = BoundaryType::from_byte(boundary_type) else {
-            continue;
-        };
-        pos += 2;
-        let Some((next_surface, _)) = packed_row_field(payload, pos) else {
+        let Some(prefix) = row_prefix::row_prefix(payload, type_offset, limit) else {
             continue;
         };
         result.push(SurfaceRow {
             id,
             kind,
-            feature_id,
-            reversed: orientation == 0xf6,
-            boundary_type,
-            next_surface,
+            feature_id: prefix.feature_id,
+            reversed: prefix.reversed,
+            boundary_type: prefix.boundary_type,
+            next_surface: prefix.next_surface,
             offset: id_start,
         });
     }
@@ -4064,22 +4069,6 @@ fn parent_feature_array_trailer(body: &[u8]) -> bool {
         return false;
     }
     matches!(&rest[cursor..], [] | [0xe1] | [0xe1, 0xf6, 0xf6])
-}
-
-fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
-    let (_, after_id) = packed_row_field(payload, row.offset)?;
-    (payload
-        .get(after_id)
-        .and_then(|byte| SurfaceKind::from_byte(*byte))
-        == Some(row.kind))
-    .then_some(())?;
-    let (feature_id, cursor) = packed_row_field(payload, after_id + 1)?;
-    (feature_id == row.feature_id).then_some(())?;
-    let orientation = *payload.get(cursor)?;
-    let boundary = *payload.get(cursor + 1)?;
-    (matches!(orientation, 0x01 | 0xf6) && BoundaryType::from_byte(boundary).is_some())
-        .then_some(())?;
-    packed_row_field(payload, cursor + 2).map(|(_, next)| next)
 }
 
 fn decode_row_scalar(
@@ -8794,27 +8783,7 @@ impl ApexConeHalfAngle {
     }
 }
 
-/// The smallest value the packed `c0..df XX YY` form stores canonically.
-const PACKED_ROW_FIELD_MIN: u32 = 0x4000;
-
-/// A surface-row compact-integer field: `00..7f`, `80..bf XX`, or the packed
-/// `c0..df XX YY` form.
-fn packed_row_field(payload: &[u8], offset: usize) -> Option<(u32, usize)> {
-    match *payload.get(offset)? {
-        0xc0..=0xdf => psb::packed_compact_int(payload, offset)
-            .filter(|(value, _)| *value >= PACKED_ROW_FIELD_MIN),
-        _ => psb::packed_compact_int(payload, offset),
-    }
-}
-
 fn id_ending_at(payload: &[u8], type_offset: usize) -> Option<(u32, usize)> {
-    if let Some(start) = type_offset.checked_sub(3) {
-        if let Some((value, end)) = packed_row_field(payload, start) {
-            if end == type_offset && value >= PACKED_ROW_FIELD_MIN {
-                return Some((value, start));
-            }
-        }
-    }
     if type_offset >= 2 && matches!(payload[type_offset - 2], 0x80..=0xbf) {
         let (value, end) = compact_int(payload, type_offset - 2);
         if end == type_offset {

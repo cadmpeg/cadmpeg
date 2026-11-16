@@ -396,6 +396,14 @@ and `41 <tail7>` second-coordinate images in pcurve chart slots, the
 end-cylinder axis sign, and the mirrored end-cylinder placement before
 nonzero finite endpoints or complete cap charts are promoted.
 
+### GS-37. Packed surface-row identifiers after an unclosed body
+
+**Question.** Where does a positional `srf_array` row with a packed `c0..df XX YY` `geom_id` begin when it follows a row body without a row-close `e3`?
+
+**Known.** `creo_prt.md` §3 defines the three compact-integer tiers of `geom_id`, `feat_id`, and `next_geom_ptr`. The positional scan finds a row from its type byte and reads the identifier backwards. The decoder reads a packed `geom_id` when it starts at a frame start or after an `e3`, and when no one- or two-byte identifier that ends at the same type byte starts there. A packed `feat_id` or `next_geom_ptr` ends at or before the next frame label; when its packed reading fails the header, the decoder keeps the generic compact-integer reading.
+
+**Need.** A row-body grammar that bounds every body, so that each row start is known before its identifier is read.
+
 ### GS-19. Unresolved cone origin-coordinate images
 
 **Question.** Which owned scalar or model-reference grammar resolves the remaining cone origin-coordinate images and establishes their placement?
