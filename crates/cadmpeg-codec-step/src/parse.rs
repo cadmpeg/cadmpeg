@@ -640,6 +640,9 @@ pub(crate) struct GivenUpStatement {
     pub(crate) cause: GiveUpCause,
     /// Source offsets of the records dropped because they need it.
     pub(crate) dropped: Vec<usize>,
+    /// Instance names of kept records and of the entries they lost from an
+    /// unordered aggregate because the entries need it.
+    pub(crate) lost: Vec<(u64, u64)>,
 }
 
 /// Why a statement was given up.
@@ -1658,7 +1661,7 @@ impl Parser<'_, '_, '_> {
             Ok(token) => token,
             Err(error) if self.defer_lexical_errors => {
                 let offset = error.offset();
-                let message = error.to_string();
+                let message = error.message.clone();
                 if let Some(resource) = error.into_resource_error() {
                     return Err(ParseError::Resource(resource));
                 }

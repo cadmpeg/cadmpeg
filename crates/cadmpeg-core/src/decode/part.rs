@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Part-scoped recovery for parts a format frames by itself.
 
-use super::{DecodeContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
+use super::{DecodeContext, LimitScope, ResourceLimit};
 use crate::CodecError;
 
 impl DecodeContext<'_> {
@@ -35,30 +35,6 @@ impl DecodeContext<'_> {
             Err(error) if fatal(&error) => Err(error),
             result => Ok(result),
         }
-    }
-
-    /// Refuses a bound that applies to one part, such as a fixed per-part
-    /// ceiling. The session stays fused until the enclosing
-    /// [`DecodeContext::run_part`] gives the part up.
-    pub fn refuse_part_limit(
-        &self,
-        dimension: ResourceDimension,
-        limit: u64,
-        used: u64,
-        additional: u64,
-        operation: &'static str,
-    ) -> CodecError {
-        self.budget
-            .refuse_resource(ResourceLimit {
-                scope: LimitScope::Part,
-                dimension,
-                reason: ResourceFailure::BudgetExceeded,
-                limit,
-                used,
-                additional,
-                operation,
-            })
-            .into()
     }
 }
 

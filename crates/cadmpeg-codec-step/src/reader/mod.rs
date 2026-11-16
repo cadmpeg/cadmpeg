@@ -751,7 +751,13 @@ fn give_up_statements(
             u64_from_index(statement.span.start),
             bytes,
         )
-        .dropping(dropped);
+        .dropping(dropped)
+        .losing_entries(
+            statement
+                .lost
+                .iter()
+                .map(|(record, entry)| format!("#{record} entry #{entry}")),
+        );
         parts.push(ctx.give_up_part(part, statement.cause.clone().into_error())?);
     }
     Ok(parts)

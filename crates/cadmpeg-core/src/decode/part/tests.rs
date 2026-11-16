@@ -164,29 +164,6 @@ fn an_io_error_escapes_the_part() {
 }
 
 #[test]
-fn a_fixed_part_limit_is_given_up_by_its_runner() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"ABC", &arena, &DecodePolicy::service())
-        .expect("a three-byte root fits the service policy");
-    let failed = ctx
-        .run_part(|| {
-            Err::<(), _>(ctx.refuse_part_limit(
-                ResourceDimension::Entities,
-                1,
-                1,
-                1,
-                "attributes in one tag",
-            ))
-        })
-        .expect("a part limit stays inside the part result");
-    assert!(
-        matches!(failed, Err(CodecError::ResourceLimit(limit)) if limit.scope == LimitScope::Part)
-    );
-    assert_eq!(ctx.resource_refusal(), None);
-    ctx.finish_session().expect("session");
-}
-
-#[test]
 fn refusals_name_their_scope() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();

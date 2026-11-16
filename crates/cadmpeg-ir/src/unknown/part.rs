@@ -12,6 +12,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
+use crate::hash::digest::Sha256Digest;
 use crate::ids::{Identity, UnknownId};
 use crate::native::NativeRecord;
 use crate::provenance::{SourceOwner, SourceProvenance, StreamName};
@@ -43,6 +44,9 @@ pub struct Part<'a> {
     bytes: &'a [u8],
     containing: Option<Identity>,
     dropped: Vec<Identity>,
+    lost: Vec<String>,
+    consequence: Option<String>,
+    digest_only: bool,
 }
 
 impl<'a> Part<'a> {
@@ -66,6 +70,9 @@ impl<'a> Part<'a> {
             bytes,
             containing: None,
             dropped: Vec::new(),
+            lost: Vec::new(),
+            consequence: None,
+            digest_only: false,
         }
     }
 
@@ -96,6 +103,31 @@ impl<'a> Part<'a> {
     #[must_use]
     pub fn dropping(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
         self.dropped.extend(records);
+        self
+    }
+
+    /// Names entries removed from records the decoder keeps because the
+    /// entries need this part. Each text names the record and the entry it
+    /// lost.
+    #[must_use]
+    pub fn losing_entries(mut self, entries: impl IntoIterator<Item = String>) -> Self {
+        self.lost.extend(entries);
+        self
+    }
+
+    /// States what else the document lacks because the part was given up,
+    /// such as content the part would have placed.
+    #[must_use]
+    pub fn costing(mut self, consequence: impl Into<String>) -> Self {
+        self.consequence = Some(consequence.into());
+        self
+    }
+
+    /// Keeps only the length and digest of the part's bytes, for a decoder
+    /// that already retains them in a record holding the whole stream.
+    #[must_use]
+    pub fn digest_only(mut self) -> Self {
+        self.digest_only = true;
         self
     }
 
@@ -149,6 +181,14 @@ impl GivenUpPart {
         self.loss.clone()
     }
 
+    /// Links the stub to the innermost record that contains the part, for a
+    /// decoder that creates that record after it gave the part up.
+    #[must_use]
+    pub fn contained_in(mut self, record: Identity) -> Self {
+        self.stub.links = vec![record];
+        self
+    }
+
     /// Adds the stub to the codec's native `unknowns` arena of `ir` and the
     /// part's bytes to `fidelity`, and returns the loss for the decoder's
     /// report. On failure `ir` and `fidelity` are unchanged.
@@ -197,31 +237,26 @@ impl GivenUpPart {
     }
 }
 
-/// The outcome of one part.
-#[derive(Debug)]
-pub enum PartOutcome<T> {
-    /// The decoder read the part.
-    Decoded(T),
-    /// The decoder gave the part up.
-    GivenUp(Box<GivenUpPart>),
+/// Restates the `record.unreadable` loss of the part whose stub id changed
+/// from `from` to `to`, as when a decoder composing several documents
+/// rescopes one document's records. Returns whether `loss` names `from`.
+pub fn restate_loss(loss: &mut LossNote, from: &UnknownId, to: &str) -> bool {
+    if loss.code != record_unreadable_kind() {
+        return false;
+    }
+    let field = format!(" record={from}: ");
+    let Some(at) = loss.message.find(&field) else {
+        return false;
+    };
+    loss.message
+        .replace_range(at..at + field.len(), &format!(" record={to}: "));
+    true
 }
 
 /// Gives up the parts a decoder cannot read.
 pub trait DecodeParts {
-    /// Decodes one part. A failure of the part's own, including a
-    /// Part-scoped resource refusal, gives the part up.
-    ///
-    /// # Errors
-    ///
-    /// The errors fatal to the session: a Session-scoped refusal, a refusal
-    /// already in force, or an I/O error.
-    fn decode_part<T>(
-        &self,
-        part: Part<'_>,
-        decode: impl FnOnce() -> Result<T, CodecError>,
-    ) -> Result<PartOutcome<T>, CodecError>;
-
-    /// Gives up `part` after its decode failed with `error`.
+    /// Gives up `part` after its decode, run inside
+    /// [`DecodeContext::run_part`], failed with `error`.
     ///
     /// # Errors
     ///
@@ -231,19 +266,6 @@ pub trait DecodeParts {
 }
 
 impl DecodeParts for DecodeContext<'_> {
-    fn decode_part<T>(
-        &self,
-        part: Part<'_>,
-        decode: impl FnOnce() -> Result<T, CodecError>,
-    ) -> Result<PartOutcome<T>, CodecError> {
-        match self.run_part(decode)? {
-            Ok(value) => Ok(PartOutcome::Decoded(value)),
-            Err(error) => self
-                .give_up_part(part, error)
-                .map(|given_up| PartOutcome::GivenUp(Box::new(given_up))),
-        }
-    }
-
     fn give_up_part(&self, part: Part<'_>, error: CodecError) -> Result<GivenUpPart, CodecError> {
         if let Some(limit) = self.resource_refusal() {
             return Err(limit.into());
@@ -259,15 +281,22 @@ impl DecodeParts for DecodeContext<'_> {
         let id = part.id()?;
         let bytes = part.bytes;
         let length = u64_from_index(bytes.len());
-        self.retain_bytes(length, "given-up part source bytes")?;
-        let mut data = self.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
-        data.copy_from_slice(bytes);
+        let retained_bytes = if part.digest_only {
+            RetainedBytes::Digest {
+                byte_len: length,
+                sha256: Sha256Digest::digest(bytes),
+            }
+        } else {
+            self.retain_bytes(length, "given-up part source bytes")?;
+            let mut data = self.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
+            data.copy_from_slice(bytes);
+            RetainedBytes::Inline { data }
+        };
         let owner = part
             .stream
             .clone()
             .map_or(SourceOwner::Root, SourceOwner::from);
-        let retained =
-            RetainedSourceRecord::from_bytes(owner, part.offset(), RetainedBytes::Inline { data })?;
+        let retained = RetainedSourceRecord::from_bytes(owner, part.offset(), retained_bytes)?;
         let mut dropped: Vec<&str> = part.dropped.iter().map(Identity::as_str).collect();
         dropped.sort_unstable();
         dropped.dedup();
@@ -277,8 +306,18 @@ impl DecodeParts for DecodeContext<'_> {
             .as_ref()
             .map(|name| format!(" {name:?}"))
             .unwrap_or_default();
+        let consequence = part
+            .consequence
+            .as_ref()
+            .map(|consequence| format!("; {consequence}"))
+            .unwrap_or_default();
+        let lost = if part.lost.is_empty() {
+            String::new()
+        } else {
+            format!("; lost=[{}]", part.lost.join(", "))
+        };
         let message = format!(
-            "part {}{name} stream={stream:?} offset={} length={length} record={id}: {error}; dropped=[{}]",
+            "part {}{name} stream={stream:?} offset={} length={length} record={id}: {error}{consequence}; dropped=[{}]{lost}",
             part.kind,
             part.offset(),
             dropped.join(", ")

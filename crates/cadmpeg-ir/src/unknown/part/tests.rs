@@ -6,17 +6,29 @@ use cadmpeg_core::decode::{
 };
 use cadmpeg_core::CodecError;
 
-use super::{DecodeParts, Part, PartOutcome};
+use super::{restate_loss, DecodeParts, GivenUpPart, Part};
 use crate::document::CadIr;
 use crate::ids::Identity;
 use crate::report::Severity;
-use crate::source_fidelity::SourceFidelity;
+use crate::source_fidelity::{RetainedBytes, SourceFidelity};
 use crate::NativeUnknownRecord;
 
 const SOURCE: &[u8] = b"head[damaged part]tail";
 
 fn identity(text: &str) -> Identity {
     Identity::new(text.to_owned()).expect("fixture identity")
+}
+
+/// Runs `decode` as one part and gives the part up when it fails.
+fn decode_part<T>(
+    ctx: &DecodeContext<'_>,
+    part: Part<'_>,
+    decode: impl FnOnce() -> Result<T, CodecError>,
+) -> Result<Result<T, GivenUpPart>, CodecError> {
+    match ctx.run_part(decode)? {
+        Ok(value) => Ok(Ok(value)),
+        Err(error) => ctx.give_up_part(part, error).map(Err),
+    }
 }
 
 #[test]
@@ -35,12 +47,10 @@ fn a_failed_part_leaves_one_linked_stub_its_bytes_and_one_error_loss() {
             identity("synthetic:model:face#2"),
         ]);
     let id = part.id().expect("part id");
-    let PartOutcome::GivenUp(given_up) = ctx
-        .decode_part(part, || {
-            Err::<(), _>(CodecError::malformed("record length runs past its stream"))
-        })
-        .expect("the failure belongs to the part")
-    else {
+    let Err(given_up) = decode_part(&ctx, part, || {
+        Err::<(), _>(CodecError::malformed("record length runs past its stream"))
+    })
+    .expect("the failure belongs to the part") else {
         panic!("the part failed");
     };
     assert_eq!(given_up.id(), &id);
@@ -89,14 +99,83 @@ fn a_failed_part_leaves_one_linked_stub_its_bytes_and_one_error_loss() {
 }
 
 #[test]
-fn a_part_that_decodes_leaves_nothing_behind() {
+fn the_loss_states_lost_entries_and_what_else_the_part_cost() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).expect("root");
-    let outcome = ctx
-        .decode_part(Part::new("synthetic", "record", root), || Ok(7))
-        .expect("decoded");
-    assert!(matches!(outcome, PartOutcome::Decoded(7)));
+    let part = Part::new("synthetic", "record", root.child(4, 18).expect("extent"))
+        .costing("none of its 2 members was placed")
+        .losing_entries(["#7 entry #3".to_owned(), "#9 entry #3".to_owned()]);
+    let id = part.id().expect("part id");
+    let given_up = ctx
+        .give_up_part(part, CodecError::malformed("damaged"))
+        .expect("given up");
+    assert_eq!(
+        given_up.loss().message,
+        format!(
+            "part record stream=\"\" offset=4 length=14 record={id}: malformed container: damaged; \
+             none of its 2 members was placed; dropped=[]; lost=[#7 entry #3, #9 entry #3]"
+        )
+    );
+}
+
+#[test]
+fn a_digest_only_part_keeps_its_length_and_digest_without_a_copy() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).expect("root");
+    let bytes = &SOURCE[4..18];
+    let given_up = ctx
+        .give_up_part(
+            Part::new("synthetic", "record", root.child(4, 18).expect("extent")).digest_only(),
+            CodecError::malformed("damaged"),
+        )
+        .expect("given up")
+        .contained_in(identity("synthetic:native:document#0"));
+    let id = given_up.id().clone();
+    let mut ir = CadIr::empty();
+    let mut fidelity = SourceFidelity::default();
+    given_up
+        .commit(&ctx, &mut ir, &mut fidelity)
+        .expect("commit");
+    let retained = fidelity.retained_record(id.as_str()).expect("retained");
+    assert_eq!(retained.data(), None);
+    assert_eq!(retained.offset(), 4);
+    assert_eq!(retained.byte_len(), 14);
+    assert_eq!(
+        retained.sha256(),
+        RetainedBytes::Inline {
+            data: bytes.to_vec()
+        }
+        .sha256()
+    );
+    assert_eq!(
+        ir.native_unknowns("synthetic").expect("stub")[0].links,
+        [identity("synthetic:native:document#0")]
+    );
+}
+
+#[test]
+fn a_rescoped_stub_is_restated_in_its_loss() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).expect("root");
+    let given_up = ctx
+        .give_up_part(
+            Part::new("synthetic", "record", root.child(4, 18).expect("extent")),
+            CodecError::malformed("damaged"),
+        )
+        .expect("given up");
+    let from = given_up.id().clone();
+    let to = format!(
+        "synthetic:member/a/{}",
+        &from.as_str()["synthetic:".len()..]
+    );
+    let mut loss = given_up.loss();
+    assert!(restate_loss(&mut loss, &from, &to));
+    assert!(loss.message.contains(&format!(" record={to}: ")));
+    assert!(!loss.message.contains(&format!(" record={from}: ")));
+    assert!(!restate_loss(&mut loss, &from, &to));
 }
 
 #[test]
@@ -125,19 +204,18 @@ fn a_part_resource_refusal_gives_up_the_part_and_the_next_part_decodes() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_decompressed_bytes_per_expand = 2;
     let (ctx, root) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root");
-    let outcome = ctx
-        .decode_part(Part::new("synthetic", "stream", root), || {
-            ctx.begin_expand(ExpandSpec::Exact(3)).map(drop)
-        })
-        .expect("a Part refusal gives up the part");
-    let PartOutcome::GivenUp(given_up) = outcome else {
+    let outcome = decode_part(&ctx, Part::new("synthetic", "stream", root), || {
+        ctx.begin_expand(ExpandSpec::Exact(3)).map(drop)
+    })
+    .expect("a Part refusal gives up the part");
+    let Err(given_up) = outcome else {
         panic!("the expansion was refused");
     };
     assert!(given_up.loss().message.contains("scope Part"));
     assert_eq!(ctx.resource_refusal(), None);
     assert!(matches!(
-        ctx.decode_part(Part::new("synthetic", "stream", root), || Ok(())),
-        Ok(PartOutcome::Decoded(()))
+        decode_part(&ctx, Part::new("synthetic", "stream", root), || Ok(())),
+        Ok(Ok(()))
     ));
 }
 
@@ -147,11 +225,10 @@ fn a_session_refusal_or_io_error_is_not_given_up() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_entities = 0;
     let (ctx, root) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root");
-    let error = ctx
-        .decode_part(Part::new("synthetic", "record", root), || {
-            ctx.charge_entities(1, "entity")
-        })
-        .expect_err("the session is refused");
+    let error = decode_part(&ctx, Part::new("synthetic", "record", root), || {
+        ctx.charge_entities(1, "entity")
+    })
+    .expect_err("the session is refused");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.scope == LimitScope::Session && limit.dimension == ResourceDimension::Entities)
     );

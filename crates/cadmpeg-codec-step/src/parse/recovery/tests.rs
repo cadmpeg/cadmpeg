@@ -116,7 +116,7 @@ fn a_given_up_statement_names_the_records_that_need_it() {
         panic!("one record.unreadable loss");
     };
     assert!(loss.message.ends_with(&format!(
-        "; dropped=[step:file:omitted#{dependent}, step:file:omitted#{transitive}]"
+        "; dropped=[step:file:omitted#{dependent}, step:file:omitted#{transitive}]; lost=[#6 entry #3]"
     )));
     let omissions = decoded
         .report()
@@ -141,37 +141,142 @@ fn a_given_up_statement_names_the_records_that_need_it() {
 }
 
 #[test]
-fn a_record_that_lists_a_given_up_statement_loses_only_those_entries() {
+fn a_set_loses_only_its_given_up_entries_and_a_positional_list_drops_its_record() {
     let source = exchange(
-        "#1=ITEM();#2=ITEM(%,3);#3=ITEM(#2);#4=ITEM((#1,#3,LABEL(#2)),((#2),#1));#5=ITEM((#4));",
+        "#1=ITEM();#2=ITEM(%,3);#3=ITEM(#2);#4=GEOMETRIC_SET('',(#1,#3,LABEL(#2)));\
+         #5=ITEM((#1,#2));#6=GEOMETRIC_SET('',(#5,#1));#7=GEOMETRIC_SET('',((#2),#1));",
     );
     let (parsed, diagnostics) =
         with_service_context(source.as_bytes(), parse_inner).expect("bounded graph");
     assert_eq!(
         parsed.records().keys().copied().collect::<Vec<_>>(),
-        [1, 4, 5]
+        [1, 4, 6]
+    );
+    for id in [4, 6] {
+        assert_eq!(
+            parsed.records()[&id].partials[0].parameters[1],
+            Value::List(vec![Value::Reference(1)])
+        );
+    }
+    let [statement] = parsed.given_up() else {
+        panic!("one given-up statement");
+    };
+    let offset = |name: &str| source.find(name).expect("statement");
+    let mut dropped = statement.dropped.clone();
+    dropped.sort_unstable();
+    // #5 lists #2 in an aggregate of unknown order, and #7 nests it below
+    // the set's entries; both would shift the entries that follow it.
+    assert_eq!(dropped, [offset("#3="), offset("#5="), offset("#7=")]);
+    assert_eq!(statement.lost, [(4, 3), (4, 2), (6, 5)]);
+    assert_eq!(parsed.omitted_spans().len(), 3);
+    assert!(!diagnostics
+        .iter()
+        .any(|item| item.kind == ParseDiagnosticKind::RecordOmitted));
+}
+
+/// Decodes `data` with one `CARTESIAN_POINT`, #3, given up, and returns the
+/// source, the decode, and its one `record.unreadable` loss message.
+fn decode_with_point_three_given_up(data: &str) -> (String, cadmpeg_ir::DecodeResult, String) {
+    let source = exchange(&format!(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));#2=CARTESIAN_POINT('',(1.,0.,0.));\
+         #3=CARTESIAN_POINT('',(2.,%,0.));#4=CARTESIAN_POINT('',(3.,1.,0.));\
+         #5=CARTESIAN_POINT('',(4.,0.,0.));{data}"
+    ));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("a given-up point gives up only its dependents");
+    let losses = given_up_losses(decoded.report());
+    let [loss] = losses.as_slice() else {
+        panic!("one record.unreadable loss");
+    };
+    let message = loss.message.clone();
+    (source, decoded, message)
+}
+
+#[test]
+fn a_polyline_that_loses_a_point_is_dropped_and_named() {
+    let data = "#10=POLYLINE('',(#1,#2,#3,#4,#5));#11=GEOMETRIC_CURVE_SET('',(#10,#1));";
+    let (source, decoded, message) = decode_with_point_three_given_up(data);
+    let polyline = source.find("#10=").expect("polyline");
+    assert!(
+        message.ends_with(&format!(
+            "; dropped=[step:file:omitted#{polyline}]; lost=[#11 entry #10]"
+        )),
+        "{message}"
+    );
+    assert!(decoded.ir().geometry.curves.is_empty());
+}
+
+#[test]
+fn a_b_spline_that_loses_a_pole_is_dropped_and_named() {
+    for curve in [
+        "#10=UNIFORM_CURVE('',2,(#1,#2,#3,#4,#5),.UNSPECIFIED.,.F.,.F.);",
+        "#10=B_SPLINE_CURVE_WITH_KNOTS('',2,(#1,#2,#3,#4,#5),.UNSPECIFIED.,.F.,.F.,\
+         (3,1,1,3),(0.,1.,2.,3.),.UNSPECIFIED.);",
+    ] {
+        let (_, decoded, message) =
+            decode_with_point_three_given_up(&format!("{curve}#11=GEOMETRIC_SET('',(#10));"));
+        assert!(
+            message.contains("; dropped=[step:file:omitted#"),
+            "{message}"
+        );
+        assert!(message.ends_with("; lost=[#11 entry #10]"), "{message}");
+        assert!(decoded.ir().geometry.curves.is_empty(), "{curve}");
+        assert!(!decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("invalid geometry")));
+    }
+}
+
+#[test]
+fn a_closed_shell_that_loses_a_face_keeps_the_rest_and_the_loss_names_both() {
+    let source = exchange(
+        "#20=ITEM();#21=ITEM(%,3);#22=ITEM();#30=CLOSED_SHELL('',(#20,#21,#22));\
+         #31=(CONNECTED_FACE_SET((#21,#22))REPRESENTATION_ITEM('')TOPOLOGICAL_REPRESENTATION_ITEM());",
+    );
+    let (parsed, _) = with_service_context(source.as_bytes(), parse_inner).expect("bounded graph");
+    assert_eq!(
+        parsed.records()[&30].partials[0].parameters[1],
+        Value::List(vec![Value::Reference(20), Value::Reference(22)])
     );
     assert_eq!(
-        parsed.records()[&4].partials[0]
-            .parameters
-            .iter()
-            .collect::<Vec<_>>(),
-        [
-            &Value::List(vec![Value::Reference(1)]),
-            &Value::List(vec![Value::List(Vec::new()), Value::Reference(1)]),
-        ]
+        parsed.records()[&31].partials[0].parameters[0],
+        Value::List(vec![Value::Reference(22)])
     );
     let [statement] = parsed.given_up() else {
         panic!("one given-up statement");
     };
-    assert_eq!(
-        statement.dropped,
-        [source.find("#3=").expect("direct user")]
+    assert!(statement.dropped.is_empty());
+    assert_eq!(statement.lost, [(30, 21), (31, 21)]);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("the shell keeps its readable faces");
+    let losses = given_up_losses(decoded.report());
+    let [loss] = losses.as_slice() else {
+        panic!("one record.unreadable loss");
+    };
+    assert!(
+        loss.message
+            .ends_with("; dropped=[]; lost=[#30 entry #21, #31 entry #21]"),
+        "{}",
+        loss.message
     );
-    assert_eq!(parsed.omitted_spans().len(), 1);
-    assert!(!diagnostics
-        .iter()
-        .any(|item| item.kind == ParseDiagnosticKind::RecordOmitted));
+}
+
+#[test]
+fn unordered_attribute_tables_are_sorted_for_lookup() {
+    for table in [super::UNORDERED_SIMPLE, super::UNORDERED_PARTIAL] {
+        assert!(table.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        for &(entity, index) in table {
+            assert!(super::unordered_attribute(
+                entity,
+                index,
+                std::ptr::eq(table, super::UNORDERED_SIMPLE)
+            ));
+        }
+    }
 }
 
 #[test]
