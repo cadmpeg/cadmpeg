@@ -8,8 +8,64 @@ use serde::{Deserialize, Serialize};
 
 use crate::design::construction::{kinds, Construction};
 use crate::design::dimension::Dimension;
-use crate::design::options::LimitOffset;
-use crate::design::selection::SetSelection;
+use crate::design::expr::Expression;
+use crate::design::options::{LimitOffset, SymmetricMeasure};
+use crate::design::selection::{OrderedSelection, SetSelection};
+use crate::features::ParameterId;
+
+/// A size measured on the radius or on the diameter, as the source states
+/// it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(
+        serialize = "Q: Serialize, P: Serialize",
+        deserialize = "Q: Deserialize<'de>, P: Deserialize<'de>"
+    )
+)]
+pub enum RadialDimension<Q, P = ParameterId> {
+    /// The size on the radius.
+    Radius(Dimension<Q, P>),
+    /// The size on the diameter.
+    Diameter(Dimension<Q, P>),
+}
+
+/// Material placed along a direction or about an axis, measured from the
+/// operation's origin.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+)]
+pub enum Span<Q> {
+    /// From `start` to `end`. `end` is measured along the direction and
+    /// `start` against it.
+    Between {
+        /// The limit against the direction.
+        start: Box<Limit<Q>>,
+        /// The limit along the direction.
+        end: Box<Limit<Q>>,
+    },
+    /// Both sides of the origin equally.
+    Symmetric {
+        /// The amount.
+        amount: Dimension<Q>,
+        /// Whether `amount` is the extent of each side or the total.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_measure"
+        )]
+        measure: Option<SymmetricMeasure>,
+    },
+}
 
 /// One end of a span.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -71,6 +127,34 @@ pub enum Limit<Q> {
     Native(NonBlankString),
 }
 
+/// A function of a quantity along a path parameter from 0 to 1.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+)]
+pub enum Law<Q> {
+    /// A constant.
+    Constant(Dimension<Q>),
+    /// A linear ramp.
+    Linear {
+        /// The value at the path's start.
+        start: Dimension<Q>,
+        /// The value at the path's end.
+        end: Dimension<Q>,
+    },
+    /// A law curve that the source selects.
+    Curve(OrderedSelection),
+    /// An expression in the law parameter whose result has the quantity.
+    Expression(Expression),
+    /// A source law whose meaning is not established.
+    Native(NonBlankString),
+}
+
 /// How a value or a section changes between consecutive stations or
 /// sections.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -113,8 +197,23 @@ pub enum OffsetJoin {
     Native(NonBlankString),
 }
 
+/// The faces of a sheet-metal wall that a cut's side faces are normal to, the
+/// cut being made as if the part were flat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SheetCutNormal {
+    /// The face the wall is built from.
+    Defining,
+    /// The other face.
+    Opposite,
+    /// A cut through the thickness in the flat state.
+    Both,
+}
+
 cadmpeg_core::named_optional_field!(deserialize_extend, Dimension<bool>, "extend");
 cadmpeg_core::named_optional_field!(deserialize_far, Dimension<bool>, "far");
+cadmpeg_core::named_optional_field!(deserialize_measure, SymmetricMeasure, "measure");
 cadmpeg_core::named_optional_field!(deserialize_offset, LimitOffset, "offset");
 
 #[cfg(test)]
