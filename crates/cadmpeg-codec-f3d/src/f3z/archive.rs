@@ -102,7 +102,7 @@ impl ArchiveSession {
         let root = outer.member_view(&arena, path)?;
         let local = self.member_checkpoint(path)?.resume(&arena);
         local.take_trace();
-        let scan = crate::container::scan(&local, root)?;
+        let scan = crate::container::scan_member(&local, root, path)?;
         work(&scan)
     }
 }
@@ -199,7 +199,7 @@ pub(super) fn classify_members<'a>(
                 root.and_then(|view| {
                     ctx.with_arena(&arena, |local| {
                         let member_scan = super::observer::timed(&mut timing.nested_scan, || {
-                            crate::container::scan(local, view)
+                            crate::container::scan_member(local, view, member_path)
                         })?;
                         Ok(super::observer::timed(&mut timing.layers, || {
                             crate::dialect::classify_layers(&member_scan)
