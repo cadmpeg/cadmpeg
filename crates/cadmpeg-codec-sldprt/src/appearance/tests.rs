@@ -200,7 +200,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
     colors.into_iter().map(|(_, color)| color).collect()
 }
 
-const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+const EPS_COLOR_COMPONENT: f64 = 1.0e-6;
 
 #[test]
 fn packed_rgb_uses_low_to_high_red_green_blue_bytes() {

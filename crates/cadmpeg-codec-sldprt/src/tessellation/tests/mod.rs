@@ -235,6 +235,7 @@ fn add_face(ir: &mut CadIr, name: &str, geometry: SurfaceGeometry, corners: [Poi
         id: surface_id.clone(),
         geometry,
         source_object: None,
+        native_ref: None,
     });
 
     let coedge_ids = (0..4)
@@ -257,6 +258,7 @@ fn add_face(ir: &mut CadIr, name: &str, geometry: SurfaceGeometry, corners: [Poi
             id: vertex_id,
             point: point_id,
             tolerance: None,
+            native_ref: None,
         });
     }
     for (index, origin) in corners.iter().copied().enumerate() {
@@ -273,15 +275,19 @@ fn add_face(ir: &mut CadIr, name: &str, geometry: SurfaceGeometry, corners: [Poi
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-            start: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
-                .expect("identity grammar"),
-            end: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{next}"))
-                .expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
+                    .expect("identity grammar"),
+                VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{next}"))
+                    .expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         ir.geometry.coedges.push(Coedge {
             id: coedge_ids[index].clone(),
@@ -291,6 +297,7 @@ fn add_face(ir: &mut CadIr, name: &str, geometry: SurfaceGeometry, corners: [Poi
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
     }
     ir.geometry.loops.push(Loop {
@@ -299,6 +306,7 @@ fn add_face(ir: &mut CadIr, name: &str, geometry: SurfaceGeometry, corners: [Poi
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
+        native_ref: None,
     });
     ir.geometry.faces.push(Face {
         id: face_id.clone(),
@@ -309,6 +317,7 @@ fn add_face(ir: &mut CadIr, name: &str, geometry: SurfaceGeometry, corners: [Poi
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     face_id
 }
@@ -463,6 +472,7 @@ fn add_cylindrical_patch_face(ir: &mut CadIr, name: &str, min_z: f64, max_z: f64
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     let vertex_ids = corners
@@ -483,6 +493,7 @@ fn add_cylindrical_patch_face(ir: &mut CadIr, name: &str, min_z: f64, max_z: f64
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
+                native_ref: None,
             });
             vertex_id
         })
@@ -538,13 +549,17 @@ fn add_cylindrical_patch_face(ir: &mut CadIr, name: &str, min_z: f64, max_z: f64
             id: curve_id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-            start: vertex_ids[index].clone(),
-            end: vertex_ids[next].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertex_ids[index].clone(),
+                vertex_ids[next].clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         ir.geometry.coedges.push(Coedge {
             id: coedge_ids[index].clone(),
@@ -554,6 +569,7 @@ fn add_cylindrical_patch_face(ir: &mut CadIr, name: &str, min_z: f64, max_z: f64
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
     }
     ir.geometry.loops.push(Loop {
@@ -562,6 +578,7 @@ fn add_cylindrical_patch_face(ir: &mut CadIr, name: &str, min_z: f64, max_z: f64
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
+        native_ref: None,
     });
     ir.geometry.faces.push(Face {
         id: face_id.clone(),
@@ -572,6 +589,7 @@ fn add_cylindrical_patch_face(ir: &mut CadIr, name: &str, min_z: f64, max_z: f64
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     face_id
 }
@@ -581,30 +599,30 @@ fn model_with_body() -> CadIr {
     ir.geometry.bodies = vec![Body {
         id: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("synthetic:test:region#region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     }];
     ir.geometry.regions = vec![Region {
         id: RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
         body: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
         shells: vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
+        native_ref: None,
     }];
 
     ir
 }
 
 fn set_shell_faces(ir: &mut CadIr, faces: Vec<FaceId>) {
-    ir.geometry.shells = vec![Shell::new(
-        ir.geometry.regions[0].shells[0].clone(),
-        ir.geometry.regions[0].id.clone(),
-        faces,
-        Vec::new(),
-        Vec::new(),
-    )
-    .unwrap()];
+    let shell = ir.geometry.regions[0].shells[0].clone();
+    ir.geometry.shells = vec![Shell::new(shell.clone(), ir.geometry.regions[0].id.clone())];
+    for face in &mut ir.geometry.faces {
+        if faces.contains(&face.id) {
+            face.shell = shell.clone();
+        }
+    }
 }
 
 fn persistent_mesh(id: &str) -> Tessellation {
