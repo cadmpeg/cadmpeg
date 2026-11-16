@@ -507,7 +507,7 @@ The `var_arr` coordinate lane also defines the sign pairs
 `7e→3F F3`/`c6→BF F3`, `7f→3F F4`/`c7→BF F4`,
 `80→3F F5`/`c8→BF F5`, and
 `97→40 0C`/`dd→C0 0C`. Each prefix is followed by the remaining six IEEE
-bytes. Prefix `51` maps to `3F C6`. The defined negative DICT members are
+bytes. The defined negative DICT members are
 `a7..ac→BF D3..D8`, `ae→BF DA`, `b3→BF E0`, `bd→BF EA`, `c3→BF F0`,
 `c6..ce→BF F3..FB`,
 `d0→BF FE`, `d2→C0 00`, `d4→C0 02`, `d6→C0 04`, `d8→C0 06`,
@@ -1383,8 +1383,8 @@ separator after the first parameter is one byte in `11..14`, or three bytes
 beginning with `00` or `34`; separator payload bytes are not scalar fields.
 The second parameter follows the separator.
 
-The six endpoint coordinates use the same first tabulated-cylinder
-directrix-coordinate lane in XYZ order. A complete endpoint sequence may end
+The six endpoint coordinates use the lane of the two edge parameters, with the
+same positive DICT prefixes, in XYZ order. A complete endpoint sequence may end
 at the body boundary or at `f7 <reference-id>`; a compound close may follow
 that sequence when another bounded body is present. The reference identifies
 the generated entity and does not supply a coordinate. The two triples are
@@ -1795,7 +1795,8 @@ The four point entities form the ordered cubic control polygon `P0, P1, P2, P3`.
 Each packed point body contains two directrix coordinates. A control point is
 numeric only when two defined scalar tokens consume its entire bounded body;
 partial scalar matches do not assign either coordinate.
-In the first-coordinate lane, prefixes `4b..a3` use the positive DICT mapping.
+In the first-coordinate lane, prefixes `4b..a3` outside the fixed forms of this
+paragraph use the positive DICT mapping.
 Negative prefixes `b3..cf`, `d0..dc`, `dd`, and `de..df` derive their two
 leading IEEE bytes by adding the prefix to `BF2D`, `BF2E`, `BF2F`, and `BF32`,
 respectively. Negative prefixes `a5..a6` and `a7..b2` add to `BF2B` and `BF2C`.

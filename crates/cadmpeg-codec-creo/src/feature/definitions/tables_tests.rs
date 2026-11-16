@@ -1256,3 +1256,25 @@ fn positional_dimensions_read_the_banded_positive_dict_heads() {
         assert_eq!(decoded.value.resolved(), Some(value));
     }
 }
+
+#[test]
+fn positional_dimension_prefix_51_reads_the_banded_head() {
+    let row = [1, 0x51, 0x26, 0x7b, 0xb5, 0xd4, 0x76, 0x65, 0, 0x18, 46];
+    let cache = scalar::ScalarCache::default();
+    let decoded =
+        positional_dimension(&row, 0, row.len(), &cache).expect("positive dictionary dimension");
+    assert_eq!(
+        decoded.value.resolved(),
+        Some(f64::from_be_bytes([
+            0x3f, 0xc3, 0x26, 0x7b, 0xb5, 0xd4, 0x76, 0x65,
+        ]))
+    );
+}
+
+#[test]
+fn variable_dict_scalar_stays_inside_its_end() {
+    let token = [0x54, 0x0a, 0x3d, 0x70, 0xa3, 0xd7, 0x0a];
+    let cache = scalar::ScalarCache::default();
+    let (lane, next) = decode_variable_scalar(&token, 0, 4, &cache);
+    assert!(next <= 4 || !matches!(lane, ScalarLane::Value(_)));
+}
