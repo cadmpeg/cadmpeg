@@ -308,3 +308,43 @@ fn expanded_section_above_the_local_ceiling_stays_compressed() {
 
 mod parent_features;
 mod unit_selection;
+
+#[test]
+fn banner_release_major_reads_the_creo_banner() {
+    let header = b"#UGC:2 PART 2149 1860 800 1 1 15 4100 2023294 000002cc \
+#-END_OF_UGC_HEADER
+";
+    for (banner, release) in [
+        (
+            &b"#Creo  TM  10.0  (c) 2023 by PTC Inc.  All Rights Reserved. 10.0.2.0
+"[..],
+            Some(10),
+        ),
+        (
+            &b"#Creo  TM  12  (c) 2025 by PTC Inc.  All Rights Reserved. 12.4.1.0
+"[..],
+            Some(12),
+        ),
+        (
+            &b"#Pro/ENGINEER  TM  Wildfire 5.0  (c) 2009
+"[..],
+            None,
+        ),
+        (
+            &b"#Creo  TM  x.0  (c)
+"[..],
+            None,
+        ),
+    ] {
+        let mut data = header.to_vec();
+        data.extend_from_slice(banner);
+        assert_eq!(super::banner_release_major(&data), release);
+    }
+    assert_eq!(
+        super::banner_release_major(
+            b"#Creo  TM  10.0
+"
+        ),
+        None
+    );
+}

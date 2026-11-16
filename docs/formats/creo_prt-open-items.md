@@ -1642,6 +1642,21 @@ and records that assumption.
 **Need.** Compare nonempty PMI unit fields with independently measured values
 to establish their conversion and precedence over the model unit.
 
+### PP-26. Limit attribute form of Creo 5 through 9
+
+**Question.** Which saving releases from Creo 5 through Creo 9 store
+`PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT` as absolute bounds, and which
+store them as deviations from the nominal?
+
+**Known.** `creo_prt.md` states the absolute form for banner releases 10 and
+later and the deviation form for banner releases 4 and earlier. For another
+release, or a file without a `#Creo  TM` banner release, the decoder reads the
+attributes as absolute bounds when they enclose the nominal and as deviations
+otherwise, and charges `pmi.dimension-limit-form-assumed`.
+
+**Need.** Dimensions with known limits in saves from each release from Creo 5
+through Creo 9.
+
 ## 6. Assembly component table
 
 ### AS-01. Other `ee` frame-slot fills

@@ -155,6 +155,7 @@ pub(super) fn transfer(
             dimension_targets: &dimension_targets,
         },
         scale.map(cadmpeg_ir::scalar::PositiveReal::get),
+        crate::container::banner_release_major(&scan.framing.data),
         ir,
         annotations,
         losses,

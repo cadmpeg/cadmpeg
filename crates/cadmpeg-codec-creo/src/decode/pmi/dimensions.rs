@@ -21,6 +21,17 @@ use super::elements::Element;
 
 const SYMMETRIC_LENGTH_LIMIT_ROUNDING_TOLERANCE_MM: f64 = 1.0e-9;
 const SYMMETRIC_ANGLE_LIMIT_ROUNDING_TOLERANCE_RAD: f64 = 1.0e-12;
+const LAST_DEVIATION_LIMIT_RELEASE: u32 = 4;
+const FIRST_ABSOLUTE_LIMIT_RELEASE: u32 = 10;
+
+/// How `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT` state a dimension's bounds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LimitForm {
+    /// The attributes are the lower and upper bounds.
+    Absolute,
+    /// The attributes are unsigned deviations below and above the nominal.
+    Deviation,
+}
 
 #[derive(Default)]
 struct DimensionFields<'a> {
@@ -57,6 +68,7 @@ pub(super) fn transfer(
     attributes: &[Option<Attribute<'_>>],
     index: &AnnotationIndex<'_>,
     length_scale_mm: Option<f64>,
+    release_major: Option<u32>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<LossNote>,
@@ -97,6 +109,7 @@ pub(super) fn transfer(
     let mut edge_targets = 0usize;
     let mut conflicting = 0usize;
     let mut assumed_angular_units = 0usize;
+    let mut assumed_limit_forms = 0usize;
     for (owner, fields) in fields_by_owner {
         let Some(kind) = fields.kind else {
             unresolved += 1;
@@ -151,8 +164,10 @@ pub(super) fn transfer(
             },
             None => None,
         };
+        let (form, assumed_form) = limit_form(release_major, &fields);
+        assumed_limit_forms += usize::from(assumed_form);
         let (tolerance, unresolved_tolerance) =
-            tolerance(&fields, fields.nominal, quantity, length_scale);
+            tolerance(&fields, fields.nominal, form, quantity, length_scale);
         unresolved += usize::from(unresolved_tolerance);
         let definition = match PmiDimension::new(dimension_kind.clone(), nominal, tolerance) {
             Ok(definition) => definition,
@@ -267,6 +282,11 @@ pub(super) fn transfer(
             "{assumed_length_kinds} dimension(s) with an unknown kind use length values by assumption."
         )));
     }
+    if assumed_limit_forms != 0 {
+        losses.push(CreoLossCode::PmiDimensionLimitFormAssumed.note(format!(
+            "{assumed_limit_forms} dimension(s) read their limit attributes as absolute bounds when they enclose the nominal and as deviations otherwise; the saving release does not select the form."
+        )));
+    }
     if assumed_angular_units != 0 {
         losses.push(CreoLossCode::PmiAngularUnitAssumed.note(format!(
             "{assumed_angular_units} angular dimension(s) use stored radians by assumption."
@@ -368,15 +388,53 @@ fn value_for(value: f64, quantity: PmiQuantity, length_scale: f64) -> Option<Pmi
     PmiValue::new(value, quantity)
 }
 
+/// The limit form a dimension uses, and whether the saving release left it unselected.
+fn limit_form(release_major: Option<u32>, fields: &DimensionFields<'_>) -> (LimitForm, bool) {
+    match release_major {
+        Some(release) if release <= LAST_DEVIATION_LIMIT_RELEASE => (LimitForm::Deviation, false),
+        Some(release) if release >= FIRST_ABSOLUTE_LIMIT_RELEASE => (LimitForm::Absolute, false),
+        _ => {
+            let form = match (fields.nominal, fields.lower_limit, fields.upper_limit) {
+                (Some(nominal), Some(lower), Some(upper))
+                    if !(lower <= nominal && nominal <= upper) =>
+                {
+                    LimitForm::Deviation
+                }
+                _ => LimitForm::Absolute,
+            };
+            (
+                form,
+                fields.lower_limit.is_some() || fields.upper_limit.is_some(),
+            )
+        }
+    }
+}
+
+/// The lower and upper bounds the limit attributes state, in source units.
+fn absolute_limits(
+    fields: &DimensionFields<'_>,
+    nominal: Option<f64>,
+    form: LimitForm,
+) -> Option<(f64, f64)> {
+    let lower = fields.lower_limit?;
+    let upper = fields.upper_limit?;
+    match form {
+        LimitForm::Absolute => Some((lower, upper)),
+        LimitForm::Deviation => nominal.map(|nominal| (nominal - lower, nominal + upper)),
+    }
+}
+
 fn tolerance(
     fields: &DimensionFields<'_>,
     nominal: Option<f64>,
+    form: LimitForm,
     quantity: PmiQuantity,
     length_scale: f64,
 ) -> (Option<DimensionTolerance>, bool) {
+    let limits = absolute_limits(fields, nominal, form);
     match fields.mode {
-        Some(b"Limits") => match (fields.lower_limit, fields.upper_limit) {
-            (Some(lower), Some(upper)) => match (
+        Some(b"Limits") => match limits {
+            Some((lower, upper)) => match (
                 value_for(lower, quantity, length_scale),
                 value_for(upper, quantity, length_scale),
             ) {
@@ -390,8 +448,7 @@ fn tolerance(
         Some(b"+- Symmetric") => {
             let magnitude = fields.tolerance.or_else(|| {
                 let nominal = nominal?;
-                let lower = fields.lower_limit?;
-                let upper = fields.upper_limit?;
+                let (lower, upper) = limits?;
                 let lower_deviation = (lower - nominal).abs();
                 let upper_deviation = (upper - nominal).abs();
                 let (lower_comparison, upper_comparison, rounding_tolerance) = match quantity {
@@ -427,8 +484,8 @@ fn tolerance(
         Some(b"Plus-Minus") => {
             let (upper, lower) = match (fields.upper_tolerance, fields.lower_tolerance) {
                 (Some(upper), Some(lower)) => (upper.abs(), lower.abs()),
-                _ => match (nominal, fields.lower_limit, fields.upper_limit) {
-                    (Some(nominal), Some(lower), Some(upper)) => {
+                _ => match (nominal, limits) {
+                    (Some(nominal), Some((lower, upper))) => {
                         ((upper - nominal).abs(), (lower - nominal).abs())
                     }
                     _ => return (None, true),
@@ -466,8 +523,18 @@ fn tolerance(
 
 #[cfg(test)]
 mod tests {
-    use super::{add_attribute, dimension_kind, tolerance, Attribute, DimensionFields, Value};
-    use cadmpeg_ir::pmi::{DimensionKind, DimensionTolerance, PmiQuantity, PmiValue};
+    use super::{
+        add_attribute, dimension_kind, tolerance, transfer, AnnotationIndex, Attribute,
+        DimensionFields, Element, LimitForm, Value,
+    };
+    use crate::loss::CreoLossCode;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::pmi::{
+        DimensionKind, DimensionTolerance, PmiDefinition, PmiQuantity, PmiValue,
+    };
+    use cadmpeg_ir::report::loss::LossNote;
+    use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::BTreeMap;
     use std::f64::consts::PI;
 
     const VALUE_TOLERANCE: f64 = 1.0e-12;
@@ -494,7 +561,8 @@ mod tests {
             PmiQuantity::Length
         };
         let raw_nominal = fields.nominal;
-        let (tolerance, unresolved) = tolerance(fields, raw_nominal, quantity, 1.0);
+        let (tolerance, unresolved) =
+            tolerance(fields, raw_nominal, LimitForm::Absolute, quantity, 1.0);
         let nominal =
             raw_nominal.map(|value| PmiValue::new(value, quantity).expect("finite nominal"));
         (nominal, tolerance, unresolved, dimension_kind)
@@ -639,7 +707,13 @@ mod tests {
         close(fields.nominal.expect("preserved nominal"), 85.0);
         close(fields.upper_tolerance.expect("first tolerance"), 0.01);
         assert!(fields.duplicate);
-        let (tolerance, unresolved) = tolerance(&fields, fields.nominal, PmiQuantity::Length, 1.0);
+        let (tolerance, unresolved) = tolerance(
+            &fields,
+            fields.nominal,
+            LimitForm::Absolute,
+            PmiQuantity::Length,
+            1.0,
+        );
         assert!(tolerance.is_none());
         assert!(unresolved);
     }
@@ -663,6 +737,124 @@ mod tests {
             close(nominal.expect("nominal").value.get(), expected_nominal);
             assert!(tolerance.is_none());
             assert!(unresolved);
+        }
+    }
+
+    fn transferred_tolerance(
+        mode: &'static [u8],
+        lower: f64,
+        upper: f64,
+        release_major: Option<u32>,
+    ) -> (Option<DimensionTolerance>, Vec<LossNote>) {
+        let attribute = |name: &'static [u8], value, offset| Attribute {
+            name,
+            value,
+            owner: Some(9),
+            owner_type: Some(3),
+            unit: b"",
+            offset,
+        };
+        let attributes = [
+            Some(attribute(b"PTC_DIM_TYPE", Value::Text(b"Diameter"), 10)),
+            Some(attribute(
+                b"PTC_DIM_NOMINAL_VAL",
+                Value::Real(Some(35.0)),
+                20,
+            )),
+            Some(attribute(b"PTC_TOLERANCE_MODE", Value::Text(mode), 30)),
+            Some(attribute(
+                b"PTC_DIM_LOWER_LIMIT",
+                Value::Real(Some(lower)),
+                40,
+            )),
+            Some(attribute(
+                b"PTC_DIM_UPPER_LIMIT",
+                Value::Real(Some(upper)),
+                50,
+            )),
+        ];
+        let elements = [(
+            "BasFullData",
+            vec![Some(Element {
+                owner: 9,
+                owner_type: 3,
+                annotation: None,
+                annotation_type: Some(8),
+            })],
+        )];
+        let dimension_targets = BTreeMap::new();
+        let index = AnnotationIndex {
+            elements: &elements,
+            dimension_targets: &dimension_targets,
+        };
+        let mut ir = CadIr::empty();
+        let mut losses = Vec::new();
+        crate::decode::with_service_context(|ctx| {
+            transfer(
+                ctx,
+                &attributes,
+                &index,
+                Some(1.0),
+                release_major,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &mut losses,
+            )
+        })
+        .expect("dimension transfers");
+        let [annotation] = ir.model.pmi.as_slice() else {
+            panic!("one dimension")
+        };
+        let PmiDefinition::Dimension(dimension) = &annotation.definition else {
+            panic!("dimension definition")
+        };
+        (dimension.tolerance().cloned(), losses)
+    }
+
+    fn limit_form_losses(losses: &[LossNote]) -> usize {
+        losses
+            .iter()
+            .filter(|loss| loss.code == CreoLossCode::PmiDimensionLimitFormAssumed.kind())
+            .count()
+    }
+
+    #[test]
+    fn creo_4_limits_are_deviations_and_creo_10_limits_are_bounds() {
+        for (release, lower, upper) in [(4, 0.2, 0.2), (10, 34.8, 35.2)] {
+            let (tolerance, losses) = transferred_tolerance(b"Limits", lower, upper, Some(release));
+            let Some(DimensionTolerance::Limits { lower, upper }) = tolerance else {
+                panic!("limit tolerance")
+            };
+            close(lower.value.get(), 34.8);
+            close(upper.value.get(), 35.2);
+            assert_eq!(limit_form_losses(&losses), 0);
+        }
+    }
+
+    #[test]
+    fn plus_minus_without_tolerance_values_reads_the_release_limit_form() {
+        for (release, lower, upper) in [(4, 0.2, 0.2), (10, 34.8, 35.2)] {
+            let (tolerance, losses) =
+                transferred_tolerance(b"Plus-Minus", lower, upper, Some(release));
+            let Some(DimensionTolerance::PlusMinus { lower, upper }) = tolerance else {
+                panic!("plus-minus tolerance")
+            };
+            close(lower.value.get(), -0.2);
+            close(upper.value.get(), 0.2);
+            assert_eq!(limit_form_losses(&losses), 0);
+        }
+    }
+
+    #[test]
+    fn limits_without_a_selecting_release_follow_the_nominal_and_are_charged() {
+        for (release, lower, upper) in [(None, 0.2, 0.2), (Some(7), 34.8, 35.2)] {
+            let (tolerance, losses) = transferred_tolerance(b"Limits", lower, upper, release);
+            let Some(DimensionTolerance::Limits { lower, upper }) = tolerance else {
+                panic!("limit tolerance")
+            };
+            close(lower.value.get(), 34.8);
+            close(upper.value.get(), 35.2);
+            assert_eq!(limit_form_losses(&losses), 1);
         }
     }
 }
