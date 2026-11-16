@@ -2265,7 +2265,8 @@ fn try_decode_standard_population(
                     id: id.clone(),
                     geometry,
                     source_object: Some(admitted!(cgm_source( "carrier", *tag))),
-                 native_ref: None, });
+                    native_ref: None,
+                });
                 if let Some(procedure) = admitted!(freeform_procedural_surfaces.get(tag)
                     .map(copy_standard_procedure).transpose()) {
                     procedural_surface_plans.push((i, id, *tag, procedure));
@@ -2326,7 +2327,8 @@ fn try_decode_standard_population(
                     id,
                     geometry: geom,
                     source_object: Some(admitted!(cgm_source("carrier", prefix.target))),
-                 native_ref: None, });
+                    native_ref: None,
+                });
             }
             None => {
                 if prefix.kind == AnalyticSurfaceKind::Plane {
@@ -2353,7 +2355,8 @@ fn try_decode_standard_population(
                         record: Some(admitted!(UnknownId::mint(("catia:payload:unknown#brep-stream").to_owned()).map_err(cadmpeg_core::CodecError::malformed))),
                     }),
                     source_object: Some(admitted!(cgm_source("carrier", prefix.target))),
-                 native_ref: None, });
+                    native_ref: None,
+                });
             }
         }
     }
@@ -2414,7 +2417,8 @@ fn try_decode_standard_population(
                                 id: id.clone(),
                                 geometry: support,
                                 source_object: Some(source_object),
-                             native_ref: None, });
+                                native_ref: None,
+                            });
                             procedural_supports.insert(support_object_id, id.clone());
                             id
                         }
@@ -2436,7 +2440,8 @@ fn try_decode_standard_population(
                                 record: None,
                             }),
                             source_object: Some(admitted!(cgm_source("surface", support_object_id))),
-                         native_ref: None, });
+                            native_ref: None,
+                        });
                         let definition = match emit_standard_extrusion_definition(&mut ir, &mut annotations, (&mut surfaces, &mut procedural_supports), &mut extrusion_definitions, *extrusion, &mut admission) {
                             Ok(definition) => definition,
                             Err(error) => return Some(Err(error)),
@@ -2529,7 +2534,8 @@ fn try_decode_standard_population(
                         revolution.directrix,
                     )),
                     source_object: None,
-                 native_ref: None, });
+                    native_ref: None,
+                });
                 (
                     "object_stream_b5_03_2d",
                     tag,
@@ -2620,7 +2626,8 @@ fn try_decode_standard_population(
             id: vertex_id,
             point: point_id,
             tolerance: None,
-         native_ref: None, });
+            native_ref: None,
+        });
     }
     for (id, stream, offset, tag, exactness) in surface_annotations {
         admitted!(annotate(&mut annotations, &id, stream, u64_from_index(offset), tag, exactness));
@@ -6548,7 +6555,8 @@ refusal)?
                             ),
                             None,
                         ),
-                     native_ref: None, });
+                        native_ref: None,
+                    });
                     Ok((id, range))
                 })
                 .transpose()?;

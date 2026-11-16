@@ -206,6 +206,15 @@ impl Brep {
                 bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces,
                 curves, pcurves
             );
+            for region in &self.asm.regions {
+                insert_brep_adjacency(&mut adjacency, region.body.as_str(), region.id.as_str());
+            }
+            for shell in &self.asm.shells {
+                insert_brep_adjacency(&mut adjacency, shell.region.as_str(), shell.id.as_str());
+            }
+            for face in &self.asm.faces {
+                insert_brep_adjacency(&mut adjacency, face.shell.as_str(), face.id.as_str());
+            }
             macro_rules! native_dependencies {
                 ($($field:ident => $owner:ident),*) => {$(
                     for row in &self.asm.$field {

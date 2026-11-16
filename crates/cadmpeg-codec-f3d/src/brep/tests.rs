@@ -599,10 +599,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         let face = entity(3, 1);
         let ring = entity(4, 1);
         asm.bodies.push(
-            serde_json::from_value(
-                serde_json::json!({"id": body, "kind": "solid", "regions": [region]}),
-            )
-            .unwrap(),
+            serde_json::from_value(serde_json::json!({"id": body, "kind": "solid"})).unwrap(),
         );
         asm.regions.push(Region {
             id: RegionId::mint(region.clone()).unwrap(),

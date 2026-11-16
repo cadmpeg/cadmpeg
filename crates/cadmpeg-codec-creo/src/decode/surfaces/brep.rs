@@ -3790,7 +3790,8 @@ pub(in super::super) fn transfer_native_brep(
                                     id: crate::identity::copy_checked_id(pcurve.as_str())?,
                                     geometry,
                                     metadata,
-                                 native_ref: None, };
+                                    native_ref: None,
+                                };
                                 if intersection_pcurve {
                                     ir.geometry.pcurves.push(record);
                                 } else {

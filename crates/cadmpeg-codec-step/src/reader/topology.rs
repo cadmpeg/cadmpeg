@@ -2692,6 +2692,7 @@ fn build_one(
             return Err(BuildError::Absent);
         }
         let sid = shell_identity(id, shell_step, scope_root);
+        let first_face = faces.len();
         let mut face_ids = vec![];
         for face_step in face_steps.iter().filter_map(Value::reference) {
             if used_faces.contains(&(shell_step, face_step)) {
@@ -3341,7 +3342,7 @@ fn build_one(
                 ))
             };
             for face_index in component {
-                faces[face_index].shell = component_shell.clone();
+                faces[first_face + face_index].shell = component_shell.clone();
             }
             shells.push(Shell::new(component_shell.clone(), rid.clone()));
             region.shells.push(component_shell);

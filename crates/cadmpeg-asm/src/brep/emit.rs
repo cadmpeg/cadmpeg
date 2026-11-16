@@ -146,7 +146,7 @@ use super::geometry::{
     tolerant_coedge_extension, vertex_point_ref,
 };
 use super::topology::{
-    loop_chain, ring_coedges, shell_chain, shell_faces, subshell_ancestor_shells,
+    loop_chain, region_chain, ring_coedges, shell_chain, shell_faces, subshell_ancestor_shells,
 };
 use super::{id, inherited_attribute_target, AsmBrep, Carriers, Reachable, WireShellTopology};
 const EPS_EMIT_EMIT_EDGES_E9: f64 = 1.0e-9;
@@ -1039,7 +1039,8 @@ fn emit_loft_surface(
                                                 SolvedCurveGeometry::Nurbs(geometry)
                                             ),
                                             source_object: None,
-                                         native_ref: None, });
+                                            native_ref: None,
+                                        });
                                     id
                                 })
                             },
@@ -3624,7 +3625,8 @@ fn emit_carrier_curve(
                                 id: curve.clone(),
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                                 source_object: None,
-                             native_ref: None, });
+                                native_ref: None,
+                            });
                             cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve }
                         }
                         crate::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference {
@@ -5135,6 +5137,7 @@ pub fn emit_containers(
             free_vertices,
         );
         out.shells.push(shell);
+        out.chain_order.shell_faces.insert(i, faces);
         emitted_shells.insert(i);
     }
     for r in records.iter().filter(|record| record.head() != "shell") {
@@ -5155,6 +5158,9 @@ pub fn emit_containers(
                 });
             }
             "body" => {
+                out.chain_order
+                    .body_regions
+                    .insert(i, region_chain(r, by_index, format));
                 let body_id = <BodyId>::from(id(format, i));
                 if let Some(Token::Long(key)) = r.chunk(1) {
                     out.body_native_keys.push(BodyNativeKey {

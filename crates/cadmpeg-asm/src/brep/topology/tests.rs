@@ -41,6 +41,12 @@ fn chains_list_only_children_that_are_emitted() {
         .collect();
     let format = crate::asm_format!("f3d");
     {
+        let regions = super::region_chain(&records[0], &by_index, format);
+        assert_eq!(
+            regions.len(),
+            1,
+            "a lump owned by another body ends the chain"
+        );
         let shells = super::shell_chain(
             &records[1],
             &by_index,
@@ -48,6 +54,8 @@ fn chains_list_only_children_that_are_emitted() {
             format,
         );
         assert_eq!(shells.len(), 1, "a face record is not a shell");
+        let missing = ref_record(5, "body", &[-1, -1, -1, 7]);
+        assert!(super::region_chain(&missing, &by_index, format).is_empty());
     };
 }
 

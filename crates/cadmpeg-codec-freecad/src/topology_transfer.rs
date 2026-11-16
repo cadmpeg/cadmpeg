@@ -1137,7 +1137,8 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                             })
                         })
                         .collect::<Result<Vec<_>, CodecError>>()?,
-                 native_ref: None, });
+                        native_ref: None,
+                    });
                 placed_uses.push((edge, use_sense));
             }
             let ends = placed_uses

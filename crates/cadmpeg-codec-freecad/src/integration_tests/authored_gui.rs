@@ -137,11 +137,18 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
             .find(|binding| binding.target == target)
             .expect("every source shell face has an appearance binding");
         let appearance = appearance(&binding.appearance);
+        let color = appearance.base_color.expect("face material color");
+        let expected = expected_face_colors[face_index];
         assert_eq!(
-            appearance.base_color,
-            Some(expected_face_colors[face_index]),
+            [color.r(), color.g(), color.b()],
+            [expected.r(), expected.g(), expected.b()],
             "authored palette color for source-ordered face {}",
             face_index + 1
+        );
+        assert!(
+            (color.a() - expected.a()).abs() < TRANSPARENCY_TOLERANCE,
+            "face opacity {}",
+            color.a()
         );
         let transparency = appearance
             .properties

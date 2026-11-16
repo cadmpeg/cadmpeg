@@ -9529,12 +9529,35 @@ fn historical_topology(
             .or_default()
             .push(region.id.as_str());
     }
+    for body in &brep.bodies {
+        if let Some(chain) = stable_ref(body.id.as_str())
+            .and_then(|record| brep.chain_order.body_regions.get(&record))
+        {
+            regions_by_body.insert(
+                body.id.as_str(),
+                chain
+                    .iter()
+                    .map(cadmpeg_ir::ids::RegionId::as_str)
+                    .collect(),
+            );
+        }
+    }
     let mut faces_by_shell = HashMap::<&str, Vec<&str>>::new();
     for face in &brep.faces {
         faces_by_shell
             .entry(face.shell.as_str())
             .or_default()
             .push(face.id.as_str());
+    }
+    for shell in &brep.shells {
+        if let Some(chain) = stable_ref(shell.id.as_str())
+            .and_then(|record| brep.chain_order.shell_faces.get(&record))
+        {
+            faces_by_shell.insert(
+                shell.id.as_str(),
+                chain.iter().map(cadmpeg_ir::ids::FaceId::as_str).collect(),
+            );
+        }
     }
     let mut ring_neighbors = HashMap::new();
     for loop_ in &brep.loops {

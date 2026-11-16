@@ -2030,7 +2030,8 @@ fn append_legacy_brep(
                             .transpose()
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
-                 native_ref: None, });
+                    native_ref: None,
+                });
                 let coedge_id = cadmpeg_ir::ids::CoedgeId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "coedge"),
                     legacy_identity_key(format!(

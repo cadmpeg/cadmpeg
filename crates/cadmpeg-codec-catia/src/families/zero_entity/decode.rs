@@ -873,7 +873,8 @@ pub(in crate::families) fn try_decode_zero_entity(
             id: id.clone(),
             geometry: surface.geometry,
             source_object: None,
-         native_ref: None, });
+            native_ref: None,
+        });
         surface_ids_by_position.insert(surface.pos, id);
     }
 
@@ -902,7 +903,8 @@ pub(in crate::families) fn try_decode_zero_entity(
                     id: curve_id.clone(),
                     geometry,
                     source_object: None,
-                 native_ref: None, });
+                    native_ref: None,
+                });
                 support_curve_ids.insert(support.record_ordinal, curve_id);
                 transferred_support_curves += 1;
                 continue;
@@ -995,7 +997,8 @@ pub(in crate::families) fn try_decode_zero_entity(
                     cache: None,
                 },
                 source_object: None,
-             native_ref: None, });
+                native_ref: None,
+            });
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }

@@ -90,6 +90,7 @@ pub fn transfer_into_ir<'ir>(
         unknowns,
         stats,
         annotation_records,
+        chain_order: _,
     } = brep;
     super::subsets::localize_subsets(&mut curves, &mut edges, &mut coedges, &procedural_curves)?;
 

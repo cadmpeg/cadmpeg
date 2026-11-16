@@ -1285,7 +1285,7 @@ fn bounded_circle_arcs_prove_disjoint_cap_holes() {
     let mut native = CadIr::empty();
     native.geometry.bodies.push(
         serde_json::from_value(serde_json::json!({
-            "id": "creo:visibgeom:body#2", "kind": "solid", "regions": ["creo:visibgeom:region#3"]
+            "id": "creo:visibgeom:body#2", "kind": "solid"
         }))
         .expect("native body"),
     );
@@ -1297,9 +1297,7 @@ fn bounded_circle_arcs_prove_disjoint_cap_holes() {
     );
     native.geometry.shells.push(
         serde_json::from_value(serde_json::json!({
-            "id": "creo:visibgeom:shell#6", "region": "creo:visibgeom:region#3", "members": [
-                {"kind": "face", "id": "creo:visibgeom:face#1"}
-            ]
+            "id": "creo:visibgeom:shell#6", "region": "creo:visibgeom:region#3", "members": []
         }))
         .expect("native shell"),
     );

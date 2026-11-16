@@ -186,7 +186,8 @@ pub(in crate::families) fn try_decode_e5(
                 id: vertex_id,
                 point: point_id,
                 tolerance: None,
-             native_ref: None, });
+                native_ref: None,
+            });
         }
         for (index, circle) in circles.iter().enumerate() {
             let id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "e5", "curve"), index, CurveId::mint));
@@ -199,7 +200,8 @@ parameter_range: None,
                 id,
                 geometry: circle.geometry.clone(),
                 source_object: None,
-             native_ref: None, });
+                native_ref: None,
+            });
         }
         for (index, surface) in surfaces.iter().enumerate() {
             let id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "e5", "surf"), index, SurfaceId::mint));
@@ -218,7 +220,8 @@ parameter_range: None,
                 id,
                 geometry: surface.geometry.clone(),
                 source_object: None,
-             native_ref: None, });
+                native_ref: None,
+            });
         }
         for (index, jet) in rolling_ball_jets.iter().enumerate() {
             let surface_index = surfaces.len() + index;
@@ -247,7 +250,8 @@ parameter_range: None,
                     cache: None,
                 },
                 source_object: None,
-             native_ref: None, });
+                native_ref: None,
+            });
             admitted!(annotate(&mut annotations, &procedural_id, "e5_0d_03", u64_from_index(jet.pos), "rolling_ball_jet_definition", Exactness::ByteExact));
             admitted!(annotations.derived(&procedural_id, "surface").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations.derived(&procedural_id, "definition").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
@@ -2085,7 +2089,8 @@ fn emit_e5_pcurves(
                 ),
                 None,
             ),
-         native_ref: None, });
+            native_ref: None,
+        });
     }
     Ok(())
 }

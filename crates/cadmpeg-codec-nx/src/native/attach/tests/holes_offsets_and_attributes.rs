@@ -1197,8 +1197,11 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
+                let mut seen = std::collections::HashSet::new();
                 for face in ir.geometry.shell_faces(&shell.id) {
-                    faces.push((face.id.clone(), face.surface.clone()));
+                    if seen.insert(&face.id) {
+                        faces.push((face.id.clone(), face.surface.clone()));
+                    }
                 }
             }
         }

@@ -670,7 +670,8 @@ pub(super) fn try_decode_freeform_surfaces(
                     id,
                     geometry: surface.geometry,
                     source_object: Some(surface.source_object),
-                 native_ref: None, });
+                    native_ref: None,
+                });
             }
         }
         // The bindings this call returns are read by the standard-family route
@@ -765,7 +766,8 @@ pub(super) fn try_decode_freeform_surfaces(
                     "b2-nurbs-curve-frame",
                     format_args!("{:010}", curve.pos)
                 ))),
-             native_ref: None, });
+                native_ref: None,
+            });
             standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
         }
         for curve in a5_nurbs_curves {
@@ -792,7 +794,8 @@ pub(super) fn try_decode_freeform_surfaces(
                     "a5-nurbs-curve-frame",
                     format_args!("{:010}", curve.pos)
                 ))),
-             native_ref: None, });
+                native_ref: None,
+            });
             standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
         }
         for circle in b2_spatial_circles {
@@ -833,7 +836,8 @@ pub(super) fn try_decode_freeform_surfaces(
                     "b2-spatial-circle-frame",
                     format_args!("{:010}", circle.pos)
                 ))),
-             native_ref: None, });
+                native_ref: None,
+            });
             standalone_wires.push((id, parameter_range, circle.pos));
         }
         let wire_topology_transferred = if !topology_transferred

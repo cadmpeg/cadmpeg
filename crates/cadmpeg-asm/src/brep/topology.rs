@@ -11,8 +11,8 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    CoedgeId, EdgeId, FaceId, LoopId, ProceduralCurveId, ProceduralSurfaceId, ShellId, SurfaceId,
-    VertexId,
+    CoedgeId, EdgeId, FaceId, LoopId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
+    SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
@@ -1090,6 +1090,28 @@ pub(super) fn shell_chain(
             out.push(id(si));
         }
         cur = s.ref_at(3);
+    }
+    out
+}
+
+pub(super) fn region_chain(
+    body_rec: &Record,
+    by_index: &HashMap<i64, &Record>,
+    format: IdFormat,
+) -> Vec<RegionId> {
+    let id = |i: i64| RegionId::from(super::id(format, i));
+    let mut out = Vec::new();
+    let mut cur = body_rec.ref_at(3);
+    let mut guard = HashSet::new();
+    while let Some(li) = cur {
+        if !guard.insert(li) {
+            break;
+        }
+        let Some(l) = owned_child(by_index, li, &["region", "lump"], 5, body_rec) else {
+            break;
+        };
+        out.push(id(li));
+        cur = l.ref_at(3);
     }
     out
 }

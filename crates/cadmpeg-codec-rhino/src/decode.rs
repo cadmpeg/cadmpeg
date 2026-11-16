@@ -3398,7 +3398,8 @@ impl<'a> DecodeContext<'a> {
                         boundary.boundary.lateral.clone(),
                     )),
                     source_object: Some(association.clone()),
-                 native_ref: None, });
+                    native_ref: None,
+                });
                 candidate
                     .geometry
                     .add_procedural_surface(&surface_id, cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
@@ -4163,7 +4164,8 @@ fn stage_extrusion_caps(
                     ),
                     None,
                 ),
-             native_ref: None, });
+                native_ref: None,
+            });
             ir.geometry.coedges.push(Coedge {
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),

@@ -884,6 +884,12 @@ macro_rules! declare_document_arenas {
                 $(for entity in self.$home.$field.iter() {
                     graph.references(entity)?;
                 })*
+                for region in &self.geometry.regions {
+                    graph.child(region.body.as_str(), region.id.as_str());
+                }
+                for face in &self.geometry.faces {
+                    graph.child(face.shell.as_str(), face.id.as_str());
+                }
                 Ok(graph)
             }
         }

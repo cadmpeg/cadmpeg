@@ -1735,7 +1735,15 @@ mod tests {
         };
         assert_eq!(
             appearance.base_color,
-            Some(Color::new(0.2, 0.4, 0.6, 0.8).expect("valid color"))
+            Some(
+                Color::new(
+                    f64::from(0.2_f32),
+                    f64::from(0.4_f32),
+                    f64::from(0.6_f32),
+                    f64::from(0.8_f32)
+                )
+                .expect("valid color")
+            )
         );
         let [binding] = projection.bindings.as_slice() else {
             panic!("one face binding must be projected");

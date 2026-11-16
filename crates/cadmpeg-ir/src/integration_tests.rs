@@ -225,7 +225,8 @@ proptest! {
                 id: "prop:test:vertex#dangling".try_into().expect("valid identity"),
                 point: PointId::mint("x:y:z#missing").expect("valid identity"),
                 tolerance: None,
-             native_ref: None, });
+                native_ref: None,
+            });
             broken.finalize();
             let report = validate_neutral(&broken, Vec::new()).expect("validate the neutral model");
             prop_assert!(
@@ -264,7 +265,8 @@ proptest! {
                 id: vertex_id.clone().try_into().expect("valid identity"),
                 point: missing.try_into().expect("valid identity"),
                 tolerance: None,
-             native_ref: None, })
+                native_ref: None,
+            })
             .unwrap();
         let mut base = CadIr::empty();
         let dangling_result = dangling.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap();
