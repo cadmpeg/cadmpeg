@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fixture trees for the declaration index and the optional-field census.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use crate::optional_absence_census;
@@ -19,13 +20,25 @@ impl Fixture {
         if root.exists() {
             std::fs::remove_dir_all(&root).expect("clear a stale fixture");
         }
-        let mut files = files.to_vec();
-        for root in [
-            "crates/cadmpeg-core/src/lib.rs",
-            "crates/cadmpeg-asm/src/lib.rs",
+        let mut files: Vec<(&str, String)> = files
+            .iter()
+            .map(|(path, text)| (*path, (*text).to_owned()))
+            .collect();
+        let mut defaults = vec![
+            ("crates/cadmpeg-core/src/lib.rs", String::new()),
+            ("crates/cadmpeg-asm/src/lib.rs", String::new()),
+            ("Cargo.toml", WORKSPACE_MANIFEST.to_owned()),
+        ];
+        for (manifest, package) in [
+            ("crates/cadmpeg-ir/Cargo.toml", "cadmpeg-ir"),
+            ("crates/cadmpeg-core/Cargo.toml", "cadmpeg-core"),
+            ("crates/cadmpeg-asm/Cargo.toml", "cadmpeg-asm"),
         ] {
-            if !files.iter().any(|(path, _)| *path == root) {
-                files.push((root, ""));
+            defaults.push((manifest, crate_manifest(package)));
+        }
+        for (path, text) in defaults {
+            if !files.iter().any(|(stated, _)| *stated == path) {
+                files.push((path, text));
             }
         }
         for (path, text) in files {
@@ -40,6 +53,40 @@ impl Fixture {
     fn offenders(&self) -> Vec<String> {
         optional_absence_census(&self.root).1
     }
+}
+
+/// The workspace a fixture's crates belong to: each wire crate a reader path
+/// can name, and the registry crates its paths spell.
+const WORKSPACE_MANIFEST: &str = r#"[workspace]
+[workspace.dependencies]
+cadmpeg-ir = { path = "crates/cadmpeg-ir" }
+cadmpeg-core = { path = "crates/cadmpeg-core" }
+cadmpeg-asm = { path = "crates/cadmpeg-asm" }
+serde = "1"
+serde_json = "1"
+serde_bytes = "0.11"
+"#;
+
+/// A wire crate's manifest, depending on every other crate the workspace states.
+fn crate_manifest(package: &str) -> String {
+    [
+        "cadmpeg-ir",
+        "cadmpeg-core",
+        "cadmpeg-asm",
+        "serde",
+        "serde_json",
+        "serde_bytes",
+    ]
+    .into_iter()
+    .filter(|dependency| *dependency != package)
+    .fold(
+        format!("[package]\nname = \"{package}\"\n[dependencies]\n"),
+        |mut manifest, dependency| {
+            writeln!(manifest, "{dependency}.workspace = true")
+                .expect("writing to a String does not fail");
+            manifest
+        },
+    )
 }
 
 impl Drop for Fixture {
@@ -82,6 +129,79 @@ fn same_named_types_in_two_modules_are_each_their_own_writer() {
                 .contains("admits null, but cadmpeg_ir::design::Sketch skips the key for None"),
         "{offenders:#?}"
     );
+}
+
+/// A field reader named by `cadmpeg_core::` is that crate's reader only
+/// where nothing in the reading crate binds the root otherwise. A
+/// `named_optional_field!` shim's macro path is resolved the same way.
+#[test]
+fn a_helper_whose_root_binds_another_item_states_no_spelling() {
+    let local = "mod other { pub mod absent_key { pub fn nullable<'de, D, T>(_: D) -> Result<Option<T>, D::Error> where D: serde::Deserializer<'de> { Ok(None) } } }\n";
+    let renamed = "[package]\nname = \"cadmpeg-ir\"\n[dependencies]\ncadmpeg_core = { package = \"evil\", path = \"../evil\" }\n";
+    let moved =
+        "[package]\nname = \"cadmpeg-ir\"\n[dependencies]\ncadmpeg-core = { path = \"../evil\" }\n";
+    for (case, prefix, manifest) in [
+        (
+            "a local module",
+            format!("mod cadmpeg_core {{ {local} }}"),
+            None,
+        ),
+        (
+            "a use rename",
+            format!("{local} use other as cadmpeg_core;"),
+            None,
+        ),
+        (
+            "an extern crate rename",
+            "extern crate serde_json as cadmpeg_core;".to_owned(),
+            None,
+        ),
+        (
+            "a macro that declares the module it is passed",
+            "macro_rules! module { ($name:ident) => { mod $name {} }; } module!(cadmpeg_core);"
+                .to_owned(),
+            None,
+        ),
+        (
+            "a glob from outside the crate",
+            "use serde_json::*;".to_owned(),
+            None,
+        ),
+        (
+            "a dependency renamed to the root",
+            String::new(),
+            Some(renamed),
+        ),
+        (
+            "a dependency on another directory",
+            String::new(),
+            Some(moved),
+        ),
+    ] {
+        let source = format!("{prefix}\n{NULLABLE_NAME}");
+        let mut files = vec![("crates/cadmpeg-ir/src/lib.rs", source.as_str())];
+        files.extend(manifest.map(|manifest| ("crates/cadmpeg-ir/Cargo.toml", manifest)));
+        let offenders = Fixture::new("shadowed-helper-root", &files).offenders();
+        assert!(
+            offenders.iter().any(|offender| offender.contains(
+                "Sketch.name states the unlisted helper cadmpeg_core::absent_key::nullable"
+            )),
+            "{case}: {offenders:#?}"
+        );
+    }
+    let offenders = lib("unshadowed-helper-root", NULLABLE_NAME).offenders();
+    assert!(offenders.is_empty(), "{offenders:#?}");
+    let fixture = Fixture::new(
+        "shadowed-shim-root",
+        &[("crates/cadmpeg-ir/src/lib.rs", "mod cadmpeg_core {}")],
+    );
+    let declarations = super::Declarations::read(&fixture.root);
+    assert!(!declarations.names_external(
+        "crates/cadmpeg-ir/src/lib.rs",
+        &[],
+        "cadmpeg_core::named_optional_field",
+        &["cadmpeg_core", "named_optional_field"],
+    ));
 }
 
 const ROUTED: &str = r#"
@@ -540,6 +660,94 @@ fn a_bare_parameter_the_census_cannot_enumerate_is_an_offender() {
     }
 }
 
+/// `Slot<T>` beside one safe instantiation, `Plain { nested: Slot<u16> }`.
+const SLOT_BESIDE_A_SAFE_USE: &str =
+    "#[derive(Serialize, Deserialize)] pub struct Slot<T> { pub value: T }
+    #[derive(Serialize, Deserialize)] pub struct Plain { pub nested: Slot<u16> }
+";
+
+#[test]
+fn an_instantiation_outside_a_declaration_is_read_beside_a_safe_one() {
+    for written in [
+        "pub fn read() -> Slot<Option<u16>> { todo!() }",
+        "pub fn take(value: Slot<Option<u16>>) {}",
+        "pub fn read<F: Fn() -> Slot<Option<u16>>>(f: F) {}",
+        "pub struct Bag<const N: usize>; impl Bag<1> { pub fn value() -> Slot<Option<u16>> { todo!() } }",
+        "pub trait Read { fn read(text: &str) -> Slot<Option<u16>>; }",
+        "pub static READ: Option<Slot<Option<u16>>> = None;",
+        "pub const READ: fn() -> Slot<Option<u16>> = next;",
+        "const _: () = { let _ = Slot::<Option<u16>> { value: None }; };",
+        "pub struct Doc; impl From<Slot<Option<u16>>> for Doc { fn from(_: Slot<Option<u16>>) -> Self { Doc } }",
+        "macro_rules! reader { () => { pub fn read(t: &str) -> Slot<Option<u16>> { serde_json::from_str(t).unwrap() } }; }
+         reader!();",
+        "macro_rules! reader { ($name:ident, $t:ty) => { pub fn $name() -> Option<$t> { None } }; }
+         reader!(read, Slot<Option<u16>>);",
+    ] {
+        assert_one_offender(
+            &lib("written-instantiation", &format!("{SLOT_BESIDE_A_SAFE_USE}{written}")),
+            "Slot.value states no deserialize_with",
+        );
+    }
+}
+
+#[test]
+fn a_forwarded_signature_parameter_states_nothing_and_a_wrapped_one_is_read() {
+    let forwarded = "pub fn read<U>() -> Slot<U> { todo!() }
+        pub struct Doc<V>(V);
+        impl<V> Doc<V> { pub fn get(&self) -> Slot<V> { todo!() } }
+        macro_rules! reader { ($name:ident, $t:ty) => { pub fn $name<G>() -> Option<$t> { None } }; }
+        reader!(read_generic, Slot<G>);";
+    let offenders = lib(
+        "forwarded-signature",
+        &format!("{SLOT_BESIDE_A_SAFE_USE}{forwarded}"),
+    )
+    .offenders();
+    assert!(offenders.is_empty(), "{offenders:#?}");
+    assert_one_offender(
+        &lib(
+            "wrapped-signature",
+            &format!("{SLOT_BESIDE_A_SAFE_USE}pub fn read<U>() -> Slot<Option<U>> {{ todo!() }}"),
+        ),
+        "Slot.value states no deserialize_with",
+    );
+}
+
+#[test]
+fn a_macro_body_spelling_a_fragment_leaves_the_parameter_unread() {
+    assert_one_offender(
+        &lib(
+            "fragment-instantiation",
+            &format!(
+                "{SLOT_BESIDE_A_SAFE_USE}macro_rules! reader {{ ($t:ty) => {{ pub fn read() -> Slot<$t> {{ todo!() }} }}; }}"
+            ),
+        ),
+        "the macro_rules! reader at crates/cadmpeg-ir/src/lib.rs:3 names Slot, and the census does not expand it",
+    );
+}
+
+#[test]
+fn a_declaration_in_a_const_block_is_read() {
+    assert_one_offender(
+        &lib(
+            "const-block-declaration",
+            "const _: () = { #[derive(Serialize, Deserialize)] struct Host { point: Option<u16> } };",
+        ),
+        "Host.point states no deserialize_with",
+    );
+    assert_one_offender(
+        &lib(
+            "const-block-instantiation",
+            &format!(
+                "{SLOT_BESIDE_A_SAFE_USE}const _: () = {{ #[derive(Serialize, Deserialize)] struct Host {{ nested: Slot<Option<u16>> }} }};"
+            ),
+        ),
+        "Slot.value states no deserialize_with",
+    );
+    let source = SPACE.replace("PLANAR", "u16")
+        + "pub struct Hidden; const _: () = { impl Space for Hidden { type Point = Option<u8>; } };";
+    assert_one_offender(&space("const-block-impl", &source), OPEN_POINT);
+}
+
 #[test]
 fn a_use_under_a_renamed_import_or_in_another_wire_crate_fills_the_parameter() {
     let renamed = "#[derive(Serialize, Deserialize)] pub struct Slot<T = u8> { pub value: T }
@@ -670,7 +878,7 @@ impl Plane for Codec { type Point = u8; }",
 #[test]
 fn an_impl_the_item_walk_does_not_reach_is_unread() {
     let source = SPACE.replace("PLANAR", "u16")
-        + "pub struct Hidden; const _: () = { impl Space for Hidden { type Point = Option<u8>; } };";
+        + "pub struct Hidden; fn hidden() { { impl Space for Hidden { type Point = Option<u8>; } } }";
     assert_one_offender(
         &space("impl-in-a-block", &source),
         "sits where the census reads no impl, so its types are unread",
@@ -882,7 +1090,7 @@ fn an_argument_spelled_by_a_concrete_projection_is_unread() {
 #[test]
 fn an_impl_on_the_line_of_a_read_impl_is_unread() {
     let source = SPACE.replace("PLANAR", "u16")
-        + "pub struct Other; pub struct Extra; impl Space for Other { type Point = u8; } const _: () = { impl Space for Extra { type Point = Option<u8>; } };";
+        + "pub struct Other; pub struct Extra; impl Space for Other { type Point = u8; } fn hidden() { { impl Space for Extra { type Point = Option<u8>; } } }";
     assert_one_offender(
         &space("impl-beside-read-impl", &source),
         "the impl of Space at crates/cadmpeg-ir/src/space.rs:17 sits where the census reads no impl",
@@ -892,7 +1100,7 @@ fn an_impl_on_the_line_of_a_read_impl_is_unread() {
 #[test]
 fn an_impl_on_the_line_of_a_test_module_is_unread() {
     let source = SPACE.replace("PLANAR", "u16")
-        + "pub struct Extra; #[cfg(test)] mod tests {} const _: () = { impl Space for Extra { type Point = Option<u8>; } };";
+        + "pub struct Extra; #[cfg(test)] mod tests {} fn hidden() { { impl Space for Extra { type Point = Option<u8>; } } }";
     assert_one_offender(
         &space("impl-beside-test-module", &source),
         "the impl of Space at crates/cadmpeg-ir/src/space.rs:17 sits where the census reads no impl",

@@ -71,6 +71,10 @@ pub(super) struct MacroTree {
     pub(super) line: usize,
     /// Every token of the tree, groups flattened.
     pub(super) tokens: Vec<String>,
+    /// The tree itself, delimiters kept.
+    pub(super) stream: TokenStream,
+    /// Whether the tree sits in a function body.
+    pub(super) in_function: bool,
     /// The macros called inside the tree.
     pub(super) calls: Vec<String>,
 }
@@ -94,12 +98,15 @@ impl MacroTree {
             .find(|name| self.tokens.iter().any(|token| token == *name))
     }
 
-    /// Whether the tree's own tokens spell a type declaration: `struct`,
-    /// `enum`, `union` or `type` that is no metavariable.
-    pub(super) fn spells_declaration(&self) -> bool {
+    /// Whether the tree's own tokens spell a keyword that binds a name a type
+    /// argument can spell: `struct`, `enum`, `union`, `type`, `use`, `mod`,
+    /// `extern` or `trait` that is no metavariable.
+    pub(super) fn spells_binding(&self) -> bool {
         self.tokens.iter().enumerate().any(|(index, token)| {
-            matches!(token.as_str(), "struct" | "enum" | "union" | "type")
-                && (index == 0 || self.tokens[index - 1] != "$")
+            matches!(
+                token.as_str(),
+                "struct" | "enum" | "union" | "type" | "use" | "mod" | "extern" | "trait"
+            ) && (index == 0 || self.tokens[index - 1] != "$")
         })
     }
 }
@@ -144,7 +151,7 @@ pub(super) struct FileTokens {
 pub(super) fn scan(text: &str, excluded: &[(Position, Position)]) -> Option<FileTokens> {
     let stream: TokenStream = text.parse().ok()?;
     let mut found = FileTokens::default();
-    walk(stream, excluded, &mut found);
+    walk(stream, excluded, false, &mut found);
     Some(found)
 }
 
@@ -208,9 +215,16 @@ fn called_macros(stream: TokenStream, calls: &mut Vec<String>) {
     }
 }
 
-fn walk(stream: TokenStream, excluded: &[(Position, Position)], found: &mut FileTokens) {
+fn walk(
+    stream: TokenStream,
+    excluded: &[(Position, Position)],
+    in_function: bool,
+    found: &mut FileTokens,
+) {
     let trees: Vec<TokenTree> = stream.into_iter().collect();
     let mut index = 0;
+    // Whether a `fn` keyword opened a signature whose body is the next brace.
+    let mut signature = false;
     while index < trees.len() {
         let at = position(trees[index].span());
         let line = at.0;
@@ -225,12 +239,14 @@ fn walk(stream: TokenStream, excluded: &[(Position, Position)], found: &mut File
             let mut tokens = Vec::new();
             flatten(stream.clone(), &mut tokens);
             let mut calls = Vec::new();
-            called_macros(stream, &mut calls);
+            called_macros(stream.clone(), &mut calls);
             found.trees.push(MacroTree {
                 kind,
                 name,
                 line,
                 tokens,
+                stream,
+                in_function,
                 calls,
             });
             index += width;
@@ -245,7 +261,15 @@ fn walk(stream: TokenStream, excluded: &[(Position, Position)], found: &mut File
                     found.impl_headers.push(ImplHeader { names, at });
                 }
             }
-            TokenTree::Group(nested) => walk(nested.stream(), excluded, found),
+            TokenTree::Ident(keyword) if keyword == "fn" => signature = true,
+            TokenTree::Punct(punct) if punct.as_char() == ';' => signature = false,
+            TokenTree::Group(nested) => {
+                let body = signature && nested.delimiter() == Delimiter::Brace;
+                if body {
+                    signature = false;
+                }
+                walk(nested.stream(), excluded, in_function || body, found);
+            }
             _ => {}
         }
         index += 1;
@@ -308,13 +332,14 @@ fn is_punct(tree: Option<&TokenTree>, wanted: char) -> bool {
     matches!(tree, Some(TokenTree::Punct(punct)) if punct.as_char() == wanted)
 }
 
-/// Whether a call to the macro `name` can write a type declaration.
+/// Whether a call to the macro `name` can bind a name a type argument can
+/// spell.
 ///
 /// `definitions` holds every wire-crate `macro_rules!` tree. A macro with no
 /// definition there, other than a standard expression macro, can write
-/// anything; one whose body spells a type declaration, or calls a macro that
-/// can, writes one. A call through a metavariable can reach any macro.
-pub(super) fn declaring_macro(
+/// anything; one whose body spells a binding keyword, or calls a macro that
+/// can bind, binds. A call through a metavariable can reach any macro.
+pub(super) fn binding_macro(
     name: &str,
     definitions: &[&MacroTree],
     seen: &mut Vec<String>,
@@ -331,10 +356,67 @@ pub(super) fn declaring_macro(
     }
     seen.push(name.to_owned());
     defined.iter().any(|tree| {
-        tree.spells_declaration()
+        tree.spells_binding()
             || tree
                 .calls
                 .iter()
-                .any(|called| !seen.contains(called) && declaring_macro(called, definitions, seen))
+                .any(|called| !seen.contains(called) && binding_macro(called, definitions, seen))
     })
+}
+
+/// Each `Name<..>` with `Name` one of `names` that `stream` spells, at any
+/// depth, as the type the name and its arguments parse as, or `Err` with
+/// the name when the arguments do not parse as a type.
+pub(super) fn spelled_uses(
+    stream: &TokenStream,
+    names: &[String],
+) -> Vec<Result<syn::Type, String>> {
+    let trees: Vec<TokenTree> = stream.clone().into_iter().collect();
+    let mut found = Vec::new();
+    for (index, tree) in trees.iter().enumerate() {
+        if let TokenTree::Group(group) = tree {
+            found.extend(spelled_uses(&group.stream(), names));
+            continue;
+        }
+        let TokenTree::Ident(ident) = tree else {
+            continue;
+        };
+        let name = ident.to_string();
+        if !names.contains(&name) {
+            continue;
+        }
+        let mut open = index + 1;
+        if is_punct(trees.get(open), ':') && is_punct(trees.get(open + 1), ':') {
+            open += 2;
+        }
+        if !is_punct(trees.get(open), '<') {
+            continue;
+        }
+        let mut depth = 0_usize;
+        let mut close = None;
+        for (at, tree) in trees.iter().enumerate().skip(open) {
+            let TokenTree::Punct(punct) = tree else {
+                continue;
+            };
+            match punct.as_char() {
+                '<' => depth += 1,
+                '>' if !is_punct(trees.get(at - 1), '-') => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(at);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let parsed = close.and_then(|close| {
+            let spelled: TokenStream = std::iter::once(tree.clone())
+                .chain(trees[open..=close].iter().cloned())
+                .collect();
+            syn::parse2::<syn::Type>(spelled).ok()
+        });
+        found.push(parsed.ok_or(name));
+    }
+    found
 }

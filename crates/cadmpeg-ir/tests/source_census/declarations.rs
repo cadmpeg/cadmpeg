@@ -11,8 +11,15 @@
 //! filling `P` states for `Name`. Every impl of the bound trait in the wire
 //! crates is read; a bound, trait or impl the census cannot read is an error,
 //! never a field taken to hold no `Option`. A field typed by a bare type
-//! parameter holds whatever fills it: the default and every argument a wire
-//! declaration states for it.
+//! parameter holds whatever fills it: the default and every argument the wire
+//! sources write for it outside a function body, in a declaration, a function
+//! signature, a const, a static, a const block, an impl header or an impl or
+//! trait item. A parameter of an enclosing function, trait or impl passed bare
+//! is filled where that item is used. A `macro_rules!` body that spells only
+//! items is read where it is written; one that spells a fragment beside the
+//! name, an attribute, and a call to a macro that can bind a name leave the
+//! parameter unread. Any other call is read in place, where a bare argument
+//! nothing in scope declares is a parameter the expansion binds.
 //!
 //! Every impl header the tokens state is matched by position to an impl the
 //! item walk reads, and a type shape the census does not read, such as a
@@ -32,6 +39,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use proc_macro2::TokenStream;
 use syn::spanned::Spanned;
 
 use crate::reader_routes::DeclarationResolver;
@@ -39,7 +47,7 @@ use crate::{
     collect_rust_sources, derive_list_names_deserialize, is_option_type, is_test_module,
     is_test_path, read_source,
 };
-use tokens::{declaring_macro, position, FileTokens, MacroTree, Position, TreeKind};
+use tokens::{binding_macro, position, spelled_uses, FileTokens, MacroTree, Position, TreeKind};
 
 mod tokens;
 
@@ -216,6 +224,11 @@ struct TraitIndex {
     uses: Vec<GenericUse>,
     /// What each wire source states in tokens, by repository-relative path.
     tokens: Vec<(String, FileTokens)>,
+    /// The tokens of every const and static initializer, with the file and
+    /// module it is written in; the census reads the uses they spell in place.
+    initializers: Vec<(String, Vec<String>, TokenStream)>,
+    /// The module and span of each initializer of the file being read.
+    pending_initializers: Vec<(Vec<String>, proc_macro2::Span)>,
 }
 
 impl Declarations {
@@ -259,6 +272,21 @@ impl TraitIndex {
                 index.collect(&parsed.items, &relative, &module_scope(&relative));
                 let found = tokens::scan(&text, &test_module_spans(&parsed.items))
                     .expect("every source file in the wire crates parses, so it lexes");
+                // A `macro_rules!` body that spells only items, no fragment,
+                // is read where it is written.
+                for tree in &found.trees {
+                    if tree.kind == TreeKind::Definition {
+                        if let Some(items) = transcribed_items(&tree.stream) {
+                            index.collect(&items, &relative, &module_scope(&relative));
+                        }
+                    }
+                }
+                for (scope, span) in std::mem::take(&mut index.pending_initializers) {
+                    let stream = span_text(&text, span)
+                        .and_then(|written| written.parse::<TokenStream>().ok())
+                        .expect("an initializer the parser read lexes again");
+                    index.initializers.push((relative.clone(), scope, stream));
+                }
                 index.tokens.push((relative, found));
             }
         }
@@ -272,50 +300,17 @@ impl TraitIndex {
     }
 
     /// Records each type with generic arguments that `ty` writes, at any
-    /// depth, as written at `site`.
+    /// depth, as written at `site`: in a path's arguments, a function
+    /// pointer's signature, and the bounds of an `impl Trait` or `dyn Trait`.
     fn record_uses(&mut self, ty: &syn::Type, site: usize) {
         match ty {
             syn::Type::Path(typed) => {
                 if let Some(qself) = &typed.qself {
                     self.record_uses(&qself.ty, site);
+                    self.record_arguments(&typed.path, site);
+                } else {
+                    self.record_path(&typed.path, site);
                 }
-                for segment in &typed.path.segments {
-                    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
-                        continue;
-                    };
-                    for argument in &arguments.args {
-                        match argument {
-                            syn::GenericArgument::Type(inner) => self.record_uses(inner, site),
-                            syn::GenericArgument::AssocType(bound) => {
-                                self.record_uses(&bound.ty, site);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                let Some(last) = typed.path.segments.last() else {
-                    return;
-                };
-                if !matches!(last.arguments, syn::PathArguments::AngleBracketed(_)) {
-                    return;
-                }
-                if typed.qself.is_some() {
-                    return;
-                }
-                let mut path = typed.path.clone();
-                if let Some(segment) = path.segments.last_mut() {
-                    segment.arguments = syn::PathArguments::None;
-                }
-                self.uses.push(GenericUse {
-                    site,
-                    line: last.ident.span().start().line,
-                    name: last.ident.to_string(),
-                    path,
-                    arguments: positional_arguments(&last.arguments)
-                        .into_iter()
-                        .map(Option::<&syn::Type>::cloned)
-                        .collect(),
-                });
             }
             syn::Type::Reference(inner) => self.record_uses(&inner.elem, site),
             syn::Type::Array(inner) => self.record_uses(&inner.elem, site),
@@ -328,8 +323,168 @@ impl TraitIndex {
                     self.record_uses(inner, site);
                 }
             }
+            syn::Type::FnPtr(function) => {
+                for input in &function.inputs {
+                    self.record_uses(&input.ty, site);
+                }
+                if let syn::ReturnType::Type(_, output) = &function.output {
+                    self.record_uses(output, site);
+                }
+            }
+            syn::Type::ImplTrait(bounded) => self.record_bounds(&bounded.bounds, site),
+            syn::Type::TraitObject(object) => self.record_bounds(&object.bounds, site),
             _ => {}
         }
+    }
+
+    /// Records the uses every segment of `path` writes in its arguments.
+    fn record_arguments(&mut self, path: &syn::Path, site: usize) {
+        for segment in &path.segments {
+            match &segment.arguments {
+                syn::PathArguments::AngleBracketed(arguments) => {
+                    for argument in &arguments.args {
+                        match argument {
+                            syn::GenericArgument::Type(inner) => self.record_uses(inner, site),
+                            syn::GenericArgument::AssocType(bound) => {
+                                self.record_uses(&bound.ty, site);
+                            }
+                            syn::GenericArgument::Constraint(constraint) => {
+                                self.record_bounds(&constraint.bounds, site);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                syn::PathArguments::Parenthesized(arguments) => {
+                    for input in &arguments.inputs {
+                        self.record_uses(&input.ty, site);
+                    }
+                    if let syn::ReturnType::Type(_, output) = &arguments.output {
+                        self.record_uses(output, site);
+                    }
+                }
+                syn::PathArguments::None => {}
+            }
+        }
+    }
+
+    /// Records the uses `path` writes, and `path` itself when its last
+    /// segment states arguments.
+    fn record_path(&mut self, path: &syn::Path, site: usize) {
+        self.record_arguments(path, site);
+        let Some(last) = path.segments.last() else {
+            return;
+        };
+        if !matches!(last.arguments, syn::PathArguments::AngleBracketed(_)) {
+            return;
+        }
+        let mut bare = path.clone();
+        if let Some(segment) = bare.segments.last_mut() {
+            segment.arguments = syn::PathArguments::None;
+        }
+        self.uses.push(GenericUse {
+            site,
+            line: last.ident.span().start().line,
+            name: last.ident.to_string(),
+            path: bare,
+            arguments: positional_arguments(&last.arguments)
+                .into_iter()
+                .map(Option::<&syn::Type>::cloned)
+                .collect(),
+        });
+    }
+
+    /// Records the uses the trait bounds `bounds` write.
+    fn record_bounds<'a>(
+        &mut self,
+        bounds: impl IntoIterator<Item = &'a syn::TypeParamBound>,
+        site: usize,
+    ) {
+        for bound in bounds {
+            if let syn::TypeParamBound::Trait(traited) = bound {
+                self.record_path(&traited.path, site);
+            }
+        }
+    }
+
+    /// Records the uses `generics` writes: each parameter's bounds and
+    /// default, and each where-clause predicate.
+    fn record_generics(&mut self, generics: &syn::Generics, site: usize) {
+        for parameter in generics.type_params() {
+            self.record_bounds(&parameter.bounds, site);
+            if let Some((_, default)) = &parameter.default {
+                self.record_uses(default, site);
+            }
+        }
+        if let Some(clause) = &generics.where_clause {
+            for predicate in &clause.predicates {
+                if let syn::WherePredicate::Type(predicate) = predicate {
+                    self.record_uses(&predicate.bounded_ty, site);
+                    self.record_bounds(&predicate.bounds, site);
+                }
+            }
+        }
+    }
+
+    /// Records the uses a function signature writes: its inputs, its
+    /// return and its generics.
+    fn record_signature(&mut self, signature: &syn::Signature, site: usize) {
+        for input in &signature.inputs {
+            match input {
+                syn::FnArg::Typed(typed) => self.record_uses(&typed.ty, site),
+                syn::FnArg::Receiver(receiver) => {
+                    if let syn::ReceiverKind::Typed(_, ty) = &receiver.kind {
+                        self.record_uses(ty, site);
+                    }
+                }
+            }
+        }
+        if let syn::ReturnType::Type(_, output) = &signature.output {
+            self.record_uses(output, site);
+        }
+        self.record_generics(&signature.generics, site);
+    }
+
+    /// A site that instantiates no declaration's parameters of its own: a
+    /// function, const, static or trait item, whose `generics` a document
+    /// read does not fill, so a use that forwards one of them states nothing.
+    fn signature_site(
+        &mut self,
+        relative: &str,
+        scope: &[String],
+        generics: syn::Generics,
+        implementation: Option<(&[String], &syn::Type)>,
+    ) -> usize {
+        let site = self.sites.len();
+        self.sites.push(UseSite {
+            path: relative.to_owned(),
+            scope: scope.to_owned(),
+            owner: None,
+            generics,
+            impl_parameters: implementation.map(|(parameters, _)| parameters.to_vec()),
+            self_type: implementation.map(|(_, self_type)| self_type.clone()),
+            read: false,
+        });
+        site
+    }
+
+    /// Records a const or static item: its type, the items its initializer
+    /// declares, and the initializer's tokens, read in place.
+    fn record_initialized(
+        &mut self,
+        relative: &str,
+        scope: &[String],
+        generics: &syn::Generics,
+        ty: &syn::Type,
+        expression: &syn::Expr,
+        implementation: Option<(&[String], &syn::Type)>,
+    ) {
+        let site = self.signature_site(relative, scope, generics.clone(), implementation);
+        self.record_uses(ty, site);
+        self.record_generics(generics, site);
+        self.pending_initializers
+            .push((scope.to_owned(), expression.span()));
+        self.collect(&initializer_items(expression), relative, scope);
     }
 
     /// Records the uses a struct, enum or alias writes in its fields, its
@@ -351,11 +506,7 @@ impl TraitIndex {
             self_type: None,
             read,
         });
-        for parameter in generics.type_params() {
-            if let Some((_, default)) = &parameter.default {
-                self.record_uses(default, site);
-            }
-        }
+        self.record_generics(generics, site);
         for ty in types {
             self.record_uses(ty, site);
         }
@@ -391,6 +542,7 @@ impl TraitIndex {
                     );
                 }
                 syn::Item::Trait(declaration) => {
+                    self.record_trait_items(declaration, relative, scope);
                     let mut types = BTreeMap::new();
                     for member in &declaration.items {
                         let syn::TraitItem::Type(associated) = member else {
@@ -441,8 +593,27 @@ impl TraitIndex {
                     );
                 }
                 syn::Item::Fn(function) => {
+                    let site =
+                        self.signature_site(relative, scope, function.sig.generics.clone(), None);
+                    self.record_signature(&function.sig, site);
                     self.collect(&function_body_items(function), relative, scope);
                 }
+                syn::Item::Const(constant) => self.record_initialized(
+                    relative,
+                    scope,
+                    &constant.generics,
+                    &constant.ty,
+                    &constant.expr,
+                    None,
+                ),
+                syn::Item::Static(item) => self.record_initialized(
+                    relative,
+                    scope,
+                    &syn::Generics::default(),
+                    &item.ty,
+                    &item.expr,
+                    None,
+                ),
                 syn::Item::Mod(module) => {
                     if is_test_module(module) {
                         continue;
@@ -475,14 +646,42 @@ impl TraitIndex {
         )
     }
 
-    fn collect_impl(&mut self, implementation: &syn::ItemImpl, relative: &str, scope: &[String]) {
-        let Some((trait_path, _)) = &implementation.trait_ else {
-            return;
-        };
-        if implementation.modifiers.polarity.is_some() {
-            // A negative impl states no associated type.
-            return;
+    /// Records the uses a trait's items write: supertraits, method
+    /// signatures, consts and associated types' bounds and defaults. The
+    /// trait's own parameters are filled by its impls, so a use that
+    /// forwards one states nothing.
+    fn record_trait_items(
+        &mut self,
+        declaration: &syn::ItemTrait,
+        relative: &str,
+        scope: &[String],
+    ) {
+        let site = self.signature_site(relative, scope, declaration.generics.clone(), None);
+        self.record_generics(&declaration.generics, site);
+        self.record_bounds(&declaration.supertraits, site);
+        for member in &declaration.items {
+            match member {
+                syn::TraitItem::Fn(method) => {
+                    let mut generics = declaration.generics.clone();
+                    generics
+                        .params
+                        .extend(method.sig.generics.params.iter().cloned());
+                    let site = self.signature_site(relative, scope, generics, None);
+                    self.record_signature(&method.sig, site);
+                }
+                syn::TraitItem::Const(constant) => self.record_uses(&constant.ty, site),
+                syn::TraitItem::Type(associated) => {
+                    self.record_bounds(&associated.bounds, site);
+                    if let Some((_, default)) = &associated.default {
+                        self.record_uses(default, site);
+                    }
+                }
+                _ => {}
+            }
         }
+    }
+
+    fn collect_impl(&mut self, implementation: &syn::ItemImpl, relative: &str, scope: &[String]) {
         let parameters: Vec<String> = implementation
             .generics
             .params
@@ -502,13 +701,51 @@ impl TraitIndex {
             self_type: Some((*implementation.self_ty).clone()),
             read: true,
         });
+        // An impl header instantiates the type it is written for and the
+        // trait it implements; its methods and consts what they spell.
+        let implemented = (parameters.as_slice(), implementation.self_ty.as_ref());
+        let header =
+            self.signature_site(relative, scope, syn::Generics::default(), Some(implemented));
+        self.record_uses(&implementation.self_ty, header);
+        self.record_generics(&implementation.generics, header);
+        if let Some((trait_path, _)) = &implementation.trait_ {
+            self.record_path(trait_path, header);
+        }
+        for member in &implementation.items {
+            match member {
+                syn::ImplItem::Fn(method) => {
+                    let site = self.signature_site(
+                        relative,
+                        scope,
+                        method.sig.generics.clone(),
+                        Some(implemented),
+                    );
+                    self.record_signature(&method.sig, site);
+                }
+                syn::ImplItem::Const(constant) => self.record_initialized(
+                    relative,
+                    scope,
+                    &constant.generics,
+                    &constant.ty,
+                    &constant.expr,
+                    Some(implemented),
+                ),
+                _ => {}
+            }
+        }
+        let Some((trait_path, _)) = &implementation.trait_ else {
+            return;
+        };
+        if implementation.modifiers.polarity.is_some() {
+            // A negative impl states no associated type.
+            return;
+        }
         // A `Deserialize` impl reads the type it is written for.
         if trait_path
             .segments
             .last()
             .is_some_and(|segment| segment.ident == "Deserialize")
         {
-            self.record_uses(&implementation.self_ty, site);
             if let Some(read) = type_head(&implementation.self_ty) {
                 self.hand_read.insert(read);
             }
@@ -555,6 +792,80 @@ fn function_body_items(function: &syn::ItemFn) -> Vec<syn::Item> {
             _ => None,
         })
         .collect()
+}
+
+/// The items a const or static initializer declares in its blocks, at any
+/// depth of nested blocks.
+pub(crate) fn initializer_items(expression: &syn::Expr) -> Vec<syn::Item> {
+    let block = match expression {
+        syn::Expr::Block(block) => &block.block,
+        syn::Expr::Const(block) => &block.block,
+        syn::Expr::Unsafe(block) => &block.block,
+        _ => return Vec::new(),
+    };
+    block
+        .stmts
+        .iter()
+        .flat_map(|statement| match statement {
+            syn::Stmt::Item(item) => vec![item.clone()],
+            syn::Stmt::Expr(inner, _) => initializer_items(inner),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+/// The items every arm of a `macro_rules!` body writes, or `None` when an
+/// arm does not parse as items, as one that spells a fragment does not.
+fn transcribed_items(body: &TokenStream) -> Option<Vec<syn::Item>> {
+    let trees: Vec<proc_macro2::TokenTree> = body.clone().into_iter().collect();
+    let mut items = Vec::new();
+    let mut index = 0;
+    while index < trees.len() {
+        let (
+            Some(proc_macro2::TokenTree::Group(_)),
+            Some(proc_macro2::TokenTree::Punct(equals)),
+            Some(proc_macro2::TokenTree::Punct(arrow)),
+            Some(proc_macro2::TokenTree::Group(transcriber)),
+        ) = (
+            trees.get(index),
+            trees.get(index + 1),
+            trees.get(index + 2),
+            trees.get(index + 3),
+        )
+        else {
+            return None;
+        };
+        if equals.as_char() != '=' || arrow.as_char() != '>' {
+            return None;
+        }
+        items.extend(syn::parse2::<syn::File>(transcriber.stream()).ok()?.items);
+        index += 4;
+        if matches!(trees.get(index), Some(proc_macro2::TokenTree::Punct(semicolon)) if semicolon.as_char() == ';')
+        {
+            index += 1;
+        }
+    }
+    Some(items)
+}
+
+/// The text of `text` that `span` covers.
+fn span_text(text: &str, span: proc_macro2::Span) -> Option<&str> {
+    let offset = |at: proc_macro2::LineColumn| {
+        let start: usize = text
+            .split_inclusive('\n')
+            .take(at.line.checked_sub(1)?)
+            .map(str::len)
+            .sum();
+        let line = text.get(start..)?.split('\n').next()?;
+        Some(
+            start
+                + line
+                    .char_indices()
+                    .nth(at.column)
+                    .map_or(line.len(), |(byte, _)| byte),
+        )
+    };
+    text.get(offset(span.start())?..offset(span.end())?)
 }
 
 /// The half-open spans of the test modules among `items`, at any depth, from
@@ -613,6 +924,26 @@ impl Declarations {
         self.resolver()
             .resolve(file, scope, path)
             .map(|(path, scope, name)| Declaration { path, scope, name })
+    }
+
+    /// Whether the path `spelled`, read from module `scope` of `file`, names
+    /// the external item `expected`, its root bound to its real crate there.
+    pub(crate) fn names_external(
+        &self,
+        file: &str,
+        scope: &[String],
+        spelled: &str,
+        expected: &[&str],
+    ) -> bool {
+        syn::parse_str::<syn::Path>(spelled)
+            .ok()
+            .and_then(|path| self.resolver().external_path(file, scope, &path))
+            .is_some_and(|segments| {
+                segments
+                    .iter()
+                    .map(String::as_str)
+                    .eq(expected.iter().copied())
+            })
     }
 
     /// The declaration a serde attribute's type string names from `from`'s
@@ -803,10 +1134,12 @@ impl Declarations {
                 let Some(name) = tree.names(&names) else {
                     continue;
                 };
-                if tree.kind == TreeKind::Attribute
-                    || tree.spells_declaration()
-                    || declaring_macro(&tree.name, &definitions, &mut Vec::new())
-                {
+                let unread = match tree.kind {
+                    TreeKind::Attribute => true,
+                    TreeKind::Definition => transcribed_items(&tree.stream).is_none(),
+                    TreeKind::Call => binding_macro(&tree.name, &definitions, &mut Vec::new()),
+                };
+                if unread {
                     return Err(format!(
                         "{} names {name}, and the census does not expand it, so its argument for {label} is unread",
                         tree.describe(relative)
@@ -814,9 +1147,8 @@ impl Declarations {
                 }
             }
         }
-        let mut stated = false;
-        let mut concrete = false;
-        let mut optional = false;
+        let (mut stated, mut optional, mut concrete) =
+            self.in_place_fills(owner, &names, slot, label, depth)?;
         if let Some((_, default)) = &parameter.default {
             stated = true;
             concrete = true;
@@ -864,13 +1196,20 @@ impl Declarations {
             if forwarded.is_some() && !read {
                 continue;
             }
-            stated = true;
             if let Some(forwarded) = impl_parameter(argument, written) {
+                // An impl parameter a header or method signature forwards,
+                // which the self type does not carry, is filled where the
+                // impl is used, as a function's own parameter is.
+                if !read && self.impl_parameter_carrier(written, forwarded).is_none() {
+                    continue;
+                }
                 let (holds, filled) = self.impl_parameter_fills(written, forwarded, depth + 1)?;
+                stated = true;
                 optional |= holds;
                 concrete |= filled;
                 continue;
             }
+            stated = true;
             let use_site = Site {
                 file: &written.path,
                 scope: &written.scope,
@@ -895,6 +1234,124 @@ impl Declarations {
         Ok((optional, concrete))
     }
 
+    /// What the uses of `owner` that a const or static initializer and a
+    /// macro call outside a function body spell fill its parameter at
+    /// `slot` with: whether any use states it, whether any holds an
+    /// `Option`, and whether any is concrete.
+    ///
+    /// The tokens are read in place, from the module that writes them. A
+    /// call to a macro that binds no name writes functions and impls whose
+    /// parameters are the names it binds, so a bare argument that names
+    /// nothing in scope is such a parameter and forwards what fills it. A
+    /// call inside a function body writes a type in a function body.
+    fn in_place_fills(
+        &self,
+        owner: &Declaration,
+        names: &[String],
+        slot: usize,
+        label: &syn::Ident,
+        depth: usize,
+    ) -> Result<(bool, bool, bool), String> {
+        let index = self.trait_index();
+        let resolver = self.resolver();
+        let no_generics = syn::Generics::default();
+        let calls = index.tokens.iter().flat_map(|(relative, found)| {
+            found
+                .trees
+                .iter()
+                .filter(|tree| tree.kind == TreeKind::Call && !tree.in_function)
+                .map(move |tree| {
+                    (
+                        relative.clone(),
+                        module_scope(relative),
+                        &tree.stream,
+                        Some(tree),
+                    )
+                })
+        });
+        let initializers = index
+            .initializers
+            .iter()
+            .map(|(relative, scope, stream)| (relative.clone(), scope.clone(), stream, None));
+        let (mut stated, mut optional, mut concrete) = (false, false, false);
+        for (relative, scope, stream, tree) in calls.chain(initializers) {
+            let written = |name: &str| match tree {
+                Some(tree) => tree.describe(&relative),
+                None => format!("an initializer in {relative} that names {name}"),
+            };
+            for spelled in spelled_uses(stream, names) {
+                let ty = spelled.map_err(|name| {
+                    format!(
+                        "{} spells {name} with arguments the census does not parse, so its argument for {label} is unread",
+                        written(&name)
+                    )
+                })?;
+                let syn::Type::Path(typed) = &ty else {
+                    continue;
+                };
+                let Some(last) = typed.path.segments.last() else {
+                    continue;
+                };
+                let mut path = typed.path.clone();
+                if let Some(segment) = path.segments.last_mut() {
+                    segment.arguments = syn::PathArguments::None;
+                }
+                let Some(resolved) = resolver
+                    .resolve_across_crates(&relative, &scope, &path)
+                    .map(|(path, scope, name)| Declaration { path, scope, name })
+                else {
+                    return Err(format!(
+                        "the use of {} in {} resolves to no one declaration, so its argument for {label} is unread",
+                        path_text(&path),
+                        written(&last.ident.to_string())
+                    ));
+                };
+                if resolved != *owner {
+                    continue;
+                }
+                let argument = match positional_arguments(&last.arguments).get(slot) {
+                    None => continue,
+                    Some(Some(argument)) => (*argument).clone(),
+                    Some(None) => {
+                        return Err(format!(
+                            "{} states a const expression where {label} is",
+                            written(&last.ident.to_string())
+                        ));
+                    }
+                };
+                if tree.is_some() && self.bound_by_expansion(&relative, &scope, &argument) {
+                    continue;
+                }
+                let site = Site {
+                    file: &relative,
+                    scope: &scope,
+                    generics: &no_generics,
+                    impl_parameters: None,
+                    owner: None,
+                };
+                stated = true;
+                optional |= self.holds_option(&site, &argument, depth + 1)?;
+                concrete = true;
+            }
+        }
+        Ok((stated, optional, concrete))
+    }
+
+    /// Whether `ty`, a macro call's argument in module `scope` of `file`, is
+    /// a bare name no declaration, import or standard name in scope binds.
+    fn bound_by_expansion(&self, file: &str, scope: &[String], ty: &syn::Type) -> bool {
+        let syn::Type::Path(typed) = ty else {
+            return false;
+        };
+        typed.qself.is_none()
+            && typed.path.get_ident().is_some()
+            && self
+                .resolver()
+                .resolve_across_crates(file, scope, &typed.path)
+                .is_none()
+            && !self.resolver().is_external(file, scope, &typed.path)
+    }
+
     /// Whether the impl parameter `parameter` of the impl `written` can be
     /// filled with an `Option`, and whether by a concrete type: what fills
     /// the self type's argument it names, as [`Self::parameter_fills`] reads
@@ -906,58 +1363,12 @@ impl Declarations {
         parameter: &syn::Ident,
         depth: usize,
     ) -> Result<(bool, bool), String> {
-        let unread = || {
-            Err(format!(
+        let Some((declared, declaration, filled)) = self.impl_parameter_carrier(written, parameter)
+        else {
+            return Err(format!(
                 "the impl at {} fills {parameter} with what fills its self type, which the census does not read",
                 written.path
-            ))
-        };
-        let mut self_type = written.self_type.as_ref();
-        while let Some(syn::Type::Reference(borrowed)) = self_type {
-            self_type = Some(&borrowed.elem);
-        }
-        let Some(syn::Type::Path(typed)) = self_type else {
-            return unread();
-        };
-        let Some(last) = typed.path.segments.last() else {
-            return unread();
-        };
-        let Some(slot) = positional_arguments(&last.arguments)
-            .into_iter()
-            .position(|argument| {
-                matches!(argument, Some(syn::Type::Path(named))
-                    if named.qself.is_none() && named.path.is_ident(parameter))
-            })
-        else {
-            return unread();
-        };
-        let mut path = typed.path.clone();
-        if let Some(segment) = path.segments.last_mut() {
-            segment.arguments = syn::PathArguments::None;
-        }
-        let Some(declared) = self
-            .resolver()
-            .resolve_across_crates(&written.path, &written.scope, &path)
-            .map(|(path, scope, name)| Declaration { path, scope, name })
-        else {
-            return unread();
-        };
-        let index = self.trait_index();
-        let Some(declaration) = index
-            .sites
-            .iter()
-            .find(|site| site.owner.as_ref() == Some(&declared))
-        else {
-            return unread();
-        };
-        let Some(syn::GenericParam::Type(filled)) = declaration
-            .generics
-            .params
-            .iter()
-            .filter(|declared| !matches!(declared, syn::GenericParam::Lifetime(_)))
-            .nth(slot)
-        else {
-            return unread();
+            ));
         };
         let site = Site {
             file: &declared.path,
@@ -966,7 +1377,54 @@ impl Declarations {
             impl_parameters: None,
             owner: Some(&declared),
         };
-        self.parameter_fills(&site, &filled.ident, depth)
+        self.parameter_fills(&site, &filled, depth)
+    }
+
+    /// The wire declaration whose parameter the self type of the impl
+    /// `written` fills with its parameter `parameter` named bare, with that
+    /// declaration's site and parameter, or `None`.
+    fn impl_parameter_carrier(
+        &self,
+        written: &UseSite,
+        parameter: &syn::Ident,
+    ) -> Option<(Declaration, &UseSite, syn::Ident)> {
+        let mut self_type = written.self_type.as_ref();
+        while let Some(syn::Type::Reference(borrowed)) = self_type {
+            self_type = Some(&borrowed.elem);
+        }
+        let Some(syn::Type::Path(typed)) = self_type else {
+            return None;
+        };
+        let last = typed.path.segments.last()?;
+        let slot = positional_arguments(&last.arguments)
+            .into_iter()
+            .position(|argument| {
+                matches!(argument, Some(syn::Type::Path(named))
+                    if named.qself.is_none() && named.path.is_ident(parameter))
+            })?;
+        let mut path = typed.path.clone();
+        if let Some(segment) = path.segments.last_mut() {
+            segment.arguments = syn::PathArguments::None;
+        }
+        let declared = self
+            .resolver()
+            .resolve_across_crates(&written.path, &written.scope, &path)
+            .map(|(path, scope, name)| Declaration { path, scope, name })?;
+        let declaration = self
+            .trait_index()
+            .sites
+            .iter()
+            .find(|site| site.owner.as_ref() == Some(&declared))?;
+        let Some(syn::GenericParam::Type(filled)) = declaration
+            .generics
+            .params
+            .iter()
+            .filter(|declared| !matches!(declared, syn::GenericParam::Lifetime(_)))
+            .nth(slot)
+        else {
+            return None;
+        };
+        Some((declared, declaration, filled.ident.clone()))
     }
 
     /// Whether the alias `typed` names, if it names one, holds an `Option`.

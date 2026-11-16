@@ -5,11 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use declarations::{module_scope, Declaration, Declarations};
+use declarations::{initializer_items, module_scope, Declaration, Declarations};
 use writers::{wire_index, WireIndex, HAND_WRITTEN_KEYS};
 
 mod declarations;
 mod reader_routes;
+mod roots;
 mod writers;
 
 /// Every hand-written `Deserialize` in the three wire crates, with the reader
@@ -669,8 +670,8 @@ fn every_hand_written_deserialize_refuses_a_null_spelling() {
             .map(|(_, _, field, site)| {
                 match helper_at_guard_site(&parsed.items, site, field) {
                     Ok(helper) => assert!(
-                        refuses_null(path, &helper)
-                            || NULL_STATING_HELPERS.contains(&helper.as_str()),
+                        refuses_null(&declarations, path, &helper)
+                            || states_null(&declarations, path, &module_scope(path), &helper),
                         "{path} {site} is listed as where {name} states the spelling of null for {field}, but it states the unlisted helper {helper}"
                     ),
                     Err(reason) => panic!(
@@ -753,6 +754,15 @@ fn declared_optional_fields(
                     );
                 }
             }
+            syn::Item::Const(syn::ItemConst { expr, .. })
+            | syn::Item::Static(syn::ItemStatic { expr, .. }) => declared_optional_fields(
+                &initializer_items(expr),
+                relative,
+                scope,
+                name,
+                declarations,
+                found,
+            ),
             _ => {}
         }
     }
@@ -810,8 +820,8 @@ fn every_read_optional_field_refuses_a_null_spelling() {
     );
 }
 
-/// The macro every field-deserializer shim is defined by, keyed by the file it
-/// is declared in and the shim's own name.
+/// The macro path every field-deserializer shim is defined by, keyed by the
+/// file it is declared in and the shim's own name.
 ///
 /// A shim is a `named_field!` or `named_optional_field!` item invocation; the
 /// macro's first token is the shim's own name. The source is parsed, so an
@@ -830,20 +840,31 @@ fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
         for item in items {
             match item {
                 syn::Item::Macro(invocation) => {
-                    let Some(macro_name) = invocation.mac.path.segments.last() else {
+                    let path = &invocation.mac.path;
+                    let Some(macro_name) = path.segments.last() else {
                         continue;
                     };
                     let macro_name = macro_name.ident.to_string();
                     if macro_name != "named_field" && macro_name != "named_optional_field" {
                         continue;
                     }
+                    let segments: Vec<String> = path
+                        .segments
+                        .iter()
+                        .map(|segment| segment.ident.to_string())
+                        .collect();
+                    let leading = if path.leading_colon.is_some() {
+                        "::"
+                    } else {
+                        ""
+                    };
                     let mut tokens = Vec::new();
                     flatten_tokens(&invocation.mac.tokens, &mut tokens);
                     let Some(shim) = tokens.first() else { continue };
                     found
                         .entry((relative.to_owned(), shim.clone()))
                         .or_default()
-                        .insert(macro_name);
+                        .insert(format!("{leading}{}", segments.join("::")));
                 }
                 syn::Item::Mod(module) => {
                     if let Some((_, nested)) = &module.content {
@@ -1018,6 +1039,17 @@ fn collect_optional_fields(
                     );
                 }
             }
+            // A const block is no function body: the items it declares are
+            // read in its module.
+            syn::Item::Const(syn::ItemConst { expr, .. })
+            | syn::Item::Static(syn::ItemStatic { expr, .. }) => collect_optional_fields(
+                &initializer_items(expr),
+                relative,
+                scope,
+                index,
+                readable,
+                offenders,
+            ),
             _ => {}
         }
     }
@@ -1087,21 +1119,53 @@ fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
 ///
 /// Anything else on a field that skips on `None` is an offender, because a
 /// `deserialize_with` that does not state the refusal gives `None` a second
-/// spelling.
-fn null_refusing_helpers() -> &'static BTreeSet<(String, String)> {
-    static HELPERS: OnceLock<BTreeSet<(String, String)>> = OnceLock::new();
+/// spelling. Each shim maps to the macro path its invocation spells.
+fn null_refusing_helpers() -> &'static BTreeMap<(String, String), String> {
+    static HELPERS: OnceLock<BTreeMap<(String, String), String>> = OnceLock::new();
     HELPERS.get_or_init(|| {
         shim_definitions()
             .into_iter()
-            .filter(|(_, macros)| macros.len() == 1 && macros.contains("named_optional_field"))
-            .map(|(site, _)| site)
+            .filter_map(|(site, macros)| {
+                let [invoked] = macros.into_iter().collect::<Vec<_>>().try_into().ok()?;
+                (invoked.rsplit("::").next() == Some("named_optional_field"))
+                    .then_some((site, invoked))
+            })
             .collect()
     })
 }
 
-/// Whether `helper`, read in `relative`, is a shim that refuses `null`.
-fn refuses_null(relative: &str, helper: &str) -> bool {
-    null_refusing_helpers().contains(&(relative.to_owned(), helper.to_owned()))
+/// Whether `helper`, read in `relative`, is a shim that refuses `null`: one
+/// the macro defines whose path, read in that file, is the real
+/// `cadmpeg_core::named_optional_field!`. `crate::` and a bare name reach it
+/// only inside `cadmpeg-core`.
+fn refuses_null(declarations: &Declarations, relative: &str, helper: &str) -> bool {
+    null_refusing_helpers()
+        .get(&(relative.to_owned(), helper.to_owned()))
+        .is_some_and(|invoked| {
+            declarations.names_external(
+                relative,
+                &module_scope(relative),
+                invoked,
+                &["cadmpeg_core", "named_optional_field"],
+            ) || (relative.starts_with("crates/cadmpeg-core/src/")
+                && matches!(
+                    invoked.as_str(),
+                    "crate::named_optional_field" | "named_optional_field"
+                ))
+        })
+}
+
+/// Whether `helper`, read in module `scope` of `relative`, is one of
+/// [`NULL_STATING_HELPERS`], its root bound to the real crate there.
+fn states_null(
+    declarations: &Declarations,
+    relative: &str,
+    scope: &[String],
+    helper: &str,
+) -> bool {
+    NULL_STATING_HELPERS
+        .iter()
+        .any(|expected| declarations.names_external(relative, scope, helper, expected))
 }
 
 /// The `deserialize_with` helpers that state `null` is this key's own spelling
@@ -1115,7 +1179,7 @@ fn refuses_null(relative: &str, helper: &str) -> bool {
 /// missing field rather than a second spelling of `None`. A key that states
 /// neither this nor a helper [`null_refusing_helpers`] derives declares no
 /// spelling at all, which is what this census refuses.
-const NULL_STATING_HELPERS: &[&str] = &["cadmpeg_core::absent_key::nullable"];
+const NULL_STATING_HELPERS: &[&[&str]] = &[&["cadmpeg_core", "absent_key", "nullable"]];
 
 /// Records every `Option` field of `fields` that states no helper
 /// [`null_refusing_helpers`] derives.
@@ -1155,8 +1219,12 @@ fn record_unguarded_fields(
         }
         let helper = absence_spelling(field);
         let read = match helper.as_deref() {
-            Some(helper) if refuses_null(relative, helper) => ReadSpelling::Present,
-            Some(helper) if NULL_STATING_HELPERS.contains(&helper) => ReadSpelling::Nullable,
+            Some(helper) if refuses_null(&index.declarations, relative, helper) => {
+                ReadSpelling::Present
+            }
+            Some(helper) if states_null(&index.declarations, relative, &reader.scope, helper) => {
+                ReadSpelling::Nullable
+            }
             Some(helper) => {
                 offenders.push(format!("{at} states the unlisted helper {helper}"));
                 continue;

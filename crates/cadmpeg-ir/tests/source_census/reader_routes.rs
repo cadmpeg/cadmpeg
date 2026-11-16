@@ -6,10 +6,12 @@ use std::path::Path;
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use syn::spanned::Spanned;
 
+use super::roots::RootShadows;
 use super::{
     collect_rust_sources, deserialize_impl_target, is_test_module, is_test_path, read_source,
     skip_meta_value,
 };
+use classify::same_crate;
 
 /// One route shape a hand-written reader is allowed to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -192,6 +194,40 @@ struct SourceIndex {
     denied: BTreeSet<WireKey>,
     imports: Vec<ImportBinding>,
     symbols: Vec<SymbolKey>,
+    /// Where a crate root can name another item than its real crate.
+    shadows: RootShadows,
+}
+
+impl SourceIndex {
+    /// Indexes one parsed source file and the crate roots its tokens can bind.
+    fn read_file(&mut self, items: &[syn::Item], path: &str, source: &str, scope: &[String]) {
+        collect_source_items(items, path, source, scope, self);
+        self.shadows.record_tokens(path, source);
+    }
+
+    /// Records every glob import whose target lies outside its own crate,
+    /// which can bring in a module named by any crate root.
+    fn record_foreign_globs(&mut self) {
+        let foreign: Vec<(String, String)> = self
+            .imports
+            .iter()
+            .filter(|import| import.glob)
+            .filter(|import| {
+                let first = import.target.segments.first().map_or("", String::as_str);
+                import.target.absolute
+                    || !(matches!(first, "crate" | "self" | "super")
+                        || self.symbols.iter().any(|symbol| {
+                            symbol.kind == SymbolKind::Module
+                                && symbol.name == first
+                                && same_crate(&symbol.path, &import.path)
+                        }))
+            })
+            .map(|import| (import.path.clone(), import.target.segments.join("::")))
+            .collect();
+        for (path, target) in foreign {
+            self.shadows.record_glob(&path, &target);
+        }
+    }
 }
 
 /// One lexical `use` binding. The target is retained as a syntax path so
@@ -819,9 +855,18 @@ fn source_index(root: &Path) -> SourceIndex {
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
             let scope = source_module_scope(&root.join(source_root), &file);
-            collect_source_items(&parsed.items, &relative, &source, &scope, &mut index);
+            index.read_file(&parsed.items, &relative, &source, &scope);
         }
     }
+    index.record_foreign_globs();
+    index.shadows.record_manifests(
+        root,
+        &[
+            "crates/cadmpeg-ir",
+            "crates/cadmpeg-core",
+            "crates/cadmpeg-asm",
+        ],
+    );
     index
 }
 
@@ -1293,10 +1338,21 @@ impl DeclarationResolver {
     /// Whether `path`, from module `scope` of the file `file`, names a
     /// standard or external path rather than a workspace declaration.
     pub(super) fn is_external(&self, file: &str, scope: &[String], path: &syn::Path) -> bool {
-        matches!(
-            self.resolve_path(file, scope, path),
-            resolve::ResolvedPath::External(_)
-        )
+        self.external_path(file, scope, path).is_some()
+    }
+
+    /// The standard or external path `path` names from module `scope` of
+    /// the file `file`, its root bound to its real crate there, or `None`.
+    pub(super) fn external_path(
+        &self,
+        file: &str,
+        scope: &[String],
+        path: &syn::Path,
+    ) -> Option<Vec<String>> {
+        match self.resolve_path(file, scope, path) {
+            resolve::ResolvedPath::External(segments) => Some(segments),
+            resolve::ResolvedPath::Local(_) | resolve::ResolvedPath::Unknown => None,
+        }
     }
 
     fn resolve_path(
@@ -1343,6 +1399,14 @@ impl DeclarationResolver {
             .collect();
         let (first, rest) = segments.split_first()?;
         if let Some(root) = wire_crate_root(first) {
+            if self
+                .index
+                .shadows
+                .failure(file, first, path.leading_colon.is_some())
+                .is_some()
+            {
+                return None;
+            }
             let rest: syn::Path = syn::parse_str(&format!("crate::{}", rest.join("::"))).ok()?;
             return self.resolve(&root, &[], &rest);
         }

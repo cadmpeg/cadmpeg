@@ -32,10 +32,27 @@ Every ``impl`` keyword in item position is a candidate, wherever it sits, and
 the header parser proves it. A candidate the parser does not read, whose
 tokens up to its body name the trait, fails the trait's proof with its file
 and line: the census fails where its parser does not follow, and never drops.
-A raw identifier ``r#Name`` is read as ``Name``, as rustc reads it. A macro
-token tree that names a generic reader and can declare a type leaves the
-reader's parameters unread, whether or not it spells the arguments beside the
-name.
+A raw identifier ``r#Name`` is read as ``Name``, as rustc reads it.
+
+A generic reader's parameter is proved over every instantiation the wire
+sources write outside a function body: a declaration, a function signature, a
+const, a static, a const block, an impl header, and what an impl or trait
+body writes outside its functions. A parameter of an enclosing function,
+trait or impl, passed bare, is filled where that item is used; one inside a
+larger argument makes a type the census does not read, and fails. A
+``macro_rules!`` body is read where it is written, so a use whose argument is
+a fragment fails. An attribute that names the reader, and a call naming it to
+a macro that can bind a name, leave its parameters unread; any other call is
+read in place, where a bare argument nothing in scope declares is a parameter
+the expansion binds. One unproved instantiation fails the reader, however many
+proved ones it has.
+
+A reader the census accepts by its path - ``cadmpeg_core::tag_only::read``,
+the absent-key and distinct-key helpers, ``named_optional_field!``, a standard
+or registry reader - is that reader only where the path's root binds its real
+crate: the using crate's manifest names the workspace's own package (or the
+registry crate) by that root, and no token of the using crate binds the root
+to anything else. ``crate::`` names a reader only in the crate that owns it.
 
 The proof is static: it reads what source tokens name. An impl or a use that
 no token names where the census reads is outside it by design, and a runtime
