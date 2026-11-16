@@ -13,7 +13,8 @@ use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize, Serializer};
 
 use super::dimension::Dimension;
 use super::names::{CodecId, NativeNameValue};
@@ -74,17 +75,16 @@ pub mod kinds {
 /// How an element is built from references. A construction inside an
 /// operand has no identity, and its references anchor where the operand's
 /// do.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
-    schemars(bound = "K: JsonSchema, K::Value: JsonSchema")
+    schemars(
+        bound = "K: JsonSchema, K::Value: JsonSchema",
+        with = "ConstructionWire<K>"
+    )
 )]
-#[serde(
-    bound(serialize = "K: Clone", deserialize = ""),
-    try_from = "ConstructionWire<K>",
-    into = "ConstructionWire<K>"
-)]
+#[serde(bound(deserialize = ""), try_from = "ConstructionWire<K>")]
 pub struct Construction<K: ConstructionKind> {
     /// The constraints the source stores, in the source's priority order.
     pub inputs: Vec<ConstructionInput>,
@@ -118,10 +118,33 @@ impl<K: ConstructionKind> Default for Construction<K> {
     }
 }
 
+impl<K: ConstructionKind> Serialize for Construction<K> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let fields = 3
+            + usize::from(self.solution.is_some())
+            + usize::from(self.mode.is_some())
+            + usize::from(self.resolved.is_some());
+        let mut wire = serializer.serialize_struct("ConstructionWire", fields)?;
+        wire.serialize_field("inputs", &self.inputs)?;
+        wire.serialize_field("after", &self.after)?;
+        if let Some(solution) = &self.solution {
+            wire.serialize_field("solution", solution)?;
+        }
+        if let Some(mode) = &self.mode {
+            wire.serialize_field("mode", mode)?;
+        }
+        if let Some(resolved) = &self.resolved {
+            wire.serialize_field("resolved", resolved)?;
+        }
+        wire.serialize_field("resolved_in", &self.resolved_in)?;
+        wire.end()
+    }
+}
+
 /// The wire form of [`Construction`]. Each construction nested in its
 /// inputs has passed the construction ceiling; reading admits this one
 /// level above the deepest of them.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -187,27 +210,6 @@ impl<K: ConstructionKind> TryFrom<ConstructionWire<K>> for Construction<K> {
         };
         read::within(Ceiling::Construction, construction.depth())?;
         Ok(construction)
-    }
-}
-
-impl<K: ConstructionKind> From<Construction<K>> for ConstructionWire<K> {
-    fn from(construction: Construction<K>) -> Self {
-        let Construction {
-            inputs,
-            after,
-            solution,
-            mode,
-            resolved,
-            resolved_in,
-        } = construction;
-        Self {
-            inputs,
-            after,
-            solution,
-            mode,
-            resolved,
-            resolved_in,
-        }
     }
 }
 
@@ -625,3 +627,6 @@ cadmpeg_core::named_optional_field!(deserialize_reversed, bool, "reversed");
 cadmpeg_core::named_optional_field!(deserialize_role, InputRole, "role");
 cadmpeg_core::named_optional_field!(deserialize_solution, u32, "solution");
 cadmpeg_core::named_optional_field!(deserialize_value, ScalarDimension, "value");
+
+#[cfg(test)]
+mod tests;

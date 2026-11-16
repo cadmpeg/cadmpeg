@@ -4,7 +4,7 @@ use crate::design::construction::{
 };
 use crate::design::dimension::Dimension;
 use crate::design::names::{CodecId, NativeNameValue};
-use crate::design::options::NativeOption;
+use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::selection::OrderedSelection;
 use crate::features::{ConfigurationId, ParameterId};
 use crate::scalar::Length;
@@ -45,7 +45,7 @@ fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() 
                     cadmpeg_core::text::NonBlankString::new(literal).unwrap(),
                 )),
             )]),
-            source_settings: Default::default(),
+            source_settings: NativeOptions::new(),
         }),
         resolved_in: std::collections::BTreeMap::from([(
             ConfigurationId::mint("test:model:configuration#two").unwrap(),
