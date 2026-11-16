@@ -4042,6 +4042,7 @@ mod tests {
                 "appearance.reference-image-flag-assumed",
                 "appearance.decal-native",
                 "appearance.decal-mapping-assumed",
+                "appearance.decal-placement-native",
                 "appearance.decal-target-unresolved",
                 "appearance.decal-image-unresolved",
                 "appearance.decal-definition-unresolved",
