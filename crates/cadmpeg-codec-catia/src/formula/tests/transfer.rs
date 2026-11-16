@@ -698,7 +698,7 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
 }
 
 #[test]
-fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
+fn decode_transfers_a_unit_literal_formula_input_and_keeps_the_output_driven() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(
@@ -720,8 +720,12 @@ fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
     };
 
     assert_eq!(input.name, "Width");
-    assert_eq!(input.value, None);
-    assert!(input.expression.is_empty());
+    assert_eq!(
+        input.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(1.0).unwrap()
+        ))
+    );
     assert!(input.dependencies.is_empty());
     assert_eq!(input.properties["value_type"], "LENGTH");
     assert_eq!(input.properties["catia_binding"], "#1_ /2");

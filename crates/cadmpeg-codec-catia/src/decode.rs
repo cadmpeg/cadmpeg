@@ -941,7 +941,7 @@ fn finish_decode(
                             crate::entity_table::RangeIntervalSlot::Binary64 { .. } => {
                                 (finite + 1, unset)
                             }
-                            crate::entity_table::RangeIntervalSlot::Unset { .. } => {
+                            crate::entity_table::RangeIntervalSlot::ZeroLiteral { .. } => {
                                 (finite, unset + 1)
                             }
                         });
@@ -979,7 +979,9 @@ fn finish_decode(
                     }
                 };
                 let (evaluated, unset) = match range.evaluation {
-                    crate::native::CatiaEntityEvaluation::Scalar { .. } => (evaluated + 1, unset),
+                    crate::native::CatiaEntityEvaluation::Scalar { .. }
+                    | crate::native::CatiaEntityEvaluation::UnitLiteral
+                    | crate::native::CatiaEntityEvaluation::ZeroLiteral => (evaluated + 1, unset),
                     crate::native::CatiaEntityEvaluation::Unset => (evaluated, unset + 1),
                 };
                 (total + 1, dimensions, complex, evaluated, unset)
@@ -996,12 +998,10 @@ fn finish_decode(
                     | crate::native::CatiaConstraintRangeFraming::DimensionC1
                     | crate::native::CatiaConstraintRangeFraming::DimensionDC
                     | crate::native::CatiaConstraintRangeFraming::DimensionDF
-            ) && match range.evaluation {
-                crate::native::CatiaEntityEvaluation::Scalar { bits } => {
-                    f64::from_bits(bits).is_finite()
-                }
-                crate::native::CatiaEntityEvaluation::Unset => false,
-            }
+            ) && range
+                .evaluation
+                .bits()
+                .is_some_and(|bits| f64::from_bits(bits).is_finite())
         })
         .count();
     let constraint_range_incidences = incoming_entity_incidence_counts(
@@ -1093,7 +1093,10 @@ fn finish_decode(
                 };
                 match &value.value {
                     Selected::Evaluation {
-                        evaluation: CatiaEntityEvaluation::Scalar { .. },
+                        evaluation:
+                            CatiaEntityEvaluation::Scalar { .. }
+                            | CatiaEntityEvaluation::UnitLiteral
+                            | CatiaEntityEvaluation::ZeroLiteral,
                         ..
                     } => (
                         total + 1,
@@ -1125,16 +1128,6 @@ fn finish_decode(
                         unset,
                         atoms + 1,
                         controls,
-                        separators,
-                        schemas,
-                    ),
-                    Selected::ControlE8 => (
-                        total + 1,
-                        evaluations,
-                        evaluated,
-                        unset,
-                        atoms,
-                        controls + 1,
                         separators,
                         schemas,
                     ),
@@ -1651,7 +1644,9 @@ fn finish_decode(
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Evaluation {
-                        evaluation: crate::native::CatiaEntityEvaluation::Scalar { .. },
+                        evaluation: crate::native::CatiaEntityEvaluation::Scalar { .. }
+                            | crate::native::CatiaEntityEvaluation::UnitLiteral
+                            | crate::native::CatiaEntityEvaluation::ZeroLiteral,
                         ..
                     }
                 )
@@ -1678,7 +1673,6 @@ fn finish_decode(
         .iter()
         .fold((0, 0), |(e8, e9), record| {
             match record.suffix_value().map(|value| &value.payload) {
-                Some(crate::native::CatiaEntitySuffixPayload::ControlE8) => (e8 + 1, e9),
                 Some(crate::native::CatiaEntitySuffixPayload::ControlE9) => (e8, e9 + 1),
                 _ => (e8, e9),
             }
@@ -1729,9 +1723,6 @@ fn finish_decode(
                 }
                 crate::native::CatiaEntitySuffixSelectedValue::Evaluation { .. } => {
                     (atoms, evaluations + 1, controls, separators, schemas)
-                }
-                crate::native::CatiaEntitySuffixSelectedValue::ControlE8 => {
-                    (atoms, evaluations, controls + 1, separators, schemas)
                 }
                 crate::native::CatiaEntitySuffixSelectedValue::Separator37 => {
                     (atoms, evaluations, controls, separators + 1, schemas)

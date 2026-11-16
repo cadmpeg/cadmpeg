@@ -863,14 +863,14 @@ fn constraint_range_requires_an_exact_role_and_framing_pair() {
             decoded.report(),
             crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT.as_str()
         ),
-        0
+        1
     );
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
             crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT.as_str()
         ),
-        1
+        0
     );
 
     for (range, constraint, code) in [
