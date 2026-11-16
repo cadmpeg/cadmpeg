@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::project_solid_primitive;
+use crate::design::feature_project::primitives::project_solid_primitive;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::primitives::DesignCylinderPrimitive;
 use crate::records::feature::scope::{

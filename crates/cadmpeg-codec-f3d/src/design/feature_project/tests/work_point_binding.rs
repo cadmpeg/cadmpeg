@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::feature_project::bind_work_point_sketch_point_constructions;
+use crate::design::feature_project::work_points::bind_work_point_sketch_point_constructions;
 use crate::layout::work_point_sketch_point_identity as layout;
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,

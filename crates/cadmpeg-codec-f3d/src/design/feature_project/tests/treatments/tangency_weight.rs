@@ -3,7 +3,7 @@
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use crate::design::decode::parameters::parse_design_parameter_record;
-use crate::design::feature_project::{project_fillet_arm, ProjectInputs};
+use crate::design::feature_project::{edge_treatments::project_fillet_arm, ProjectInputs};
 use crate::design::test_support::parameter_record;
 use crate::records::topology::fillet::{DesignFilletRadiusGroup, DesignFilletRadiusLaw};
 

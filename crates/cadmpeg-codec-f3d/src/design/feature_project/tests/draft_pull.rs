@@ -169,7 +169,7 @@ fn project(
     scope: &DesignParameterScope,
     selections: &[DesignEntitySelectionOperand],
 ) -> Option<Projected> {
-    let definition = super::super::project_draft(
+    let definition = super::super::draft::project_draft(
         scope,
         &super::super::ProjectInputs {
             scopes: std::slice::from_ref(scope),
@@ -245,7 +245,7 @@ fn an_origin_plane_in_a_stream_of_several_components_keeps_no_frame() {
         (vec![space(1)], true),
         (vec![space(1), space(2)], false),
     ] {
-        let definition = super::super::project_draft(
+        let definition = super::super::draft::project_draft(
             &scope,
             &super::super::ProjectInputs {
                 scopes: std::slice::from_ref(&scope),
@@ -367,7 +367,7 @@ fn a_flip_reverses_the_pull_of_a_work_plane() {
     let plane = work_plane_scope();
     for (flipped, z) in [(false, 1.0), (true, -1.0)] {
         let scope = draft_scope(0.25, Some(flipped));
-        let definition = super::super::project_draft(
+        let definition = super::super::draft::project_draft(
             &scope,
             &super::super::ProjectInputs {
                 scopes: &[scope.clone(), plane.clone()],
@@ -410,7 +410,7 @@ fn a_flip_reverses_the_pull_of_a_parting_line() {
         .unwrap();
     let [faces, neutral] = groups();
     let tool = group(103, 113, DesignOperandRole::ROLE_0X21);
-    let definition = super::super::project_draft(
+    let definition = super::super::draft::project_draft(
         &scope,
         &super::super::ProjectInputs {
             scopes: &[scope.clone(), plane],
@@ -507,7 +507,7 @@ fn the_first_lane_drafts_the_plane_normal_side_whatever_the_flip() {
             (282, vec![scope.clone(), plane.clone()]),
             (42, vec![scope.clone()]),
         ] {
-            let definition = super::super::project_draft(
+            let definition = super::super::draft::project_draft(
                 &scope,
                 &super::super::ProjectInputs {
                     scopes: &scopes,
@@ -570,7 +570,7 @@ fn a_two_sided_draft_needs_a_neutral_plane_pull() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let definition = super::super::project_draft(
+        let definition = super::super::draft::project_draft(
             &scope,
             &super::super::ProjectInputs {
                 scopes: &[scope.clone(), plane.clone()],

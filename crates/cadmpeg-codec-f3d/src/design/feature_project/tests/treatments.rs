@@ -1675,7 +1675,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut cell = group(300, 3, vec![301]);
     cell.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     assert!(matches!(
-        crate::design::feature_project::project_boundary_fill(&fill_scope, &[tools.clone(), cell.clone()]),
+        crate::design::feature_project::surface_edit::project_boundary_fill(&fill_scope, &[tools.clone(), cell.clone()]),
         Some(FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
             tools: cadmpeg_ir::features::BodySelection::Native(ref tool_selection),
             cells: ref cell_selections,
@@ -1870,7 +1870,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
         };
         assert!(matches!(
             crate::test_support::with_decode_context(|decode_ctx| {
-                crate::design::feature_project::project_fillet_arm(
+                crate::design::feature_project::edge_treatments::project_fillet_arm(
                     decode_ctx,
                     &inputs,
                     &scope,
