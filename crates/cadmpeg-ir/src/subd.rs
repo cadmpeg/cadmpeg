@@ -1026,6 +1026,7 @@ impl SubdEdge {
 )]
 pub enum SubdUserKnot {
     /// Use the edge's base knot interval.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Inherit,
     /// Use this finite nonnegative interval, including explicit zero.
     Override(NonNegativeReal),
