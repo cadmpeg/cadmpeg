@@ -1063,8 +1063,9 @@ enum MarkerGeometryFailure {
     Codec(CodecError),
 }
 
-/// Native-kind prefix of a marker entity whose geometry the recovery passes
-/// may still resolve. [`finalize_unread_marker_entities`] replaces it.
+/// Native-kind prefix of a marker entity without admitted geometry, until
+/// [`finalize_unread_marker_entities`] replaces it after the last sketch
+/// geometry pass.
 const MARKER_GEOMETRY_PLACEHOLDER: &str = "sldprt:marker-geometry:";
 const DEGENERATE_LINE_PLACEHOLDER: &str = "sldprt:marker-geometry:degenerate-line";
 
@@ -1086,14 +1087,14 @@ pub(crate) fn finalize_unread_marker_entities(
             continue;
         };
         let (role, code) = match placeholder {
-            "0" => ("point", SldprtLossCode::SketchCoordinatesUnread),
-            "1" => ("line-or-circle", SldprtLossCode::SketchCoordinatesUnread),
-            "2" => ("arc", SldprtLossCode::SketchCoordinatesUnread),
-            "3" => ("constrained-point", SldprtLossCode::SketchCoordinatesUnread),
+            "0" => ("point", SldprtLossCode::SketchHandleUnresolved),
+            "1" => ("line-or-circle", SldprtLossCode::SketchHandleUnresolved),
+            "2" => ("arc", SldprtLossCode::SketchHandleUnresolved),
+            "3" => ("constrained-point", SldprtLossCode::SketchHandleUnresolved),
             _ if native_kind.as_str() == DEGENERATE_LINE_PLACEHOLDER => {
                 ("line-or-circle", SldprtLossCode::SketchLineDegenerate)
             }
-            _ => ("unknown", SldprtLossCode::SketchCoordinatesUnread),
+            _ => ("marker", SldprtLossCode::SketchHandleUnresolved),
         };
         let marker = entity
             .native_ref
@@ -1106,7 +1107,7 @@ pub(crate) fn finalize_unread_marker_entities(
                 entity.id()
             ),
             _ => format!(
-                "sketch {} entity {}: the coordinates of {role} handle {marker} were not read; the entity keeps its marker role",
+                "sketch {} entity {}: no line, circle, or arc geometry was admitted for {role} handle {marker}; the entity keeps its marker role",
                 entity.sketch,
                 entity.id()
             ),

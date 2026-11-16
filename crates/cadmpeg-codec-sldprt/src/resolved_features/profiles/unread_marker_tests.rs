@@ -161,7 +161,7 @@ fn a_line_or_circle_marker_without_coordinates_keeps_its_role_and_identity() {
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
-        SldprtLossCode::SketchCoordinatesUnread.kind()
+        SldprtLossCode::SketchHandleUnresolved.kind()
     );
     assert!(losses[0].message.contains(entities[curve].id().as_str()));
     assert!(losses[0].message.contains("line-or-circle handle curve"));
@@ -187,6 +187,9 @@ fn each_placeholder_takes_its_marker_role_and_resolved_geometry_is_untouched() {
             "degenerate",
             placeholder("sldprt:marker-geometry:degenerate-line"),
         ),
+        entity("point", placeholder("sldprt:marker-geometry:0")),
+        entity("constrained", placeholder("sldprt:marker-geometry:3")),
+        entity("other", placeholder("sldprt:marker-geometry:9")),
     ];
     let mut losses = Vec::new();
     finalize_unread_marker_entities(&mut entities, &mut losses);
@@ -198,6 +201,12 @@ fn each_placeholder_takes_its_marker_role_and_resolved_geometry_is_untouched() {
         Some("sldprt:line-or-circle-handle")
     );
     assert_eq!(native_kind(&entities[3]), Some("sldprt:arc-handle"));
+    assert_eq!(native_kind(&entities[5]), Some("sldprt:point-handle"));
+    assert_eq!(
+        native_kind(&entities[6]),
+        Some("sldprt:constrained-point-handle")
+    );
+    assert_eq!(native_kind(&entities[7]), Some("sldprt:marker-handle"));
     assert_eq!(
         native_kind(&entities[4]),
         Some("sldprt:line-or-circle-handle")
@@ -208,9 +217,12 @@ fn each_placeholder_takes_its_marker_role_and_resolved_geometry_is_untouched() {
             .map(|loss| loss.code.clone())
             .collect::<Vec<_>>(),
         vec![
-            SldprtLossCode::SketchCoordinatesUnread.kind(),
-            SldprtLossCode::SketchCoordinatesUnread.kind(),
+            SldprtLossCode::SketchHandleUnresolved.kind(),
+            SldprtLossCode::SketchHandleUnresolved.kind(),
             SldprtLossCode::SketchLineDegenerate.kind(),
+            SldprtLossCode::SketchHandleUnresolved.kind(),
+            SldprtLossCode::SketchHandleUnresolved.kind(),
+            SldprtLossCode::SketchHandleUnresolved.kind(),
         ]
     );
     assert!(losses[2].message.contains("marker-degenerate coincide"));
