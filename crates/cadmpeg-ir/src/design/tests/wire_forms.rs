@@ -141,7 +141,8 @@ fn an_option_field_is_omitted_and_a_list_field_is_always_written() {
     );
 }
 
-/// "A number has one zero: −0 equals 0, and a writer writes zero as `0`."
+/// "A number has one zero: −0 equals 0, a float zero is written `0.0`, and a
+/// writer never writes −0."
 #[test]
 fn negative_zero_is_never_written() {
     for zero in [0.0, -0.0] {
