@@ -490,6 +490,17 @@ byte1 = (prefix - 0x8B) & 0xFF
 byte0 = 0x3F when byte1 >= 0x80, otherwise 0x40
 ```
 
+Prefixes `4b..59` select the first two IEEE bytes from this table instead:
+
+| Prefix   | First two IEEE bytes |
+| -------- | -------------------- |
+| `4b`     | `3fb0`               |
+| `4c`     | `3fb1`               |
+| `4d`     | `3fb5`               |
+| `4e..53` | `3f72 + prefix`      |
+| `54..57` | `3f73 + prefix`      |
+| `58..59` | `3f74 + prefix`      |
+
 Known prefixes include `71→3F E6`, `74→3F E9`, `76→3F EB`, `81→3F F6`, `8b→40 00`, `90→40 05`, `91→40 06`, `a1→40 16`, `a2→40 17`, and `b7→3F E4`. The negative saved-spline tangent form `b3` maps to `BF E0`. In the `var_arr` coordinate lane, `d7` is the sign counterpart of `90` and maps to `C0 05 <tail6>`.
 
 The `var_arr` coordinate lane also defines the sign pairs
@@ -1365,8 +1376,8 @@ model-reference token with a seven-byte tail, `19 <scalar>`, `eb ba
 <payload3>`, `ec ba <payload3>`, `ed ba <payload3>`, `5a b2`, or a bare `18`.
 The control shell does not contribute geometry. The two edge parameters use
 the first tabulated-cylinder directrix-coordinate lane. A positive DICT
-parameter with prefix `p` in `4b..a3` reconstructs IEEE bytes two through seven
-with `q = (p + 75) mod 256`; byte one is `3f` when `q >= 80` and `40` otherwise.
+parameter with prefix `p` in `4b..a3` takes its first two IEEE bytes from the
+positive DICT lane of the seven-byte DICT form.
 The signed directrix lattice handles all other parameter prefixes. The
 separator after the first parameter is one byte in `11..14`, or three bytes
 beginning with `00` or `34`; separator payload bytes are not scalar fields.
@@ -1785,9 +1796,9 @@ Each packed point body contains two directrix coordinates. A control point is
 numeric only when two defined scalar tokens consume its entire bounded body;
 partial scalar matches do not assign either coordinate.
 In the first-coordinate lane, prefixes `4b..a3` use the positive DICT mapping.
-Negative prefixes `b2..cf`, `d0..dc`, `dd`, and `de..df` derive their two
+Negative prefixes `b3..cf`, `d0..dc`, `dd`, and `de..df` derive their two
 leading IEEE bytes by adding the prefix to `BF2D`, `BF2E`, `BF2F`, and `BF32`,
-respectively. Negative prefixes `a5..a6` and `a7..b1` add to `BF2B` and `BF2C`.
+respectively. Negative prefixes `a5..a6` and `a7..b2` add to `BF2B` and `BF2C`.
 Prefixes `2c`, `4e..4f`, `52`, `54`, and `58..5a` reconstruct
 `3F <tail6> 00`; `45` reconstructs `BF <tail6> 00`.
 The fixed-width forms are `28 <tail7> → 3F <tail7>`,
@@ -4059,9 +4070,8 @@ parameter rows within one snapshot use occurrence-qualified identities in source
 order. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following
 compact `ext_id`.
-The positional `value` lane uses the positive DICT lattice `53..a3`; the first
-two IEEE bytes are `3F75 + prefix` and the following six bytes complete the
-value; `ad` is an alias for leading bytes `3F D9`. The seven-byte
+The positional `value` lane uses the positive DICT lane of the seven-byte DICT
+form for prefixes `53..a3`, and the following six bytes complete the value; `ad` is an alias for leading bytes `3F D9`. The seven-byte
 `31 <tail6>` form reconstructs `[40, tail6, 00]`. A bare `18` value is zero. Unresolved `00 XX YY` and `01 XX YY ZZ`
 value forms occupy three and four bytes respectively. Compact `0e` is `-0.5`, so
 the following one-byte `direct`, `aux_value`, and compact `ext_id` fields remain
@@ -6963,10 +6973,16 @@ tail bytes follow the prefix.
 
 | Prefix   | `H`         |
 | -------- | ----------- |
-| `4b..a3` | `3f75 + p`  |
+| `4b`     | `3fb0`      |
+| `4c`     | `3fb1`      |
+| `4d`     | `3fb5`      |
+| `4e..53` | `3f72 + p`  |
+| `54..57` | `3f73 + p`  |
+| `58..59` | `3f74 + p`  |
+| `5a..a3` | `3f75 + p`  |
 | `a5..a6` | `bf2b + p`  |
-| `a7..b1` | `bf2c + p`  |
-| `b2..cf` | `bf2d + p`  |
+| `a7..b2` | `bf2c + p`  |
+| `b3..cf` | `bf2d + p`  |
 | `d0..dc` | `bf2e + p`  |
 | `dd`     | `bf2f + p`  |
 | `de..df` | `bf32 + p`  |
