@@ -76,8 +76,8 @@
         "id": "synthetic:v2:curve#v",
         "geometry": {
           "kind": "solved",
-          "valÿÿÿÿ {
-            "kind": "line",
+          "value": {
+ ÿÿÿÿ       "kind": "line",
             "origin": {
               "x": 0.0,
               "y": 0.0,
@@ -273,6 +273,7 @@
     "features": [],
     "parameters": [],
     "spreadsheets": [],
+    "sheet_metal_rules": [],
     "programs": [],
     "configurations": [],
     "arrangements": [],

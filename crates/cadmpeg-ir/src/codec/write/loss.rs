@@ -82,6 +82,7 @@ impl ExportLossCode {
             | EntityKind::DesignFeature
             | EntityKind::DesignParameter
             | EntityKind::DesignSpreadsheet
+            | EntityKind::DesignSheetMetalRule
             | EntityKind::DesignProgram
             | EntityKind::DesignConfiguration
             | EntityKind::DesignArrangement

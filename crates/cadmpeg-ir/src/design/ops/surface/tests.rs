@@ -1047,6 +1047,37 @@ fn a_mesh_operation_takes_an_unread_source() {
     round_trip(&feature).unwrap();
 }
 
+/// §5.10: each surfacing, wireframe, form, and mesh operation is the
+/// `FeatureOperation` arm its family names, holding the operation as its
+/// value.
+#[test]
+fn every_surface_operation_is_a_feature_operation_arm() {
+    use crate::design::feature::{FeatureOperation as Op, OperationFamily as Family};
+    use crate::design::tests::arm_failures;
+    let failures = [
+        arm_failures(Family::Patch, patch_samples(), Op::Patch),
+        arm_failures(Family::Knit, knit_samples(), Op::Knit),
+        arm_failures(Family::Unsew, unsew_samples(), Op::Unsew),
+        arm_failures(Family::UnsewFaces, unsew_faces_samples(), Op::UnsewFaces),
+        arm_failures(Family::Extend, extend_samples(), Op::Extend),
+        arm_failures(
+            Family::ImplicitSweep,
+            implicit_sweep_samples(),
+            Op::ImplicitSweep,
+        ),
+        arm_failures(
+            Family::BoundaryFill,
+            boundary_fill_samples(),
+            Op::BoundaryFill,
+        ),
+        arm_failures(Family::Curve, curve_feature_samples(), Op::Curve),
+        arm_failures(Family::Form, form_samples(), Op::Form),
+        arm_failures(Family::Mesh, mesh_feature_samples(), Op::Mesh),
+    ]
+    .concat();
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
 #[cfg(feature = "schema")]
 mod schema {
     use schemars::{schema_for, JsonSchema};

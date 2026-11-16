@@ -139,6 +139,7 @@ macro_rules! classified_arena_registry {
             features: crate::design::feature::Feature, design, design, "The features of the scopes' histories.", [];
             parameters: crate::design::parameter::DesignParameter, design, design, "The design parameters.", [];
             spreadsheets: crate::design::spreadsheet::Spreadsheet, design, design, "The sheets that own some of the design parameters.", [];
+            sheet_metal_rules: crate::design::ops::sheet_metal::SheetMetalRule, design, design, "The sheet-metal defaults that several features and bodies share.", [];
             programs: crate::design::program::ParameterProgram, design, design, "The parameter programs.", [];
             configurations: crate::design::configuration::DesignConfiguration, design, design, "The configurations of the scopes.", [];
             arrangements: crate::design::configuration::Arrangement, design, design, "The arrangements of the scopes' occurrences.", [];

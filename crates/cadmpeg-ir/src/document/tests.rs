@@ -987,6 +987,7 @@ fn every_design_arena_is_classified_design() {
             "design.features",
             "design.parameters",
             "design.spreadsheets",
+            "design.sheet_metal_rules",
             "design.programs",
             "design.configurations",
             "design.arrangements",

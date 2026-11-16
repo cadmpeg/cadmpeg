@@ -249,7 +249,7 @@
       },
       {
         "id": "synthetic:cube:coedge#bottom:1",
-        "owner_loop": "syntÿÿÿÿc:cube:loop#bottom",
+        "owner_loop": "synthetic:cuÿÿÿÿoop#bottom",
         "edge": "synthetic:cube:edge#3",
         "radial_next": "synthetic:cube:coedge#left:0",
         "sense": "reversed",
@@ -1095,6 +1095,7 @@
     "features": [],
     "parameters": [],
     "spreadsheets": [],
+    "sheet_metal_rules": [],
     "programs": [],
     "configurations": [],
     "arrangements": [],

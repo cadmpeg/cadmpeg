@@ -148,8 +148,8 @@
                 0.0,
                 0.5
               ],
-              "tag": "smoêth_x",
-              "sector_coefficients": [
+              "tag": "smooth_x",
+       ﬂ      "sector_coefficients": [
                 0.25,
                 0.75
               ]
@@ -273,6 +273,7 @@
     "features": [],
     "parameters": [],
     "spreadsheets": [],
+    "sheet_metal_rules": [],
     "programs": [],
     "configurations": [],
     "arrangements": [],

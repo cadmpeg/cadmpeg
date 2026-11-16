@@ -538,8 +538,8 @@ The generated document begins with this complete hierarchy and representative ra
   "model": { "features": [] },
   "design": {
     "scopes": [], "containers": [], "features": [], "parameters": [],
-    "spreadsheets": [], "programs": [], "configurations": [], "arrangements": [],
-    "publications": [], "evaluations": [], "names": []
+    "spreadsheets": [], "sheet_metal_rules": [], "programs": [], "configurations": [],
+    "arrangements": [], "publications": [], "evaluations": [], "names": []
   },
   "process": {},
   "native": {}

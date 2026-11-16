@@ -22,6 +22,11 @@ use super::ops::datum::Datum;
 use super::ops::dressup::{
     Chamfer, Decal, Dome, Draft, Emboss, Fillet, Hole, Offset, ShellFeature, Thicken, Thread,
 };
+use super::ops::sheet_metal::SheetMetal;
+use super::ops::surface::{
+    BoundaryFill, CurveFeature, Extend, Form, ImplicitSweep, Knit, MeshFeature, Patch, Unsew,
+    UnsewFaces,
+};
 use super::ops::swept::{Extrude, HelicalSweep, Loft, Primitive, Revolve, Rib, Sweep};
 use super::options::NativeOptions;
 use super::selection::{DefinitionRef, SetSelection};
@@ -232,6 +237,28 @@ pub enum FeatureOperation {
     ReplaceFaces(Box<ReplaceFaces>),
     /// A graft (§6.5).
     Graft(Box<Graft>),
+    /// A patch (§6.6).
+    Patch(Box<Patch>),
+    /// A knit (§6.6).
+    Knit(Box<Knit>),
+    /// An unsew (§6.6).
+    Unsew(Box<Unsew>),
+    /// An unsew of faces (§6.6).
+    UnsewFaces(Box<UnsewFaces>),
+    /// An extension (§6.6).
+    Extend(Box<Extend>),
+    /// An implicit-section sweep (§6.6).
+    ImplicitSweep(Box<ImplicitSweep>),
+    /// A boundary fill (§6.6).
+    BoundaryFill(Box<BoundaryFill>),
+    /// A wireframe curve (§6.6).
+    Curve(Box<CurveFeature>),
+    /// A subdivision form (§6.6).
+    Form(Box<Form>),
+    /// A sheet-metal feature (§6.6).
+    SheetMetal(Box<SheetMetal>),
+    /// A mesh feature (§6.6).
+    Mesh(Box<MeshFeature>),
     /// A design feature whose removed volume is the volume a manufacturing
     /// operation machines.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]

@@ -87,6 +87,7 @@ fn every_design_root_type_round_trips() {
     check(f, "ProgramBody", root::program_bodies());
     check(f, "ParameterProgram", root::programs());
     check(f, "Spreadsheet", root::spreadsheets());
+    check(f, "SheetMetalRule", root::sheet_metal_rules());
     check(f, "Design", root::designs());
     assert!(failures.is_empty(), "{failures:#?}");
 }
@@ -244,7 +245,7 @@ fn the_design_root_writes_every_arena_in_order() {
     let text = serde_json::to_string(&Design::default()).unwrap();
     assert_eq!(
         text,
-        r#"{"scopes":[],"containers":[],"features":[],"parameters":[],"spreadsheets":[],"programs":[],"configurations":[],"arrangements":[],"publications":[],"evaluations":[],"names":[]}"#
+        r#"{"scopes":[],"containers":[],"features":[],"parameters":[],"spreadsheets":[],"sheet_metal_rules":[],"programs":[],"configurations":[],"arrangements":[],"publications":[],"evaluations":[],"names":[]}"#
     );
     refuses::<Design>(r#"{"scopes": []}"#);
     let mut extra = to_value(&Design::default());

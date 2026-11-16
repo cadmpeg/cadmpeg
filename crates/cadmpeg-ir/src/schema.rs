@@ -123,6 +123,8 @@ pub enum EntityKind {
     DesignParameter,
     /// Spreadsheet of the `design` home.
     DesignSpreadsheet,
+    /// Sheet-metal rule.
+    DesignSheetMetalRule,
     /// Parameter program.
     DesignProgram,
     /// Configuration of the `design` home.
@@ -195,16 +197,17 @@ impl EntityKind {
             Self::DesignFeature => 53,
             Self::DesignParameter => 54,
             Self::DesignSpreadsheet => 55,
-            Self::DesignProgram => 56,
-            Self::DesignConfiguration => 57,
-            Self::DesignArrangement => 58,
-            Self::DesignPublication => 59,
-            Self::DesignEvaluation => 60,
+            Self::DesignSheetMetalRule => 56,
+            Self::DesignProgram => 57,
+            Self::DesignConfiguration => 58,
+            Self::DesignArrangement => 59,
+            Self::DesignPublication => 60,
+            Self::DesignEvaluation => 61,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 61] = [
+    pub const ALL: [Self; 62] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -261,6 +264,7 @@ impl EntityKind {
         Self::DesignFeature,
         Self::DesignParameter,
         Self::DesignSpreadsheet,
+        Self::DesignSheetMetalRule,
         Self::DesignProgram,
         Self::DesignConfiguration,
         Self::DesignArrangement,
@@ -313,6 +317,11 @@ impl_design_record!(
 impl_design_record!(
     crate::design::spreadsheet::Spreadsheet,
     DesignSpreadsheet,
+    id
+);
+impl_design_record!(
+    crate::design::ops::sheet_metal::SheetMetalRule,
+    DesignSheetMetalRule,
     id
 );
 impl_design_record!(crate::design::program::ParameterProgram, DesignProgram, id);

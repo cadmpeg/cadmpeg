@@ -24,6 +24,7 @@ use crate::design::feature::{
     OperationFamily, StoredOrigin,
 };
 use crate::design::ops::body::TransformStep;
+use crate::design::ops::sheet_metal::{BendAllowance, BendSpec, RadiusSide, SheetMetalRule};
 use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::parameter::{
     DesignParameter, Deviations, DimensionDisplay, FitDeviations, LimitSide, ParameterDefinition,
@@ -887,6 +888,41 @@ pub(super) fn spreadsheets() -> Vec<Spreadsheet> {
     ]
 }
 
+pub(super) fn sheet_metal_rules() -> Vec<SheetMetalRule> {
+    vec![
+        SheetMetalRule {
+            id: id("sheet-metal-rule", 1),
+            scope: id("product-definition", 1),
+            name: Some(text("Default")),
+            thickness: Some(Dimension::Parameter(id("parameter", 1))),
+            bend: BendSpec {
+                radius: Some(Dimension::Literal(positive_length(1.5))),
+                radius_side: Some(RadiusSide::Inside),
+                relief: None,
+            },
+            allowance: Some(BendAllowance::KFactor(Dimension::Literal(real(0.44)))),
+            native_options: native_options(),
+            source_settings: NativeOptions::new(),
+            native_ref: Some("f3d:rule#1".to_owned()),
+        },
+        SheetMetalRule {
+            id: id("sheet-metal-rule", 2),
+            scope: id("product-definition", 1),
+            name: None,
+            thickness: None,
+            bend: BendSpec {
+                radius: None,
+                radius_side: None,
+                relief: None,
+            },
+            allowance: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+            native_ref: None,
+        },
+    ]
+}
+
 pub(super) fn designs() -> Vec<Design> {
     vec![
         Design::default(),
@@ -896,6 +932,7 @@ pub(super) fn designs() -> Vec<Design> {
             features: features(),
             parameters: design_parameters(),
             spreadsheets: spreadsheets(),
+            sheet_metal_rules: sheet_metal_rules(),
             programs: programs(),
             configurations: design_configurations(),
             arrangements: arrangements(),
