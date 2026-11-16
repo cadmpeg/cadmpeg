@@ -651,6 +651,7 @@ pub(super) fn emit_surfaces(
             id: model_id,
             geometry: plan.geometry,
             source_object: Some(cgm_source("surface", object_id)?),
+            native_ref: None,
         });
         match plan.procedure {
             Some(SurfaceProcedure::Extrusion(extrusion)) => {
@@ -686,6 +687,7 @@ pub(super) fn emit_surfaces(
                         revolution.directrix,
                     )),
                     source_object: None,
+                    native_ref: None,
                 });
                 let procedural_id = crate::resource::compose_u32_id(
                     &cadmpeg_ir::identity_namespace!("catia", "b5", "procedural-surface"),
@@ -831,6 +833,7 @@ fn emit_extrusion_procedure(
                 id: directrix_id.clone(),
                 geometry: curve,
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
+                native_ref: None,
             });
         }
         super::ResolvedExtrusionDirectrix::Offset {
@@ -859,6 +862,7 @@ fn emit_extrusion_procedure(
                 id: source_id.clone(),
                 geometry: source_curve,
                 source_object: Some(cgm_source("curve", source_object_id)?),
+                native_ref: None,
             });
             annotate(
                 annotations,
@@ -873,6 +877,7 @@ fn emit_extrusion_procedure(
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
+                native_ref: None,
             });
             let procedure_id = crate::resource::compose_u32_id(
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),
@@ -1027,6 +1032,7 @@ mod tests {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
 
         crate::test_support::with_service_context(|ctx| {

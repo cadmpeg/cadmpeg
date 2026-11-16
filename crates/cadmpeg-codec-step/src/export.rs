@@ -28,7 +28,8 @@ use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
+    Body, BodyKind, ChildLists, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell,
+    Vertex,
 };
 use cadmpeg_ir::CadIr;
 
@@ -295,6 +296,7 @@ pub(crate) struct Builder<'a> {
     points: HashMap<&'a str, &'a Point>,
     bodies: HashMap<&'a str, &'a Body>,
     shells: HashMap<&'a str, &'a Shell>,
+    children: ChildLists<'a>,
     faces: HashMap<&'a str, &'a Face>,
     loops: HashMap<&'a str, &'a Loop>,
     vertices: HashMap<&'a str, &'a Vertex>,
@@ -520,6 +522,7 @@ impl<'a> Builder<'a> {
                 .iter()
                 .map(|shell| (shell.id.as_str(), shell))
                 .collect(),
+            children: ir.geometry.child_lists(),
             faces: ir
                 .geometry
                 .faces
@@ -683,7 +686,8 @@ impl<'a> Builder<'a> {
             .bodies
             .iter()
             .filter(|body| matches!(body.kind, BodyKind::Solid | BodyKind::Sheet))
-            .flat_map(|body| &body.regions)
+            .flat_map(|body| self.children.body_regions(&body.id))
+            .map(|region| &region.id)
             .collect::<BTreeSet<_>>();
         let mut wire_edges = BTreeSet::new();
         let mut free_vertices = BTreeSet::new();
@@ -905,8 +909,8 @@ impl<'a> Builder<'a> {
                 let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
                     continue;
                 };
-                for face in shell.faces() {
-                    face_body.insert(face.as_str(), body);
+                for face in self.children.shell_faces(&shell.id) {
+                    face_body.insert(face.id.as_str(), body);
                 }
             }
         }
@@ -1135,9 +1139,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(f64::from(color.r())),
-            self.emitter.real(f64::from(color.g())),
-            self.emitter.real(f64::from(color.b()))
+            self.emitter.real(color.r()),
+            self.emitter.real(color.g()),
+            self.emitter.real(color.b())
         );
         let key = format!("surface:{name}:{rgb}:{}", color.a().to_bits());
         if let Some(style) = cache.get(&key) {
@@ -1159,7 +1163,7 @@ impl<'a> Builder<'a> {
         if color.a() < 1.0 {
             let transparency = self.emitter.emit(
                 "SURFACE_STYLE_TRANSPARENT",
-                &self.emitter.real(1.0 - f64::from(color.a())),
+                &self.emitter.real(1.0 - color.a()),
             );
             let rendering = self.emitter.emit(
                 "SURFACE_STYLE_RENDERING_WITH_PROPERTIES",
@@ -1188,9 +1192,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(f64::from(color.r())),
-            self.emitter.real(f64::from(color.g())),
-            self.emitter.real(f64::from(color.b()))
+            self.emitter.real(color.r()),
+            self.emitter.real(color.g()),
+            self.emitter.real(color.b())
         );
         let key = format!("curve:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -1221,9 +1225,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(f64::from(color.r())),
-            self.emitter.real(f64::from(color.g())),
-            self.emitter.real(f64::from(color.b()))
+            self.emitter.real(color.r()),
+            self.emitter.real(color.g()),
+            self.emitter.real(color.b())
         );
         let key = format!("point:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -1992,12 +1996,12 @@ impl<'a> Builder<'a> {
             let has_surface_topology = region.shells.iter().any(|shell_id| {
                 self.shells
                     .get(shell_id.as_str())
-                    .is_some_and(|shell| !shell.faces().is_empty())
+                    .is_some_and(|shell| !self.children.shell_faces(&shell.id).is_empty())
             });
             let has_wire_topology = region.shells.iter().any(|shell_id| {
-                self.shells.get(shell_id.as_str()).is_some_and(|shell| {
-                    !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty()
-                })
+                self.shells
+                    .get(shell_id.as_str())
+                    .is_some_and(|shell| !shell.members.is_empty())
             });
             let mixed_wire = body_kind == BodyKind::General && has_wire_topology;
             if body_kind == BodyKind::Wire
@@ -2165,7 +2169,7 @@ impl<'a> Builder<'a> {
             let Some(shell) = self.shells.get(shell_id.as_str()) else {
                 continue;
             };
-            missing.extend(shell.free_vertices().iter().cloned());
+            missing.extend(shell.free_vertices().cloned());
             for edge_id in shell.wire_edges() {
                 if let Some(edge) = self.edges.get(edge_id.as_str()) {
                     let vertices = if wire_written && self.edge_refs.contains_key(edge_id.as_str())
@@ -2176,13 +2180,11 @@ impl<'a> Builder<'a> {
                         missing_edges.insert(edge_id.clone());
                         &mut missing
                     };
-                    vertices.extend([edge.start.clone(), edge.end.clone()]);
+                    vertices.extend(edge.vertices().cloned());
                 }
             }
-            for face_id in shell.faces() {
-                let Some(face) = self.faces.get(face_id.as_str()) else {
-                    continue;
-                };
+            for face in self.children.shell_faces(&shell.id) {
+                let face_id = &face.id;
                 for loop_id in &face.loops {
                     let Some(lp) = self.loops.get(loop_id.as_str()) else {
                         continue;
@@ -2207,7 +2209,7 @@ impl<'a> Builder<'a> {
                             } else {
                                 missing_edges.insert(edge.id.clone());
                             }
-                            vertices.extend([edge.start.clone(), edge.end.clone()]);
+                            vertices.extend(edge.vertices().cloned());
                         }
                     }
                 }
@@ -2222,7 +2224,7 @@ impl<'a> Builder<'a> {
                 continue;
             }
             if let Some(reference) = self.emit_edge(edge_id.as_str()) {
-                retained.extend([edge.start.clone(), edge.end.clone()]);
+                retained.extend(edge.vertices().cloned());
                 edges.extend(reference.into_iter().map(|reference| (reference, edge)));
             }
         }
@@ -2472,19 +2474,18 @@ impl<'a> Builder<'a> {
         }
         let mut connected_sets = Vec::new();
         for shell in shells {
-            if !shell.free_vertices().is_empty() {
+            if shell.free_vertices().next().is_some() {
                 self.loss(
                     StepLossCode::WireShellFreeVertices,
                     format!(
                         "wire shell '{}' has {} free vertex/vertices without an edge-based STEP carrier",
                         shell.id,
-                        shell.free_vertices().len()
+                        shell.free_vertices().count()
                     ),
                 );
             }
             let edges = shell
                 .wire_edges()
-                .iter()
                 .flat_map(|id| {
                     let emitted = self.emit_edge(id.as_str()).unwrap_or_default();
                     let edge = self.edges.get(id.as_str()).copied();
@@ -2929,10 +2930,7 @@ impl<'a> Builder<'a> {
             let Some(shell) = self.shells.get(shell.as_str()).copied() else {
                 continue;
             };
-            for face in shell.faces() {
-                let Some(face) = self.faces.get(face.as_str()).copied() else {
-                    continue;
-                };
+            for face in self.children.shell_faces(&shell.id).to_vec() {
                 for loop_id in &face.loops {
                     let Some(lp) = self.loops.get(loop_id.as_str()).copied() else {
                         continue;
@@ -2975,10 +2973,11 @@ impl<'a> Builder<'a> {
 
     fn emit_shell(&mut self, shell_id: &str, closed: bool, reversed: bool) -> Option<(Ref, bool)> {
         let shell = self.shells.get(shell_id).copied()?;
-        let face_ids: Vec<String> = shell
-            .faces()
+        let face_ids: Vec<String> = self
+            .children
+            .shell_faces(&shell.id)
             .iter()
-            .map(|f| f.as_str().to_owned())
+            .map(|f| f.id.as_str().to_owned())
             .collect();
         let mut face_refs = Vec::new();
         let prior_losses = self.topology_relation_losses.len();
@@ -3019,10 +3018,8 @@ impl<'a> Builder<'a> {
 
     fn shell_is_closed(&self, shell: &Shell) -> bool {
         let mut uses: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
-        for face_id in shell.faces() {
-            let Some(face) = self.faces.get(face_id.as_str()) else {
-                return false;
-            };
+        let shell_faces = self.children.shell_faces(&shell.id);
+        for face in shell_faces {
             for loop_id in &face.loops {
                 let Some(lp) = self.loops.get(loop_id.as_str()) else {
                     return false;
@@ -3034,7 +3031,7 @@ impl<'a> Builder<'a> {
                     let Some(edge) = self.edges.get(coedge.edge.as_str()) else {
                         return false;
                     };
-                    let degenerate = edge.start == edge.end
+                    let degenerate = single_vertex(edge).is_some()
                         && (self
                             .collapsed_curveless_coedges
                             .contains(coedge_id.as_str())
@@ -3055,10 +3052,10 @@ impl<'a> Builder<'a> {
             }
         }
         (!uses.is_empty()
-            || (shell.faces().len() == 1
+            || (shell_faces.len() == 1
                 && self
                     .implicit_outer_bounds
-                    .get(shell.faces()[0].as_str())
+                    .get(shell_faces[0].id.as_str())
                     .is_some_and(|bound| matches!(bound, implicit_outer::OuterBound::Closed(_)))))
             && uses.values().all(|[forward, reversed]| forward == reversed)
     }
@@ -3305,16 +3302,15 @@ impl<'a> Builder<'a> {
             }
             let edge = self.edges.get(coedge.edge.as_str()).copied()?;
             let curve = self.curves.get(edge.curve()?.as_str()).copied()?;
-            if edge.start != edge.end
-                || !matches!(
-                    curve.geometry,
-                    CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
-                )
-                || vertex.is_some_and(|vertex| vertex != &edge.start)
+            let start = single_vertex(edge)?;
+            if !matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+            ) || vertex.is_some_and(|vertex| vertex != start)
             {
                 return None;
             }
-            vertex = Some(&edge.start);
+            vertex = Some(start);
             curves.push(curve.id.as_str());
         }
         Some((vertex?, curves))
@@ -3348,7 +3344,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             if edge.curve().is_none()
-                && edge.start == edge.end
+                && single_vertex(edge).is_some()
                 && self.pcurves_collapse_to(coedge, edge)?
             {
                 collapsed.insert(*coedge_id);
@@ -3385,12 +3381,13 @@ impl<'a> Builder<'a> {
                     Some(SolvedCurveGeometry::Degenerate(_))
                 )
             });
-            let collapsed = edge.start == edge.end
+            let pole = single_vertex(edge);
+            let collapsed = pole.is_some()
                 && (degenerate
                     || (edge.curve().is_none() && self.pcurves_collapse_to(coedge, edge)?));
-            if collapsed {
-                if !poles.contains(&&edge.start) {
-                    poles.push(&edge.start);
+            if let (true, Some(pole)) = (collapsed, pole) {
+                if !poles.contains(&pole) {
+                    poles.push(pole);
                 }
             } else {
                 let count = uses.entry(edge.id.as_str()).or_default();
@@ -3433,9 +3430,9 @@ impl<'a> Builder<'a> {
         else {
             return Ok(false);
         };
-        let Some(vertex) = self
-            .vertices
-            .get(edge.start.as_str())
+        let Some(vertex) = edge
+            .start()
+            .and_then(|start| self.vertices.get(start.as_str()))
             .and_then(|vertex| self.points.get(vertex.point.as_str()))
             .map(|point| point.position().get())
         else {
@@ -3499,7 +3496,7 @@ impl<'a> Builder<'a> {
                 .get(coedge_id.as_str())
                 .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
                 .is_some_and(|edge| {
-                    edge.start != edge.end
+                    single_vertex(edge).is_none()
                         || edge
                             .curve()
                             .and_then(|curve_id| self.curves.get(curve_id.as_str()))
@@ -3580,20 +3577,21 @@ impl<'a> Builder<'a> {
             if matches!(
                 curve.geometry.solved(),
                 Some(SolvedCurveGeometry::Degenerate(_))
-            ) && edge.start == edge.end
+            ) && single_vertex(edge).is_some()
                 && has_extent
             {
                 self.point_loop_curves.insert(curve.id.as_str().to_owned());
                 continue;
             }
-            let (start_vertex, end_vertex) = match coedge.sense {
-                Sense::Forward => (&edge.start, &edge.end),
-                Sense::Reversed => (&edge.end, &edge.start),
+            let (start_vertex, end_vertex) = match (&edge.ends, coedge.sense) {
+                (None, _) => (edge.id.as_str(), edge.id.as_str()),
+                (Some(ends), Sense::Forward) => (ends.start.as_str(), ends.end.as_str()),
+                (Some(ends), Sense::Reversed) => (ends.end.as_str(), ends.start.as_str()),
             };
             segments.push(LoopSegment {
                 coedge_id: coedge_id.as_str().to_owned(),
-                start_vertex: start_vertex.as_str().to_owned(),
-                end_vertex: end_vertex.as_str().to_owned(),
+                start_vertex: start_vertex.to_owned(),
+                end_vertex: end_vertex.to_owned(),
             });
         }
 
@@ -3735,24 +3733,32 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        let Some(v1) = self.emit_vertex(edge.start.as_str()) else {
+        let Some(ends) = &edge.ends else {
             self.topology_relation_loss(
-                format!("edge:{edge_id}:start-vertex:{}", edge.start),
+                format!("edge:{edge_id}:vertices"),
+                StepLossCode::EdgeNoVertex,
+                format!("edge {edge_id} was omitted because it has no vertex"),
+            );
+            return None;
+        };
+        let Some(v1) = self.emit_vertex(ends.start.as_str()) else {
+            self.topology_relation_loss(
+                format!("edge:{edge_id}:start-vertex:{}", ends.start),
                 StepLossCode::EdgeStartVertexMissing,
                 format!(
                     "edge {edge_id} was omitted because start vertex {} is missing",
-                    edge.start
+                    ends.start
                 ),
             );
             return None;
         };
-        let Some(v2) = self.emit_vertex(edge.end.as_str()) else {
+        let Some(v2) = self.emit_vertex(ends.end.as_str()) else {
             self.topology_relation_loss(
-                format!("edge:{edge_id}:end-vertex:{}", edge.end),
+                format!("edge:{edge_id}:end-vertex:{}", ends.end),
                 StepLossCode::EdgeEndVertexMissing,
                 format!(
                     "edge {edge_id} was omitted because end vertex {} is missing",
-                    edge.end
+                    ends.end
                 ),
             );
             return None;
@@ -3894,7 +3900,7 @@ impl<'a> Builder<'a> {
         let active_trim = if range.is_some()
             && (matches!(aligned, std::borrow::Cow::Owned(_)) || pcurves::ranges_match(range, edge))
             && edge.tolerance.is_some_and(|edge_tolerance| {
-                [&edge.start, &edge.end].into_iter().any(|id| {
+                edge.vertices().into_iter().any(|id| {
                     self.vertices
                         .get(id.as_str())
                         .and_then(|vertex| vertex.tolerance)
@@ -4079,8 +4085,8 @@ impl<'a> Builder<'a> {
         };
         let (Some(surface), Some(start), Some(end)) = (
             self.surfaces.get(surface),
-            position(&edge.start),
-            position(&edge.end),
+            edge.start().and_then(position),
+            edge.end().and_then(position),
         ) else {
             return Ok(None);
         };
@@ -5603,23 +5609,16 @@ impl<'a> Builder<'a> {
                 for edge_id in shell.wire_edges() {
                     referenced_edges.insert(edge_id.as_str());
                     if let Some(edge) = self.edges.get(edge_id.as_str()).copied() {
-                        referenced_vertices.insert(edge.start.as_str());
-                        referenced_vertices.insert(edge.end.as_str());
+                        referenced_vertices
+                            .extend(edge.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
                     }
                 }
-                referenced_vertices.extend(
-                    shell
-                        .free_vertices()
-                        .iter()
-                        .map(cadmpeg_ir::ids::VertexId::as_str),
-                );
-                for face_id in shell.faces() {
-                    if !referenced_faces.insert(face_id.as_str()) {
+                referenced_vertices
+                    .extend(shell.free_vertices().map(cadmpeg_ir::ids::VertexId::as_str));
+                for face in self.children.shell_faces(&shell.id) {
+                    if !referenced_faces.insert(face.id.as_str()) {
                         continue;
                     }
-                    let Some(face) = self.faces.get(face_id.as_str()).copied() else {
-                        continue;
-                    };
                     for loop_id in &face.loops {
                         if !referenced_loops.insert(loop_id.as_str()) {
                             continue;
@@ -5641,8 +5640,8 @@ impl<'a> Builder<'a> {
                             };
                             referenced_edges.insert(coedge.edge.as_str());
                             if let Some(edge) = self.edges.get(coedge.edge.as_str()).copied() {
-                                referenced_vertices.insert(edge.start.as_str());
-                                referenced_vertices.insert(edge.end.as_str());
+                                referenced_vertices
+                                    .extend(edge.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
                             }
                         }
                     }
@@ -6704,4 +6703,12 @@ fn helix_fit_failure(error: &cadmpeg_ir::eval::helix_nurbs::HelixNurbsError) -> 
         }
         cadmpeg_ir::eval::helix_nurbs::HelixNurbsError::Refused(_) => "with a refused evaluation",
     }
+}
+
+/// The one vertex an edge starts and ends at.
+fn single_vertex(edge: &Edge) -> Option<&cadmpeg_ir::ids::VertexId> {
+    edge.ends
+        .as_ref()
+        .filter(|ends| ends.start == ends.end)
+        .map(|ends| &ends.start)
 }

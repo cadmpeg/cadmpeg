@@ -6,10 +6,7 @@
       "bodies": [
         {
           "id": "catia:standard:body#unbound-points",
-          "kind": "wire",
-          "regions": [
-            "catia:standard:region#unbound-points"
-          ]
+          "kind": "wire"
         }
       ],
       "coedges": [],

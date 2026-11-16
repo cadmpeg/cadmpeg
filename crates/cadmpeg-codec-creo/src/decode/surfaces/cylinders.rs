@@ -161,6 +161,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         surface_ids.admit(
@@ -289,6 +290,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -402,6 +404,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -540,6 +543,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -1316,6 +1320,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         summary.transferred += 1;
@@ -1571,6 +1576,7 @@ pub(in super::super) fn transfer_positional_cones(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -1650,6 +1656,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -1723,6 +1730,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -1773,6 +1781,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;

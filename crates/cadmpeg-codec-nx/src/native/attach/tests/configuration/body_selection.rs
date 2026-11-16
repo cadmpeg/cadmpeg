@@ -270,7 +270,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
 #[test]
 fn segment_bound_bodies_form_the_exact_retained_history_input() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
-    use cadmpeg_ir::ids::{BodyId, RegionId};
+    use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
 
     let mut ir = CadIr::empty();
@@ -279,24 +279,20 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         Body {
             id: bound.clone(),
             kind: BodyKind::Solid,
-            regions: vec![
-                RegionId::mint("test:model:entity#region-2".to_string()).expect("identity grammar")
-            ],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         },
         Body {
             id: BodyId::mint("nx:s3:body#4".to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
-            regions: vec![
-                RegionId::mint("test:model:entity#region-3".to_string()).expect("identity grammar")
-            ],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         },
     ]);
     let binding = crate::native::segments::SegmentBodyBinding {
@@ -350,7 +346,6 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
 
 #[test]
 fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
-    use cadmpeg_ir::ids::RegionId;
     use cadmpeg_ir::topology::{Body, BodyKind};
 
     let body_ids = (0..2048)
@@ -361,13 +356,11 @@ fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
     ir.geometry.bodies.extend(body_ids.iter().map(|id| Body {
         id: BodyId::mint(id.clone()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![
-            RegionId::mint("test:model:entity#region".to_string()).expect("identity grammar"),
-        ],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     }));
     let bindings = (0..256_u32)
         .map(|index| crate::native::segments::SegmentBodyBinding {

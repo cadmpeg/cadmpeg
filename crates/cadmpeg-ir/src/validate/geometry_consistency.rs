@@ -673,6 +673,37 @@ fn bounded_curve_domain(curve: &crate::geometry::Curve) -> Option<[f64; 2]> {
     }
 }
 
+/// Whether a curve carrier is open: a bounded carrier whose ends do not
+/// coincide within `bound`, or an unbounded line, parabola, or hyperbola. A
+/// carrier that neither its kind nor an evaluation decides is not open.
+fn carrier_is_open(
+    ctx: &DecodeContext<'_>,
+    geometry: &crate::geometry::CurveGeometry,
+    domain: Option<[f64; 2]>,
+    bound: f64,
+) -> Result<bool, CodecError> {
+    if let Some([start_t, end_t]) = domain {
+        let (Some(at_start), Some(at_end)) = (
+            measured_point(crate::eval::decode::curve_point(ctx, geometry, start_t))?,
+            measured_point(crate::eval::decode::curve_point(ctx, geometry, end_t))?,
+        ) else {
+            return Ok(false);
+        };
+        return Ok(!crate::eval::curve_endpoints_coincident(
+            [at_start, at_end],
+            bound,
+        ));
+    }
+    Ok(matches!(
+        geometry.solved(),
+        Some(
+            SolvedCurveGeometry::Line(_)
+                | SolvedCurveGeometry::Parabola(_)
+                | SolvedCurveGeometry::Hyperbola(_)
+        )
+    ))
+}
+
 /// An edge's curve evaluated at its parameter range must land on the edge's
 /// start and end vertex positions within the topology tolerances or the
 /// evaluated curve cache's fit tolerance. An edge with no range on an open
@@ -711,9 +742,39 @@ pub(super) fn check_edge_endpoint_consistency(
         let Some(geometry) = curves.get(curve_id.as_str()) else {
             continue;
         };
+        let Some(ends) = &edge.ends else {
+            let bound = allowance(
+                ir.tolerances.linear,
+                &[
+                    edge.tolerance.map(crate::scalar::PositiveReal::get),
+                    curve_cache_tolerances
+                        .get(curve_id.as_str())
+                        .copied()
+                        .flatten()
+                        .map(crate::geometry::FitTolerance::get),
+                ],
+            );
+            if edge.param_range().is_none()
+                && carrier_is_open(
+                    ctx,
+                    geometry,
+                    curve_domains.get(curve_id.as_str()).copied(),
+                    bound,
+                )?
+            {
+                super::record_finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    Severity::Error,
+                    Some(edge.id.as_str()),
+                    format_args!("edge with no vertex lies on an open carrier curve"),
+                );
+            }
+            continue;
+        };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(edge.start.as_str()),
-            vertices.get(edge.end.as_str()),
+            vertices.get(ends.start.as_str()),
+            vertices.get(ends.end.as_str()),
         ) else {
             continue;
         };
@@ -795,9 +856,12 @@ pub(super) fn check_edge_endpoint_consistency(
         let Some(edge) = edges.get(coedge.edge.as_str()) else {
             continue;
         };
+        let Some(ends) = &edge.ends else {
+            continue;
+        };
         let (first_vertex, last_vertex) = match coedge.sense {
-            Sense::Forward => (&edge.start, &edge.end),
-            Sense::Reversed => (&edge.end, &edge.start),
+            Sense::Forward => (&ends.start, &ends.end),
+            Sense::Reversed => (&ends.end, &ends.start),
         };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
             vertices.get(first_vertex.as_str()),
@@ -940,9 +1004,12 @@ pub(super) fn check_pcurve_surface_consistency(
         let Some(edge) = edges.get(coedge.edge.as_str()) else {
             continue;
         };
+        let Some(ends) = &edge.ends else {
+            continue;
+        };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(edge.start.as_str()),
-            vertices.get(edge.end.as_str()),
+            vertices.get(ends.start.as_str()),
+            vertices.get(ends.end.as_str()),
         ) else {
             continue;
         };

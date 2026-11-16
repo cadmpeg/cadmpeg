@@ -264,11 +264,13 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
             id: vertex_start.clone(),
             point: point_start,
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: vertex_end.clone(),
             point: point_end,
             tolerance: None,
+            native_ref: None,
         },
     ]);
     ir.geometry.curves.push(Curve {
@@ -282,14 +284,18 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
             .expect("valid LineCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#line").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
             .expect("valid edge carrier"),
-        start: vertex_start,
-        end: vertex_end,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            vertex_start,
+            vertex_end,
+        )),
         tolerance: None,
+        native_ref: None,
     });
 
     let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
@@ -1042,6 +1048,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let mut ir = CadIr::empty();
     ir.geometry.loops = vec![
@@ -1056,6 +1063,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
                 )
                 .expect("valid loop ring"),
             ),
+            native_ref: None,
         },
         Loop {
             id: outer_id.clone(),
@@ -1068,6 +1076,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
                 )
                 .expect("valid loop ring"),
             ),
+            native_ref: None,
         },
     ];
 
@@ -1095,6 +1104,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let mut ir = CadIr::empty();
     ir.geometry.loops = vec![
@@ -1109,6 +1119,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
                 )
                 .expect("valid loop ring"),
             ),
+            native_ref: None,
         },
         Loop {
             id: unclassified_id.clone(),
@@ -1121,6 +1132,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
                 )
                 .expect("valid loop ring"),
             ),
+            native_ref: None,
         },
     ];
 

@@ -350,15 +350,17 @@ fn caps(ir: &CadIr, work: &WorkBudget) -> Option<Vec<Cap>> {
         .iter()
         .map(|s| (&s.id, &s.region))
         .collect();
-    let regions: HashMap<_, _> = ir
+    let body_transforms: HashMap<_, _> = ir
         .geometry
         .bodies
         .iter()
-        .flat_map(|b| {
-            b.regions
-                .iter()
-                .map(move |r| (r, b.transform.unwrap_or_else(Transform::identity)))
-        })
+        .map(|b| (&b.id, b.transform.unwrap_or_else(Transform::identity)))
+        .collect();
+    let regions: HashMap<_, _> = ir
+        .geometry
+        .regions
+        .iter()
+        .filter_map(|r| Some((&r.id, *body_transforms.get(&r.body)?)))
         .collect();
     let loops: HashMap<_, _> = ir.geometry.loops.iter().map(|l| (&l.id, l)).collect();
     let coedges: HashMap<_, _> = ir.geometry.coedges.iter().map(|c| (&c.id, c)).collect();
@@ -427,10 +429,11 @@ fn caps(ir: &CadIr, work: &WorkBudget) -> Option<Vec<Cap>> {
                     }
                     let coedge = coedges.get(cid)?;
                     let edge = edges.get(&coedge.edge)?;
+                    let ends = edge.ends.as_ref()?;
                     let (a, b) = if coedge.sense == Sense::Reversed {
-                        (&edge.end, &edge.start)
+                        (&ends.end, &ends.start)
                     } else {
-                        (&edge.start, &edge.end)
+                        (&ends.start, &ends.end)
                     };
                     let ap = transform.apply_point(*points.get(vertices.get(a)?)?)?.get();
                     let bp = transform.apply_point(*points.get(vertices.get(b)?)?)?.get();

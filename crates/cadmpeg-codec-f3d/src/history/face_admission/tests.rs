@@ -164,6 +164,7 @@ fn hole_keeps_a_surviving_current_face_and_refuses_an_unemitted_history() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     }];
     let mut inputs = FaceInputs::new(&topologies, &current);
     let original = resolved(face.as_str());

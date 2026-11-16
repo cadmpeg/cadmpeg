@@ -1862,6 +1862,7 @@ fn append_legacy_brep(
                         .ok_or_else(|| CodecError::malformed("vertex tolerance must be finite"))
                 })
                 .transpose()?,
+            native_ref: None,
         });
         vertex_by_class.insert(class, vertex_id);
     }
@@ -1894,6 +1895,7 @@ fn append_legacy_brep(
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             });
             Some((id, domain))
         } else {
@@ -1913,8 +1915,10 @@ fn append_legacy_brep(
                 curve_id.map(|value| value.1),
             )
             .map_err(CodecError::malformed)?,
-            start: vertices[0].clone(),
-            end: vertices[1].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertices[0].clone(),
+                vertices[1].clone(),
+            )),
             tolerance: group_tolerance
                 .get(&root)
                 .copied()
@@ -1924,6 +1928,7 @@ fn append_legacy_brep(
                         .ok_or_else(|| CodecError::malformed("edge tolerance must be finite"))
                 })
                 .transpose()?,
+            native_ref: None,
         });
         group_edges.insert(root, edge_id);
     }
@@ -1944,6 +1949,7 @@ fn append_legacy_brep(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
             source_object: None,
+            native_ref: None,
         });
         // Each V1 boundary record states its loop and its role together, so
         // the face's classification is folded from those rows and never
@@ -2024,6 +2030,7 @@ fn append_legacy_brep(
                             .transpose()
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
+                    native_ref: None,
                 });
                 let coedge_id = cadmpeg_ir::ids::CoedgeId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "coedge"),
@@ -2055,6 +2062,7 @@ fn append_legacy_brep(
                         ),
                     }],
                     use_curve: None,
+                    native_ref: None,
                 });
                 global_trim += 1;
             }
@@ -2064,6 +2072,7 @@ fn append_legacy_brep(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                native_ref: None,
             });
             match loop_record.role {
                 LoopBoundaryRole::Unspecified => {}
@@ -2106,6 +2115,7 @@ fn append_legacy_brep(
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         shell_faces.push(face_id);
     }
@@ -2122,29 +2132,28 @@ fn append_legacy_brep(
                 ring[(index + 1) % ring.len()].clone();
         }
     }
-    geometry.shells.push(
-        Shell::new(
-            shell_id.clone(),
-            region_id.clone(),
-            shell_faces,
-            Vec::new(),
-            Vec::new(),
-        )
-        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-    );
+    if shell_faces.is_empty() {
+        return Err(cadmpeg_core::CodecError::Malformed(
+            cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+        ));
+    }
+    geometry
+        .shells
+        .push(Shell::new(shell_id.clone(), region_id.clone()));
     geometry.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id],
+        native_ref: None,
     });
     geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::General,
-        regions: vec![region_id],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     draft.commit_model(ir, ctx)?.map_err(CodecError::malformed)
 }
@@ -2678,6 +2687,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
+                native_ref: None,
             });
             ir.geometry.shells.push(Shell::with_free_vertex(
                 shell_id.clone(),
@@ -2688,15 +2698,16 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 id: region_id.clone(),
                 body: body_id.clone(),
                 shells: vec![shell_id],
+                native_ref: None,
             });
             ir.geometry.bodies.push(Body {
                 id: body_id,
                 kind: BodyKind::General,
-                regions: vec![region_id],
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             });
             push_v1_record(
                 ctx,
@@ -2819,6 +2830,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             id: curve_id.clone(),
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
                             source_object: None,
+                            native_ref: None,
                         });
                         let start = FinitePoint3::new(start)
                             .ok_or(Point::NON_FINITE_POSITION)
@@ -2835,11 +2847,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                                 id: start_vertex.clone(),
                                 point: start_point,
                                 tolerance: None,
+                                native_ref: None,
                             },
                             Vertex {
                                 id: end_vertex.clone(),
                                 point: end_point,
                                 tolerance: None,
+                                native_ref: None,
                             },
                         ]);
                         ir.geometry.edges.push(Edge {
@@ -2849,9 +2863,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                                 Some(parameter_range),
                             )
                             .map_err(CodecError::malformed)?,
-                            start: start_vertex,
-                            end: end_vertex,
+                            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                                start_vertex,
+                                end_vertex,
+                            )),
                             tolerance: None,
+                            native_ref: None,
                         });
                         ir.geometry.shells.push(Shell::with_wire_edge(
                             shell_id.clone(),
@@ -2862,15 +2879,16 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             id: region_id.clone(),
                             body: body_id.clone(),
                             shells: vec![shell_id],
+                            native_ref: None,
                         });
                         ir.geometry.bodies.push(Body {
                             id: body_id,
                             kind: BodyKind::General,
-                            regions: vec![region_id],
                             transform: None,
                             name: None,
                             color: None,
                             visible: None,
+                            native_ref: None,
                         });
                         decoded_curves += 1;
                     }
@@ -4263,7 +4281,10 @@ mod tests {
             .geometry
             .edges
             .iter()
-            .map(|edge| (edge.start.clone(), edge.end.clone()))
+            .map(|edge| {
+                let ends = edge.ends.clone().unwrap();
+                (ends.start, ends.end)
+            })
             .collect::<Vec<_>>();
         assert_eq!(edge_endpoints[0].0, edge_endpoints[3].1);
         assert_ne!(edge_endpoints[0].0, edge_endpoints[2].0);

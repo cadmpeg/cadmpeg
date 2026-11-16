@@ -113,6 +113,7 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
             cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]),
             None,
         ),
+        native_ref: None,
     });
     ir.geometry.coedges[coedge].pcurves.push(PcurveUse {
         pcurve,

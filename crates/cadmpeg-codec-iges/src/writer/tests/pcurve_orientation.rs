@@ -35,6 +35,7 @@ fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
             Some(cadmpeg_ir::units::FiniteVector::new([-1.0, 1.0]).expect("finite range")),
             None,
         ),
+        native_ref: None,
     });
     let context = pcurve_orientation_context(
         &ir,
@@ -74,6 +75,7 @@ fn line_pcurve_end_error(surface: &SurfaceGeometry, line: LinePcurve) -> String 
             Some(cadmpeg_ir::units::FiniteVector::new([-1.0, 1.0]).expect("finite range")),
             None,
         ),
+        native_ref: None,
     });
     let context = pcurve_orientation_context(
         &ir,
@@ -189,6 +191,7 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
             .expect("valid PlacedCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
@@ -215,6 +218,7 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
             Some(cadmpeg_ir::units::FiniteVector::new([-1.0, 1.0]).expect("finite range")),
             None,
         ),
+        native_ref: None,
     });
     let surface = SurfaceGeometry::Procedural {
         construction,

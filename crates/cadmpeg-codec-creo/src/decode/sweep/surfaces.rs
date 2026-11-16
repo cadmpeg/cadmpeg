@@ -361,6 +361,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -631,6 +632,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -697,6 +699,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -821,6 +824,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                             layer: None,
                             instance_path: Vec::new(),
                         }),
+                        native_ref: None,
                     },
                 )?;
             }
@@ -875,6 +879,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             let Some((lower_knot, upper_knot)) = directrix_range else {
@@ -1191,6 +1196,7 @@ pub(in crate::decode) fn transfer_envelope_replay_surfaces(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -1725,6 +1731,7 @@ pub(in crate::decode) fn transfer_sampled_sweep_circles(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -2270,6 +2277,7 @@ pub(in crate::decode) fn transfer_hole_generators(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred.insert(id);

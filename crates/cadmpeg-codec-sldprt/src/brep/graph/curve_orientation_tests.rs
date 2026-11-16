@@ -39,8 +39,8 @@ fn decode_marked_edge(mut carrier: Vec<u8>, marker: u8) -> (String, String, Sens
         .find(|coedge| coedge.edge == edge.id)
         .unwrap();
     (
-        edge.start.as_str().to_owned(),
-        edge.end.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().start.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().end.as_str().to_owned(),
         coedge.sense,
     )
 }
@@ -148,8 +148,8 @@ fn decode_spline_edge(first: [f64; 3], last: [f64; 3]) -> (String, String, Sense
         .find(|coedge| coedge.edge == edge.id)
         .unwrap();
     (
-        edge.start.as_str().to_owned(),
-        edge.end.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().start.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().end.as_str().to_owned(),
         coedge.sense,
     )
 }
@@ -473,6 +473,7 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
         id: curve_id.clone(),
         geometry: unit_circle(),
         source_object: None,
+        native_ref: None,
     });
     let point_id = PointId::mint("test:model:point#seam").expect("point id");
     brep.points.push(Point::new(
@@ -485,6 +486,7 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
+        native_ref: None,
     });
     // A sentinel closed circle starts at its reference direction; its vertex
     // has since moved to θ = 3π/2.
@@ -495,9 +497,12 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
             Some([0.0, std::f64::consts::TAU]),
         )
         .expect("edge carrier"),
-        start: vertex_id.clone(),
-        end: vertex_id,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            vertex_id.clone(),
+            vertex_id,
+        )),
         tolerance: None,
+        native_ref: None,
     });
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     super::phase_full_turn_edge_ranges(&mut brep, &mut annotations).expect("phase");

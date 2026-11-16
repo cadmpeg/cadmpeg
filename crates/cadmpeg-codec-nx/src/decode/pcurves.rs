@@ -489,8 +489,10 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             else {
                 continue;
             };
-            let edge_reversed = match (vertex_points.get(&edge.start), vertex_points.get(&edge.end))
-            {
+            let edge_reversed = match (
+                edge.start().and_then(|vertex| vertex_points.get(vertex)),
+                edge.end().and_then(|vertex| vertex_points.get(vertex)),
+            ) {
                 (Some(start), Some(end)) => {
                     let forward = Point3::distance(*start, endpoints[0].get())
                         <= endpoint_tolerance
@@ -501,7 +503,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                     match (forward, reversed) {
                         (true, false) => false,
                         (false, true) => true,
-                        (true, true) if edge.start == edge.end => false,
+                        (true, true) if edge.start() == edge.end() => false,
                         _ => continue,
                     }
                 }
@@ -631,7 +633,9 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         };
         if let Some(edge) = ir.geometry.edges.iter_mut().find(|edge| edge.id == edge_id) {
             if edge_reversed {
-                std::mem::swap(&mut edge.start, &mut edge.end);
+                if let Some(ends) = &mut edge.ends {
+                    std::mem::swap(&mut ends.start, &mut ends.end);
+                }
             }
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
             annotations
@@ -1524,9 +1528,9 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 else {
                     continue;
                 };
-                let [Some(start_point), Some(end_point)] =
-                    [&edge.start, &edge.end].map(|vertex| vertex_points.get(vertex).copied())
-                else {
+                let Some([Some(start_point), Some(end_point)]) = edge.ends.as_ref().map(|ends| {
+                    [&ends.start, &ends.end].map(|vertex| vertex_points.get(vertex).copied())
+                }) else {
                     continue;
                 };
                 let Some(tolerance) = edge
@@ -1551,7 +1555,10 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 let endpoints = intersection.endpoints();
                 let tolerance = intersection.tolerance();
 
-                let range = if edge.start == edge.end
+                let range = if edge
+                    .ends
+                    .as_ref()
+                    .is_some_and(|ends| ends.start == ends.end)
                     && model_index
                         .curves(owner.as_str(), cadmpeg_ir::index::StandardIndex)
                         .is_some_and(|curve| {
@@ -4177,7 +4184,10 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                         .points(vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)
                         .map(|point| point.position().get()))
                 };
-            let (Some(start), Some(end)) = (endpoint(&edge.start)?, endpoint(&edge.end)?) else {
+            let Some(ends) = &edge.ends else {
+                continue;
+            };
+            let (Some(start), Some(end)) = (endpoint(&ends.start)?, endpoint(&ends.end)?) else {
                 continue;
             };
             let endpoints = [start, end];
@@ -4328,6 +4338,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
 
         let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve_id, procedural)?;
@@ -4476,8 +4487,11 @@ pub(super) fn pcurve_edge_endpoint_contract_with_index(
         };
         Ok(Some((point.position().get(), vertex.tolerance)))
     };
+    let Some(ends) = &edge.ends else {
+        return Ok(None);
+    };
     let (Some((start, start_tolerance)), Some((end, end_tolerance))) =
-        (vertex(&edge.start)?, vertex(&edge.end)?)
+        (vertex(&ends.start)?, vertex(&ends.end)?)
     else {
         return Ok(None);
     };
@@ -4654,6 +4668,7 @@ mod tests {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         ir.geometry
             .add_procedural_curve(
@@ -4694,6 +4709,7 @@ mod tests {
                 parameter_range: None,
             }],
             use_curve: None,
+            native_ref: None,
         });
 
         ({
@@ -4717,6 +4733,7 @@ mod tests {
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             });
             ir.geometry.loops.push(Loop {
                 id: loop_id,
@@ -4728,15 +4745,19 @@ mod tests {
                     )
                     .expect("valid loop ring"),
                 ),
+                native_ref: None,
             });
             ir.geometry.edges.push(Edge {
                 id: edge_id,
                 carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
                     CurveId::mint("nx:s0:intersection-crv#0").expect("identity grammar"),
                 )),
-                start: vertex_id.clone(),
-                end: vertex_id,
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    vertex_id.clone(),
+                    vertex_id,
+                )),
                 tolerance: None,
+                native_ref: None,
             });
             ir.geometry.pcurves.push(Pcurve {
                 id: pcurve_id,
@@ -4748,6 +4769,7 @@ mod tests {
                     .unwrap(),
                 ),
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+                native_ref: None,
             });
 
             index.complete_from_stream(&mut ir, later_starts);

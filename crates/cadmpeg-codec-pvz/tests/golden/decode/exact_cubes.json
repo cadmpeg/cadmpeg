@@ -7,24 +7,17 @@
         {
           "id": "pvz:model:body#cube32.ol",
           "kind": "solid",
-          "name": "cube32.ol",
-          "regions": [
-            "pvz:model:region#cube32.ol:0"
-          ]
+          "name": "cube32.ol"
         },
         {
           "id": "pvz:model:body#cube64.ol",
           "kind": "solid",
-          "name": "cube64.ol",
-          "regions": [
-            "pvz:model:region#cube64.ol:0"
-          ]
+          "name": "cube64.ol"
         },
         {
           "id": "pvz:model:body#plate.ol",
           "kind": "general",
-          "name": "plate.ol",
-          "regions": []
+          "name": "plate.ol"
         }
       ],
       "coedges": [
@@ -1264,9 +1257,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:1",
-          "id": "pvz:model:edge#cube32.ol:0",
-          "start": "pvz:model:vertex#cube32.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:1",
+            "start": "pvz:model:vertex#cube32.ol:0"
+          },
+          "id": "pvz:model:edge#cube32.ol:0"
         },
         {
           "carrier": {
@@ -1276,9 +1271,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:2",
-          "id": "pvz:model:edge#cube32.ol:1",
-          "start": "pvz:model:vertex#cube32.ol:1"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:2",
+            "start": "pvz:model:vertex#cube32.ol:1"
+          },
+          "id": "pvz:model:edge#cube32.ol:1"
         },
         {
           "carrier": {
@@ -1288,9 +1285,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:7",
-          "id": "pvz:model:edge#cube32.ol:10",
-          "start": "pvz:model:vertex#cube32.ol:1"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:7",
+            "start": "pvz:model:vertex#cube32.ol:1"
+          },
+          "id": "pvz:model:edge#cube32.ol:10"
         },
         {
           "carrier": {
@@ -1300,9 +1299,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:6",
-          "id": "pvz:model:edge#cube32.ol:11",
-          "start": "pvz:model:vertex#cube32.ol:2"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:6",
+            "start": "pvz:model:vertex#cube32.ol:2"
+          },
+          "id": "pvz:model:edge#cube32.ol:11"
         },
         {
           "carrier": {
@@ -1312,9 +1313,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:2",
-          "id": "pvz:model:edge#cube32.ol:2",
-          "start": "pvz:model:vertex#cube32.ol:3"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:2",
+            "start": "pvz:model:vertex#cube32.ol:3"
+          },
+          "id": "pvz:model:edge#cube32.ol:2"
         },
         {
           "carrier": {
@@ -1324,9 +1327,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:3",
-          "id": "pvz:model:edge#cube32.ol:3",
-          "start": "pvz:model:vertex#cube32.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:3",
+            "start": "pvz:model:vertex#cube32.ol:0"
+          },
+          "id": "pvz:model:edge#cube32.ol:3"
         },
         {
           "carrier": {
@@ -1336,9 +1341,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:5",
-          "id": "pvz:model:edge#cube32.ol:4",
-          "start": "pvz:model:vertex#cube32.ol:4"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:5",
+            "start": "pvz:model:vertex#cube32.ol:4"
+          },
+          "id": "pvz:model:edge#cube32.ol:4"
         },
         {
           "carrier": {
@@ -1348,9 +1355,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:6",
-          "id": "pvz:model:edge#cube32.ol:5",
-          "start": "pvz:model:vertex#cube32.ol:5"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:6",
+            "start": "pvz:model:vertex#cube32.ol:5"
+          },
+          "id": "pvz:model:edge#cube32.ol:5"
         },
         {
           "carrier": {
@@ -1360,9 +1369,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:6",
-          "id": "pvz:model:edge#cube32.ol:6",
-          "start": "pvz:model:vertex#cube32.ol:7"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:6",
+            "start": "pvz:model:vertex#cube32.ol:7"
+          },
+          "id": "pvz:model:edge#cube32.ol:6"
         },
         {
           "carrier": {
@@ -1372,9 +1383,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:7",
-          "id": "pvz:model:edge#cube32.ol:7",
-          "start": "pvz:model:vertex#cube32.ol:4"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:7",
+            "start": "pvz:model:vertex#cube32.ol:4"
+          },
+          "id": "pvz:model:edge#cube32.ol:7"
         },
         {
           "carrier": {
@@ -1384,9 +1397,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:5",
-          "id": "pvz:model:edge#cube32.ol:8",
-          "start": "pvz:model:vertex#cube32.ol:3"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:5",
+            "start": "pvz:model:vertex#cube32.ol:3"
+          },
+          "id": "pvz:model:edge#cube32.ol:8"
         },
         {
           "carrier": {
@@ -1396,9 +1411,11 @@
               9.999999776482582
             ]
           },
-          "end": "pvz:model:vertex#cube32.ol:4",
-          "id": "pvz:model:edge#cube32.ol:9",
-          "start": "pvz:model:vertex#cube32.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#cube32.ol:4",
+            "start": "pvz:model:vertex#cube32.ol:0"
+          },
+          "id": "pvz:model:edge#cube32.ol:9"
         },
         {
           "carrier": {
@@ -1408,9 +1425,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:1",
-          "id": "pvz:model:edge#cube64.ol:0",
-          "start": "pvz:model:vertex#cube64.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:1",
+            "start": "pvz:model:vertex#cube64.ol:0"
+          },
+          "id": "pvz:model:edge#cube64.ol:0"
         },
         {
           "carrier": {
@@ -1420,9 +1439,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:2",
-          "id": "pvz:model:edge#cube64.ol:1",
-          "start": "pvz:model:vertex#cube64.ol:1"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:2",
+            "start": "pvz:model:vertex#cube64.ol:1"
+          },
+          "id": "pvz:model:edge#cube64.ol:1"
         },
         {
           "carrier": {
@@ -1432,9 +1453,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:7",
-          "id": "pvz:model:edge#cube64.ol:10",
-          "start": "pvz:model:vertex#cube64.ol:1"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:7",
+            "start": "pvz:model:vertex#cube64.ol:1"
+          },
+          "id": "pvz:model:edge#cube64.ol:10"
         },
         {
           "carrier": {
@@ -1444,9 +1467,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:6",
-          "id": "pvz:model:edge#cube64.ol:11",
-          "start": "pvz:model:vertex#cube64.ol:2"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:6",
+            "start": "pvz:model:vertex#cube64.ol:2"
+          },
+          "id": "pvz:model:edge#cube64.ol:11"
         },
         {
           "carrier": {
@@ -1456,9 +1481,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:2",
-          "id": "pvz:model:edge#cube64.ol:2",
-          "start": "pvz:model:vertex#cube64.ol:3"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:2",
+            "start": "pvz:model:vertex#cube64.ol:3"
+          },
+          "id": "pvz:model:edge#cube64.ol:2"
         },
         {
           "carrier": {
@@ -1468,9 +1495,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:3",
-          "id": "pvz:model:edge#cube64.ol:3",
-          "start": "pvz:model:vertex#cube64.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:3",
+            "start": "pvz:model:vertex#cube64.ol:0"
+          },
+          "id": "pvz:model:edge#cube64.ol:3"
         },
         {
           "carrier": {
@@ -1480,9 +1509,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:5",
-          "id": "pvz:model:edge#cube64.ol:4",
-          "start": "pvz:model:vertex#cube64.ol:4"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:5",
+            "start": "pvz:model:vertex#cube64.ol:4"
+          },
+          "id": "pvz:model:edge#cube64.ol:4"
         },
         {
           "carrier": {
@@ -1492,9 +1523,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:6",
-          "id": "pvz:model:edge#cube64.ol:5",
-          "start": "pvz:model:vertex#cube64.ol:5"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:6",
+            "start": "pvz:model:vertex#cube64.ol:5"
+          },
+          "id": "pvz:model:edge#cube64.ol:5"
         },
         {
           "carrier": {
@@ -1504,9 +1537,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:6",
-          "id": "pvz:model:edge#cube64.ol:6",
-          "start": "pvz:model:vertex#cube64.ol:7"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:6",
+            "start": "pvz:model:vertex#cube64.ol:7"
+          },
+          "id": "pvz:model:edge#cube64.ol:6"
         },
         {
           "carrier": {
@@ -1516,9 +1551,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:7",
-          "id": "pvz:model:edge#cube64.ol:7",
-          "start": "pvz:model:vertex#cube64.ol:4"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:7",
+            "start": "pvz:model:vertex#cube64.ol:4"
+          },
+          "id": "pvz:model:edge#cube64.ol:7"
         },
         {
           "carrier": {
@@ -1528,9 +1565,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:5",
-          "id": "pvz:model:edge#cube64.ol:8",
-          "start": "pvz:model:vertex#cube64.ol:3"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:5",
+            "start": "pvz:model:vertex#cube64.ol:3"
+          },
+          "id": "pvz:model:edge#cube64.ol:8"
         },
         {
           "carrier": {
@@ -1540,9 +1579,11 @@
               10.0
             ]
           },
-          "end": "pvz:model:vertex#cube64.ol:4",
-          "id": "pvz:model:edge#cube64.ol:9",
-          "start": "pvz:model:vertex#cube64.ol:0"
+          "ends": {
+            "end": "pvz:model:vertex#cube64.ol:4",
+            "start": "pvz:model:vertex#cube64.ol:0"
+          },
+          "id": "pvz:model:edge#cube64.ol:9"
         }
       ],
       "faces": [
@@ -2866,62 +2907,12 @@
       "shells": [
         {
           "id": "pvz:model:shell#cube32.ol:0",
-          "members": [
-            {
-              "id": "pvz:model:face#cube32.ol:0:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#cube32.ol:1:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#cube32.ol:2:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#cube32.ol:3:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#cube32.ol:4:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#cube32.ol:5:0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "pvz:model:region#cube32.ol:0"
         },
         {
           "id": "pvz:model:shell#cube64.ol:0",
-          "members": [
-            {
-              "id": "pvz:model:face#cube64.ol:0:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#cube64.ol:1:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#cube64.ol:2:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#cube64.ol:3:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#cube64.ol:4:0",
-              "kind": "face"
-            },
-            {
-              "id": "pvz:model:face#cube64.ol:5:0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "pvz:model:region#cube64.ol:0"
         }
       ],

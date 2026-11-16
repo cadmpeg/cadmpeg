@@ -898,6 +898,7 @@ fn partition_graph_comparison_includes_pcurve_geometry_and_face_colours() {
             .unwrap(),
         ),
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     };
     ir.geometry.pcurves.push(pcurve);
     let native = crate::brep::graph::Brep {
@@ -979,6 +980,7 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
                     .unwrap(),
                 ),
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+                native_ref: None,
             });
     }
     let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();

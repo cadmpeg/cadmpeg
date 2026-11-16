@@ -55,6 +55,7 @@ fn an_occt_endpoint_a_whole_period_off_a_circle_subset_start_maps_to_local_zero(
         )),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.curves.push(Curve {
         id: subset.clone(),
@@ -64,6 +65,7 @@ fn an_occt_endpoint_a_whole_period_off_a_circle_subset_start_maps_to_local_zero(
         },
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_curve(

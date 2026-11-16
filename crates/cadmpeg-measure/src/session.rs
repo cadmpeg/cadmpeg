@@ -244,6 +244,7 @@ impl<'ir> Measurer<'ir> {
         let items = geometry.faces.len() + geometry.edges.len();
         let Some(allowance) = self.options.work.pass_allowance(items) else {
             return Err(ResourceLimit {
+                scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::Entities),
                 dimension: ResourceDimension::Entities,
                 reason: ResourceFailure::BudgetExceeded,
                 limit: 0,
@@ -508,15 +509,10 @@ impl<'ir> Measurer<'ir> {
             return Vec::new();
         }
         self.owners
-            .shell(face.shell.as_str())
-            .map(|shell| {
-                shell
-                    .faces()
-                    .iter()
-                    .map(cadmpeg_ir::ids::FaceId::as_str)
-                    .collect()
-            })
-            .unwrap_or_default()
+            .shell_faces(&face.shell)
+            .iter()
+            .map(|face| face.id.as_str())
+            .collect()
     }
 
     /// The reference point of a body's fluxes: the centre of the box of its

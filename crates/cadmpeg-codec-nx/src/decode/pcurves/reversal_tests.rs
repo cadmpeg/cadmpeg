@@ -368,6 +368,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let first = cadmpeg_ir::eval::decode::pcurve_uv(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,

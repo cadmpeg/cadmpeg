@@ -46,13 +46,14 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 id: vertex.clone(),
                 point,
                 tolerance: None,
+                native_ref: None,
             });
             ir.geometry.edges.push(Edge {
                 id: edge.clone(),
-                start: vertex.clone(),
-                end: vertex,
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
                 carrier: EdgeCarrier::Free,
                 tolerance: None,
+                native_ref: None,
             });
             ir.geometry.coedges.push(Coedge {
                 id: coedge.clone(),
@@ -62,11 +63,13 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,
+                native_ref: None,
             });
             ir.geometry.loops.push(Loop {
                 id: boundary.clone(),
                 face: face.clone(),
                 boundary: LoopBoundary::Ring(LoopRing::single(coedge)),
+                native_ref: None,
             });
             loops.push(boundary);
         }
@@ -82,6 +85,7 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.faces.push(Face {
             id: face.clone(),
@@ -92,33 +96,26 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
-        if let Some(existing) = ir.geometry.shells.iter_mut().find(|s| s.id == shell) {
-            existing.add_face(face);
-        } else {
-            ir.geometry.shells.push(
-                Shell::new(
-                    shell.clone(),
-                    region.clone(),
-                    vec![face],
-                    Vec::new(),
-                    Vec::new(),
-                )
-                .unwrap(),
-            );
+        if !ir.geometry.shells.iter().any(|s| s.id == shell) {
+            ir.geometry
+                .shells
+                .push(Shell::new(shell.clone(), region.clone()));
             ir.geometry.regions.push(Region {
                 id: region.clone(),
                 body: body.clone(),
                 shells: vec![shell],
+                native_ref: None,
             });
             ir.geometry.bodies.push(Body {
                 id: body,
                 kind: BodyKind::Sheet,
-                regions: vec![region],
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             });
         }
     }
@@ -194,9 +191,6 @@ fn symbolic_thread_selection_abstains_for_zero_multiple_or_incomplete_ownership(
             .map(|face| face.id.clone())
             .collect::<Vec<_>>()
     );
-    let mut duplicate = fixture(&[("first", "a", 1.)]);
-    duplicate.geometry.shells[0].add_face(duplicate.geometry.faces[0].id.clone());
-    assert_eq!(selected(&duplicate), FaceSelection::Unresolved);
     let mut placed = fixture(&[("first", "a", 1.)]);
     placed.geometry.bodies[0].transform = Some(cadmpeg_ir::transform::Transform::identity());
     assert_eq!(selected(&placed), FaceSelection::Unresolved);

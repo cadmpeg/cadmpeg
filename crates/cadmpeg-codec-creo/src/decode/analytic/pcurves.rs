@@ -2102,6 +2102,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred.insert(id);
@@ -2878,6 +2879,7 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
         (scan, ir)
     }
@@ -3051,6 +3053,7 @@ mod tests {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         ir.geometry.surfaces.push(surface(
@@ -3184,6 +3187,7 @@ mod tests {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
@@ -3197,6 +3201,7 @@ mod tests {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
 
@@ -3227,12 +3232,14 @@ mod tests {
             id: id.clone(),
             geometry: plane(1.0),
             source_object: None,
+            native_ref: None,
         });
         let mut ir = CadIr::empty();
         ir.geometry.surfaces.push(Surface {
             id,
             geometry: plane(25.4),
             source_object: None,
+            native_ref: None,
         });
 
         let mapped = crate::decode::with_service_context(|ctx| {
@@ -3294,6 +3301,7 @@ mod tests {
                     .expect("valid test surface"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#8".to_string())
@@ -3307,6 +3315,7 @@ mod tests {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let model_surfaces = ModelSurfaceIndex::new(&ir.geometry.surfaces);
@@ -3399,6 +3408,7 @@ mod tests {
                     .expect("valid ConeSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
@@ -3412,6 +3422,7 @@ mod tests {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let carriers = BTreeMap::from([
@@ -3522,6 +3533,7 @@ mod tests {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
@@ -3535,6 +3547,7 @@ mod tests {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
 
@@ -3633,6 +3646,7 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
 
         let (evidence, diagnostics) = crate::decode::with_service_context(|ctx| {
@@ -3803,6 +3817,7 @@ mod tests {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
@@ -3816,6 +3831,7 @@ mod tests {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
 
@@ -3984,6 +4000,7 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         }
     }
 
@@ -4000,6 +4017,7 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         }
     }
 
@@ -4256,6 +4274,7 @@ mod tests {
                 .expect("valid PlacedSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         }
     }
 
@@ -4470,6 +4489,7 @@ mod tests {
                     .expect("cylinder frame"),
                 )),
                 source_object: None,
+                native_ref: None,
             }];
             let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(

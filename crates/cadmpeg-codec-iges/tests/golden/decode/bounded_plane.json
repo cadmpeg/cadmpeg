@@ -7,9 +7,6 @@
         {
           "id": "iges:model:body#D13",
           "kind": "sheet",
-          "regions": [
-            "iges:model:region#D13"
-          ],
           "visible": true
         }
       ],
@@ -186,9 +183,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D13:0:1",
+          "ends": {
+            "end": "iges:model:vertex#D13:0:1",
+            "start": "iges:model:vertex#D13:0:0"
+          },
           "id": "iges:model:edge#D13:0:0",
-          "start": "iges:model:vertex#D13:0:0",
           "tolerance": 0.001
         },
         {
@@ -199,9 +198,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D13:0:1",
+          "ends": {
+            "end": "iges:model:vertex#D13:0:1",
+            "start": "iges:model:vertex#D13:0:2"
+          },
           "id": "iges:model:edge#D13:0:1",
-          "start": "iges:model:vertex#D13:0:2",
           "tolerance": 0.001
         },
         {
@@ -212,9 +213,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D13:0:3",
+          "ends": {
+            "end": "iges:model:vertex#D13:0:3",
+            "start": "iges:model:vertex#D13:0:2"
+          },
           "id": "iges:model:edge#D13:0:2",
-          "start": "iges:model:vertex#D13:0:2",
           "tolerance": 0.001
         },
         {
@@ -225,9 +228,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D13:0:0",
+          "ends": {
+            "end": "iges:model:vertex#D13:0:0",
+            "start": "iges:model:vertex#D13:0:3"
+          },
           "id": "iges:model:edge#D13:0:3",
-          "start": "iges:model:vertex#D13:0:3",
           "tolerance": 0.001
         }
       ],
@@ -311,12 +316,7 @@
       "shells": [
         {
           "id": "iges:model:shell#D13",
-          "members": [
-            {
-              "id": "iges:model:face#D13",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D13"
         }
       ],

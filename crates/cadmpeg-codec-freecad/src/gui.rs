@@ -4338,26 +4338,26 @@ fn transfer_topology_colors(
 
 fn decode_color(value: u32, transparency: Option<f32>) -> Result<Color, CodecError> {
     Color::new(
-        f32::from(
+        f64::from(
             u8::try_from((value >> 24) & 0xff).map_err(|_| {
                 CodecError::Malformed("GUI color channel exceeds byte range".into())
             })?,
         ) / 255.0,
-        f32::from(
+        f64::from(
             u8::try_from((value >> 16) & 0xff).map_err(|_| {
                 CodecError::Malformed("GUI color channel exceeds byte range".into())
             })?,
         ) / 255.0,
-        f32::from(
+        f64::from(
             u8::try_from((value >> 8) & 0xff).map_err(|_| {
                 CodecError::Malformed("GUI color channel exceeds byte range".into())
             })?,
         ) / 255.0,
         transparency.map_or(
-            f32::from(u8::try_from(value & 0xff).map_err(|_| {
+            f64::from(u8::try_from(value & 0xff).map_err(|_| {
                 CodecError::Malformed("GUI color channel exceeds byte range".into())
             })?) / 255.0,
-            |value| 1.0 - value,
+            |value| 1.0 - f64::from(value),
         ),
     )
     .ok_or_else(|| CodecError::Malformed("GUI color components must be in [0, 1]".into()))
@@ -4378,13 +4378,13 @@ mod color_tests {
     #[test]
     fn packed_alpha_is_used_without_a_transparency_property() {
         let color = decode_color(0x1122_3340, None).expect("valid color");
-        assert!((color.a() - 64.0 / 255.0).abs() < f32::EPSILON);
+        assert!((color.a() - 64.0 / 255.0).abs() < f64::from(f32::EPSILON));
     }
 
     #[test]
     fn transparency_property_overrides_packed_alpha() {
         let color = decode_color(0x1122_3300, Some(0.25)).expect("valid color");
-        assert!((color.a() - 0.75).abs() < f32::EPSILON);
+        assert!((color.a() - 0.75).abs() < f64::from(f32::EPSILON));
     }
 
     #[test]
@@ -4486,11 +4486,11 @@ mod shape_association_tests {
         ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
             id: cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#payload:1").expect("body identity"),
             kind: cadmpeg_ir::topology::BodyKind::default(),
-            regions: Vec::new(),
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         ir
     }

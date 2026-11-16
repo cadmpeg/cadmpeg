@@ -7,10 +7,7 @@
         {
           "id": "usd:stage:body#/Occurrence",
           "kind": "solid",
-          "name": "Occurrence",
-          "regions": [
-            "usd:stage:region#/Occurrence:region:0"
-          ]
+          "name": "Occurrence"
         }
       ],
       "coedges": [
@@ -794,9 +791,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:1",
-          "id": "usd:stage:edge#/Occurrence:edge:0",
-          "start": "usd:stage:vertex#/Occurrence:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:1",
+            "start": "usd:stage:vertex#/Occurrence:vertex:0"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:0"
         },
         {
           "carrier": {
@@ -806,9 +805,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:1",
-          "id": "usd:stage:edge#/Occurrence:edge:1",
-          "start": "usd:stage:vertex#/Occurrence:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:1",
+            "start": "usd:stage:vertex#/Occurrence:vertex:2"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:1"
         },
         {
           "carrier": {
@@ -818,9 +819,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:6",
-          "id": "usd:stage:edge#/Occurrence:edge:10",
-          "start": "usd:stage:vertex#/Occurrence:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:6",
+            "start": "usd:stage:vertex#/Occurrence:vertex:0"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:10"
         },
         {
           "carrier": {
@@ -830,9 +833,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:7",
-          "id": "usd:stage:edge#/Occurrence:edge:11",
-          "start": "usd:stage:vertex#/Occurrence:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:7",
+            "start": "usd:stage:vertex#/Occurrence:vertex:1"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:11"
         },
         {
           "carrier": {
@@ -842,9 +847,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:2",
-          "id": "usd:stage:edge#/Occurrence:edge:2",
-          "start": "usd:stage:vertex#/Occurrence:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:2",
+            "start": "usd:stage:vertex#/Occurrence:vertex:3"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:2"
         },
         {
           "carrier": {
@@ -854,9 +861,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:0",
-          "id": "usd:stage:edge#/Occurrence:edge:3",
-          "start": "usd:stage:vertex#/Occurrence:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:0",
+            "start": "usd:stage:vertex#/Occurrence:vertex:3"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:3"
         },
         {
           "carrier": {
@@ -866,9 +875,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:5",
-          "id": "usd:stage:edge#/Occurrence:edge:4",
-          "start": "usd:stage:vertex#/Occurrence:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:5",
+            "start": "usd:stage:vertex#/Occurrence:vertex:4"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:4"
         },
         {
           "carrier": {
@@ -878,9 +889,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:6",
-          "id": "usd:stage:edge#/Occurrence:edge:5",
-          "start": "usd:stage:vertex#/Occurrence:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:6",
+            "start": "usd:stage:vertex#/Occurrence:vertex:4"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:5"
         },
         {
           "carrier": {
@@ -890,9 +903,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:7",
-          "id": "usd:stage:edge#/Occurrence:edge:6",
-          "start": "usd:stage:vertex#/Occurrence:vertex:6"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:7",
+            "start": "usd:stage:vertex#/Occurrence:vertex:6"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:6"
         },
         {
           "carrier": {
@@ -902,9 +917,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:7",
-          "id": "usd:stage:edge#/Occurrence:edge:7",
-          "start": "usd:stage:vertex#/Occurrence:vertex:5"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:7",
+            "start": "usd:stage:vertex#/Occurrence:vertex:5"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:7"
         },
         {
           "carrier": {
@@ -914,9 +931,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:5",
-          "id": "usd:stage:edge#/Occurrence:edge:8",
-          "start": "usd:stage:vertex#/Occurrence:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:5",
+            "start": "usd:stage:vertex#/Occurrence:vertex:2"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:8"
         },
         {
           "carrier": {
@@ -926,9 +945,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:4",
-          "id": "usd:stage:edge#/Occurrence:edge:9",
-          "start": "usd:stage:vertex#/Occurrence:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:4",
+            "start": "usd:stage:vertex#/Occurrence:vertex:3"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:9"
         }
       ],
       "faces": [
@@ -1911,32 +1932,7 @@
       "shells": [
         {
           "id": "usd:stage:shell#/Occurrence:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/Occurrence:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Occurrence:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Occurrence:face:2",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Occurrence:face:3",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Occurrence:face:4",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Occurrence:face:5",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/Occurrence:region:0"
         }
       ],

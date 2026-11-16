@@ -296,11 +296,11 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     let body = cadmpeg_ir::topology::Body {
         id: BodyId::mint("nx:s4:body#8").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
 
     let writes = [write_a, write_b];

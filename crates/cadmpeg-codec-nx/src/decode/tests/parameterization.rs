@@ -129,6 +129,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
         translated
             .geometry
@@ -288,6 +289,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                 .expect("valid wavy support"),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.surfaces.push(Surface {
             id: offset.clone(),
@@ -296,6 +298,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             construction,
@@ -352,6 +355,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             nested_construction,
@@ -972,6 +976,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
             .expect("valid clamped witness curve"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 
@@ -1192,6 +1197,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                     .expect("valid serialized-seed surface"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             ir.geometry.curves.push(Curve {
                 parameter_range: None,
@@ -1204,6 +1210,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             let _attached = ir.geometry.add_procedural_curve(
                 &curve_id,
@@ -1342,6 +1349,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: base_surfaces[1].clone(),
@@ -1354,6 +1362,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         for (side, surface) in procedural_surfaces.iter().enumerate() {
@@ -1364,6 +1373,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
             ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
                 constructions[side].clone(),
@@ -1395,6 +1405,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
             id: carrier.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let _attached = ir.geometry.add_procedural_curve(
             &carrier,
@@ -1534,6 +1545,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             id
         });
@@ -1549,6 +1561,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         result
             .ir_mut()

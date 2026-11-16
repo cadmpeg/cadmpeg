@@ -291,8 +291,8 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         let end = cadmpeg_ir::eval::decode::curve_point(admission, &curve.geometry, last)
             .unwrap_or_else(|error| panic!("{id}: curve end at {last}: {error:?}"))
             .get();
-        let vertex_start = vertices[&edge.start];
-        let vertex_end = vertices[&edge.end];
+        let vertex_start = vertices[&edge.ends.as_ref().unwrap().start];
+        let vertex_end = vertices[&edge.ends.as_ref().unwrap().end];
         let endpoint_error = start.distance(vertex_start).max(end.distance(vertex_end));
         assert!(
             endpoint_error < ENDPOINT_TOLERANCE_MM,
@@ -445,14 +445,9 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     assert_eq!(sheets.len(), 2);
     let mut areas = Vec::new();
     for body in sheets {
-        let [region_id] = body.regions.as_slice() else {
+        let [region] = geometry.body_regions(&body.id).collect::<Vec<_>>()[..] else {
             panic!("one region per sheet")
         };
-        let region = geometry
-            .regions
-            .iter()
-            .find(|region| &region.id == region_id)
-            .expect("sheet region");
         let [shell_id] = region.shells.as_slice() else {
             panic!("one shell per sheet")
         };
@@ -461,14 +456,9 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
             .iter()
             .find(|shell| &shell.id == shell_id)
             .expect("sheet shell");
-        let [face_id] = shell.faces() else {
+        let [face] = geometry.shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
             panic!("one face per sheet")
         };
-        let face = geometry
-            .faces
-            .iter()
-            .find(|face| &face.id == face_id)
-            .expect("sheet face");
         let surface = geometry
             .surfaces
             .iter()
@@ -499,8 +489,8 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
                 .iter()
                 .find(|edge| edge.id == coedge.edge)
                 .expect("sheet edge");
-            vertex_ids.insert(&edge.start);
-            vertex_ids.insert(&edge.end);
+            vertex_ids.insert(&edge.ends.as_ref().unwrap().start);
+            vertex_ids.insert(&edge.ends.as_ref().unwrap().end);
         }
         assert_eq!(vertex_ids.len(), 3);
         let points: Vec<_> = vertex_ids

@@ -1567,6 +1567,7 @@ mod tests {
                         id: curve_id,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                         source_object: None,
+                        native_ref: None,
                     },
                 )
         })
@@ -1735,6 +1736,7 @@ mod tests {
                         SolvedSurfaceGeometry::Unknown { record: None },
                     ),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1780,6 +1782,7 @@ mod tests {
                         SolvedCurveGeometry::Unknown { record: None },
                     ),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1935,6 +1938,7 @@ mod tests {
                     SolvedSurfaceGeometry::Unknown { record: None },
                 ),
                 source_object: None,
+                native_ref: None,
             });
             let surface = cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
