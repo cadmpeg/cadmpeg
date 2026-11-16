@@ -148,6 +148,7 @@ pub enum ExtrudeDirection {
 )]
 pub enum ExtrudeOrigin {
     /// The profile plane.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ProfilePlane,
     /// A plane offset from the profile plane along the direction.
     Offset(Dimension<Length>),
@@ -228,10 +229,12 @@ pub enum DraftNeutral {
 pub enum HoleDraft {
     /// Every boundary of a region moves by the same amount relative to its
     /// material, so a hole narrows where the outer loop widens.
-    WithRegion {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    WithRegion,
     /// Each inner loop tapers as the outer loop is tapered, in its own
     /// outward sense, so a hole widens where the outer loop widens.
-    WithOuter {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    WithOuter,
     /// Each inner loop drafts as a loop of its own at its own angle. A
     /// positive angle widens the hole away from the origin, and 0 leaves it
     /// straight.
@@ -392,17 +395,21 @@ pub struct Sweep {
 pub enum CornerTransition {
     /// The pieces swept along the two adjacent segments extend until they
     /// meet, and their intersection is the joint.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Mitre,
     /// The section turns about the axis through the corner point normal to
     /// both adjacent tangents, so a rounded piece joins the two.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Round,
     /// The pieces swept along the two adjacent segments stay as they are,
     /// with no surface joining them at the corner.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Open,
     /// No joint piece: the section crosses the corner without turning, each
     /// later segment's frame law premultiplied by the constant rotation that
     /// carries the frame at that segment's start onto the frame at the
     /// previous segment's end.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Carried,
     /// A source transition whose meaning is not established.
     Native(NonBlankString),
@@ -541,12 +548,16 @@ pub struct SweepControls {
 )]
 pub enum SweepOrientation {
     /// Keeps the section's angle to the path tangent.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     FollowPath,
     /// A law the source documents as twist-minimizing.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     MinimumTwist,
     /// Follows the Frenet frame of the path.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Frenet,
     /// Keeps the section's orientation.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Fixed,
     /// Twists the intermediate sections with the guides: the angle between
     /// the section's in-plane x axis and a guide vector stays constant along
@@ -624,8 +635,10 @@ pub enum ScalingLaw {
     /// A scale law along the path.
     Law(Law<FiniteReal>),
     /// Scaling that follows an area.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Area,
     /// Scaling that follows a perimeter.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Perimeter,
     /// Scaling toward a point.
     Point(Construction<kinds::Point>),
@@ -678,7 +691,8 @@ pub struct PathExtent {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProfilePlacement {
     /// Where the profile lies.
-    InPlace {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    InPlace,
     /// Moved onto the path start.
     Positioned(Box<ProfilePosition>),
 }
@@ -1062,8 +1076,10 @@ pub struct Rib {
 )]
 pub enum RibGrowth {
     /// In the profile plane, with the thickness normal to that plane.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     InPlane,
     /// Along the profile normal, with the thickness in the plane.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Normal,
     /// Along a fixed direction.
     Along(Construction<kinds::Direction>),
@@ -1398,7 +1414,8 @@ pub struct PointSection {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PointCondition {
     /// A sharp point.
-    Sharp {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Sharp,
     /// A tangent point.
     Tangent {
         /// The source's tangent magnitude.
@@ -1490,7 +1507,8 @@ pub enum Spine {
         stations: Vec<AreaStation>,
     },
     /// The source computes the spine.
-    Computed {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Computed,
 }
 
 /// A section of a stated area placed along a loft's centerline.
@@ -1550,19 +1568,26 @@ pub struct Correspondence {
 )]
 pub enum CouplingMode {
     /// By ratio.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Ratio,
     /// By tangency.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Tangency,
     /// By tangency, then curvature.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     TangencyThenCurvature,
     /// By vertices.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Vertices,
     /// By arc length.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ArcLength,
     /// By parameter: member k of one section joins member k of the next at
     /// equal parameter.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Parameter,
     /// By segment.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     BySegment,
     /// A source coupling whose meaning is not established.
     Native(NonBlankString),
@@ -1686,14 +1711,18 @@ pub enum LoftStyle {
     /// The sections' control points are the surface's control points, so the
     /// surface passes through the first and last sections and approximates
     /// the others.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Loose,
     /// The surface's knot vectors are uniform.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Uniform,
     /// A degree-3 interpolation of the sections whose knots are spaced by the
     /// chord between consecutive compatible sections.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ChordLength,
     /// A degree-3 interpolation of the sections whose knots are spaced by the
     /// square root of that chord.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     SqrtChordLength,
     /// A source style whose meaning is not established.
     Native(NonBlankString),

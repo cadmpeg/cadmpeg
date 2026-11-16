@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::num::NonZeroU32;
+use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
 use cadmpeg_core::text::NonBlankString;
@@ -23,6 +24,7 @@ use crate::design::read;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
 };
+use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
 use crate::features::{FinitePoint3, ParameterId};
 use crate::math::Point3;
 use crate::units::UnitVector3;
@@ -164,7 +166,7 @@ fn native_options() -> NativeOptions {
 
 fn solid() -> SolidOutput {
     SolidOutput {
-        body: Some(BodyForm::Solid {}),
+        body: Some(BodyForm::Solid),
         boolean: Some(Boolean::Apply {
             op: BooleanOp::Join,
             targets: None,
@@ -265,8 +267,8 @@ fn extrude_origins() -> Vec<ExtrudeOrigin> {
 
 fn hole_drafts() -> Vec<HoleDraft> {
     vec![
-        HoleDraft::WithRegion {},
-        HoleDraft::WithOuter {},
+        HoleDraft::WithRegion,
+        HoleDraft::WithOuter,
         HoleDraft::Angles {
             end: lit(angle(0.1)),
             start: Some(lit(angle(0.0))),
@@ -284,7 +286,7 @@ fn extrude_drafts() -> Vec<ExtrudeDraft> {
             end: Some(lit(angle(0.05))),
             start: Some(lit(angle(-0.05))),
             neutral: Some(DraftNeutral::Start),
-            holes: Some(HoleDraft::WithOuter {}),
+            holes: Some(HoleDraft::WithOuter),
         },
         ExtrudeDraft {
             end: None,
@@ -565,7 +567,7 @@ fn profile_positions() -> Vec<ProfilePosition> {
 }
 
 fn profile_placements() -> Vec<ProfilePlacement> {
-    let mut out = vec![ProfilePlacement::InPlace {}];
+    let mut out = vec![ProfilePlacement::InPlace];
     out.extend(
         profile_positions()
             .into_iter()
@@ -595,7 +597,7 @@ fn sweeps() -> Vec<Sweep> {
             controls: sweep_controls().remove(0),
             guides: sweep_guides(),
             extent: path_extents().into_iter().next(),
-            placement: Some(ProfilePlacement::InPlace {}),
+            placement: Some(ProfilePlacement::InPlace),
             limits: spine_limits().remove(0),
             transition: Some(CornerTransition::Round),
             output: solid(),
@@ -773,7 +775,7 @@ fn ribs() -> Vec<Rib> {
             thickness_at: Some(RibEnd::Tip),
             root_fillet: Some(lit(positive(0.5))),
             extend_profile: Some(lit(false)),
-            boolean: Some(Boolean::NewBody {}),
+            boolean: Some(Boolean::NewBody),
             native_options: native_options(),
             source_settings: native_options(),
         },
@@ -911,7 +913,7 @@ fn sections() -> Vec<Section> {
             flip: Some(lit(true)),
             seam: seams().into_iter().next(),
             condition: Some(SectionCondition::Tangent {
-                support: Some(Support::Computed {}),
+                support: Some(Support::Computed),
                 weight: Some(lit(positive_real(1.5))),
                 flip: None,
             }),
@@ -931,7 +933,7 @@ fn sections() -> Vec<Section> {
 
 fn point_conditions() -> Vec<PointCondition> {
     vec![
-        PointCondition::Sharp {},
+        PointCondition::Sharp,
         PointCondition::Tangent {
             weight: Some(lit(positive_real(2.0))),
         },
@@ -951,7 +953,7 @@ fn point_sections() -> Vec<PointSection> {
     vec![
         PointSection {
             point: point_construction(),
-            condition: Some(PointCondition::Sharp {}),
+            condition: Some(PointCondition::Sharp),
         },
         PointSection {
             point: construction(None),
@@ -1022,7 +1024,7 @@ fn spines() -> Vec<Spine> {
             sections: None,
             stations: Vec::new(),
         },
-        Spine::Computed {},
+        Spine::Computed,
     ]
 }
 
@@ -1137,7 +1139,7 @@ fn lofts() -> Vec<Loft> {
                 condition: Some(PointCondition::Tangent { weight: None }),
             }),
             cross: vec![sections().remove(1)],
-            spine: Some(Spine::Computed {}),
+            spine: Some(Spine::Computed),
             guides: guides(),
             correspondence: correspondences().into_iter().next(),
             shape: loft_shapes().remove(0),
@@ -1290,10 +1292,10 @@ fn each_enum_has_its_tag_form() {
         json!({"kind": "profile_normal", "reversed": {"kind": "literal", "value": true}})
     );
     assert_eq!(
-        to_value(&HoleDraft::WithRegion {}),
+        to_value(&HoleDraft::WithRegion),
         json!({"kind": "with_region"})
     );
-    assert_eq!(to_value(&Spine::Computed {}), json!({"kind": "computed"}));
+    assert_eq!(to_value(&Spine::Computed), json!({"kind": "computed"}));
     assert_eq!(
         to_value(&SpiralLaw::EndRadiusTurns {
             end: lit(positive(12.0)),
@@ -1333,6 +1335,23 @@ fn each_enum_has_its_tag_form() {
     refuses::<HoleDraft>(
         r#"{"kind": "angles", "end": {"kind": "literal", "value": 0.1}, "start": null}"#,
     );
+}
+
+/// §2.5: each value has one spelling, so a unit variant of an adjacently
+/// tagged enum is its `kind` alone and refuses a stated `value`.
+#[test]
+fn every_adjacent_unit_variant_refuses_a_stated_value() {
+    let readers: [(&'static str, Reader); 7] = [
+        ("CornerTransition", reads::<CornerTransition>),
+        ("CouplingMode", reads::<CouplingMode>),
+        ("ExtrudeOrigin", reads::<ExtrudeOrigin>),
+        ("LoftStyle", reads::<LoftStyle>),
+        ("RibGrowth", reads::<RibGrowth>),
+        ("ScalingLaw", reads::<ScalingLaw>),
+        ("SweepOrientation", reads::<SweepOrientation>),
+    ];
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/design/ops/swept.rs");
+    assert_units_refuse_value(&[file], &BTreeMap::from(readers));
 }
 
 /// A primitive's fixed-size arrays write as arrays and refuse another length.

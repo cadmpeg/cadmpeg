@@ -79,14 +79,18 @@ pub enum Span<Q> {
 )]
 pub enum Limit<Q> {
     /// At the operation's origin.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     AtOrigin,
     /// A signed distance or angle from the origin.
     Amount(Dimension<Q>),
     /// Through every target body; in a revolve, a full turn.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ThroughAll,
     /// At the first face the swept profile meets.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Next,
     /// At the last face the swept profile meets.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Last,
     /// At faces, surfaces, or bodies.
     ToGeometry {
@@ -164,8 +168,10 @@ pub enum Law<Q> {
 pub enum Interpolation {
     /// Each consecutive pair blends linearly, which leaves an edge at each
     /// intermediate section.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Linear,
     /// One smooth surface passes through every section.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Smooth,
     /// A source interpolation whose meaning is not established.
     Native(NonBlankString),
@@ -182,8 +188,10 @@ pub enum Interpolation {
 )]
 pub enum OffsetJoin {
     /// Rounded arcs.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Round,
     /// Sharp intersection: the sides extend to meet.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Sharp,
     /// A source join whose meaning is not established.
     Native(NonBlankString),
@@ -207,3 +215,6 @@ cadmpeg_core::named_optional_field!(deserialize_extend, Dimension<bool>, "extend
 cadmpeg_core::named_optional_field!(deserialize_far, Dimension<bool>, "far");
 cadmpeg_core::named_optional_field!(deserialize_measure, SymmetricMeasure, "measure");
 cadmpeg_core::named_optional_field!(deserialize_offset, LimitOffset, "offset");
+
+#[cfg(test)]
+mod tests;
