@@ -1149,10 +1149,12 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
     nonrational["curve"]["poles"] = serde_json::json!({
         "kind": "polynomial", "points": [{"u": 2.0, "v": 3.0}, {"u": 4.0, "v": 5.0}]
     });
-    nonrational["curve"]
+    let mut unstated = nonrational.clone();
+    unstated["curve"]
         .as_object_mut()
         .unwrap()
         .remove("periodic");
+    assert!(serde_json::from_value::<SketchGeometry>(unstated).is_err());
     let geometry = serde_json::from_value::<SketchGeometry>(nonrational).unwrap();
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         panic!("NURBS geometry");

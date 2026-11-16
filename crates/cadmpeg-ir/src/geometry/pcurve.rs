@@ -2009,7 +2009,6 @@ impl<'de> Deserialize<'de> for PcurveNurbs {
             degree: u32,
             knots: Vec<f64>,
             poles: PcurveNurbsPoles,
-            #[serde(default)]
             periodic: bool,
         }
 
