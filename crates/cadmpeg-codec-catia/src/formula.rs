@@ -158,9 +158,9 @@ pub(crate) fn transfer_parameters(
         let mut dependencies = Vec::new();
         let mut used_inputs = BTreeSet::new();
         let mut expression_bindings = BTreeMap::new();
-        // E7 inputs have a declared type but no value. Keep a separate typed
-        // binding set so their defining expression can still be retained as
-        // an unset result after syntax and type validation.
+        // Unset and literal inputs leave the formula unevaluated. Keep a
+        // separate typed binding set so its defining expression can still be
+        // retained after syntax and type validation.
         let mut type_bindings = BTreeMap::new();
         let mut all_inputs_complete = true;
         let mut all_inputs_typed = true;
@@ -204,7 +204,12 @@ pub(crate) fn transfer_parameters(
             dependencies.push(id);
             let type_value = static_formula_value(candidate.parameter_type);
             type_bindings.insert(input.parameter.as_str(), type_value);
-            match candidate.parameter.value.as_ref() {
+            match candidate
+                .parameter
+                .value
+                .as_ref()
+                .filter(|_| !candidate.literal)
+            {
                 None => {
                     all_inputs_complete = false;
                 }
@@ -324,6 +329,7 @@ pub(crate) fn transfer_parameters(
                             let output_expression = expression.expression.value.clone();
                             let output_native_ref = output.id.clone();
                             transferred.push(FormulaParameterCandidate {
+                                literal: false,
                                 parameter: DesignParameter {
                                     product_definition: None,
                                     id: output_id,
@@ -648,6 +654,7 @@ fn definition_chain_parameter_candidate(
         Err(error) => return Err(error),
     };
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
+    let literal = matches!(evaluation, TypedParameterEvaluation::Literal(_));
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
         TypedParameterEvaluation::Value(value) | TypedParameterEvaluation::Literal(value) => {
@@ -706,6 +713,7 @@ fn definition_chain_parameter_candidate(
         )?;
     }
     Ok(Some(FormulaParameterCandidate {
+        literal,
         parameter: DesignParameter {
             product_definition: None,
             id,
@@ -827,6 +835,7 @@ fn collect_legacy_parameters(
                 continue;
             }
             ctx.charge_entities(1, "admit CATIA formula candidate")?;
+            let literal = matches!(evaluation, TypedParameterEvaluation::Literal(_));
             let (expression, value) = match evaluation {
                 TypedParameterEvaluation::Unset => (String::new(), None),
                 TypedParameterEvaluation::Value(value)
@@ -839,6 +848,7 @@ fn collect_legacy_parameters(
             let parameter_name = name.to_owned();
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
+                literal,
                 parameter: DesignParameter {
                     product_definition: None,
                     id: parameter_id,
@@ -899,6 +909,7 @@ fn collect_legacy_parameters(
             let parameter_name = name.to_owned();
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
+                literal: false,
                 parameter: DesignParameter {
                     product_definition: None,
                     id: parameter_id,
@@ -959,6 +970,7 @@ fn collect_legacy_parameters(
             let parameter_name = name.to_owned();
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
+                literal: false,
                 parameter: DesignParameter {
                     product_definition: None,
                     id: parameter_id,
@@ -1292,6 +1304,9 @@ struct FormulaParameterCandidate {
     parameter_type: FormulaParameterType,
     role: FormulaParameterRole,
     source_order: u64,
+    /// The value is a stored `E7` or `E8` literal, which leaves a formula
+    /// that reads it unevaluated.
+    literal: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1350,6 +1365,7 @@ fn typed_entity_parameter_candidate(
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
     let name = parameter.name.value.clone();
     let native_ref = entity.id.clone();
+    let literal = matches!(evaluation, TypedParameterEvaluation::Literal(_));
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
         TypedParameterEvaluation::Value(value) | TypedParameterEvaluation::Literal(value) => {
@@ -1358,6 +1374,7 @@ fn typed_entity_parameter_candidate(
         }
     };
     Ok(Some(FormulaParameterCandidate {
+        literal,
         parameter: DesignParameter {
             product_definition: None,
             id,
@@ -1519,7 +1536,12 @@ fn relation_program_output_candidate<'a>(
             input.parameter.as_str(),
             static_formula_value(candidate.parameter_type),
         );
-        match candidate.parameter.value.as_ref() {
+        match candidate
+            .parameter
+            .value
+            .as_ref()
+            .filter(|_| !candidate.literal)
+        {
             Some(value) => {
                 expression_bindings.insert(
                     input.parameter.as_str(),
@@ -1604,6 +1626,7 @@ fn relation_program_output_candidate<'a>(
     let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
     output_dependencies.extend(dependencies.iter().cloned());
     let candidate = FormulaParameterCandidate {
+        literal: false,
         parameter: DesignParameter {
             product_definition: None,
             id: candidate_id,
@@ -1705,9 +1728,7 @@ fn demote_formula_output(candidate: &mut FormulaParameterCandidate) -> bool {
 enum TypedParameterEvaluation {
     Unset,
     Value(ParameterValue),
-    /// A stored `E7` or `E8` literal. It is accepted wherever an unset
-    /// evaluation is, so an expression that drives the parameter keeps
-    /// driving it.
+    /// A stored `E7` or `E8` literal.
     Literal(ParameterValue),
 }
 
@@ -3907,6 +3928,7 @@ mod parser_tests {
 
     fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
         FormulaParameterCandidate {
+            literal: false,
             parameter: DesignParameter {
                 id: ParameterId::mint("synthetic:test:id#parameter".to_string())
                     .expect("identity grammar"),

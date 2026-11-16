@@ -938,11 +938,9 @@ fn finish_decode(
                     slots
                         .iter()
                         .fold((0_usize, 0_usize), |(finite, unset), slot| match slot {
-                            crate::entity_table::RangeIntervalSlot::Binary64 { .. } => {
+                            crate::entity_table::RangeIntervalSlot::Binary64 { .. }
+                            | crate::entity_table::RangeIntervalSlot::ZeroLiteral { .. } => {
                                 (finite + 1, unset)
-                            }
-                            crate::entity_table::RangeIntervalSlot::ZeroLiteral { .. } => {
-                                (finite, unset + 1)
                             }
                         });
                 (

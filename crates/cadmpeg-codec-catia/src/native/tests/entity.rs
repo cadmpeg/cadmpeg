@@ -1237,13 +1237,19 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
         control.entity_records[0]
             .suffix_value()
             .as_ref()
-            .expect("complete control suffix")
+            .expect("complete zero-literal suffix")
             .payload,
         crate::native::CatiaEntitySuffixPayload::Evaluation {
             evaluation: crate::native::CatiaEntityEvaluation::ZeroLiteral,
             ..
         }
     ));
+    assert_eq!(
+        control.entity_records[0]
+            .parameter_value()
+            .map(|value| value.evaluation.clone()),
+        Some(crate::native::CatiaEntityEvaluation::ZeroLiteral)
+    );
 }
 
 #[test]

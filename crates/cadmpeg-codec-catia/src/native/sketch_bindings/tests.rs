@@ -361,7 +361,15 @@ fn a_zero_literal_owner_slot_is_the_coordinate_zero() {
         *value_payload = finite.clone();
     }
     rebind(&mut native);
-    assert!(!group(&native, 3).local_point_pairs.is_empty());
+    let pairs = &group(&native, 3).local_point_pairs;
+    assert!(
+        pairs.iter().any(|pair| pair
+            .slots
+            .iter()
+            .map(|s| (s.bits, s.payload_offset))
+            .eq([(1.25_f64.to_bits(), 8), (0.0_f64.to_bits(), 17)])),
+        "{pairs:?}"
+    );
 }
 
 #[test]

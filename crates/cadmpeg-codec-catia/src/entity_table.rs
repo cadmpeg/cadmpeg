@@ -79,7 +79,6 @@ pub(crate) enum RangeIntervalSlot {
     },
 }
 
-/// Complete encoded value selected by a source-schema entry named `Range`.
 impl RangeIntervalSlot {
     /// The slot's binary64 bits; `E8` is 0.0.
     pub(crate) fn bits(&self) -> u64 {
@@ -90,6 +89,7 @@ impl RangeIntervalSlot {
     }
 }
 
+/// Complete encoded value selected by a source-schema entry named `Range`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct RangeInterval {
     /// Atom preceding the fixed range type frame.

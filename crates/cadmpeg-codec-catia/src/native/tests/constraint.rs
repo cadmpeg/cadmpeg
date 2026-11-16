@@ -648,11 +648,18 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
             )),
             &DecodeOptions::default(),
         )
-        .expect("decode unset range interval");
+        .expect("decode zero-literal range interval");
     assert_eq!(
         wire::coverage_count(
             unset.report(),
             crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            unset.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT.as_str()
         ),
         2
     );

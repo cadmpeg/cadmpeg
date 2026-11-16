@@ -729,7 +729,12 @@ fn decode_transfers_a_unit_literal_formula_input_and_keeps_the_output_driven() {
     assert!(input.dependencies.is_empty());
     assert_eq!(input.properties["value_type"], "LENGTH");
     assert_eq!(input.properties["catia_binding"], "#1_ /2");
-    assert_eq!(output.value, None);
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(1.0).unwrap()
+        ))
+    );
     assert_eq!(output.expression, "#1_ /2+1mm");
     assert_eq!(
         output.dependencies.as_slice(),
@@ -737,6 +742,43 @@ fn decode_transfers_a_unit_literal_formula_input_and_keeps_the_output_driven() {
     );
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.properties["catia_binding"], "#result_ /1");
+}
+
+#[test]
+fn a_literal_input_keeps_an_unevaluable_formula_output_driven() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(
+                standard_catpart_with_typed_formula_inputs_and_object_payload(
+                    4,
+                    false,
+                    &[("#1_", "LENGTH", "Width", "#1_ /2", 12.0)],
+                    "LENGTH",
+                    None,
+                    "1mm*1mm/(#1_ /2-1mm)",
+                    (&[0xfe], Some(0)),
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("decode literal formula input");
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
+        panic!(
+            "literal formula parameters: {:?}",
+            decoded
+                .ir()
+                .model
+                .parameters
+                .iter()
+                .map(|p| (&p.name, &p.expression, &p.value))
+                .collect::<Vec<_>>()
+        )
+    };
+    assert_eq!(output.expression, "1mm*1mm/(#1_ /2-1mm)");
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
 }
 
 #[test]
