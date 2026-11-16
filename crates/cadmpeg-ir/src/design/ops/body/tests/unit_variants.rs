@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Every unit variant of an enum of `body.rs` or `shared.rs` tagged by `kind`
-//! with content under `value` has one spelling: `{"kind": name}`. The sweep
-//! finds each such enum in those files and reads every one of its unit
+//! has one spelling: `{"kind": name}`. The sweep finds each such enum with
+//! content under `value` in those files and reads every one of its unit
 //! variants.
 
 use std::collections::BTreeMap;
@@ -13,9 +13,10 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use syn::{Fields, Item};
 
-use crate::design::ops::body::{Heal, PatternMethod, SplitMethod};
+use crate::design::ops::body::{Heal, InstanceChange, PatternMethod, SplitMethod, TransformMode};
 use crate::design::ops::shared::{
-    Alignment, InstanceOrientation, JointKind, JointMotion, RunSides, SlotPosition, WidthMode,
+    Alignment, InstanceOrientation, JointKind, JointMotion, Locus, PathAxisControl, PathPosition,
+    PathReference, PathRollControl, RunSides, SlotPosition, WidthMode,
 };
 use crate::design::read;
 use crate::scalar::Length;
@@ -132,6 +133,32 @@ fn every_adjacent_unit_variant_refuses_a_stated_value() {
                     "{name}::{variant}: {error}"
                 );
             }
+        }
+    }
+}
+
+/// A unit variant of an enum tagged by `kind` alone is `{"kind": name}` and
+/// refuses every other key, `value` among them.
+#[test]
+fn every_internally_tagged_unit_variant_refuses_another_key() {
+    let units: [(&str, Reader); 7] = [
+        ("centroid", reads::<Locus>),
+        ("plane_normal", reads::<PathReference>),
+        ("skipped", reads::<InstanceChange>),
+        ("move", reads::<TransformMode>),
+        ("free", reads::<PathPosition>),
+        ("free", reads::<PathAxisControl>),
+        ("free", reads::<PathRollControl>),
+    ];
+    for (variant, read) in units {
+        let bare = json!({"kind": variant});
+        assert_eq!(read(&bare).as_ref(), Ok(&bare), "{variant}");
+        for stated in [
+            json!({"kind": variant, "value": null}),
+            json!({"kind": variant, "value": {}}),
+            json!({"kind": variant, "zz_bogus": 1}),
+        ] {
+            read(&stated).expect_err(&format!("{stated} is refused"));
         }
     }
 }

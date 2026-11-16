@@ -206,7 +206,7 @@ fn slot_positions() -> Vec<SlotPosition> {
 
 fn path_positions() -> Vec<PathPosition> {
     vec![
-        PathPosition::Free {},
+        PathPosition::Free,
         PathPosition::Distance {
             distance: literal(non_negative(12.0)),
             from_end: Some(literal(true)),
@@ -224,7 +224,7 @@ fn path_positions() -> Vec<PathPosition> {
 
 fn pitch_yaws() -> Vec<PathAxisControl> {
     vec![
-        PathAxisControl::Free {},
+        PathAxisControl::Free,
         PathAxisControl::FollowPath {
             axis: FrameAxis::X,
             flip: Some(literal(false)),
@@ -238,7 +238,7 @@ fn pitch_yaws() -> Vec<PathAxisControl> {
 
 fn rolls() -> Vec<PathRollControl> {
     vec![
-        PathRollControl::Free {},
+        PathRollControl::Free,
         PathRollControl::UpVector {
             vector: Box::new(direction_construction()),
             axis: FrameAxis::Z,
@@ -377,8 +377,8 @@ fn every_joint_type_round_trips() {
 }
 
 /// §2.5's tag forms: a unit-only enum writes a string, a unit arm of an
-/// adjacently tagged enum is its tag alone, and an empty struct arm of an
-/// internally tagged enum writes its tag and refuses another key.
+/// adjacently tagged enum is its tag alone, and a unit arm of an internally
+/// tagged enum writes its tag and refuses another key.
 #[test]
 fn each_joint_enum_writes_its_tag_form() {
     assert_eq!(to_value(&PairElement::Second), json!("second"));
@@ -392,7 +392,7 @@ fn each_joint_enum_writes_its_tag_form() {
         to_value(&JointMotion::Revolute { axis: FrameAxis::Z }),
         json!({"kind": "revolute", "value": {"axis": "z"}})
     );
-    assert_eq!(to_value(&PathPosition::Free {}), json!({"kind": "free"}));
+    assert_eq!(to_value(&PathPosition::Free), json!({"kind": "free"}));
     refuses::<PathPosition>(r#"{"kind": "free", "distance": 1}"#);
     refuses::<PathAxisControl>(r#"{"kind": "free", "axis": "x"}"#);
     refuses::<PathRollControl>(r#"{"kind": "free", "axis": "x"}"#);

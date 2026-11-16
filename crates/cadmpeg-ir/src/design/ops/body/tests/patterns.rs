@@ -2,13 +2,15 @@
 //! Patterns, their layouts, runs, spacing, and instances.
 
 use std::collections::BTreeMap;
+use std::thread;
 
+use cadmpeg_core::decode::ResourceLimits;
 use serde_json::json;
 
 use super::{
     angle, axis_construction, direction_construction, faces, id, length, literal, options, ordered,
-    parameter, plane_construction, point_construction, refuses, settings, text, to_value, unread,
-    Report,
+    parameter, plane_construction, point_construction, refuses, round_trip, settings, text,
+    to_value, unread, Report,
 };
 use crate::design::construction::{FrameAxis, ScalarDimension};
 use crate::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral, Node};
@@ -23,6 +25,7 @@ use crate::design::ops::shared::{
     Spacing, TableRow, UpToFill,
 };
 use crate::design::options::SymmetricMeasure;
+use crate::design::read;
 use crate::features::ParameterId;
 use crate::scalar::{Angle, Length, PositiveReal};
 
@@ -55,7 +58,7 @@ fn angle_fills() -> Vec<UpToFill<Angle>> {
 
 fn loci() -> Vec<Locus> {
     vec![
-        Locus::Centroid {},
+        Locus::Centroid,
         Locus::Point(Box::new(point_construction())),
     ]
 }
@@ -79,7 +82,7 @@ fn length_spacings() -> Vec<Spacing<Length>> {
             reference: Box::new(ordered(5)),
             fill: UpToFill::Pitch(literal(length(3.0))),
             offset: Some(literal(length(1.0))),
-            from: Some(Locus::Centroid {}),
+            from: Some(Locus::Centroid),
         },
         Spacing::UpTo {
             reference: Box::new(unread()),
@@ -195,7 +198,7 @@ fn linear_runs() -> Vec<LinearRun> {
 
 fn path_references() -> Vec<PathReference> {
     vec![
-        PathReference::PlaneNormal {},
+        PathReference::PlaneNormal,
         PathReference::Direction(Box::new(direction_construction())),
     ]
 }
@@ -206,7 +209,7 @@ fn orientations() -> Vec<InstanceOrientation> {
         InstanceOrientation::Follow,
         InstanceOrientation::Frenet,
         InstanceOrientation::Rolled {
-            reference: PathReference::PlaneNormal {},
+            reference: PathReference::PlaneNormal,
             reference_axis: FrameAxis::Y,
             seed_axis: None,
         },
@@ -344,7 +347,7 @@ fn layouts() -> Vec<PatternLayout> {
             PatternLayout::Scale {
                 factor: literal(PositiveReal::new(2.0).unwrap()),
                 count: literal(2),
-                center: Locus::Centroid {},
+                center: Locus::Centroid,
             },
         ]),
         PatternLayout::Scale {
@@ -384,7 +387,7 @@ fn expression_map() -> BTreeMap<ParameterId, Expression> {
 
 fn changes() -> Vec<InstanceChange> {
     vec![
-        InstanceChange::Skipped {},
+        InstanceChange::Skipped,
         InstanceChange::Varied {
             parameters: expression_map(),
         },
@@ -556,17 +559,17 @@ fn the_examples_of_section_2_5() {
     );
 }
 
-/// A struct arm of an internally tagged enum writes only its tag and refuses
+/// A unit arm of an internally tagged enum writes only its tag and refuses
 /// another key.
 #[test]
 fn an_empty_arm_is_its_tag_alone() {
-    assert_eq!(to_value(&Locus::Centroid {}), json!({"kind": "centroid"}));
+    assert_eq!(to_value(&Locus::Centroid), json!({"kind": "centroid"}));
     assert_eq!(
-        to_value(&PathReference::PlaneNormal {}),
+        to_value(&PathReference::PlaneNormal),
         json!({"kind": "plane_normal"})
     );
     assert_eq!(
-        to_value(&InstanceChange::Skipped {}),
+        to_value(&InstanceChange::Skipped),
         json!({"kind": "skipped"})
     );
     refuses::<PathReference>(r#"{"kind": "plane_normal", "extra": 1}"#);
@@ -636,4 +639,44 @@ fn a_chain_link_holds_two_pins() {
     assert_eq!(pins.len(), 2);
     pins.pop();
     refuses::<ChainLink>(&value.to_string());
+}
+
+/// The deepest `Composite` nesting the reader admits, in layouts with the
+/// leaf: each level above the leaf is an object and an array under the JSON
+/// depth limit of 128.
+const DEEPEST_COMPOSITE: usize = 64;
+
+/// `depth` layouts, each a `Composite` of the next, around a native leaf.
+fn nested_composite(depth: usize) -> String {
+    let mut text = r#"{"kind":"native","value":"leaf"}"#.to_owned();
+    for _ in 1..depth {
+        text = format!(r#"{{"kind":"composite","value":[{text}]}}"#);
+    }
+    text
+}
+
+/// `Composite` nesting has no ceiling of its own; the JSON depth limit bounds
+/// it. The deepest nesting it admits reads, clones, compares, writes back the
+/// same bytes, and drops on a default 2 MiB thread, and one level more is
+/// refused.
+#[test]
+fn the_deepest_admitted_composite_nesting_reads_on_a_default_thread() {
+    thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(|| {
+            let text = nested_composite(DEEPEST_COMPOSITE);
+            let layout: PatternLayout = read::from_str(&text, &ResourceLimits::desktop())
+                .expect("the deepest admitted nesting reads");
+            let copy = layout.clone();
+            assert_eq!(copy, layout);
+            assert_eq!(serde_json::to_string(&copy).unwrap(), text);
+            round_trip(&layout).unwrap();
+            drop(copy);
+            drop(layout);
+            let message = refuses::<PatternLayout>(&nested_composite(DEEPEST_COMPOSITE + 1));
+            assert!(message.contains("recursion limit exceeded"), "{message}");
+        })
+        .unwrap()
+        .join()
+        .unwrap();
 }

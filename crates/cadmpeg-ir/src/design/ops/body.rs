@@ -169,7 +169,8 @@ pub struct InstanceOverride {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum InstanceChange {
     /// Leaves the instance out. The other instances keep their coordinates.
-    Skipped {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Skipped,
     /// Replaces the expression of seed parameters within the instance.
     Varied {
         /// The expression of each seed parameter within the instance.
@@ -616,7 +617,8 @@ pub struct TransformBodies {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TransformMode {
     /// Transforms the picked bodies in place, and they keep their identity.
-    Move {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Move,
     /// Leaves the bodies and adds `count` copies: copy k, for k from 1 to
     /// `count`, applies the per-copy motion k times.
     Copy {

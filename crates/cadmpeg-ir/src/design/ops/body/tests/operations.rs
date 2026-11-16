@@ -346,7 +346,7 @@ fn steps() -> Vec<TransformStep> {
             to: frame_construction(),
         },
         TransformStep::Scale {
-            center: Some(Locus::Centroid {}),
+            center: Some(Locus::Centroid),
             factors: ScaleFactors::Uniform(literal(non_zero(0.5))),
         },
         TransformStep::Scale {
@@ -376,7 +376,7 @@ fn transformations() -> Vec<Transformation> {
 
 fn transform_modes() -> Vec<TransformMode> {
     vec![
-        TransformMode::Move {},
+        TransformMode::Move,
         TransformMode::Copy {
             count: literal(4),
             divisions: Some(literal(4)),
@@ -393,7 +393,7 @@ fn transform_bodies() -> Vec<TransformBodies> {
         TransformBodies {
             bodies: faces(49),
             transformation: transformations().remove(0),
-            mode: Some(TransformMode::Move {}),
+            mode: Some(TransformMode::Move),
             native_options: options(),
             source_settings: settings(),
         },
@@ -590,7 +590,7 @@ fn the_examples_of_section_2_5() {
         to_value(&copy),
         json!({"kind": "copy", "count": {"kind": "literal", "value": 4}, "divisions": {"kind": "literal", "value": 4}})
     );
-    assert_eq!(to_value(&TransformMode::Move {}), json!({"kind": "move"}));
+    assert_eq!(to_value(&TransformMode::Move), json!({"kind": "move"}));
     refuses::<TransformMode>(r#"{"kind": "move", "count": 1}"#);
     assert_eq!(to_value(&ToolDisposition::Absorbed), json!("absorbed"));
     assert_eq!(to_value(&Retention::KeepSelected), json!("keep_selected"));

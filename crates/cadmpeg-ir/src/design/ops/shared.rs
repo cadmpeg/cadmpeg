@@ -366,7 +366,8 @@ pub enum UpToFill<Q> {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Locus {
     /// The seed's centroid.
-    Centroid {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Centroid,
     /// A constructed point.
     Point(Box<Construction<kinds::Point>>),
 }
@@ -420,7 +421,8 @@ pub enum InstanceOrientation {
 pub enum PathReference {
     /// The normal of the path's plane on the side of the z axis of the path's
     /// placement, and the definition's +Z for a path that is not planar.
-    PlaneNormal {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    PlaneNormal,
     /// A constructed direction.
     Direction(Box<Construction<kinds::Direction>>),
 }
@@ -1107,7 +1109,8 @@ pub enum SlotPosition {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathPosition {
     /// Anywhere.
-    Free {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Free,
     /// At a distance along the path.
     Distance {
         /// The distance.
@@ -1143,7 +1146,8 @@ pub enum PathPosition {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathAxisControl {
     /// Not held.
-    Free {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Free,
     /// One axis of the second element's definition frame held tangent to the
     /// path.
     FollowPath {
@@ -1165,7 +1169,8 @@ pub enum PathAxisControl {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathRollControl {
     /// Not held.
-    Free {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Free,
     /// One axis held along a constructed direction.
     UpVector {
         /// The direction.
