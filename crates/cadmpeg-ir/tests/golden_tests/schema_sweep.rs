@@ -361,15 +361,10 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
 /// The empty document with `element` as the one element of `arena`.
 fn document(arena: &str, element: Value) -> Value {
     let mut document = serde_json::to_value(CadIr::empty()).expect("a CadIr serializes");
-    let home = if document["geometry"].get(arena).is_some() {
-        "geometry"
-    } else {
-        "model"
-    };
-    assert!(
-        document[home].get(arena).is_some(),
-        "no arena is named {arena}"
-    );
+    let home = ["geometry", "model"]
+        .into_iter()
+        .find(|home| document[*home].get(arena).is_some())
+        .unwrap_or_else(|| panic!("no document root holds the arena {arena}"));
     document[home][arena] = Value::Array(vec![element]);
     document
 }
