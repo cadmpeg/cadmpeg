@@ -80,7 +80,8 @@ pub enum SketchPlane {
     Placed(Box<Construction<kinds::Frame>>),
     /// A block definition: a sketch with no plane, whose entities block
     /// instances in other sketches place.
-    Block {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Block,
 }
 
 /// A spatial sketch: entities in the coordinates of its definition. It has
@@ -148,15 +149,20 @@ pub struct SketchSolve {
 )]
 pub enum SolveState {
     /// Fully constrained.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Full,
     /// Under-constrained.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Under,
     /// Not fully constrained: under-constrained or unsolvable, the source
     /// does not say which.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     NotFull,
     /// Over-constrained.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Over,
     /// The constraints contradict each other.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Inconsistent,
     /// A state whose meaning is not established.
     Native(NonBlankString),
@@ -367,6 +373,7 @@ pub enum EntityForm<S: SketchSpace> {
     },
     /// A sketch-local coordinate frame: a point entity, its `solved` the
     /// frame's origin.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Frame,
     /// A form whose meaning is not established.
     Native(NonBlankString),
@@ -398,22 +405,30 @@ pub struct EntityRole<S: SketchSpace> {
 )]
 pub enum DefiningRole {
     /// The start point.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Start,
     /// The end point.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     End,
     /// The center.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Center,
     /// A conic's apex.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Apex,
     /// A focus, by index.
     Focus(u8),
     /// An ellipse's major axis line.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     MajorAxis,
     /// An ellipse's minor axis line.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     MinorAxis,
     /// The x axis line of a `Frame` entity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     XAxis,
     /// The y axis line of a `Frame` entity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     YAxis,
     /// The fit point of an interpolated spline, by index.
     Fit(u32),
@@ -424,8 +439,10 @@ pub enum DefiningRole {
     /// A spline handle line at a fit point, by index.
     Handle(u32),
     /// A text anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Anchor,
     /// A block insertion point.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Insertion,
     /// A role whose meaning is not established.
     Native(NonBlankString),
@@ -581,7 +598,7 @@ pub struct InterpolatedSpline<S: SketchSpace> {
     )]
     pub closed: Option<bool>,
     /// The tangent and curvature conditions at fit point `i`, by `i`.
-    #[serde(with = "crate::design::wire::pairs")]
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<(u32, SplineHandle<S>)>"))]
     pub handles: BTreeMap<u32, SplineHandle<S>>,
 }
@@ -657,12 +674,16 @@ pub struct Derivation {
 )]
 pub enum DerivationMode {
     /// Projects the source onto the sketch plane.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Project,
     /// Copies the source curve unprojected.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Include,
     /// Intersects the source with the sketch plane.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Intersect,
     /// Takes the source's outline seen along the normal.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Silhouette,
     /// Projects and offsets the source along the projected curve's left
     /// normal.
@@ -806,12 +827,16 @@ pub struct TextContent {
 )]
 pub enum TextAlign {
     /// The box's start; vertically against `CapHeight`, the baseline.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Start,
     /// The box's center.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Center,
     /// The box's end.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     End,
     /// The baseline. It does not occur with `CapHeight`.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Baseline,
     /// An alignment whose meaning is not established.
     Native(NonBlankString),
@@ -1238,10 +1263,13 @@ pub enum Contact<S: SketchSpace> {
 )]
 pub enum DistanceAxis<S: SketchSpace> {
     /// The Euclidean distance.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Aligned,
     /// The signed sketch-coordinate difference `b − a` in x.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Horizontal,
     /// The signed sketch-coordinate difference `b − a` in y.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Vertical,
     /// Parallel to a line or axis.
     Along(Operand<S>),
@@ -1282,8 +1310,10 @@ pub enum AngleOperands<S: SketchSpace> {
 )]
 pub enum AngleSector {
     /// The non-reflex angle.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Minor,
     /// The reflex angle.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Major,
     /// The angle swept from the first operand's direction to the second's,
     /// in [0, 2π).
@@ -1388,12 +1418,16 @@ pub struct SketchSlot<S: SketchSpace> {
 )]
 pub enum SlotKind {
     /// A straight slot by its ends.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Straight,
     /// A straight slot by its center.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     CenterStraight,
     /// An arc slot by its ends.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Arc,
     /// An arc slot by its center.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     CenterArc,
     /// A slot whose meaning is not established.
     Native(NonBlankString),

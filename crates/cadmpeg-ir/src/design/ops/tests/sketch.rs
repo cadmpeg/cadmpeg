@@ -114,7 +114,7 @@ fn sketch_planes() -> Vec<SketchPlane> {
     vec![
         SketchPlane::Placed(Box::new(frame())),
         SketchPlane::Placed(Box::new(construction(None))),
-        SketchPlane::Block {},
+        SketchPlane::Block,
     ]
 }
 
@@ -939,7 +939,7 @@ fn every_sketch_type_round_trips() {
 fn each_enum_has_its_tag_form() {
     assert_eq!(to_value(&RadialMeasure::MajorRadius), json!("major_radius"));
     assert_eq!(to_value(&TextVerticalBox::CapHeight), json!("cap_height"));
-    assert_eq!(to_value(&SketchPlane::Block {}), json!({"kind": "block"}));
+    assert_eq!(to_value(&SketchPlane::Block), json!({"kind": "block"}));
     refuses::<SketchPlane>(r#"{"kind": "block", "extra": 1}"#);
     let placed = to_value(&SketchPlane::Placed(Box::new(construction(None))));
     assert_eq!(

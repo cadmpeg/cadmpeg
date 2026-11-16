@@ -7,6 +7,7 @@ mod datum;
 mod schema;
 mod shared;
 mod sketch;
+mod unit_variants;
 
 use std::collections::BTreeMap;
 use std::fmt::Debug;

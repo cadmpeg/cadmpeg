@@ -115,9 +115,11 @@ pub enum LinkState {
 )]
 pub enum RunSides<Q> {
     /// Along the run's direction from the seed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     One,
     /// Against the run's direction from the seed, so the instances'
     /// coordinates are negative. It occurs only in a `Path` run.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Against,
     /// The run mirrored onto the reverse side.
     Symmetric {
