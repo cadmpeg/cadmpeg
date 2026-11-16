@@ -442,6 +442,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     id: self.pcurve_id(position + 1, representation_index, false)?,
                     geometry: primary_geometry,
                     metadata: PcurveMetadata::general(None, primary_range.map(Into::into), None),
+                    native_ref: None,
                 });
                 if let Some(secondary) = secondary {
                     let secondary_read =
@@ -476,6 +477,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                             secondary_range.map(Into::into),
                             None,
                         ),
+                        native_ref: None,
                     });
                 }
             }
@@ -610,11 +612,11 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         ir.geometry.bodies.push(Body {
             id: body_id.clone(),
             kind,
-            regions,
             transform: (!is_identity(root.transform.transform)).then_some(root.transform.transform),
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         if matches!(
             root_kind,
@@ -682,6 +684,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 id: region_id.clone(),
                 body: body.clone(),
                 shells,
+                native_ref: None,
             });
             if shape.kind() == TextShapeKind::Solid {
                 self.bind_topology(
@@ -758,16 +761,12 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     }
                 }
                 retain_wire_edges(&ir.geometry.coedges[coedge_start..], &mut wire_edges);
-                ir.geometry.shells.push(
-                    Shell::new(
-                        component_id.clone(),
-                        region.clone(),
-                        faces,
-                        wire_edges,
-                        Vec::new(),
-                    )
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-                );
+                ir.geometry.shells.push(Shell::with_members(
+                    component_id.clone(),
+                    region.clone(),
+                    wire_edges,
+                    Vec::new(),
+                ));
                 self.bind_topology(
                     TextShapeKind::Shell,
                     shape_index,
@@ -827,31 +826,23 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     location: 0.into(),
                 };
                 let vertex = self.ensure_vertex(ir, &vertex_use, transform)?;
-                ir.geometry.shells.push(
-                    Shell::new(
-                        shell_id.clone(),
-                        region.clone(),
-                        faces,
-                        wire_edges,
-                        vec![vertex],
-                    )
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-                );
+                ir.geometry.shells.push(Shell::with_members(
+                    shell_id.clone(),
+                    region.clone(),
+                    wire_edges,
+                    vec![vertex],
+                ));
                 return Ok(vec![shell_id]);
             }
             _ => {}
         }
         retain_wire_edges(&ir.geometry.coedges[coedge_start..], &mut wire_edges);
-        ir.geometry.shells.push(
-            Shell::new(
-                shell_id.clone(),
-                region.clone(),
-                faces,
-                wire_edges,
-                Vec::new(),
-            )
-            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-        );
+        ir.geometry.shells.push(Shell::with_members(
+            shell_id.clone(),
+            region.clone(),
+            wire_edges,
+            Vec::new(),
+        ));
         if shape.kind() == TextShapeKind::Wire {
             self.bind_topology(shape.kind(), shape_index, transform, shell_id.as_str())?;
         }
@@ -999,6 +990,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     )),
                     source_object: Some(self.source_association()?),
+                    native_ref: None,
                 });
             }
             id
@@ -1135,7 +1127,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                             })
                         })
                         .collect::<Result<Vec<_>, CodecError>>()?,
-                });
+                 native_ref: None, });
                 placed_uses.push((edge, use_sense));
             }
             let ends = placed_uses
@@ -1158,6 +1150,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                         ))
                     })?,
                 ),
+                native_ref: None,
             });
             self.bind_topology(
                 TextShapeKind::Wire,
@@ -1176,6 +1169,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             name: None,
             color: None,
             tolerance: PositiveReal::from_finite(tolerance),
+            native_ref: None,
         });
         self.bind_topology(
             TextShapeKind::Face,
@@ -1286,9 +1280,9 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
                 .map_err(CodecError::malformed)?,
-            start,
-            end,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
             tolerance: PositiveReal::from_finite(tolerance),
+            native_ref: None,
         });
         self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.as_str())?;
         self.edges.insert(key, placed.clone());
@@ -1345,6 +1339,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
             source_object: Some(self.source_association()?),
+            native_ref: None,
         });
         if let TextEdgeRepresentation::PolygonPair {
             polygons,
@@ -1365,6 +1360,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
                 source_object: Some(self.source_association()?),
+                native_ref: None,
             });
         }
         Ok(id)
@@ -1476,6 +1472,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             tolerance: positive_tolerance(
                 tolerance.get() * uniform_scale(transform.transform)?.get(),
             ),
+            native_ref: None,
         });
         self.bind_topology(
             TextShapeKind::Vertex,
@@ -1520,6 +1517,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 id: id.clone(),
                 geometry,
                 source_object,
+                native_ref: None,
             });
         }
         Ok(id)
@@ -1577,6 +1575,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 id: id.clone(),
                 geometry,
                 source_object,
+                native_ref: None,
             });
             if has_procedural_construction {
                 let admission = match self.procedural_admission.take() {

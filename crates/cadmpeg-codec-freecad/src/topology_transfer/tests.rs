@@ -74,7 +74,7 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
     }
 }
 
-const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+const EPS_COLOR_COMPONENT: f64 = 1.0e-6;
 
 #[test]
 fn indexed_polygon_pairs_checked_samples() {
@@ -740,6 +740,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
                 sense: Sense::Forward,
                 use_curve: None,
                 pcurves: Vec::new(),
+                native_ref: None,
             }
         })
         .collect::<Vec<_>>();
@@ -759,6 +760,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
                 sense: Sense::Forward,
                 use_curve: None,
                 pcurves: Vec::new(),
+                native_ref: None,
             }
         })
         .collect::<Vec<_>>();
@@ -783,6 +785,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         sense: Sense::Forward,
         use_curve: None,
         pcurves: Vec::new(),
+        native_ref: None,
     }];
     close_radial_rings(&mut singleton);
     assert_eq!(singleton[0].radial_next, id);
@@ -1189,9 +1192,9 @@ Co 1001000 +2 0 *
         Some(4.0)
     );
     let color = result.ir().geometry.bodies[0].color.expect("shape color");
-    assert!((color.r() - f32::from(0x33_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
-    assert!((color.g() - f32::from(0x66_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
-    assert!((color.b() - f32::from(0x99_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.r() - f64::from(0x33_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.g() - f64::from(0x66_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.b() - f64::from(0x99_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.a() - 0.75).abs() < EPS_COLOR_COMPONENT);
     let shape_material = result
         .ir()
@@ -1411,8 +1414,8 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
         cadmpeg_ir::topology::BodyKind::Wire
     );
     assert_eq!(result.ir().geometry.shells.len(), 1);
-    assert_eq!(result.ir().geometry.shells[0].wire_edges().len(), 1);
-    assert!(result.ir().geometry.shells[0].faces().is_empty());
+    assert_eq!(result.ir().geometry.shells[0].wire_edges().count(), 1);
+    assert!(result.ir().geometry.faces.is_empty());
 }
 
 #[test]
@@ -1580,7 +1583,14 @@ Co 1001000 +2 1 +2 3 *
         // Two uses of a solid whose one shell is open: a sheet.
         cadmpeg_ir::topology::BodyKind::Sheet
     );
-    assert_eq!(result.ir().geometry.bodies[0].regions.len(), 2);
+    assert_eq!(
+        result
+            .ir()
+            .geometry
+            .body_regions(&result.ir().geometry.bodies[0].id)
+            .count(),
+        2
+    );
     // OCCT's closed flag does not close a shell whose edges are used once.
     let flagged = String::from_utf8_lossy(brep).replacen("Sh 1001000", "Sh 1001100", 1);
     let flagged = archive_entries(&[
@@ -1602,7 +1612,7 @@ Co 1001000 +2 1 +2 3 *
         .geometry
         .edges
         .iter()
-        .flat_map(|edge| [&edge.start, &edge.end])
+        .flat_map(|edge| edge.vertices())
         .map(|vertex| {
             let vertex = result
                 .ir()

@@ -2133,7 +2133,6 @@ impl BrepComponentTopology {
 }
 
 struct BrepShellReferences {
-    face_ids: Vec<FaceId>,
     edge_ids: Vec<EdgeId>,
 }
 
@@ -2143,16 +2142,11 @@ impl BrepShellReferences {
         shell_id: &ShellId,
         face_shell_ids: &mut BTreeMap<FaceRegionKey, ShellId>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let mut face_ids = Vec::new();
         for face_id in &shell.faces {
             face_shell_ids.insert(
                 *face_id,
                 crate::identity::copy_checked_id(shell_id.as_str())?,
             );
-            face_ids.push(crate::identity::compose_checked::<FaceId>(
-                &crate::identity::VISIBGEOM_FACE,
-                *face_id,
-            )?);
         }
         let mut edge_ids = Vec::new();
         for curve_id in &shell.wire_curves {
@@ -2161,7 +2155,7 @@ impl BrepShellReferences {
                 *curve_id,
             )?);
         }
-        Ok(Self { face_ids, edge_ids })
+        Ok(Self { edge_ids })
     }
 }
 
@@ -2560,6 +2554,7 @@ pub(in super::super) fn transfer_native_brep(
                                     layer: None,
                                     instance_path: Vec::new(),
                                 }),
+                                native_ref: None,
                             },
                         )?;
                     }
@@ -2650,6 +2645,7 @@ pub(in super::super) fn transfer_native_brep(
                                     layer: None,
                                     instance_path: Vec::new(),
                                 }),
+                                native_ref: None,
                             },
                         )?;
                     }
@@ -3098,6 +3094,7 @@ pub(in super::super) fn transfer_native_brep(
                 id: vertex,
                 point: point_id,
                 tolerance: None,
+                native_ref: None,
             },
         )?;
         vertex_ids.admit(
@@ -3244,9 +3241,12 @@ pub(in super::super) fn transfer_native_brep(
                     param_range,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-                start: crate::identity::compose_checked(&crate::identity::VISIBGEOM_VERTEX, start)?,
-                end: crate::identity::compose_checked(&crate::identity::VISIBGEOM_VERTEX, end)?,
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    crate::identity::compose_checked(&crate::identity::VISIBGEOM_VERTEX, start)?,
+                    crate::identity::compose_checked(&crate::identity::VISIBGEOM_VERTEX, end)?,
+                )),
                 tolerance: None,
+                native_ref: None,
             },
         )?;
         numbered_edges.admit(ir.geometry.edges[edge_position].id.as_str(), edge_position);
@@ -3288,6 +3288,7 @@ pub(in super::super) fn transfer_native_brep(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             let admitted = ir.geometry.curves[curve_position].id.as_str();
@@ -3376,23 +3377,18 @@ pub(in super::super) fn transfer_native_brep(
                 diagnostics.empty_component_count += 1;
                 continue;
             }
-            let BrepShellReferences { face_ids, edge_ids } =
+            let BrepShellReferences { edge_ids } =
                 BrepShellReferences::from_shell(shell, &shell_id, &mut face_shell_ids)?;
             ctx.charge_entities(1, "admit Creo model shells")?;
-            let Ok(shell_entity) = Shell::new(
+            let shell_entity = Shell::with_members(
                 crate::identity::copy_checked_id(shell_id.as_str())?,
                 crate::identity::copy_checked_id(region_id.as_str())?,
-                face_ids,
                 edge_ids,
                 Vec::new(),
-            ) else {
-                diagnostics.empty_component_count += 1;
-                continue;
-            };
+            );
             ir.geometry.shells.push(shell_entity);
             shell_ids.push(shell_id);
         }
-        let region_ids = vec![crate::identity::copy_checked_id(region_id.as_str())?];
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
             ir,
@@ -3405,11 +3401,11 @@ pub(in super::super) fn transfer_native_brep(
                 } else {
                     BodyKind::Sheet
                 },
-                regions: region_ids,
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             },
         )?;
         ctx.charge_entities(1, "admit Creo model regions")?;
@@ -3417,6 +3413,7 @@ pub(in super::super) fn transfer_native_brep(
             id: crate::identity::copy_checked_id(region_id.as_str())?,
             body: body_id,
             shells: shell_ids,
+            native_ref: None,
         });
         for face_key in faces {
             let native_loops = &eligible_regions[face_key];
@@ -3482,6 +3479,7 @@ pub(in super::super) fn transfer_native_brep(
                             layer: None,
                             instance_path: Vec::new(),
                         }),
+                        native_ref: None,
                     },
                 )?;
                 surface_positions.admit(&ir.geometry.surfaces, ir.geometry.surfaces.len() - 1);
@@ -3549,6 +3547,7 @@ pub(in super::super) fn transfer_native_brep(
                     name: None,
                     color: None,
                     tolerance: None,
+                    native_ref: None,
                 },
             )?;
             let face_surface = surface_positions
@@ -3561,6 +3560,7 @@ pub(in super::super) fn transfer_native_brep(
                     id: crate::identity::copy_checked_id(loop_id.as_str())?,
                     face: crate::identity::copy_checked_id(face.as_str())?,
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                    native_ref: None,
                 });
                 for half_edge in native_loop.half_edges() {
                     let id = crate::identity::compose_checked::<CoedgeId>(
@@ -3790,7 +3790,7 @@ pub(in super::super) fn transfer_native_brep(
                                     id: crate::identity::copy_checked_id(pcurve.as_str())?,
                                     geometry,
                                     metadata,
-                                };
+                                 native_ref: None, };
                                 if intersection_pcurve {
                                     ir.geometry.pcurves.push(record);
                                 } else {
@@ -3827,6 +3827,7 @@ pub(in super::super) fn transfer_native_brep(
                             sense: native_coedge_sense(half_edge.side),
                             pcurves,
                             use_curve: None,
+                            native_ref: None,
                         },
                     )?;
                 }
@@ -3905,6 +3906,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         surface_ids.admit(
@@ -3983,6 +3985,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             curve_ids.admit(

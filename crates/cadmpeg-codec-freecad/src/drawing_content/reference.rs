@@ -110,8 +110,8 @@ impl<'a> Sources<'a> {
             }
             let primitive = match geometry {
                 SolvedCurveGeometry::Line(_) => {
-                    let first = self.vertices.get(&edge.start)?;
-                    let second = self.vertices.get(&edge.end)?;
+                    let first = self.vertices.get(edge.start()?)?;
+                    let second = self.vertices.get(edge.end()?)?;
                     Primitive::Line([
                         point(Vector3::new(first.x, first.y, first.z)),
                         point(Vector3::new(second.x, second.y, second.z)),

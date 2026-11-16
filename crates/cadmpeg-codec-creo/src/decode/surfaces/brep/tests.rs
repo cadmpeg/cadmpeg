@@ -73,6 +73,7 @@ fn brep_edge_indexes_preserve_model_curve_multiplicity() {
         id: CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 10),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     };
     ir.geometry.curves.push(curve.clone());
     let one = { BrepEdgeIndexes::from_rows(&rows, &native_vertices, &solved_vertices, &ir) };
@@ -180,6 +181,7 @@ fn typed_curve_id_fixture() -> CadIr {
             .expect("fixture circle"),
         )),
         source_object: None,
+        native_ref: None,
     };
     ir.geometry
         .curves
@@ -830,6 +832,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
             .expect("valid CircleCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let model_curves = vec![
         circle(10, 2.0),
@@ -1020,6 +1023,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     for (id, origin, direction) in [
         (10, Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
@@ -1041,6 +1045,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
                 .expect("valid LineCurve fixture"),
             )),
             source_object: None,
+            native_ref: None,
         };
         ir.geometry.curves.extend([curve.clone(), curve]);
     }
@@ -1124,6 +1129,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
@@ -1136,6 +1142,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     let counts = crate::decode::with_service_context(|ctx| {
@@ -1162,7 +1169,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     assert_eq!(ir.geometry.edges.len(), 3);
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert_eq!(ir.geometry.shells.len(), 1);
-    assert_eq!(ir.geometry.shells[0].wire_edges().len(), 3);
+    assert_eq!(ir.geometry.shells[0].wire_edges().count(), 3);
 }
 #[test]
 fn brep_face_candidate_keeps_a_closed_loop_beside_rows_outside_it() {
@@ -1231,6 +1238,7 @@ fn compact_rotation_cylinder_caps_order_disjoint_circular_holes() {
                     )
                     .expect("line"),
                 )),
+                native_ref: None,
             });
         }
         for (id, center) in [(5, -2.0), (6, -2.0), (7, second_center), (8, second_center)] {
@@ -1247,6 +1255,7 @@ fn compact_rotation_cylinder_caps_order_disjoint_circular_holes() {
                     )
                     .expect("circle"),
                 )),
+                native_ref: None,
             });
         }
         let polygons = [
@@ -1379,6 +1388,7 @@ fn bounded_circle_arcs_prove_disjoint_cap_holes() {
                     )
                     .expect("line"),
                 )),
+                native_ref: None,
             });
         }
         for (id, center) in [(5, -2.0), (6, -2.0), (7, second_center), (8, second_center)] {
@@ -1417,6 +1427,7 @@ fn bounded_circle_arcs_prove_disjoint_cap_holes() {
                     )
                     .expect("circle"),
                 )),
+                native_ref: None,
             });
         }
         let polygons = [

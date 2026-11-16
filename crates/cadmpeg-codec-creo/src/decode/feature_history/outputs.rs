@@ -199,12 +199,12 @@ fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) -> Result<Vec<BodyId>, 
         };
         shell_ids.insert(&face.shell);
     }
-    for shell in ir.geometry.shells.iter().filter(|shell| {
-        shell
-            .wire_edges()
-            .iter()
-            .any(|edge| selected.contains(edge))
-    }) {
+    for shell in ir
+        .geometry
+        .shells
+        .iter()
+        .filter(|shell| shell.wire_edges().any(|edge| selected.contains(edge)))
+    {
         shell_ids.insert(&shell.id);
     }
     let mut bodies = Vec::new();

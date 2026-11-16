@@ -377,7 +377,7 @@ fn project_face_bindings(
         }
         let style = color_styles[0];
         let [r, g, b, a] = style.colors[1].map(cadmpeg_ir::scalar::FiniteBinary32::get);
-        let Some(color) = Color::new(r, g, b, a) else {
+        let Some(color) = Color::new(f64::from(r), f64::from(g), f64::from(b), f64::from(a)) else {
             count_unresolved(
                 &mut projection.unresolved_face_overrides,
                 UnresolvedCause::Color,

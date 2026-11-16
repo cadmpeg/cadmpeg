@@ -462,15 +462,9 @@ fn assert_recipe_pad_topology(
         .find(|body| &body.id == body_id)
         .unwrap_or_else(|| panic!("{label}: Pad output body resolves"));
     assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid, "{label}");
-    let [region_id] = body.regions.as_slice() else {
+    let [region] = ir.geometry.body_regions(&body.id).collect::<Vec<_>>()[..] else {
         panic!("{label}: one output region")
     };
-    let region = ir
-        .geometry
-        .regions
-        .iter()
-        .find(|region| &region.id == region_id)
-        .unwrap_or_else(|| panic!("{label}: Pad region resolves"));
     let [shell_id] = region.shells.as_slice() else {
         panic!("{label}: one output shell")
     };
@@ -480,14 +474,18 @@ fn assert_recipe_pad_topology(
         .iter()
         .find(|shell| &shell.id == shell_id)
         .unwrap_or_else(|| panic!("{label}: Pad shell resolves"));
-    let face_ids = shell.faces();
+    let face_ids = ir
+        .geometry
+        .shell_faces(&shell.id)
+        .map(|face| face.id.clone())
+        .collect::<Vec<_>>();
     assert_eq!(face_ids.len(), 3, "{label}: output shell face uses");
     let mut output_face_surfaces = [0, 0];
     let mut loop_coedge_counts = Vec::new();
     let mut edge_ids = std::collections::BTreeSet::new();
     let mut vertex_ids = std::collections::BTreeSet::new();
     let mut edge_curve_kinds = [0, 0];
-    for face_id in face_ids {
+    for face_id in &face_ids {
         let face = ir
             .geometry
             .faces
@@ -556,8 +554,8 @@ fn assert_recipe_pad_topology(
             .iter()
             .find(|edge| edge.id.as_str() == edge_id)
             .unwrap_or_else(|| panic!("{label}: edge resolves"));
-        vertex_ids.insert(edge.start.as_str());
-        vertex_ids.insert(edge.end.as_str());
+        vertex_ids.insert(edge.ends.as_ref().unwrap().start.as_str());
+        vertex_ids.insert(edge.ends.as_ref().unwrap().end.as_str());
         let Some(curve_id) = (match &edge.carrier {
             EdgeCarrier::Curve(curve_id) | EdgeCarrier::Bounded(curve_id, _) => Some(curve_id),
             EdgeCarrier::Free | EdgeCarrier::Endpoints(_) => None,

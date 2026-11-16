@@ -84,10 +84,10 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
     };
     let face_color = |rgb: [u8; 3]| {
         Color::new(
-            f32::from(rgb[0]) / 255.0,
-            f32::from(rgb[1]) / 255.0,
-            f32::from(rgb[2]) / 255.0,
-            1.0 - AUTHORED_TRANSPARENCY,
+            f64::from(rgb[0]) / 255.0,
+            f64::from(rgb[1]) / 255.0,
+            f64::from(rgb[2]) / 255.0,
+            1.0 - f64::from(AUTHORED_TRANSPARENCY),
         )
         .unwrap()
     };
@@ -119,25 +119,19 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
             .collect::<BTreeSet<_>>(),
         expected_face_targets
     );
-    let [region_id] = geometry.bodies[0].regions.as_slice() else {
+    let [region] = geometry
+        .body_regions(&geometry.bodies[0].id)
+        .collect::<Vec<_>>()[..]
+    else {
         panic!("one authored solid region");
     };
-    let region = geometry
-        .regions
-        .iter()
-        .find(|region| &region.id == region_id)
-        .expect("authored body region");
     let [shell_id] = region.shells.as_slice() else {
         panic!("one authored exterior shell");
     };
-    let shell = geometry
-        .shells
-        .iter()
-        .find(|shell| &shell.id == shell_id)
-        .expect("authored body shell");
-    assert_eq!(shell.faces().len(), expected_face_colors.len());
-    for (face_index, face_id) in shell.faces().iter().enumerate() {
-        let target = AppearanceTarget::Face(face_id.clone());
+    let shell_faces = geometry.shell_faces(shell_id).collect::<Vec<_>>();
+    assert_eq!(shell_faces.len(), expected_face_colors.len());
+    for (face_index, face) in shell_faces.iter().enumerate() {
+        let target = AppearanceTarget::Face(face.id.clone());
         let binding = face_bindings
             .iter()
             .find(|binding| binding.target == target)
