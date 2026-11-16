@@ -495,8 +495,9 @@ impl PatternScalarWire {
     }
 
     fn terminal(&self) -> Result<PatternValue<PatternTerminal, u64>, String> {
-        let scalar = PatternTerminal::read(&self.raw)
-            .ok_or("raw_values wide-row terminal must contain exact one or binary32")?;
+        let scalar = PatternTerminal::read(&self.raw).ok_or(
+            "raw_values wide-row terminal must contain exact one or a four-byte pattern atom",
+        )?;
         if self.encoding != scalar.encoding()
             || self.raw.len() != scalar.raw().len()
             || self.value.to_bits() != scalar.value().get().to_bits()

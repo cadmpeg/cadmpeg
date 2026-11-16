@@ -324,6 +324,14 @@ fn pattern_counted_references_preserve_wire_and_reject_token_disagreement() {
 }
 
 #[test]
+fn pattern_transform_values_follow_the_quarter_scaled_atom_reading() {
+    let json = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["binary32"],"values":[2.0],"raw_values":["50200000"],"selectors":[7],"raw_selectors":["07"],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[114]}"#;
+    check_lane_wire::<FeaturePatternTransformLane>(json, &[]);
+    let binary32_reading = json.replace("\"values\":[2.0]", "\"values\":[2.5]");
+    assert!(serde_json::from_str::<FeaturePatternTransformLane>(&binary32_reading).is_err());
+}
+
+#[test]
 fn pattern_transform_selectors_require_matching_compact_tokens() {
     let json = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["binary32"],"values":[2.0],"raw_values":["50200000"],"selectors":[4096],"raw_selectors":["9000"],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[114]}"#;
     check_lane_wire::<FeaturePatternTransformLane>(json, &[]);

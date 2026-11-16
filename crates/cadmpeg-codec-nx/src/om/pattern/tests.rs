@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{PatternAtom, PatternNarrow, PatternScalarEncoding, PatternWide};
+use super::{PatternAtom, PatternNarrow, PatternScalarEncoding, PatternTerminal, PatternWide};
 
 fn wide_atom(stated: f64) -> [u8; 8] {
     let mut raw = stated.to_be_bytes();
@@ -46,4 +46,14 @@ fn rotation_rows_are_orthonormal_after_the_quarter_scale() {
             assert!((dot - expected).abs() < 1.0e-12, "rows {i} and {j}: {dot}");
         }
     }
+}
+
+#[test]
+fn a_four_byte_wide_row_terminal_is_quarter_scaled_and_exact_one_is_one() {
+    let narrow = PatternTerminal::read(&[0x50, 0x10, 0x00, 0x00]).unwrap();
+    assert_eq!(narrow.encoding(), PatternScalarEncoding::Binary32);
+    assert_eq!(narrow.value().get(), 1.0);
+    let exact = PatternTerminal::read(&[0x01]).unwrap();
+    assert_eq!(exact.encoding(), PatternScalarEncoding::ExactOne);
+    assert_eq!(exact.value().get(), 1.0);
 }
