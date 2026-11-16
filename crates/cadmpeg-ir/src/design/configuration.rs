@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use super::expr::Expression;
 use super::feature::FeatureDefinition;
 use super::ids::{ArrangementId, PublicationId};
+use super::ops::body::TransformStep;
 use super::parameter::ParameterValue;
 use super::refs::ConfigurationRef;
 use super::selection::{OccurrencePath, Picked, SetSelection};
@@ -342,6 +343,8 @@ pub struct Arrangement {
     pub overrides: Overrides,
     /// An instance's appearance and transparency.
     pub appearances: Vec<ArrangementAppearance>,
+    /// Moves of sets of instances, applied in order after the overrides.
+    pub moves: Vec<ArrangementMove>,
     /// For an instance of a sub-assembly, the arrangement of its prototype it
     /// shows while this arrangement is in force.
     pub nested: Vec<NestedArrangement>,
@@ -400,6 +403,18 @@ pub struct ArrangementAppearance {
         deserialize_with = "deserialize_transparency"
     )]
     pub transparency: Option<Fraction>,
+}
+
+/// A move of the instances it lists in an arrangement: a `Translate` or
+/// `Rotate` step (§6.5).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ArrangementMove {
+    /// The paths of the instances the step moves.
+    pub occurrences: Vec<OccurrencePath>,
+    /// The step.
+    pub step: TransformStep,
 }
 
 /// The arrangement of its prototype that an instance of a sub-assembly shows.

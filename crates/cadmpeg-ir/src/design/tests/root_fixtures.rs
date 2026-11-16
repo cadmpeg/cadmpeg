@@ -8,9 +8,9 @@ use super::fixtures::{
     occurrence_path, parameter_ref, picked, positive_length, real, record_refs, selections, text,
 };
 use crate::design::configuration::{
-    Arrangement, ArrangementAppearance, ArrangementKind, ArrangementRef, DefinitionOverride,
-    DesignConfiguration, FeatureStateOverride, MaterialOverride, MaterialRef, NestedArrangement,
-    OccurrenceOverride, Overrides, ParameterOverride, PartNumber, Publication,
+    Arrangement, ArrangementAppearance, ArrangementKind, ArrangementMove, ArrangementRef,
+    DefinitionOverride, DesignConfiguration, FeatureStateOverride, MaterialOverride, MaterialRef,
+    NestedArrangement, OccurrenceOverride, Overrides, ParameterOverride, PartNumber, Publication,
 };
 use crate::design::construction::kinds;
 use crate::design::container::{Container, Folder, OrderedKind, Rollback, UnorderedKind};
@@ -23,6 +23,7 @@ use crate::design::feature::{
     Driver, Feature, FeatureDefinition, FeatureOperation, FuzzyTolerance, Link, LinkState,
     OperationFamily, StoredOrigin,
 };
+use crate::design::ops::body::TransformStep;
 use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::parameter::{
     DesignParameter, Deviations, DimensionDisplay, FitDeviations, LimitSide, ParameterDefinition,
@@ -337,13 +338,16 @@ pub(super) fn operation_families() -> Vec<OperationFamily> {
         Patch,
         Knit,
         Unsew,
+        UnsewFaces,
         Extend,
         ImplicitSweep,
         BoundaryFill,
         Curve,
         Form,
         SheetMetal,
+        Mesh,
         Place,
+        PlaceSet,
         Joint,
         RigidGroup,
         ComponentPattern,
@@ -595,6 +599,29 @@ pub(super) fn arrangement_appearances() -> Vec<ArrangementAppearance> {
     ]
 }
 
+pub(super) fn arrangement_moves() -> Vec<ArrangementMove> {
+    vec![
+        ArrangementMove {
+            occurrences: vec![occurrence_path()],
+            step: TransformStep::Translate {
+                direction: fixtures::direction_constructions().remove(0),
+                distance: Dimension::Literal(fixtures::length(25.0)),
+            },
+        },
+        ArrangementMove {
+            occurrences: Vec::new(),
+            step: TransformStep::Rotate {
+                axis: fixtures::constructions::<kinds::Axis>(
+                    fixtures::axis_value(),
+                    fixtures::axis_value(),
+                )
+                .remove(0),
+                angle: Dimension::Parameter(id("parameter", 1)),
+            },
+        },
+    ]
+}
+
 pub(super) fn arrangement_refs() -> Vec<ArrangementRef> {
     vec![
         ArrangementRef::Local(id("arrangement", 1)),
@@ -622,6 +649,7 @@ pub(super) fn arrangements() -> Vec<Arrangement> {
             configuration: Some(id("configuration", 1)),
             overrides: overrides().remove(0),
             appearances: arrangement_appearances(),
+            moves: arrangement_moves(),
             nested: nested_arrangements(),
             native_ref: Some("sldprt:display-state#1".to_owned()),
         },
@@ -633,6 +661,7 @@ pub(super) fn arrangements() -> Vec<Arrangement> {
             configuration: None,
             overrides: Overrides::default(),
             appearances: Vec::new(),
+            moves: Vec::new(),
             nested: Vec::new(),
             native_ref: None,
         },

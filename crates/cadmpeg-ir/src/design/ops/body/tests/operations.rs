@@ -20,6 +20,7 @@ use crate::design::ops::body::{
 };
 use crate::design::ops::shared::{Alignment, JointKind, Locus, ToolDisposition};
 use crate::design::options::{BooleanOp, ProjectionDirection};
+use crate::design::tests::arm_failures;
 use crate::scalar::{FiniteReal, NonNegativeLength, NonZeroReal, PositiveLength};
 use crate::transform::Transform;
 
@@ -576,6 +577,36 @@ fn every_template_and_body_operation_type_round_trips() {
     report.check("Flex", flexes());
     report.check("FlexKind", flex_kinds());
     report.finish();
+}
+
+/// §5.10: each template and body operation is the `FeatureOperation` arm its
+/// family names, holding the operation as its value.
+#[test]
+fn every_template_and_body_operation_is_a_feature_operation_arm() {
+    use crate::design::feature::{FeatureOperation as Op, OperationFamily as Family};
+    let failures = [
+        arm_failures(
+            Family::TemplateInstance,
+            template_instances(),
+            Op::TemplateInstance,
+        ),
+        arm_failures(Family::Combine, combines(), Op::Combine),
+        arm_failures(Family::Split, splits(), Op::Split),
+        arm_failures(Family::DeleteBodies, delete_bodies(), Op::DeleteBodies),
+        arm_failures(Family::Extract, extracts(), Op::Extract),
+        arm_failures(
+            Family::TransformBodies,
+            transform_bodies(),
+            Op::TransformBodies,
+        ),
+        arm_failures(Family::Flex, flexes(), Op::Flex),
+        arm_failures(Family::MoveFaces, move_faces(), Op::MoveFaces),
+        arm_failures(Family::DeleteFaces, delete_faces(), Op::DeleteFaces),
+        arm_failures(Family::ReplaceFaces, replace_faces(), Op::ReplaceFaces),
+        arm_failures(Family::Graft, grafts(), Op::Graft),
+    ]
+    .concat();
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 /// §2.5's example: an internally tagged arm writes its fields beside its

@@ -70,6 +70,7 @@ fn every_design_root_type_round_trips() {
     check(f, "Publication", root::publications());
     check(f, "ArrangementKind", root::arrangement_kinds());
     check(f, "ArrangementAppearance", root::arrangement_appearances());
+    check(f, "ArrangementMove", root::arrangement_moves());
     check(f, "ArrangementRef", root::arrangement_refs());
     check(f, "NestedArrangement", root::nested_arrangements());
     check(f, "Arrangement", root::arrangements());

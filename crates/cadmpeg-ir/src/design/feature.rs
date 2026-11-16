@@ -14,6 +14,10 @@ use serde::{Deserialize, Serialize};
 use super::construction::{kinds, Construction};
 use super::dimension::Dimension;
 use super::names::NativeName;
+use super::ops::body::{
+    Combine, DeleteBodies, DeleteFaces, Extract, Flex, Graft, MoveFaces, Pattern, ReplaceFaces,
+    Split, TemplateInstance, TransformBodies,
+};
 use super::ops::dressup::{
     Chamfer, Decal, Dome, Draft, Emboss, Fillet, Hole, Offset, ShellFeature, Thicken, Thread,
 };
@@ -201,6 +205,30 @@ pub enum FeatureOperation {
     Dome(Box<Dome>),
     /// A decal (§6.4).
     Decal(Box<Decal>),
+    /// A pattern or mirror (§6.5).
+    Pattern(Box<Pattern>),
+    /// A template instance (§6.5).
+    TemplateInstance(Box<TemplateInstance>),
+    /// A combine (§6.5).
+    Combine(Box<Combine>),
+    /// A split (§6.5).
+    Split(Box<Split>),
+    /// A deletion of bodies (§6.5).
+    DeleteBodies(Box<DeleteBodies>),
+    /// An extraction (§6.5).
+    Extract(Box<Extract>),
+    /// A transformation of bodies (§6.5).
+    TransformBodies(Box<TransformBodies>),
+    /// A flex (§6.5).
+    Flex(Box<Flex>),
+    /// A move of faces (§6.5).
+    MoveFaces(Box<MoveFaces>),
+    /// A deletion of faces (§6.5).
+    DeleteFaces(Box<DeleteFaces>),
+    /// A replacement of faces (§6.5).
+    ReplaceFaces(Box<ReplaceFaces>),
+    /// A graft (§6.5).
+    Graft(Box<Graft>),
     /// A design feature whose removed volume is the volume a manufacturing
     /// operation machines.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
@@ -410,6 +438,8 @@ pub enum OperationFamily {
     Knit,
     /// An unsew.
     Unsew,
+    /// An unsew of faces.
+    UnsewFaces,
     /// An extension.
     Extend,
     /// An implicit-section sweep.
@@ -422,8 +452,12 @@ pub enum OperationFamily {
     Form,
     /// A sheet-metal feature.
     SheetMetal,
+    /// A mesh feature.
+    Mesh,
     /// A placement of a component.
     Place,
+    /// A placement of a set of components.
+    PlaceSet,
     /// A joint.
     Joint,
     /// A rigid group.

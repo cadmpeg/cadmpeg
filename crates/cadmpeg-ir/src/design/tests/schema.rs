@@ -240,6 +240,7 @@ fn every_design_root_type_has_a_schema() {
     generates::<configuration::Arrangement>();
     generates::<configuration::ArrangementKind>();
     generates::<configuration::ArrangementAppearance>();
+    generates::<configuration::ArrangementMove>();
     generates::<configuration::NestedArrangement>();
     generates::<configuration::ArrangementRef>();
     generates::<crate::products::NestedOverride>();
