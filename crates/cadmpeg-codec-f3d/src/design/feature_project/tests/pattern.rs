@@ -1076,6 +1076,10 @@ fn coincident_direction_scope_with_seed_words(
                                 offset: 134,
                             },
                             untyped_body_references: untyped,
+                            suppressed: crate::records::identity::Located {
+                                value: Vec::new(),
+                                offset: 158,
+                            },
                         },
                     ),
                 },
@@ -1262,6 +1266,10 @@ fn a_payload_seed_kind_or_body_reference_that_disagrees_with_the_seed_group_is_c
                 offset: 134,
             },
             untyped_body_references: untyped,
+            suppressed: Located {
+                value: Vec::new(),
+                offset: 170,
+            },
         };
     let faces = [PatternSeed::Faces(FaceSelection::Native(
         "faces".to_owned(),
@@ -1665,6 +1673,10 @@ fn with_distribution(
             offset: 134,
         },
         untyped_body_references: 0,
+        suppressed: Located {
+            value: Vec::new(),
+            offset: 170,
+        },
     });
     let mut scope = scope.clone();
     if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(slot)

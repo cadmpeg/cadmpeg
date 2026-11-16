@@ -8584,8 +8584,8 @@ pub(crate) mod rectangular_pattern_payload_suffix {
     pub(crate) const SCOPE: usize = 11;
     /// Offset of `seed_group` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const SEED_GROUP: usize = 22;
-    /// Offset of `zero_tail` (`bytes[4]`). Spec §Assembly operands.
-    pub(crate) const ZERO_TAIL: usize = 33;
+    /// Offset of `suppressed_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SUPPRESSED_COUNT: usize = 33;
 }
 
 /// Byte offsets for the `sketch_geometry_ordinal_collection_reference` record.

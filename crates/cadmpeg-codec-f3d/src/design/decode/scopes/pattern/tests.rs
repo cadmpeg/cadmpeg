@@ -1559,6 +1559,7 @@ mod direction_records;
 mod distance_type_ten;
 mod inactive_direction_one;
 mod rectangular_instance_caps;
+mod suppressed_instances;
 mod symmetric_two;
 
 fn spacing_payload() -> Vec<u8> {

@@ -244,3 +244,28 @@ reported the body count, volume, area and face count after each timeline item.
   1025.2187 mm², 1 cone face.
 - `reverse_normal_loft.f3d`: Loft1, then Reverse Normal of the Loft body.
   1 surface body, 0 mm³, 1025.2187 mm², 1 cone face.
+
+Suppressed instances. The same plate and hole, patterned with Compute
+Optimized at 6 mm. The API built each pattern and a person suppressed instances
+in the Fusion UI (Edit Pattern, Suppression). Fusion numbers the instances of
+direction one, then direction two, from zero.
+
+- `suppressed_two_instances.f3d`: quantity 5 along X, instances 1 and 3
+  suppressed. The copies are at 0, 12 and 24 mm. 7811.50 mm³, 9 faces.
+- `suppressed_grid_middle.f3d`: 3 × 3 along X and Y, instance (1, 1)
+  suppressed. 8 holes, 7497.35 mm³, 14 faces.
+- `suppressed_grid_corner.f3d`: as `suppressed_grid_middle.f3d` with instance
+  (2, 2) suppressed.
+
+Suppressed instances of symmetric directions. An 80 × 80 × 5 mm plate has a 4 mm hole at
+(40, 40) mm, patterned with Compute Optimized at 6 mm; a person suppressed instances in the
+Fusion UI. Each pattern leaves 1 body.
+
+- `suppressed_symmetric_even.f3d`: 4 along X, Symmetric. Holes at 0 and +12 mm
+  remain. 31874.34 mm³, 8 faces.
+- `suppressed_symmetric_direction_two.f3d`: 3 × 3, direction two Symmetric;
+  (+6, −6) and (0, +6) mm suppressed. 31560.18 mm³, 13 faces.
+- `suppressed_symmetric_both.f3d`: 3 × 3, both Symmetric; (−6, −6) and (+6, +6) mm
+  suppressed. 31560.18 mm³, 13 faces.
+- `suppressed_direction_two_only.f3d`: 4 along Y only; +6 and +18 mm suppressed.
+  31874.34 mm³, 8 faces.

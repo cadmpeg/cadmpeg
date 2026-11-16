@@ -337,7 +337,7 @@ pub(super) fn project_rectangular_pattern_scalars(
         spacing,
         count,
         second,
-        omitted_instances: Vec::new(),
+        omitted_instances: construction.omitted_grid_positions()?,
         symmetric,
     })
     .ok()?;
