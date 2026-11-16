@@ -1292,6 +1292,46 @@ For PmDc segment major versions 20 and 23, the same operand sequence has `prefix
 
 The length operands reference the parameters `Thickness`, `BendRadius`, `BendReliefWidth`, `BendReliefDepth`, `CornerReliefSize`, `SeamGap`, `MinimumRemnant`, and `TransitionRadius`. The relief-form references select type `720c3e2bd311976060007aa99dccefb0`. The transition-form reference selects type `07a66130d4118895600053aa9dccefb0`. The option references a Boolean. Enumeration identity includes both `type_value` and `value`; equal values in distinct types do not identify equal forms. A length formula that consists of a parameter-reference expression to the style operand uses that style parameter. A literal expression is an explicit length operand, including when its evaluated value equals the style parameter.
 
+A `PmApp` record with type identifier `3e0b6bdaf5417a648da91fbd093fe213` stores one unfold rule. For `PmApp` segment major versions above 23, its payload contains:
+
+```text
+header_value u32
+header_id u16
+state u8
+flags u16
+padding u16 = 0
+values u16[2]
+default_state u32
+value u32
+name_reference u32
+name utf16
+long_name utf16
+style_state u16
+key utf16
+form u32
+expression utf16
+display utf16
+```
+
+For `PmApp` segment major versions 17 through 23, the payload has the same fields without `padding`. Each `utf16` field is a u32 code-unit count followed by that many UTF-16LE code units. A suffix follows the fields. `expression` is the K-factor expression text. The text is a decimal number of ASCII digits with at most one decimal point and at least one digit, optionally followed by the unitless suffix ` ul`. The K-factor is the value of that decimal number.
+
+A `PmApp` record with type identifier `20d0a6fdd2118f936000a1b70b02ecb0` stores one style category. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+category_len u32
+category bytes[category_len]
+value u32
+reference u32
+form u32
+entry_count u32
+entry_values u32[2]
+entries (name utf16, rule u32)[entry_count]
+```
+
+`category` is ASCII. `entry_values` is present only when `entry_count` is above zero. Each entry `rule` is a one-based record index in the same `PmApp` segment, with the reference qualifier in bit 31. A suffix follows the fields. The category `SheetMetalUnfold` selects the active unfold rule. The active unfold rule exists when the document has exactly one `SheetMetalUnfold` category record, the record has exactly one entry, the entry `rule` selects an unfold-rule record, and the entry `name` equals the rule `name`.
+
 The plate scalar control contains `value:u32` after its versioned content header and stamps. The base bend scalar control contains `value:u32` after that header and stamps. The extended bend scalar control contains `value:u32` and `state:u8`. Each record ends after its last stated field.
 
 ### 13.6 Rectangular patterns

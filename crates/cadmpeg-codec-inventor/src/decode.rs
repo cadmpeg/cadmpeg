@@ -542,6 +542,20 @@ fn decode_container<'a>(
             &feature_inventory.thread_definitions,
         )?;
     }
+    if !feature_inventory.sheet_metal_unfold_rules.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_app_sheet_metal_unfold_rules",
+            &feature_inventory.sheet_metal_unfold_rules,
+        )?;
+    }
+    if !feature_inventory.sheet_metal_unfold_selections.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_app_sheet_metal_unfold_selections",
+            &feature_inventory.sheet_metal_unfold_selections,
+        )?;
+    }
     if !feature_inventory.sheet_metal_styles.is_empty() {
         namespace.set_arena(
             ctx,
@@ -1520,7 +1534,13 @@ fn decode_container<'a>(
         ir.model = Model::default();
     }
     if document_kind == DocumentKind::Part && ctx.depth() >= DecodeDepth::Design {
-        crate::design_v11::project(ctx, &mut ir, &feature_inventory, &sketch_inventory)?;
+        crate::design_v11::project(
+            ctx,
+            &mut ir,
+            &feature_inventory,
+            &sketch_inventory,
+            &design_inventory.parameters,
+        )?;
     }
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),

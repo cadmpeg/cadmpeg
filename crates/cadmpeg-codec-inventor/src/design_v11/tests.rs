@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-use cadmpeg_ir::features::{FeatureContent, FeatureEvaluation, FeatureId, SketchFeatureBinding};
+use cadmpeg_ir::features::{
+    DistinctMembers, FeatureContent, FeatureEvaluation, FeatureId, SketchFeatureBinding,
+};
 
 use super::*;
 
@@ -11,8 +13,8 @@ fn feature(key: &str, ordinal: u64) -> LegacyFeature {
         ordinal,
         name: Some(key.to_owned()),
         suppressed: Some(false),
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
@@ -218,7 +220,7 @@ fn operations_keep_the_family_and_native_class() {
     );
     let native_operation = LegacyOperation::Native {
         kind: cadmpeg_ir::features::NativeFeatureKind::Other("CustomClass".to_owned()),
-        parameters: Default::default(),
+        parameters: BTreeMap::default(),
     };
     assert_eq!(
         operation(&native_operation).expect("native"),
@@ -248,7 +250,7 @@ fn native_header_flags_supply_suppression_for_unplaced_features() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    project(&ctx, &mut ir, &inventory, &sketches).expect("projection");
+    project(&ctx, &mut ir, &inventory, &sketches, &[]).expect("projection");
     assert_eq!(
         ir.design.features[0].suppressed,
         Some(Dimension::Literal(true))

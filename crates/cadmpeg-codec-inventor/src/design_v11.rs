@@ -18,11 +18,14 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::CadIr;
 
+mod sheet_metal;
+
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     features: &crate::feature::FeatureInventory,
     sketches: &crate::sketch::SketchInventory,
+    parameters: &[crate::design::PmDcParameter],
 ) -> Result<(), CodecError> {
     let flags = features
         .features
@@ -47,7 +50,8 @@ pub(crate) fn project(
                 .map(|record| (record.id(), record.header.flags)),
         )
         .collect();
-    project_history(ctx, ir, &flags)
+    project_history(ctx, ir, &flags)?;
+    sheet_metal::project(ctx, ir, features, parameters)
 }
 
 fn project_history(
@@ -101,7 +105,7 @@ fn project_history(
                     .filter(|body| owned_bodies.contains(&body.id))
                     .map(|body| body.id.clone())
                     .collect(),
-                poses: Default::default(),
+                poses: BTreeMap::default(),
                 status: EvaluationStatus::Current,
                 native_ref: None,
             });
@@ -146,8 +150,8 @@ fn project_history(
         definition,
         roots,
         active_configuration: None,
-        active_arrangements: Default::default(),
-        occurrences: Default::default(),
+        active_arrangements: BTreeSet::default(),
+        occurrences: BTreeMap::default(),
         current,
     });
     Ok(())
@@ -169,8 +173,8 @@ fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Native {
         kind: NonBlankString::new(format!("inventor:{kind}"))
             .ok_or_else(|| CodecError::malformed("Inventor v11 operation kind is blank"))?,
-        native_options: Default::default(),
-        source_settings: Default::default(),
+        native_options: BTreeMap::default(),
+        source_settings: BTreeMap::default(),
     })
 }
 
