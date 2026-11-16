@@ -216,7 +216,7 @@ fn feature_order_fixture_preserves_parent_before_child() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_for_ordering();
     crate::decode::with_service_context(|ctx| {
-        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new(), &mut Vec::new())
     })
     .expect("feature ordering");
     assert_eq!(ir.model.features[0].ordinal, 0);
@@ -249,7 +249,7 @@ fn regeneration_fixture_preserves_parent_relation() {
     let scan = regeneration_scan();
     let mut ir = reconciliation_ir_for_ordering();
     crate::decode::with_service_context(|ctx| {
-        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new(), &mut Vec::new())
     })
     .expect("regeneration parent");
     let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
@@ -258,11 +258,46 @@ fn regeneration_fixture_preserves_parent_relation() {
 }
 
 #[test]
+fn recipe_parent_stored_after_its_child_drops_only_that_edge() {
+    let scan = regeneration_scan();
+    let mut ir = reconciliation_ir_for_ordering();
+    for feature in &mut ir.model.features {
+        feature.ordinal = match feature.id.as_str() {
+            "creo:model:feature#10" => 0,
+            _ => 1,
+        };
+    }
+    let mut losses = Vec::new();
+    crate::decode::with_service_context(|ctx| {
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new(), &mut losses)
+    })
+    .expect("a later recipe parent keeps the decode");
+    let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
+    assert_eq!(ir.model.features.len(), 2);
+    assert_eq!(ir.model.feature_regeneration_parent(&child), None);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::FeatureRegenerationParentDropped
+            .note(String::new())
+            .code
+    );
+    assert!(losses[0].message.contains("creo:model:feature#10"));
+    assert!(losses[0].message.contains("creo:model:feature#3"));
+}
+
+#[test]
 fn reconciled_native_dependency_preserves_emitted_parent() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_emitted_parent();
     crate::decode::with_service_context(|ctx| {
-        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::from([(10, vec![3])]))
+        super::reconcile_feature_links(
+            ctx,
+            &scan,
+            &mut ir,
+            &BTreeMap::from([(10, vec![3])]),
+            &mut Vec::new(),
+        )
     })
     .expect("native dependency reconciliation");
     let feature = ir

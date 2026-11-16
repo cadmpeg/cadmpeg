@@ -3,9 +3,10 @@
 use std::collections::BTreeMap;
 
 use super::{
-    append_regeneration_edge, commit_regeneration_edges, compose_feature_id, emit_model_features,
-    ordered_row_feature_ids, refresh_feature_outputs,
+    append_regeneration_edge, compose_feature_id, emit_model_features, ordered_row_feature_ids,
+    refresh_feature_outputs,
 };
+use crate::decode::feature_history::dependencies::commit_regeneration_edges;
 
 #[test]
 fn model_feature_identity_composes_model_namespace() {
@@ -36,9 +37,14 @@ fn regeneration_edge_commit_installs_feature_parent() {
     child.id = child_id.clone();
     child.ordinal = 1;
     ir.model.features.push(child);
-    commit_regeneration_edges(&mut ir, vec![(child_id.clone(), parent_id.clone())])
-        .expect("regeneration parent");
+    let mut losses = Vec::new();
+    commit_regeneration_edges(
+        &mut ir,
+        vec![(child_id.clone(), parent_id.clone())],
+        &mut losses,
+    );
     assert_eq!(ir.model.feature_parent(&child_id), Some(&parent_id));
+    assert!(losses.is_empty());
 }
 
 fn feature_for_output_refresh() -> cadmpeg_ir::features::Feature {
@@ -110,6 +116,7 @@ fn native_operation_feature_records_native_kind() {
             &mut ir,
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut Vec::new(),
         )
     })
     .expect("model features");
@@ -134,6 +141,7 @@ fn native_row_feature_records_native_kind() {
             &mut ir,
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut Vec::new(),
         )
     })
     .expect("model features");
@@ -158,6 +166,7 @@ fn native_row_feature_derives_name() {
             &mut ir,
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut Vec::new(),
         )
     })
     .expect("model features");
@@ -191,6 +200,7 @@ fn recipe_source_tag_names_recipe() {
             &mut ir,
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut Vec::new(),
         )
     })
     .expect("model features");

@@ -17,7 +17,8 @@ use crate::feature::schema::SchemaClass;
 use super::super::curve_expressions::transfer_curve_expression_features;
 use super::super::feature_history::axes::geometry_generator_features;
 use super::super::feature_history::dependencies::{
-    feature_dependencies, reconcile_feature_links, surface_prototype_feature_dependencies,
+    commit_regeneration_edges, feature_dependencies, reconcile_feature_links,
+    surface_prototype_feature_dependencies,
 };
 use super::super::feature_history::dimensions::transfer_feature_dimensions;
 use super::super::feature_history::draft::{
@@ -64,16 +65,6 @@ fn append_regeneration_edge(
     edges.push((child, parent));
 }
 
-fn commit_regeneration_edges(
-    ir: &mut CadIr,
-    edges: Vec<(IrFeatureId, IrFeatureId)>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    for (child, parent) in edges {
-        ir.model.set_feature_regeneration_parent(&child, &parent)?;
-    }
-    Ok(())
-}
-
 fn refresh_feature_outputs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -118,6 +109,7 @@ pub(super) fn emit_model_features(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let schema_classes = FeatureSchemaClasses::new(scan);
     let mut regeneration_edges = Vec::new();
@@ -576,7 +568,7 @@ pub(super) fn emit_model_features(
         source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(ctx, scan, ir)?;
     }
-    commit_regeneration_edges(ir, regeneration_edges)?;
+    commit_regeneration_edges(ir, regeneration_edges, losses);
     Ok(geometry_generator_feature_count)
 }
 
@@ -587,10 +579,11 @@ pub(super) fn finish_feature_transfers(
     annotations: &mut AnnotationBuilder,
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     link_feature_sketch_history(scan, ir)?;
-    reconcile_feature_links(ctx, scan, ir, &prototype_feature_dependencies)?;
+    reconcile_feature_links(ctx, scan, ir, &prototype_feature_dependencies, losses)?;
     let feature_result_topology_count = emit_feature_result_topologies(ctx, scan, ir)?;
     let feature_result_edge_count = ir
         .model

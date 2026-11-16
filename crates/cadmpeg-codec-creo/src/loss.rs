@@ -246,6 +246,9 @@ pub(crate) enum CreoLossCode {
     FeatureNativeSemantics,
     /// Same-ID operation candidates disagree and have no current-state selector.
     FeatureStateSelectionUnresolved,
+    /// A feature's recipe parent fails regeneration-parent admission, such as
+    /// a parent stored after its child, and the edge is dropped.
+    FeatureRegenerationParentDropped,
     /// Typed history features retain an explicitly unresolved construction.
     FeatureConstructionUnresolved,
     /// Declared section segment rows did not decode.
@@ -432,6 +435,7 @@ impl CreoLossCode {
             Self::FeatureRecognizedIncomplete => "feature.recognized-incomplete",
             Self::FeatureNativeSemantics => "feature.native-semantics",
             Self::FeatureStateSelectionUnresolved => "feature.state-selection-unresolved",
+            Self::FeatureRegenerationParentDropped => "feature.regeneration-parent-dropped",
             Self::FeatureConstructionUnresolved => "feature.construction-unresolved",
             Self::SectionSegmentMissing => "section.segment-missing",
             Self::SectionRelationMissing => "section.relation-missing",
@@ -577,6 +581,7 @@ impl CreoLossCode {
             | Self::FeatureRecognizedIncomplete
             | Self::FeatureNativeSemantics
             | Self::FeatureStateSelectionUnresolved
+            | Self::FeatureRegenerationParentDropped
             | Self::FeatureConstructionUnresolved
             | Self::SectionSegmentMissing
             | Self::SectionRelationMissing
@@ -719,6 +724,7 @@ impl CreoLossCode {
             | Self::FeatureRecognizedIncomplete
             | Self::FeatureNativeSemantics
             | Self::FeatureStateSelectionUnresolved
+            | Self::FeatureRegenerationParentDropped
             | Self::FeatureConstructionUnresolved
             | Self::SectionSegmentMissing
             | Self::SectionRelationMissing
@@ -895,6 +901,7 @@ mod tests {
                 "feature.recognized-incomplete",
                 "feature.native-semantics",
                 "feature.state-selection-unresolved",
+                "feature.regeneration-parent-dropped",
                 "feature.construction-unresolved",
                 "section.segment-missing",
                 "section.relation-missing",

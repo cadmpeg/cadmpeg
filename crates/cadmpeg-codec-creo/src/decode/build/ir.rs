@@ -791,8 +791,14 @@ pub(in super::super) fn build_ir(
         &mut transfer_losses,
         &mut source_carriers,
     )?;
-    let geometry_generator_feature_count =
-        emit_model_features(ctx, scan, &mut ir, &mut annotations, &source_carriers)?;
+    let geometry_generator_feature_count = emit_model_features(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &source_carriers,
+        &mut transfer_losses,
+    )?;
     let dimension_targets =
         super::super::pmi::transfer(ctx, scan, &mut ir, &mut annotations, &mut transfer_losses)?;
     super::super::pmi::tags::transfer(
@@ -810,6 +816,7 @@ pub(in super::super) fn build_ir(
         &mut annotations,
         &mut coverage,
         &mut source_carriers,
+        &mut transfer_losses,
     )?;
     attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
     emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;

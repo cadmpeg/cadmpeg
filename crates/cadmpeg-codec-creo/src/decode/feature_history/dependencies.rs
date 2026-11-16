@@ -407,11 +407,32 @@ pub(in super::super) fn agreed_feature_replay_edge_ids(
     )
 }
 
+/// Set each regeneration parent the model admits. An edge the model refuses,
+/// such as one whose parent is stored after its child, is dropped with one
+/// loss naming both features.
+pub(in super::super) fn commit_regeneration_edges(
+    ir: &mut CadIr,
+    edges: Vec<(IrFeatureId, IrFeatureId)>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    for (child, parent) in edges {
+        if let Err(error) = ir.model.set_feature_regeneration_parent(&child, &parent) {
+            let note = crate::loss::CreoLossCode::FeatureRegenerationParentDropped.note(format!(
+                "feature {child} keeps no regeneration parent {parent}: {error}"
+            ));
+            if !losses.contains(&note) {
+                losses.push(note);
+            }
+        }
+    }
+}
+
 pub(in super::super) fn reconcile_feature_links(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut output_updates = Vec::new();
     for (index, feature) in ir.model.features.iter().enumerate() {
@@ -505,9 +526,7 @@ pub(in super::super) fn reconcile_feature_links(
             }
         }
     }
-    for (child, parent) in regeneration_edges {
-        ir.model.set_feature_regeneration_parent(&child, &parent)?;
-    }
+    commit_regeneration_edges(ir, regeneration_edges, losses);
     let mut remaining = Vec::new();
     remaining.extend(0..ir.model.features.len());
     let mut ordered = Vec::new();
