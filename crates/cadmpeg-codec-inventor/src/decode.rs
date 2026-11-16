@@ -1519,6 +1519,9 @@ fn decode_container<'a>(
         ir.geometry = Topology::default();
         ir.model = Model::default();
     }
+    if document_kind == DocumentKind::Part && ctx.depth() >= DecodeDepth::Design {
+        crate::design_v11::project(ctx, &mut ir, &feature_inventory, &sketch_inventory)?;
+    }
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
