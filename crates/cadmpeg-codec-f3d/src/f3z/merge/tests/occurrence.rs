@@ -9,6 +9,7 @@ use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureContent;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::RegionId;
 use cadmpeg_ir::schema::rewrite::typed::TextReplacements;
@@ -200,7 +201,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
         .merge(
             &mut ir,
             &mut report,
-            &mut cadmpeg_ir::SourceFidelity::default(),
+            &mut cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b"")),
             &crate::xref::XrefTable::default(),
         )
         .unwrap();
@@ -998,7 +999,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             cadmpeg_core::decode::DecodeDepth::Full,
             false,
         ));
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut fidelity = cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b""));
     let merged = crate::f3z::merge::MergeSession {
         ctx: &ctx,
         scan: &scan,
@@ -1378,7 +1379,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         let occurrence = |name: &str, parent: serde_json::Value, native: Option<&str>| {
             let mut occurrence = serde_json::from_value::<Occurrence>(serde_json::json!({
                 "id":format!("f3d:model:occurrence#{name}"),
-                "prototype":{"scope":"local", "definition":definition},
+                "prototype":{"kind":"local", "definition":definition},
                 "parent":parent, "ordinal":0, "transform":Transform::identity(),
                 "scale":[1.0, 1.0, 1.0]
             }))
@@ -1472,7 +1473,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             .unwrap();
         let placing = crate::ids::neutral_xref_occurrence_id(0, 0);
         ir.model.occurrences.push(serde_json::from_value(serde_json::json!({
-            "id":placing, "prototype":{"scope":"external", "document":ExternalDocument::path("member.f3d")},
+            "id":placing, "prototype":{"kind":"external", "document":ExternalDocument::path("member.f3d")},
             "parent":{"kind":"root"}, "ordinal":0, "transform":Transform::identity(),
             "scale":[1.0, 1.0, 1.0], "native_ref":reference.id
         })).unwrap());
@@ -1502,7 +1503,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             .merge(
                 &mut ir,
                 &mut report,
-                &mut cadmpeg_ir::SourceFidelity::default(),
+                &mut cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b"")),
                 &table
             )
             .unwrap(),

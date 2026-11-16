@@ -21,9 +21,10 @@ use cadmpeg_core::CodecError;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
+use crate::features::serialization::FeatureWriteWire;
 use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
-    FeatureRowWire, FeatureWriteWire,
+    FeatureRowWire,
 };
 use crate::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
@@ -49,6 +50,7 @@ use cadmpeg_core::text::NonBlankString;
 
 pub(crate) mod census;
 pub(crate) mod feature_parents;
+mod legacy;
 pub mod procedural;
 
 struct UnknownProjection<T>(T);
@@ -96,42 +98,42 @@ macro_rules! classified_arena_registry {
             pcurves: Pcurve, model, geometry, "Pcurve arena.", [];
             procedural_surfaces: ProceduralSurface, model, geometry, "Procedural surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralSurface>"))];
             procedural_curves: ProceduralCurve, model, geometry, "Procedural curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralCurve>"))];
-            assets: crate::assets::Asset, model, model, "Embedded and externally referenced document resources.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            assets: crate::assets::Asset, model, model, "Embedded and externally referenced document resources.", [];
             features: Feature, design, model, "Feature arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<FeatureRowWire>"))];
-            feature_input_topologies: FeatureInputTopology, design, model, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            feature_result_topologies: FeatureResultTopology, design, model, "Feature result-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            configurations: DesignConfiguration, design, model, "Design configuration arena.", [serde(default)];
-            parameters: DesignParameter, design, model, "Design parameter arena.", [serde(default)];
-            sketches: Sketch, design, model, "Planar sketch arena.", [serde(default)];
-            sketch_entities: SketchEntity, design, model, "Solved sketch entity arena.", [serde(default)];
-            sketch_constraints: SketchConstraint, design, model, "Sketch constraint arena.", [serde(default)];
-            spatial_sketches: SpatialSketch, design, model, "Spatial sketch arena.", [serde(default)];
-            spatial_sketch_entities: SpatialSketchEntity, design, model, "Solved spatial sketch entity arena.", [serde(default)];
-            spatial_sketch_constraints: SpatialSketchConstraint, design, model, "Spatial sketch constraint arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            spreadsheets: Spreadsheet, design, model, "Spreadsheet arena.", [serde(default)];
-            product_definitions: ProductDefinition, model, model, "Product definition arena.", [serde(default)];
-            occurrences: Occurrence, model, model, "Product occurrence arena.", [serde(default)];
-            assembly_joints: AssemblyJoint, model, model, "Assembly joint arena.", [serde(default)];
-            drawings: Drawing, model, model, "Drawing page, resource, view, and annotation arena.", [serde(default)];
-            semantic_annotations: SemanticAnnotation, model, model, "Semantic dimension, note, symbol, and callout arena.", [serde(default)];
-            presentation_documents: PresentationDocument, model, model, "Document presentation arena.", [serde(default)];
-            view_presentations: ViewPresentation, model, model, "View-provider presentation arena.", [serde(default)];
+            feature_input_topologies: FeatureInputTopology, design, model, "Feature input-topology arena.", [];
+            feature_result_topologies: FeatureResultTopology, design, model, "Feature result-topology arena.", [];
+            configurations: DesignConfiguration, design, model, "Design configuration arena.", [];
+            parameters: DesignParameter, design, model, "Design parameter arena.", [];
+            sketches: Sketch, design, model, "Planar sketch arena.", [];
+            sketch_entities: SketchEntity, design, model, "Solved sketch entity arena.", [];
+            sketch_constraints: SketchConstraint, design, model, "Sketch constraint arena.", [];
+            spatial_sketches: SpatialSketch, design, model, "Spatial sketch arena.", [];
+            spatial_sketch_entities: SpatialSketchEntity, design, model, "Solved spatial sketch entity arena.", [];
+            spatial_sketch_constraints: SpatialSketchConstraint, design, model, "Spatial sketch constraint arena.", [];
+            spreadsheets: Spreadsheet, design, model, "Spreadsheet arena.", [];
+            product_definitions: ProductDefinition, model, model, "Product definition arena.", [];
+            occurrences: Occurrence, model, model, "Product occurrence arena.", [];
+            assembly_joints: AssemblyJoint, model, model, "Assembly joint arena.", [];
+            drawings: Drawing, model, model, "Drawing page, resource, view, and annotation arena.", [];
+            semantic_annotations: SemanticAnnotation, model, model, "Semantic dimension, note, symbol, and callout arena.", [];
+            presentation_documents: PresentationDocument, model, model, "Document presentation arena.", [];
+            view_presentations: ViewPresentation, model, model, "View-provider presentation arena.", [];
             tessellations: Tessellation, model, model, "Tessellation arena.", [];
             appearances: Appearance, model, model, "Appearance arena.", [];
             appearance_bindings: AppearanceBinding, model, model, "Appearance binding arena.", [];
             attributes: SourceAttribute, model, model, "Attribute arena.", [];
-            pmi: crate::pmi::PmiAnnotation, model, model, "Product-manufacturing information arena.", [serde(default)];
-            presentation_layers: crate::presentation::PresentationLayer, model, model, "Presentation layer arena.", [serde(default)];
-            physical_materials: crate::physics::PhysicalMaterial, model, model, "Physical material arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            mass_properties: crate::physics::MassProperties, model, model, "Mass property arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            rigid_bodies: crate::physics::RigidBody, model, model, "Rigid body arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            colliders: crate::physics::Collider, model, model, "Collider arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            articulations: crate::physics::Articulation, model, model, "Articulation arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            physics_scenes: crate::physics::PhysicsScene, model, model, "Physics scene arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            solver_settings: crate::physics::solver::SolverSettings, model, model, "Solver settings arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            declared_measures: crate::declared_measures::DeclaredMeasure, model, model, "Declared measure arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            point_clouds: crate::point_cloud::PointCloud, model, model, "Point cloud arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            history_bodies: crate::history_body::HistoryBody, design, model, "History body arena: bodies that only an earlier history state holds, each with a nest of its own.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            pmi: crate::pmi::PmiAnnotation, model, model, "Product-manufacturing information arena.", [];
+            presentation_layers: crate::presentation::PresentationLayer, model, model, "Presentation layer arena.", [];
+            physical_materials: crate::physics::PhysicalMaterial, model, model, "Physical material arena.", [];
+            mass_properties: crate::physics::MassProperties, model, model, "Mass property arena.", [];
+            rigid_bodies: crate::physics::RigidBody, model, model, "Rigid body arena.", [];
+            colliders: crate::physics::Collider, model, model, "Collider arena.", [];
+            articulations: crate::physics::Articulation, model, model, "Articulation arena.", [];
+            physics_scenes: crate::physics::PhysicsScene, model, model, "Physics scene arena.", [];
+            solver_settings: crate::physics::solver::SolverSettings, model, model, "Solver settings arena.", [];
+            declared_measures: crate::declared_measures::DeclaredMeasure, model, model, "Declared measure arena.", [];
+            point_clouds: crate::point_cloud::PointCloud, model, model, "Point cloud arena.", [];
+            history_bodies: crate::history_body::HistoryBody, design, model, "History body arena: bodies that only an earlier history state holds, each with a nest of its own.", [];
             scopes: crate::design::scope::DesignScope, design, design, "The design scopes, one per product definition that has a design.", [];
             containers: crate::design::container::Container, design, design, "The ordered and unordered containers of the scopes' histories.", [];
             features: crate::design::feature::Feature, design, design, "The features of the scopes' histories.", [];
@@ -293,6 +295,22 @@ impl fmt::Display for ArenaHome {
     }
 }
 
+/// A procedural carrier's retained cache, written as the carrier's `solved`
+/// geometry arm.
+struct SolvedGeometryWire<'a, T>(&'a T);
+
+impl<T: Serialize> Serialize for SolvedGeometryWire<'_, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Geometry", 2)?;
+        state.serialize_field("kind", "solved")?;
+        state.serialize_field("value", self.0)?;
+        state.end()
+    }
+}
+
 struct SurfaceWire<'a>(&'a Surface);
 
 impl Serialize for SurfaceWire<'_> {
@@ -303,7 +321,7 @@ impl Serialize for SurfaceWire<'_> {
         let mut state = serializer.serialize_struct("Surface", 3)?;
         state.serialize_field("id", &self.0.id)?;
         match self.0.geometry.solved_cache() {
-            Some(cache) => state.serialize_field("geometry", cache)?,
+            Some(cache) => state.serialize_field("geometry", &SolvedGeometryWire(cache))?,
             None => state.serialize_field("geometry", &self.0.geometry)?,
         }
         if let Some(source_object) = &self.0.source_object {
@@ -323,7 +341,7 @@ impl Serialize for CurveWire<'_> {
         let mut state = serializer.serialize_struct("Curve", 4)?;
         state.serialize_field("id", &self.0.id)?;
         match self.0.geometry.solved_cache() {
-            Some(cache) => state.serialize_field("geometry", cache)?,
+            Some(cache) => state.serialize_field("geometry", &SolvedGeometryWire(cache))?,
             None => state.serialize_field("geometry", &self.0.geometry)?,
         }
         if let Some(range) = &self.0.parameter_range {
@@ -1167,7 +1185,7 @@ macro_rules! declare_arena_name {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "10";
+pub const IR_VERSION: &str = "11";
 
 /// The current IR wire version. Every value writes [`IR_VERSION`].
 /// Deserialization refuses any other version.
@@ -1844,9 +1862,7 @@ impl Topology {
 fn check_ir_version<E: serde::de::Error>(version: Option<&serde_json::Value>) -> Result<(), E> {
     let version = version.and_then(serde_json::Value::as_str);
     if version != Some(IR_VERSION) {
-        return Err(E::custom(format!(
-            "unsupported ir_version {version:?}; expected {IR_VERSION}"
-        )));
+        return Err(E::custom(legacy::unsupported_version(version)));
     }
     Ok(())
 }
@@ -1972,7 +1988,6 @@ impl std::error::Error for ScopeViolation {}
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CadIrWriteWire<'a> {
     ir_version: IrVersion,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
     fragment: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     repro: Option<&'a crate::repro::BundleMetadata>,
@@ -1998,21 +2013,19 @@ struct CadIrReadWire {
         deserialize_with = "deserialize_ir_version"
     )]
     ir_version: Option<serde_json::Value>,
-    #[serde(default, deserialize_with = "deserialize_fragment")]
-    fragment: Option<bool>,
+    fragment: bool,
     #[serde(default, deserialize_with = "deserialize_repro")]
     repro: Option<Box<crate::repro::BundleMetadata>>,
     scope: ContentScope,
     #[serde(default, deserialize_with = "deserialize_source")]
     source: Option<SourceMeta>,
-    #[serde(default, rename = "units")]
+    #[serde(rename = "units")]
     _units: CanonicalUnitsWire,
     tolerances: Tolerances,
     geometry: Topology,
     model: Model,
     design: Design,
     process: Process,
-    #[serde(default)]
     native: Native,
 }
 
@@ -2050,7 +2063,7 @@ impl TryFrom<CadIrReadWire> for CadIr {
 
     fn try_from(wire: CadIrReadWire) -> Result<Self, Self::Error> {
         let ir = Self {
-            fragment: wire.fragment.unwrap_or(false),
+            fragment: wire.fragment,
             repro: wire.repro,
             scope: wire.scope,
             source: wire.source,
@@ -2377,8 +2390,14 @@ impl CadIr {
         /// Every member but `ir_version` is skipped.
         #[derive(Deserialize)]
         struct VersionProbe {
+            #[serde(default, deserialize_with = "deserialize_probe_version")]
             ir_version: Option<serde_json::Value>,
         }
+        cadmpeg_core::named_optional_field!(
+            deserialize_probe_version,
+            serde_json::Value,
+            "ir_version"
+        );
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
@@ -2417,7 +2436,6 @@ pub struct SourceMeta {
     /// Format identity: classified dialect layers, or a bare known format.
     identity: FormatIdentity<DialectLayers>,
     /// Format-specific attributes.
-    #[serde(default)]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub attributes: BTreeMap<NonBlankString, String>,
 }
@@ -2485,8 +2503,6 @@ cadmpeg_core::named_optional_field!(deserialize_ir_version, serde_json::Value, "
 cadmpeg_core::named_optional_field!(deserialize_source, SourceMeta, "source");
 
 mod identity_rewrite;
-
-cadmpeg_core::named_optional_field!(deserialize_fragment, bool, "fragment");
 
 cadmpeg_core::named_optional_field!(
     deserialize_repro,

@@ -9,7 +9,8 @@ use super::super::define_member;
 fn sketch(name: &str) -> Sketch {
     serde_json::from_value(serde_json::json!({
         "id": format!("test:model:sketch#{name}"),
-        "placement": {"kind": "unresolved"}
+        "placement": {"kind": "unresolved"},
+        "profiles": []
     }))
     .unwrap()
 }
@@ -18,6 +19,8 @@ fn component(sketch: &Sketch) -> ProductDefinition {
     serde_json::from_value(serde_json::json!({
         "id": "test:model:product#component",
         "kind": "part",
+        "bom_properties": {},
+        "bodies": [],
         "sketches": [sketch.id]
     }))
     .unwrap()

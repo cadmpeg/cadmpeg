@@ -471,6 +471,15 @@ enum CommittedIdentity {
     StagedUnknown(usize),
 }
 
+impl CommittedIdentity {
+    /// The identity of the neutral entity at `index` of the arena of `kind`.
+    /// The arena macros call it, so the source census, which does not expand
+    /// them, sees no use of the expression type `Neutral` in their bodies.
+    const fn entity(kind: EntityKind, index: usize) -> Self {
+        Self::Neutral(IdentitySlot { kind, index })
+    }
+}
+
 type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 
 /// A document owner or exclusive borrow with a caller-owned identity cache.
@@ -999,7 +1008,7 @@ fn index_committed_identities(
     macro_rules! collect_model_identities {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (index, entity) in base.$home.$field.iter().enumerate() {
-                insert_identity(&mut identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }));
+                insert_identity(&mut identities, identity_hash(entity.identity()), CommittedIdentity::entity(<$ty as EntitySchema>::KIND, index));
             })*
         };
     }
@@ -1103,7 +1112,7 @@ fn stage_committed_identities(
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
             for (offset, entity) in candidate.$home.$field.iter().enumerate() {
                 let index = base.$home.$field.len() + offset;
-                insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }));
+                insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::entity(<$ty as EntitySchema>::KIND, index));
             }
         )*};
     }
@@ -1183,7 +1192,7 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
                 ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
                     let start = starts[<$ty as EntitySchema>::KIND.index()];
                     for (offset, entity) in self.base.borrow().$home.$field.get(start..).ok_or_else(|| CodecError::malformed("append-only staging removed an arena prefix"))?.iter().enumerate() {
-                        insert_identity(identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: start + offset }));
+                        insert_identity(identities, identity_hash(entity.identity()), CommittedIdentity::entity(<$ty as EntitySchema>::KIND, start + offset));
                     }
                 )*};
             }

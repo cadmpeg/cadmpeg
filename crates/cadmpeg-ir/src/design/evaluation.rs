@@ -117,7 +117,7 @@ pub struct StateDelta {
     /// The base's records the state does not hold.
     pub removed: Vec<RecordRef>,
     /// The state's name table entries.
-    #[serde(with = "super::wire::pairs")]
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(
         feature = "schema",
         schemars(with = "Vec<(EntityRef, Option<NameEntry>)>")
@@ -130,7 +130,7 @@ pub struct StateDelta {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub members: BTreeMap<OccurrenceId, Option<ProductDefinitionId>>,
     /// An instance's bodies, keyed by the instance's path.
-    #[serde(with = "super::wire::pairs")]
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(
         feature = "schema",
         schemars(with = "Vec<(OccurrencePath, Option<Vec<BodyId>>)>")
@@ -138,7 +138,7 @@ pub struct StateDelta {
     pub instance_bodies: BTreeMap<OccurrencePath, Option<Vec<BodyId>>>,
     /// A placed instance's placement in the state, only where it differs from
     /// the placement the state's configuration resolves to.
-    #[serde(with = "super::wire::pairs")]
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(
         feature = "schema",
         schemars(with = "Vec<(OccurrencePath, Option<Transform>)>")
@@ -159,7 +159,7 @@ pub struct CurrentState {
     /// A placed instance's placement in the current state where it differs
     /// from the placement its configuration resolves to, keyed by the
     /// instance's path.
-    #[serde(with = "super::wire::pairs")]
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(
         feature = "schema",
         schemars(with = "Vec<(OccurrencePath, Transform)>")

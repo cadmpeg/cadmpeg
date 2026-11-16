@@ -11,21 +11,22 @@
         "product_version": "ASM 232.4.0.65535 OSX",
         "save_date": "Synthetic"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "stream",
       "role": "brep",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 588
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [
         {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "reference_width": "8",
             "save_format_major": "232",
@@ -35,13 +36,17 @@
         }
       ],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "encoding": "binary"
         },
         "dialect": "sat:asm-binary"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": []
 }

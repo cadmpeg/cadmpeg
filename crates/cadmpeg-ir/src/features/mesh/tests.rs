@@ -18,7 +18,7 @@ fn separation_wire_keeps_independent_controls_and_selected_category() {
         serde_json::json!({"method":"face_groups", "groups":{"kind":"selected"}}),
         serde_json::json!({"groups":{"kind":"selected", "members":["beta", "alpha"]}, "multiple_bodies":false}),
     ] {
-        let wire = serde_json::json!({"definition":"mesh_modify", "source":{"feature":"test:model:feature#separate"}, "modification":{"kind":"separate", "separation":separation}});
+        let wire = serde_json::json!({"kind": "mesh_modify", "value": {"source":{"kind":"unresolved","value":{"feature":"test:model:feature#separate"}}, "modification":{"kind":"separate", "separation":separation}}});
         let decoded: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
     }
@@ -53,7 +53,7 @@ fn separation_rewrite_traverses_owned_group_selectors_and_source_identity() {
     let scope = "f3d:Design/BulkStream.dat:design-parameter-scope#57";
     let renamed = "f3d:child/Design/BulkStream.dat:design-parameter-scope#57";
     let replacements = std::collections::BTreeMap::from([(scope.to_owned(), renamed.to_owned())]);
-    let wire = serde_json::json!({"definition":"mesh_modify", "source":{"feature":"test:model:feature#separate"}, "modification":{"kind":"separate", "separation":{"groups":{"kind":"selected", "members":[scope, format!("{scope}/alpha"), "beta"]}, "keep_body":false}}});
+    let wire = serde_json::json!({"kind": "mesh_modify", "value": {"source":{"kind":"unresolved","value":{"feature":"test:model:feature#separate"}}, "modification":{"kind":"separate", "separation":{"groups":{"kind":"selected", "members":[scope, format!("{scope}/alpha"), "beta"]}, "keep_body":false}}}});
     let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
     crate::test_support::with_service_decode_context(|ctx| {
         let text = TextReplacements::build(replacements.iter())?;
@@ -61,8 +61,9 @@ fn separation_rewrite_traverses_owned_group_selectors_and_source_identity() {
             .with_text_replacements(&text);
         let rewritten = operation.rewrite_identities(ctx, &mut map)?;
         let mut expected = wire.clone();
-        expected["source"]["feature"] = "test:child/model:feature#separate".into();
-        expected["modification"]["separation"]["groups"]["members"][0] = renamed.into();
+        expected["value"]["source"]["value"]["feature"] =
+            "test:child/model:feature#separate".into();
+        expected["value"]["modification"]["separation"]["groups"]["members"][0] = renamed.into();
         assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
         map.finish()
     })
@@ -92,9 +93,9 @@ fn face_group_operations_round_trip_partial_settings_and_rewrite_sources() {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
     for wire in [
-        serde_json::json!({"definition":"mesh_generate_face_groups", "source":{"feature":"test:model:feature#groups"}, "settings":{"boundary_tolerance":0.047, "minimum_area_fraction":0.17}}),
-        serde_json::json!({"definition":"mesh_combine_face_groups", "source":["test:mesh:tessellation#first"]}),
-        serde_json::json!({"definition":"mesh_combine_face_groups", "source":{"native":"native-mesh", "members":["second","first"]}}),
+        serde_json::json!({"kind": "mesh_generate_face_groups", "value": {"source":{"kind":"unresolved","value":{"feature":"test:model:feature#groups"}}, "settings":{"boundary_tolerance":0.047, "minimum_area_fraction":0.17}}}),
+        serde_json::json!({"kind": "mesh_combine_face_groups", "value": {"source":{"kind":"tessellations","value":["test:mesh:tessellation#first"]}}}),
+        serde_json::json!({"kind": "mesh_combine_face_groups", "value": {"source":{"kind":"native","value":{"native":"native-mesh", "members":["second","first"]}}}}),
     ] {
         let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
@@ -103,13 +104,17 @@ fn face_group_operations_round_trip_partial_settings_and_rewrite_sources() {
                 IdentityMap::new(|source: &str| Ok(source.replace("test:", "test:child/")));
             let rewritten = operation.rewrite_identities(ctx, &mut map)?;
             let rewritten = serde_json::to_value(rewritten).unwrap();
-            if let Some(feature) = wire["source"].get("feature") {
+            let source = &wire["value"]["source"];
+            if let Some(feature) = source["value"].get("feature") {
                 assert_eq!(
-                    rewritten["source"]["feature"],
+                    rewritten["value"]["source"]["value"]["feature"],
                     feature.as_str().unwrap().replace("test:", "test:child/")
                 );
-            } else if wire["source"].is_array() {
-                assert_eq!(rewritten["source"][0], "test:child/mesh:tessellation#first");
+            } else if source["value"].is_array() {
+                assert_eq!(
+                    rewritten["value"]["source"]["value"][0],
+                    "test:child/mesh:tessellation#first"
+                );
             } else {
                 assert_eq!(rewritten, wire);
             }
@@ -123,16 +128,16 @@ fn face_group_operations_round_trip_partial_settings_and_rewrite_sources() {
         serde_json::json!({"minimum_area_fraction":1.1}),
         serde_json::json!({"angle_threshold":null}),
     ] {
-        assert!(serde_json::from_value::<FeatureOperation>(serde_json::json!({"definition":"mesh_generate_face_groups", "source":{"native":"mesh"}, "settings":settings})).is_err());
+        assert!(serde_json::from_value::<FeatureOperation>(serde_json::json!({"kind": "mesh_generate_face_groups", "value": {"source":{"kind":"native","value":{"native":"mesh"}}, "settings":settings}})).is_err());
     }
 }
 
 #[test]
 fn resolved_mesh_selection_preserves_the_tessellation_array_wire_form() {
-    let wire = serde_json::json!([
+    let wire = serde_json::json!({"kind": "tessellations", "value": [
         "test:mesh:tessellation#first",
         "test:mesh:tessellation#second"
-    ]);
+    ]});
     let selection: MeshSelection = serde_json::from_value(wire.clone()).unwrap();
     let MeshSelection::Tessellations(values) = &selection else {
         panic!("resolved tessellations");
@@ -152,7 +157,8 @@ fn resolved_mesh_selection_preserves_the_tessellation_array_wire_form() {
 
 #[test]
 fn native_mesh_selection_preserves_source_order() {
-    let wire = serde_json::json!({"native":"mesh:source", "members":["7", "3"]});
+    let wire =
+        serde_json::json!({"kind":"native","value":{"native":"mesh:source", "members":["7", "3"]}});
     let selection: MeshSelection = serde_json::from_value(wire.clone()).unwrap();
     let MeshSelection::Native { native, members } = &selection else {
         panic!("native sources");
@@ -165,20 +171,20 @@ fn native_mesh_selection_preserves_source_order() {
 #[test]
 fn mesh_selections_reject_empty_repeated_blank_and_mixed_members() {
     for wire in [
-        serde_json::json!([]),
-        serde_json::json!([
+        serde_json::json!({"kind":"tessellations","value":[]}),
+        serde_json::json!({"kind":"tessellations","value":[
             "test:mesh:tessellation#first",
             "test:mesh:tessellation#first"
-        ]),
-        serde_json::json!(["mesh id"]),
-        serde_json::json!({"native":" "}),
-        serde_json::json!({"native":"mesh:source", "members":[]}),
-        serde_json::json!({"native":"mesh:source", "members":null}),
-        serde_json::json!({"native":"mesh:source", "members":[" "]}),
-        serde_json::json!({"native":"mesh:source", "members":["7", "7"]}),
-        serde_json::json!({"native":"mesh:source", "tessellations":["mesh:second"]}),
-        serde_json::json!({"feature":" "}),
-        serde_json::json!({"feature":"test:model:feature#import", "native":"mesh:source"}),
+        ]}),
+        serde_json::json!({"kind":"tessellations","value":["mesh id"]}),
+        serde_json::json!({"kind":"native","value":{"native":" "}}),
+        serde_json::json!({"kind":"native","value":{"native":"mesh:source", "members":[]}}),
+        serde_json::json!({"kind":"native","value":{"native":"mesh:source", "members":null}}),
+        serde_json::json!({"kind":"native","value":{"native":"mesh:source", "members":[" "]}}),
+        serde_json::json!({"kind":"native","value":{"native":"mesh:source", "members":["7", "7"]}}),
+        serde_json::json!({"kind":"native","value":{"native":"mesh:source", "tessellations":["mesh:second"]}}),
+        serde_json::json!({"kind":"unresolved","value":{"feature":" "}}),
+        serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#import", "native":"mesh:source"}}),
     ] {
         assert!(serde_json::from_value::<MeshSelection>(wire).is_err());
     }
@@ -199,10 +205,10 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
             Ok(format!("f3d:xref/child/{source}"))
         })
         .with_text_replacements(&text);
-        let resolved: MeshSelection = serde_json::from_value(serde_json::json!([
+        let resolved: MeshSelection = serde_json::from_value(serde_json::json!({"kind": "tessellations", "value": [
             "f3d:mesh:tessellation#first",
             "f3d:mesh:tessellation#second"
-        ]))
+        ]}))
         .unwrap();
         let mut visited = Vec::new();
         resolved.visit_identity_references(ctx, &mut |id| {
@@ -219,25 +225,25 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
         let resolved = resolved.rewrite_identities(ctx, &mut map)?;
         assert_eq!(
             serde_json::to_value(resolved).unwrap(),
-            serde_json::json!([
+            serde_json::json!({"kind": "tessellations", "value": [
                 "f3d:xref/child/mesh:tessellation#first",
                 "f3d:xref/child/mesh:tessellation#second"
-            ])
+            ]})
         );
-        let native: MeshSelection = serde_json::from_value(serde_json::json!({
+        let native: MeshSelection = serde_json::from_value(serde_json::json!({"kind": "native", "value": {
             "native":source_scope, "members":["7", "3"]
-        }))
+        }}))
         .unwrap();
         let native = native.rewrite_identities(ctx, &mut map)?;
         assert_eq!(
             serde_json::to_value(native).unwrap(),
-            serde_json::json!({
+            serde_json::json!({"kind": "native", "value": {
                 "native":target_scope, "members":["7", "3"]
-            })
+            }})
         );
-        let unresolved: MeshSelection = serde_json::from_value(serde_json::json!({
+        let unresolved: MeshSelection = serde_json::from_value(serde_json::json!({"kind": "unresolved", "value": {
             "feature":"f3d:model:feature#import"
-        }))
+        }}))
         .unwrap();
         let mut visited = Vec::new();
         unresolved.visit_identity_references(ctx, &mut |id| {
@@ -248,7 +254,7 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
         let unresolved = unresolved.rewrite_identities(ctx, &mut map)?;
         assert_eq!(
             serde_json::to_value(unresolved).unwrap(),
-            serde_json::json!({"feature":"f3d:xref/child/model:feature#import"})
+            serde_json::json!({"kind": "unresolved", "value": {"feature":"f3d:xref/child/model:feature#import"}})
         );
         map.finish()
     })
@@ -358,21 +364,18 @@ fn mesh_reduction_bounds_and_repair_methods_reject_unknown_keys() {
 #[test]
 fn mesh_operations_keep_their_feature_wire_forms() {
     for wire in [
-        serde_json::json!({
-            "definition":"mesh_modify",
-            "source":{"native":"mesh:scope","members":["9"]},
+        serde_json::json!({"kind": "mesh_modify", "value": {
+            "source":{"kind":"native","value":{"native":"mesh:scope","members":["9"]}},
             "modification":{"kind":"smooth","smoothness":0.25}
-        }),
-        serde_json::json!({
-            "definition":"mesh_section",
-            "source":["test:mesh:tessellation#first"],
+        }}),
+        serde_json::json!({"kind": "mesh_section", "value": {
+            "source":{"kind":"tessellations","value":["test:mesh:tessellation#first"]},
             "sketch":"test:model:feature#sketch",
             "plane":{"origin":{"x":1.0,"y":2.0,"z":3.0},"normal":{"x":0.0,"y":0.0,"z":1.0},"u_axis":{"x":1.0,"y":0.0,"z":0.0}}
-        }),
-        serde_json::json!({
-            "definition":"mesh_section",
-            "source":{"feature":"test:model:feature#section"}
-        }),
+        }}),
+        serde_json::json!({"kind": "mesh_section", "value": {
+            "source":{"kind":"unresolved","value":{"feature":"test:model:feature#section"}}
+        }}),
     ] {
         let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
         assert!(matches!(
@@ -393,11 +396,10 @@ fn section_plane_rejects_explicit_null_and_nonperpendicular_axes() {
             "u_axis":{"x":0.0,"y":0.0,"z":1.0}
         }),
     ] {
-        let wire = serde_json::json!({
-            "definition":"mesh_section",
-            "source":{"feature":"test:model:feature#section"},
+        let wire = serde_json::json!({"kind": "mesh_section", "value": {
+            "source":{"kind":"unresolved","value":{"feature":"test:model:feature#section"}},
             "plane":plane
-        });
+        }});
         assert!(serde_json::from_value::<FeatureOperation>(wire).is_err());
     }
 }
@@ -406,16 +408,15 @@ fn section_plane_rejects_explicit_null_and_nonperpendicular_axes() {
 fn section_identity_rewrite_keeps_its_plane_and_linked_sketch() {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
-    let wire = serde_json::json!({
-        "definition":"mesh_section",
-        "source":{"feature":"test:model:feature#section"},
+    let wire = serde_json::json!({"kind": "mesh_section", "value": {
+        "source":{"kind":"unresolved","value":{"feature":"test:model:feature#section"}},
         "plane":{
             "origin":{"x":1.0,"y":2.0,"z":3.0},
             "normal":{"x":0.0,"y":0.0,"z":1.0},
             "u_axis":{"x":1.0,"y":0.0,"z":0.0}
         },
         "sketch":"test:model:feature#sketch"
-    });
+    }});
     let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
     crate::test_support::with_service_decode_context(|ctx| {
         let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:", "test:child/")));
@@ -430,8 +431,8 @@ fn section_identity_rewrite_keeps_its_plane_and_linked_sketch() {
         );
         let rewritten = operation.rewrite_identities(ctx, &mut map)?;
         let mut expected = wire.clone();
-        expected["source"]["feature"] = "test:child/model:feature#section".into();
-        expected["sketch"] = "test:child/model:feature#sketch".into();
+        expected["value"]["source"]["value"]["feature"] = "test:child/model:feature#section".into();
+        expected["value"]["sketch"] = "test:child/model:feature#sketch".into();
         assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
         map.finish()
     })
@@ -440,14 +441,13 @@ fn section_identity_rewrite_keeps_its_plane_and_linked_sketch() {
 
 #[test]
 fn conversion_wire_preserves_ordered_source_contexts() {
-    let wire = serde_json::json!({
-        "definition":"mesh_convert",
+    let wire = serde_json::json!({"kind": "mesh_convert", "value": {
         "sources":[
-            {"native":"mesh:scope","members":["9", "3"]},
-            {"native":"mesh:scope","members":["9", "3"]},
-            {"feature":"test:model:feature#convert"}
+            {"kind":"native","value":{"native":"mesh:scope","members":["9", "3"]}},
+            {"kind":"native","value":{"native":"mesh:scope","members":["9", "3"]}},
+            {"kind":"unresolved","value":{"feature":"test:model:feature#convert"}}
         ]
-    });
+    }});
     let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
     let FeatureOperation::MeshConvert(conversion) = &operation else {
         panic!("mesh conversion");
@@ -457,27 +457,27 @@ fn conversion_wire_preserves_ordered_source_contexts() {
     assert_eq!(serde_json::to_value(operation).unwrap(), wire);
     for method in ["faceted", "prismatic"] {
         let mut known = wire.clone();
-        known["method"] = method.into();
+        known["value"]["method"] = method.into();
         let operation: FeatureOperation = serde_json::from_value(known.clone()).unwrap();
         assert_eq!(serde_json::to_value(operation).unwrap(), known);
     }
     for method in [serde_json::Value::Null, serde_json::json!("unruled")] {
         let mut invalid = wire.clone();
-        invalid["method"] = method;
+        invalid["value"]["method"] = method;
         assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
     }
     for sources in [
         serde_json::Value::Null,
-        serde_json::json!({"native":"mesh:scope"}),
-        serde_json::json!([{"native":"mesh:scope","members":[]}]),
-        serde_json::json!([{"feature":" "}]),
+        serde_json::json!({"kind":"native","value":{"native":"mesh:scope"}}),
+        serde_json::json!([{"kind":"native","value":{"native":"mesh:scope","members":[]}}]),
+        serde_json::json!([{"kind":"unresolved","value":{"feature":" "}}]),
     ] {
-        assert!(
-            serde_json::from_value::<FeatureOperation>(serde_json::json!({
-                "definition":"mesh_convert", "sources":sources
-            }))
-            .is_err()
-        );
+        assert!(serde_json::from_value::<FeatureOperation>(
+            serde_json::json!({"kind": "mesh_convert", "value": {
+                "sources":sources
+            }})
+        )
+        .is_err());
     }
 }
 
@@ -489,14 +489,13 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
     let target_scope = "f3d:xref/child/Design/BulkStream.dat:design-parameter-scope#7";
     let replacements =
         std::collections::BTreeMap::from([(source_scope.to_owned(), target_scope.to_owned())]);
-    let wire = serde_json::json!({
-        "definition":"mesh_convert",
+    let wire = serde_json::json!({"kind": "mesh_convert", "value": {
         "sources":[
-            {"native":source_scope,"members":["9", "3"]},
-            ["f3d:mesh:tessellation#source"],
-            {"feature":"f3d:model:feature#convert"}
+            {"kind":"native","value":{"native":source_scope,"members":["9", "3"]}},
+            {"kind":"tessellations","value":["f3d:mesh:tessellation#source"]},
+            {"kind":"unresolved","value":{"feature":"f3d:model:feature#convert"}}
         ]
-    });
+    }});
     let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
     crate::test_support::with_service_decode_context(|ctx| {
         let text = TextReplacements::build(replacements.iter())?;
@@ -518,9 +517,10 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
         );
         let rewritten = operation.rewrite_identities(ctx, &mut map)?;
         let mut expected = wire.clone();
-        expected["sources"][0]["native"] = target_scope.into();
-        expected["sources"][1][0] = "f3d:xref/child/mesh:tessellation#source".into();
-        expected["sources"][2]["feature"] = "f3d:xref/child/model:feature#convert".into();
+        let sources = &mut expected["value"]["sources"];
+        sources[0]["value"]["native"] = target_scope.into();
+        sources[1]["value"][0] = "f3d:xref/child/mesh:tessellation#source".into();
+        sources[2]["value"]["feature"] = "f3d:xref/child/model:feature#convert".into();
         assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
         map.finish()
     })
@@ -531,10 +531,10 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
 #[test]
 fn conversion_schema_exposes_sources_on_the_tagged_operation() {
     fn find_conversion(value: &serde_json::Value) -> Option<&serde_json::Value> {
-        if value["properties"]["definition"]["const"] == "mesh_convert"
-            || value["properties"]["definition"]["enum"] == serde_json::json!(["mesh_convert"])
+        if value["properties"]["kind"]["const"] == "mesh_convert"
+            || value["properties"]["kind"]["enum"] == serde_json::json!(["mesh_convert"])
         {
-            return Some(value);
+            return Some(&value["properties"]["value"]);
         }
         match value {
             serde_json::Value::Object(fields) => fields.values().find_map(find_conversion),
@@ -544,6 +544,12 @@ fn conversion_schema_exposes_sources_on_the_tagged_operation() {
     }
     let schema = serde_json::to_value(schemars::schema_for!(FeatureOperation)).unwrap();
     let conversion = find_conversion(&schema).unwrap();
+    let conversion = match conversion.get("$ref").and_then(serde_json::Value::as_str) {
+        Some(reference) => schema
+            .pointer(reference.strip_prefix('#').unwrap())
+            .unwrap(),
+        None => conversion,
+    };
     assert_eq!(conversion["properties"]["sources"]["type"], "array");
     assert!(conversion["required"]
         .as_array()
@@ -564,11 +570,11 @@ fn plane_cut_round_trips_independent_components_and_rewrites_sources() {
         serde_json::json!({"mode":"split_bodies","fill":"uniform","retained_side":"positive"}),
     ] {
         for source in [
-            serde_json::json!({"feature":"test:model:feature#cut"}),
-            serde_json::json!(["test:mesh:tessellation#source"]),
-            serde_json::json!({"native":"scope","members":["9","7"]}),
+            serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#cut"}}),
+            serde_json::json!({"kind":"tessellations","value":["test:mesh:tessellation#source"]}),
+            serde_json::json!({"kind":"native","value":{"native":"scope","members":["9","7"]}}),
         ] {
-            let wire = serde_json::json!({"definition":"mesh_modify","source":source,"modification":{"kind":"plane_cut","cut":cut}});
+            let wire = serde_json::json!({"kind": "mesh_modify", "value": {"source":source,"modification":{"kind":"plane_cut","cut":cut}}});
             let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
             crate::test_support::with_service_decode_context(|ctx| {
@@ -576,13 +582,13 @@ fn plane_cut_round_trips_independent_components_and_rewrites_sources() {
                     IdentityMap::new(|source: &str| Ok(source.replace("test:", "test:child/")));
                 let cloned = operation.rewrite_identities(ctx, &mut identities)?;
                 let cloned = serde_json::to_value(cloned).unwrap();
-                assert_eq!(cloned["modification"], wire["modification"]);
+                assert_eq!(cloned["value"]["modification"], wire["value"]["modification"]);
                 assert_eq!(
-                    cloned["source"],
-                    if source.get("feature").is_some() {
-                        serde_json::json!({"feature":"test:child/model:feature#cut"})
-                    } else if source.is_array() {
-                        serde_json::json!(["test:child/mesh:tessellation#source"])
+                    cloned["value"]["source"],
+                    if source["value"].get("feature").is_some() {
+                        serde_json::json!({"kind":"unresolved","value":{"feature":"test:child/model:feature#cut"}})
+                    } else if source["value"].is_array() {
+                        serde_json::json!({"kind":"tessellations","value":["test:child/mesh:tessellation#source"]})
                     } else {
                         source.clone()
                     }

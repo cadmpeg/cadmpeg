@@ -8,13 +8,17 @@
 //! the first value is already overwritten.
 //!
 //! Every map whose key is an identity or a source-supplied name reads through
-//! one of these functions, so a restated key is refused by name.
+//! one of these functions, so a restated key is refused by name. A map whose
+//! key is not a JSON string is an array of `[key, value]` pairs sorted by key
+//! ([`pairs`]), and a set is an array sorted by value ([`set`]); each refuses
+//! a repeated key or member.
 
-use std::collections::BTreeMap;
-use std::fmt::{self, Display};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Debug, Display};
 use std::marker::PhantomData;
 
 use serde::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
+use serde::ser::{Serialize, SerializeSeq, Serializer};
 
 /// Reads a `BTreeMap`, refusing a key the document states twice.
 ///
@@ -159,9 +163,130 @@ where
     }
 }
 
+/// A map with a key that is not a JSON string, as `[key, value]` pairs.
+pub mod pairs {
+    use super::{
+        fmt, BTreeMap, Debug, Deserialize, Deserializer, Error, PhantomData, SeqAccess, Serialize,
+        SerializeSeq, Serializer, Visitor,
+    };
+
+    /// Writes the entries in key order.
+    ///
+    /// # Errors
+    ///
+    /// Returns the serializer's error for a key or value it cannot write.
+    pub fn serialize<S, K, V>(map: &BTreeMap<K, V>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        K: Serialize,
+        V: Serialize,
+    {
+        let mut out = serializer.serialize_seq(Some(map.len()))?;
+        for entry in map {
+            out.serialize_element(&entry)?;
+        }
+        out.end()
+    }
+
+    /// Reads the entries and refuses a key stated twice.
+    ///
+    /// # Errors
+    ///
+    /// Names the restated key.
+    pub fn deserialize<'de, D, K, V>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
+    where
+        D: Deserializer<'de>,
+        K: Deserialize<'de> + Ord + Debug,
+        V: Deserialize<'de>,
+    {
+        struct Pairs<K, V>(PhantomData<fn() -> (K, V)>);
+
+        impl<'de, K, V> Visitor<'de> for Pairs<K, V>
+        where
+            K: Deserialize<'de> + Ord + Debug,
+            V: Deserialize<'de>,
+        {
+            type Value = BTreeMap<K, V>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("an array of [key, value] pairs with distinct keys")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+                let mut out = BTreeMap::new();
+                while let Some((key, value)) = access.next_element::<(K, V)>()? {
+                    if out.contains_key(&key) {
+                        return Err(A::Error::custom(format_args!(
+                            "key {key:?} is stated twice"
+                        )));
+                    }
+                    out.insert(key, value);
+                }
+                Ok(out)
+            }
+        }
+
+        deserializer.deserialize_seq(Pairs(PhantomData))
+    }
+}
+
+/// A set, as an array sorted by value.
+pub mod set {
+    use super::{
+        fmt, BTreeSet, Deserialize, Deserializer, Error, PhantomData, SeqAccess, Serialize,
+        Serializer, Visitor,
+    };
+
+    /// Writes the members in order.
+    ///
+    /// # Errors
+    ///
+    /// Returns the serializer's error for a member it cannot write.
+    pub fn serialize<S, T>(set: &BTreeSet<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Serialize,
+    {
+        serializer.collect_seq(set)
+    }
+
+    /// Reads the members and refuses a member stated twice.
+    ///
+    /// # Errors
+    ///
+    /// Refuses the array at the restated member.
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<BTreeSet<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de> + Ord,
+    {
+        struct Members<T>(PhantomData<fn() -> T>);
+
+        impl<'de, T: Deserialize<'de> + Ord> Visitor<'de> for Members<T> {
+            type Value = BTreeSet<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("an array of distinct values")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+                let mut out = BTreeSet::new();
+                while let Some(value) = access.next_element::<T>()? {
+                    if !out.insert(value) {
+                        return Err(A::Error::custom("a set states a member twice"));
+                    }
+                }
+                Ok(out)
+            }
+        }
+
+        deserializer.deserialize_seq(Members(PhantomData))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use super::{btree_map, json_object};
 
@@ -221,6 +346,31 @@ mod tests {
             let wire = format!(r#"{{"ordered":{{{entries}}}}}"#);
             let error =
                 serde_json::from_str::<Maps>(&wire).expect_err("the map refuses this entry");
+            assert!(error.to_string().contains(expected), "{error}");
+        }
+    }
+
+    #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct Sorted {
+        #[serde(with = "super::pairs")]
+        pairs: BTreeMap<u32, String>,
+        #[serde(with = "super::set")]
+        set: BTreeSet<u32>,
+    }
+
+    #[test]
+    fn pairs_and_sets_write_sorted_arrays_and_refuse_a_repeated_key_or_member() {
+        let wire = r#"{"pairs":[[1,"a"],[2,"b"]],"set":[1,2]}"#;
+        let sorted: Sorted = serde_json::from_str(wire).expect("distinct entries are admitted");
+        assert_eq!(serde_json::to_string(&sorted).expect("writes"), wire);
+        for (wire, expected) in [
+            (
+                r#"{"pairs":[[1,"a"],[1,"b"]],"set":[]}"#,
+                "key 1 is stated twice",
+            ),
+            (r#"{"pairs":[],"set":[1,1]}"#, "a set states a member twice"),
+        ] {
+            let error = serde_json::from_str::<Sorted>(wire).expect_err("a repeat is refused");
             assert!(error.to_string().contains(expected), "{error}");
         }
     }

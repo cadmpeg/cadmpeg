@@ -276,7 +276,9 @@ fn decoded_without_a_model() -> cadmpeg_ir::codec::Decoded {
     cadmpeg_ir::codec::Decoded {
         ir: cadmpeg_ir::document::CadIr::empty(),
         body,
-        source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+        source_fidelity: cadmpeg_ir::SourceFidelity::new(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b""),
+        ),
     }
 }
 
@@ -310,7 +312,8 @@ fn an_assembly_with_its_own_parasolid_stream_keeps_the_part_model_losses() {
 }
 
 fn body(id: &str) -> cadmpeg_ir::topology::Body {
-    serde_json::from_value(serde_json::json!({ "id": id, "regions": [] })).expect("a body")
+    serde_json::from_value(serde_json::json!({ "id": id, "kind": "solid", "regions": [] }))
+        .expect("a body")
 }
 
 #[test]

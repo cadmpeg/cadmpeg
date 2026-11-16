@@ -234,7 +234,7 @@ fn offset_side() -> (CadIr, SurfaceId, SurfaceId) {
     wire["geometry"]["surfaces"]
         .as_array_mut()
         .expect("surfaces")
-        .push(serde_json::json!({"id": offset, "geometry": {"kind": "unknown"}}));
+        .push(serde_json::json!({"id": offset, "geometry": {"kind": "solved", "value": {"kind": "unknown"}}}));
     wire["geometry"]["procedural_surfaces"] = serde_json::json!([{
         "id": "test:construction:offset_surface#offset",
         "surface": offset,

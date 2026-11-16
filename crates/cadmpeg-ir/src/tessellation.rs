@@ -806,7 +806,7 @@ fn admit_normal(normal: Vector3) -> Result<FiniteVector3, TessellationError> {
 /// leave empty and none to refuse.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "domain", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum ChannelAddressing {
     /// Vertex-order addressing with no explicit index table.
@@ -848,7 +848,6 @@ struct TessellationWire {
     )]
     body: Option<BodyId>,
     /// Faces represented by this mesh, empty when face-level ownership is unknown.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     faces: Vec<FaceId>,
     /// Source chordal deflection tolerance, when carried.
     #[serde(
@@ -867,19 +866,14 @@ struct TessellationWire {
     /// The mesh's vertices, triangles and shading normals.
     mesh: TessellationMesh,
     /// Undirected geometric feature edges.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     feature_edges: Vec<[u32; 2]>,
     /// Source face or region groups as an ordered partition of the triangle ordinals.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     triangle_groups: Vec<TessellationTriangleGroup>,
     /// Source texture resources assigned to disjoint sets of triangle ordinals.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     texture_assignments: Vec<TessellationTextureAssignment>,
     /// Named texture-coordinate sets.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     texture_coordinates: Vec<TextureCoordinates>,
     /// Additional per-vertex or per-facet data channels.
-    #[serde(default)]
     channels: Vec<TessellationChannel>,
 }
 

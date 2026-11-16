@@ -56,7 +56,7 @@ pub enum Container {
         /// What the unordered container is.
         kind: UnorderedKind,
         /// The members.
-        #[serde(with = "super::wire::set")]
+        #[serde(with = "cadmpeg_core::distinct_keys::set")]
         #[cfg_attr(feature = "schema", schemars(with = "Vec<Member>"))]
         members: BTreeSet<Member>,
     },

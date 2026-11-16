@@ -31,7 +31,5 @@ pub mod selection;
 pub mod spreadsheet;
 pub mod units;
 
-mod wire;
-
 #[cfg(test)]
 mod tests;

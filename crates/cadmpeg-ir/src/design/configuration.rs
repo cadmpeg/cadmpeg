@@ -55,7 +55,7 @@ pub struct DesignConfiguration {
     pub overrides: Overrides,
     /// The arrangements the configuration puts in force, each in place of the
     /// arrangement of its kind that its parent or the base names.
-    #[serde(with = "super::wire::set")]
+    #[serde(with = "cadmpeg_core::distinct_keys::set")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<ArrangementId>"))]
     pub active_arrangements: BTreeSet<ArrangementId>,
     /// The materials that override the base material in this configuration.

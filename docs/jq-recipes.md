@@ -6,7 +6,7 @@ Reach for `cadmpeg query` first: `summary` names the artifact kind,
 with empty cells for absent values). Walk identity references with
 `query graph FILE ARENA [ID...]` (`--hops`, `--follow`, `--reverse`).
 Join two arenas with `query join FILE LEFT RIGHT --left-key PATH
---right-key PATH`. Discover those paths with `query schema FILE ARENA`
+--right-key PATH`. Discover those paths with `query schema file FILE ARENA`
 (`relation=ref|refs` marks graph `--follow` fields and join keys). jq is
 for field predicates and aggregation after those nouns. These
 recipes exist because every mistake below has been made repeatedly; copy
@@ -14,7 +14,7 @@ the shapes instead of re-deriving them.
 
 ## Prefer graph and join
 
-Feature `native_ref` to a native record, after `query schema FILE ARENA`
+Feature `native_ref` to a native record, after `query schema file FILE ARENA`
 shows `native_ref` as `ref`:
 
 ```sh
@@ -81,7 +81,7 @@ jq -f face-surfaces.jq doc.json
 . as $doc
 | INDEX($doc.geometry.surfaces[]?; .id) as $surface
 | $doc.geometry.faces[]?
-| [.id, .surface, ($surface[.surface].geometry.type // "absent")]
+| [.id, .surface, ($surface[.surface].geometry | .value.kind // .kind // "absent")]
 | @tsv
 ```
 

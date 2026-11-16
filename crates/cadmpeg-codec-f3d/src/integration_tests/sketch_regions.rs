@@ -29,7 +29,7 @@ fn kept_source_ordinals(result: &EditableDecodeResult) -> Vec<u32> {
         .surfaces
         .iter()
         .map(|surface| {
-            let height = serde_json::to_value(surface).unwrap()["geometry"]["origin"]["z"]
+            let height = serde_json::to_value(surface).unwrap()["geometry"]["value"]["origin"]["z"]
                 .as_f64()
                 .unwrap()
                 / 10.0;

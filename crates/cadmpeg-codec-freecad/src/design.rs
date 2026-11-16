@@ -9322,7 +9322,7 @@ pub(crate) fn census(
             ))
         })?;
         let semantic_kind = value
-            .get("definition")
+            .get("kind")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(

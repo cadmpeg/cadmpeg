@@ -10,6 +10,7 @@ mod root_fixtures;
 mod round_trip;
 #[cfg(feature = "schema")]
 mod schema;
+mod unit_variants;
 mod wire_forms;
 
 use std::fmt::Debug;

@@ -257,5 +257,5 @@ fn a_document_with_a_nest_round_trips_through_json() {
     let back: CadIr = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back.model.history_bodies, ir.model.history_bodies);
     let empty = serde_json::to_value(CadIr::empty()).expect("serialize");
-    assert!(empty["model"].get("history_bodies").is_none());
+    assert_eq!(empty["model"]["history_bodies"], serde_json::json!([]));
 }

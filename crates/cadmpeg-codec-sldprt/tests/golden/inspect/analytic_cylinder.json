@@ -10,19 +10,20 @@
         "sha256": "75ef48592e32edac52ccd78844671d9961e3a5db3082873aa027b360dfc7b107",
         "type_id": "0x00000020"
       },
-      "compression": "deflate",
       "expanded": 647,
+      "kind": "deflate",
       "name": "Contents/Config-0-Partition",
       "role": "block",
       "stored": 195
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [
         {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "carrier": "block@8:Contents/Config-0-Partition+0",
             "schema": "SCH_SW_33103_11000"
@@ -31,19 +32,25 @@
         }
       ],
       "primary": {
-        "admission": "residual",
+        "admission": {
+          "kind": "residual"
+        },
+        "declared": {},
         "dialect": "sldprt:unknown"
       }
-    }
+    },
+    "kind": "classified"
   },
   "losses": [
     {
       "code": {
-        "code": "source.dialect-unverified",
-        "kind": "source_dialect_unverified",
-        "namespace": "sldprt",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "kind": "namespaced",
+        "value": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "sldprt",
+          "strict_floor": "warning"
+        }
       },
       "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
       "severity": "warning"

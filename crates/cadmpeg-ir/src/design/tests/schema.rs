@@ -41,7 +41,6 @@ use crate::design::units::{
     AngularSpeed, Duration, Feed, PositiveArea, Quantity, Unit, UnitFactor, UnitSymbol, UnitSystem,
     ValueKind,
 };
-use crate::document::Topology;
 use crate::scalar::{Angle, Length};
 
 fn generates<T: JsonSchema>() {
@@ -88,7 +87,6 @@ fn every_design_type_has_a_schema() {
     generates::<Generator>();
     generates::<GenerationRole>();
     generates::<HoleFaceRole>();
-    generates::<Topology>();
     generates::<Ordered>();
     generates::<Unordered>();
     generates::<Members<Picked, Ordered>>();

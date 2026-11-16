@@ -27,7 +27,9 @@ fn decoded(ir: CadIr) -> Decoded {
     Decoded {
         ir,
         body: DecodeBody::new(crate::report::decode::DecodeTransfer::full(true)),
-        source_fidelity: SourceFidelity::default(),
+        source_fidelity: SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(
+            b"test source",
+        )),
     }
 }
 
@@ -214,9 +216,10 @@ impl CodecBackend for ForeignIdentityCodec {
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         Ok(serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": "foreign"},
+            "identity": {"kind": "unclassified", "format": "foreign"},
             "container_kind": "flat",
             "entries": [],
+            "losses": [],
             "notes": []
         }))
         .expect("foreign inspection fixture"))
@@ -393,7 +396,7 @@ fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": "test"},
+            "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
         .unwrap(),
@@ -427,7 +430,9 @@ fn a_decode_result_keeps_the_body_it_was_given() {
         Decoded {
             ir: CadIr::empty(),
             body,
-            source_fidelity: SourceFidelity::default(),
+            source_fidelity: SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(
+                b"test source",
+            )),
         },
         FormatId::new("test"),
         DecodeDepth::Container,

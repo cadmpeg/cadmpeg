@@ -256,7 +256,7 @@ fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
 #[test]
 fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
     let ir = CadIr::empty();
-    let fidelity = SourceFidelity::default();
+    let fidelity = SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
     let plan = CatalogEncoder
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),

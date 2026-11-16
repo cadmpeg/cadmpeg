@@ -152,6 +152,7 @@ pub fn document_local_sha256_without_carried(
     let document = (|| {
         Ok::<_, CodecError>(NormalizedDocument {
             ir_version: ir.ir_version(),
+            fragment: ir.fragment,
             source: source.map(SourceMeta::normalized_digest_copy),
             units: CanonicalUnitsWire::default(),
             tolerances: &ir.tolerances,
@@ -196,6 +197,7 @@ fn reduced_unknowns(
 #[derive(Serialize)]
 struct NormalizedDocument<'a> {
     ir_version: &'a str,
+    fragment: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<SourceMeta>,
     units: CanonicalUnitsWire,
@@ -606,7 +608,7 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
-            "58d508ed8801acae6cd043cb5e88d32804b697d4486ebb38b1342132324aaebb"
+            "605c1866a39cdda1e5b5a7580c89e21104c3bc766eeb3d9c64ab1574774b7fd8"
         );
         assert_eq!(
             document_local_sha256(
@@ -617,7 +619,7 @@ mod tests {
                 "pin:test:source-image#0"
             )
             .unwrap(),
-            "d010c18244b3d58c7d625a42d8d737c5be94eb87b911a06290cecb1675720050"
+            "bb61a43c3983f15f7874744df8f3c7114da2ffa213de9900072866ae37c37c41"
         );
     }
 
@@ -678,11 +680,12 @@ mod tests {
     /// ```text
     ///   "source": {
     ///     "identity": {
-    ///       "classification": "classified",
+    ///       "kind": "classified",
     ///       "dialects": {
     ///         "primary": {
     ///           "dialect": "pin:test",
-    ///           "admission": "admitted"
+    ///           "declared": {},
+    ///           "admission": {"kind": "admitted"}
     ///         },
     ///         "extra": []
     ///       }
@@ -703,7 +706,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "6b2f17d3565e731a03249a3055a33712085b1c16b8e945ce494d57ca9730f27b"
+            "c662a5a11fcacc9b780464205447c39b5cce2be6fdb5986cf31e7e2929a05b8d"
         );
         assert_eq!(
             document_local_sha256(
@@ -827,7 +830,8 @@ mod tests {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("test context");
-        let mut source_fidelity = crate::SourceFidelity::default();
+        let mut source_fidelity =
+            crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(&[]));
         source_fidelity
             .attach_native_unknown_records(
                 &mut ir,
