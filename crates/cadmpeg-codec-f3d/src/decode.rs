@@ -5092,13 +5092,18 @@ pub(crate) fn commit_given_up_parts(
 }
 
 /// The definition the decoded file holds at its top: the prototype of its
-/// root occurrence, or with none, the one definition no occurrence places.
-/// Definitions of merged archive members belong to their own files.
+/// root occurrences the source places, or with none, of the decoder's
+/// stored-frame root occurrences, or with none, the one definition no
+/// occurrence places. A stored-frame occurrence places a definition the
+/// source holds in the file's design without an occurrence, so beside a
+/// source root it is held by that root's definition. Definitions of merged
+/// archive members belong to their own files.
 fn file_definition(
     model: &cadmpeg_ir::document::Model,
 ) -> Option<cadmpeg_ir::ids::ProductDefinitionId> {
     use cadmpeg_ir::ids::ProductDefinitionId;
     use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+    use std::collections::BTreeSet;
     fn local(occurrence: &cadmpeg_ir::products::Occurrence) -> Option<&ProductDefinitionId> {
         match &occurrence.prototype {
             PrototypeReference::Local { definition } => Some(definition),
@@ -5106,13 +5111,22 @@ fn file_definition(
         }
     }
     let own = |definition: &&ProductDefinitionId| !definition.as_str().starts_with("f3d:xref/");
-    let mut top = model
-        .occurrences
-        .iter()
-        .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
-        .filter_map(local)
-        .filter(own)
-        .collect::<std::collections::BTreeSet<_>>();
+    let root_prototypes = |stored_frame: bool| {
+        model
+            .occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .filter(move |occurrence| {
+                crate::design::components::is_stored_frame_occurrence(occurrence) == stored_frame
+            })
+            .filter_map(local)
+            .filter(own)
+            .collect::<BTreeSet<_>>()
+    };
+    let mut top = root_prototypes(false);
+    if top.is_empty() {
+        top = root_prototypes(true);
+    }
     if top.is_empty() {
         let placed = model
             .occurrences

@@ -193,6 +193,71 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
 }
 
 #[test]
+fn an_unreadable_asset_beside_a_stored_frame_root_links_to_the_source_root_definition() {
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+    let name = "FusionAssetName[Active]/Previews/thumbnail.png";
+    let (bulk, meta) = crate::test_support::component_design::nested_local_component_design(&[]);
+    let original = crate::test_support::body_map_test::f3d_with_breps_design_and_assets(
+        &[("BREP.module.smbh", &synthetic_geometry_smbh())],
+        &bulk,
+        &meta,
+        &[(name, b"preview")],
+    );
+    let expected = super::decode(original.clone());
+    let roots = |model: &cadmpeg_ir::document::Model, stored_frame: bool| {
+        model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence.parent == OccurrenceParent::Root {}
+                    && crate::design::components::is_stored_frame_occurrence(occurrence)
+                        == stored_frame
+            })
+            .map(|occurrence| match &occurrence.prototype {
+                PrototypeReference::Local { definition } => definition.as_str().to_owned(),
+                other => panic!("a local root prototype: {other:?}"),
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+    };
+    let model = &expected.ir().model;
+    let Ok([source_root]) = <[String; 1]>::try_from(roots(model, false)) else {
+        panic!("one source root prototype: {:?}", model.occurrences);
+    };
+    let Ok([stored_root]) = <[String; 1]>::try_from(roots(model, true)) else {
+        panic!("one stored-frame root prototype: {:?}", model.occurrences);
+    };
+    assert_ne!(source_root, stored_root, "two root definitions");
+
+    let mut changed = original;
+    damage_entry(&mut changed, name, Defect::Crc);
+    let decoded = super::decode(changed);
+    assert_eq!(decoded.ir().model, expected.ir().model);
+    let losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .collect::<Vec<_>>();
+    let [loss] = losses.as_slice() else {
+        panic!("one record.unreadable loss: {losses:?}");
+    };
+    let stubs = decoded.ir().native_unknowns("f3d").unwrap();
+    let stub = stubs
+        .iter()
+        .find(|stub| loss.message.contains(&format!("record={}", stub.id)))
+        .expect("the loss names the stub");
+    let links = stub
+        .links
+        .iter()
+        .map(cadmpeg_ir::ids::Identity::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(links, [source_root.as_str()]);
+    super::assert_valid(&decoded);
+}
+
+#[test]
 fn required_brep_payload_defects_remain_fatal() {
     let name = "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
     let original = crate::test_support::zip_test::f3d_with_smbh(&synthetic_geometry_smbh());

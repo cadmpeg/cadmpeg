@@ -602,6 +602,33 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
     ];
     assert_eq!(file_definition(&model).as_deref(), Some(root));
 
+    let stored = "f3d:model:component#stored";
+    let stored_frame = format!("{stored}/stored-frame-occurrence");
+    model.product_definitions.push(definition(stored));
+    model
+        .occurrences
+        .push(occurrence(&stored_frame, stored, None));
+    assert_eq!(
+        file_definition(&model).as_deref(),
+        Some(root),
+        "a stored-frame root beside a source root"
+    );
+    model.occurrences.retain(|occurrence| {
+        occurrence.id.as_str() == stored_frame || occurrence.id.as_str().ends_with("#xref")
+    });
+    assert_eq!(
+        file_definition(&model).as_deref(),
+        Some(stored),
+        "one stored-frame root alone"
+    );
+    model
+        .occurrences
+        .push(occurrence("f3d:model:occurrence#root-b", child, None));
+    model
+        .occurrences
+        .push(occurrence("f3d:model:occurrence#root-a", root, None));
+    assert_eq!(file_definition(&model), None, "two source roots");
+
     model.occurrences.clear();
     model.product_definitions = vec![definition(root), definition(member)];
     assert_eq!(file_definition(&model).as_deref(), Some(root));
