@@ -92,8 +92,11 @@ fn a_surface_row_reports_the_carrier_and_the_faces_that_use_it() {
     assert_measured(diameter, 2.0 * RADIUS, RADIUS);
     assert_eq!(point(axis_point), [0.0; 3]);
     assert_eq!(point(axis_direction), [0.0, 0.0, 1.0]);
-    assert_eq!(row.faces(), &[ir.model.faces[0].id.as_str().to_owned()]);
-    assert_eq!(row.bodies(), &[ir.model.bodies[0].id.as_str().to_owned()]);
+    assert_eq!(row.faces(), &[ir.geometry.faces[0].id.as_str().to_owned()]);
+    assert_eq!(
+        row.bodies(),
+        &[ir.geometry.bodies[0].id.as_str().to_owned()]
+    );
     assert!(row.unresolved().is_none());
     assert_eq!(*row.status(), RowStatus::Measured);
 }
@@ -101,7 +104,7 @@ fn a_surface_row_reports_the_carrier_and_the_faces_that_use_it() {
 #[test]
 fn a_surface_row_is_placed_by_the_body_that_uses_it() {
     let (mut ir, surface) = cylinder_side();
-    ir.model.bodies[0].transform = Some(
+    ir.geometry.bodies[0].transform = Some(
         Transform::affine([
             [1.0, 0.0, 0.0, 5.0],
             [0.0, 1.0, 0.0, -2.0],
@@ -120,13 +123,13 @@ fn a_surface_row_is_placed_by_the_body_that_uses_it() {
 /// under another placement.
 fn shared_by_two_placements() -> (CadIr, SurfaceId) {
     let (mut ir, surface) = cylinder_side();
-    let mut face = ir.model.faces[0].clone();
+    let mut face = ir.geometry.faces[0].clone();
     let shell = ShellId::mint("test:model:shell#second").expect("identity");
     let region = RegionId::mint("test:model:region#second").expect("identity");
     let body = BodyId::mint("test:model:body#second").expect("identity");
     face.id = cadmpeg_ir::ids::FaceId::mint("test:model:face#second").expect("identity");
     face.shell = shell.clone();
-    ir.model.shells.push(
+    ir.geometry.shells.push(
         Shell::new(
             shell.clone(),
             region.clone(),
@@ -136,13 +139,13 @@ fn shared_by_two_placements() -> (CadIr, SurfaceId) {
         )
         .expect("shell"),
     );
-    ir.model.faces.push(face);
-    ir.model.regions.push(Region {
+    ir.geometry.faces.push(face);
+    ir.geometry.regions.push(Region {
         id: region.clone(),
         body: body.clone(),
         shells: vec![shell],
     });
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::Sheet,
         regions: vec![region],
@@ -183,7 +186,7 @@ fn a_surface_shared_by_bodies_with_different_placements_has_no_placed_parameters
 /// The cylinder side with a plane surface no face uses.
 fn with_unused_plane() -> (CadIr, SurfaceId) {
     let (mut ir, _) = cylinder_side();
-    let mut builder_surface = ir.model.surfaces[0].clone();
+    let mut builder_surface = ir.geometry.surfaces[0].clone();
     builder_surface.id = SurfaceId::mint("test:model:surface#unused").expect("identity");
     builder_surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(
@@ -196,7 +199,7 @@ fn with_unused_plane() -> (CadIr, SurfaceId) {
         ),
     );
     let id = builder_surface.id.clone();
-    ir.model.surfaces.push(builder_surface);
+    ir.geometry.surfaces.push(builder_surface);
     ir.finalize();
     (ir, id)
 }
@@ -204,7 +207,7 @@ fn with_unused_plane() -> (CadIr, SurfaceId) {
 #[test]
 fn a_surface_no_face_uses_is_reported_as_stored() {
     let (mut ir, surface) = with_unused_plane();
-    ir.model.bodies[0].transform = Some(
+    ir.geometry.bodies[0].transform = Some(
         Transform::affine([
             [1.0, 0.0, 0.0, 5.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -228,11 +231,11 @@ fn offset_side() -> (CadIr, SurfaceId, SurfaceId) {
     let (ir, cylinder) = cylinder_side();
     let mut wire = serde_json::to_value(&ir).expect("finite document");
     let offset = "test:model:surface#offset";
-    wire["model"]["surfaces"]
+    wire["geometry"]["surfaces"]
         .as_array_mut()
         .expect("surfaces")
         .push(serde_json::json!({"id": offset, "geometry": {"kind": "solved", "value": {"kind": "unknown"}}}));
-    wire["model"]["procedural_surfaces"] = serde_json::json!([{
+    wire["geometry"]["procedural_surfaces"] = serde_json::json!([{
         "id": "test:construction:offset_surface#offset",
         "surface": offset,
         "definition": {
@@ -242,7 +245,7 @@ fn offset_side() -> (CadIr, SurfaceId, SurfaceId) {
             "self_intersect": false
         }
     }]);
-    wire["model"]["faces"][0]["surface"] = serde_json::json!(offset);
+    wire["geometry"]["faces"][0]["surface"] = serde_json::json!(offset);
     let mut ir: CadIr = serde_json::from_value(wire).expect("admitted document");
     ir.finalize();
     (ir, SurfaceId::mint(offset).expect("identity"), cylinder)
@@ -265,7 +268,7 @@ fn a_procedural_surface_row_states_why_it_has_no_parameters() {
         UnavailableReason::CarrierProceduralUnevaluated
     );
     assert_eq!(*row.status(), RowStatus::Unavailable);
-    assert_eq!(row.faces(), &[ir.model.faces[0].id.as_str().to_owned()]);
+    assert_eq!(row.faces(), &[ir.geometry.faces[0].id.as_str().to_owned()]);
     assert_eq!(*row.placement(), RowPlacement::Model {});
 
     let support = surface_row(&ir, &cylinder);
@@ -290,7 +293,7 @@ fn a_surface_outside_the_body_scope_is_refused() {
         .measure(
             &ctx,
             &Selection {
-                bodies: vec![ir.model.bodies[0].id.clone()],
+                bodies: vec![ir.geometry.bodies[0].id.clone()],
                 surfaces: vec![surface],
                 ..Selection::default()
             },

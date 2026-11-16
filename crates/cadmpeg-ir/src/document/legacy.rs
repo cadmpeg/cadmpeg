@@ -6,7 +6,9 @@ use super::IR_VERSION;
 /// What a wire 10 reader must change to read the current wire.
 const WIRE_10_CHANGES: &str = "wire 11 writes each enum value's variant under `kind` and a non-struct payload \
      under `value`, omits a `None` option and refuses `null`, writes every list, map, and set and every \
-     default value, writes `units` with `length`, `angle`, `mass`, and `time`, and always writes `fragment`";
+     default value, writes `units` with `length`, `angle`, `mass`, and `time`, always writes `fragment`, \
+     holds the topology arenas under `geometry` instead of `model`, records `scope` instead of \
+     `decode_depth`, and writes `design` and `process`";
 
 /// The refusal of a document whose `ir_version` is not [`IR_VERSION`].
 pub(super) fn unsupported_version(version: Option<&str>) -> String {
@@ -203,6 +205,9 @@ mod tests {
             "default value",
             "`units`",
             "`fragment`",
+            "`geometry`",
+            "`scope`",
+            "`design` and `process`",
         ] {
             assert!(error.contains(change), "{error}");
         }

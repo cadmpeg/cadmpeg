@@ -1,7 +1,43 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
+    "geometry": {
+      "bodies": [
+        {
+          "id": "usd:stage:body#/Arm/Base/Geom",
+          "kind": "general",
+          "name": "Geom",
+          "regions": []
+        },
+        {
+          "id": "usd:stage:body#/Arm/Slider/Geom",
+          "kind": "general",
+          "name": "Geom",
+          "regions": []
+        },
+        {
+          "id": "usd:stage:body#/Arm/Upper/Geom",
+          "kind": "general",
+          "name": "Geom",
+          "regions": []
+        }
+      ],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
     "ir_version": "11",
     "model": {
       "appearance_bindings": [],
@@ -275,27 +311,6 @@
       ],
       "assets": [],
       "attributes": [],
-      "bodies": [
-        {
-          "id": "usd:stage:body#/Arm/Base/Geom",
-          "kind": "general",
-          "name": "Geom",
-          "regions": []
-        },
-        {
-          "id": "usd:stage:body#/Arm/Slider/Geom",
-          "kind": "general",
-          "name": "Geom",
-          "regions": []
-        },
-        {
-          "id": "usd:stage:body#/Arm/Upper/Geom",
-          "kind": "general",
-          "name": "Geom",
-          "regions": []
-        }
-      ],
-      "coedges": [],
       "colliders": [
         {
           "enabled": true,
@@ -338,16 +353,12 @@
         }
       ],
       "configurations": [],
-      "curves": [],
       "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [],
       "history_bodies": [],
-      "loops": [],
       "mass_properties": [
         {
           "center_of_mass": {
@@ -688,7 +699,6 @@
         }
       ],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [
         {
           "density": 7849.999703466891,
@@ -703,11 +713,8 @@
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
           "bodies": [],
@@ -779,7 +786,6 @@
           "source_name": "Geom"
         }
       ],
-      "regions": [],
       "rigid_bodies": [
         {
           "enabled": true,
@@ -816,7 +822,6 @@
         }
       ],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -825,8 +830,6 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [
         {
           "body": "usd:stage:body#/Arm/Base/Geom",
@@ -1000,10 +1003,15 @@
           "triangle_groups": []
         }
       ],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Arm",
@@ -1069,6 +1077,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "314aa7f1118297aa5df0d5d00a29b747ac71e28b81134c302012c3e145dfbe28",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

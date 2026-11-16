@@ -274,7 +274,7 @@ fn an_absent_maximum_line_width_decodes_in_salvage_and_strict_modes() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::LineWeightScaleUnavailable),
@@ -307,7 +307,7 @@ fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(result.ir().model.points.len(), 1, "{value}");
+        assert_eq!(result.ir().geometry.points.len(), 1, "{value}");
         assert_eq!(
             report_code_count(
                 result.report(),
@@ -344,7 +344,7 @@ fn a_negative_minimum_resolution_decodes_with_the_semantic_context_loss() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(
         result.ir().tolerances.linear,
         cadmpeg_ir::units::Tolerances::default().linear
@@ -366,7 +366,7 @@ fn a_malformed_generation_date_decodes_in_salvage_and_strict_modes() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),

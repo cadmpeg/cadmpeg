@@ -227,7 +227,10 @@ fn decode_with_exact_read_ledger_matches_plain_decode() {
     let (result, ledgers) = SldprtCodec
         .decode_with_exact_read_ledger(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("ledger decode should succeed");
-    assert_eq!(result.ir().model.faces.len(), plain.ir().model.faces.len());
+    assert_eq!(
+        result.ir().geometry.faces.len(),
+        plain.ir().geometry.faces.len()
+    );
     assert_eq!(result.report().losses.len(), plain.report().losses.len());
     assert!(!ledgers.is_empty());
     for ledger in &ledgers {

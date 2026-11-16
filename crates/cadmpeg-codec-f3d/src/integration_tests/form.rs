@@ -24,7 +24,7 @@ fn form_cage_program_failures_retain_the_active_resource_and_native_parser_loss(
             panic!("Form");
         };
         assert_eq!(construction.membership_is_complete(), valid);
-        assert_eq!(decoded.ir().model.subds.len(), usize::from(valid));
+        assert_eq!(decoded.ir().geometry.subds.len(), usize::from(valid));
         assert_eq!(
             decoded
                 .report()
@@ -161,7 +161,7 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
         assert_eq!(form.referenced_cages().count(), 2);
         for id in form.referenced_cages() {
             assert!(id.as_str().contains(&prefix));
-            assert!(decoded.ir().model.subds.iter().any(|cage| cage.id == *id));
+        assert!(decoded.ir().geometry.subds.iter().any(|cage| cage.id == *id));
             assert!(all_cages.insert(id.as_str().to_owned()));
         }
         let association = form

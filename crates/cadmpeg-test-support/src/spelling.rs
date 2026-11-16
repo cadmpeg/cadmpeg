@@ -236,7 +236,7 @@ fn numbers_agree(left: &serde_json::Number, right: &serde_json::Number) -> bool 
 }
 
 /// The JSON pointer of the first value `read` and `written` differ at.
-fn first_difference(read: &Value, written: &Value, at: String) -> Option<String> {
+pub(crate) fn first_difference(read: &Value, written: &Value, at: String) -> Option<String> {
     match (read, written) {
         (Value::Object(left), Value::Object(right)) => {
             left.keys()
@@ -270,7 +270,7 @@ fn is_empty_collection(value: &Value) -> bool {
 
 /// Writes `value` as JSON text, stating the first key of the object at `path`
 /// twice.
-fn write_repeating(value: &Value, path: &[Step], text: &mut String) {
+pub(crate) fn write_repeating(value: &Value, path: &[Step], text: &mut String) {
     match value {
         Value::Object(fields) => {
             text.push('{');

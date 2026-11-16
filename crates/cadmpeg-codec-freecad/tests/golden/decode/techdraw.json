@@ -1,15 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
@@ -405,8 +398,6 @@
           "sense": "forward"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -697,338 +688,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [
-        {
-          "assets": [],
-          "curves": [],
-          "direction": [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          "id": "fcstd:model:drawing#Front:entity",
-          "kind": "view",
-          "native_ref": "fcstd:native:drawing#Front",
-          "object": "fcstd:native:object#Front",
-          "order": 2,
-          "parameters": {
-            "Caption": "<String value=\"\"/>",
-            "Direction": "<PropertyVector valueX=\"0.0000000000000000\" valueY=\"-1.0000000000000000\" valueZ=\"0.0000000000000000\"/>",
-            "LockPosition": "<Bool value=\"false\"/>",
-            "Rotation": "<Float value=\"0.0000000000000000\"/>",
-            "Scale": "<Float value=\"2.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"2\"/>",
-            "X": "<Float value=\"65.0000000000000000\"/>",
-            "Y": "<Float value=\"180.0000000000000000\"/>"
-          },
-          "position": [
-            65.0,
-            180.0
-          ],
-          "relationships": {
-            "Source": [
-              {
-                "subelements": [],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:native:object#Box"
-                }
-              }
-            ]
-          },
-          "rotation_degrees": 0.0,
-          "runtime_type": "TechDraw::DrawViewPart",
-          "scale": 2.0,
-          "x_direction": [
-            1.0,
-            0.0,
-            0.0
-          ]
-        },
-        {
-          "assets": [
-            "fcstd:native:entry#BoxCorners",
-            "fcstd:native:entry#Length.SavedGeometry.0.brp"
-          ],
-          "curves": [],
-          "id": "fcstd:model:drawing#Length:entity",
-          "kind": "dimension",
-          "native_ref": "fcstd:native:drawing#Length",
-          "object": "fcstd:native:object#Length",
-          "order": 4,
-          "parameters": {
-            "Caption": "<String value=\"\"/>",
-            "FormatSpec": "<String value=\"%.2w\"/>",
-            "LockPosition": "<Bool value=\"false\"/>",
-            "MeasureType": "<Integer value=\"1\"/>",
-            "Rotation": "<Float value=\"0.0000000000000000\"/>",
-            "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
-            "X": "<Float value=\"65.0000000000000000\"/>",
-            "Y": "<Float value=\"160.0000000000000000\"/>"
-          },
-          "relationships": {
-            "References2D": [
-              {
-                "subelements": [
-                  "Edge3"
-                ],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
-                }
-              }
-            ]
-          },
-          "rotation_degrees": 0.0,
-          "runtime_type": "TechDraw::DrawViewDimension",
-          "scale": 1.0
-        },
-        {
-          "assets": [],
-          "curves": [],
-          "id": "fcstd:model:drawing#Note:entity",
-          "kind": "annotation",
-          "native_ref": "fcstd:native:drawing#Note",
-          "object": "fcstd:native:object#Note",
-          "order": 5,
-          "parameters": {
-            "Caption": "<String value=\"\"/>",
-            "LockPosition": "<Bool value=\"false\"/>",
-            "Rotation": "<Float value=\"0.0000000000000000\"/>",
-            "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
-            "X": "<Float value=\"120.0000000000000000\"/>",
-            "Y": "<Float value=\"100.0000000000000000\"/>"
-          },
-          "position": [
-            120.0,
-            100.0
-          ],
-          "relationships": {
-            "Owner": [
-              {
-                "subelements": [],
-                "target": {
-                  "kind": "null"
-                }
-              }
-            ]
-          },
-          "rotation_degrees": 0.0,
-          "runtime_type": "TechDraw::DrawViewAnnotation",
-          "scale": 1.0
-        },
-        {
-          "assets": [],
-          "curves": [],
-          "id": "fcstd:model:drawing#Page:entity",
-          "kind": "page",
-          "native_ref": "fcstd:native:drawing#Page",
-          "object": "fcstd:native:object#Page",
-          "order": 0,
-          "parameters": {
-            "ProjectionType": "<Integer value=\"0\"/>",
-            "Scale": "<Float value=\"1.0000000000000000\"/>"
-          },
-          "relationships": {
-            "Template": [
-              {
-                "subelements": [],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Template:entity"
-                }
-              }
-            ],
-            "Views": [
-              {
-                "subelements": [],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
-                }
-              },
-              {
-                "subelements": [],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Top:entity"
-                }
-              },
-              {
-                "subelements": [],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Length:entity"
-                }
-              },
-              {
-                "subelements": [],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Note:entity"
-                }
-              }
-            ]
-          },
-          "runtime_type": "TechDraw::DrawPage",
-          "scale": 1.0,
-          "template": "fcstd:model:drawing#Template:entity"
-        },
-        {
-          "assets": [
-            "fcstd:native:entry#techdraw-template.svg"
-          ],
-          "curves": [],
-          "id": "fcstd:model:drawing#Template:entity",
-          "kind": "template",
-          "native_ref": "fcstd:native:drawing#Template",
-          "object": "fcstd:native:object#Template",
-          "order": 1,
-          "parameters": {},
-          "relationships": {},
-          "runtime_type": "TechDraw::DrawSVGTemplate",
-          "sheet": {
-            "fields": [
-              {
-                "name": "Title",
-                "value": "Synthetic box"
-              }
-            ],
-            "height_mm": 297.0,
-            "width_mm": 210.0
-          },
-          "template_geometry": {
-            "curves": [
-              {
-                "end": [
-                  200.0,
-                  287.0
-                ],
-                "kind": "line",
-                "start": [
-                  10.0,
-                  287.0
-                ]
-              },
-              {
-                "end": [
-                  200.0,
-                  10.0
-                ],
-                "kind": "line",
-                "start": [
-                  200.0,
-                  287.0
-                ]
-              },
-              {
-                "end": [
-                  10.0,
-                  10.0
-                ],
-                "kind": "line",
-                "start": [
-                  200.0,
-                  10.0
-                ]
-              },
-              {
-                "end": [
-                  10.0,
-                  287.0
-                ],
-                "kind": "line",
-                "start": [
-                  10.0,
-                  10.0
-                ]
-              },
-              {
-                "end": [
-                  200.0,
-                  30.0
-                ],
-                "kind": "line",
-                "start": [
-                  110.0,
-                  30.0
-                ]
-              },
-              {
-                "end": [
-                  110.0,
-                  10.0
-                ],
-                "kind": "line",
-                "start": [
-                  110.0,
-                  30.0
-                ]
-              }
-            ],
-            "texts": [
-              {
-                "height": 4.0,
-                "position": [
-                  115.0,
-                  19.0
-                ],
-                "text": "Synthetic box"
-              }
-            ]
-          }
-        },
-        {
-          "assets": [],
-          "curves": [],
-          "direction": [
-            0.0,
-            0.0,
-            1.0
-          ],
-          "id": "fcstd:model:drawing#Top:entity",
-          "kind": "view",
-          "native_ref": "fcstd:native:drawing#Top",
-          "object": "fcstd:native:object#Top",
-          "order": 3,
-          "parameters": {
-            "Caption": "<String value=\"\"/>",
-            "Direction": "<PropertyVector valueX=\"0.0000000000000000\" valueY=\"0.0000000000000000\" valueZ=\"1.0000000000000000\"/>",
-            "LockPosition": "<Bool value=\"false\"/>",
-            "Rotation": "<Float value=\"0.0000000000000000\"/>",
-            "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"2\"/>",
-            "X": "<Float value=\"65.0000000000000000\"/>",
-            "Y": "<Float value=\"230.0000000000000000\"/>"
-          },
-          "position": [
-            65.0,
-            230.0
-          ],
-          "relationships": {
-            "Source": [
-              {
-                "subelements": [],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:native:object#Box"
-                }
-              }
-            ]
-          },
-          "rotation_degrees": 0.0,
-          "runtime_type": "TechDraw::DrawViewPart",
-          "scale": 1.0,
-          "x_direction": [
-            1.0,
-            0.0,
-            0.0
-          ]
-        }
-      ],
       "edges": [
         {
           "carrier": {
@@ -1267,62 +926,6 @@
           "tolerance": 1e-7
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "primitive",
-              "value": {
-                "op": "new_body",
-                "placement": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "solid": {
-                  "height": 10.0,
-                  "kind": "box",
-                  "length": 30.0,
-                  "width": 20.0
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Box",
-          "name": "Box",
-          "native_ref": "fcstd:native:object#Box",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Box"
-        }
-      ],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -1407,24 +1010,6 @@
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:32%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:32%40location1%3A1"
-        }
-      ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "30.0000000000000000",
-          "id": "fcstd:design:parameter#Box:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#Box:Length",
-          "ordinal": 8,
-          "owner": "fcstd:design:feature#Box",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 30.0
-          }
         }
       ],
       "pcurves": [
@@ -1981,10 +1566,6 @@
           }
         }
       ],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:1%40location1",
@@ -2091,11 +1672,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
@@ -2103,144 +1681,6 @@
           "shells": [
             "fcstd:model:shell#Box:Shape:Box.Shape.brp:33%40location1"
           ]
-        }
-      ],
-      "rigid_bodies": [],
-      "semantic_annotations": [
-        {
-          "assets": [
-            "fcstd:native:entry#BoxCorners",
-            "fcstd:native:entry#Length.SavedGeometry.0.brp"
-          ],
-          "dimension_kind": {
-            "kind": "horizontal_distance"
-          },
-          "format": "%.2w",
-          "id": "fcstd:model:semantic-annotation#Length:content",
-          "kind": "dimension",
-          "native_ref": "fcstd:native:annotation#Length",
-          "object": "fcstd:native:object#Length",
-          "order": 0,
-          "parameters": {
-            "AngleOverride": "<Property name=\"AngleOverride\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "Arbitrary": "<Property name=\"Arbitrary\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "ArbitraryTolerances": "<Property name=\"ArbitraryTolerances\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "BoxCorners": "<Property name=\"BoxCorners\" type=\"App::PropertyVectorList\">\n                    <VectorList file=\"BoxCorners\"/>\n                </Property>",
-            "Caption": "<Property name=\"Caption\" type=\"App::PropertyString\" status=\"134217736\">\n                    <String value=\"\"/>\n                </Property>",
-            "EqualTolerance": "<Property name=\"EqualTolerance\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"true\"/>\n                </Property>",
-            "ExpressionEngine": "<Property name=\"ExpressionEngine\" type=\"App::PropertyExpressionEngine\" status=\"67108864\">\n                    <ExpressionEngine count=\"0\">\n                    </ExpressionEngine>\n                </Property>",
-            "ExtensionAngle": "<Property name=\"ExtensionAngle\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "FormatSpec": "<Property name=\"FormatSpec\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"%.2w\"/>\n                </Property>",
-            "FormatSpecOverTolerance": "<Property name=\"FormatSpecOverTolerance\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"%+.2w\"/>\n                </Property>",
-            "FormatSpecUnderTolerance": "<Property name=\"FormatSpecUnderTolerance\" type=\"App::PropertyString\" status=\"134217732\">\n                    <String value=\"%+.2w\"/>\n                </Property>",
-            "Inverted": "<Property name=\"Inverted\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "Label": "<Property name=\"Label\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"Length\"/>\n                </Property>",
-            "Label2": "<Property name=\"Label2\" type=\"App::PropertyString\" status=\"67108992\">\n                    <String value=\"\"/>\n                </Property>",
-            "LineAngle": "<Property name=\"LineAngle\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "LockPosition": "<Property name=\"LockPosition\" type=\"App::PropertyBool\" status=\"134217736\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "MeasureType": "<Property name=\"MeasureType\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"1\"/>\n                </Property>",
-            "OverTolerance": "<Property name=\"OverTolerance\" type=\"App::PropertyQuantityConstraint\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "References3D": "<Property name=\"References3D\" type=\"App::PropertyLinkSubList\" status=\"4\">\n                    <LinkSubList count=\"0\">\n                    </LinkSubList>\n                </Property>",
-            "Rotation": "<Property name=\"Rotation\" type=\"App::PropertyAngle\" status=\"134217740\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "SavedGeometry": "<Property name=\"SavedGeometry\" type=\"Part::PropertyTopoShapeList\" status=\"8192\">\n                    <ShapeList count=\"1\">\n                        <TopoShape                         file=\"Length.SavedGeometry.0.brp\"/>\n                    </ShapeList>\n                </Property>",
-            "Scale": "<Property name=\"Scale\" type=\"App::PropertyFloatConstraint\" status=\"12\">\n                    <Float value=\"1.0000000000000000\"/>\n                </Property>",
-            "ScaleType": "<Property name=\"ScaleType\" type=\"App::PropertyEnumeration\" status=\"134217740\">\n                    <Integer value=\"0\"/>\n                </Property>",
-            "ShowUnits": "<Property name=\"ShowUnits\" type=\"App::PropertyBool\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "TheoreticalExact": "<Property name=\"TheoreticalExact\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "Type": "<Property name=\"Type\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"1\"/>\n                </Property>",
-            "UnderTolerance": "<Property name=\"UnderTolerance\" type=\"App::PropertyQuantityConstraint\" status=\"134217732\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "UseActualArea": "<Property name=\"UseActualArea\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"true\"/>\n                </Property>",
-            "Visibility": "<Property name=\"Visibility\" type=\"App::PropertyBool\" status=\"648\">\n                    <Bool value=\"true\"/>\n                </Property>",
-            "X": "<Property name=\"X\" type=\"App::PropertyDistance\">\n                    <Float value=\"65.0000000000000000\"/>\n                </Property>",
-            "Y": "<Property name=\"Y\" type=\"App::PropertyDistance\">\n                    <Float value=\"160.0000000000000000\"/>\n                </Property>"
-          },
-          "position": [
-            65.0,
-            160.0,
-            0.0
-          ],
-          "reference_anchors": [
-            [
-              35.0,
-              190.0
-            ],
-            [
-              95.0,
-              190.0
-            ]
-          ],
-          "references": {
-            "References2D": [
-              {
-                "subelements": [
-                  "Edge3"
-                ],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
-                }
-              }
-            ]
-          },
-          "runtime_type": "TechDraw::DrawViewDimension",
-          "text": [
-            "%.2w"
-          ],
-          "text_style": {},
-          "value": 30.0
-        },
-        {
-          "assets": [],
-          "id": "fcstd:model:semantic-annotation#Note:content",
-          "kind": "text",
-          "native_ref": "fcstd:native:annotation#Note",
-          "object": "fcstd:native:object#Note",
-          "order": 1,
-          "parameters": {
-            "Caption": "<Property name=\"Caption\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"\"/>\n                </Property>",
-            "ExpressionEngine": "<Property name=\"ExpressionEngine\" type=\"App::PropertyExpressionEngine\" status=\"67108864\">\n                    <ExpressionEngine count=\"0\">\n                    </ExpressionEngine>\n                </Property>",
-            "Font": "<Property name=\"Font\" type=\"App::PropertyFont\">\n                    <String value=\"osifont\"/>\n                </Property>",
-            "Label": "<Property name=\"Label\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"Note\"/>\n                </Property>",
-            "Label2": "<Property name=\"Label2\" type=\"App::PropertyString\" status=\"67108992\">\n                    <String value=\"\"/>\n                </Property>",
-            "LineSpace": "<Property name=\"LineSpace\" type=\"App::PropertyInteger\">\n                    <Integer value=\"100\"/>\n                </Property>",
-            "LockPosition": "<Property name=\"LockPosition\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "MaxWidth": "<Property name=\"MaxWidth\" type=\"App::PropertyFloat\">\n                    <Float value=\"-1.0000000000000000\"/>\n                </Property>",
-            "Rotation": "<Property name=\"Rotation\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "Scale": "<Property name=\"Scale\" type=\"App::PropertyFloatConstraint\" status=\"12\">\n                    <Float value=\"1.0000000000000000\"/>\n                </Property>",
-            "ScaleType": "<Property name=\"ScaleType\" type=\"App::PropertyEnumeration\" status=\"134217736\">\n                    <Integer value=\"0\"/>\n                </Property>",
-            "Text": "<Property name=\"Text\" type=\"App::PropertyStringList\">\n                    <StringList count=\"2\">\n                        <String value=\"Synthetic box\"/>\n                        <String value=\"30 x 20 x 10 mm\"/>\n                    </StringList>\n                </Property>",
-            "TextColor": "<Property name=\"TextColor\" type=\"App::PropertyColor\">\n                    <PropertyColor value=\"255\"/>\n                </Property>",
-            "TextSize": "<Property name=\"TextSize\" type=\"App::PropertyLength\">\n                    <Float value=\"5.0000000000000000\"/>\n                </Property>",
-            "TextStyle": "<Property name=\"TextStyle\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"0\"/>\n                </Property>",
-            "Visibility": "<Property name=\"Visibility\" type=\"App::PropertyBool\" status=\"648\">\n                    <Bool value=\"true\"/>\n                </Property>",
-            "X": "<Property name=\"X\" type=\"App::PropertyDistance\">\n                    <Float value=\"120.0000000000000000\"/>\n                </Property>",
-            "Y": "<Property name=\"Y\" type=\"App::PropertyDistance\">\n                    <Float value=\"100.0000000000000000\"/>\n                </Property>"
-          },
-          "position": [
-            120.0,
-            100.0,
-            0.0
-          ],
-          "reference_anchors": [],
-          "references": {
-            "Owner": [
-              {
-                "subelements": [],
-                "target": {
-                  "kind": "null"
-                }
-              }
-            ]
-          },
-          "runtime_type": "TechDraw::DrawViewAnnotation",
-          "text": [
-            "Synthetic box",
-            "30 x 20 x 10 mm"
-          ],
-          "text_style": {
-            "font_family": "osifont",
-            "height": 5.0
-          }
         }
       ],
       "shells": [
@@ -2275,14 +1715,6 @@
           "region": "fcstd:model:region#Box:Shape:Box.Shape.brp:34%40location1"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -2460,7 +1892,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
@@ -2502,7 +1933,578 @@
           "point": "fcstd:model:point#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [
+        {
+          "assets": [],
+          "curves": [],
+          "direction": [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          "id": "fcstd:model:drawing#Front:entity",
+          "kind": "view",
+          "native_ref": "fcstd:native:drawing#Front",
+          "object": "fcstd:native:object#Front",
+          "order": 2,
+          "parameters": {
+            "Caption": "<String value=\"\"/>",
+            "Direction": "<PropertyVector valueX=\"0.0000000000000000\" valueY=\"-1.0000000000000000\" valueZ=\"0.0000000000000000\"/>",
+            "LockPosition": "<Bool value=\"false\"/>",
+            "Rotation": "<Float value=\"0.0000000000000000\"/>",
+            "Scale": "<Float value=\"2.0000000000000000\"/>",
+            "ScaleType": "<Integer value=\"2\"/>",
+            "X": "<Float value=\"65.0000000000000000\"/>",
+            "Y": "<Float value=\"180.0000000000000000\"/>"
+          },
+          "position": [
+            65.0,
+            180.0
+          ],
+          "relationships": {
+            "Source": [
+              {
+                "subelements": [],
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:native:object#Box"
+                }
+              }
+            ]
+          },
+          "rotation_degrees": 0.0,
+          "runtime_type": "TechDraw::DrawViewPart",
+          "scale": 2.0,
+          "x_direction": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "assets": [
+            "fcstd:native:entry#BoxCorners",
+            "fcstd:native:entry#Length.SavedGeometry.0.brp"
+          ],
+          "curves": [],
+          "id": "fcstd:model:drawing#Length:entity",
+          "kind": "dimension",
+          "native_ref": "fcstd:native:drawing#Length",
+          "object": "fcstd:native:object#Length",
+          "order": 4,
+          "parameters": {
+            "Caption": "<String value=\"\"/>",
+            "FormatSpec": "<String value=\"%.2w\"/>",
+            "LockPosition": "<Bool value=\"false\"/>",
+            "MeasureType": "<Integer value=\"1\"/>",
+            "Rotation": "<Float value=\"0.0000000000000000\"/>",
+            "Scale": "<Float value=\"1.0000000000000000\"/>",
+            "ScaleType": "<Integer value=\"0\"/>",
+            "X": "<Float value=\"65.0000000000000000\"/>",
+            "Y": "<Float value=\"160.0000000000000000\"/>"
+          },
+          "relationships": {
+            "References2D": [
+              {
+                "subelements": [
+                  "Edge3"
+                ],
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Front:entity"
+                }
+              }
+            ]
+          },
+          "rotation_degrees": 0.0,
+          "runtime_type": "TechDraw::DrawViewDimension",
+          "scale": 1.0
+        },
+        {
+          "assets": [],
+          "curves": [],
+          "id": "fcstd:model:drawing#Note:entity",
+          "kind": "annotation",
+          "native_ref": "fcstd:native:drawing#Note",
+          "object": "fcstd:native:object#Note",
+          "order": 5,
+          "parameters": {
+            "Caption": "<String value=\"\"/>",
+            "LockPosition": "<Bool value=\"false\"/>",
+            "Rotation": "<Float value=\"0.0000000000000000\"/>",
+            "Scale": "<Float value=\"1.0000000000000000\"/>",
+            "ScaleType": "<Integer value=\"0\"/>",
+            "X": "<Float value=\"120.0000000000000000\"/>",
+            "Y": "<Float value=\"100.0000000000000000\"/>"
+          },
+          "position": [
+            120.0,
+            100.0
+          ],
+          "relationships": {
+            "Owner": [
+              {
+                "subelements": [],
+                "target": {
+                  "kind": "null"
+                }
+              }
+            ]
+          },
+          "rotation_degrees": 0.0,
+          "runtime_type": "TechDraw::DrawViewAnnotation",
+          "scale": 1.0
+        },
+        {
+          "assets": [],
+          "curves": [],
+          "id": "fcstd:model:drawing#Page:entity",
+          "kind": "page",
+          "native_ref": "fcstd:native:drawing#Page",
+          "object": "fcstd:native:object#Page",
+          "order": 0,
+          "parameters": {
+            "ProjectionType": "<Integer value=\"0\"/>",
+            "Scale": "<Float value=\"1.0000000000000000\"/>"
+          },
+          "relationships": {
+            "Template": [
+              {
+                "subelements": [],
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Template:entity"
+                }
+              }
+            ],
+            "Views": [
+              {
+                "subelements": [],
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Front:entity"
+                }
+              },
+              {
+                "subelements": [],
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Top:entity"
+                }
+              },
+              {
+                "subelements": [],
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Length:entity"
+                }
+              },
+              {
+                "subelements": [],
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Note:entity"
+                }
+              }
+            ]
+          },
+          "runtime_type": "TechDraw::DrawPage",
+          "scale": 1.0,
+          "template": "fcstd:model:drawing#Template:entity"
+        },
+        {
+          "assets": [
+            "fcstd:native:entry#techdraw-template.svg"
+          ],
+          "curves": [],
+          "id": "fcstd:model:drawing#Template:entity",
+          "kind": "template",
+          "native_ref": "fcstd:native:drawing#Template",
+          "object": "fcstd:native:object#Template",
+          "order": 1,
+          "parameters": {},
+          "relationships": {},
+          "runtime_type": "TechDraw::DrawSVGTemplate",
+          "sheet": {
+            "fields": [
+              {
+                "name": "Title",
+                "value": "Synthetic box"
+              }
+            ],
+            "height_mm": 297.0,
+            "width_mm": 210.0
+          },
+          "template_geometry": {
+            "curves": [
+              {
+                "end": [
+                  200.0,
+                  287.0
+                ],
+                "kind": "line",
+                "start": [
+                  10.0,
+                  287.0
+                ]
+              },
+              {
+                "end": [
+                  200.0,
+                  10.0
+                ],
+                "kind": "line",
+                "start": [
+                  200.0,
+                  287.0
+                ]
+              },
+              {
+                "end": [
+                  10.0,
+                  10.0
+                ],
+                "kind": "line",
+                "start": [
+                  200.0,
+                  10.0
+                ]
+              },
+              {
+                "end": [
+                  10.0,
+                  287.0
+                ],
+                "kind": "line",
+                "start": [
+                  10.0,
+                  10.0
+                ]
+              },
+              {
+                "end": [
+                  200.0,
+                  30.0
+                ],
+                "kind": "line",
+                "start": [
+                  110.0,
+                  30.0
+                ]
+              },
+              {
+                "end": [
+                  110.0,
+                  10.0
+                ],
+                "kind": "line",
+                "start": [
+                  110.0,
+                  30.0
+                ]
+              }
+            ],
+            "texts": [
+              {
+                "height": 4.0,
+                "position": [
+                  115.0,
+                  19.0
+                ],
+                "text": "Synthetic box"
+              }
+            ]
+          }
+        },
+        {
+          "assets": [],
+          "curves": [],
+          "direction": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "id": "fcstd:model:drawing#Top:entity",
+          "kind": "view",
+          "native_ref": "fcstd:native:drawing#Top",
+          "object": "fcstd:native:object#Top",
+          "order": 3,
+          "parameters": {
+            "Caption": "<String value=\"\"/>",
+            "Direction": "<PropertyVector valueX=\"0.0000000000000000\" valueY=\"0.0000000000000000\" valueZ=\"1.0000000000000000\"/>",
+            "LockPosition": "<Bool value=\"false\"/>",
+            "Rotation": "<Float value=\"0.0000000000000000\"/>",
+            "Scale": "<Float value=\"1.0000000000000000\"/>",
+            "ScaleType": "<Integer value=\"2\"/>",
+            "X": "<Float value=\"65.0000000000000000\"/>",
+            "Y": "<Float value=\"230.0000000000000000\"/>"
+          },
+          "position": [
+            65.0,
+            230.0
+          ],
+          "relationships": {
+            "Source": [
+              {
+                "subelements": [],
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:native:object#Box"
+                }
+              }
+            ]
+          },
+          "rotation_degrees": 0.0,
+          "runtime_type": "TechDraw::DrawViewPart",
+          "scale": 1.0,
+          "x_direction": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "primitive",
+              "value": {
+                "op": "new_body",
+                "placement": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ]
+                ],
+                "solid": {
+                  "height": 10.0,
+                  "kind": "box",
+                  "length": 30.0,
+                  "width": 20.0
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Box",
+          "name": "Box",
+          "native_ref": "fcstd:native:object#Box",
+          "ordinal": 0,
+          "outputs": [
+            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "0",
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Box"
+        }
+      ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [
+        {
+          "dependencies": [],
+          "expression": "30.0000000000000000",
+          "id": "fcstd:design:parameter#Box:Length",
+          "name": "Length",
+          "native_ref": "fcstd:native:property#Box:Length",
+          "ordinal": 8,
+          "owner": "fcstd:design:feature#Box",
+          "properties": {},
+          "value": {
+            "kind": "length",
+            "value": 30.0
+          }
+        }
+      ],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [
+        {
+          "assets": [
+            "fcstd:native:entry#BoxCorners",
+            "fcstd:native:entry#Length.SavedGeometry.0.brp"
+          ],
+          "dimension_kind": {
+            "kind": "horizontal_distance"
+          },
+          "format": "%.2w",
+          "id": "fcstd:model:semantic-annotation#Length:content",
+          "kind": "dimension",
+          "native_ref": "fcstd:native:annotation#Length",
+          "object": "fcstd:native:object#Length",
+          "order": 0,
+          "parameters": {
+            "AngleOverride": "<Property name=\"AngleOverride\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
+            "Arbitrary": "<Property name=\"Arbitrary\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
+            "ArbitraryTolerances": "<Property name=\"ArbitraryTolerances\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
+            "BoxCorners": "<Property name=\"BoxCorners\" type=\"App::PropertyVectorList\">\n                    <VectorList file=\"BoxCorners\"/>\n                </Property>",
+            "Caption": "<Property name=\"Caption\" type=\"App::PropertyString\" status=\"134217736\">\n                    <String value=\"\"/>\n                </Property>",
+            "EqualTolerance": "<Property name=\"EqualTolerance\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"true\"/>\n                </Property>",
+            "ExpressionEngine": "<Property name=\"ExpressionEngine\" type=\"App::PropertyExpressionEngine\" status=\"67108864\">\n                    <ExpressionEngine count=\"0\">\n                    </ExpressionEngine>\n                </Property>",
+            "ExtensionAngle": "<Property name=\"ExtensionAngle\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
+            "FormatSpec": "<Property name=\"FormatSpec\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"%.2w\"/>\n                </Property>",
+            "FormatSpecOverTolerance": "<Property name=\"FormatSpecOverTolerance\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"%+.2w\"/>\n                </Property>",
+            "FormatSpecUnderTolerance": "<Property name=\"FormatSpecUnderTolerance\" type=\"App::PropertyString\" status=\"134217732\">\n                    <String value=\"%+.2w\"/>\n                </Property>",
+            "Inverted": "<Property name=\"Inverted\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
+            "Label": "<Property name=\"Label\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"Length\"/>\n                </Property>",
+            "Label2": "<Property name=\"Label2\" type=\"App::PropertyString\" status=\"67108992\">\n                    <String value=\"\"/>\n                </Property>",
+            "LineAngle": "<Property name=\"LineAngle\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
+            "LockPosition": "<Property name=\"LockPosition\" type=\"App::PropertyBool\" status=\"134217736\">\n                    <Bool value=\"false\"/>\n                </Property>",
+            "MeasureType": "<Property name=\"MeasureType\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"1\"/>\n                </Property>",
+            "OverTolerance": "<Property name=\"OverTolerance\" type=\"App::PropertyQuantityConstraint\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
+            "References3D": "<Property name=\"References3D\" type=\"App::PropertyLinkSubList\" status=\"4\">\n                    <LinkSubList count=\"0\">\n                    </LinkSubList>\n                </Property>",
+            "Rotation": "<Property name=\"Rotation\" type=\"App::PropertyAngle\" status=\"134217740\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
+            "SavedGeometry": "<Property name=\"SavedGeometry\" type=\"Part::PropertyTopoShapeList\" status=\"8192\">\n                    <ShapeList count=\"1\">\n                        <TopoShape                         file=\"Length.SavedGeometry.0.brp\"/>\n                    </ShapeList>\n                </Property>",
+            "Scale": "<Property name=\"Scale\" type=\"App::PropertyFloatConstraint\" status=\"12\">\n                    <Float value=\"1.0000000000000000\"/>\n                </Property>",
+            "ScaleType": "<Property name=\"ScaleType\" type=\"App::PropertyEnumeration\" status=\"134217740\">\n                    <Integer value=\"0\"/>\n                </Property>",
+            "ShowUnits": "<Property name=\"ShowUnits\" type=\"App::PropertyBool\">\n                    <Bool value=\"false\"/>\n                </Property>",
+            "TheoreticalExact": "<Property name=\"TheoreticalExact\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
+            "Type": "<Property name=\"Type\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"1\"/>\n                </Property>",
+            "UnderTolerance": "<Property name=\"UnderTolerance\" type=\"App::PropertyQuantityConstraint\" status=\"134217732\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
+            "UseActualArea": "<Property name=\"UseActualArea\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"true\"/>\n                </Property>",
+            "Visibility": "<Property name=\"Visibility\" type=\"App::PropertyBool\" status=\"648\">\n                    <Bool value=\"true\"/>\n                </Property>",
+            "X": "<Property name=\"X\" type=\"App::PropertyDistance\">\n                    <Float value=\"65.0000000000000000\"/>\n                </Property>",
+            "Y": "<Property name=\"Y\" type=\"App::PropertyDistance\">\n                    <Float value=\"160.0000000000000000\"/>\n                </Property>"
+          },
+          "position": [
+            65.0,
+            160.0,
+            0.0
+          ],
+          "reference_anchors": [
+            [
+              35.0,
+              190.0
+            ],
+            [
+              95.0,
+              190.0
+            ]
+          ],
+          "references": {
+            "References2D": [
+              {
+                "subelements": [
+                  "Edge3"
+                ],
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#Front:entity"
+                }
+              }
+            ]
+          },
+          "runtime_type": "TechDraw::DrawViewDimension",
+          "text": [
+            "%.2w"
+          ],
+          "text_style": {},
+          "value": 30.0
+        },
+        {
+          "assets": [],
+          "id": "fcstd:model:semantic-annotation#Note:content",
+          "kind": "text",
+          "native_ref": "fcstd:native:annotation#Note",
+          "object": "fcstd:native:object#Note",
+          "order": 1,
+          "parameters": {
+            "Caption": "<Property name=\"Caption\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"\"/>\n                </Property>",
+            "ExpressionEngine": "<Property name=\"ExpressionEngine\" type=\"App::PropertyExpressionEngine\" status=\"67108864\">\n                    <ExpressionEngine count=\"0\">\n                    </ExpressionEngine>\n                </Property>",
+            "Font": "<Property name=\"Font\" type=\"App::PropertyFont\">\n                    <String value=\"osifont\"/>\n                </Property>",
+            "Label": "<Property name=\"Label\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"Note\"/>\n                </Property>",
+            "Label2": "<Property name=\"Label2\" type=\"App::PropertyString\" status=\"67108992\">\n                    <String value=\"\"/>\n                </Property>",
+            "LineSpace": "<Property name=\"LineSpace\" type=\"App::PropertyInteger\">\n                    <Integer value=\"100\"/>\n                </Property>",
+            "LockPosition": "<Property name=\"LockPosition\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
+            "MaxWidth": "<Property name=\"MaxWidth\" type=\"App::PropertyFloat\">\n                    <Float value=\"-1.0000000000000000\"/>\n                </Property>",
+            "Rotation": "<Property name=\"Rotation\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
+            "Scale": "<Property name=\"Scale\" type=\"App::PropertyFloatConstraint\" status=\"12\">\n                    <Float value=\"1.0000000000000000\"/>\n                </Property>",
+            "ScaleType": "<Property name=\"ScaleType\" type=\"App::PropertyEnumeration\" status=\"134217736\">\n                    <Integer value=\"0\"/>\n                </Property>",
+            "Text": "<Property name=\"Text\" type=\"App::PropertyStringList\">\n                    <StringList count=\"2\">\n                        <String value=\"Synthetic box\"/>\n                        <String value=\"30 x 20 x 10 mm\"/>\n                    </StringList>\n                </Property>",
+            "TextColor": "<Property name=\"TextColor\" type=\"App::PropertyColor\">\n                    <PropertyColor value=\"255\"/>\n                </Property>",
+            "TextSize": "<Property name=\"TextSize\" type=\"App::PropertyLength\">\n                    <Float value=\"5.0000000000000000\"/>\n                </Property>",
+            "TextStyle": "<Property name=\"TextStyle\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"0\"/>\n                </Property>",
+            "Visibility": "<Property name=\"Visibility\" type=\"App::PropertyBool\" status=\"648\">\n                    <Bool value=\"true\"/>\n                </Property>",
+            "X": "<Property name=\"X\" type=\"App::PropertyDistance\">\n                    <Float value=\"120.0000000000000000\"/>\n                </Property>",
+            "Y": "<Property name=\"Y\" type=\"App::PropertyDistance\">\n                    <Float value=\"100.0000000000000000\"/>\n                </Property>"
+          },
+          "position": [
+            120.0,
+            100.0,
+            0.0
+          ],
+          "reference_anchors": [],
+          "references": {
+            "Owner": [
+              {
+                "subelements": [],
+                "target": {
+                  "kind": "null"
+                }
+              }
+            ]
+          },
+          "runtime_type": "TechDraw::DrawViewAnnotation",
+          "text": [
+            "Synthetic box",
+            "30 x 20 x 10 mm"
+          ],
+          "text_style": {
+            "font_family": "osifont",
+            "height": 5.0
+          }
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -2649,16 +2651,18 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "application_domains": "Part,TechDraw",
-        "archive_entry_count": "5",
         "document_kind": "drawing",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "7",
-        "physical_archive_bytes": "4932",
-        "physical_ledger_spans": "36",
         "program_version": "1.1R45039 (Git)"
       },
       "identity": {
@@ -2793,6 +2797,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "50450fbe592989557b01a854f4c4b5916c46fa4654f85d78cae3817fda95879b",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

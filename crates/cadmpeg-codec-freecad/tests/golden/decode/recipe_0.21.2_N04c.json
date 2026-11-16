@@ -1,15 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "fcstd:model:body#Body:Shape:PartShape.brp:13%40location1",
@@ -285,8 +278,6 @@
           "sense": "reversed"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -1102,8 +1093,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -1355,138 +1344,6 @@
           "tolerance": 1e-7
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "tree_node",
-              "value": {
-                "children": {
-                  "active_child": "fcstd:design:feature#Pad",
-                  "children": [
-                    "fcstd:design:feature#Sketch",
-                    "fcstd:design:feature#Pad"
-                  ]
-                },
-                "role": "solid_bodies"
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Body",
-          "name": "Body",
-          "native_ref": "fcstd:native:object#Body",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Body:Shape:PartShape.brp:13%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Tip": "fcstd:native:object#Pad",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Body"
-        },
-        {
-          "definition": {
-            "kind": "post_process",
-            "value": {
-              "fuzzy_tolerance": {
-                "kind": "kernel_default"
-              },
-              "operation": {
-                "kind": "extrude",
-                "value": {
-                  "allow_multi_profile_faces": true,
-                  "direction": {
-                    "kind": "explicit",
-                    "source": {
-                      "kind": "profile_normal"
-                    },
-                    "vector": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 1.0
-                    }
-                  },
-                  "extent": {
-                    "kind": "one_sided",
-                    "side": {
-                      "termination": {
-                        "kind": "blind",
-                        "length": 5.0
-                      }
-                    }
-                  },
-                  "length_along_profile_normal": true,
-                  "op": "join",
-                  "profile": {
-                    "kind": "planar",
-                    "value": {
-                      "kind": "sketch",
-                      "value": "fcstd:design:sketch#Sketch"
-                    }
-                  },
-                  "solid": true,
-                  "start": {
-                    "kind": "profile_plane"
-                  }
-                }
-              },
-              "refine": false
-            }
-          },
-          "dependencies": [
-            "fcstd:design:feature#Sketch",
-            "fcstd:design:feature#Body"
-          ],
-          "id": "fcstd:design:feature#Pad",
-          "name": "Pad",
-          "native_ref": "fcstd:native:object#Pad",
-          "ordinal": 9,
-          "outputs": [
-            "fcstd:model:body#Pad:Shape:PartShape3.brp:9%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Pad"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "sketch",
-              "value": {
-                "sketch": {
-                  "kind": "planar",
-                  "sketch": "fcstd:design:sketch#Sketch"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Sketch",
-          "name": "Sketch",
-          "native_ref": "fcstd:native:object#Sketch",
-          "ordinal": 8,
-          "outputs": [
-            "fcstd:model:body#Sketch:Shape:PartShape1.brp:3%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "5",
-            "Support": "fcstd:native:object#XY_Plane",
-            "Visibility": "false"
-          },
-          "source_tag": "Sketcher::SketchObject"
-        }
-      ],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -1595,38 +1452,6 @@
           },
           "face": "fcstd:model:face#Pad:Shape:PartShape3.brp:7%40location15",
           "id": "fcstd:model:loop#Pad:Shape:PartShape3.brp:7%40location15%3A1"
-        }
-      ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "5.0000000000000000",
-          "id": "fcstd:design:parameter#Pad:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#Pad:Length",
-          "ordinal": 8,
-          "owner": "fcstd:design:feature#Pad",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 5.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "10.0000000000000000",
-          "id": "fcstd:design:parameter#Pad:Length2",
-          "name": "Length2",
-          "native_ref": "fcstd:native:property#Pad:Length2",
-          "ordinal": 9,
-          "owner": "fcstd:design:feature#Pad",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 10.0
-          }
         }
       ],
       "pcurves": [
@@ -1907,10 +1732,6 @@
           }
         }
       ],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#Body:Shape:PartShape.brp:1%40location19",
@@ -2004,8 +1825,6 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [
         {
@@ -2073,7 +1892,6 @@
           "surface": "fcstd:model:surface#Sketch:Shape:PartShape1.brp:1"
         }
       ],
-      "product_definitions": [],
       "regions": [
         {
           "body": "fcstd:model:body#Body:Shape:PartShape.brp:13%40location1",
@@ -2104,8 +1922,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "fcstd:model:shell#Body:Shape:PartShape.brp:12%40location1",
@@ -2172,113 +1988,6 @@
           "region": "fcstd:model:region#Sketch:Shape:PartShape1.brp:3%40location1"
         }
       ],
-      "sketch_constraints": [
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Sketch:1",
-            "kind": "fixed"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:1",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false
-        }
-      ],
-      "sketch_entities": [
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "curve": {
-              "degree": 2,
-              "knots": [
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                2.0,
-                3.0,
-                3.0,
-                3.0
-              ],
-              "periodic": false,
-              "poles": {
-                "kind": "polynomial",
-                "points": [
-                  {
-                    "u": -10.0,
-                    "v": -10.0
-                  },
-                  {
-                    "u": 10.0,
-                    "v": -10.0
-                  },
-                  {
-                    "u": 10.0,
-                    "v": 10.0
-                  },
-                  {
-                    "u": -10.0,
-                    "v": 10.0
-                  },
-                  {
-                    "u": -10.0,
-                    "v": -10.0
-                  }
-                ]
-              }
-            },
-            "kind": "nurbs"
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:1",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        }
-      ],
-      "sketches": [
-        {
-          "id": "fcstd:design:sketch#Sketch",
-          "name": "Sketch",
-          "native_ref": "fcstd:native:object#Sketch",
-          "placement": {
-            "frame": {
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:1",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -2610,7 +2319,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location19",
@@ -2647,7 +2355,301 @@
           "point": "fcstd:model:point#Sketch:Shape:PartShape1.brp:1%40location1",
           "tolerance": 1e-7
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "tree_node",
+              "value": {
+                "children": {
+                  "active_child": "fcstd:design:feature#Pad",
+                  "children": [
+                    "fcstd:design:feature#Sketch",
+                    "fcstd:design:feature#Pad"
+                  ]
+                },
+                "role": "solid_bodies"
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Body",
+          "name": "Body",
+          "native_ref": "fcstd:native:object#Body",
+          "ordinal": 0,
+          "outputs": [
+            "fcstd:model:body#Body:Shape:PartShape.brp:13%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Tip": "fcstd:native:object#Pad",
+            "Visibility": "true"
+          },
+          "source_tag": "PartDesign::Body"
+        },
+        {
+          "definition": {
+            "kind": "post_process",
+            "value": {
+              "fuzzy_tolerance": {
+                "kind": "kernel_default"
+              },
+              "operation": {
+                "kind": "extrude",
+                "value": {
+                  "allow_multi_profile_faces": true,
+                  "direction": {
+                    "kind": "explicit",
+                    "source": {
+                      "kind": "profile_normal"
+                    },
+                    "vector": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 1.0
+                    }
+                  },
+                  "extent": {
+                    "kind": "one_sided",
+                    "side": {
+                      "termination": {
+                        "kind": "blind",
+                        "length": 5.0
+                      }
+                    }
+                  },
+                  "length_along_profile_normal": true,
+                  "op": "join",
+                  "profile": {
+                    "kind": "planar",
+                    "value": {
+                      "kind": "sketch",
+                      "value": "fcstd:design:sketch#Sketch"
+                    }
+                  },
+                  "solid": true,
+                  "start": {
+                    "kind": "profile_plane"
+                  }
+                }
+              },
+              "refine": false
+            }
+          },
+          "dependencies": [
+            "fcstd:design:feature#Sketch",
+            "fcstd:design:feature#Body"
+          ],
+          "id": "fcstd:design:feature#Pad",
+          "name": "Pad",
+          "native_ref": "fcstd:native:object#Pad",
+          "ordinal": 9,
+          "outputs": [
+            "fcstd:model:body#Pad:Shape:PartShape3.brp:9%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "PartDesign::Pad"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#Sketch"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Sketch",
+          "name": "Sketch",
+          "native_ref": "fcstd:native:object#Sketch",
+          "ordinal": 8,
+          "outputs": [
+            "fcstd:model:body#Sketch:Shape:PartShape1.brp:3%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "5",
+            "Support": "fcstd:native:object#XY_Plane",
+            "Visibility": "false"
+          },
+          "source_tag": "Sketcher::SketchObject"
+        }
       ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [
+        {
+          "dependencies": [],
+          "expression": "5.0000000000000000",
+          "id": "fcstd:design:parameter#Pad:Length",
+          "name": "Length",
+          "native_ref": "fcstd:native:property#Pad:Length",
+          "ordinal": 8,
+          "owner": "fcstd:design:feature#Pad",
+          "properties": {},
+          "value": {
+            "kind": "length",
+            "value": 5.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "10.0000000000000000",
+          "id": "fcstd:design:parameter#Pad:Length2",
+          "name": "Length2",
+          "native_ref": "fcstd:native:property#Pad:Length2",
+          "ordinal": 9,
+          "owner": "fcstd:design:feature#Pad",
+          "properties": {},
+          "value": {
+            "kind": "length",
+            "value": 10.0
+          }
+        }
+      ],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [
+        {
+          "active": true,
+          "definition": {
+            "entity": "fcstd:design:sketch-entity#Sketch:1",
+            "kind": "fixed"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:1",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false
+        }
+      ],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "endpoint_refs": [],
+          "geometry": {
+            "curve": {
+              "degree": 2,
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                2.0,
+                3.0,
+                3.0,
+                3.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "u": -10.0,
+                    "v": -10.0
+                  },
+                  {
+                    "u": 10.0,
+                    "v": -10.0
+                  },
+                  {
+                    "u": 10.0,
+                    "v": 10.0
+                  },
+                  {
+                    "u": -10.0,
+                    "v": 10.0
+                  },
+                  {
+                    "u": -10.0,
+                    "v": -10.0
+                  }
+                ]
+              }
+            },
+            "kind": "nurbs"
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:1",
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "sketch": "fcstd:design:sketch#Sketch"
+        }
+      ],
+      "sketches": [
+        {
+          "id": "fcstd:design:sketch#Sketch",
+          "name": "Sketch",
+          "native_ref": "fcstd:native:object#Sketch",
+          "placement": {
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "kind": "resolved"
+          },
+          "profiles": [
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#Sketch:1",
+                "reversed": false
+              }
+            ]
+          ]
+        }
+      ],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -3266,16 +3268,18 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
-        "archive_entry_count": "5",
         "document_kind": "part-design",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "10",
-        "physical_archive_bytes": "5589",
-        "physical_ledger_spans": "36",
         "program_version": "0.21R33771 (Git)"
       },
       "identity": {
@@ -3349,6 +3353,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "aada0b43748b48935a0a2829196f0ef916a0407676f85bf6704c419dd4f32baa",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

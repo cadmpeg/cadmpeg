@@ -33,7 +33,7 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
     let decoded = decode_inline(source);
     let trimmed = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#8")
@@ -44,13 +44,13 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
     ));
     let procedural = decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| {
             decoded
                 .ir()
-                .model
+                .geometry
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#8")
@@ -116,7 +116,7 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         .expect("decode trimmed surface");
     let round_trip = round_trip
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| match surface.definition() {
@@ -162,13 +162,13 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
     let decoded = decode_inline(source);
     let construction = decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| {
             decoded
                 .ir()
-                .model
+                .geometry
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#6")
@@ -233,13 +233,13 @@ fn rectangular_trimmed_surface_shifts_a_wide_finite_nurbs_seam() {
     let decoded = decode_inline(&source);
     let construction = decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| {
             decoded
                 .ir()
-                .model
+                .geometry
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#6")
@@ -302,13 +302,13 @@ fn rectangular_trimmed_surface_unwraps_both_periodic_directions_and_senses() {
     for (surface_id, expected_ranges, expected_u_sense, expected_v_sense) in expected {
         let construction = decoded
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|surface| {
                 decoded
                     .ir()
-                    .model
+                    .geometry
                     .procedural_surface_owner(&surface.id)
                     .map(SurfaceId::as_str)
                     == Some(surface_id)
@@ -345,15 +345,15 @@ fn rectangular_trimmed_surface_keeps_topology_pcurves_in_local_uv_space() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode trimmed sheet");
-    let face = decoded.ir().model.faces.first().expect("trimmed face");
+    let face = decoded.ir().geometry.faces.first().expect("trimmed face");
     assert_eq!(face.surface.as_str(), "step:data:surface#28");
     let construction = decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| {
-            decoded.ir().model.procedural_surface_owner(&surface.id) == Some(&face.surface)
+            decoded.ir().geometry.procedural_surface_owner(&surface.id) == Some(&face.surface)
         })
         .expect("trimmed face construction");
     assert!(match construction.definition() {
@@ -381,8 +381,8 @@ fn catia_cartesian_trim_points_resolve_on_nurbs_curve() {
 #10=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
     );
 
-    assert_eq!(result.ir().model.curves.len(), 3);
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 3);
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DecodeWarning.kind()
             && loss.message.contains("UNKNOWN periodicity")
@@ -409,7 +409,7 @@ fn line_numeric_trim_uses_vector_magnitude_and_length_unit() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if (start - 2.0).abs() < 1.0e-12 && (end - 2.0).abs() < 1.0e-12), _ => false }));
@@ -431,7 +431,7 @@ fn trimmed_curve_prefers_the_parameter_value_under_parameter_master() {
     );
     let parameter_range = result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
@@ -471,7 +471,7 @@ fn trimmed_curve_prefers_the_point_under_cartesian_master() {
     );
     let parameter_range = result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
@@ -512,7 +512,7 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
     );
     let parameter_range = result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
@@ -529,7 +529,7 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
         .expect("opposed-sense trimmed curve");
     assert!((parameter_range.endpoints()[0] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert!((parameter_range.endpoints()[1] - std::f64::consts::TAU).abs() < 1.0e-12);
-    assert!(result.ir().model.procedural_curves.iter().any(|curve| {
+    assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
         match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.sense(),), (sense,) if curve.id.as_str() == "step:construction:trimmed_curve#40" && !sense), _ => false }
     }));
     let mut output = Vec::new();
@@ -561,7 +561,7 @@ fn trimmed_curve_forward_sense_wraps_a_closed_basis() {
     );
     let parameter_range = result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {

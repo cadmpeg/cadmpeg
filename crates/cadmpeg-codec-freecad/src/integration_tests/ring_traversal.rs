@@ -12,15 +12,15 @@ use std::path::Path;
 /// Rings whose coedges, with their senses applied, do not each end at the
 /// vertex where the next one starts.
 fn discontinuous_rings(ir: &CadIr) -> Vec<String> {
-    let model = &ir.model;
-    let edges: HashMap<_, _> = model.edges.iter().map(|edge| (&edge.id, edge)).collect();
-    let coedges: HashMap<_, _> = model
+    let geometry = &ir.geometry;
+    let edges: HashMap<_, _> = geometry.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let coedges: HashMap<_, _> = geometry
         .coedges
         .iter()
         .map(|coedge| (&coedge.id, coedge))
         .collect();
     let mut discontinuous = Vec::new();
-    for face_loop in &model.loops {
+    for face_loop in &geometry.loops {
         let LoopBoundary::Ring(ring) = &face_loop.boundary else {
             continue;
         };

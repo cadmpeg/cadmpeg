@@ -1,7 +1,135 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
+    "geometry": {
+      "bodies": [
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.0,
+            "g": 0.0,
+            "r": 1.0
+          },
+          "id": "iges:model:body#D11",
+          "kind": "sheet",
+          "regions": [
+            "iges:model:region#D11"
+          ],
+          "visible": true
+        }
+      ],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.6000000238418579,
+            "g": 0.4000000059604645,
+            "r": 0.20000000298023224
+          },
+          "id": "iges:model:face#D11:D9",
+          "loops": {
+            "inner": [],
+            "kind": "classified",
+            "outer": "iges:model:loop#D11:D7"
+          },
+          "sense": "forward",
+          "shell": "iges:model:shell#D11",
+          "surface": "iges:model:surface#D3"
+        }
+      ],
+      "loops": [
+        {
+          "boundary": {
+            "kind": "vertex",
+            "pcurves": [],
+            "vertex": "iges:model:vertex#D11:D5:1"
+          },
+          "face": "iges:model:face#D11:D9",
+          "id": "iges:model:loop#D11:D7"
+        }
+      ],
+      "pcurves": [],
+      "points": [
+        {
+          "id": "iges:model:point#D11:D5:1",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1.0
+          }
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [
+        {
+          "body": "iges:model:body#D11",
+          "id": "iges:model:region#D11",
+          "shells": [
+            "iges:model:shell#D11"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "iges:model:shell#D11",
+          "members": [
+            {
+              "id": "iges:model:face#D11:D9",
+              "kind": "face"
+            }
+          ],
+          "region": "iges:model:region#D11"
+        }
+      ],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "sphere",
+              "radius": 1.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "iges:model:surface#D3",
+          "source_object": {
+            "format": "iges",
+            "geometry_role": "support",
+            "instance_path": [],
+            "layer": "0",
+            "name": "SPHERE",
+            "object_id": "D3",
+            "visible": true
+          }
+        }
+      ],
+      "vertices": [
+        {
+          "id": "iges:model:vertex#D11:D5:1",
+          "point": "iges:model:point#D11:D5:1"
+        }
+      ]
+    },
     "ir_version": "11",
     "model": {
       "appearance_bindings": [
@@ -57,109 +185,26 @@
       "assembly_joints": [],
       "assets": [],
       "attributes": [],
-      "bodies": [
-        {
-          "color": {
-            "a": 1.0,
-            "b": 0.0,
-            "g": 0.0,
-            "r": 1.0
-          },
-          "id": "iges:model:body#D11",
-          "kind": "sheet",
-          "regions": [
-            "iges:model:region#D11"
-          ],
-          "visible": true
-        }
-      ],
-      "coedges": [],
       "colliders": [],
       "configurations": [],
-      "curves": [],
       "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [
-        {
-          "color": {
-            "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
-          },
-          "id": "iges:model:face#D11:D9",
-          "loops": {
-            "inner": [],
-            "kind": "classified",
-            "outer": "iges:model:loop#D11:D7"
-          },
-          "sense": "forward",
-          "shell": "iges:model:shell#D11",
-          "surface": "iges:model:surface#D3"
-        }
-      ],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [],
       "history_bodies": [],
-      "loops": [
-        {
-          "boundary": {
-            "kind": "vertex",
-            "pcurves": [],
-            "vertex": "iges:model:vertex#D11:D5:1"
-          },
-          "face": "iges:model:face#D11:D9",
-          "id": "iges:model:loop#D11:D7"
-        }
-      ],
       "mass_properties": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [
-        {
-          "id": "iges:model:point#D11:D5:1",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 1.0
-          }
-        }
-      ],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [
-        {
-          "body": "iges:model:body#D11",
-          "id": "iges:model:region#D11",
-          "shells": [
-            "iges:model:shell#D11"
-          ]
-        }
-      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "iges:model:shell#D11",
-          "members": [
-            {
-              "id": "iges:model:face#D11:D9",
-              "kind": "face"
-            }
-          ],
-          "region": "iges:model:region#D11"
-        }
-      ],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -168,50 +213,7 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "axis": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "center": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "kind": "sphere",
-              "radius": 1.0,
-              "ref_direction": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            }
-          },
-          "id": "iges:model:surface#D3",
-          "source_object": {
-            "format": "iges",
-            "geometry_role": "support",
-            "instance_path": [],
-            "layer": "0",
-            "name": "SPHERE",
-            "object_id": "D3",
-            "visible": true
-          }
-        }
-      ],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "iges:model:vertex#D11:D5:1",
-          "point": "iges:model:point#D11:D5:1"
-        }
-      ],
       "view_presentations": []
     },
     "native": {
@@ -1116,6 +1118,12 @@
         "views": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
@@ -1259,6 +1267,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "e16cc607a946e9c79a59f9b6da0ec977b3e08235336fe5e54f02cf604675a276",
+    "file_digests": {},
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -1266,8 +1276,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

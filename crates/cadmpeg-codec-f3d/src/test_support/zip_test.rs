@@ -55,7 +55,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .expect("revision surface decode");
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .first()
         .expect("revision surface construction");
@@ -81,7 +81,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
     let actual = scrubbed_definition(
         round_trip
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .first()
             .expect("round-trip construction")

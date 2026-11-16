@@ -23,19 +23,19 @@ fn dependent_curve_carriers_are_retained_without_standalone_wire_topology() {
             let decoded = crate::IgesCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("dependent curve");
-            assert_eq!(decoded.ir().model.curves.len(), 1);
-            assert!(decoded.ir().model.bodies.is_empty());
-            assert!(decoded.ir().model.edges.is_empty());
-            assert!(decoded.ir().model.vertices.is_empty());
-            assert!(decoded.ir().model.points.is_empty());
-            assert!(decoded.ir().model.curves[0].parameter_range.is_some());
+            assert_eq!(decoded.ir().geometry.curves.len(), 1);
+            assert!(decoded.ir().geometry.bodies.is_empty());
+            assert!(decoded.ir().geometry.edges.is_empty());
+            assert!(decoded.ir().geometry.vertices.is_empty());
+            assert!(decoded.ir().geometry.points.is_empty());
+            assert!(decoded.ir().geometry.curves[0].parameter_range.is_some());
         }
     }
     let decoded = crate::test_support::decode(
         crate::test_support::test_procedural_surfaces::cacheless_line_tabulated_surface_file(),
     );
     assert!(
-        !decoded.ir().model.curves.is_empty(),
+        !decoded.ir().geometry.curves.is_empty(),
         "surface support remains live"
     );
 }
@@ -45,10 +45,10 @@ fn consumed_boundary_carriers_keep_their_source_intervals() {
     let decoded = crate::test_support::decode(
         crate::test_support::test_surface_fixtures::trimmed_plane_file(),
     );
-    assert_eq!(decoded.ir().model.curves.len(), 2);
+    assert_eq!(decoded.ir().geometry.curves.len(), 2);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .all(|curve| curve.parameter_range
@@ -77,9 +77,9 @@ fn logical_group_members_keep_their_physical_wire_geometry() {
     let decoded = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("logically grouped wire");
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.edges.len(), 1);
-    assert_eq!(decoded.ir().model.vertices.len(), 2);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.edges.len(), 1);
+    assert_eq!(decoded.ir().geometry.vertices.len(), 2);
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .expect("wire validation")
         .is_ok());

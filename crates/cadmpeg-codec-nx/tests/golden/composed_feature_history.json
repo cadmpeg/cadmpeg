@@ -1,8 +1,25 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
+      "design": {},
       "fragment": false,
+      "geometry": {
+        "bodies": [],
+        "coedges": [],
+        "curves": [],
+        "edges": [],
+        "faces": [],
+        "loops": [],
+        "pcurves": [],
+        "points": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "regions": [],
+        "shells": [],
+        "subds": [],
+        "surfaces": [],
+        "vertices": []
+      },
       "ir_version": "11",
       "model": {
         "appearance_bindings": [],
@@ -11,15 +28,10 @@
         "assembly_joints": [],
         "assets": [],
         "attributes": [],
-        "bodies": [],
-        "coedges": [],
         "colliders": [],
         "configurations": [],
-        "curves": [],
         "declared_measures": [],
         "drawings": [],
-        "edges": [],
-        "faces": [],
         "feature_input_topologies": [],
         "feature_result_topologies": [],
         "features": [
@@ -798,25 +810,18 @@
           }
         ],
         "history_bodies": [],
-        "loops": [],
         "mass_properties": [],
         "occurrences": [],
         "parameters": [],
-        "pcurves": [],
         "physical_materials": [],
         "physics_scenes": [],
         "pmi": [],
         "point_clouds": [],
-        "points": [],
         "presentation_documents": [],
         "presentation_layers": [],
-        "procedural_curves": [],
-        "procedural_surfaces": [],
         "product_definitions": [],
-        "regions": [],
         "rigid_bodies": [],
         "semantic_annotations": [],
-        "shells": [],
         "sketch_constraints": [],
         "sketch_entities": [
           {
@@ -878,10 +883,7 @@
         "spatial_sketch_entities": [],
         "spatial_sketches": [],
         "spreadsheets": [],
-        "subds": [],
-        "surfaces": [],
         "tessellations": [],
-        "vertices": [],
         "view_presentations": []
       },
       "native": {
@@ -4603,22 +4605,14 @@
           ]
         }
       },
+      "process": {},
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
+      },
       "source": {
-        "attributes": {
-          "classified_offset_store_control_count": "0",
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "2082",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "2068",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "offset_store_control_count": "1",
-          "partition_streams": "0",
-          "plain_streams": "0",
-          "unclassified_offset_store_control_count": "1"
-        },
+        "attributes": {},
         "identity": {
           "dialects": {
             "extra": [],
@@ -5309,6 +5303,8 @@
           }
         }
       },
+      "decode_digest": "af297f9d01a582b6a4a23835fb95346885065faa094a5524077554ed4905ebb5",
+      "file_digests": {},
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {
@@ -5316,7 +5312,11 @@
             "kind": "inline"
           },
           "offset": 1548,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model",
+            "design"
+          ]
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -5324,7 +5324,8 @@
             "kind": "inline"
           },
           "offset": 1564,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -5332,7 +5333,8 @@
             "kind": "inline"
           },
           "offset": 1586,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#3": {
           "bytes": {
@@ -5340,7 +5342,8 @@
             "kind": "inline"
           },
           "offset": 1599,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#4": {
           "bytes": {
@@ -5348,7 +5351,8 @@
             "kind": "inline"
           },
           "offset": 1813,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#5": {
           "bytes": {
@@ -5356,7 +5360,8 @@
             "kind": "inline"
           },
           "offset": 1814,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#6": {
           "bytes": {
@@ -5364,9 +5369,14 @@
             "kind": "inline"
           },
           "offset": 1854,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": [
+        "model",
+        "design"
+      ]
     }
   },
   "inspect": {

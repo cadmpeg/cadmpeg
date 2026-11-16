@@ -3728,6 +3728,7 @@ pub enum FeatureOperation {
         /// Adjacent faces supplying tangent or curvature conditions.
         support_faces: FaceSelection,
         /// Uniform, component-specific, or unresolved boundary continuity.
+        #[serde(deserialize_with = "FilledSurfaceContinuityState::deserialize")]
         continuity: FilledSurfaceContinuityState,
         /// Whether the generated patch is merged into adjacent surface bodies,
         /// when resolved.
@@ -8282,6 +8283,8 @@ pub type SheetSweepSection = SweepSection<NoGeneratedSection>;
 )]
 pub enum SweepSection<G = GeneratedSweepSection> {
     /// The source requires a cross-section, but its carrier is unresolved.
+    // serde reads a missing `value` as `None` unless the variant states its reader.
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     Unresolved(#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<String>),
     /// Cross-section supplied by referenced profile geometry.
     Profile(PlanarProfileRef),

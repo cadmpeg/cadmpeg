@@ -1,15 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "color": {
@@ -35,11 +28,7 @@
         }
       ],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [],
       "faces": [
         {
@@ -63,174 +52,11 @@
           "surface": "usd:stage:surface#/Surfaces/Trimmed"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [],
-      "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "usd:stage:occurrence#/Surfaces",
-          "name": "Surfaces",
-          "native_ref": "/Surfaces",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Surfaces",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/Surfaces/Bilinear",
-          "name": "Bilinear",
-          "native_ref": "/Surfaces/Bilinear",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Surfaces"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Surfaces/Bilinear",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/Surfaces/Trimmed",
-          "name": "Trimmed",
-          "native_ref": "/Surfaces/Trimmed",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Surfaces"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Surfaces/Trimmed",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [
-        {
-          "bodies": [],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/Surfaces",
-          "kind": "group",
-          "native_ref": "/Surfaces",
-          "sketches": [],
-          "source_name": "Surfaces"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/Surfaces/Bilinear"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/Surfaces/Bilinear",
-          "kind": "object",
-          "native_ref": "/Surfaces/Bilinear",
-          "sketches": [],
-          "source_name": "Bilinear"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/Surfaces/Trimmed"
-          ],
-          "bom_properties": {},
-          "id": "usd:stage:definition#/Surfaces/Trimmed",
-          "kind": "object",
-          "native_ref": "/Surfaces/Trimmed",
-          "sketches": [],
-          "source_name": "Trimmed"
-        }
-      ],
       "regions": [
         {
           "body": "usd:stage:body#/Surfaces/Bilinear",
@@ -247,8 +73,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "usd:stage:shell#/Surfaces/Bilinear",
@@ -271,14 +95,6 @@
           "region": "usd:stage:region#/Surfaces/Trimmed"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -422,11 +238,203 @@
           "id": "usd:stage:surface#/Surfaces/Trimmed"
         }
       ],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Surfaces",
+          "name": "Surfaces",
+          "native_ref": "/Surfaces",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Surfaces",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Surfaces/Bilinear",
+          "name": "Bilinear",
+          "native_ref": "/Surfaces/Bilinear",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Surfaces"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Surfaces/Bilinear",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Surfaces/Trimmed",
+          "name": "Trimmed",
+          "native_ref": "/Surfaces/Trimmed",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Surfaces"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Surfaces/Trimmed",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/Surfaces",
+          "kind": "group",
+          "native_ref": "/Surfaces",
+          "sketches": [],
+          "source_name": "Surfaces"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Surfaces/Bilinear"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/Surfaces/Bilinear",
+          "kind": "object",
+          "native_ref": "/Surfaces/Bilinear",
+          "sketches": [],
+          "source_name": "Bilinear"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Surfaces/Trimmed"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/Surfaces/Trimmed",
+          "kind": "object",
+          "native_ref": "/Surfaces/Trimmed",
+          "sketches": [],
+          "source_name": "Trimmed"
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Surfaces",
@@ -517,6 +525,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "ce9cac2678daa54716885214e3e7909ed3bb11cad1dd6587b6f82c0829992089",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

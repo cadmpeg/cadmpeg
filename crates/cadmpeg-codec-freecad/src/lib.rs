@@ -199,7 +199,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         ));
     }
-    let derived_census = (ir.decode_depth() == DecodeDepth::Full)
+    let derived_census = ir
+        .scope()
+        .design
         .then(|| design::census(&objects, &ir.model.features));
     match derived_census {
         None => {}
@@ -626,15 +628,15 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     let topology_ids = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|entity| entity.id.as_str())
-        .chain(ir.model.edges.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.loops.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.faces.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.shells.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.bodies.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.geometry.edges.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.geometry.loops.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.geometry.faces.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.geometry.shells.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.geometry.bodies.iter().map(|entity| entity.id.as_str()))
         .collect::<HashSet<_>>();
     for map in &element_maps {
         if !property_ids.contains(map.property.as_str())
@@ -760,12 +762,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ));
         }
     }
-    let physical_end = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("physical_archive_bytes"))
-        .and_then(|value| value.parse().ok());
-    validate_span_chain("physical archive", &physical, physical_end, &mut findings);
+    validate_span_chain("physical archive", &physical, &mut findings);
     let string_table_ids = string_tables
         .iter()
         .map(native::StringTableRecord::id)
@@ -821,7 +818,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         &physical,
         &entries,
         &logical,
-        physical_end.unwrap_or_default(),
+        physical
+            .iter()
+            .map(|span| span.span.end())
+            .max()
+            .unwrap_or_default(),
     );
     if coverage_records.as_slice() != [expected_coverage.clone()] || !expected_coverage.exact {
         findings.push(finding(
@@ -843,19 +844,13 @@ fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> 
     }
 }
 
-fn validate_span_chain(
-    label: &str,
-    spans: &[native::ArchiveSpan],
-    expected_end: Option<u64>,
-    findings: &mut Vec<Finding>,
-) {
+fn validate_span_chain(label: &str, spans: &[native::ArchiveSpan], findings: &mut Vec<Finding>) {
     let mut ordered = spans.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|left| left.span.start());
     let valid = ordered.first().is_some_and(|span| span.span.start() == 0)
         && ordered
             .windows(2)
-            .all(|pair| pair[0].span.end() == pair[1].span.start())
-        && expected_end.is_none_or(|end| ordered.last().is_some_and(|span| span.span.end() == end));
+            .all(|pair| pair[0].span.end() == pair[1].span.start());
     if !valid {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -938,7 +933,7 @@ impl CodecBackend for FcstdCodec {
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let mut scan = container::scan(ctx, root)?;
         let mut admitted_entities = 0_u64;
-        let mut attributes = container::source_attributes(&scan)?;
+        let attributes = container::source_attributes(&scan)?;
         let thumbnail = scan
             .data
             .get("thumbnails/Thumbnail.png")
@@ -948,13 +943,7 @@ impl CodecBackend for FcstdCodec {
                     .get("Thumbnail.png")
                     .map(|view| ("Thumbnail.png", view.window()))
             });
-        if let Some((_, thumbnail)) = thumbnail {
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("thumbnail_bytes"),
-                thumbnail.len().to_string(),
-            );
-        }
-        let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
@@ -1062,12 +1051,12 @@ impl CodecBackend for FcstdCodec {
             )?;
             geometry_transferred =
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
-            ir.model.curves = curve_transfer.curves;
-            ir.model
+            ir.geometry.curves = curve_transfer.curves;
+            ir.geometry
                 .add_procedural_curves(curve_transfer.procedural)?
                 .map_err(CodecError::malformed)?;
-            ir.model.surfaces = surface_transfer.surfaces;
-            ir.model
+            ir.geometry.surfaces = surface_transfer.surfaces;
+            ir.geometry
                 .add_procedural_surfaces(surface_transfer.procedural)?
                 .map_err(CodecError::malformed)?;
             geometry_transferred |= application_geometry::transfer(
@@ -1084,7 +1073,7 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &mut transfer_losses,
             )?;
-            if ctx.depth() == DecodeDepth::Full {
+            if ctx.depth() >= DecodeDepth::Design {
                 let (cycle_affected, design_losses) = design::transfer(
                     ctx,
                     &mut ir,
@@ -1110,19 +1099,19 @@ impl CodecBackend for FcstdCodec {
             }
             transfer_losses.extend(drawing_content::transfer(
                 ctx,
-                &mut ir.model,
+                &mut ir,
                 &graph.properties,
                 &scan.data,
             )?);
             ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                cadmpeg_core::decode::u64_from_index(ir.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
             let link_occurrences =
                 product::link_occurrence_count(&product_nodes, &graph.objects, &graph.properties)?;
             ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count())
+                cadmpeg_core::decode::u64_from_index(ir.entity_count())
                     .checked_add(link_occurrences)
                     .ok_or_else(|| CodecError::malformed("FCStd entity count overflows u64"))?,
                 &mut admitted_entities,
@@ -1135,12 +1124,12 @@ impl CodecBackend for FcstdCodec {
                 &graph.objects,
                 &graph.properties,
                 &shape_payloads,
-                &ir.model.bodies,
+                &ir.geometry.bodies,
             )?;
             product::localize_definition_bodies(
                 &product_definitions,
                 &occurrences,
-                &mut ir.model.bodies,
+                &mut ir.geometry.bodies,
             );
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
@@ -1155,11 +1144,11 @@ impl CodecBackend for FcstdCodec {
             ir.model.assembly_joints =
                 joint::transfer_neutral(&joint_records, &ir.model.occurrences)?;
             ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                cadmpeg_core::decode::u64_from_index(ir.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            if ctx.depth() == DecodeDepth::Full {
+            if ctx.depth() >= DecodeDepth::Design {
                 let design_census = design::census(&graph.objects, &ir.model.features)?;
                 ir.native
                     .namespace_mut("fcstd")
@@ -1193,7 +1182,7 @@ impl CodecBackend for FcstdCodec {
             );
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                cadmpeg_core::decode::u64_from_index(ir.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
@@ -1302,7 +1291,7 @@ impl CodecBackend for FcstdCodec {
             }
         }
         ctx.admit_entities(
-            cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+            cadmpeg_core::decode::u64_from_index(ir.entity_count()),
             &mut admitted_entities,
             "admit FCStd entities",
         )?;

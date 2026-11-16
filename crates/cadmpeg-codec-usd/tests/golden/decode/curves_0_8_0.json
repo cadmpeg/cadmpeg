@@ -1,15 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/Curves/Arc",
@@ -61,8 +54,6 @@
         }
       ],
       "coedges": [],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -433,8 +424,6 @@
           "id": "usd:stage:curve#/Curves/Splines:1"
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -522,11 +511,299 @@
         }
       ],
       "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [
+        {
+          "id": "usd:stage:point#/Curves/Arc:0:0",
+          "position": {
+            "x": 1000.0,
+            "y": 0.0,
+            "z": 7000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Arc:0:1",
+          "position": {
+            "x": 0.0,
+            "y": 1000.0,
+            "z": 7000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Bezier:0:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 2000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Bezier:0:1",
+          "position": {
+            "x": 6000.0,
+            "y": 0.0,
+            "z": 2000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/CatmullRom:0:0",
+          "position": {
+            "x": 1000.0,
+            "y": 1000.0,
+            "z": 5000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/CatmullRom:0:1",
+          "position": {
+            "x": 3000.0,
+            "y": 1000.0,
+            "z": 5000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Loop:0:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Polyline:0:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Polyline:0:1",
+          "position": {
+            "x": 1000.0,
+            "y": 1000.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Splines:0:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 3000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Splines:0:1",
+          "position": {
+            "x": 4000.0000000000005,
+            "y": 0.0,
+            "z": 3000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Splines:1:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 4000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Curves/Splines:1:1",
+          "position": {
+            "x": 1000.0000000000001,
+            "y": 0.0,
+            "z": 4000.0
+          }
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [
+        {
+          "body": "usd:stage:body#/Curves/Arc",
+          "id": "usd:stage:region#/Curves/Arc",
+          "shells": [
+            "usd:stage:shell#/Curves/Arc"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Curves/Bezier",
+          "id": "usd:stage:region#/Curves/Bezier",
+          "shells": [
+            "usd:stage:shell#/Curves/Bezier"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Curves/CatmullRom",
+          "id": "usd:stage:region#/Curves/CatmullRom",
+          "shells": [
+            "usd:stage:shell#/Curves/CatmullRom"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Curves/Loop",
+          "id": "usd:stage:region#/Curves/Loop",
+          "shells": [
+            "usd:stage:shell#/Curves/Loop"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Curves/Polyline",
+          "id": "usd:stage:region#/Curves/Polyline",
+          "shells": [
+            "usd:stage:shell#/Curves/Polyline"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Curves/Splines",
+          "id": "usd:stage:region#/Curves/Splines",
+          "shells": [
+            "usd:stage:shell#/Curves/Splines"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "usd:stage:shell#/Curves/Arc",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/Arc:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/Arc"
+        },
+        {
+          "id": "usd:stage:shell#/Curves/Bezier",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/Bezier:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/Bezier"
+        },
+        {
+          "id": "usd:stage:shell#/Curves/CatmullRom",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/CatmullRom:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/CatmullRom"
+        },
+        {
+          "id": "usd:stage:shell#/Curves/Loop",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/Loop:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/Loop"
+        },
+        {
+          "id": "usd:stage:shell#/Curves/Polyline",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/Polyline:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/Polyline"
+        },
+        {
+          "id": "usd:stage:shell#/Curves/Splines",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Curves/Splines:0",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "usd:stage:edge#/Curves/Splines:1",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Curves/Splines"
+        }
+      ],
+      "subds": [],
+      "surfaces": [],
+      "vertices": [
+        {
+          "id": "usd:stage:vertex#/Curves/Arc:0:0",
+          "point": "usd:stage:point#/Curves/Arc:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Arc:0:1",
+          "point": "usd:stage:point#/Curves/Arc:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Bezier:0:0",
+          "point": "usd:stage:point#/Curves/Bezier:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Bezier:0:1",
+          "point": "usd:stage:point#/Curves/Bezier:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/CatmullRom:0:0",
+          "point": "usd:stage:point#/Curves/CatmullRom:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/CatmullRom:0:1",
+          "point": "usd:stage:point#/Curves/CatmullRom:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Loop:0:0",
+          "point": "usd:stage:point#/Curves/Loop:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Polyline:0:0",
+          "point": "usd:stage:point#/Curves/Polyline:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Polyline:0:1",
+          "point": "usd:stage:point#/Curves/Polyline:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Splines:0:0",
+          "point": "usd:stage:point#/Curves/Splines:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Splines:0:1",
+          "point": "usd:stage:point#/Curves/Splines:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Splines:1:0",
+          "point": "usd:stage:point#/Curves/Splines:1:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Curves/Splines:1:1",
+          "point": "usd:stage:point#/Curves/Splines:1:1"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [],
       "history_bodies": [],
-      "loops": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -803,121 +1080,12 @@
         }
       ],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [
-        {
-          "id": "usd:stage:point#/Curves/Arc:0:0",
-          "position": {
-            "x": 1000.0,
-            "y": 0.0,
-            "z": 7000.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/Arc:0:1",
-          "position": {
-            "x": 0.0,
-            "y": 1000.0,
-            "z": 7000.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/Bezier:0:0",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 2000.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/Bezier:0:1",
-          "position": {
-            "x": 6000.0,
-            "y": 0.0,
-            "z": 2000.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/CatmullRom:0:0",
-          "position": {
-            "x": 1000.0,
-            "y": 1000.0,
-            "z": 5000.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/CatmullRom:0:1",
-          "position": {
-            "x": 3000.0,
-            "y": 1000.0,
-            "z": 5000.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/Loop:0:0",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 1000.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/Polyline:0:0",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/Polyline:0:1",
-          "position": {
-            "x": 1000.0,
-            "y": 1000.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/Splines:0:0",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 3000.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/Splines:0:1",
-          "position": {
-            "x": 4000.0000000000005,
-            "y": 0.0,
-            "z": 3000.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/Splines:1:0",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 4000.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Curves/Splines:1:1",
-          "position": {
-            "x": 1000.0000000000001,
-            "y": 0.0,
-            "z": 4000.0
-          }
-        }
-      ],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
           "bodies": [],
@@ -995,118 +1163,8 @@
           "source_name": "Splines"
         }
       ],
-      "regions": [
-        {
-          "body": "usd:stage:body#/Curves/Arc",
-          "id": "usd:stage:region#/Curves/Arc",
-          "shells": [
-            "usd:stage:shell#/Curves/Arc"
-          ]
-        },
-        {
-          "body": "usd:stage:body#/Curves/Bezier",
-          "id": "usd:stage:region#/Curves/Bezier",
-          "shells": [
-            "usd:stage:shell#/Curves/Bezier"
-          ]
-        },
-        {
-          "body": "usd:stage:body#/Curves/CatmullRom",
-          "id": "usd:stage:region#/Curves/CatmullRom",
-          "shells": [
-            "usd:stage:shell#/Curves/CatmullRom"
-          ]
-        },
-        {
-          "body": "usd:stage:body#/Curves/Loop",
-          "id": "usd:stage:region#/Curves/Loop",
-          "shells": [
-            "usd:stage:shell#/Curves/Loop"
-          ]
-        },
-        {
-          "body": "usd:stage:body#/Curves/Polyline",
-          "id": "usd:stage:region#/Curves/Polyline",
-          "shells": [
-            "usd:stage:shell#/Curves/Polyline"
-          ]
-        },
-        {
-          "body": "usd:stage:body#/Curves/Splines",
-          "id": "usd:stage:region#/Curves/Splines",
-          "shells": [
-            "usd:stage:shell#/Curves/Splines"
-          ]
-        }
-      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "usd:stage:shell#/Curves/Arc",
-          "members": [
-            {
-              "id": "usd:stage:edge#/Curves/Arc:0",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "usd:stage:region#/Curves/Arc"
-        },
-        {
-          "id": "usd:stage:shell#/Curves/Bezier",
-          "members": [
-            {
-              "id": "usd:stage:edge#/Curves/Bezier:0",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "usd:stage:region#/Curves/Bezier"
-        },
-        {
-          "id": "usd:stage:shell#/Curves/CatmullRom",
-          "members": [
-            {
-              "id": "usd:stage:edge#/Curves/CatmullRom:0",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "usd:stage:region#/Curves/CatmullRom"
-        },
-        {
-          "id": "usd:stage:shell#/Curves/Loop",
-          "members": [
-            {
-              "id": "usd:stage:edge#/Curves/Loop:0",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "usd:stage:region#/Curves/Loop"
-        },
-        {
-          "id": "usd:stage:shell#/Curves/Polyline",
-          "members": [
-            {
-              "id": "usd:stage:edge#/Curves/Polyline:0",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "usd:stage:region#/Curves/Polyline"
-        },
-        {
-          "id": "usd:stage:shell#/Curves/Splines",
-          "members": [
-            {
-              "id": "usd:stage:edge#/Curves/Splines:0",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "usd:stage:edge#/Curves/Splines:1",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "usd:stage:region#/Curves/Splines"
-        }
-      ],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -1115,66 +1173,16 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "usd:stage:vertex#/Curves/Arc:0:0",
-          "point": "usd:stage:point#/Curves/Arc:0:0"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/Arc:0:1",
-          "point": "usd:stage:point#/Curves/Arc:0:1"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/Bezier:0:0",
-          "point": "usd:stage:point#/Curves/Bezier:0:0"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/Bezier:0:1",
-          "point": "usd:stage:point#/Curves/Bezier:0:1"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/CatmullRom:0:0",
-          "point": "usd:stage:point#/Curves/CatmullRom:0:0"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/CatmullRom:0:1",
-          "point": "usd:stage:point#/Curves/CatmullRom:0:1"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/Loop:0:0",
-          "point": "usd:stage:point#/Curves/Loop:0:0"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/Polyline:0:0",
-          "point": "usd:stage:point#/Curves/Polyline:0:0"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/Polyline:0:1",
-          "point": "usd:stage:point#/Curves/Polyline:0:1"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/Splines:0:0",
-          "point": "usd:stage:point#/Curves/Splines:0:0"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/Splines:0:1",
-          "point": "usd:stage:point#/Curves/Splines:0:1"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/Splines:1:0",
-          "point": "usd:stage:point#/Curves/Splines:1:0"
-        },
-        {
-          "id": "usd:stage:vertex#/Curves/Splines:1:1",
-          "point": "usd:stage:point#/Curves/Splines:1:1"
-        }
-      ],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Curves",
@@ -1266,6 +1274,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "6827a940fc37362489679ab059abf75d62f72133f4fbbb4407419d8c6cc29a73",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

@@ -1,980 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:13%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:13%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:14%40location19",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:14%40location19"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:15%40location16",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:15%40location16"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:20%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:20%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:21%40location19",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:21%40location19"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:22%40location16",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:22%40location16"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:25%40location19",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:25%40location19"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:26%40location16",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:26%40location16"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:3%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:3%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:6%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:6%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:7%40location19",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:7%40location19"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Body:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:8%40location16",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:8%40location16"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:10%40location12",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location12"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:10%40location14",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location14"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:14%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:14%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:15%40location12",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location12"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:15%40location14",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location14"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:18%40location12",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location12"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:18%40location14",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location14"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:2%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:4%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:4%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:5%40location12",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location12"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:5%40location14",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location14"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Pad:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:9%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:9%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Sketch:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:3%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Sketch",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:3%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Sketch:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:5%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Sketch",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:5%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Sketch:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:7%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Sketch",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:7%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Sketch:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:8%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Sketch",
-          "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:8%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#Body:1",
-          "channels": {},
-          "id": "fcstd:appearance:binding#shape-material:Body:0",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "body",
-            "value": "fcstd:model:body#Body:Shape:Body.Shape.brp:34%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#Pad:1",
-          "channels": {},
-          "id": "fcstd:appearance:binding#shape-material:Pad:0",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "body",
-            "value": "fcstd:model:body#Pad:Shape:Pad.Shape.brp:24%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Body:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:1%40location17",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1%40location17"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Body:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:11%40location17",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11%40location17"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Body:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:12%40location17",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:12%40location17"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Body:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:18%40location17",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:18%40location17"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Body:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:19%40location17",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:19%40location17"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Body:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:2%40location17",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2%40location17"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Body:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:4%40location17",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4%40location17"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Body:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:5%40location17",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Body",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:5%40location17"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Pad:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:1%40location12",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location12"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Pad:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:1%40location14",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Pad:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:13%40location12",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location12"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Pad:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:13%40location14",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location14"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Pad:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:3%40location12",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location12"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Pad:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:3%40location14",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location14"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Pad:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:8%40location12",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location12"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Pad:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:8%40location14",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Pad",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location14"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Sketch:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:1%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Sketch",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:1%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Sketch:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:2%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Sketch",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:2%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Sketch:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:4%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Sketch",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:4%40location1"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Sketch:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:6%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Sketch",
-          "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:6%40location1"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.09803921729326248,
-            "g": 0.09803921729326248,
-            "r": 0.09803921729326248
-          },
-          "id": "fcstd:appearance:edge#Body",
-          "name": "Body line appearance",
-          "properties": {
-            "line_width": 2.0
-          },
-          "schema": "FCStd ViewProvider line style",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.09803921729326248,
-            "g": 0.09803921729326248,
-            "r": 0.09803921729326248
-          },
-          "id": "fcstd:appearance:edge#Body:1",
-          "name": "Body Edge1 appearance",
-          "properties": {
-            "line_width": 2.0
-          },
-          "schema": "FCStd LineColorArray",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.09803921729326248,
-            "g": 0.09803921729326248,
-            "r": 0.09803921729326248
-          },
-          "id": "fcstd:appearance:edge#Pad",
-          "name": "Pad line appearance",
-          "properties": {
-            "line_width": 2.0
-          },
-          "schema": "FCStd ViewProvider line style",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.09803921729326248,
-            "g": 0.09803921729326248,
-            "r": 0.09803921729326248
-          },
-          "id": "fcstd:appearance:edge#Pad:1",
-          "name": "Pad Edge1 appearance",
-          "properties": {
-            "line_width": 2.0
-          },
-          "schema": "FCStd LineColorArray",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.16078431904315948,
-            "g": 0.14509804546833038,
-            "r": 0.12941177189350128
-          },
-          "id": "fcstd:appearance:edge#Sketch:1",
-          "name": "Sketch Edge1 appearance",
-          "properties": {},
-          "schema": "FCStd LineColorArray",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.7411764860153198,
-            "g": 0.7098039388656616,
-            "r": 0.6784313917160034
-          },
-          "id": "fcstd:appearance:shape-material#Body:1",
-          "name": "Body face 1 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.9803921580314636,
-            "g": 0.5882353186607361,
-            "r": 0.19607843458652496
-          },
-          "id": "fcstd:appearance:shape-material#Origin001:1",
-          "name": "Origin001 face 1 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.7411764860153198,
-            "g": 0.7098039388656616,
-            "r": 0.6784313917160034
-          },
-          "id": "fcstd:appearance:shape-material#Pad:1",
-          "name": "Pad face 1 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.800000011920929,
-            "g": 0.20000000298023224,
-            "r": 0.20000000298023224
-          },
-          "id": "fcstd:appearance:shape-material#XY_Plane:1",
-          "name": "XY_Plane face 1 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.20000000298023224,
-            "g": 0.800000011920929,
-            "r": 0.20000000298023224
-          },
-          "id": "fcstd:appearance:shape-material#XZ_Plane:1",
-          "name": "XZ_Plane face 1 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.20000000298023224,
-            "g": 0.20000000298023224,
-            "r": 0.800000011920929
-          },
-          "id": "fcstd:appearance:shape-material#X_Axis:1",
-          "name": "X_Axis face 1 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.20000000298023224,
-            "g": 0.20000000298023224,
-            "r": 0.800000011920929
-          },
-          "id": "fcstd:appearance:shape-material#YZ_Plane:1",
-          "name": "YZ_Plane face 1 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.20000000298023224,
-            "g": 0.800000011920929,
-            "r": 0.20000000298023224
-          },
-          "id": "fcstd:appearance:shape-material#Y_Axis:1",
-          "name": "Y_Axis face 1 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.800000011920929,
-            "g": 0.20000000298023224,
-            "r": 0.20000000298023224
-          },
-          "id": "fcstd:appearance:shape-material#Z_Axis:1",
-          "name": "Z_Axis face 1 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.09803921729326248,
-            "g": 0.09803921729326248,
-            "r": 0.09803921729326248
-          },
-          "id": "fcstd:appearance:vertex#Body",
-          "name": "Body point appearance",
-          "properties": {
-            "point_size": 2.0
-          },
-          "schema": "FCStd ViewProvider point style",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.09803921729326248,
-            "g": 0.09803921729326248,
-            "r": 0.09803921729326248
-          },
-          "id": "fcstd:appearance:vertex#Body:1",
-          "name": "Body Vertex1 appearance",
-          "properties": {
-            "point_size": 2.0
-          },
-          "schema": "FCStd PointColorArray",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.09803921729326248,
-            "g": 0.09803921729326248,
-            "r": 0.09803921729326248
-          },
-          "id": "fcstd:appearance:vertex#Pad",
-          "name": "Pad point appearance",
-          "properties": {
-            "point_size": 2.0
-          },
-          "schema": "FCStd ViewProvider point style",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.09803921729326248,
-            "g": 0.09803921729326248,
-            "r": 0.09803921729326248
-          },
-          "id": "fcstd:appearance:vertex#Pad:1",
-          "name": "Pad Vertex1 appearance",
-          "properties": {
-            "point_size": 2.0
-          },
-          "schema": "FCStd PointColorArray",
-          "textures": []
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.16078431904315948,
-            "g": 0.14509804546833038,
-            "r": 0.12941177189350128
-          },
-          "id": "fcstd:appearance:vertex#Sketch:1",
-          "name": "Sketch Vertex1 appearance",
-          "properties": {},
-          "schema": "FCStd PointColorArray",
-          "textures": []
-        }
-      ],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "color": {
@@ -1599,8 +627,6 @@
           "sense": "reversed"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -2935,8 +1961,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -3695,167 +2719,6 @@
           "tolerance": 1e-7
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "tree_node",
-              "value": {
-                "children": {
-                  "active_child": "fcstd:design:feature#Pad",
-                  "children": [
-                    "fcstd:design:feature#Sketch",
-                    "fcstd:design:feature#Pad"
-                  ]
-                },
-                "role": "solid_bodies"
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Body",
-          "name": "Body",
-          "native_ref": "fcstd:native:object#Body",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Body:Shape:Body.Shape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Tip": "fcstd:native:object#Pad",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Body"
-        },
-        {
-          "definition": {
-            "kind": "post_process",
-            "value": {
-              "fuzzy_tolerance": {
-                "kind": "automatic"
-              },
-              "operation": {
-                "kind": "extrude",
-                "value": {
-                  "allow_multi_profile_faces": true,
-                  "direction": {
-                    "kind": "explicit",
-                    "source": {
-                      "kind": "profile_normal"
-                    },
-                    "vector": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 1.0
-                    }
-                  },
-                  "extent": {
-                    "kind": "one_sided",
-                    "side": {
-                      "termination": {
-                        "kind": "blind",
-                        "length": 10.0
-                      }
-                    }
-                  },
-                  "length_along_profile_normal": true,
-                  "op": "join",
-                  "profile": {
-                    "kind": "planar",
-                    "value": {
-                      "kind": "sketch",
-                      "value": "fcstd:design:sketch#Sketch"
-                    }
-                  },
-                  "solid": true,
-                  "start": {
-                    "kind": "profile_plane"
-                  }
-                }
-              },
-              "refine": true
-            }
-          },
-          "dependencies": [
-            "fcstd:design:feature#Sketch",
-            "fcstd:design:feature#Body",
-            "fcstd:design:feature#Parameters"
-          ],
-          "id": "fcstd:design:feature#Pad",
-          "name": "Pad",
-          "native_ref": "fcstd:native:object#Pad",
-          "ordinal": 11,
-          "outputs": [
-            "fcstd:model:body#Pad:Shape:Pad.Shape.brp:24%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Suppressed": "false",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Pad",
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "tree_node",
-              "value": {
-                "children": {
-                  "children": []
-                },
-                "role": "equations"
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Parameters",
-          "name": "Parameters",
-          "native_ref": "fcstd:native:object#Parameters",
-          "ordinal": 9,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Spreadsheet::Sheet"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "sketch",
-              "value": {
-                "sketch": {
-                  "kind": "planar",
-                  "sketch": "fcstd:design:sketch#Sketch"
-                }
-              }
-            }
-          },
-          "dependencies": [
-            "fcstd:design:feature#Parameters"
-          ],
-          "id": "fcstd:design:feature#Sketch",
-          "name": "Sketch",
-          "native_ref": "fcstd:native:object#Sketch",
-          "ordinal": 10,
-          "outputs": [
-            "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:9%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "5",
-            "Visibility": "false"
-          },
-          "source_tag": "Sketcher::SketchObject"
-        }
-      ],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -4110,117 +2973,7 @@
           "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%40location1%3A1"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [
-            "fcstd:design:parameter#Parameters:cell:B1"
-          ],
-          "expression": "Parameters.plate_w / 2",
-          "id": "fcstd:design:parameter#Pad:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#Pad:Length",
-          "ordinal": 9,
-          "owner": "fcstd:design:feature#Pad",
-          "properties": {
-            "expression_native_ref": "fcstd:native:property#Pad:ExpressionEngine"
-          },
-          "value": {
-            "kind": "length",
-            "value": 10.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "10.0000000000000000",
-          "id": "fcstd:design:parameter#Pad:Length2",
-          "name": "Length2",
-          "native_ref": "fcstd:native:property#Pad:Length2",
-          "ordinal": 10,
-          "owner": "fcstd:design:feature#Pad",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 10.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "'plate_w",
-          "id": "fcstd:design:parameter#Parameters:cell:A1",
-          "name": "A1",
-          "native_ref": "fcstd:native:property#Parameters:cells",
-          "ordinal": 0,
-          "owner": "fcstd:design:feature#Parameters",
-          "properties": {
-            "address": "A1"
-          },
-          "value": {
-            "kind": "string",
-            "value": "plate_w"
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "=20 mm",
-          "id": "fcstd:design:parameter#Parameters:cell:B1",
-          "name": "plate_w",
-          "native_ref": "fcstd:native:property#Parameters:cells",
-          "ordinal": 1,
-          "owner": "fcstd:design:feature#Parameters",
-          "properties": {
-            "address": "B1",
-            "alias": "plate_w"
-          },
-          "value": {
-            "kind": "length",
-            "value": 20.0
-          }
-        },
-        {
-          "dependencies": [
-            "fcstd:design:parameter#Parameters:cell:B1"
-          ],
-          "expression": "Parameters.plate_w",
-          "id": "fcstd:design:parameter#Sketch:constraint:10",
-          "name": "Constraint10",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "ordinal": 9,
-          "owner": "fcstd:design:feature#Sketch",
-          "properties": {
-            "expression_native_ref": "fcstd:native:property#Sketch:ExpressionEngine",
-            "is_driving": "1",
-            "source_name": "width"
-          },
-          "value": {
-            "kind": "length",
-            "value": 20.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "30.0000000000000000",
-          "id": "fcstd:design:parameter#Sketch:constraint:11",
-          "name": "Constraint11",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "ordinal": 10,
-          "owner": "fcstd:design:feature#Sketch",
-          "properties": {
-            "is_driving": "1",
-            "source_name": "height"
-          },
-          "value": {
-            "kind": "length",
-            "value": 30.0
-          }
-        }
-      ],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#Body:Shape:Body.Shape.brp:1%40location17",
@@ -4587,43 +3340,8 @@
           }
         }
       ],
-      "presentation_documents": [
-        {
-          "id": "fcstd:presentation:document#0",
-          "native_ref": "fcstd:gui:document#0",
-          "schema_version": 1,
-          "states": [
-            {
-              "assets": [],
-              "attributes": {},
-              "kind": {
-                "kind": "Native",
-                "value": "Expand"
-              },
-              "order": 0
-            },
-            {
-              "assets": [],
-              "attributes": {
-                "settings": ""
-              },
-              "kind": {
-                "kind": "Camera",
-                "value": {
-                  "properties": {
-                    "settings": ""
-                  }
-                }
-              },
-              "order": 1
-            }
-          ]
-        }
-      ],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "fcstd:model:body#Body:Shape:Body.Shape.brp:34%40location1",
@@ -4654,8 +3372,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "fcstd:model:shell#Body:Shape:Body.Shape.brp:33%40location1",
@@ -4768,387 +3484,6 @@
             }
           ],
           "region": "fcstd:model:region#Sketch:Shape:Sketch.Shape.brp:9%40location1"
-        }
-      ],
-      "sketch_constraints": [
-        {
-          "active": true,
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "kind": "end",
-                "value": "fcstd:design:sketch-entity#Sketch:1"
-              },
-              {
-                "kind": "start",
-                "value": "fcstd:design:sketch-entity#Sketch:2"
-              }
-            ]
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:1",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "entities": [
-              "fcstd:design:sketch-entity#Sketch:1"
-            ],
-            "kind": "distance",
-            "parameter": "fcstd:design:parameter#Sketch:constraint:10"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:10",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "name": "width",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "entities": [
-              "fcstd:design:sketch-entity#Sketch:2"
-            ],
-            "kind": "distance",
-            "parameter": "fcstd:design:parameter#Sketch:constraint:11"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:11",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "name": "height",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Sketch:1",
-            "kind": "horizontal"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:2",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "kind": "end",
-                "value": "fcstd:design:sketch-entity#Sketch:2"
-              },
-              {
-                "kind": "start",
-                "value": "fcstd:design:sketch-entity#Sketch:3"
-              }
-            ]
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:3",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Sketch:2",
-            "kind": "vertical"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:4",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "kind": "end",
-                "value": "fcstd:design:sketch-entity#Sketch:3"
-              },
-              {
-                "kind": "start",
-                "value": "fcstd:design:sketch-entity#Sketch:4"
-              }
-            ]
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:5",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Sketch:3",
-            "kind": "horizontal"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:6",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "kind": "end",
-                "value": "fcstd:design:sketch-entity#Sketch:4"
-              },
-              {
-                "kind": "start",
-                "value": "fcstd:design:sketch-entity#Sketch:1"
-              }
-            ]
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:7",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Sketch:4",
-            "kind": "vertical"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:8",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "center": {
-              "kind": "entity",
-              "value": "fcstd:design:sketch-entity#Sketch:reference-root-point"
-            },
-            "first": {
-              "kind": "start",
-              "value": "fcstd:design:sketch-entity#Sketch:1"
-            },
-            "kind": "point_symmetric",
-            "second": {
-              "kind": "start",
-              "value": "fcstd:design:sketch-entity#Sketch:3"
-            }
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:9",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        }
-      ],
-      "sketch_entities": [
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "end": {
-              "u": 10.0,
-              "v": -15.0
-            },
-            "kind": "line",
-            "start": {
-              "u": -10.0,
-              "v": -15.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:1",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "end": {
-              "u": 10.0,
-              "v": 15.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 10.0,
-              "v": -15.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:2",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "end": {
-              "u": -10.0,
-              "v": 15.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 10.0,
-              "v": 15.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:3",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "end": {
-              "u": -10.0,
-              "v": -15.0
-            },
-            "kind": "line",
-            "start": {
-              "u": -10.0,
-              "v": 15.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:4",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        },
-        {
-          "construction": true,
-          "endpoint_refs": [],
-          "geometry": {
-            "kind": "point",
-            "position": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:reference-root-point",
-          "native_ref": "fcstd:native:object#Sketch",
-          "sketch": "fcstd:design:sketch#Sketch"
-        }
-      ],
-      "sketches": [
-        {
-          "id": "fcstd:design:sketch#Sketch",
-          "name": "Sketch",
-          "native_ref": "fcstd:native:object#Sketch",
-          "placement": {
-            "frame": {
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:1",
-                "reversed": false
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:2",
-                "reversed": false
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:3",
-                "reversed": false
-              },
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:4",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [
-        {
-          "cells": [
-            {
-              "address": "A1",
-              "parameter": "fcstd:design:parameter#Parameters:cell:A1"
-            },
-            {
-              "address": "B1",
-              "parameter": "fcstd:design:parameter#Parameters:cell:B1"
-            }
-          ],
-          "column_widths": [],
-          "feature": "fcstd:design:feature#Parameters",
-          "id": "fcstd:design:spreadsheet#Parameters",
-          "merged_ranges": [],
-          "native_ref": "fcstd:native:object#Parameters",
-          "row_heights": []
         }
       ],
       "subds": [],
@@ -5774,7 +4109,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1%40location17",
@@ -5916,7 +4250,1675 @@
           "point": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:6%40location1",
           "tolerance": 1e-7
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:13%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:13%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:14%40location19",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:14%40location19"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:15%40location16",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:15%40location16"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:20%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:20%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:21%40location19",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:21%40location19"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:22%40location16",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:22%40location16"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:25%40location19",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:25%40location19"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:26%40location16",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:26%40location16"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:3%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:3%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:6%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:6%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:7%40location19",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:7%40location19"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Body:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Body:1:Body:Shape:Body.Shape.brp:8%40location16",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Body:Shape:Body.Shape.brp:8%40location16"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:10%40location12",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location12"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:10%40location14",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location14"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:14%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:14%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:15%40location12",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location12"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:15%40location14",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location14"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:18%40location12",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location12"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:18%40location14",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location14"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:2%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:4%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:4%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:5%40location12",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location12"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:5%40location14",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location14"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Pad:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Pad:1:Pad:Shape:Pad.Shape.brp:9%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:9%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Sketch:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:3%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Sketch",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:3%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Sketch:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:5%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Sketch",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:5%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Sketch:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:7%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Sketch",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:7%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Sketch:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:Sketch.Shape.brp:8%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Sketch",
+          "target": {
+            "kind": "edge",
+            "value": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:8%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#Body:1",
+          "channels": {},
+          "id": "fcstd:appearance:binding#shape-material:Body:0",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "body",
+            "value": "fcstd:model:body#Body:Shape:Body.Shape.brp:34%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#Pad:1",
+          "channels": {},
+          "id": "fcstd:appearance:binding#shape-material:Pad:0",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "body",
+            "value": "fcstd:model:body#Pad:Shape:Pad.Shape.brp:24%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Body:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:1%40location17",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1%40location17"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Body:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:11%40location17",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11%40location17"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Body:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:12%40location17",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:12%40location17"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Body:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:18%40location17",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:18%40location17"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Body:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:19%40location17",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:19%40location17"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Body:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:2%40location17",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2%40location17"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Body:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:4%40location17",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4%40location17"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Body:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Body:1:Body:Shape:Body.Shape.brp:5%40location17",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Body",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:5%40location17"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Pad:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:1%40location12",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location12"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Pad:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:1%40location14",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Pad:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:13%40location12",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location12"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Pad:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:13%40location14",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location14"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Pad:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:3%40location12",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location12"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Pad:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:3%40location14",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location14"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Pad:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:8%40location12",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location12"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Pad:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:Pad.Shape.brp:8%40location14",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Pad",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location14"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Sketch:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:1%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Sketch",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:1%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Sketch:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:2%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Sketch",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:2%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Sketch:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:4%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Sketch",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:4%40location1"
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Sketch:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:Sketch.Shape.brp:6%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Sketch",
+          "target": {
+            "kind": "vertex",
+            "value": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:6%40location1"
+          }
+        }
       ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.09803921729326248,
+            "g": 0.09803921729326248,
+            "r": 0.09803921729326248
+          },
+          "id": "fcstd:appearance:edge#Body",
+          "name": "Body line appearance",
+          "properties": {
+            "line_width": 2.0
+          },
+          "schema": "FCStd ViewProvider line style",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.09803921729326248,
+            "g": 0.09803921729326248,
+            "r": 0.09803921729326248
+          },
+          "id": "fcstd:appearance:edge#Body:1",
+          "name": "Body Edge1 appearance",
+          "properties": {
+            "line_width": 2.0
+          },
+          "schema": "FCStd LineColorArray",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.09803921729326248,
+            "g": 0.09803921729326248,
+            "r": 0.09803921729326248
+          },
+          "id": "fcstd:appearance:edge#Pad",
+          "name": "Pad line appearance",
+          "properties": {
+            "line_width": 2.0
+          },
+          "schema": "FCStd ViewProvider line style",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.09803921729326248,
+            "g": 0.09803921729326248,
+            "r": 0.09803921729326248
+          },
+          "id": "fcstd:appearance:edge#Pad:1",
+          "name": "Pad Edge1 appearance",
+          "properties": {
+            "line_width": 2.0
+          },
+          "schema": "FCStd LineColorArray",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.16078431904315948,
+            "g": 0.14509804546833038,
+            "r": 0.12941177189350128
+          },
+          "id": "fcstd:appearance:edge#Sketch:1",
+          "name": "Sketch Edge1 appearance",
+          "properties": {},
+          "schema": "FCStd LineColorArray",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.7411764860153198,
+            "g": 0.7098039388656616,
+            "r": 0.6784313917160034
+          },
+          "id": "fcstd:appearance:shape-material#Body:1",
+          "name": "Body face 1 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.9803921580314636,
+            "g": 0.5882353186607361,
+            "r": 0.19607843458652496
+          },
+          "id": "fcstd:appearance:shape-material#Origin001:1",
+          "name": "Origin001 face 1 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.7411764860153198,
+            "g": 0.7098039388656616,
+            "r": 0.6784313917160034
+          },
+          "id": "fcstd:appearance:shape-material#Pad:1",
+          "name": "Pad face 1 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.800000011920929,
+            "g": 0.20000000298023224,
+            "r": 0.20000000298023224
+          },
+          "id": "fcstd:appearance:shape-material#XY_Plane:1",
+          "name": "XY_Plane face 1 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.20000000298023224,
+            "g": 0.800000011920929,
+            "r": 0.20000000298023224
+          },
+          "id": "fcstd:appearance:shape-material#XZ_Plane:1",
+          "name": "XZ_Plane face 1 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.20000000298023224,
+            "g": 0.20000000298023224,
+            "r": 0.800000011920929
+          },
+          "id": "fcstd:appearance:shape-material#X_Axis:1",
+          "name": "X_Axis face 1 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.20000000298023224,
+            "g": 0.20000000298023224,
+            "r": 0.800000011920929
+          },
+          "id": "fcstd:appearance:shape-material#YZ_Plane:1",
+          "name": "YZ_Plane face 1 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.20000000298023224,
+            "g": 0.800000011920929,
+            "r": 0.20000000298023224
+          },
+          "id": "fcstd:appearance:shape-material#Y_Axis:1",
+          "name": "Y_Axis face 1 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.800000011920929,
+            "g": 0.20000000298023224,
+            "r": 0.20000000298023224
+          },
+          "id": "fcstd:appearance:shape-material#Z_Axis:1",
+          "name": "Z_Axis face 1 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.09803921729326248,
+            "g": 0.09803921729326248,
+            "r": 0.09803921729326248
+          },
+          "id": "fcstd:appearance:vertex#Body",
+          "name": "Body point appearance",
+          "properties": {
+            "point_size": 2.0
+          },
+          "schema": "FCStd ViewProvider point style",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.09803921729326248,
+            "g": 0.09803921729326248,
+            "r": 0.09803921729326248
+          },
+          "id": "fcstd:appearance:vertex#Body:1",
+          "name": "Body Vertex1 appearance",
+          "properties": {
+            "point_size": 2.0
+          },
+          "schema": "FCStd PointColorArray",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.09803921729326248,
+            "g": 0.09803921729326248,
+            "r": 0.09803921729326248
+          },
+          "id": "fcstd:appearance:vertex#Pad",
+          "name": "Pad point appearance",
+          "properties": {
+            "point_size": 2.0
+          },
+          "schema": "FCStd ViewProvider point style",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.09803921729326248,
+            "g": 0.09803921729326248,
+            "r": 0.09803921729326248
+          },
+          "id": "fcstd:appearance:vertex#Pad:1",
+          "name": "Pad Vertex1 appearance",
+          "properties": {
+            "point_size": 2.0
+          },
+          "schema": "FCStd PointColorArray",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.16078431904315948,
+            "g": 0.14509804546833038,
+            "r": 0.12941177189350128
+          },
+          "id": "fcstd:appearance:vertex#Sketch:1",
+          "name": "Sketch Vertex1 appearance",
+          "properties": {},
+          "schema": "FCStd PointColorArray",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "tree_node",
+              "value": {
+                "children": {
+                  "active_child": "fcstd:design:feature#Pad",
+                  "children": [
+                    "fcstd:design:feature#Sketch",
+                    "fcstd:design:feature#Pad"
+                  ]
+                },
+                "role": "solid_bodies"
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Body",
+          "name": "Body",
+          "native_ref": "fcstd:native:object#Body",
+          "ordinal": 0,
+          "outputs": [
+            "fcstd:model:body#Body:Shape:Body.Shape.brp:34%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Tip": "fcstd:native:object#Pad",
+            "Visibility": "true"
+          },
+          "source_tag": "PartDesign::Body"
+        },
+        {
+          "definition": {
+            "kind": "post_process",
+            "value": {
+              "fuzzy_tolerance": {
+                "kind": "automatic"
+              },
+              "operation": {
+                "kind": "extrude",
+                "value": {
+                  "allow_multi_profile_faces": true,
+                  "direction": {
+                    "kind": "explicit",
+                    "source": {
+                      "kind": "profile_normal"
+                    },
+                    "vector": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 1.0
+                    }
+                  },
+                  "extent": {
+                    "kind": "one_sided",
+                    "side": {
+                      "termination": {
+                        "kind": "blind",
+                        "length": 10.0
+                      }
+                    }
+                  },
+                  "length_along_profile_normal": true,
+                  "op": "join",
+                  "profile": {
+                    "kind": "planar",
+                    "value": {
+                      "kind": "sketch",
+                      "value": "fcstd:design:sketch#Sketch"
+                    }
+                  },
+                  "solid": true,
+                  "start": {
+                    "kind": "profile_plane"
+                  }
+                }
+              },
+              "refine": true
+            }
+          },
+          "dependencies": [
+            "fcstd:design:feature#Sketch",
+            "fcstd:design:feature#Body",
+            "fcstd:design:feature#Parameters"
+          ],
+          "id": "fcstd:design:feature#Pad",
+          "name": "Pad",
+          "native_ref": "fcstd:native:object#Pad",
+          "ordinal": 11,
+          "outputs": [
+            "fcstd:model:body#Pad:Shape:Pad.Shape.brp:24%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Suppressed": "false",
+            "Visibility": "true"
+          },
+          "source_tag": "PartDesign::Pad",
+          "suppressed": false
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "tree_node",
+              "value": {
+                "children": {
+                  "children": []
+                },
+                "role": "equations"
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Parameters",
+          "name": "Parameters",
+          "native_ref": "fcstd:native:object#Parameters",
+          "ordinal": 9,
+          "outputs": [],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Spreadsheet::Sheet"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#Sketch"
+                }
+              }
+            }
+          },
+          "dependencies": [
+            "fcstd:design:feature#Parameters"
+          ],
+          "id": "fcstd:design:feature#Sketch",
+          "name": "Sketch",
+          "native_ref": "fcstd:native:object#Sketch",
+          "ordinal": 10,
+          "outputs": [
+            "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:9%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "5",
+            "Visibility": "false"
+          },
+          "source_tag": "Sketcher::SketchObject"
+        }
+      ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [
+        {
+          "dependencies": [
+            "fcstd:design:parameter#Parameters:cell:B1"
+          ],
+          "expression": "Parameters.plate_w / 2",
+          "id": "fcstd:design:parameter#Pad:Length",
+          "name": "Length",
+          "native_ref": "fcstd:native:property#Pad:Length",
+          "ordinal": 9,
+          "owner": "fcstd:design:feature#Pad",
+          "properties": {
+            "expression_native_ref": "fcstd:native:property#Pad:ExpressionEngine"
+          },
+          "value": {
+            "kind": "length",
+            "value": 10.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "10.0000000000000000",
+          "id": "fcstd:design:parameter#Pad:Length2",
+          "name": "Length2",
+          "native_ref": "fcstd:native:property#Pad:Length2",
+          "ordinal": 10,
+          "owner": "fcstd:design:feature#Pad",
+          "properties": {},
+          "value": {
+            "kind": "length",
+            "value": 10.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "'plate_w",
+          "id": "fcstd:design:parameter#Parameters:cell:A1",
+          "name": "A1",
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "ordinal": 0,
+          "owner": "fcstd:design:feature#Parameters",
+          "properties": {
+            "address": "A1"
+          },
+          "value": {
+            "kind": "string",
+            "value": "plate_w"
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "=20 mm",
+          "id": "fcstd:design:parameter#Parameters:cell:B1",
+          "name": "plate_w",
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "ordinal": 1,
+          "owner": "fcstd:design:feature#Parameters",
+          "properties": {
+            "address": "B1",
+            "alias": "plate_w"
+          },
+          "value": {
+            "kind": "length",
+            "value": 20.0
+          }
+        },
+        {
+          "dependencies": [
+            "fcstd:design:parameter#Parameters:cell:B1"
+          ],
+          "expression": "Parameters.plate_w",
+          "id": "fcstd:design:parameter#Sketch:constraint:10",
+          "name": "Constraint10",
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "ordinal": 9,
+          "owner": "fcstd:design:feature#Sketch",
+          "properties": {
+            "expression_native_ref": "fcstd:native:property#Sketch:ExpressionEngine",
+            "is_driving": "1",
+            "source_name": "width"
+          },
+          "value": {
+            "kind": "length",
+            "value": 20.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "30.0000000000000000",
+          "id": "fcstd:design:parameter#Sketch:constraint:11",
+          "name": "Constraint11",
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "ordinal": 10,
+          "owner": "fcstd:design:feature#Sketch",
+          "properties": {
+            "is_driving": "1",
+            "source_name": "height"
+          },
+          "value": {
+            "kind": "length",
+            "value": 30.0
+          }
+        }
+      ],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [
+        {
+          "id": "fcstd:presentation:document#0",
+          "native_ref": "fcstd:gui:document#0",
+          "schema_version": 1,
+          "states": [
+            {
+              "assets": [],
+              "attributes": {},
+              "kind": {
+                "kind": "Native",
+                "value": "Expand"
+              },
+              "order": 0
+            },
+            {
+              "assets": [],
+              "attributes": {
+                "settings": ""
+              },
+              "kind": {
+                "kind": "Camera",
+                "value": {
+                  "properties": {
+                    "settings": ""
+                  }
+                }
+              },
+              "order": 1
+            }
+          ]
+        }
+      ],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [
+        {
+          "active": true,
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "kind": "end",
+                "value": "fcstd:design:sketch-entity#Sketch:1"
+              },
+              {
+                "kind": "start",
+                "value": "fcstd:design:sketch-entity#Sketch:2"
+              }
+            ]
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:1",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        },
+        {
+          "active": true,
+          "definition": {
+            "entities": [
+              "fcstd:design:sketch-entity#Sketch:1"
+            ],
+            "kind": "distance",
+            "parameter": "fcstd:design:parameter#Sketch:constraint:10"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:10",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "name": "width",
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        },
+        {
+          "active": true,
+          "definition": {
+            "entities": [
+              "fcstd:design:sketch-entity#Sketch:2"
+            ],
+            "kind": "distance",
+            "parameter": "fcstd:design:parameter#Sketch:constraint:11"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:11",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "name": "height",
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        },
+        {
+          "active": true,
+          "definition": {
+            "entity": "fcstd:design:sketch-entity#Sketch:1",
+            "kind": "horizontal"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:2",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        },
+        {
+          "active": true,
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "kind": "end",
+                "value": "fcstd:design:sketch-entity#Sketch:2"
+              },
+              {
+                "kind": "start",
+                "value": "fcstd:design:sketch-entity#Sketch:3"
+              }
+            ]
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:3",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        },
+        {
+          "active": true,
+          "definition": {
+            "entity": "fcstd:design:sketch-entity#Sketch:2",
+            "kind": "vertical"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:4",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        },
+        {
+          "active": true,
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "kind": "end",
+                "value": "fcstd:design:sketch-entity#Sketch:3"
+              },
+              {
+                "kind": "start",
+                "value": "fcstd:design:sketch-entity#Sketch:4"
+              }
+            ]
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:5",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        },
+        {
+          "active": true,
+          "definition": {
+            "entity": "fcstd:design:sketch-entity#Sketch:3",
+            "kind": "horizontal"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:6",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        },
+        {
+          "active": true,
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "kind": "end",
+                "value": "fcstd:design:sketch-entity#Sketch:4"
+              },
+              {
+                "kind": "start",
+                "value": "fcstd:design:sketch-entity#Sketch:1"
+              }
+            ]
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:7",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        },
+        {
+          "active": true,
+          "definition": {
+            "entity": "fcstd:design:sketch-entity#Sketch:4",
+            "kind": "vertical"
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:8",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        },
+        {
+          "active": true,
+          "definition": {
+            "center": {
+              "kind": "entity",
+              "value": "fcstd:design:sketch-entity#Sketch:reference-root-point"
+            },
+            "first": {
+              "kind": "start",
+              "value": "fcstd:design:sketch-entity#Sketch:1"
+            },
+            "kind": "point_symmetric",
+            "second": {
+              "kind": "start",
+              "value": "fcstd:design:sketch-entity#Sketch:3"
+            }
+          },
+          "driving": true,
+          "id": "fcstd:design:sketch-constraint#Sketch:9",
+          "label_distance": 10.0,
+          "label_position": 0.0,
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "sketch": "fcstd:design:sketch#Sketch",
+          "virtual_space": false,
+          "visible": true
+        }
+      ],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "endpoint_refs": [],
+          "geometry": {
+            "end": {
+              "u": 10.0,
+              "v": -15.0
+            },
+            "kind": "line",
+            "start": {
+              "u": -10.0,
+              "v": -15.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:1",
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "sketch": "fcstd:design:sketch#Sketch"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [],
+          "geometry": {
+            "end": {
+              "u": 10.0,
+              "v": 15.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 10.0,
+              "v": -15.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:2",
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "sketch": "fcstd:design:sketch#Sketch"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [],
+          "geometry": {
+            "end": {
+              "u": -10.0,
+              "v": 15.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 10.0,
+              "v": 15.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:3",
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "sketch": "fcstd:design:sketch#Sketch"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [],
+          "geometry": {
+            "end": {
+              "u": -10.0,
+              "v": -15.0
+            },
+            "kind": "line",
+            "start": {
+              "u": -10.0,
+              "v": 15.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:4",
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "sketch": "fcstd:design:sketch#Sketch"
+        },
+        {
+          "construction": true,
+          "endpoint_refs": [],
+          "geometry": {
+            "kind": "point",
+            "position": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:reference-root-point",
+          "native_ref": "fcstd:native:object#Sketch",
+          "sketch": "fcstd:design:sketch#Sketch"
+        }
+      ],
+      "sketches": [
+        {
+          "id": "fcstd:design:sketch#Sketch",
+          "name": "Sketch",
+          "native_ref": "fcstd:native:object#Sketch",
+          "placement": {
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "kind": "resolved"
+          },
+          "profiles": [
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#Sketch:1",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#Sketch:2",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#Sketch:3",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#Sketch:4",
+                "reversed": false
+              }
+            ]
+          ]
+        }
+      ],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [
+        {
+          "cells": [
+            {
+              "address": "A1",
+              "parameter": "fcstd:design:parameter#Parameters:cell:A1"
+            },
+            {
+              "address": "B1",
+              "parameter": "fcstd:design:parameter#Parameters:cell:B1"
+            }
+          ],
+          "column_widths": [],
+          "feature": "fcstd:design:feature#Parameters",
+          "id": "fcstd:design:spreadsheet#Parameters",
+          "merged_ranges": [],
+          "native_ref": "fcstd:native:object#Parameters",
+          "row_heights": []
+        }
+      ],
+      "tessellations": [],
       "view_presentations": [
         {
           "display_mode": "0",
@@ -6976,16 +6978,18 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher,Spreadsheet",
-        "archive_entry_count": "28",
         "document_kind": "part-design",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "12",
-        "physical_archive_bytes": "12601",
-        "physical_ledger_spans": "197",
         "program_version": "1.1R20260928 (Git shallow)"
       },
       "identity": {
@@ -7059,6 +7063,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "703bdba9622a88c56205442ee8b60e48587d6e2883b0687fa59cdf5021990e89",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

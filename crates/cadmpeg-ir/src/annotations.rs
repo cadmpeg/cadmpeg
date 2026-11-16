@@ -1246,7 +1246,7 @@ mod tests {
     fn repeated_exactness_field_keys_are_refused_through_the_decode_sidecar() {
         let ir = crate::examples::unit_cube().expect("valid cube");
         let ir_json = ir.to_canonical_json().expect("serialize CADIR");
-        let id = ir.model.points[0].id.as_str();
+        let id = ir.geometry.points[0].id.as_str();
         for scope in ["entity", "fields"] {
             let mut builder = AnnotationBuilder::new();
             if scope == "entity" {
@@ -1264,7 +1264,10 @@ mod tests {
             let sidecar = crate::source_fidelity::DecodeSidecar::bind_sha256(
                 crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),
                 report,
-                crate::SourceFidelity::with_annotations(builder.build()),
+                crate::SourceFidelity::with_annotations(
+                    builder.build(),
+                    crate::hash::digest::Sha256Digest::digest(b"test source"),
+                ),
             );
             let text = serde_json::to_string(&sidecar).expect("serialize sidecar");
             assert_eq!(

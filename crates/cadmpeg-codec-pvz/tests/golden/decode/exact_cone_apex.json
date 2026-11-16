@@ -1,15 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "pvz:model:body#part.ol",
@@ -102,8 +95,6 @@
           "sense": "reversed"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -164,8 +155,6 @@
           "id": "pvz:model:curve#part.ol:2"
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -224,10 +213,6 @@
           "surface": "pvz:model:surface#part.ol:1"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -255,86 +240,6 @@
           "id": "pvz:model:loop#part.ol:1"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "pvz:model:occurrence#0",
-          "native_ref": "definition 0",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "pvz:model:definition#0",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "pvz:model:occurrence#1",
-          "name": "41",
-          "native_ref": "definition 0 occurrence 0",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#0"
-          },
-          "prototype": {
-            "definition": "pvz:model:definition#1",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -431,10 +336,6 @@
           }
         }
       ],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "pvz:model:point#part.ol:0",
@@ -453,32 +354,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [
-        {
-          "bodies": [],
-          "bom_properties": {},
-          "id": "pvz:model:definition#0",
-          "kind": "part",
-          "native_ref": "definition 0",
-          "sketches": [],
-          "source_name": "TOP.ASM"
-        },
-        {
-          "bodies": [
-            "pvz:model:body#part.ol"
-          ],
-          "bom_properties": {},
-          "id": "pvz:model:definition#1",
-          "kind": "part",
-          "native_ref": "definition 1",
-          "sketches": [],
-          "source_name": "PART.PRT"
-        }
-      ],
       "regions": [
         {
           "body": "pvz:model:body#part.ol",
@@ -488,8 +365,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "pvz:model:shell#part.ol:0",
@@ -506,14 +381,6 @@
           "region": "pvz:model:region#part.ol:0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -568,7 +435,6 @@
           "id": "pvz:model:surface#part.ol:1"
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "pvz:model:vertex#part.ol:0",
@@ -580,13 +446,154 @@
           "point": "pvz:model:point#part.ol:1",
           "tolerance": 0.02
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [
+        {
+          "id": "pvz:model:occurrence#0",
+          "native_ref": "definition 0",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#0",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "pvz:model:occurrence#1",
+          "name": "41",
+          "native_ref": "definition 0 occurrence 0",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "pvz:model:occurrence#0"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#1",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
       ],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "pvz:model:definition#0",
+          "kind": "part",
+          "native_ref": "definition 0",
+          "sketches": [],
+          "source_name": "TOP.ASM"
+        },
+        {
+          "bodies": [
+            "pvz:model:body#part.ol"
+          ],
+          "bom_properties": {},
+          "id": "pvz:model:definition#1",
+          "kind": "part",
+          "native_ref": "definition 1",
+          "sketches": [],
+          "source_name": "PART.PRT"
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "geometry_member_count": "1",
         "structure_member": "model.pvs"
       },
       "identity": {
@@ -934,6 +941,9 @@
         }
       }
     },
-    "retained_records": {}
+    "decode_digest": "fa22afa4d62e11d7ca4df74ea4a9db0993364ae1b5b5ca05ae3bc596e0c28796",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

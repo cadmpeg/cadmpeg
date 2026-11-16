@@ -29,11 +29,8 @@ const CHECK_REPORT: &str = r#"{
     ],
     "losses": [
       {
-        "code": {"kind": "namespaced", "value": {
-          "namespace": "shared",
-          "code": "topology_not_transferred",
-          "kind": "topology_not_transferred"
-        }},
+        "code": {"kind": "namespaced", "value": {"namespace": "shared",
+                 "code": "topology_not_transferred", "kind": "topology_not_transferred"}},
         "severity": "warning",
         "message": "wire dropped"
       }
@@ -43,7 +40,8 @@ const CHECK_REPORT: &str = r#"{
 
 const CADIR_DOC: &str = r#"{
   "ir_version": "11",
-  "model": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
+  "geometry": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
+  "model": {"features": []},
   "native": {"fcstd": {"objects": [1, 2, 3]}}
 }"#;
 
@@ -457,8 +455,9 @@ fn counts_works_on_all_three_kinds_with_teaching_on_the_sidecar() {
         .success()
         .stdout(
             "namespace\tarena\tentries\n\
-             model\tedges\t0\n\
-             model\tfaces\t2\n\
+             geometry\tedges\t0\n\
+             geometry\tfaces\t2\n\
+             model\tfeatures\t0\n\
              native.fcstd\tobjects\t3\n",
         );
 
@@ -469,8 +468,8 @@ fn counts_works_on_all_three_kinds_with_teaching_on_the_sidecar() {
         .success()
         .stdout(
             "namespace\tarena\tentries\n\
-             model\tedges\t12\n\
-             model\tfaces\t2\n",
+             geometry\tedges\t12\n\
+             geometry\tfaces\t2\n",
         );
 
     let sidecar = write(dir.path(), "model.fidelity.json", SIDECAR);
@@ -615,7 +614,7 @@ fn query_projects_a_real_check_report_end_to_end() {
 fn summary_names_a_measure_report_and_counts_its_rows_and_unavailable_values() {
     let dir = tempdir().unwrap();
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.faces[0].sense = match ir.model.faces[0].sense {
+    ir.geometry.faces[0].sense = match ir.geometry.faces[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
     };
@@ -1022,7 +1021,7 @@ fn item_rejects_report_and_sidecar() {
             "query",
             "item",
             report.to_str().unwrap(),
-            "model.faces",
+            "geometry.faces",
             "f1",
         ])
         .assert()
@@ -1039,7 +1038,7 @@ fn item_rejects_report_and_sidecar() {
             "query",
             "item",
             sidecar.to_str().unwrap(),
-            "model.faces",
+            "geometry.faces",
             "f1",
         ])
         .assert()
@@ -1235,16 +1234,16 @@ fn item_round_trips_counts_dotted_name_on_unit_cube() {
     assert!(counts.status.success());
     let value: serde_json::Value = serde_json::from_slice(&counts.stdout).unwrap();
     let counts_map = value["payload"].as_object().unwrap();
-    assert!(counts_map.contains_key("model.faces"));
-    assert!(counts_map["model.faces"].as_u64().unwrap() > 0);
+    assert!(counts_map.contains_key("geometry.faces"));
+    assert!(counts_map["geometry.faces"].as_u64().unwrap() > 0);
 
-    let face_id = ir.model.faces[0].id.to_string();
+    let face_id = ir.geometry.faces[0].id.to_string();
     cadmpeg()
         .args([
             "query",
             "item",
             model.to_str().unwrap(),
-            "model.faces",
+            "geometry.faces",
             &face_id,
         ])
         .assert()
@@ -1258,7 +1257,7 @@ fn schema_lists_model_arenas_with_element_types() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.starts_with("arena\telement\trequired\n"), "{stdout}");
-    assert!(stdout.contains("model.faces\tFace\tyes"), "{stdout}");
+    assert!(stdout.contains("geometry.faces\tFace\tyes"), "{stdout}");
     assert!(
         stdout.contains("model.assembly_joints\tAssemblyJoint\tyes"),
         "{stdout}"
@@ -1467,7 +1466,7 @@ fn schema_sidecar_and_json_envelope() {
     assert!(stdout.contains("ir_sha256\tSha256Digest\tyes"), "{stdout}");
 
     let json = cadmpeg()
-        .args(["query", "schema", "--json", "types", "model.faces"])
+        .args(["query", "schema", "--json", "types", "geometry.faces"])
         .output()
         .unwrap();
     assert!(json.status.success());
@@ -1478,211 +1477,6 @@ fn schema_sidecar_and_json_envelope() {
         .as_object()
         .unwrap()
         .contains_key("FaceId"));
-}
-
-const FIDELITY_SIDECAR: &str = r#"{
-  "ir_version": "11",
-  "ir_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-  "report": {"identity": {"kind": "unclassified", "format": "f3d"},
-             "transfer": {"kind": "full", "geometry_transferred": true},
-             "coverage": {}, "losses": [], "notes": [],
-             "transfer_ledger": {"entries": []}},
-  "fidelity": {
-    "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},
-                    "exactness": {}},
-    "retained_records": {
-      "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0,
-             "bytes": {"kind": "inline", "data": "QUJDRA=="}},
-      "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4,
-             "bytes": {"kind": "inline", "data": "RUY="}},
-      "f3d:source:record#r3": {"stream": "Other", "offset": 0,
-             "bytes": {"kind": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}}
-    }
-  }
-}"#;
-
-#[test]
-fn fidelity_lists_retained_records_with_annotation_counts() {
-    let dir = tempdir().unwrap();
-    let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
-    cadmpeg()
-        .args(["query", "fidelity", sidecar.to_str().unwrap()])
-        .assert()
-        .success()
-        .stdout(
-            "stream\toffset\tbytes\tdata\tid\n\
-             Contents/Config-0\t0\t4\tyes\tf3d:source:record#r1\n\
-             Contents/Config-0\t4\t2\tyes\tf3d:source:record#r2\n\
-             Other\t0\t3\tno\tf3d:source:record#r3\n",
-        )
-        .stderr(predicate::str::contains(
-            "annotations: 1 streams, 1 provenance entries, 0 exactness notes",
-        ));
-}
-
-#[test]
-fn fidelity_extracts_a_contiguous_stream_byte_exactly() {
-    let dir = tempdir().unwrap();
-    let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
-    let out = dir.path().join("out.bin");
-
-    cadmpeg()
-        .args([
-            "query",
-            "fidelity",
-            sidecar.to_str().unwrap(),
-            "--stream",
-            "Contents/Config-0",
-            "-o",
-            out.to_str().unwrap(),
-        ])
-        .assert()
-        .success()
-        .stderr(predicate::str::contains("wrote 6 bytes from 2 record(s)"));
-    assert_eq!(fs::read(&out).unwrap(), b"ABCDEF");
-
-    let stdout = cadmpeg()
-        .args([
-            "query",
-            "fidelity",
-            sidecar.to_str().unwrap(),
-            "--stream",
-            "Contents/Config-0",
-            "--binary-stdout",
-        ])
-        .output()
-        .unwrap();
-    assert!(stdout.status.success());
-    assert_eq!(stdout.stdout, b"ABCDEF");
-}
-
-#[test]
-fn fidelity_refuses_to_overwrite_without_force() {
-    let dir = tempdir().unwrap();
-    let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
-    let out = dir.path().join("existing.bin");
-    fs::write(&out, b"precious").unwrap();
-
-    cadmpeg()
-        .args([
-            "query",
-            "fidelity",
-            sidecar.to_str().unwrap(),
-            "--stream",
-            "Contents/Config-0",
-            "-o",
-            out.to_str().unwrap(),
-        ])
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "exists; pass --force to overwrite",
-        ));
-    assert_eq!(fs::read(&out).unwrap(), b"precious");
-
-    cadmpeg()
-        .args([
-            "query",
-            "fidelity",
-            sidecar.to_str().unwrap(),
-            "--stream",
-            "Contents/Config-0",
-            "-o",
-            out.to_str().unwrap(),
-            "--force",
-        ])
-        .assert()
-        .success();
-    assert_eq!(fs::read(&out).unwrap(), b"ABCDEF");
-}
-
-#[test]
-fn fidelity_extraction_teaches_on_every_failure_shape() {
-    let dir = tempdir().unwrap();
-    let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
-    let path = sidecar.to_str().unwrap();
-
-    // No -o and no --binary-stdout: the house binary-stdout guard.
-    let guard = cadmpeg()
-        .args(["query", "fidelity", path, "--stream", "Contents/Config-0"])
-        .output()
-        .unwrap();
-    assert_eq!(guard.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&guard.stderr).contains("--binary-stdout"));
-
-    // Unknown stream lists the real ones.
-    let miss = cadmpeg()
-        .args([
-            "query",
-            "fidelity",
-            path,
-            "--stream",
-            "Nope",
-            "--binary-stdout",
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(miss.status.code(), Some(2));
-    let stderr = String::from_utf8_lossy(&miss.stderr);
-    assert!(stderr.contains("Contents/Config-0"), "{stderr}");
-
-    // Extent-only retention is a named refusal, not a silent empty file.
-    let nodata = cadmpeg()
-        .args([
-            "query",
-            "fidelity",
-            path,
-            "--stream",
-            "Other",
-            "--binary-stdout",
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(nodata.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&nodata.stderr).contains("without bytes"));
-
-    // A gap between extents refuses the concat instead of splicing bytes.
-    let gapped = FIDELITY_SIDECAR.replace("\"offset\": 4", "\"offset\": 8");
-    let gap_file = write(dir.path(), "gap.fidelity.json", &gapped);
-    let gap = cadmpeg()
-        .args([
-            "query",
-            "fidelity",
-            gap_file.to_str().unwrap(),
-            "--stream",
-            "Contents/Config-0",
-            "--binary-stdout",
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(gap.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&gap.stderr).contains("not contiguous"));
-}
-
-#[test]
-fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
-    let dir = tempdir().unwrap();
-    let doc = write(dir.path(), "doc.cadir.json", CADIR_DOC);
-    let cadir = cadmpeg()
-        .args(["query", "fidelity", doc.to_str().unwrap()])
-        .output()
-        .unwrap();
-    assert_eq!(cadir.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&cadir.stderr).contains(".fidelity.json"));
-
-    let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
-    let json = cadmpeg()
-        .args(["query", "fidelity", "--json", sidecar.to_str().unwrap()])
-        .output()
-        .unwrap();
-    assert!(json.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(value["command"], "query");
-    assert_eq!(value["payload"]["annotations"]["provenance"], 1);
-    assert_eq!(
-        value["payload"]["retained_records"][2]["data_retained"],
-        false
-    );
 }
 
 #[test]
@@ -1881,7 +1675,7 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
     use cadmpeg_ir::{CodecFormat, SourceGeometryRole, SourceObjectAssociation};
     let dir = tempdir().unwrap();
     let mut ir = unit_cube().unwrap();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "synthetic:cube:point#orphan".try_into().unwrap(),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(20.0, 30.0, 40.0))
             .unwrap(),

@@ -1,27 +1,9 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
+      "design": {},
       "fragment": false,
-      "ir_version": "11",
-      "model": {
-        "appearance_bindings": [],
-        "appearances": [],
-        "articulations": [],
-        "assembly_joints": [],
-        "assets": [
-          {
-            "content": {
-              "data": "SUkqAAgAAAAAAA==",
-              "kind": "embedded"
-            },
-            "id": "nx:container:material-texture#0:asset",
-            "media_type": "image/tiff",
-            "name": "AISI Steel 4340",
-            "native_ref": "nx:container:material-texture#0"
-          }
-        ],
-        "attributes": [],
+      "geometry": {
         "bodies": [
           {
             "id": "nx:derived:point-body#0",
@@ -32,8 +14,6 @@
           }
         ],
         "coedges": [],
-        "colliders": [],
-        "configurations": [],
         "curves": [
           {
             "geometry": {
@@ -55,23 +35,10 @@
             "id": "nx:s0:crv#0"
           }
         ],
-        "declared_measures": [],
-        "drawings": [],
         "edges": [],
         "faces": [],
-        "feature_input_topologies": [],
-        "feature_result_topologies": [],
-        "features": [],
-        "history_bodies": [],
         "loops": [],
-        "mass_properties": [],
-        "occurrences": [],
-        "parameters": [],
         "pcurves": [],
-        "physical_materials": [],
-        "physics_scenes": [],
-        "pmi": [],
-        "point_clouds": [],
         "points": [
           {
             "id": "nx:s0:pt#0",
@@ -82,11 +49,8 @@
             }
           }
         ],
-        "presentation_documents": [],
-        "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_definitions": [],
         "regions": [
           {
             "body": "nx:derived:point-body#0",
@@ -96,8 +60,6 @@
             ]
           }
         ],
-        "rigid_bodies": [],
-        "semantic_annotations": [],
         "shells": [
           {
             "id": "nx:derived:point-shell#0",
@@ -110,14 +72,6 @@
             "region": "nx:derived:point-region#0"
           }
         ],
-        "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
-        "solver_settings": [],
-        "spatial_sketch_constraints": [],
-        "spatial_sketch_entities": [],
-        "spatial_sketches": [],
-        "spreadsheets": [],
         "subds": [],
         "surfaces": [
           {
@@ -170,13 +124,61 @@
             "id": "nx:s0:surf#1"
           }
         ],
-        "tessellations": [],
         "vertices": [
           {
             "id": "nx:derived:point-vertex#0",
             "point": "nx:s0:pt#0"
           }
+        ]
+      },
+      "ir_version": "11",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "articulations": [],
+        "assembly_joints": [],
+        "assets": [
+          {
+            "content": {
+              "data": "SUkqAAgAAAAAAA==",
+              "kind": "embedded"
+            },
+            "id": "nx:container:material-texture#0:asset",
+            "media_type": "image/tiff",
+            "name": "AISI Steel 4340",
+            "native_ref": "nx:container:material-texture#0"
+          }
         ],
+        "attributes": [],
+        "colliders": [],
+        "configurations": [],
+        "declared_measures": [],
+        "drawings": [],
+        "feature_input_topologies": [],
+        "feature_result_topologies": [],
+        "features": [],
+        "history_bodies": [],
+        "mass_properties": [],
+        "occurrences": [],
+        "parameters": [],
+        "physical_materials": [],
+        "physics_scenes": [],
+        "pmi": [],
+        "point_clouds": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "product_definitions": [],
+        "rigid_bodies": [],
+        "semantic_annotations": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "solver_settings": [],
+        "spatial_sketch_constraints": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "tessellations": [],
         "view_presentations": []
       },
       "native": {
@@ -206,19 +208,14 @@
           ]
         }
       },
+      "process": {},
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
+      },
       "source": {
-        "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "3",
-          "file_size": "434",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "420",
-          "header_entry_count": "3",
-          "jpeg_preview_count": "0",
-          "partition_streams": "1",
-          "plain_streams": "0"
-        },
+        "attributes": {},
         "identity": {
           "dialects": {
             "extra": [
@@ -440,6 +437,8 @@
           }
         }
       },
+      "decode_digest": "cf67593c1f7f06d78a68a50988b47ecbf4efb89fcdc17ef44a57913ec868ea35",
+      "file_digests": {},
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -447,9 +446,15 @@
             "kind": "inline"
           },
           "offset": 178,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

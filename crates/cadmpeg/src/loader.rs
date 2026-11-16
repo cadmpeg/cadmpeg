@@ -167,7 +167,7 @@ mod tests {
         let sidecar = DecodeSidecar::bind_sha256(
             cadmpeg_ir::hash::digest::Sha256Digest::digest(text.as_bytes()),
             report,
-            SourceFidelity::default(),
+            SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source")),
         );
         std::fs::write(
             cadmpeg_ir::decode_sidecar_path(&path).unwrap(),

@@ -1,7 +1,24 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
     "ir_version": "11",
     "model": {
       "appearance_bindings": [],
@@ -10,38 +27,26 @@
       "assembly_joints": [],
       "assets": [],
       "attributes": [],
-      "bodies": [],
-      "coedges": [],
       "colliders": [],
       "configurations": [],
-      "curves": [],
       "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [],
       "history_bodies": [],
-      "loops": [],
       "mass_properties": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -50,10 +55,7 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -70,29 +72,23 @@
         ]
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "crv_array_count": "12",
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "158",
-        "section.0.length": "42",
         "section.0.name": "VisibGeom",
-        "section.0.offset": "79",
         "section.0.raw_name": "VisibGeom",
         "section.0.role": "psb-geometry",
-        "section.1.length": "16",
         "section.1.name": "AllFeatur",
-        "section.1.offset": "121",
         "section.1.raw_name": "AllFeatur",
         "section.1.role": "model-data",
-        "section.2.length": "21",
         "section.2.name": "THMB_IMG_MAIN",
-        "section.2.offset": "137",
         "section.2.raw_name": "THMB_IMG_MAIN",
         "section.2.role": "thumbnail",
-        "section_count": "3",
-        "srf_array_count": "5",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P test"
       },
@@ -607,6 +603,8 @@
         }
       }
     },
+    "decode_digest": "e9cfd827cb1b7ebc7a15fb7e89a4158579a2bd589becb53bc4e4d5bd225fac4e",
+    "file_digests": {},
     "retained_records": {
       "creo:THMB_IMG_MAIN:section#152": {
         "bytes": {
@@ -614,7 +612,10 @@
           "kind": "inline"
         },
         "offset": 152,
-        "stream": "creo:THMB_IMG_MAIN"
+        "stream": "creo:THMB_IMG_MAIN",
+        "untyped": [
+          "model"
+        ]
       },
       "creo:VisibGeom:section#79": {
         "bytes": {
@@ -622,8 +623,14 @@
           "kind": "inline"
         },
         "offset": 79,
-        "stream": "creo:VisibGeom"
+        "stream": "creo:VisibGeom",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

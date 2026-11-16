@@ -1,8 +1,157 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
+      "design": {},
       "fragment": false,
+      "geometry": {
+        "bodies": [
+          {
+            "id": "nx:s0:body#2",
+            "kind": "sheet",
+            "regions": [
+              "nx:s0:region#12"
+            ]
+          }
+        ],
+        "coedges": [
+          {
+            "edge": "nx:s0:edge#8",
+            "id": "nx:s0:fin#7",
+            "owner_loop": "nx:s0:loop#5",
+            "pcurves": [],
+            "radial_next": "nx:s0:fin#7",
+            "sense": "forward"
+          }
+        ],
+        "curves": [
+          {
+            "geometry": {
+              "kind": "solved",
+              "value": {
+                "direction": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "kind": "line",
+                "origin": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              }
+            },
+            "id": "nx:s0:crv#0"
+          }
+        ],
+        "edges": [
+          {
+            "carrier": {
+              "curve": "nx:s0:crv#0"
+            },
+            "end": "nx:s0:vertex#10",
+            "id": "nx:s0:edge#8",
+            "start": "nx:s0:vertex#10",
+            "tolerance": 0.3
+          }
+        ],
+        "faces": [
+          {
+            "id": "nx:s0:face#4",
+            "loops": {
+              "kind": "unspecified",
+              "loops": [
+                "nx:s0:loop#5"
+              ]
+            },
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#0",
+            "tolerance": 0.2
+          }
+        ],
+        "loops": [
+          {
+            "boundary": {
+              "coedges": [
+                "nx:s0:fin#7"
+              ],
+              "kind": "ring",
+              "vertex_uses": []
+            },
+            "face": "nx:s0:face#4",
+            "id": "nx:s0:loop#5"
+          }
+        ],
+        "pcurves": [],
+        "points": [
+          {
+            "id": "nx:s0:pt#0",
+            "position": {
+              "x": 10.0,
+              "y": 20.0,
+              "z": 30.0
+            }
+          }
+        ],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "regions": [
+          {
+            "body": "nx:s0:body#2",
+            "id": "nx:s0:region#12",
+            "shells": [
+              "nx:s0:shell#3"
+            ]
+          }
+        ],
+        "shells": [
+          {
+            "id": "nx:s0:shell#3",
+            "members": [
+              {
+                "id": "nx:s0:face#4",
+                "kind": "face"
+              }
+            ],
+            "region": "nx:s0:region#12"
+          }
+        ],
+        "subds": [],
+        "surfaces": [
+          {
+            "geometry": {
+              "kind": "solved",
+              "value": {
+                "kind": "plane",
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "origin": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "u_axis": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              }
+            },
+            "id": "nx:s0:surf#0"
+          }
+        ],
+        "vertices": [
+          {
+            "id": "nx:s0:vertex#10",
+            "point": "nx:s0:pt#0",
+            "tolerance": 0.1
+          }
+        ]
+      },
       "ir_version": "11",
       "model": {
         "appearance_bindings": [],
@@ -23,25 +172,6 @@
                 "value": "Model"
               }
             ]
-          }
-        ],
-        "bodies": [
-          {
-            "id": "nx:s0:body#2",
-            "kind": "sheet",
-            "regions": [
-              "nx:s0:region#12"
-            ]
-          }
-        ],
-        "coedges": [
-          {
-            "edge": "nx:s0:edge#8",
-            "id": "nx:s0:fin#7",
-            "owner_loop": "nx:s0:loop#5",
-            "pcurves": [],
-            "radial_next": "nx:s0:fin#7",
-            "sense": "forward"
           }
         ],
         "colliders": [],
@@ -73,118 +203,24 @@
             "source_index": 1
           }
         ],
-        "curves": [
-          {
-            "geometry": {
-              "kind": "solved",
-              "value": {
-                "direction": {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                "kind": "line",
-                "origin": {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              }
-            },
-            "id": "nx:s0:crv#0"
-          }
-        ],
         "declared_measures": [],
         "drawings": [],
-        "edges": [
-          {
-            "carrier": {
-              "curve": "nx:s0:crv#0"
-            },
-            "end": "nx:s0:vertex#10",
-            "id": "nx:s0:edge#8",
-            "start": "nx:s0:vertex#10",
-            "tolerance": 0.3
-          }
-        ],
-        "faces": [
-          {
-            "id": "nx:s0:face#4",
-            "loops": {
-              "kind": "unspecified",
-              "loops": [
-                "nx:s0:loop#5"
-              ]
-            },
-            "sense": "forward",
-            "shell": "nx:s0:shell#3",
-            "surface": "nx:s0:surf#0",
-            "tolerance": 0.2
-          }
-        ],
         "feature_input_topologies": [],
         "feature_result_topologies": [],
         "features": [],
         "history_bodies": [],
-        "loops": [
-          {
-            "boundary": {
-              "coedges": [
-                "nx:s0:fin#7"
-              ],
-              "kind": "ring",
-              "vertex_uses": []
-            },
-            "face": "nx:s0:face#4",
-            "id": "nx:s0:loop#5"
-          }
-        ],
         "mass_properties": [],
         "occurrences": [],
         "parameters": [],
-        "pcurves": [],
         "physical_materials": [],
         "physics_scenes": [],
         "pmi": [],
         "point_clouds": [],
-        "points": [
-          {
-            "id": "nx:s0:pt#0",
-            "position": {
-              "x": 10.0,
-              "y": 20.0,
-              "z": 30.0
-            }
-          }
-        ],
         "presentation_documents": [],
         "presentation_layers": [],
-        "procedural_curves": [],
-        "procedural_surfaces": [],
         "product_definitions": [],
-        "regions": [
-          {
-            "body": "nx:s0:body#2",
-            "id": "nx:s0:region#12",
-            "shells": [
-              "nx:s0:shell#3"
-            ]
-          }
-        ],
         "rigid_bodies": [],
         "semantic_annotations": [],
-        "shells": [
-          {
-            "id": "nx:s0:shell#3",
-            "members": [
-              {
-                "id": "nx:s0:face#4",
-                "kind": "face"
-              }
-            ],
-            "region": "nx:s0:region#12"
-          }
-        ],
         "sketch_constraints": [],
         "sketch_entities": [],
         "sketches": [],
@@ -193,41 +229,7 @@
         "spatial_sketch_entities": [],
         "spatial_sketches": [],
         "spreadsheets": [],
-        "subds": [],
-        "surfaces": [
-          {
-            "geometry": {
-              "kind": "solved",
-              "value": {
-                "kind": "plane",
-                "normal": {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 1.0
-                },
-                "origin": {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                "u_axis": {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              }
-            },
-            "id": "nx:s0:surf#0"
-          }
-        ],
         "tessellations": [],
-        "vertices": [
-          {
-            "id": "nx:s0:vertex#10",
-            "point": "nx:s0:pt#0",
-            "tolerance": 0.1
-          }
-        ],
         "view_presentations": []
       },
       "native": {
@@ -280,19 +282,14 @@
           ]
         }
       },
+      "process": {},
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
+      },
       "source": {
-        "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "3",
-          "file_size": "718",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "704",
-          "header_entry_count": "3",
-          "jpeg_preview_count": "0",
-          "partition_streams": "1",
-          "plain_streams": "0"
-        },
+        "attributes": {},
         "identity": {
           "dialects": {
             "extra": [
@@ -526,6 +523,8 @@
           }
         }
       },
+      "decode_digest": "92293567a331f3aabfb8fd905eba2bbb32cf6ed3c6771d652761101c38fc2589",
+      "file_digests": {},
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -533,9 +532,15 @@
             "kind": "inline"
           },
           "offset": 155,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {
