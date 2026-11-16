@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use declarations::{initializer_items, module_scope, Declaration, Declarations};
-use writers::{wire_index, WireIndex, HAND_WRITTEN_KEYS};
+use writers::{container_conversion, wire_index, WireIndex, HAND_WRITTEN_KEYS};
 
 mod declarations;
 mod reader_routes;
@@ -999,8 +999,14 @@ fn collect_optional_fields(
                     continue;
                 }
                 *readable += 1;
+                let absence = if is_newtype(&declaration.fields) {
+                    NewtypeKey::Holder
+                } else {
+                    NewtypeKey::Own
+                };
                 record_unguarded_fields(
                     &declaration.fields,
+                    absence,
                     &declaration.generics,
                     &reader(&declaration.ident),
                     index,
@@ -1012,9 +1018,19 @@ fn collect_optional_fields(
                     continue;
                 }
                 *readable += 1;
+                let adjacent = container_conversion(&declaration.attrs, "content").is_some();
                 for variant in &declaration.variants {
+                    let absence = if adjacent
+                        && is_newtype(&variant.fields)
+                        && !variant_states_reader(variant)
+                    {
+                        NewtypeKey::Content
+                    } else {
+                        NewtypeKey::Own
+                    };
                     record_unguarded_fields(
                         &variant.fields,
+                        absence,
                         &declaration.generics,
                         &reader(&declaration.ident),
                         index,
@@ -1190,9 +1206,11 @@ const NULL_STATING_HELPERS: &[&[&str]] = &[&["cadmpeg_core", "absent_key", "null
 /// half and the reading half are separate declarations, and only the reading
 /// half decides what `null` becomes. A field typed by a type parameter's
 /// associated type holds an `Option` when any impl's type is one, and one
-/// whose impls the census cannot read is an offender.
+/// whose impls the census cannot read is an offender. `absence` says which
+/// key spells the absence of a newtype's `Option`.
 fn record_unguarded_fields(
     fields: &syn::Fields,
+    absence: NewtypeKey,
     generics: &syn::Generics,
     reader: &Declaration,
     index: &WireIndex,
@@ -1234,7 +1252,10 @@ fn record_unguarded_fields(
                 continue;
             }
         };
-        let defaulted = states_default(field);
+        if read == ReadSpelling::Present && absence == NewtypeKey::Holder {
+            continue;
+        }
+        let defaulted = states_default(field) || absence == NewtypeKey::Content;
         match (read, defaulted) {
             (ReadSpelling::Present, false) => offenders.push(format!(
                 "{at} reads the absent key as its one spelling of None but states no default"
@@ -1296,6 +1317,47 @@ fn record_spelling_match(
         (ReadSpelling::Present, WriteSpelling::Omitted | WriteSpelling::Always)
         | (ReadSpelling::Nullable, WriteSpelling::Null) => {}
     }
+}
+
+/// Which key spells the absence of a newtype's `Option`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NewtypeKey {
+    /// The `Option` is a key of its own declaration.
+    Own,
+    /// A newtype struct writes its `Option` as itself, so the fields that hold
+    /// the struct state its key, and `integration_tests::wire_form_census`
+    /// requires each of them to skip `None` and state a default.
+    Holder,
+    /// An adjacently tagged newtype variant's payload is the `content` key.
+    /// When the variant states no reader of its own, serde reads an absent
+    /// `content` through `missing_field`, which is `None` for an `Option`.
+    Content,
+}
+
+/// Whether these fields are one unnamed field: a newtype struct or variant.
+fn is_newtype(fields: &syn::Fields) -> bool {
+    matches!(fields, syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1)
+}
+
+/// Whether a `serde` attribute on the variant itself states `deserialize_with`
+/// or `with`, which makes an absent `content` a missing field.
+fn variant_states_reader(variant: &syn::Variant) -> bool {
+    variant.attrs.iter().any(|attribute| {
+        if !attribute.path().is_ident("serde") {
+            return false;
+        }
+        let mut stated = false;
+        attribute
+            .parse_nested_meta(|meta| {
+                if meta.path.is_ident("deserialize_with") || meta.path.is_ident("with") {
+                    stated = true;
+                }
+                skip_meta_value(&meta)?;
+                Ok(())
+            })
+            .expect("every serde attribute in the wire crates parses as a nested meta list");
+        stated
+    })
 }
 
 /// Which spelling of `None` a reading declaration admits.

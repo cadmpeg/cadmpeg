@@ -20,18 +20,19 @@ use crate::{
 /// as (file, reading type, writing type); the writing type is resolved from
 /// the reading type's own module.
 const WRITING_DECLARATIONS: &[(&str, &str, &str)] = &[
-    // `Feature` writes through `FeatureWriteWire` on both routes: the
-    // standalone `Serialize` impl builds one, and the model route builds a
-    // `Vec<FeatureWriteWire>` beside the `Vec<FeatureRowWire>` it reads.
+    // `Feature` writes through `serialization::FeatureWriteWire` on both
+    // routes: the standalone `Serialize` impl builds one, and the model route
+    // builds a `Vec<FeatureWriteWire>` beside the `Vec<FeatureRowWire>` it
+    // reads.
     (
         "crates/cadmpeg-ir/src/features.rs",
         "FeatureReadWire",
-        "FeatureWriteWire",
+        "serialization::FeatureWriteWire",
     ),
     (
         "crates/cadmpeg-ir/src/features.rs",
         "FeatureRowWire",
-        "FeatureWriteWire",
+        "serialization::FeatureWriteWire",
     ),
     // `CadIr` writes through `CadIrWriteWire` in its hand-written `Serialize`.
     (
@@ -75,12 +76,24 @@ const WRITING_DECLARATIONS: &[(&str, &str, &str)] = &[
 ///
 /// `WireMembers` serializes a map by hand: it writes `free_vertex` only for
 /// the `Vertex` variant, so the key is left out for every other state.
-pub(crate) const HAND_WRITTEN_KEYS: &[(&str, &str, &str, WriteSpelling)] = &[(
-    "crates/cadmpeg-asm/src/brep/records.rs",
-    "WireMembersWire",
-    "free_vertex",
-    WriteSpelling::Omitted,
-)];
+///
+/// `SweepSection` serializes through a hand-written `SectionWire`: it writes
+/// `value` beside `kind: "unresolved"` only for a named section, so the
+/// `Unresolved` payload's key is left out for an unnamed one.
+pub(crate) const HAND_WRITTEN_KEYS: &[(&str, &str, &str, WriteSpelling)] = &[
+    (
+        "crates/cadmpeg-asm/src/brep/records.rs",
+        "WireMembersWire",
+        "free_vertex",
+        WriteSpelling::Omitted,
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "SweepSection",
+        "<tuple field>",
+        WriteSpelling::Omitted,
+    ),
+];
 
 /// Every declaration of the three wire crates, indexed for writer resolution
 /// by its module path: two modules' same-named types are two declarations.
@@ -354,8 +367,9 @@ fn index_declarations(
     }
 }
 
-/// The type named by the container-level `serde` conversion `key`, if any.
-fn container_conversion(attrs: &[syn::Attribute], key: &str) -> Option<String> {
+/// The string the container-level `serde` key `key` states, if any: the type a
+/// conversion names, or the `content` key of an adjacently tagged enum.
+pub(crate) fn container_conversion(attrs: &[syn::Attribute], key: &str) -> Option<String> {
     let mut named = None;
     for attribute in attrs {
         if !attribute.path().is_ident("serde") {

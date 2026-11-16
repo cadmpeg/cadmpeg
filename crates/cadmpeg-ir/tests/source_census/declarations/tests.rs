@@ -1106,3 +1106,158 @@ fn an_impl_on_the_line_of_a_test_module_is_unread() {
         "the impl of Space at crates/cadmpeg-ir/src/space.rs:17 sits where the census reads no impl",
     );
 }
+
+/// A fixture whose `crates/cadmpeg-ir/src/features.rs` holds `source`.
+///
+/// The census derives its null-refusing shims from the repository's own
+/// sources, so a fixture that reads through one names a shim that file
+/// declares.
+fn features(name: &str, source: &str, extra: &[(&str, &str)]) -> Fixture {
+    let mut files = vec![
+        ("crates/cadmpeg-ir/src/lib.rs", "mod features;"),
+        ("crates/cadmpeg-ir/src/features.rs", source),
+    ];
+    files.extend_from_slice(extra);
+    Fixture::new(name, &files)
+}
+
+const CONTINUITY_STATE: &str = r#"
+        cadmpeg_core::named_optional_field!(deserialize_continuity, Continuity, "continuity");
+        #[derive(Serialize, Deserialize)]
+        pub struct Continuity { pub order: u8 }
+        #[derive(Serialize, Deserialize)]
+        pub struct ContinuityState(FIELDS);
+    "#;
+
+#[test]
+fn a_newtype_struct_leaves_the_absence_of_its_option_to_its_holders() {
+    let read = r#"#[serde(deserialize_with = "deserialize_continuity")] Option<Continuity>"#;
+    let offenders = features(
+        "newtype-holder",
+        &CONTINUITY_STATE.replace("FIELDS", read),
+        &[],
+    )
+    .offenders();
+    assert!(offenders.is_empty(), "{offenders:#?}");
+
+    let pair = features(
+        "newtype-holder-pair",
+        &CONTINUITY_STATE.replace("FIELDS", &format!("{read}, u8")),
+        &[],
+    )
+    .offenders();
+    assert_eq!(pair.len(), 2, "{pair:#?}");
+    assert!(
+        pair[0].contains("ContinuityState.<tuple field> reads the absent key as its one spelling of None but states no default")
+            && pair[1].contains("ContinuityState.<tuple field> refuses null, but cadmpeg_ir::features::ContinuityState states no skip_serializing_if and writes null for None"),
+        "{pair:#?}"
+    );
+
+    let nullable = r#"#[serde(skip_serializing_if = "Option::is_none", deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<Continuity>"#;
+    assert_one_offender(
+        &features(
+            "newtype-holder-nullable",
+            &CONTINUITY_STATE.replace("FIELDS", nullable),
+            &[],
+        ),
+        "ContinuityState.<tuple field> admits null, but cadmpeg_ir::features::ContinuityState skips the key for None",
+    );
+}
+
+const SWEEP_SECTION: &str = r#"
+        cadmpeg_core::named_optional_field!(deserialize_section_native, String, "value");
+        #[derive(Deserialize)]
+        #[serde(TAGGING)]
+        pub enum SweepSection {
+            VARIANT
+            Unresolved(#[serde(deserialize_with = "deserialize_section_native")] Option<String>),
+            Profile(u32),
+        }
+    "#;
+
+fn sweep_section(name: &str, tagging: &str, variant: &str) -> Fixture {
+    features(
+        name,
+        &SWEEP_SECTION
+            .replace("TAGGING", tagging)
+            .replace("VARIANT", variant),
+        &[],
+    )
+}
+
+#[test]
+fn an_adjacently_tagged_newtype_variant_reads_an_absent_content_as_none() {
+    let adjacent = r#"tag = "kind", content = "value""#;
+    let offenders = sweep_section("adjacent-content", adjacent, "").offenders();
+    assert!(offenders.is_empty(), "{offenders:#?}");
+
+    let no_default = "SweepSection.<tuple field> reads the absent key as its one spelling of None but states no default";
+    assert_one_offender(
+        &sweep_section("external-content", "deny_unknown_fields", ""),
+        no_default,
+    );
+    assert_one_offender(
+        &sweep_section(
+            "adjacent-variant-reader",
+            adjacent,
+            r#"#[serde(deserialize_with = "read_unresolved")]"#,
+        ),
+        no_default,
+    );
+}
+
+#[test]
+fn a_hand_written_key_names_its_own_reading_type() {
+    let source = SWEEP_SECTION
+        .replace("TAGGING", r#"tag = "kind", content = "value""#)
+        .replace("VARIANT", "")
+        .replace("SweepSection", "OtherSection");
+    assert_one_offender(
+        &features("unlisted-hand-written-key", &source, &[]),
+        "OtherSection.<tuple field> cadmpeg_ir::features::OtherSection writes no keys of its own and no single container attribute routes a read through it",
+    );
+}
+
+const FEATURE_ROW: &str = r#"
+        pub(crate) mod serialization;
+        cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+        #[derive(Deserialize)]
+        pub(crate) struct FeatureRowWire {
+            #[serde(default, deserialize_with = "deserialize_name")]
+            name: Option<String>,
+        }
+    "#;
+
+const FEATURE_WRITE: &str = r#"
+        #[derive(Serialize)]
+        pub(crate) struct FeatureWriteWire<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            name: &'a Option<String>,
+        }
+    "#;
+
+#[test]
+fn a_listed_writer_is_found_in_its_own_module() {
+    let offenders = features(
+        "listed-writer",
+        FEATURE_ROW,
+        &[(
+            "crates/cadmpeg-ir/src/features/serialization.rs",
+            FEATURE_WRITE,
+        )],
+    )
+    .offenders();
+    assert!(offenders.is_empty(), "{offenders:#?}");
+
+    assert_one_offender(
+        &features(
+            "listed-writer-elsewhere",
+            &format!("{FEATURE_ROW}pub(crate) mod wire;"),
+            &[
+                ("crates/cadmpeg-ir/src/features/serialization.rs", ""),
+                ("crates/cadmpeg-ir/src/features/wire.rs", FEATURE_WRITE),
+            ],
+        ),
+        "FeatureRowWire.name serialization::FeatureWriteWire, named from cadmpeg_ir::features::FeatureRowWire, resolves to no one declaration",
+    );
+}
