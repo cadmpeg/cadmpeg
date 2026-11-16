@@ -341,42 +341,60 @@ pub enum Subject {
 pub enum Relation {
     /// Incidence: the lower-dimensional of subject and reference lies in the
     /// other.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Coincident,
     /// The subject's direction is parallel to the reference's.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Parallel,
     /// The subject's direction is perpendicular to the reference's.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Perpendicular,
     /// The subject touches the reference tangentially.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Tangent,
     /// The subject lies at a signed distance from the reference.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Offset,
     /// The subject makes an angle with the reference.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Angle,
     /// The subject lies midway between the references, or at the midpoint
     /// of one curve.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Midway,
     /// The subject contains the reference's point at the value.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     AtParameter,
     /// The subject's coordinates in the reference frame.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Coordinates,
     /// At the center of the reference.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Center,
     /// At the centroid of the references.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Centroid,
     /// Incident with the axis of a surface of revolution or circle.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     AxisOf,
     /// The reference projected onto the element the other inputs fix.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Projection,
     /// Along the reference curve's principal normal.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     PrincipalNormal,
     /// Along the reference curve's binormal.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Binormal,
     /// The subject, a circle or arc, has the radius of the value, or passes
     /// through the reference.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Radius,
     /// One end of the subject curve.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Limit,
     /// A frame on a strip of a sheet folded along two lines.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Fold,
     /// A source relation whose meaning is not established, written
     /// `codec:relation`.

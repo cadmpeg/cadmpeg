@@ -160,11 +160,13 @@ pub type SetSelection = Selection<Unordered>;
 pub enum Anchor {
     /// The state entering the feature whose definition holds the selection.
     /// It follows edits that insert features before that feature.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Input,
     /// One fixed state.
     Pinned(Position),
     /// The current geometry of the scope the pick resolves in. It follows
     /// every edit.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Current,
     /// A state of a definition that has no scope in this document, by the
     /// source's own name for it.
@@ -183,6 +185,7 @@ pub enum Anchor {
 )]
 pub enum Picks<O: MemberOrder> {
     /// The source holds a selection whose members the decoder did not read.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unread,
     /// A list of picks.
     Named(Members<Picked, O>),
@@ -411,6 +414,7 @@ pub enum PickTarget {
         input: u32,
     },
     /// The occurrence that the pick's context names.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Component,
     /// A published entity.
     Publication(PublicationId),
@@ -744,6 +748,7 @@ pub struct RuleTerm<O: MemberOrder> {
 )]
 pub enum SelectionRule {
     /// The seeds themselves.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Explicit,
     /// Every entity of a kind in the anchored state. It takes no seeds.
     All {
@@ -757,9 +762,11 @@ pub enum SelectionRule {
         kind: NameKind,
     },
     /// The edges of a loop.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     LoopEdges,
     /// The edges that bound exactly one face of the seed faces, or of the
     /// seed bodies' faces.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Boundary,
     /// The edges or curves connected end to end from each seed.
     Chain {
@@ -798,9 +805,11 @@ pub enum SelectionRule {
 )]
 pub enum Propagation {
     /// The source holds propagation off.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Off,
     /// The operation continues past the seeds only where it cannot end
     /// otherwise.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Minimal,
     /// The result extends to the entities connected to it.
     Connected {
@@ -841,12 +850,16 @@ pub enum Propagation {
 )]
 pub enum Continuity {
     /// Touching.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     G0,
     /// Tangent.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     G1,
     /// Curvature continuous.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     G2,
     /// G3 continuous.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     G3,
     /// A source continuity whose meaning is not established.
     Native(NonBlankString),

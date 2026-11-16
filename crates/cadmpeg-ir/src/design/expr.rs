@@ -94,23 +94,32 @@ pub enum ExpressionToken<R> {
 )]
 pub enum ExpressionDialect {
     /// `SolidWorks` equations.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     SolidWorks,
     /// Fusion parameter expressions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Fusion,
     /// Fusion CAM expressions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     FusionCam,
     /// Inventor parameter expressions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Inventor,
     /// CATIA formulas and rules.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Catia,
     /// Creo relations.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Creo,
     /// NX expressions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Nx,
     /// `FreeCAD` expressions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     FreeCad,
     /// The workbook formula language: operators, functions, `&`, and cell
     /// references relative to the formula's own cell.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Spreadsheet,
     /// A source language that the vocabulary does not name.
     Native(NonBlankString),
@@ -147,6 +156,7 @@ pub enum Node<R> {
     Measure(Box<Measure>),
     /// The path parameter, dimensionless from 0 to 1, of a `Law::Expression`.
     /// It occurs only there.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     LawParameter,
     /// A value of the bend for which a bend-allowance expression is
     /// evaluated. It occurs only in an `AngleRange.value`.
@@ -377,18 +387,25 @@ pub struct Measure {
 )]
 pub enum MeasureKind {
     /// The length of edges or curves.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Length,
     /// The area of faces.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Area,
     /// The volume of bodies.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Volume,
     /// The mass of bodies, using each body's material in the configuration.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Mass,
     /// The distance between two picks.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Distance,
     /// The angle between two picks.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Angle,
     /// The radius of an arc or cylinder.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Radius,
     /// The coordinate of a point or frame origin along an axis of the owner's
     /// definition.

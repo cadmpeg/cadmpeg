@@ -585,14 +585,19 @@ pub enum Generator {
 pub enum GenerationRole {
     /// The cap of a swept solid at the end of the span against the sweep's
     /// direction.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Start,
     /// The cap of a swept solid along the sweep's direction.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     End,
     /// A face swept from a profile entity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Side,
     /// An edge or face that a closed entity closes on.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Seam,
     /// The body.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Body,
     /// A face of a hole, by its place in the hole's shape.
     Hole(HoleFaceRole),
