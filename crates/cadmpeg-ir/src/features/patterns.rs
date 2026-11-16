@@ -804,6 +804,7 @@ fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
 #[serde(deny_unknown_fields)]
 pub enum PatternScaleCenter {
     /// Volume centroid of the first seed feature.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     FirstSeedCentroid,
     /// Explicit model-space point.
     Point(FinitePoint3),

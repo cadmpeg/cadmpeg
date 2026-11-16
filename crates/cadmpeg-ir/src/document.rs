@@ -21,9 +21,10 @@ use cadmpeg_core::CodecError;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
+use crate::features::serialization::FeatureWriteWire;
 use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
-    FeatureRowWire, FeatureWriteWire,
+    FeatureRowWire,
 };
 use crate::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
