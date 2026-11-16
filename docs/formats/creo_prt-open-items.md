@@ -587,6 +587,22 @@ vertices and midpoints.
 **Need.** Establish carrier and branch selection for other cone chart paths
 and face pairs through independent chart and topology witnesses.
 
+### GS-38. Positional torus rows with other envelopes
+
+**Question.** Which local-system grammar follows the envelope-closing `e3` of
+a type-38 row whose envelope differs from the direct torus replay image and
+whose body is outside the inline-suffix form?
+
+**Known.** `creo_prt.md` places a type-38 row through the direct torus
+replay, whose envelope image and five-coordinate radius proof are fixed, and
+through the inline-suffix form, whose local system admits compact images and
+repeat tokens. Both read their radii in the type-26 radius-slot lane. The
+replay's positional local-system lane reads `e4` as one, so it does not read a
+compact-image local system after another envelope.
+
+**Need.** Type-38 rows outside both forms with an independently known center
+and radii.
+
 ## 3. Section solving and feature placement
 
 **Note.** The extended `order_table.rg_ref_id` form is defined only for its

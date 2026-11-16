@@ -5540,8 +5540,8 @@ fn decode_inline_surface_suffix_at(
             ([value, 0.0], end)
         }
         SurfaceKind::TorusOrSphere => {
-            let (major, next) = scalar::decode_inline_surface_suffix_scalar(local, cursor, cache)?;
-            let (minor, end) = scalar::decode_inline_surface_suffix_scalar(local, next, cache)?;
+            let (major, next) = scalar::decode_type26_radius_slot(local, cursor, cache)?;
+            let (minor, end) = scalar::decode_type26_radius_slot(local, next, cache)?;
             ([major, minor], end)
         }
         _ => return None,
@@ -6274,9 +6274,9 @@ fn decode_positional_torus_frame(
     let (slots, frame_end) =
         scalar::decode_positional_torus_local_system_prefix(body.get(49..)?, cache)?;
     let mut cursor = 49usize.checked_add(frame_end)?;
-    let (major_radius, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    let (major_radius, next) = scalar::decode_type26_radius_slot(body, cursor, cache)?;
     cursor = next;
-    let (signed_minor_radius, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    let (signed_minor_radius, next) = scalar::decode_type26_radius_slot(body, cursor, cache)?;
     (next == body.len()
         && major_radius.is_finite()
         && major_radius > 0.0
