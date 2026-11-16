@@ -67,15 +67,15 @@ fuzz_target!(|data: &[u8]| {
         }
         3 => {
             // Create inconsistent edge references
-            if !ir.geometry.edges.is_empty() {
-                ir.geometry.edges[0].start = cadmpeg_ir::ids::VertexId::mint("fuzz:missing:vertex#0")
+            if let Some(ends) = ir.geometry.edges.first_mut().and_then(|edge| edge.ends.as_mut()) {
+                ends.start = cadmpeg_ir::ids::VertexId::mint("fuzz:missing:vertex#0")
                     .expect("identity grammar");
             }
         }
         4 => {
             // Create empty body (no regions)
-            if !ir.geometry.bodies.is_empty() {
-                ir.geometry.bodies[0].regions.clear();
+            if let Some(body) = ir.geometry.bodies.first().map(|body| body.id.clone()) {
+                ir.geometry.regions.retain(|region| region.body != body);
             }
         }
         5 => {
