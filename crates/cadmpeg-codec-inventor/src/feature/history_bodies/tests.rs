@@ -170,7 +170,6 @@ fn records_of_other_bodies_stay_out_of_the_nest() {
     let mut geometry = cube();
     let mut other = geometry.bodies[0].clone();
     other.id = "inventor:brep:entity#other".try_into().expect("identity");
-    other.regions.clear();
     geometry.bodies.push(other);
     let Extract::Nest(nest) = extract_cube(&geometry) else {
         panic!("a closed cube must extract");

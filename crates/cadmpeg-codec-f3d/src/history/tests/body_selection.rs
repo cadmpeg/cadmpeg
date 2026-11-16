@@ -156,6 +156,7 @@ fn move_body_selection_uses_unique_owning_history() {
         bodies: &[],
         regions: &[],
         shells: &[],
+        faces: &[],
     };
     let losses = bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
     assert!(losses.is_empty());
@@ -252,6 +253,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
         bodies: &[],
         regions: &[],
         shells: &[],
+        faces: &[],
     };
     super::super::bind_pattern_body_selections(
         std::slice::from_mut(&mut feature),
@@ -260,6 +262,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
@@ -469,6 +472,7 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
         bodies: &[],
         regions: &[],
         shells: &[],
+        faces: &[],
     };
     super::super::bind_pattern_body_selections(
         std::slice::from_mut(&mut feature),
@@ -477,6 +481,7 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),

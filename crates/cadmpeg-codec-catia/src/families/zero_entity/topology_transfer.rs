@@ -572,6 +572,7 @@ pub(super) fn transfer_closed_face_topology(
                 id: copied_id!(vertex_ids[index], VertexId),
                 point: copied_id!(point_ids[index], PointId),
                 tolerance: Some(MODEL_POINT_TOLERANCE),
+                native_ref: None,
             };
             ir.geometry.vertices.push(vertex);
         }
@@ -605,6 +606,7 @@ pub(super) fn transfer_closed_face_topology(
                     )?),
                     None,
                 ),
+                native_ref: None,
             };
             ir.geometry.pcurves.push(pcurve);
         }
@@ -659,11 +661,11 @@ pub(super) fn transfer_closed_face_topology(
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
-                .derived(&edge_id, "start")
+                .derived(&edge_id, "ends.start")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
-                .derived(&edge_id, "end")
+                .derived(&edge_id, "ends.end")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             if param_range.is_some() {
@@ -682,9 +684,12 @@ pub(super) fn transfer_closed_face_topology(
                     param_range,
                 )
                 .ok()?,
-                start: copied_id!(oriented_vertices[0], VertexId),
-                end: copied_id!(oriented_vertices[1], VertexId),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    copied_id!(oriented_vertices[0], VertexId),
+                    copied_id!(oriented_vertices[1], VertexId),
+                )),
                 tolerance: Some(MODEL_POINT_TOLERANCE),
+                native_ref: None,
             };
             ir.geometry.edges.push(edge);
             edge_ids.push(edge_id);
@@ -758,6 +763,7 @@ pub(super) fn transfer_closed_face_topology(
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             };
             ir.geometry.faces.push(face_record);
 
@@ -815,6 +821,7 @@ pub(super) fn transfer_closed_face_topology(
                     id: copied_id!(loop_id, LoopId),
                     face: copied_id!(face_id, FaceId),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                    native_ref: None,
                 };
                 ir.geometry.loops.push(loop_entity);
 
@@ -930,6 +937,7 @@ pub(super) fn transfer_closed_face_topology(
                         sense,
                         pcurves,
                         use_curve,
+                        native_ref: None,
                     };
                     ir.geometry.coedges.push(coedge);
                     coedges_by_support.insert(support_record_ordinal, coedge_id);
@@ -966,22 +974,17 @@ pub(super) fn transfer_closed_face_topology(
             .derived(&body_id, "kind")
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from));
-        admitted!(annotations
-            .derived(&body_id, "regions")
-            .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
-        let regions = vec![copied_id!(region_id, RegionId)];
         let body = Body {
             id: copied_id!(body_id, BodyId),
             kind: BodyKind::Solid,
-            regions,
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         };
         ir.geometry.bodies.push(body);
         admitted!(annotate(
@@ -1008,6 +1011,7 @@ pub(super) fn transfer_closed_face_topology(
             id: copied_id!(region_id, RegionId),
             body: body_id,
             shells,
+            native_ref: None,
         };
         ir.geometry.regions.push(region);
         admitted!(annotate(
@@ -1022,14 +1026,13 @@ pub(super) fn transfer_closed_face_topology(
             .derived(&shell_id, "region")
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from));
-        admitted!(annotations
-            .derived(&shell_id, "faces")
-            .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
-        let shell = Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()).ok()?;
+        if face_ids.is_empty() {
+            return None;
+        }
+        let shell = Shell::new(shell_id, region_id);
         ir.geometry.shells.push(shell);
 
         Some(Ok(ZeroEntityTopologyCounts {
@@ -1345,6 +1348,7 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
         for run in &runs {
             for support in &run.supports {
@@ -1365,6 +1369,7 @@ mod tests {
                         .expect("valid LineCurve fixture"),
                     )),
                     source_object: None,
+                    native_ref: None,
                 });
             }
         }
@@ -1494,7 +1499,10 @@ mod tests {
         assert_eq!(counts.vertices, 3);
         assert_eq!(counts.coedges, 6);
         assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Solid);
-        assert_eq!(ir.geometry.shells[0].faces().len(), 2);
+        assert_eq!(
+            ir.geometry.shell_faces(&ir.geometry.shells[0].id).count(),
+            2
+        );
         assert!(ir.geometry.coedges.iter().all(|coedge| {
             ir.geometry
                 .coedges
@@ -1544,6 +1552,7 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
         for run in &runs {
             for support in &run.supports {
@@ -1578,6 +1587,7 @@ mod tests {
                     id: curve_ids[&support.record_ordinal].clone(),
                     geometry,
                     source_object: None,
+                    native_ref: None,
                 });
             }
         }
@@ -1649,6 +1659,7 @@ mod tests {
                     .expect("valid plane"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             let mut annotations = AnnotationBuilder::new();
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
@@ -1701,6 +1712,7 @@ mod tests {
                     .expect("valid plane"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             transfer_closed_face_topology(
                 &mut crate::families::FamilyEntityAdmission::new(ctx),

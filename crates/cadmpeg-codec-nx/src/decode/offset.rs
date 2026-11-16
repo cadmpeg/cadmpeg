@@ -2575,6 +2575,7 @@ mod tests {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let mut policy = DecodePolicy::service();
@@ -2695,6 +2696,7 @@ mod tests {
                     .expect("finite wide surface"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let geometry_budget =
@@ -2868,6 +2870,7 @@ mod tests {
                 .expect("valid rational hull support"),
             )),
             source_object: None,
+            native_ref: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 
@@ -2923,6 +2926,7 @@ mod tests {
                     .expect("valid linear support"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
                 id: offset.clone(),
@@ -2931,6 +2935,7 @@ mod tests {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
             ir.geometry
                 .procedural_surfaces
@@ -3190,6 +3195,7 @@ mod tests {
                 id: support.clone(),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
+                native_ref: None,
             },
             cadmpeg_ir::geometry::Surface {
                 id: offset.clone(),
@@ -3198,6 +3204,7 @@ mod tests {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             },
         ]);
         ir.geometry

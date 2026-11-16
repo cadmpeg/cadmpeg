@@ -1744,7 +1744,7 @@ fn generic_transparency_sets_opacity_without_changing_rgb() {
         let (appearances, _) = schema_appearances(&[record]).unwrap();
         let color = appearances[0].base_color.unwrap();
         assert_eq!([color.r(), color.g(), color.b()], [0.125, 0.25, 0.375]);
-        assert_eq!(f64::from(color.a()), 1.0 - transparency);
+        assert_eq!(color.a(), 1.0 - transparency);
     }
 }
 

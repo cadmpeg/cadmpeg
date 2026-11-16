@@ -2148,6 +2148,8 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub(crate) regions: &'a [cadmpeg_ir::topology::Region],
     /// Neutral region shells.
     pub(crate) shells: &'a [cadmpeg_ir::topology::Shell],
+    /// Neutral shell faces.
+    pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
 }
 
 pub(crate) fn bind_feature_body_selections(
@@ -2169,6 +2171,7 @@ pub(crate) fn bind_feature_body_selections(
         bodies,
         regions,
         shells,
+        inputs.faces,
         inputs.construction_recipes,
         inputs.persistent_design_links,
     );
@@ -9519,6 +9522,43 @@ fn historical_topology(
         .collect::<Vec<_>>();
     surface_axes.sort_by_key(|a| a.surface);
 
+    let mut regions_by_body = HashMap::<&str, Vec<&str>>::new();
+    for region in &brep.regions {
+        regions_by_body
+            .entry(region.body.as_str())
+            .or_default()
+            .push(region.id.as_str());
+    }
+    for body in &brep.bodies {
+        if let Some(chain) = stable_ref(body.id.as_str())
+            .and_then(|record| brep.chain_order.body_regions.get(&record))
+        {
+            regions_by_body.insert(
+                body.id.as_str(),
+                chain
+                    .iter()
+                    .map(cadmpeg_ir::ids::RegionId::as_str)
+                    .collect(),
+            );
+        }
+    }
+    let mut faces_by_shell = HashMap::<&str, Vec<&str>>::new();
+    for face in &brep.faces {
+        faces_by_shell
+            .entry(face.shell.as_str())
+            .or_default()
+            .push(face.id.as_str());
+    }
+    for shell in &brep.shells {
+        if let Some(chain) = stable_ref(shell.id.as_str())
+            .and_then(|record| brep.chain_order.shell_faces.get(&record))
+        {
+            faces_by_shell.insert(
+                shell.id.as_str(),
+                chain.iter().map(cadmpeg_ir::ids::FaceId::as_str).collect(),
+            );
+        }
+    }
     let mut ring_neighbors = HashMap::new();
     for loop_ in &brep.loops {
         let ring = loop_.coedges();
@@ -9583,7 +9623,11 @@ fn historical_topology(
         body_regions: topology_some!(relations(brep.bodies.iter().map(|body| {
             (
                 body.id.as_str(),
-                body.regions.iter().map(cadmpeg_ir::ids::RegionId::as_str),
+                regions_by_body
+                    .get(body.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .copied(),
             )
         }))),
         region_shells: topology_some!(relations(brep.regions.iter().map(|region| {
@@ -9595,25 +9639,23 @@ fn historical_topology(
         shell_faces: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell.faces().iter().map(cadmpeg_ir::ids::FaceId::as_str),
+                faces_by_shell
+                    .get(shell.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .copied(),
             )
         }))),
         shell_wire_edges: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell
-                    .wire_edges()
-                    .iter()
-                    .map(cadmpeg_ir::ids::EdgeId::as_str),
+                shell.wire_edges().map(cadmpeg_ir::ids::EdgeId::as_str),
             )
         }))),
         shell_free_vertices: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell
-                    .free_vertices()
-                    .iter()
-                    .map(cadmpeg_ir::ids::VertexId::as_str),
+                shell.free_vertices().map(cadmpeg_ir::ids::VertexId::as_str),
             )
         }))),
         face_loops: topology_some!(relations(brep.faces.iter().map(|face| {
@@ -9654,8 +9696,8 @@ fn historical_topology(
             .map(|edge| {
                 Some(AsmHistoricalEdge {
                     edge: stable_ref(edge.id.as_str())?,
-                    start_vertex: stable_ref(edge.start.as_str())?,
-                    end_vertex: stable_ref(edge.end.as_str())?,
+                    start_vertex: stable_ref(edge.start()?.as_str())?,
+                    end_vertex: stable_ref(edge.end()?.as_str())?,
                 })
             })
             .collect::<Option<Vec<_>>>()),

@@ -211,6 +211,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         ir.geometry.surfaces.extend([
@@ -229,6 +230,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
                     .expect("valid CylinderSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
 
@@ -292,6 +294,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         assert_eq!(
             generated_bounded_cylinder_extent(
@@ -312,6 +315,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         assert_eq!(
             generated_bounded_cylinder_extent(

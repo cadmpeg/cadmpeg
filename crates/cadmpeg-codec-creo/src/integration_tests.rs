@@ -166,12 +166,21 @@ fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .expect("boundary edge");
-        for vertex in [&edge.start, &edge.end] {
+        for vertex in [
+            &edge.ends.as_ref().unwrap().start,
+            &edge.ends.as_ref().unwrap().end,
+        ] {
             assert!(geometry.vertices.iter().any(|item| &item.id == vertex));
         }
         directed_vertices.push(match coedge.sense {
-            cadmpeg_ir::topology::Sense::Forward => (&edge.start, &edge.end),
-            cadmpeg_ir::topology::Sense::Reversed => (&edge.end, &edge.start),
+            cadmpeg_ir::topology::Sense::Forward => (
+                &edge.ends.as_ref().unwrap().start,
+                &edge.ends.as_ref().unwrap().end,
+            ),
+            cadmpeg_ir::topology::Sense::Reversed => (
+                &edge.ends.as_ref().unwrap().end,
+                &edge.ends.as_ref().unwrap().start,
+            ),
         });
     }
     for index in 0..directed_vertices.len() {
@@ -1766,24 +1775,12 @@ fn nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut() {
     assert_eq!(unowned_surface_losses.len(), UNOWNED_SOURCE_FACES.len());
     for face_id in UNOWNED_SOURCE_FACES {
         let face_identity = format!("creo:visibgeom:face#{face_id}");
-        for region_id in &body.regions {
-            let region = ir
-                .geometry
-                .regions
-                .iter()
-                .find(|region| &region.id == region_id)
-                .expect("body region");
+        for region in ir.geometry.body_regions(&body.id) {
             for shell_id in &region.shells {
-                let shell = ir
+                assert!(ir
                     .geometry
-                    .shells
-                    .iter()
-                    .find(|shell| &shell.id == shell_id)
-                    .expect("region shell");
-                assert!(shell
-                    .faces()
-                    .iter()
-                    .all(|shell_face| shell_face.as_str() != face_identity));
+                    .shell_faces(shell_id)
+                    .all(|shell_face| shell_face.id.as_str() != face_identity));
             }
         }
 

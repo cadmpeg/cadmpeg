@@ -6,38 +6,23 @@
       "bodies": [
         {
           "id": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
-          "kind": "solid",
-          "regions": [
-            "fcstd:model:region#Box:Shape:Box.Shape.brp:34%40location1"
-          ]
+          "kind": "solid"
         },
         {
           "id": "fcstd:model:body#Cut:Shape:Cut.Shape.brp:44%40location1",
-          "kind": "solid",
-          "regions": [
-            "fcstd:model:region#Cut:Shape:Cut.Shape.brp:43%40location1"
-          ]
+          "kind": "solid"
         },
         {
           "id": "fcstd:model:body#Cylinder:Shape:Cylinder.Shape.brp:9%40location1",
-          "kind": "solid",
-          "regions": [
-            "fcstd:model:region#Cylinder:Shape:Cylinder.Shape.brp:9%40location1"
-          ]
+          "kind": "solid"
         },
         {
           "id": "fcstd:model:body#DesignedFeature:Shape:DesignedFeature.Shape.brp:34%40location1",
-          "kind": "solid",
-          "regions": [
-            "fcstd:model:region#DesignedFeature:Shape:DesignedFeature.Shape.brp:34%40location1"
-          ]
+          "kind": "solid"
         },
         {
           "id": "fcstd:model:body#Profile:Shape:Profile.Shape.brp:9%40location1",
-          "kind": "wire",
-          "regions": [
-            "fcstd:model:region#Profile:Shape:Profile.Shape.brp:9%40location1"
-          ]
+          "kind": "wire"
         }
       ],
       "coedges": [
@@ -2640,9 +2625,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:13%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2653,9 +2640,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:15%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2666,9 +2655,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:17%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2679,9 +2670,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:18%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2692,9 +2685,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:21%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2705,9 +2700,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:22%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2718,9 +2715,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:25%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2731,9 +2730,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:26%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2744,9 +2745,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2757,9 +2760,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:5%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2770,9 +2775,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2783,9 +2790,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:8%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2796,9 +2805,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:11%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:11%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:2%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:12%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:2%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2809,9 +2820,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:13%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:13%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:11%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:14%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:11%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2822,9 +2835,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:13%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:13%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:1%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:15%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:1%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2835,9 +2850,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:18%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:18%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:4%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:19%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:4%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2848,9 +2865,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:18%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:18%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:13%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:20%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:13%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2861,9 +2880,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:22%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:22%40location1",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:22%40location1"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:23%40location1",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:22%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2874,9 +2895,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:26%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:26%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:6%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:27%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:6%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2887,9 +2910,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:18%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:18%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:26%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:28%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:26%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2900,9 +2925,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:1%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:1%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:2%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:3%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:2%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2913,9 +2940,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:26%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:26%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:11%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:31%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:11%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2926,9 +2955,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:33%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:33%40location1",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:33%40location1"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:34%40location11",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:33%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2939,9 +2970,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:22%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:22%40location1",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:33%40location1"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:39%40location11",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:33%40location1",
           "tolerance": 1e-7
         },
         {
@@ -2952,9 +2985,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:4%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:4%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:1%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:5%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:1%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2965,9 +3000,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:4%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:4%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:6%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:7%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:6%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2978,9 +3015,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:6%40location13",
+          "ends": {
+            "end": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:6%40location13",
+            "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:2%40location13"
+          },
           "id": "fcstd:model:edge#Cut:Shape:Cut.Shape.brp:8%40location13",
-          "start": "fcstd:model:vertex#Cut:Shape:Cut.Shape.brp:2%40location13",
           "tolerance": 1e-7
         },
         {
@@ -2991,9 +3030,11 @@
               16.0
             ]
           },
-          "end": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location4",
+          "ends": {
+            "end": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location4",
+            "start": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Cylinder:Shape:Cylinder.Shape.brp:2%40location1",
-          "start": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3004,9 +3045,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location1",
+            "start": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Cylinder:Shape:Cylinder.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3017,9 +3060,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location4",
+          "ends": {
+            "end": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location4",
+            "start": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location4"
+          },
           "id": "fcstd:model:edge#Cylinder:Shape:Cylinder.Shape.brp:3%40location4",
-          "start": "fcstd:model:vertex#Cylinder:Shape:Cylinder.Shape.brp:1%40location4",
           "tolerance": 1e-7
         },
         {
@@ -3030,9 +3075,11 @@
               5.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:13%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3043,9 +3090,11 @@
               8.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:11%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:15%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3056,9 +3105,11 @@
               5.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:16%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:17%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3069,9 +3120,11 @@
               8.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:18%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3082,9 +3135,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:12%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:12%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:21%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3095,9 +3150,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:22%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3108,9 +3165,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:25%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3121,9 +3180,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:4%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:26%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3134,9 +3195,11 @@
               5.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:1%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3147,9 +3210,11 @@
               8.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:5%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3160,9 +3225,11 @@
               5.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3173,9 +3240,11 @@
               8.0
             ]
           },
-          "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#DesignedFeature:Shape:DesignedFeature.Shape.brp:8%40location1",
-          "start": "fcstd:model:vertex#DesignedFeature:Shape:DesignedFeature.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3186,9 +3255,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:2%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:2%40location1",
+            "start": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3199,9 +3270,11 @@
               8.0
             ]
           },
-          "end": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:5%40location1",
-          "start": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3212,9 +3285,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:4%40location1"
+          },
           "id": "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
@@ -3225,9 +3300,11 @@
               8.0
             ]
           },
-          "end": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:1%40location1",
+            "start": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:8%40location1",
-          "start": "fcstd:model:vertex#Profile:Shape:Profile.Shape.brp:6%40location1",
           "tolerance": 1e-7
         }
       ],
@@ -6325,114 +6402,22 @@
       "shells": [
         {
           "id": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:10%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:20%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:24%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:28%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:30%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:32%40location1",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#Box:Shape:Box.Shape.brp:34%40location1"
         },
         {
           "id": "fcstd:model:shell#Cut:Shape:Cut.Shape.brp:42%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:10%40location13",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:17%40location13",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:25%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:30%40location13",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:36%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:38%40location13",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:41%40location1",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#Cut:Shape:Cut.Shape.brp:43%40location1"
         },
         {
           "id": "fcstd:model:shell#Cylinder:Shape:Cylinder.Shape.brp:8%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:5%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%40location4",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#Cylinder:Shape:Cylinder.Shape.brp:9%40location1"
         },
         {
           "id": "fcstd:model:shell#DesignedFeature:Shape:DesignedFeature.Shape.brp:33%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:10%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:20%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:24%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:28%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:30%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:32%40location1",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#DesignedFeature:Shape:DesignedFeature.Shape.brp:34%40location1"
         },
         {

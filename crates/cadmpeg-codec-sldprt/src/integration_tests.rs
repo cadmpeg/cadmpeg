@@ -247,7 +247,6 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let mut coincident = decoded.ir().geometry.faces[0].clone();
     coincident.id =
         cadmpeg_ir::ids::FaceId::mint("sldprt:brep:face#coincident").expect("identity grammar");
-    decoded.ir_mut().geometry.shells[0].add_face(coincident.id.clone());
     decoded.ir_mut().geometry.faces.push(coincident);
 
     let arena = cadmpeg_core::decode::DecodeArena::new();

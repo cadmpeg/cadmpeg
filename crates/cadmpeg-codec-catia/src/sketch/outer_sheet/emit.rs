@@ -207,6 +207,7 @@ fn prepare_component(
             id: vertex,
             point,
             tolerance: None,
+            native_ref: None,
         });
 
         let line_key = format!("{key}:{}", line.source_offset);
@@ -242,22 +243,26 @@ fn prepare_component(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(geometry)),
             parameter_range: Some(interval),
             source_object: None,
+            native_ref: None,
         });
         prepared.geometry.edges.push(Edge {
             id: edge.clone(),
             carrier: EdgeCarrier::new(Some(curve), Some(line.interval))
                 .map_err(CodecError::malformed)?,
-            start: sheet_id(
-                "vertex",
-                format_args!("{key}:{}", line.start_id),
-                VertexId::mint,
-            )?,
-            end: sheet_id(
-                "vertex",
-                format_args!("{key}:{}", line.end_id),
-                VertexId::mint,
-            )?,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                sheet_id(
+                    "vertex",
+                    format_args!("{key}:{}", line.start_id),
+                    VertexId::mint,
+                )?,
+                sheet_id(
+                    "vertex",
+                    format_args!("{key}:{}", line.end_id),
+                    VertexId::mint,
+                )?,
+            )),
             tolerance: None,
+            native_ref: None,
         });
         prepared.geometry.coedges.push(Coedge {
             id: coedge.clone(),
@@ -271,6 +276,7 @@ fn prepare_component(
             },
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
         coedges.push(coedge);
     }
@@ -278,11 +284,7 @@ fn prepare_component(
         return Ok(false);
     };
     for (id, tag, fields) in [
-        (
-            body.as_str(),
-            "split_fill_component",
-            &["kind", "regions"][..],
-        ),
+        (body.as_str(), "split_fill_component", &["kind"][..]),
         (
             region.as_str(),
             "fill_component_region",
@@ -310,25 +312,27 @@ fn prepare_component(
     prepared.geometry.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Sheet,
-        regions: vec![region.clone()],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     prepared.geometry.regions.push(Region {
         id: region.clone(),
         body,
         shells: vec![shell.clone()],
+        native_ref: None,
     });
     prepared
         .geometry
         .shells
-        .push(Shell::with_face(shell.clone(), region, face.clone()));
+        .push(Shell::new(shell.clone(), region));
     prepared.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(carrier)),
         source_object: None,
+        native_ref: None,
     });
     prepared.geometry.faces.push(Face {
         id: face.clone(),
@@ -343,6 +347,7 @@ fn prepare_component(
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     prepared.geometry.loops.push(Loop {
         id: loop_id,
@@ -350,6 +355,7 @@ fn prepare_component(
         boundary: LoopBoundary::Ring(
             LoopRing::new(coedges, Vec::new()).map_err(CodecError::malformed)?,
         ),
+        native_ref: None,
     });
     Ok(true)
 }

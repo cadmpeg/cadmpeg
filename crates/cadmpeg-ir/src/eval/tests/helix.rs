@@ -38,6 +38,7 @@ fn helix_fixture() -> (CadIr, CurveId) {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_curves.push(procedural_curve! {
         id: construction_id,

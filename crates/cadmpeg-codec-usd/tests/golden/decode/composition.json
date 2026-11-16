@@ -7,10 +7,7 @@
         {
           "id": "usd:stage:body#/Scene/Box",
           "kind": "solid",
-          "name": "Box",
-          "regions": [
-            "usd:stage:region#/Scene/Box:region:0"
-          ]
+          "name": "Box"
         }
       ],
       "coedges": [
@@ -446,9 +443,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:4",
-          "id": "usd:stage:edge#/Scene/Box:edge:0",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:4",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:0"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:0"
         },
         {
           "carrier": {
@@ -458,9 +457,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:6",
-          "id": "usd:stage:edge#/Scene/Box:edge:1",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:6",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:4"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:1"
         },
         {
           "carrier": {
@@ -470,9 +471,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:7",
-          "id": "usd:stage:edge#/Scene/Box:edge:10",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:6"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:7",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:6"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:10"
         },
         {
           "carrier": {
@@ -482,9 +485,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:3",
-          "id": "usd:stage:edge#/Scene/Box:edge:11",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:3",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:2"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:11"
         },
         {
           "carrier": {
@@ -494,9 +499,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:6",
-          "id": "usd:stage:edge#/Scene/Box:edge:2",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:6",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:2"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:2"
         },
         {
           "carrier": {
@@ -506,9 +513,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:2",
-          "id": "usd:stage:edge#/Scene/Box:edge:3",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:2",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:0"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:3"
         },
         {
           "carrier": {
@@ -518,9 +527,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:3",
-          "id": "usd:stage:edge#/Scene/Box:edge:4",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:3",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:1"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:4"
         },
         {
           "carrier": {
@@ -530,9 +541,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:7",
-          "id": "usd:stage:edge#/Scene/Box:edge:5",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:7",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:3"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:5"
         },
         {
           "carrier": {
@@ -542,9 +555,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:7",
-          "id": "usd:stage:edge#/Scene/Box:edge:6",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:5"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:7",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:5"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:6"
         },
         {
           "carrier": {
@@ -554,9 +569,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:5",
-          "id": "usd:stage:edge#/Scene/Box:edge:7",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:5",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:1"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:7"
         },
         {
           "carrier": {
@@ -566,9 +583,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:1",
-          "id": "usd:stage:edge#/Scene/Box:edge:8",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:1",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:0"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:8"
         },
         {
           "carrier": {
@@ -578,9 +597,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/Scene/Box:vertex:5",
-          "id": "usd:stage:edge#/Scene/Box:edge:9",
-          "start": "usd:stage:vertex#/Scene/Box:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/Scene/Box:vertex:5",
+            "start": "usd:stage:vertex#/Scene/Box:vertex:4"
+          },
+          "id": "usd:stage:edge#/Scene/Box:edge:9"
         }
       ],
       "faces": [
@@ -818,32 +839,7 @@
       "shells": [
         {
           "id": "usd:stage:shell#/Scene/Box:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/Scene/Box:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Scene/Box:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Scene/Box:face:2",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Scene/Box:face:3",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Scene/Box:face:4",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Scene/Box:face:5",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/Scene/Box:region:0"
         }
       ],

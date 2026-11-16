@@ -245,7 +245,7 @@ impl Serialize for SurfaceWire<'_> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Surface", 3)?;
+        let mut state = serializer.serialize_struct("Surface", 4)?;
         state.serialize_field("id", &self.0.id)?;
         match self.0.geometry.solved_cache() {
             Some(cache) => state.serialize_field("geometry", &SolvedGeometryWire(cache))?,
@@ -253,6 +253,9 @@ impl Serialize for SurfaceWire<'_> {
         }
         if let Some(source_object) = &self.0.source_object {
             state.serialize_field("source_object", source_object)?;
+        }
+        if let Some(native_ref) = &self.0.native_ref {
+            state.serialize_field("native_ref", native_ref)?;
         }
         state.end()
     }
@@ -265,7 +268,7 @@ impl Serialize for CurveWire<'_> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Curve", 4)?;
+        let mut state = serializer.serialize_struct("Curve", 5)?;
         state.serialize_field("id", &self.0.id)?;
         match self.0.geometry.solved_cache() {
             Some(cache) => state.serialize_field("geometry", &SolvedGeometryWire(cache))?,
@@ -276,6 +279,9 @@ impl Serialize for CurveWire<'_> {
         }
         if let Some(source_object) = &self.0.source_object {
             state.serialize_field("source_object", source_object)?;
+        }
+        if let Some(native_ref) = &self.0.native_ref {
+            state.serialize_field("native_ref", native_ref)?;
         }
         state.end()
     }
@@ -879,6 +885,12 @@ macro_rules! declare_document_arenas {
                 $(for entity in self.$home.$field.iter() {
                     graph.references(entity)?;
                 })*
+                for region in &self.geometry.regions {
+                    graph.child(region.body.as_str(), region.id.as_str());
+                }
+                for face in &self.geometry.faces {
+                    graph.child(face.shell.as_str(), face.id.as_str());
+                }
                 Ok(graph)
             }
         }

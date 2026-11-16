@@ -5,13 +5,13 @@ use serde_json::json;
 
 fn model() -> CadIr {
     let mut partial = json!({
-        "bodies": [{"id":"test:model:body#b", "kind":"solid", "regions":["test:model:region#r"]}],
+        "bodies": [{"id":"test:model:body#b", "kind":"solid"}],
         "regions": [{"id":"test:model:region#r", "body":"test:model:body#b", "shells":["test:model:shell#s"]}],
-        "shells": [{"id":"test:model:shell#s", "region":"test:model:region#r", "members":[{"kind":"face","id":"test:model:face#f0"},{"kind":"face","id":"test:model:face#f1"},{"kind":"face","id":"test:model:face#f2"}]}],
+        "shells": [{"id":"test:model:shell#s", "region":"test:model:region#r", "members":[]}],
         "faces": (0..3).map(|i| json!({"id":format!("test:model:face#f{i}"),"shell":"test:model:shell#s", "surface":format!("test:model:surface#g{i}"), "sense":"forward", "loops":{"kind":"unspecified","loops":if i<2 {vec![format!("test:model:loop#l{i}")]} else {vec![]}}})).collect::<Vec<_>>(),
         "loops": (0..2).map(|i|json!({"id":format!("test:model:loop#l{i}"), "face":format!("test:model:face#f{i}"), "boundary":{"kind":"ring","coedges":[format!("test:model:coedge#c{i}")], "vertex_uses": []}})).collect::<Vec<_>>(),
         "coedges": (0..2).map(|i|json!({"id":format!("test:model:coedge#c{i}"),"owner_loop":format!("test:model:loop#l{i}"), "edge":format!("test:model:edge#e{i}"), "radial_next":format!("test:model:coedge#c{i}"), "sense":"forward", "pcurves": []})).collect::<Vec<_>>(),
-        "edges": (0..2).map(|i|json!({"id":format!("test:model:edge#e{i}"), "carrier":{"curve":format!("test:model:curve#c{i}"),"param_range":[0.0,std::f64::consts::TAU]}, "start":format!("test:model:vertex#v{i}"), "end":format!("test:model:vertex#v{i}")})).collect::<Vec<_>>(),
+        "edges": (0..2).map(|i|json!({"id":format!("test:model:edge#e{i}"), "carrier":{"curve":format!("test:model:curve#c{i}"),"param_range":[0.0,std::f64::consts::TAU]}, "ends":{"start":format!("test:model:vertex#v{i}"), "end":format!("test:model:vertex#v{i}")}})).collect::<Vec<_>>(),
         "curves": (0..2).map(|i|json!({"id":format!("test:model:curve#c{i}"), "geometry":{"kind": "solved", "value": {"kind":"circle", "center":{"x":0.0,"y":0.0,"z":f64::from(i)*5.0},"axis":{"x":0.0,"y":0.0,"z":1.0},"ref_direction":{"x":1.0,"y":0.0,"z":0.0},"radius":2.0}}})).collect::<Vec<_>>(),
         "surfaces": [
             {"id":"test:model:surface#g0", "geometry":{"kind": "solved", "value": {"kind":"plane","origin":{"x":0.0,"y":0.0,"z":0.0},"normal":{"x":0.0,"y":0.0,"z":1.0},"u_axis":{"x":1.0,"y":0.0,"z":0.0}}}},

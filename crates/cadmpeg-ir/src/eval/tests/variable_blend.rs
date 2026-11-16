@@ -72,6 +72,7 @@ fn variable_blend_eval_fixture(
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.extend([
         Surface {
@@ -85,6 +86,7 @@ fn variable_blend_eval_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: second_surface.clone(),
@@ -97,6 +99,7 @@ fn variable_blend_eval_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: blend_surface.clone(),
@@ -108,6 +111,7 @@ fn variable_blend_eval_fixture(
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         },
     ]);
     let side = |surface, origin: Point2, direction: Point2| RollingBallSide {
@@ -748,6 +752,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: replica_construction,

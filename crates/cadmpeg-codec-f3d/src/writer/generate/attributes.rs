@@ -1204,9 +1204,9 @@ fn native_color_attribute(
     native_subident(records, "st")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, -1, owner);
-    native_f64(records, f64::from(color.r()));
-    native_f64(records, f64::from(color.g()));
-    native_f64(records, f64::from(color.b()));
+    native_f64(records, color.r());
+    native_f64(records, color.g());
+    native_f64(records, color.b());
     native_f64(records, 1.0);
     Ok(())
 }

@@ -78,6 +78,7 @@ pub(super) fn sketch_brep(
                 .map_err(cadmpeg_core::CodecError::malformed)?,
         )),
         source_object: None,
+        native_ref: None,
     });
     let ordered_entities = source
         .model
@@ -222,6 +223,7 @@ pub(super) fn sketch_brep(
                 id: curve_id.clone(),
                 geometry: generated.curve,
                 source_object: None,
+                native_ref: None,
             });
             ir.geometry.edges.push(Edge {
                 id: edge_id.clone(),
@@ -230,9 +232,12 @@ pub(super) fn sketch_brep(
                     Some(generated.param_range),
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-                start: start_vertex,
-                end: end_vertex,
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    start_vertex,
+                    end_vertex,
+                )),
                 tolerance: None,
+                native_ref: None,
             });
             match &mut ring {
                 Some(ring) => ring
@@ -252,6 +257,7 @@ pub(super) fn sketch_brep(
                 },
                 use_curve: None,
                 pcurves: Vec::new(),
+                native_ref: None,
             });
         }
         ir.geometry.loops.push(Loop {
@@ -260,6 +266,7 @@ pub(super) fn sketch_brep(
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring.ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("sketch profile has no coedges")
             })?),
+            native_ref: None,
         });
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
@@ -295,6 +302,7 @@ pub(super) fn sketch_brep(
             id: vertex_id.clone(),
             point: point_id,
             tolerance: None,
+            native_ref: None,
         });
         let edge_id = EdgeId::compose(
             &sketch_namespace(),
@@ -320,9 +328,12 @@ pub(super) fn sketch_brep(
         ir.geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-            start: vertex_id.clone(),
-            end: vertex_id,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertex_id.clone(),
+                vertex_id,
+            )),
             tolerance: None,
+            native_ref: None,
         });
         ir.geometry.coedges.push(Coedge {
             id: coedge_id.clone(),
@@ -332,6 +343,7 @@ pub(super) fn sketch_brep(
             sense: Sense::Forward,
             use_curve: None,
             pcurves: Vec::new(),
+            native_ref: None,
         });
         ir.geometry.loops.push(Loop {
             id: loop_id.clone(),
@@ -339,6 +351,7 @@ pub(super) fn sketch_brep(
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::single(coedge_id),
             ),
+            native_ref: None,
         });
         face_loops.push(loop_id);
     }
@@ -357,25 +370,25 @@ pub(super) fn sketch_brep(
         name: sketch.name.clone(),
         color: None,
         tolerance: None,
+        native_ref: None,
     });
-    ir.geometry.shells.push(Shell::with_face(
-        shell_id.clone(),
-        region_id.clone(),
-        face_id,
-    ));
+    ir.geometry
+        .shells
+        .push(Shell::new(shell_id.clone(), region_id.clone()));
     ir.geometry.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id],
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
-        regions: vec![region_id],
         transform: None,
         name: sketch.name.clone(),
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.finalize();
     Ok(ir)
@@ -584,6 +597,7 @@ fn sketch_vertex(
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
+        native_ref: None,
     });
     vertices.insert(key, vertex_id.clone());
     Ok(vertex_id)

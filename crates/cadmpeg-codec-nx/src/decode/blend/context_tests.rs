@@ -25,6 +25,7 @@ fn spine_model(count: u32) -> (CadIr, CurveId) {
         id: id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         source_object: None,
+        native_ref: None,
     });
     (ir, id)
 }

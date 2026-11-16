@@ -637,6 +637,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             vertex,
             pcurves: Vec::new(),
         },
+        native_ref: None,
     });
     let outer = ir.geometry.faces[0].loops.iter().next().unwrap().clone();
     ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);

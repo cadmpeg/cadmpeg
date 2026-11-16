@@ -37,6 +37,7 @@ fn make_offset(ir: &mut CadIr, surface: &SurfaceId, distance: f64) {
         id: support.clone(),
         source_object: None,
         geometry,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
@@ -168,6 +169,7 @@ fn cacheless_offset_cuboid_preserves_flux_and_placement() {
                             )
                             .unwrap(),
                         )),
+                        native_ref: None,
                     });
                     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
                         construction,

@@ -6,10 +6,7 @@
       "bodies": [
         {
           "id": "step:data:body#13",
-          "kind": "sheet",
-          "regions": [
-            "step:data:region#13"
-          ]
+          "kind": "sheet"
         }
       ],
       "coedges": [],
@@ -113,12 +110,7 @@
       "shells": [
         {
           "id": "step:data:shell#geometric-set-13",
-          "members": [
-            {
-              "id": "step:data:face#11-geometric-set-13",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "step:data:region#13"
         }
       ],

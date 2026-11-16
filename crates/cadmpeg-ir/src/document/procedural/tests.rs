@@ -19,6 +19,7 @@ fn curves(count: usize) -> (Topology, Vec<(CurveId, ProceduralCurve)>) {
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 parameter_range: None,
                 source_object: None,
+                native_ref: None,
             });
             let procedural = ProceduralCurve::new(
                 ProceduralCurveId::mint(format!("test:model:construction#{index:04}")).unwrap(),
@@ -39,6 +40,7 @@ fn surfaces(count: usize) -> (Topology, Vec<(SurfaceId, ProceduralSurface)>) {
                 id: owner.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             });
             let procedural = ProceduralSurface::new(
                 ProceduralSurfaceId::mint(format!("test:model:construction#{index:04}")).unwrap(),

@@ -310,6 +310,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
@@ -322,6 +323,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.finalize();
     for version in [

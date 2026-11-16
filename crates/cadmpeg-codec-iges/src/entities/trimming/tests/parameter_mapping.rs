@@ -27,6 +27,7 @@ fn extrusions(count: usize) -> CadIr {
         )),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     for ordinal in 0..count {
         let id = ProceduralSurfaceId::mint(format!("test:model:construction#{ordinal}")).unwrap();
@@ -51,6 +52,7 @@ fn extrusions(count: usize) -> CadIr {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
     }
     ir

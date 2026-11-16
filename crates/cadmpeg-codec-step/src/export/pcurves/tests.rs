@@ -243,6 +243,7 @@ fn normal_and_split_edges_keep_the_coedge_interval_until_spline_emission() {
                 id: pcurve.clone(),
                 geometry: spline(),
                 metadata: PcurveMetadata::default(),
+                native_ref: None,
             });
         for coedge in ir
             .geometry
@@ -369,7 +370,10 @@ fn cube_edge_with_pcurve(from: f64, to: f64) -> (cadmpeg_ir::CadIr, PcurveGeomet
             .position()
             .get()
     };
-    let (start, end) = (position(&edge.start), position(&edge.end));
+    let (start, end) = (
+        position(&edge.ends.as_ref().unwrap().start),
+        position(&edge.ends.as_ref().unwrap().end),
+    );
     let along = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
     let length = (along.x * along.x + along.y * along.y + along.z * along.z).sqrt();
     let along = Vector3::new(along.x / length, along.y / length, along.z / length);
@@ -459,7 +463,7 @@ fn spline_pcurve_uses_the_active_edge_interval_at_a_tolerant_vertex() {
         ir.geometry
             .vertices
             .iter_mut()
-            .find(|vertex| vertex.id == edge.start)
+            .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
             .unwrap()
             .tolerance = PositiveReal::new(vertex_tolerance);
 
@@ -470,6 +474,7 @@ fn spline_pcurve_uses_the_active_edge_interval_at_a_tolerant_vertex() {
                 id: pcurve.clone(),
                 geometry,
                 metadata: PcurveMetadata::default(),
+                native_ref: None,
             });
         let index = ir
             .geometry
@@ -504,7 +509,7 @@ fn spline_pcurve_uses_the_active_edge_interval_at_a_tolerant_vertex() {
 #[test]
 fn a_closed_edge_directs_only_an_increasing_use_interval() {
     let (mut ir, pcurve, surface, mut edge) = cube_edge_with_pcurve(0.0, 0.0);
-    edge.end = edge.start.clone();
+    edge.ends.as_mut().unwrap().end = edge.ends.as_ref().unwrap().start.clone();
     ir.geometry.edges[0] = edge.clone();
     let builder =
         super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
@@ -551,6 +556,7 @@ fn reflected_conic_emission_uses_a_rational_spline() {
             id: pcurve_id.clone(),
             geometry: reflected,
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
     for coedge in ir.geometry.coedges.iter_mut().filter(|c| c.edge == edge_id) {
         coedge.pcurves.push(cadmpeg_ir::topology::PcurveUse {
