@@ -1063,6 +1063,59 @@ enum MarkerGeometryFailure {
     Codec(CodecError),
 }
 
+/// Native-kind prefix of a marker entity whose geometry the recovery passes
+/// may still resolve. [`finalize_unread_marker_entities`] replaces it.
+const MARKER_GEOMETRY_PLACEHOLDER: &str = "sldprt:marker-geometry:";
+const DEGENERATE_LINE_PLACEHOLDER: &str = "sldprt:marker-geometry:degenerate-line";
+
+/// Gives every marker entity that no recovery pass resolved the marker role
+/// as its native kind, and charges one loss per entity.
+pub(crate) fn finalize_unread_marker_entities(
+    sketch_entities: &mut [SketchEntity],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    use crate::loss::SldprtLossCode;
+    for entity in sketch_entities {
+        let SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
+            continue;
+        };
+        let Some(placeholder) = native_kind
+            .as_str()
+            .strip_prefix(MARKER_GEOMETRY_PLACEHOLDER)
+        else {
+            continue;
+        };
+        let (role, code) = match placeholder {
+            "0" => ("point", SldprtLossCode::SketchCoordinatesUnread),
+            "1" => ("line-or-circle", SldprtLossCode::SketchCoordinatesUnread),
+            "2" => ("arc", SldprtLossCode::SketchCoordinatesUnread),
+            "3" => ("constrained-point", SldprtLossCode::SketchCoordinatesUnread),
+            _ if native_kind.as_str() == DEGENERATE_LINE_PLACEHOLDER => {
+                ("line-or-circle", SldprtLossCode::SketchLineDegenerate)
+            }
+            _ => ("unknown", SldprtLossCode::SketchCoordinatesUnread),
+        };
+        let marker = entity
+            .native_ref
+            .as_deref()
+            .unwrap_or("without a native reference");
+        losses.push(code.note(match code {
+            SldprtLossCode::SketchLineDegenerate => format!(
+                "sketch {} entity {}: the two read endpoints of {role} handle {marker} coincide; the entity keeps its marker role",
+                entity.sketch,
+                entity.id()
+            ),
+            _ => format!(
+                "sketch {} entity {}: the coordinates of {role} handle {marker} were not read; the entity keeps its marker role",
+                entity.sketch,
+                entity.id()
+            ),
+        }));
+        entity.geometry =
+            SketchGeometry::native(cadmpeg_core::nonblank_literal!("sldprt:{role}-handle"));
+    }
+}
+
 impl From<CodecError> for MarkerGeometryFailure {
     fn from(error: CodecError) -> Self {
         Self::Codec(error)
@@ -1572,7 +1625,9 @@ pub(crate) fn project_marker_backed_sketches(
                                             // A zero-length line is not valid IR geometry. Preserve
                                             // the marker whose endpoint collapsed because a newly
                                             // recognized profile point supplied its coordinates.
-                                            SketchGeometry::native(native_kind)
+                                            SketchGeometry::native(cadmpeg_core::nonblank_const!(
+                                                DEGENERATE_LINE_PLACEHOLDER
+                                            ))
                                         } else {
                                             return Err(MarkerGeometryFailure::Absent);
                                         }
@@ -4871,3 +4926,6 @@ mod exact_tests;
 
 #[cfg(test)]
 mod index_tests;
+
+#[cfg(test)]
+mod unread_marker_tests;

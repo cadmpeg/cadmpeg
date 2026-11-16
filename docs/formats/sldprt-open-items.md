@@ -660,6 +660,14 @@ resolve a seed feature?
 
 **Need.** We must draw these points to type the relations that name them.
 
+### DI-70. Geometry of unread line-or-circle and arc handles
+
+**Question.** Which sketch records carry the geometry of a line-or-circle or arc handle that no marker layout in `sldprt.md` resolves?
+
+**Known.** `sldprt.md` gives coordinate-bearing marker codes `1` and `2` as line-or-circle and arc geometry handles. The decoder keeps such an entity with its identity and relations, gives it native kind `sldprt:line-or-circle-handle` or `sldprt:arc-handle`, and charges `sketch.coordinates-unread`. A line handle whose two read endpoints coincide keeps native kind `sldprt:line-or-circle-handle` and charges `sketch.line-degenerate`.
+
+**Need.** We must read these handles to complete the sketch geometry and its profiles.
+
 
 ### DI-47. Relation-table framing
 

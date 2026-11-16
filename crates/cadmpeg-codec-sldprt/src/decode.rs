@@ -3505,6 +3505,10 @@ fn build_geometry_ir(
         &histories,
         sketch_lanes,
     );
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut sketch_entities,
+        &mut pmi_losses,
+    );
     crate::history::bind::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
@@ -4749,6 +4753,10 @@ fn build_metadata_ir(
         &mut ir.model.sketch_entities,
         &histories,
         sketch_lanes,
+    );
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut ir.model.sketch_entities,
+        &mut pmi_losses,
     );
     crate::history::bind::bind_unique_sketch_feature(
         &mut ir.model.features,
