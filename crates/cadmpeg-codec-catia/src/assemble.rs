@@ -7,6 +7,7 @@
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -14,7 +15,6 @@ use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::hash::{sha256, LowerHex};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -23,7 +23,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::SourceObjectAssociation;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::container::ContainerScan;
 use crate::loss::{identity_statement, CatiaLossCode};
@@ -532,61 +532,6 @@ pub(crate) fn source_meta(
     matched: &DialectMatch,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("file_size"),
-        format_args!("{}", scan.data.len()),
-    )?;
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("outer_dir_offset"),
-        format_args!("{}", scan.outer_dir_offset),
-    )?;
-    if let Some(dir) = &scan.inner {
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("inner_offset"),
-            format_args!("{}", dir.inner),
-        )?;
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("stream_count"),
-            format_args!("{}", dir.descriptors.len()),
-        )?;
-    }
-    if let Some(brep) = &scan.brep {
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("brep_stream_len"),
-            format_args!("{}", brep.len()),
-        )?;
-        let digest = sha256(brep);
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("brep_stream_sha256"),
-            format_args!("{}", LowerHex(&digest)),
-        )?;
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("fbb_runs"),
-            format_args!("{}", scan.census.fbb_runs),
-        )?;
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("fbb_face_rows"),
-            format_args!("{}", scan.census.fbb_face_rows),
-        )?;
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("vertex_records"),
-            format_args!("{}", scan.census.vertex_markers),
-        )?;
-    }
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("preview_count"),
-        format_args!("{}", scan.previews.len()),
-    )?;
     for (index, preview) in scan.previews.iter().enumerate() {
         resource::source_attribute(
             &mut attributes,
@@ -604,11 +549,6 @@ pub(crate) fn source_meta(
             format_args!("{}", preview.components),
         )?;
     }
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("external_reference_count"),
-        format_args!("{}", scan.external_references.len()),
-    )?;
     for (index, reference) in scan.external_references.iter().enumerate() {
         resource::source_attribute(
             &mut attributes,
@@ -616,11 +556,6 @@ pub(crate) fn source_meta(
             format_args!("{}", reference.target),
         )?;
     }
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("finjpl_segment_count"),
-        format_args!("{}", scan.finjpl_segments.len()),
-    )?;
     for (index, segment) in scan.finjpl_segments.iter().enumerate() {
         if let Some(name) = &segment.name {
             resource::source_attribute(
@@ -748,10 +683,19 @@ pub(crate) fn build_geometry_report(
     }
 }
 
+/// The returned classes are the ones the retained payload holds undecoded.
 pub(crate) fn build_metadata_fallback(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        CadIr,
+        cadmpeg_ir::Annotations,
+        Vec<UnknownRecord>,
+        BTreeSet<ArenaClass>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
@@ -759,17 +703,20 @@ pub(crate) fn build_metadata_fallback(
     // Preserve the reconstructed BREP stream, or the whole file when the scan
     // recovered no stream, as an unknown passthrough so no source byte is
     // dropped. A container-only decode transfers no model, so this record is
-    // the only place the payload survives.
-    let (bytes, stream, key) = match scan.brep.as_ref() {
+    // the only place the payload survives. The BREP stream holds model
+    // content; the whole file holds model and design content.
+    let (bytes, stream, key, untyped) = match scan.brep.as_ref() {
         Some(brep) => (
             brep.as_slice(),
             "MainDataStream+SurfacicReps",
             cadmpeg_ir::identity_key!("brep-stream"),
+            BTreeSet::from([ArenaClass::Model]),
         ),
         None => (
             scan.data.as_ref(),
             "CATPart",
             cadmpeg_ir::identity_key!("container"),
+            BTreeSet::from([ArenaClass::Model, ArenaClass::Design]),
         ),
     };
     let id = UnknownId::compose(
@@ -791,7 +738,7 @@ pub(crate) fn build_metadata_fallback(
         Exactness::Unknown,
     )?;
     unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
-    Ok((ir, annotations.build(), unknowns))
+    Ok((ir, annotations.build(), unknowns, untyped))
 }
 
 /// Preserve the native payload for every partial decode.  Typed entities are
@@ -1653,7 +1600,7 @@ mod route_tests {
     }
 
     #[test]
-    fn source_metadata_records_the_file_size() {
+    fn source_metadata_holds_no_source_layout() {
         let scan = crate::test_support::with_service_context(|ctx| {
             crate::container::scan_bytes(
                 ctx,
@@ -1663,7 +1610,17 @@ mod route_tests {
         .expect("scan the container");
         let matched = crate::dialect::classify(&scan).expect("classify the dialect");
         let source = source_meta(&scan, &matched).expect("build the source metadata");
-        assert_eq!(source.attributes["file_size"], scan.data.len().to_string());
+        for key in [
+            "file_size",
+            "outer_dir_offset",
+            "brep_stream_sha256",
+            "preview_count",
+        ] {
+            assert!(
+                !source.attributes.keys().any(|name| name.as_str() == key),
+                "{key}"
+            );
+        }
     }
 
     #[test]

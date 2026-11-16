@@ -40,8 +40,8 @@ fn malformed_face_names_preserve_geometry_and_report_source_only_metadata() {
             .iter()
             .any(|loss| loss.code == StepLossCode::MetadataStringInvalid.kind()));
         assert_eq!(
-            result.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
-            "0"
+            cadmpeg_test_support::wire::coverage_count(result.report(), "bytes_unclassified"),
+            0
         );
         assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
             .unwrap()
@@ -57,8 +57,8 @@ fn byte_census_keeps_metadata_admission_after_an_omitted_record() {
         .expect("bounded defect and unreadable metadata remain recoverable");
     assert_eq!(decoded.ir().geometry.points.len(), 2);
     assert_eq!(
-        decoded.ir().source.as_ref().expect("source").attributes["bytes_unclassified"],
-        "0"
+        cadmpeg_test_support::wire::coverage_count(decoded.report(), "bytes_unclassified"),
+        0
     );
 }
 
@@ -129,6 +129,51 @@ fn opaque_reference_does_not_transfer_a_coordinate() {
 }
 
 #[test]
+fn records_kept_without_decoding_are_marked_untyped_model_content() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));#2=UNKNOWN_ITEM(#1);ENDSEC;END-ISO-10303-21;";
+    let decoded = EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("bounded opaque reference"),
+    );
+    let fidelity = decoded.source_fidelity();
+    assert_eq!(
+        fidelity.decode_digest,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(source)
+    );
+    for id in ["step:data:cartesian_point#1", "step:data:unknown_item#2"] {
+        let record = fidelity.retained_record(id).expect("retained source");
+        assert_eq!(
+            record.untyped().iter().copied().collect::<Vec<_>>(),
+            [cadmpeg_core::decode::ArenaClass::Model]
+        );
+    }
+    assert_eq!(
+        fidelity.unrepresented().into_iter().collect::<Vec<_>>(),
+        [cadmpeg_core::decode::ArenaClass::Model]
+    );
+}
+
+#[test]
+fn only_records_kept_without_decoding_carry_an_untyped_mark() {
+    let source = include_str!("../writer/tests/data/periodic_two_rims.p21");
+    let decoded = EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
+    assert!(!decoded.ir().geometry.faces.is_empty());
+    let untyped = decoded
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .filter(|(_, record)| !record.untyped().is_empty())
+        .map(|(id, _)| id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(untyped, ["step:data:application_protocol_definition#41"]);
+}
+
+#[test]
 fn byte_accounting_reports_an_unrecognized_suffix() {
     let input = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let (mut exchange, _) =
@@ -156,6 +201,7 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
         &[],
         super::DecodeMode::Decode(Packaging::Bare),
         &ctx,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&extended),
     )
     .expect("synthesized unknown record conversion")
     .decoded;
@@ -414,8 +460,7 @@ pub(crate) fn decode_accounts_for_every_part21_byte() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode byte-accounting fixture");
-    let attributes = &result.ir().source.as_ref().unwrap().attributes;
-    let count = |name: &str| attributes[name].parse::<usize>().unwrap();
+    let count = |name: &str| cadmpeg_test_support::wire::coverage_count(result.report(), name);
 
     assert!(count("bytes_structural") > 0);
     assert!(count("bytes_typed") > 0);
@@ -506,8 +551,7 @@ fn every_repository_step_fixture_has_complete_byte_accounting() {
         let result = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let attributes = &result.ir().source.as_ref().unwrap().attributes;
-        let count = |key: &str| attributes[key].parse::<usize>().unwrap();
+        let count = |key: &str| cadmpeg_test_support::wire::coverage_count(result.report(), key);
         assert_eq!(count("bytes_unclassified"), 0, "{name}");
         assert_eq!(
             count("bytes_structural")
@@ -811,8 +855,8 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     assert_eq!(provenance.tag.as_deref(), Some("complex_entity"));
     assert_eq!(result.ir().native_unknowns("step").unwrap().len(), 0);
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["bytes_named_opaque"],
-        "0"
+        cadmpeg_test_support::wire::coverage_count(result.report(), "bytes_named_opaque"),
+        0
     );
 }
 

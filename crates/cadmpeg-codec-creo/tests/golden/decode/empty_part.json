@@ -67,10 +67,6 @@
     },
     "source": {
       "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "74",
-        "section_count": "0",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
@@ -567,6 +563,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "a36323c3c9bf564036b51ec4634ddcc726ce97fc93fd8b4494fcabe7cbebee6b",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

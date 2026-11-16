@@ -434,12 +434,6 @@
     },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "290",
-        "bytes_typed": "2125",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "59",
         "schema": "AUTOMOTIVE_DESIGN"
       },
       "identity": {
@@ -471,7 +465,14 @@
     }
   },
   "report": {
-    "coverage": {},
+    "coverage": {
+      "bytes_named_opaque": 0,
+      "bytes_structural": 290,
+      "bytes_typed": 2125,
+      "bytes_unclassified": 0,
+      "data_sections": 1,
+      "entity_instances": 59
+    },
     "identity": {
       "dialects": {
         "extra": [],
@@ -531,6 +532,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "386b95e5abf75a121aac57546cae90fda35d7408e38ee7650e3407268d24f2ed",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

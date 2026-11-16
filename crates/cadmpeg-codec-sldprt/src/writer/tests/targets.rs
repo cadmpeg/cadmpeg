@@ -91,7 +91,7 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
 fn explicit_cross_dialect_transcode_refuses_without_consuming_present_image() {
     let ir = sourced_ir("sldprt:sw-version-12000-plus");
     let data = b"present retained image".to_vec();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&data));
     let source_image_id: cadmpeg_ir::ids::UnknownId = crate::SOURCE_IMAGE_ID
         .to_owned()
         .try_into()

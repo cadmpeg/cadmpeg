@@ -14,6 +14,7 @@ use cadmpeg_ir::codec::write::{
     DepthNeed, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
@@ -458,6 +459,7 @@ fn decode_zip(
             entry_count,
             root_data_offset,
         },
+        Sha256Digest::digest(root.window()),
     )?;
     decoded.body.notes.push(format!(
         "container root {}; archive entries={entry_count}",

@@ -26,6 +26,7 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 
 use crate::loss::SldprtLossCode;
@@ -33,6 +34,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod digest_partition;
+mod retention;
 
 use crate::container::configuration_index;
 use crate::container::contains_ascii_case_insensitive;
@@ -185,6 +187,7 @@ fn decode_scan(
     mut scan: container::ContainerScan<'_>,
     placed_virtual: &BTreeSet<String>,
 ) -> Result<Decoded, CodecError> {
+    let decode_digest = Sha256Digest::digest(scan.source_image);
     let classification = crate::dialect::classify_layers(&scan)?;
     let form_padding = classification.host().form_code_padding();
     // Marker identities are admitted during scanning. Compound stream identities
@@ -194,7 +197,7 @@ fn decode_scan(
     let mut admitted_entities = 0_u64;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(
+        let (ir, annotations, unknowns, retention, mut pmi_losses) = build_metadata_ir(
             ctx,
             &scan,
             &classification,
@@ -206,7 +209,15 @@ fn decode_scan(
             build_container_report(ctx, &scan, &classification, container::notes(&scan), 0)?;
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         report.losses.append(&mut pmi_losses);
-        return decode_result(ctx, ir, report, annotations, unknowns);
+        return decode_result(
+            ctx,
+            decode_digest,
+            ir,
+            report,
+            annotations,
+            unknowns,
+            retention,
+        );
     }
 
     let streams = active_body_streams(&scan);
@@ -221,7 +232,7 @@ fn decode_scan(
             &classification,
             &mut brep_fallback_losses,
         )? {
-            let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
+            let (ir, annotations, unknowns, retention, mut pmi_losses) = build_geometry_ir(
                 ctx,
                 &mut scan,
                 &classification,
@@ -232,11 +243,19 @@ fn decode_scan(
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
             append_design_losses(ctx, &ir, &mut report)?;
-            return decode_result(ctx, ir, report, annotations, unknowns);
+            return decode_result(
+                ctx,
+                decode_digest,
+                ir,
+                report,
+                annotations,
+                unknowns,
+                retention,
+            );
         }
     }
 
-    let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(
+    let (ir, annotations, unknowns, retention, mut pmi_losses) = build_metadata_ir(
         ctx,
         &scan,
         &classification,
@@ -256,8 +275,26 @@ fn decode_scan(
     report.losses.append(&mut pmi_losses);
     append_tessellation_losses(&ir, &mut report);
     append_design_losses(ctx, &ir, &mut report)?;
-    decode_result(ctx, ir, report, annotations, unknowns)
+    decode_result(
+        ctx,
+        decode_digest,
+        ir,
+        report,
+        annotations,
+        unknowns,
+        retention,
+    )
 }
+
+/// IR, annotations, retained records with their untyped marks, and losses
+/// that one decode route built.
+type BuiltIr = (
+    CadIr,
+    Annotations,
+    Vec<UnknownRecord>,
+    retention::Retention,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+);
 
 fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
     let unresolved = ir
@@ -279,20 +316,25 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
 
 fn decode_result(
     ctx: &DecodeContext<'_>,
+    decode_digest: Sha256Digest,
     mut ir: CadIr,
     body: DecodeBody,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
+    mut retention: retention::Retention,
 ) -> Result<Decoded, CodecError> {
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity =
+        cadmpeg_ir::SourceFidelity::with_annotations(annotations, decode_digest);
     let source_image = unknowns
         .iter()
         .position(|record| record.id().as_str() == "sldprt:file:source-image#0")
         .map(|index| unknowns.remove(index));
+    retention.opaque_records(&unknowns, &source_fidelity.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns, ctx)?;
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("source", [source_image])?;
     }
+    retention.apply(&mut source_fidelity)?;
     stamp_local_digests(ctx, &mut ir)?;
     Ok(Decoded {
         ir,
@@ -3290,20 +3332,37 @@ fn build_geometry_ir(
     decoded: DecodedBrep,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
-) -> Result<
-    (
-        CadIr,
-        Annotations,
-        Vec<UnknownRecord>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
-    CodecError,
-> {
+) -> Result<BuiltIr, CodecError> {
     let DecodedBrep {
         metadata_header,
         mut brep,
         configuration_bodies,
     } = decoded;
+    let mut retention = retention::Retention::default();
+    let stats = &brep.stats;
+    if stats.unknown_surface_faces != 0
+        || stats.unknown_procedural_supports != 0
+        || stats.unknown_curve_edges != 0
+        || stats.ambiguous_pcurve_parameters != 0
+        || stats.off_surface_nurbs_pcurves != 0
+        || !stats.surface_solver_capped.is_empty()
+        || stats.unresolved_face_colors != 0
+        || stats.unclaimed_faces != 0
+    {
+        // The builder withheld model content that the retained Parasolid
+        // blocks still hold.
+        for block in scan
+            .blocks
+            .iter()
+            .filter(|block| matches!(block.family, container::PayloadFamily::Parasolid))
+        {
+            let id = UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
+                block.offset,
+            );
+            retention.record(id.as_str(), cadmpeg_core::decode::ArenaClass::Model);
+        }
+    }
     let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
     let (display_sections, display_summary) = collect_display_sections(ctx, scan)?;
     let mut ir = CadIr::decoded(source_meta(
@@ -4127,7 +4186,7 @@ fn build_geometry_ir(
     // records are attached.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
-    Ok((ir, annotations, unknowns, pmi_losses))
+    Ok((ir, annotations, unknowns, retention, pmi_losses))
 }
 
 fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
@@ -4172,40 +4231,6 @@ fn source_meta(
             display.triangles.to_string(),
         );
     }
-    for (name, count) in [
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201296"),
-            display.extended_forms[0],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201a96"),
-            display.extended_forms[1],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201b96"),
-            display.extended_forms[2],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201e96"),
-            display.extended_forms[3],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_opaque_extended_tables"),
-            display.opaque_extended_tables,
-        ),
-    ] {
-        if count != 0 {
-            attributes.insert(name, count.to_string());
-        }
-    }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("block_count"),
-        scan.blocks.len().to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("compound_stream_count"),
-        scan.compound_streams.len().to_string(),
-    );
     if let Some(site) = container::select_active_parasolid_site(scan) {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("active_parasolid_block"),
@@ -4270,11 +4295,9 @@ fn add_preview_metadata(
                 png_index += 1;
             }
             container::PayloadFamily::BmpThumbnail => {
-                let (Some(width), Some(height), Some(image_size)) = (
-                    View::i32_le_at(payload, 8),
-                    View::i32_le_at(payload, 12),
-                    View::u32_le_at(payload, 24),
-                ) else {
+                let (Some(width), Some(height)) =
+                    (View::i32_le_at(payload, 8), View::i32_le_at(payload, 12))
+                else {
                     continue;
                 };
                 let (Some(planes), Some(bits_per_pixel), Some(compression)) = (
@@ -4292,20 +4315,11 @@ fn add_preview_metadata(
                 attributes.insert(key("planes"), planes.to_string());
                 attributes.insert(key("bit_count"), bits_per_pixel.to_string());
                 attributes.insert(key("compression"), compression.to_string());
-                attributes.insert(key("image_size"), image_size.to_string());
                 bmp_index += 1;
             }
             _ => {}
         }
     }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("png_preview_count"),
-        png_index.to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("bmp_thumbnail_count"),
-        bmp_index.to_string(),
-    );
 }
 
 fn add_solidworks_xml_metadata(
@@ -4538,16 +4552,9 @@ fn build_metadata_ir(
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
     transfer_display: bool,
-) -> Result<
-    (
-        CadIr,
-        Annotations,
-        Vec<UnknownRecord>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
-    CodecError,
-> {
+) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty();
+    let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
@@ -4596,14 +4603,12 @@ fn build_metadata_ir(
         cadmpeg_core::nonblank_literal!("outer_version"),
         format!("0x{:08x}", scan.version),
     );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("block_count"),
-        scan.blocks.len().to_string(),
-    );
     add_solidworks_xml_metadata(scan, &mut attributes)?;
 
     if let Some(site) = container::select_active_parasolid_site(scan) {
         let id = site.section.native_id();
+        // This route retains the body stream without projecting its geometry.
+        retention.record(id.as_str(), cadmpeg_core::decode::ArenaClass::Model);
         let offset = match site.section {
             container::Section::Block(block) => u64_from_index(block.offset),
             container::Section::Compound(_) => 0,
@@ -4994,7 +4999,7 @@ fn build_metadata_ir(
     // records are attached.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
-    Ok((ir, annotations, unknowns, pmi_losses))
+    Ok((ir, annotations, unknowns, retention, pmi_losses))
 }
 
 #[derive(Clone, Copy)]
