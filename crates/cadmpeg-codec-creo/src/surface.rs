@@ -3360,19 +3360,20 @@ fn framed_rows(candidates: Vec<SurfaceRow>, frames: &[SurfaceArrayFrame]) -> Vec
     }
 }
 
-/// Rows, and the rows the packed reading replaces.
+/// Rows with `boundary_types`, and the rows the packed reading replaces.
 ///
-/// The payload keeps its packed reading when, in every counted frame and
-/// outside them, the packed candidates are at least as many as the one- and
-/// two-byte candidates, and a frame that keeps its one- and two-byte
-/// candidates also keeps its packed ones. Otherwise it keeps the one- and
-/// two-byte reading.
+/// The choice reads candidates of every boundary type. The payload keeps its
+/// packed reading when, in every counted frame and outside them, the packed
+/// candidates are at least as many as the one- and two-byte candidates, a
+/// frame that keeps its one- and two-byte candidates also keeps its packed
+/// ones, and one- and two-byte candidates outside the frames stay kept.
+/// Otherwise it keeps the one- and two-byte reading.
 fn rows_and_packed_readings(
     payload: &[u8],
     boundary_types: &[BoundaryType],
 ) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
-    let packed = row_candidates(payload, boundary_types, row_prefix::RowReading::Packed);
-    let compact = row_candidates(payload, boundary_types, row_prefix::RowReading::Compact);
+    let packed = row_candidates(payload, row_prefix::RowReading::Packed);
+    let compact = row_candidates(payload, row_prefix::RowReading::Compact);
     let frames: Vec<SurfaceArrayFrame> = surface_array_frames(payload).collect();
     let frame_of = |row: &SurfaceRow| {
         frames
@@ -3393,11 +3394,18 @@ fn rows_and_packed_readings(
             packed_count >= compact_count
                 && count.is_none_or(|count| packed_count <= count || compact_count > count)
         });
-    let compact_rows = framed_rows(compact, &frames);
-    if !packed_admissible {
+    let framed = |rows: &[SurfaceRow]| rows.iter().any(|row| frame_of(row).is_some());
+    let keeps_unframed_rows = framed(&packed) == framed(&compact) || count_in(&compact, None) == 0;
+    let with_boundaries = |rows: Vec<SurfaceRow>| -> Vec<SurfaceRow> {
+        rows.into_iter()
+            .filter(|row| boundary_types.contains(&row.boundary_type))
+            .collect()
+    };
+    let compact_rows = framed_rows(with_boundaries(compact), &frames);
+    if !(packed_admissible && keeps_unframed_rows) {
         return (compact_rows, Vec::new());
     }
-    let packed_rows = framed_rows(packed, &frames);
+    let packed_rows = framed_rows(with_boundaries(packed), &frames);
     let mut replaced = BTreeMap::<Option<usize>, usize>::new();
     for row in compact_rows.iter().filter(|row| !packed_rows.contains(row)) {
         *replaced.entry(frame_of(row)).or_default() += 1;
@@ -3426,11 +3434,7 @@ pub(crate) fn cross_section_rows_with_packed_readings(
     rows_and_packed_readings(payload, &[BoundaryType::Code00, BoundaryType::Code06])
 }
 
-fn row_candidates(
-    payload: &[u8],
-    boundary_types: &[BoundaryType],
-    reading: row_prefix::RowReading,
-) -> Vec<SurfaceRow> {
+fn row_candidates(payload: &[u8], reading: row_prefix::RowReading) -> Vec<SurfaceRow> {
     let mut result = Vec::new();
     let mut namespace_start = 0;
     while let Some(array) = find(payload, b"srf_array\0", namespace_start) {
@@ -3477,9 +3481,8 @@ fn row_candidates(
             });
         }
     }
-    let frame_starts: Vec<usize> = surface_array_frames(payload)
-        .map(|frame| frame.start)
-        .collect();
+    let frames: Vec<SurfaceArrayFrame> = surface_array_frames(payload).collect();
+    let frame_starts: Vec<usize> = frames.iter().map(|frame| frame.start).collect();
     let labels = row_prefix::frame_label_offsets(payload);
     for type_offset in 1..payload.len() {
         let Some(kind) = SurfaceKind::from_byte(payload[type_offset]) else {
@@ -3489,17 +3492,15 @@ fn row_candidates(
             .get(labels.partition_point(|label| *label <= type_offset))
             .copied()
             .unwrap_or(payload.len());
-        let lower = frame_starts
+        let containing_frame_start = frames
             .iter()
-            .copied()
-            .filter(|start| *start <= type_offset)
-            .max()
-            .unwrap_or(0);
+            .find(|frame| frame.start <= type_offset && type_offset < frame.end)
+            .map(|frame| frame.start);
         let short = id_ending_at(payload, type_offset);
         let anchored = |start: usize| row_prefix::packed_id_anchored(payload, start, &frame_starts);
-        let packed = (reading == row_prefix::RowReading::Packed)
-            .then(|| row_prefix::packed_id_ending_at(payload, type_offset, lower))
-            .flatten()
+        let packed = containing_frame_start
+            .filter(|_| reading == row_prefix::RowReading::Packed)
+            .and_then(|lower| row_prefix::packed_id_ending_at(payload, type_offset, lower))
             .filter(|(_, start)| {
                 anchored(*start) && !short.is_some_and(|(_, short)| anchored(short))
             });
@@ -3542,7 +3543,6 @@ fn row_candidates(
             .iter()
             .any(|(start, end)| row.offset >= *start && row.offset < *end)
     });
-    result.retain(|row| boundary_types.contains(&row.boundary_type));
     result
 }
 

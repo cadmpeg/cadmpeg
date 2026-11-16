@@ -808,3 +808,9 @@ fn named_plane_reads_packed_row_fields() {
     let plane = named_plane(data).expect("named plane");
     assert_eq!((plane.id, plane.feature_id), (20_000, 17_000));
 }
+
+#[test]
+fn named_plane_packed_id_stops_at_a_named_record_header() {
+    let data = b"\xe0\x01geom_id\0\xc0\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    assert!(named_plane(data).is_none());
+}

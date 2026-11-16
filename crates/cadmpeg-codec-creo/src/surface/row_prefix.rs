@@ -95,18 +95,25 @@ pub(super) fn named_row_field(
     end: usize,
     reading: RowReading,
 ) -> Option<u32> {
-    let mut limit = end.min(label_limit(payload, offset, PACKED_FIELD_LEN));
-    if let Some(header) =
-        (offset + 1..offset + PACKED_FIELD_LEN).find(|at| named_record_header_at(payload, *at))
-    {
-        limit = limit.min(header);
-    }
+    let limit = end
+        .min(label_limit(payload, offset, PACKED_FIELD_LEN))
+        .min(named_header_limit(payload, offset));
     row_field(payload, offset, limit, reading).map(|(value, _)| value)
 }
 
-/// A named-record row identifier: the packed tier or a reference identifier.
+/// The start of the first named-record header inside a packed field at
+/// `offset`, or the payload end.
+fn named_header_limit(payload: &[u8], offset: usize) -> usize {
+    (offset + 1..offset + PACKED_FIELD_LEN)
+        .find(|at| named_record_header_at(payload, *at))
+        .unwrap_or(payload.len())
+}
+
+/// A named-record row identifier: the packed tier, ending before the next
+/// named-record header, or a reference identifier.
 pub(crate) fn named_row_identifier(payload: &[u8], offset: usize) -> Option<(u32, usize)> {
-    packed_field(payload, offset, payload.len()).or_else(|| psb::reference_id(payload, offset).ok())
+    packed_field(payload, offset, named_header_limit(payload, offset))
+        .or_else(|| psb::reference_id(payload, offset).ok())
 }
 
 /// The start of the first frame-closing label that begins within `span`

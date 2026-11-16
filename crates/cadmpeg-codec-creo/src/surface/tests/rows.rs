@@ -1714,17 +1714,26 @@ fn one_overfilled_frame_keeps_the_compact_reading_of_every_frame() {
 }
 
 #[test]
-fn cross_section_packed_reading_that_loses_its_boundary_keeps_the_compact_row() {
-    // The packed feat_id c5 01 00 leaves boundary 01, which a cross section excludes.
-    let payload = b"srf_array\0\xf8\x01\x05\x22\xc5\x01\x00\x01\x01\x00";
-    let decoded = cross_section_rows(payload);
+fn cross_section_rows_and_frame_completeness_share_one_reading() {
+    // The packed reading forms two boundary-01 rows; the compact one forms one
+    // boundary-00 row.
+    let payload = b"srf_array\0\xf8\x02\
+        \x05\x22\xc5\x01\x00\x01\x01\x00\
+        \xe3\xc0\x4e\x85\x22\x04\x01\x01\x00";
+    let (decoded, readings) = crate::surface::cross_section_rows_with_packed_readings(payload);
+    assert!(decoded.is_empty());
     assert_eq!(
-        decoded
-            .iter()
-            .map(|row| (row.id, row.feature_id))
-            .collect::<Vec<_>>(),
-        vec![(5, 0xc5)]
+        readings,
+        vec![crate::surface::PackedRowReading {
+            frame_start: Some(b"srf_array\0\xf8\x02".len()),
+            replaced: 1,
+        }]
     );
+    assert_eq!(
+        rows(payload).iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![5, 0x4e85]
+    );
+    assert_eq!(complete_surface_array_bounds(payload).len(), 1);
 }
 
 #[test]
@@ -1745,4 +1754,21 @@ fn packed_reading_outside_counted_frames_is_reported() {
             replaced: 1,
         }]
     );
+}
+
+#[test]
+fn packed_reading_that_frames_a_row_keeps_the_unframed_compact_rows() {
+    let payload = b"\x05\x22\x04\x01\x00\x00srf_array\0\xf8\x01\xc0\x4e\x85\x22\x04\x01\x00\x00";
+    let (decoded, readings) = crate::surface::rows_with_packed_readings(payload);
+    assert_eq!(
+        decoded.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![5]
+    );
+    assert!(readings.is_empty());
+}
+
+#[test]
+fn packed_id_outside_every_frame_is_no_row() {
+    let payload = b"\xe3\xc0\x4e\x85\x22\x04\x01\x00\x00";
+    assert!(rows(payload).is_empty());
 }

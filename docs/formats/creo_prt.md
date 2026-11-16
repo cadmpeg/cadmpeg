@@ -436,7 +436,7 @@ Unit-definition records can include inactive units. `history_scale` is a version
 | `80..bf XX` | Two-byte big-endian integer: `((head - 0x80) << 8) \| XX`. |
 | `c0..ff`    | Control or special-token range on typed paths.             |
 
-Reference identifiers use a narrower grammar in `srf_array` row identifiers, `crv_array` suffixes, DEPDB suffixes, and terminator validation:
+Reference identifiers use a narrower grammar in `crv_array` suffixes, DEPDB suffixes, and terminator validation:
 
 | Bytes       | Meaning                                                  |
 | ----------- | -------------------------------------------------------- |
@@ -444,7 +444,7 @@ Reference identifiers use a narrower grammar in `srf_array` row identifiers, `cr
 | `80..bf XX` | Canonical two-byte identifier with value at least `128`. |
 | `c0..ff`    | Invalid reference-identifier start byte.                 |
 
-`srf_array` row identifiers also use the packed tier `c0..df XX YY` of §3.
+`srf_array` row identifiers use this grammar, except that a `c0..df` head starts the packed tier of §3.
 
 In `segtab`, `order_table`, and `ent_tab`, bytes `c0..ff` are single-byte null sentinels. `f6` does not begin a two-byte compact integer in those lanes.
 

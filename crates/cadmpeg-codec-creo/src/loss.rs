@@ -178,8 +178,8 @@ pub(crate) enum CreoLossCode {
     NurbsBoundaryCarrierUnresolved,
     /// `VisibGeom` surface rows share a non-unique identity.
     VisibGeomSurfaceAmbiguous,
-    /// Surface rows read the packed `c0..df XX YY` identifier tier where the
-    /// one- and two-byte reading of the same frame also forms rows.
+    /// The packed `c0..df XX YY` reading of surface rows replaces rows that
+    /// the one- and two-byte reading keeps.
     SurfaceRowPackedReading,
     /// `VisibGeom` curve-topology rows share a non-unique identity.
     VisibGeomCurveAmbiguous,
@@ -654,7 +654,8 @@ impl CreoLossCode {
             | Self::PmiDatumTagBoundaryAssumed
             | Self::PmiDatumDefinitionSlotAssumed
             | Self::PmiDimensionKindInferred
-            | Self::PmiAngularUnitAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiAngularUnitAssumed
+            | Self::SurfaceRowPackedReading => LossTaxonomy::DecodeDiagnostic,
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
@@ -696,7 +697,6 @@ impl CreoLossCode {
             | Self::LegacySurfaceCarrierUnresolved
             | Self::NurbsBoundaryCarrierUnresolved
             | Self::VisibGeomSurfaceAmbiguous
-            | Self::SurfaceRowPackedReading
             | Self::VisibGeomCurveAmbiguous
             | Self::SectionSegmentGeometryUnresolved
             | Self::SectionSplineUnresolved
