@@ -1166,8 +1166,10 @@ const DEPDB_ROOT_RECORD: &[u8] = b"\xe0\x00p_dep_db\0\xe3";
 
 /// Major product release in the binary-generation `#Creo  TM  <release>` banner.
 pub(crate) fn banner_release_major(data: &[u8]) -> Option<u32> {
-    let header_end = find(data, UGC_HEADER_END, 0)?;
-    let banner = data
+    let toc = find(data, TOC_START, 0)?;
+    let header = data.get(..toc)?;
+    let header_end = find(header, UGC_HEADER_END, 0)?;
+    let banner = header
         .get(header_end + UGC_HEADER_END.len()..)?
         .strip_prefix(
             b"

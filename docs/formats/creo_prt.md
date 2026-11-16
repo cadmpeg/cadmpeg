@@ -6784,8 +6784,8 @@ the same `ref_id` and `ref_type` pair as the tolerance attributes.
 `PTC_DIM_TYPE`, `PTC_DIM_NOMINAL_VAL`, and `PTC_TOLERANCE_MODE`.
 `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT` state the limits. In a save
 whose `#Creo  TM` banner release is 10 or later, they are the absolute lower
-and upper bounds. In a save whose banner release is 4 or earlier, they are
-unsigned deviations: the lower bound is the nominal minus the lower value and
+and upper bounds. In a save whose banner release is 4, they are unsigned
+deviations: the lower bound is the nominal minus the lower value and
 the upper bound is the nominal plus the upper value. `Limits` stores the
 bounds in these two attributes.
 `+- Symmetric` stores a deviation magnitude in `PTC_DIM_TOL_VALUE`.
