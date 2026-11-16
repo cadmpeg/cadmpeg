@@ -164,7 +164,7 @@ fn sheet_metal_projection_joins_parameter_literals_and_retains_unread_fields() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    project(&ctx, &mut ir, &inventory, &[raw]).expect("project");
+    project(&ctx, &mut ir, &inventory, std::slice::from_ref(&raw)).expect("project");
     assert_eq!(ir.design.sheet_metal_rules.len(), 2);
     assert!(ir.design.sheet_metal_rules[0].id < ir.design.sheet_metal_rules[1].id);
     for rule in &ir.design.sheet_metal_rules {
@@ -177,4 +177,63 @@ fn sheet_metal_projection_joins_parameter_literals_and_retains_unread_fields() {
         assert_eq!(rule.bend.radius, None);
         assert_eq!(rule.allowance, None);
     }
+}
+
+#[test]
+fn sheet_metal_binds_projected_length_parameters() {
+    use cadmpeg_ir::design::expr::{Expression, ExpressionDialect};
+    use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition};
+    use cadmpeg_ir::design::units::{Quantity, ValueKind};
+
+    let mut ir = CadIr::empty();
+    ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
+        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
+    })).expect("part"));
+    let (raw, legacy) = crate::feature::fillet::tests::parameter(
+        0,
+        ParameterValue::Length(Length::new(0.75).expect("length")),
+    );
+    let id = legacy.id.clone();
+    ir.design.parameters.push(DesignParameter {
+        id: id.clone(),
+        scope: ir.model.product_definitions[0].id.clone(),
+        owner: None,
+        name: cadmpeg_core::text::NonBlankString::new("Thickness"),
+        kind: ValueKind::Quantity(Quantity::LENGTH),
+        unit: None,
+        definition: ParameterDefinition::Expression(Expression::Source {
+            dialect: ExpressionDialect::Inventor,
+            tokens: Vec::new(),
+        }),
+        value: None,
+        display: None,
+        tolerance: None,
+        decimals: None,
+        comment: None,
+        native_options: BTreeMap::default(),
+        source_settings: BTreeMap::default(),
+        native_ref: Some(raw.id()),
+    });
+    ir.model.parameters.push(legacy);
+    let mut inventory = FeatureInventory::default();
+    let mut style = style(20);
+    style.identity.segment_token = raw.identity.segment_token.clone();
+    style.edit(|payload| {
+        payload.thickness = PmDcReference::from_packed(1);
+        payload.bend_radius = PmDcReference::from_packed(1);
+    });
+    inventory.sheet_metal_styles.push(style);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    project(&ctx, &mut ir, &inventory, &[raw]).expect("projection");
+    assert_eq!(
+        ir.design.sheet_metal_rules[0].thickness,
+        Some(Dimension::Parameter(id.clone()))
+    );
+    assert_eq!(
+        ir.design.sheet_metal_rules[0].bend.radius,
+        Some(Dimension::Parameter(id))
+    );
+    assert_eq!(ir.design.sheet_metal_rules[0].allowance, None);
 }

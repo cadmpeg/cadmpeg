@@ -50,7 +50,31 @@ pub(super) fn project(
         &inventory.sheet_metal_unfold_rules,
         &inventory.sheet_metal_unfold_selections,
     );
-    let projected = rules(ctx, ir, &inventory.sheet_metal_styles, length, factor)?;
+    let design = unique_index(
+        ir.design
+            .parameters
+            .iter()
+            .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter))),
+    );
+    let binding = |style: &Style, reference: PmDcReference| {
+        let parameter = raw
+            .get(&(
+                style.identity.segment_token.as_str(),
+                reference.record_ordinal()?,
+            ))?
+            .as_ref()?;
+        let parameter = design.get(parameter.id().as_str())?.as_ref()?;
+        (parameter.kind
+            == cadmpeg_ir::design::units::ValueKind::Quantity(
+                cadmpeg_ir::design::units::Quantity::LENGTH,
+            ))
+        .then(|| Dimension::Parameter(parameter.id.clone()))
+    };
+    let mut projected = rules(ctx, ir, &inventory.sheet_metal_styles, length, factor)?;
+    for (rule, style) in projected.iter_mut().zip(&inventory.sheet_metal_styles) {
+        rule.thickness = binding(style, style.thickness).or_else(|| rule.thickness.take());
+        rule.bend.radius = binding(style, style.bend_radius).or_else(|| rule.bend.radius.take());
+    }
     ir.design.sheet_metal_rules.extend(projected);
     ir.design.sheet_metal_rules.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(())

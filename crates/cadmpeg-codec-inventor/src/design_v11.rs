@@ -18,6 +18,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::CadIr;
 
+mod parameters;
 mod sheet_metal;
 
 pub(crate) fn project(
@@ -26,6 +27,7 @@ pub(crate) fn project(
     features: &crate::feature::FeatureInventory,
     sketches: &crate::sketch::SketchInventory,
     parameters: &[crate::design::PmDcParameter],
+    units: &[crate::design::PmDcUnit],
 ) -> Result<(), CodecError> {
     let flags = features
         .features
@@ -51,6 +53,7 @@ pub(crate) fn project(
         )
         .collect();
     project_history(ctx, ir, &flags)?;
+    parameters::project(ctx, ir, parameters, units)?;
     sheet_metal::project(ctx, ir, features, parameters)
 }
 

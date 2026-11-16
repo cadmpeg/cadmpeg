@@ -250,7 +250,7 @@ fn native_header_flags_supply_suppression_for_unplaced_features() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    project(&ctx, &mut ir, &inventory, &sketches, &[]).expect("projection");
+    project(&ctx, &mut ir, &inventory, &sketches, &[], &[]).expect("projection");
     assert_eq!(
         ir.design.features[0].suppressed,
         Some(Dimension::Literal(true))

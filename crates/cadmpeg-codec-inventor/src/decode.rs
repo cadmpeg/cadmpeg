@@ -1540,6 +1540,7 @@ fn decode_container<'a>(
             &feature_inventory,
             &sketch_inventory,
             &design_inventory.parameters,
+            &design_inventory.units,
         )?;
     }
     let body = DecodeBody {
