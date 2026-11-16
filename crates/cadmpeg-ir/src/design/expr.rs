@@ -12,6 +12,7 @@
 
 mod parse;
 mod print;
+mod tree;
 
 #[cfg(feature = "schema")]
 use std::borrow::Cow;
@@ -125,8 +126,9 @@ pub enum ExpressionDialect {
     Native(NonBlankString),
 }
 
-/// A node of a neutral expression tree.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A node of a neutral expression tree. Its clone, comparison, and drop
+/// walk the tree without recursion.
+#[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
