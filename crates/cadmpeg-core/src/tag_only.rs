@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The reader of a unit variant in an enum tagged by `kind` alone.
+//! The readers of a unit variant in an enum tagged by `kind`.
 //!
-//! A unit variant of such an enum is the object `{"kind": name}`. serde reads
-//! it by its tag and skips every other key of the object, even under
-//! `deny_unknown_fields`, so `{"kind": name, "extra": 1}` would read as the
-//! same value. Each such variant reads through [`read`], which refuses every
-//! key beside the tag by name.
+//! A unit variant of such an enum is the object `{"kind": name}`. In an enum
+//! tagged by `kind` alone, serde reads it by its tag and skips every other key
+//! of the object, even under `deny_unknown_fields`, so `{"kind": name,
+//! "extra": 1}` would read as the same value. Each such variant reads through
+//! [`read`], which refuses every key beside the tag by name.
+//!
+//! In an enum tagged by `kind` with content under `value`, serde reads a unit
+//! variant's `value` as a unit, so `{"kind": name, "value": null}` would read
+//! as the same value. Each such variant reads through [`refuse_value`].
 
-use serde::de::{Deserialize, Deserializer};
+use serde::de::{Deserialize, Deserializer, Error};
 
 /// Reads the keys beside a unit variant's tag, refusing each one.
 ///
@@ -25,6 +29,21 @@ where
     TagOnly::deserialize(deserializer).map(|TagOnly {}| ())
 }
 
+/// Refuses the `value` key of a unit variant in an enum tagged by `kind` with
+/// content under `value`. serde calls it only when the key is stated.
+///
+/// # Errors
+///
+/// Always.
+pub fn refuse_value<'de, D>(_deserializer: D) -> Result<(), D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Err(D::Error::custom(
+        "a unit variant states its kind alone; it does not state value",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -35,6 +54,19 @@ mod tests {
         Full {
             count: u32,
         },
+    }
+
+    #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(
+        tag = "kind",
+        content = "value",
+        rename_all = "snake_case",
+        deny_unknown_fields
+    )]
+    enum AdjacentProbe {
+        #[serde(deserialize_with = "super::refuse_value")]
+        Empty,
+        Count(u32),
     }
 
     #[test]
@@ -58,6 +90,41 @@ mod tests {
             serde_json::from_value::<Probe>(serde_json::json!({"kind": "full", "count": 2}))
                 .expect("a struct variant reads"),
             Probe::Full { count: 2 }
+        );
+    }
+
+    #[test]
+    fn an_adjacent_unit_variant_reads_its_tag_and_refuses_a_stated_value() {
+        let empty = serde_json::json!({"kind": "empty"});
+        assert_eq!(
+            serde_json::to_value(AdjacentProbe::Empty).expect("a unit variant serializes"),
+            empty
+        );
+        assert_eq!(
+            serde_json::from_value::<AdjacentProbe>(empty).expect("the bare tag reads"),
+            AdjacentProbe::Empty
+        );
+        for value in [
+            serde_json::Value::Null,
+            serde_json::json!({}),
+            serde_json::json!([]),
+        ] {
+            for text in [
+                format!(r#"{{"kind": "empty", "value": {value}}}"#),
+                format!(r#"{{"value": {value}, "kind": "empty"}}"#),
+            ] {
+                let error = serde_json::from_str::<AdjacentProbe>(&text)
+                    .expect_err("a stated value is refused")
+                    .to_string();
+                assert!(error.contains("does not state value"), "{text}: {error}");
+            }
+        }
+        assert_eq!(
+            serde_json::from_value::<AdjacentProbe>(serde_json::json!({
+                "kind": "count", "value": 2
+            }))
+            .expect("a newtype variant reads"),
+            AdjacentProbe::Count(2)
         );
     }
 }
