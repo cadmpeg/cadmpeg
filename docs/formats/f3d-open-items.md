@@ -54,17 +54,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** A suppressed final item establishes its own execution state. Its authored position and the terminal ASM state identities remain distinct from the saved rollback position. Joint activation remains under DR-249.
 
-### DR-520. Version-four operation-table pose selection
+### DR-520. Version-four operation tables with an empty path
 
-**Question.** How does a version-four operation table select an occurrence, its final pose, and the saved operation state?
+**Question.** How does a version-four operation table with an empty occurrence path select an occurrence, its final pose, and the saved operation state?
 
-**Known.** `f3d.md` §1.4 "**Direct operation-table poses.**" defines versions zero and one. One local corpus file registers three version-four records of the same type. Two records reference the root component and a common operation type; one also references an Assemble operation. The version-one prefix reading gives an empty occurrence path. Two independent public controls carry version-three tables with empty paths and version-two root-placement envelopes. The decoder retains these tables with `assembly.operation-table-pose-native`.
+**Known.** `f3d.md` §1.4 "**Direct operation-table poses.**" defines the direct-path grammar of versions zero through four. A version-four table can store path count `0`, then byte `03`, a u32 count of `0` or `1`, and that many u32 values before its references. A table with count `0` has entry cursor `FF FF FF FF` and an empty entry run. A table with count `1` has one entry; its matrix equals the matrix of one local occurrence-placement record of the same Design stream, and the values `1` and `2` occur in a design with two component occurrences. The table references the root component and no occurrence-placement record. Version-two and version-three tables with an empty path store the component reference directly after the path count. The decoder retains every empty-path table with `assembly.operation-table-pose-native`.
 
-**Need.** The complete version-three and version-four table grammars, a typed join from the table to the affected occurrence, and a saved-state selector. Compare two independent designs with an insertion followed by one position change, then vary suppression and the timeline position separately. Verify the coordinate frame against the containing occurrence and the selected component body.
+**Need.** The record that the u32 values after byte `03` index, and the meaning of the references between that field and the entry cursor. Compare designs with one, two, and nested local occurrences, each saved before and after one position change. Vary suppression and the timeline position separately for the saved-state selector.
 
-**Conflict.** In one local corpus file, a version-four table references the Assemble scope that precedes the final timeline item. The occurrence envelope carries a separate matrix. Their occurrence identity and pose precedence require a typed join. The admitted direct-path rule requires one occurrence-placement reference.
+**Conflict.** In one local corpus file, a version-four table references the Assemble scope that precedes the final timeline item. The occurrence envelope carries a separate matrix. Their occurrence identity and pose precedence require a typed join.
 
-**Note.** DR-113 covers pose precedence and saved-state selection across other path forms. This item covers the version-four wire grammar and its occurrence join. DR-523 covers the rollback marker. The complete table remains native.
+**Note.** DR-113 covers pose precedence and saved-state selection across other path forms. DR-523 covers the rollback marker.
 
 ### DR-463. Analytic sketch-curve tail flag frames
 
