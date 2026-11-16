@@ -440,7 +440,16 @@
                   "references": [
                     "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record#1500"
                   ],
-                  "lists": []
+                  "reference_runs": [],
+                  "lists": [],
+                  "reference_evidence": [],
+                  "position_evidence": [],
+                  "order_evidence": [],
+                  "cardinality_evidence": [],
+                  "closure_evidence": [],
+                  "resource_evidence": [],
+                  "resource_associations": [],
+                  "resource_state_evidence": []
                 }
               }
             }
