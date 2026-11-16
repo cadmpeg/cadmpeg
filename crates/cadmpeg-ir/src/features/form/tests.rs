@@ -60,8 +60,11 @@ fn no_inputs() -> serde_json::Value {
     serde_json::to_value(FormInputs::default()).unwrap()
 }
 
-/// The wire of a Form operation whose `cages` arm is `kind`.
-fn form_wire(kind: &str, cages: serde_json::Value, inputs: serde_json::Value) -> serde_json::Value {
+fn form_operation_wire(
+    kind: &str,
+    cages: serde_json::Value,
+    inputs: serde_json::Value,
+) -> serde_json::Value {
     let mut form = serde_json::json!({"cages": {"kind": kind}});
     form["cages"]["value"] = cages;
     form["inputs"] = inputs;
@@ -76,7 +79,7 @@ fn complete_form_arrays_retain_their_v10_values() {
         serde_json::json!([]),
         serde_json::json!(["test:model:subd#1", "test:model:subd#2"]),
     ] {
-        let value = form_wire("complete", cages, no_inputs());
+        let value = form_operation_wire("complete", cages, no_inputs());
         let operation: FeatureOperation = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(operation).unwrap(), value);
     }
@@ -215,11 +218,11 @@ fn form_admission_rejects_invalid_members_and_native_positions() {
         construction.membership.clone()
     )
     .is_err());
-    let mut unknown = form_wire("complete", serde_json::json!([]), no_inputs());
+    let mut unknown = form_operation_wire("complete", serde_json::json!([]), no_inputs());
     unknown["value"]["unknown"] = 1.into();
-    let mut null_inputs = form_wire("complete", serde_json::json!([]), no_inputs());
+    let mut null_inputs = form_operation_wire("complete", serde_json::json!([]), no_inputs());
     null_inputs["value"]["cage_inputs"] = serde_json::Value::Null;
-    let valid = form_wire("complete", serde_json::json!([]), no_inputs()).to_string();
+    let valid = form_operation_wire("complete", serde_json::json!([]), no_inputs()).to_string();
     let duplicate_parameters = valid.replace(
         r#""parameters":{}"#,
         r#""parameters":{"width":"a","width":"b"}"#,
@@ -564,12 +567,14 @@ fn known_bindings_can_have_unknown_membership_and_inactive_resources_cannot_be_m
         serde_json::json!(["invalid"]),
         serde_json::json!(["test:model:subd#1", "test:model:subd#1"]),
     ] {
-        assert!(serde_json::from_value::<FeatureOperation>(form_wire(
-            "complete",
-            cages,
-            no_inputs()
-        ))
-        .is_err());
+        assert!(
+            serde_json::from_value::<FeatureOperation>(form_operation_wire(
+                "complete",
+                cages,
+                no_inputs()
+            ))
+            .is_err()
+        );
     }
 }
 
@@ -578,12 +583,12 @@ fn form_candidate_and_native_references_require_checked_identities() {
     let mut invalid_reference = no_inputs();
     invalid_reference["references"] = serde_json::json!(["invalid"]);
     for value in [
-        form_wire(
+        form_operation_wire(
             "retained",
             serde_json::json!({"observations":[{"paths":[],"binding":{"kind":"decoded","cage":"invalid"}}],"membership":{"kind":"partial","order":"unknown","members":[]}}),
             no_inputs(),
         ),
-        form_wire("complete", serde_json::json!([]), invalid_reference),
+        form_operation_wire("complete", serde_json::json!([]), invalid_reference),
     ] {
         assert!(serde_json::from_value::<FeatureOperation>(value).is_err());
     }
@@ -1209,7 +1214,7 @@ fn form_reference_schema_retains_run_bounds_and_exact_guid_lengths() {
     ] {
         let mut inputs = no_inputs();
         inputs["reference_runs"] = value;
-        let form = form_wire("complete", serde_json::json!([]), inputs);
+        let form = form_operation_wire("complete", serde_json::json!([]), inputs);
         assert_eq!(
             serde_json::from_value::<FeatureOperation>(form).is_ok(),
             valid

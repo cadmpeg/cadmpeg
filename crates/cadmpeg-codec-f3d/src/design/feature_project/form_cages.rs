@@ -1647,6 +1647,7 @@ impl FormFacts {
                     );
                     continue;
                 };
+                let owner = *owner;
                 self.reference(
                     ctx,
                     source.scope,
@@ -2728,7 +2729,7 @@ fn body_membership(
 enum FormTrackingRun {
     UnreadableOwner,
     Parsed {
-        owner: FormReference,
+        owner: Box<FormReference>,
         members: Option<FormTrackingMembers>,
     },
 }
@@ -2790,7 +2791,7 @@ fn form_tracking_members(
     })();
     let Some((count_usize, start)) = parsed else {
         return Ok(Some(FormTrackingRun::Parsed {
-            owner,
+            owner: Box::new(owner),
             members: None,
         }));
     };
@@ -2831,7 +2832,7 @@ fn form_tracking_members(
         None
     };
     Ok(Some(FormTrackingRun::Parsed {
-        owner,
+        owner: Box::new(owner),
         members: Some(FormTrackingMembers {
             members,
             fixed_members,
