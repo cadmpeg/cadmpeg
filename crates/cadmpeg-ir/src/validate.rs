@@ -629,7 +629,7 @@ mod caller_policy_tests {
                 validate_neutral_with_source_fidelity_for_decode(
                     &ctx,
                     &ir,
-                    &SourceFidelity::default(),
+                    &SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(&[])),
                     Vec::new(),
                 )
             } else {

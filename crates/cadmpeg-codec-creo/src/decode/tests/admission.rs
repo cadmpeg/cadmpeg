@@ -189,19 +189,18 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
         Exactness::ByteExact,
     );
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(source.attributes["section_count"], "1");
     assert_eq!(source.attributes["section.0.name"], "THMB_IMG_MAIN");
     assert_eq!(source.attributes["section.0.raw_name"], "THMB_IMG_MAIN");
     assert_eq!(
         source.attributes["section.0.role"],
         ContainerRole::Thumbnail.as_str()
     );
-    assert!(source.attributes["section.0.offset"]
-        .parse::<usize>()
-        .is_ok());
-    assert!(source.attributes["section.0.length"]
-        .parse::<usize>()
-        .is_ok());
+    for key in ["section_count", "section.0.offset", "section.0.length"] {
+        assert!(
+            !source.attributes.keys().any(|name| name.as_str() == key),
+            "{key}"
+        );
+    }
 }
 
 #[test]
@@ -677,16 +676,9 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
     assert!(result.ir().geometry.surfaces.is_empty());
     assert!(result.ir().geometry.points.is_empty());
     assert!(result.ir().geometry.faces.is_empty());
-    // Source attributes carry the census.
     let source = result.ir().source.as_ref().expect("source");
-    assert_eq!(
-        source.attributes.get("srf_array_count").map(String::as_str),
-        Some("5")
-    );
-    assert_eq!(
-        source.attributes.get("crv_array_count").map(String::as_str),
-        Some("12")
-    );
+    assert!(!source.attributes.contains_key("srf_array_count"));
+    assert!(!source.attributes.contains_key("crv_array_count"));
     assert_eq!(
         source.attributes.get("principal_unit").map(String::as_str),
         Some("mmNs")
