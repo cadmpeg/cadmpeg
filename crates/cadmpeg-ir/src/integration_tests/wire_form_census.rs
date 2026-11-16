@@ -17,11 +17,6 @@ use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use syn::spanned::Spanned;
 use syn::{Attribute, Fields, Item, Variant};
 
-use shim_forwards::forwarded_shim;
-
-#[path = "../../tests/source_census/shim_forwards.rs"]
-mod shim_forwards;
-
 const WIRE_CRATES: [&str; 2] = ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"];
 
 const COLLECTIONS: [&str; 8] = [
@@ -299,6 +294,43 @@ fn serde_groups(tokens: &TokenStream, out: &mut Vec<Vec<TokenTree>>) {
     }
 }
 
+/// The helper `function` forwards to, when its body is one call of a helper
+/// named without a path on its one parameter, followed by nothing but `.map`
+/// calls. `Result::map` rewrites only `Ok`, so such a function refuses
+/// whatever its callee refuses. The source census reads a forward by the same
+/// rule.
+fn forwarded_reader(function: &syn::ItemFn) -> Option<String> {
+    let mut parameters = function.sig.inputs.iter();
+    let (Some(syn::FnArg::Typed(parameter)), None) = (parameters.next(), parameters.next()) else {
+        return None;
+    };
+    let syn::Pat::Ident(parameter) = parameter.pat.as_ref() else {
+        return None;
+    };
+    let [syn::Stmt::Expr(body, None)] = function.block.stmts.as_slice() else {
+        return None;
+    };
+    let mut expression = body;
+    while let syn::Expr::MethodCall(call) = expression {
+        if call.method != "map" || call.args.len() != 1 {
+            return None;
+        }
+        expression = &call.receiver;
+    }
+    let syn::Expr::Call(call) = expression else {
+        return None;
+    };
+    let syn::Expr::Path(callee) = call.func.as_ref() else {
+        return None;
+    };
+    let callee = callee.path.get_ident()?;
+    let mut arguments = call.args.iter();
+    let (Some(syn::Expr::Path(argument)), None) = (arguments.next(), arguments.next()) else {
+        return None;
+    };
+    (argument.path.get_ident()? == &parameter.ident).then(|| callee.to_string())
+}
+
 fn macro_option_readers(tokens: &TokenStream, out: &mut BTreeSet<String>) {
     let tokens: Vec<TokenTree> = tokens.clone().into_iter().collect();
     for window in tokens.windows(3) {
@@ -427,7 +459,7 @@ impl Walker<'_> {
                     }
                 }
                 Item::Fn(item) => {
-                    if let Some(callee) = forwarded_shim(item) {
+                    if let Some(callee) = forwarded_reader(item) {
                         index
                             .option_forwards
                             .entry(item.sig.ident.to_string())
