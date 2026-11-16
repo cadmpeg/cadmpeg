@@ -246,8 +246,9 @@ pub(crate) enum CreoLossCode {
     FeatureNativeSemantics,
     /// Same-ID operation candidates disagree and have no current-state selector.
     FeatureStateSelectionUnresolved,
-    /// A feature's recipe parent fails regeneration-parent admission after
-    /// feature ordering, such as a parent that depends on its child, and the
+    /// A feature's recipe parent is the feature itself, or does not precede
+    /// it after feature ordering, which places each parent before its child
+    /// and leaves the features of a dependency cycle in storage order; the
     /// edge is dropped.
     FeatureRegenerationParentDropped,
     /// Typed history features retain an explicitly unresolved construction.

@@ -500,7 +500,14 @@ pub(in super::super) fn reconcile_feature_links(
         if let Some(parent_id) = admitted_feature_recipe_parent(scan, feature_id) {
             let text = format!("creo:model:feature#{parent_id}");
             let parent = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
-            if parent != feature.id && emitted.contains(&parent) {
+            if parent == feature.id {
+                losses.push(
+                    crate::loss::CreoLossCode::FeatureRegenerationParentDropped.note(format!(
+                        "feature {} names itself as its recipe parent",
+                        feature.id
+                    )),
+                );
+            } else if emitted.contains(&parent) {
                 let child = IrFeatureId::mint(feature.id.as_str().to_owned())
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 regeneration_edges.push((child, parent));

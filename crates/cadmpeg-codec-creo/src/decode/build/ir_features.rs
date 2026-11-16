@@ -356,7 +356,7 @@ pub(super) fn emit_model_features(
                 })
             })
             .map(|feature| &feature.id);
-        if let Some(parent) = parent {
+        if let Some(parent) = parent.filter(|parent| **parent != id) {
             append_regeneration_edge(&mut regeneration_edges, &id, parent);
         }
         if let Some(existing) = ir
@@ -581,8 +581,8 @@ pub(super) fn emit_model_features(
         source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(ctx, scan, ir)?;
     }
-    // `reconcile_feature_links` retries each refused edge after it orders the
-    // features, and charges the edges it still refuses.
+    // `reconcile_feature_links` rebuilds every recipe-parent edge after it
+    // orders the features, and charges each edge it drops.
     let _refused = commit_regeneration_edges(ir, regeneration_edges);
     Ok(geometry_generator_feature_count)
 }
