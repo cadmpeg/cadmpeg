@@ -1115,7 +1115,7 @@ fn owned_radius_test_record(major: u8, minor: u8) -> SurfaceParameterRecord {
 }
 
 #[test]
-fn owned_type26_radius_replay_preserves_generic_and_carrier_lanes() {
+fn owned_type26_radius_slots_resolve_the_carrier_and_replay_the_minor_radius() {
     let cache = scalar::ScalarCache::default();
     assert_eq!(
         scalar::decode_inline_surface_suffix_scalar(&[0x0d], 0, &cache),

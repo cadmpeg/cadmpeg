@@ -2005,9 +2005,9 @@ in slot 6, `28 b1 b2 b3 b4 b5 b6 b7` stores the negative IEEE-754 image `bf b1
 b2 b3 b4 b5 b6 b7`. Origin slots 9 through 11 use the positional row lane.
 Slots 0 through 2 and 6 through 8 are equal-scale orthogonal support
 directions; their normalized cross product is the torus axis. The origin is
-the torus center. The two terminal scalars use the type-26 radius-slot lane.
-The first is a positive major radius. The second is a nonzero signed minor
-radius; its magnitude is the analytic minor radius. The five-coordinate envelope independently satisfies the two-radius
+the torus center. The first terminal scalar is a positive major radius. The
+second is a nonzero signed minor radius; its magnitude is the analytic minor
+radius. The five-coordinate envelope independently satisfies the two-radius
 equation below. The local system and both radius scalars consume the remainder
 of the bounded body.
 

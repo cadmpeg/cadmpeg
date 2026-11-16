@@ -587,21 +587,24 @@ vertices and midpoints.
 **Need.** Establish carrier and branch selection for other cone chart paths
 and face pairs through independent chart and topology witnesses.
 
-### GS-38. Positional torus rows with other envelopes
+### GS-38. Type-26 positional rows outside the inline-suffix form
 
 **Question.** Which local-system grammar follows the envelope-closing `e3` of
-a type-38 row whose envelope differs from the direct torus replay image and
-whose body is outside the inline-suffix form?
+a type-26 row whose envelope differs from the direct torus replay image, and
+which radius forms does the direct torus replay store?
 
-**Known.** `creo_prt.md` places a type-38 row through the direct torus
-replay, whose envelope image and five-coordinate radius proof are fixed, and
-through the inline-suffix form, whose local system admits compact images and
-repeat tokens. Both read their radii in the type-26 radius-slot lane. The
-replay's positional local-system lane reads `e4` as one, so it does not read a
+**Known.** `creo_prt.md` places a type-26 row through the direct torus replay,
+whose envelope image and five-coordinate radius proof are fixed, and through
+the inline-suffix form, whose local system admits compact images and repeat
+tokens and whose radius slots read `0d` as one quarter and `2d <tail7>` as
+`40 <tail7>`. The direct replay reads its radii in the positional row lane,
+where `0d` is negative one, and requires a positive major radius. The replay's
+positional local-system lane reads `e4` as one, so it does not read a
 compact-image local system after another envelope.
 
-**Need.** Type-38 rows outside both forms with an independently known center
-and radii.
+**Need.** Type-26 rows outside the inline-suffix form, and direct replay rows
+with `0d`, `2d`, or zero radii, each with an independently known center and
+radii.
 
 ## 3. Section solving and feature placement
 

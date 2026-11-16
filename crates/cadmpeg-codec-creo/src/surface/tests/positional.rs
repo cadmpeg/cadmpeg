@@ -920,27 +920,3 @@ fn positional_frames_admit_by_the_ir_orthonormal_frame_measurement() {
         PositionalFrame::new([f64::INFINITY, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]).is_none()
     );
 }
-
-#[test]
-fn complete_positional_torus_reads_its_radii_in_the_radius_slot_lane() {
-    let mut body = vec![
-        40, 141, 7, 27, 210, 101, 111, 108, 24, 148, 63, 2, 112, 22, 190, 252, 0, 18, 32, 71, 19,
-        204, 70, 49, 61, 112, 163, 215, 10, 62, 71, 19, 204, 46, 19, 204, 70, 48, 189, 112, 163,
-        215, 10, 62, 33, 177, 72, 10, 227, 194, 255, 45, 89, 199, 15, 241, 65, 141, 6, 220, 32,
-        138, 77, 219, 24, 229, 16, 40, 141, 6, 220, 32, 138, 77, 219, 194, 255, 45, 89, 199, 15,
-        241, 24, 228, 70, 48, 189, 112, 163, 215, 10, 62, 24,
-    ];
-    body.push(0x2d);
-    body.extend_from_slice(&4.45_f64.to_be_bytes()[1..]);
-    body.push(0x0e);
-    let mut payload = vec![7, 0x26, 4, 0x01, 0, 0];
-    payload.extend(body);
-    payload.push(0xe3);
-
-    let frame = parameter_records(&payload)
-        .remove(0)
-        .positional_torus_frame()
-        .expect("complete positional torus frame");
-    assert!((frame.major_radius().get() - 4.45).abs() < 1.0e-12);
-    assert!((frame.minor_radius().get() - 0.5).abs() < 1.0e-12);
-}
