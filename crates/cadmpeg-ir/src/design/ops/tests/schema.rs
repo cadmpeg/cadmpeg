@@ -5,9 +5,7 @@
 use schemars::{schema_for, JsonSchema};
 
 use crate::design::ops::datum::{Datum, DatumElement};
-use crate::design::ops::shared::{
-    EvaluationStatus, Link, LinkState, Locus, RunSides, Spacing, UpToFill,
-};
+use crate::design::ops::shared::{Locus, RunSides, Spacing, UpToFill};
 use crate::design::ops::sketch::{
     AngleOperands, AngleSector, BlockInstance, Contact, DefiningRole, Derivation, DerivationMode,
     DistanceAxis, EntityDefinition, EntityForm, EntityRole, InterpolatedSpline, Operand, Planar,
@@ -89,9 +87,6 @@ fn every_sketch_type_has_a_schema() {
 fn every_datum_and_shared_type_has_a_schema() {
     generates::<Datum>();
     generates::<DatumElement>();
-    generates::<EvaluationStatus>();
-    generates::<Link>();
-    generates::<LinkState>();
     generates::<RunSides<Length>>();
     generates::<RunSides<Angle>>();
     generates::<Spacing<Length>>();

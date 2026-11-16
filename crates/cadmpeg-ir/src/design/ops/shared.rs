@@ -10,12 +10,11 @@ use crate::design::construction::{kinds, Construction, FrameAxis, ScalarDimensio
 use crate::design::dimension::Dimension;
 use crate::design::expr::Expression;
 use crate::design::options::{LimitOffset, NativeOptions, PathRef, SymmetricMeasure};
-use crate::design::selection::{DefinitionRef, OrderedSelection, SetSelection};
+use crate::design::selection::{OrderedSelection, SetSelection};
 use crate::features::ParameterId;
 use crate::scalar::{
     Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, PositiveReal,
 };
-use crate::transform::Transform;
 
 /// A size measured on the radius or on the diameter, as the source states
 /// it.
@@ -213,93 +212,6 @@ pub enum SheetCutNormal {
     Opposite,
     /// A cut through the thickness in the flat state.
     Both,
-}
-
-/// The status of stored solved values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum EvaluationStatus {
-    /// The source does not flag the values.
-    Current,
-    /// The values predate an edit of what they depend on.
-    Stale,
-    /// The source records a failure to compute the values.
-    Failed,
-}
-
-/// The link of a frozen copy of geometry to the geometry it copies.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct Link {
-    /// The linked entities. Its picks' contexts state the source definition,
-    /// the assembly the link runs through, and the configuration each level
-    /// reads, and its anchor the state it reads.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_source"
-    )]
-    pub source: Option<SetSelection>,
-    /// The source definition, and the configuration of it the link reads,
-    /// only where `source` is absent or unread.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_document"
-    )]
-    pub document: Option<DefinitionRef>,
-    /// A frozen placement of the copy.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_transform"
-    )]
-    pub transform: Option<Transform>,
-    /// A uniform scale of the copy.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_scale"
-    )]
-    pub scale: Option<FiniteReal>,
-    /// Whether the copy follows its source.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_associative"
-    )]
-    pub associative: Option<bool>,
-    /// The source's record of the link's health.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_state"
-    )]
-    pub state: Option<LinkState>,
-    /// The native record that holds the link.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_native_ref"
-    )]
-    pub native_ref: Option<String>,
-}
-
-/// The source's record of a link's associativity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum LinkState {
-    /// The copy matches its source.
-    Current,
-    /// The source changed after the copy was made.
-    OutOfDate,
-    /// The source does not resolve.
-    Broken,
-    /// The copy does not follow its source.
-    Locked,
 }
 
 /// Where a pattern's instances lie. Every direction, axis, and plane is a
@@ -1495,13 +1407,11 @@ pub enum PathRollControl {
 
 cadmpeg_core::named_optional_field!(deserialize_alignment<T>, T, "alignment");
 cadmpeg_core::named_optional_field!(deserialize_angle<T>, T, "angle");
-cadmpeg_core::named_optional_field!(deserialize_associative<T>, T, "associative");
 cadmpeg_core::named_optional_field!(deserialize_axes<T>, T, "axes");
 cadmpeg_core::named_optional_field!(deserialize_contact<T>, T, "contact");
 cadmpeg_core::named_optional_field!(deserialize_count<T>, T, "count");
 cadmpeg_core::named_optional_field!(deserialize_damping<T>, T, "damping");
 cadmpeg_core::named_optional_field!(deserialize_distance<T>, T, "distance");
-cadmpeg_core::named_optional_field!(deserialize_document<T>, T, "document");
 cadmpeg_core::named_optional_field!(deserialize_end<T>, T, "end");
 cadmpeg_core::named_optional_field!(deserialize_extend, Dimension<bool>, "extend");
 cadmpeg_core::named_optional_field!(deserialize_extent<T>, T, "extent");
@@ -1519,7 +1429,6 @@ cadmpeg_core::named_optional_field!(deserialize_max_force<T>, T, "max_force");
 cadmpeg_core::named_optional_field!(deserialize_measure, SymmetricMeasure, "measure");
 cadmpeg_core::named_optional_field!(deserialize_min<T>, T, "min");
 cadmpeg_core::named_optional_field!(deserialize_mode<T>, T, "mode");
-cadmpeg_core::named_optional_field!(deserialize_native_ref<T>, T, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_offset<T>, T, "offset");
 cadmpeg_core::named_optional_field!(deserialize_orientation<T>, T, "orientation");
 cadmpeg_core::named_optional_field!(deserialize_pitch<T>, T, "pitch");
@@ -1531,21 +1440,17 @@ cadmpeg_core::named_optional_field!(deserialize_ratio<T>, T, "ratio");
 cadmpeg_core::named_optional_field!(deserialize_reference<T>, T, "reference");
 cadmpeg_core::named_optional_field!(deserialize_rest<T>, T, "rest");
 cadmpeg_core::named_optional_field!(deserialize_roll<T>, T, "roll");
-cadmpeg_core::named_optional_field!(deserialize_scale<T>, T, "scale");
 cadmpeg_core::named_optional_field!(deserialize_second<T>, T, "second");
 cadmpeg_core::named_optional_field!(deserialize_seed<T>, T, "seed");
 cadmpeg_core::named_optional_field!(deserialize_seed_axis<T>, T, "seed_axis");
 cadmpeg_core::named_optional_field!(deserialize_seed_only<T>, T, "seed_only");
 cadmpeg_core::named_optional_field!(deserialize_sides<T>, T, "sides");
-cadmpeg_core::named_optional_field!(deserialize_source<T>, T, "source");
 cadmpeg_core::named_optional_field!(deserialize_start<T>, T, "start");
-cadmpeg_core::named_optional_field!(deserialize_state<T>, T, "state");
 cadmpeg_core::named_optional_field!(deserialize_stiffness<T>, T, "stiffness");
 cadmpeg_core::named_optional_field!(deserialize_stitch_tolerance<T>, T, "stitch_tolerance");
 cadmpeg_core::named_optional_field!(deserialize_taper<T>, T, "taper");
 cadmpeg_core::named_optional_field!(deserialize_target_position<T>, T, "target_position");
 cadmpeg_core::named_optional_field!(deserialize_target_velocity<T>, T, "target_velocity");
-cadmpeg_core::named_optional_field!(deserialize_transform<T>, T, "transform");
 cadmpeg_core::named_optional_field!(deserialize_x<T>, T, "x");
 cadmpeg_core::named_optional_field!(deserialize_y<T>, T, "y");
 cadmpeg_core::named_optional_field!(deserialize_z<T>, T, "z");

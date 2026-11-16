@@ -964,6 +964,35 @@ fn a_connect_apart_is_a_fixed_pair() {
     refuses::<ConnectBetween>(&one.to_string());
 }
 
+/// §5.10: a sheet-metal operation is the `FeatureOperation` arm
+/// `sheet_metal`, holding the operation as its value.
+#[test]
+fn every_sheet_metal_operation_is_a_feature_operation_arm() {
+    use crate::design::feature::{FeatureOperation as Op, OperationFamily as Family};
+    use crate::design::tests::arm_failures;
+    let failures = arm_failures(Family::SheetMetal, sheet_metal_samples(), Op::SheetMetal);
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// §5: a sheet-metal rule is a record of the design root's
+/// `sheet_metal_rules` arena.
+#[test]
+fn sheet_metal_rules_are_an_arena_of_the_design_root() {
+    let design = crate::document::Design {
+        sheet_metal_rules: sheet_metal_rule_samples(),
+        ..Default::default()
+    };
+    let value = to_value(&design);
+    assert_eq!(
+        value["sheet_metal_rules"],
+        json!(sheet_metal_rule_samples()
+            .iter()
+            .map(to_value)
+            .collect::<Vec<_>>())
+    );
+    round_trip(&design).unwrap();
+}
+
 #[cfg(feature = "schema")]
 mod schema {
     use schemars::{schema_for, JsonSchema};

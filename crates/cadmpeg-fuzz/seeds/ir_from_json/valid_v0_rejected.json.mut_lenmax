@@ -22,11 +22,11 @@
     "shells": [],
     "faces": [],
     "loops": [],
-    "coÿÿÿÿs": [],
+    "coedges": [],
     "edges": [],
     "vertices": [],
     "points": [],
-    "surfaces": [],
+ ÿÿÿÿsurfaces": [],
     "curves": [],
     "subds": [],
     "pcurves": [],
@@ -71,7 +71,20 @@
     "point_clouds": [],
     "history_bodies": []
   },
-  "design": {},
+  "design": {
+    "scopes": [],
+    "containers": [],
+    "features": [],
+    "parameters": [],
+    "spreadsheets": [],
+    "sheet_metal_rules": [],
+    "programs": [],
+    "configurations": [],
+    "arrangements": [],
+    "publications": [],
+    "evaluations": [],
+    "names": []
+  },
   "process": {},
   "native": {}
 }

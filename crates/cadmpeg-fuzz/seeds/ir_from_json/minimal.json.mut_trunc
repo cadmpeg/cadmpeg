@@ -41,4 +41,8 @@
     "configurations": [],
     "parameters": [],
     "sketches": [],
-    "sketch_en
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraint
