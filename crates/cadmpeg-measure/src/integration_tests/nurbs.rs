@@ -186,3 +186,41 @@ fn a_rational_quarter_cylinder_inverts_its_edges() {
     };
     assert_eq!(bbox.value().kind, BoxKind::Conservative);
 }
+
+/// The triangle `(0,0,0)`, `(1,0,0)`, `(0,1,0)` as a bilinear patch whose
+/// `v = 1` side collapses to the origin, bounded by its three straight sides
+/// from each corner in turn: the patch is the whole face, of area 1/2. At
+/// the collapsed side `u` is free, so each side meets it at the `u` of its
+/// own trace.
+#[test]
+fn a_patch_with_a_collapsed_side_measures_its_whole_area() {
+    let (apex, first_corner, second_corner) = ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    for start in 0..3 {
+        let mut builder = Builder::new();
+        let surface = builder.nurbs(
+            (1, vec![0.0, 0.0, 1.0, 1.0]),
+            (1, vec![0.0, 0.0, 1.0, 1.0]),
+            &[
+                vec![(first_corner, 1.0), (apex, 1.0)],
+                vec![(second_corner, 1.0), (apex, 1.0)],
+            ],
+        );
+        let vertices: Vec<_> = [first_corner, second_corner, apex]
+            .iter()
+            .map(|corner| builder.vertex(*corner))
+            .collect();
+        let ring: Vec<_> = (0..3)
+            .map(|step| {
+                let from = (start + step) % 3;
+                (
+                    builder.line(&vertices[from], &vertices[(from + 1) % 3]),
+                    Sense::Forward,
+                )
+            })
+            .collect();
+        builder.face(&surface, Sense::Forward, &[ring], true);
+        let ir = builder.finish(BodyKind::Sheet);
+        let report = measure(&ir, &faces());
+        assert_measured(&report.faces[0].measures.area, 0.5, 1.0);
+    }
+}
