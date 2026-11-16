@@ -1693,18 +1693,13 @@ pub(super) fn topology_body_node_ids(
             edge_xmts.insert(u32::from(edge));
             vertex_xmts.insert(u32::from(vertex));
         }
-        for &vertex in loops
-            .iter()
-            .flat_map(|loop_xmt| vertex_loop_fins_by_loop.get(loop_xmt).into_iter().flatten())
-        {
-            let Some(vertex) = vertex
-                .map(u32::from)
-                .filter(|vertex| graph.resolved_vertex(*vertex).is_some())
-            else {
-                continue 'body;
-            };
-            vertex_xmts.insert(vertex);
-        }
+        vertex_xmts.extend(
+            loops
+                .iter()
+                .flat_map(|loop_xmt| vertex_loop_fins_by_loop.get(loop_xmt).into_iter().flatten())
+                .filter_map(|vertex| vertex.map(u32::from))
+                .filter(|vertex| graph.resolved_vertex(*vertex).is_some()),
+        );
         let mut ids = BTreeSet::new();
         for face in faces {
             let Some(id) = face.u32_at(4) else {

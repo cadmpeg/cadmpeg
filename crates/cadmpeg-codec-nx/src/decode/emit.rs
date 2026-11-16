@@ -144,25 +144,20 @@ pub(super) fn emit_topology(
     }
     let vertex_point =
         |vertex_xmt: u32| resolved_vertex_point(graph, points, &point_positions, vertex_xmt);
-    let mut withheld_faces = Vec::new();
-    for (face_xmt, loops) in &face_boundaries {
-        for (loop_xmt, face_loop) in loops {
+    for (face_xmt, loops) in &mut face_boundaries {
+        loops.retain(|(loop_xmt, face_loop)| {
             let FaceLoop::Vertex { fin_xmt, vertex } = face_loop else {
-                continue;
+                return true;
             };
             let vertex_xmt = vertex.map(u32::from);
-            if vertex_xmt.and_then(vertex_point).is_none() {
-                topology_losses.push(crate::loss::NxLossCode::TopologyVertexLoopWithheld.note(
-                    format!("parasolid#{stream_index} FACE {face_xmt} is withheld: vertex-loop FIN {fin_xmt} of LOOP {loop_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
-                ));
-                withheld_faces.push(*face_xmt);
-                break;
+            if vertex_xmt.and_then(vertex_point).is_some() {
+                return true;
             }
-        }
-    }
-    for face_xmt in withheld_faces {
-        face_boundaries.remove(&face_xmt);
-        valid_face_xmts.remove(&face_xmt);
+            topology_losses.push(crate::loss::NxLossCode::TopologyVertexLoopUnresolved.note(
+                format!("parasolid#{stream_index} LOOP {loop_xmt} of FACE {face_xmt} is omitted: vertex-loop FIN {fin_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
+            ));
+            false
+        });
     }
     let mut valid_loop_rings: BTreeMap<u32, &[u32]> = BTreeMap::new();
     let mut vertex_loop_vertices = BTreeSet::new();

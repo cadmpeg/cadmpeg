@@ -1296,14 +1296,14 @@ fn vertex_loop_fin_emits_a_vertex_boundary_beside_the_ring_loop() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == NxLossCode::TopologyVertexLoopWithheld.kind()));
+        .any(|loss| loss.code == NxLossCode::TopologyVertexLoopUnresolved.kind()));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
-fn face_with_an_unresolved_vertex_loop_vertex_is_withheld() {
+fn an_unresolved_vertex_loop_is_omitted_and_its_face_is_kept() {
     let mut stream = topology_partition_stream();
     let graph = Graph::parse(&stream);
     let face = graph.get(NodeKind::Face, 4).expect("first face");
@@ -1328,26 +1328,75 @@ fn face_with_an_unresolved_vertex_loop_vertex_is_withheld() {
         .decode(&mut input, &DecodeOptions::default())
         .expect("decode");
     let model = &result.ir().geometry;
-    let faces = model
+    assert_eq!(model.faces.len(), 2);
+    let face = model
         .faces
         .iter()
-        .map(|face| face.id.as_str())
-        .collect::<Vec<_>>();
-    assert!(faces.len() == 1 && faces[0].ends_with("#4"), "{faces:?}");
+        .find(|face| face.id.as_str() == "nx:s0:face#30")
+        .expect("FACE 30 is kept");
+    assert!(face.loops.is_empty(), "{:?}", face.loops);
     assert!(model
         .loops
         .iter()
         .all(|loop_| loop_.singular_vertex().is_none()));
+    assert!(model
+        .shells
+        .iter()
+        .any(|shell| shell.id.as_str() == "nx:s0:shell#3"));
+    assert!(model
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "nx:s0:body#2"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == NxLossCode::TopologyVertexLoopWithheld.kind()
-            && loss.message.contains("FACE 30")
+        loss.code == NxLossCode::TopologyVertexLoopUnresolved.kind()
+            && loss.message.contains("LOOP 31 of FACE 30")
             && loss.message.contains("VERTEX 99")
     }));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
-fn one_face_shell_whose_face_is_withheld_withholds_its_shell_and_body() {
+fn a_face_keeps_its_ring_loop_when_its_vertex_loop_is_unresolved() {
     let stream = vertex_loop_topology_partition_stream(99);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    let model = &result.ir().geometry;
+    assert_eq!(model.faces.len(), 1);
+    let loops = model.faces[0]
+        .loops
+        .iter()
+        .map(cadmpeg_ir::ids::LoopId::as_str)
+        .collect::<Vec<_>>();
+    assert!(loops.len() == 1 && loops[0].ends_with("#5"), "{loops:?}");
+    assert!(model
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "nx:s0:body#2"));
+    let losses = &result.report().losses;
+    assert!(losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyVertexLoopUnresolved.kind()
+            && loss.message.contains("LOOP 21 of FACE 4")
+    }));
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::TopologyShellWithheld.kind()));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
+    let mut stream = topology_partition_stream();
+    let face = Graph::parse(&stream)
+        .get(NodeKind::Face, 4)
+        .expect("face")
+        .pos();
+    put_ref(&mut stream, face + 26, 1);
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
@@ -1368,10 +1417,6 @@ fn one_face_shell_whose_face_is_withheld_withholds_its_shell_and_body() {
         .iter()
         .any(|region| region.id.as_str() == "nx:s0:region#12"));
     let losses = &result.report().losses;
-    assert!(losses.iter().any(|loss| {
-        loss.code == NxLossCode::TopologyVertexLoopWithheld.kind()
-            && loss.message.contains("FACE 4")
-    }));
     assert!(losses.iter().any(|loss| {
         loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("SHELL 3")
     }));
