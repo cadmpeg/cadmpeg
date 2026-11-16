@@ -5041,6 +5041,9 @@ fn decode_graph_inner(
                     }
                 }
                 admit_brep_entity(ctx)?;
+                if faces.is_empty() {
+                    continue;
+                }
                 out.shells
                     .push(Shell::new(shell_id.clone(), region_id.clone()));
                 region_shells.push(shell_id);
@@ -5081,6 +5084,9 @@ fn decode_graph_inner(
                             }
                         }
                         admit_brep_entity(ctx)?;
+                        if faces.is_empty() {
+                            continue;
+                        }
                         out.shells
                             .push(Shell::new(shell_id.clone(), region_id.clone()));
                         region_shells.push(shell_id);

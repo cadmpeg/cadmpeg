@@ -2637,6 +2637,11 @@ pub(crate) fn project_geometry(
         });
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
+        if wire_edges.is_empty() && free_vertices.is_empty() {
+            return Err(CodecError::malformed(
+                cadmpeg_ir::features::BodySelectionError::Empty,
+            ));
+        }
         let shell = Shell::with_members(shell, region, wire_edges, free_vertices);
         free_geometry_shell = Some(shell.id.clone());
         ir.geometry.shells.push(shell);

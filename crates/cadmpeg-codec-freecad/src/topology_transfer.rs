@@ -761,6 +761,11 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     }
                 }
                 retain_wire_edges(&ir.geometry.coedges[coedge_start..], &mut wire_edges);
+                if faces.is_empty() && wire_edges.is_empty() {
+                    return Err(cadmpeg_core::CodecError::Malformed(
+                        cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+                    ));
+                }
                 ir.geometry.shells.push(Shell::with_members(
                     component_id.clone(),
                     region.clone(),
@@ -837,6 +842,11 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             _ => {}
         }
         retain_wire_edges(&ir.geometry.coedges[coedge_start..], &mut wire_edges);
+        if faces.is_empty() && wire_edges.is_empty() {
+            return Err(cadmpeg_core::CodecError::Malformed(
+                cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+            ));
+        }
         ir.geometry.shells.push(Shell::with_members(
             shell_id.clone(),
             region.clone(),
