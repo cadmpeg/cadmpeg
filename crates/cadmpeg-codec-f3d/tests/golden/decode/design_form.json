@@ -431,6 +431,7 @@
                   "cardinality_evidence": [],
                   "closure_evidence": [],
                   "resource_evidence": [],
+                  "resource_associations": [],
                   "resource_state_evidence": []
                 }
               }
