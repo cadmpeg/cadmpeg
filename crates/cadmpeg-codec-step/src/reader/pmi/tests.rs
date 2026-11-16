@@ -1062,7 +1062,7 @@ END-ISO-10303-21;
     let result = EditableDecodeResult::from(result);
     assert!(result.ir().model.pmi.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::ParseRecordOmitted.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
             && loss.message.contains("expected name")
     }));
     let retained = result
@@ -1947,7 +1947,7 @@ fn nonfinite_pmi_placement_omits_records_and_retains_source() {
     assert!(result.ir().geometry.points.is_empty());
     assert!(result.ir().model.pmi.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::ParseRecordOmitted.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
             && loss.message.contains("finite binary64 range")
     }));
     let retained = result

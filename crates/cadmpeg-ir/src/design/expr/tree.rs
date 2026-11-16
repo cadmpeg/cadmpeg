@@ -12,7 +12,7 @@ use super::Node;
 
 impl<R> Node<R> {
     /// The node's operands, left to right.
-    fn operands(&self) -> impl DoubleEndedIterator<Item = &Self> {
+    fn operands(&self) -> impl Iterator<Item = &Self> {
         let (pair, rest): ([Option<&Self>; 2], &[Self]) = match self {
             Self::Unary { operand, .. } => ([Some(operand.as_ref()), None], &[]),
             Self::Binary { left, right, .. } => ([Some(left.as_ref()), Some(right.as_ref())], &[]),
@@ -30,17 +30,15 @@ impl<R> Node<R> {
         pair.into_iter().flatten().chain(rest)
     }
 
-    /// Moves the node's operands onto `out`, leaving a leaf in each place.
-    fn take_operands(&mut self, out: &mut Vec<Self>) {
-        let mut take = |node: &mut Self| out.push(mem::replace(node, Self::LawParameter));
-        match self {
-            Self::Unary { operand, .. } => take(operand.as_mut()),
+    /// The node's operands, left to right, to change in place.
+    fn operands_mut(&mut self) -> impl Iterator<Item = &mut Self> {
+        let (pair, rest): ([Option<&mut Self>; 2], &mut [Self]) = match self {
+            Self::Unary { operand, .. } => ([Some(operand.as_mut()), None], &mut []),
             Self::Binary { left, right, .. } => {
-                take(left.as_mut());
-                take(right.as_mut());
+                ([Some(left.as_mut()), Some(right.as_mut())], &mut [])
             }
-            Self::Call { args, .. } => out.append(args),
-            Self::If(branches) => branches.iter_mut().for_each(take),
+            Self::Call { args, .. } => ([None, None], args),
+            Self::If(branches) => ([None, None], branches.as_mut_slice()),
             Self::Number { .. }
             | Self::Constant(_)
             | Self::Boolean(_)
@@ -48,21 +46,22 @@ impl<R> Node<R> {
             | Self::Reference(_)
             | Self::Measure(_)
             | Self::LawParameter
-            | Self::Bend(_) => {}
-        }
+            | Self::Bend(_) => ([None, None], &mut []),
+        };
+        pair.into_iter().flatten().chain(rest)
     }
 }
 
+/// A leaf that stands in an operand's place until the operand is cloned in,
+/// or after it is moved out to be dropped.
+const fn placeholder<R>() -> Node<R> {
+    Node::LawParameter
+}
+
 impl<R: Clone> Node<R> {
-    /// The node with `operands`, its operands' clones left to right, in
-    /// place of its own.
-    fn with_operands(&self, operands: Vec<Self>) -> Self {
-        let mut operands = operands.into_iter();
-        let mut next = || {
-            operands
-                .next()
-                .expect("a clone is given one built operand for each operand")
-        };
+    /// The node with a placeholder in place of each operand.
+    fn shallow(&self) -> Self {
+        let operand = || Box::new(placeholder());
         match self {
             Self::Number { value, unit } => Self::Number {
                 value: *value,
@@ -77,48 +76,33 @@ impl<R: Clone> Node<R> {
             Self::Bend(variable) => Self::Bend(*variable),
             Self::Unary { op, .. } => Self::Unary {
                 op: *op,
-                operand: Box::new(next()),
+                operand: operand(),
             },
-            Self::Binary { op, .. } => {
-                let left = Box::new(next());
-                Self::Binary {
-                    op: *op,
-                    left,
-                    right: Box::new(next()),
-                }
-            }
-            Self::Call { function, .. } => Self::Call {
+            Self::Binary { op, .. } => Self::Binary {
+                op: *op,
+                left: operand(),
+                right: operand(),
+            },
+            Self::Call { function, args } => Self::Call {
                 function: *function,
-                args: operands.collect(),
+                args: args.iter().map(|_| placeholder()).collect(),
             },
-            Self::If(_) => {
-                let condition = next();
-                let then = next();
-                Self::If(Box::new([condition, then, next()]))
-            }
+            Self::If(_) => Self::If(Box::new([placeholder(), placeholder(), placeholder()])),
         }
     }
 }
 
 impl<R: Clone> Clone for Node<R> {
-    /// Each node is visited twice: first to clone its operands, then, with
-    /// their clones built, to build its own.
+    /// Clones each node with placeholder operands, then clones each operand
+    /// into its placeholder.
     fn clone(&self) -> Self {
-        let mut work = vec![(self, false)];
-        let mut built = Vec::new();
-        while let Some((node, operands_built)) = work.pop() {
-            if operands_built {
-                let at = built.len() - node.operands().count();
-                let operands = built.split_off(at);
-                built.push(node.with_operands(operands));
-            } else {
-                work.push((node, true));
-                work.extend(node.operands().rev().map(|operand| (operand, false)));
-            }
+        let mut root = self.shallow();
+        let mut work: Vec<_> = self.operands().zip(root.operands_mut()).collect();
+        while let Some((from, to)) = work.pop() {
+            *to = from.shallow();
+            work.extend(from.operands().zip(to.operands_mut()));
         }
-        built
-            .pop()
-            .expect("a clone builds the root after its operands")
+        root
     }
 }
 
@@ -177,11 +161,18 @@ impl<R: PartialEq> PartialEq for Node<R> {
 }
 
 impl<R> Drop for Node<R> {
+    /// Moves each operand out to a work stack before the node drops, so no
+    /// node drops with an operand that is not a leaf.
     fn drop(&mut self) {
-        let mut work = Vec::new();
-        self.take_operands(&mut work);
+        let mut work: Vec<_> = self
+            .operands_mut()
+            .map(|operand| mem::replace(operand, placeholder()))
+            .collect();
         while let Some(mut node) = work.pop() {
-            node.take_operands(&mut work);
+            work.extend(
+                node.operands_mut()
+                    .map(|operand| mem::replace(operand, placeholder())),
+            );
         }
     }
 }

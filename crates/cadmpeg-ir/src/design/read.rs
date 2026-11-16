@@ -12,7 +12,9 @@
 
 use std::cell::Cell;
 
-use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit, ResourceLimits};
+use cadmpeg_core::decode::{
+    LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, ResourceLimits,
+};
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 
@@ -133,6 +135,7 @@ pub(super) fn enter(ceiling: Ceiling) -> Result<Depth, ResourceLimit> {
     let used = session.depths[ceiling.slot()];
     let Some(next) = used.checked_add(1).filter(|next| *next <= limit) else {
         let refusal = ResourceLimit {
+            scope: LimitScope::for_dimension(ResourceDimension::RecursionDepth),
             dimension: ResourceDimension::RecursionDepth,
             reason: ResourceFailure::BudgetExceeded,
             limit,
@@ -158,6 +161,7 @@ pub(super) fn within(ceiling: Ceiling, depth: u64) -> Result<(), String> {
         return Ok(());
     }
     let refusal = ResourceLimit {
+        scope: LimitScope::for_dimension(ResourceDimension::RecursionDepth),
         dimension: ResourceDimension::RecursionDepth,
         reason: ResourceFailure::BudgetExceeded,
         limit,

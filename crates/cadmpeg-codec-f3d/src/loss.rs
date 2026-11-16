@@ -998,8 +998,6 @@ pub(crate) enum F3dLossCode {
     KernelHeaderMetadataUnresolved,
     /// A bounded descriptive manifest payload is unreadable.
     ManifestMetadataUnresolved,
-    /// An optional bounded archive payload is unreadable.
-    ArchiveEntryUnreadable,
     /// A Design `BulkStream` stores a record run after its last indexed
     /// record; the run is not decoded and its bytes are retained natively.
     UnindexedRecordsRetained,
@@ -1640,7 +1638,6 @@ impl F3dLossCode {
         Self::KernelHeaderToleranceUnresolved,
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
-        Self::ArchiveEntryUnreadable,
         Self::UnindexedRecordsRetained,
         Self::DesignIntentUndecoded,
         Self::BodyDisplayNameAmbiguous,
@@ -2552,7 +2549,6 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => "brep.header-tolerance-unresolved",
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
-            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::UnindexedRecordsRetained => "source.unindexed-records-retained",
             Self::DesignIntentUndecoded => "design.intent-undecoded",
             Self::BodyDisplayNameAmbiguous => "design.body-display-name-ambiguous",
@@ -3187,7 +3183,6 @@ impl F3dLossCode {
             | Self::KernelHeaderToleranceUnresolved
             | Self::KernelHeaderMetadataUnresolved
             | Self::ManifestMetadataUnresolved
-            | Self::ArchiveEntryUnreadable
             | Self::UnindexedRecordsRetained
             | Self::BodyDisplayNameAmbiguous
             | Self::WorkPlaneDisplayNameAmbiguous
@@ -3828,9 +3823,7 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ManifestMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::ArchiveEntryUnreadable | Self::UnindexedRecordsRetained => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::UnindexedRecordsRetained => LossTaxonomy::RecordNotTyped,
         }
     }
 
@@ -4503,7 +4496,6 @@ mod tests {
                 "brep.header-tolerance-unresolved",
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
-                "source.archive-entry-unreadable",
                 "source.unindexed-records-retained",
                 "design.intent-undecoded",
                 "design.body-display-name-ambiguous",
