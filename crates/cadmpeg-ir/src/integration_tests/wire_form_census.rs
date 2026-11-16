@@ -545,6 +545,13 @@ impl Index {
         if let [file] = files {
             return Some(file);
         }
+        self.in_scope(files, name, from)
+    }
+
+    /// Of the files that declare a name, the one whose declaration `from`
+    /// brings into scope: `from` itself, else the one it imports. `None`
+    /// when neither picks exactly one.
+    fn in_scope<'a>(&self, files: &[&'a str], name: &str, from: &str) -> Option<&'a str> {
         if let Some(file) = files.iter().find(|file| **file == from) {
             return Some(file);
         }
@@ -593,12 +600,57 @@ impl Index {
         }
     }
 
+    /// The declaration a module-qualified type such as `mesh::Payload`,
+    /// written in file `from`, refers to: the one in the module its qualifier
+    /// names. `None` for an unqualified type or when no single one matches.
+    fn qualified(&self, ty: &syn::Type, name: &str, from: &str) -> Option<&Decl> {
+        let syn::Type::Path(ty) = ty else {
+            return None;
+        };
+        if ty.path.segments.len() < 2 {
+            return None;
+        }
+        let path: Vec<String> = ty
+            .path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect();
+        let (krate, module) = module_of(from)?;
+        let target = import_module(&krate, &module, &path);
+        let mut matched = self
+            .decls
+            .get(name)?
+            .iter()
+            .filter(|decl| module_of(&decl.file).as_ref() == Some(&target));
+        match (matched.next(), matched.next()) {
+            (Some(decl), None) => Some(decl),
+            _ => None,
+        }
+    }
+
     /// The type an alias named `name`, written in file `from`, stands for,
     /// with the file that declares the alias.
     fn alias(&self, name: &str, from: &str) -> Option<(&str, &syn::Type)> {
+        self.alias_in(name, from, Self::pick)
+    }
+
+    /// The alias named `name` that file `from` declares or imports, with the
+    /// file that declares it. Such an alias is what `from` means by the name,
+    /// whatever another module declares under it.
+    fn scoped_alias(&self, name: &str, from: &str) -> Option<(&str, &syn::Type)> {
+        self.alias_in(name, from, Self::in_scope)
+    }
+
+    fn alias_in<'a>(
+        &'a self,
+        name: &str,
+        from: &str,
+        choose: impl for<'f> Fn(&Self, &[&'f str], &str, &str) -> Option<&'f str>,
+    ) -> Option<(&'a str, &'a syn::Type)> {
         let aliases = self.aliases.get(name)?;
         let files: Vec<&str> = aliases.iter().map(|(file, _)| file.as_str()).collect();
-        let file = self.pick(&files, name, from)?;
+        let file = choose(self, &files, name, from)?;
         let mut in_file = aliases.iter().filter(|(alias_file, _)| alias_file == file);
         match (in_file.next(), in_file.next()) {
             (Some((file, ty)), None) => Some((file.as_str(), ty)),
@@ -679,7 +731,13 @@ impl Index {
         if depth > 6 {
             return Payload::Unresolved(format!("{name} nests too deep"));
         }
-        let Some(decl) = self.resolve(&name, from) else {
+        if let Some((file, aliased)) = self.scoped_alias(&name, from) {
+            return self.payload(aliased, None, file, depth + 1);
+        }
+        let Some(decl) = self
+            .qualified(ty, &name, from)
+            .or_else(|| self.resolve(&name, from))
+        else {
             if self.decls.contains_key(&name) {
                 return Payload::Unresolved(format!("{name} has more than one declaration"));
             }
@@ -1189,20 +1247,25 @@ fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
         (
             "crates/cadmpeg-ir/src/one.rs",
             "#[derive(Serialize)] pub struct Payload { pub a: u32 }\n\
-             pub type Alias = Payload;\n",
+             pub type Alias = Payload;\n\
+             pub type Shadowed = Payload;\n",
         ),
         (
             "crates/cadmpeg-ir/src/two.rs",
             "#[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
-             pub enum Payload { A(u32) }\n",
+             pub enum Payload { A(u32) }\n\
+             #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Shadowed { A(u32) }\n",
         ),
         (
             "crates/cadmpeg-ir/src/user.rs",
-            "use crate::one::{Alias, Payload};\n\
+            "use crate::one::{Alias, Payload, Shadowed};\n\
              #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
              pub enum Imported { Item(Payload) }\n\
              #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
              pub enum Aliased { Item(Alias) }\n\
+             #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum ImportedAlias { Item(Shadowed) }\n\
              #[derive(Serialize)] #[serde(tag = \"kind\")]\n\
              pub enum Generic<T> { Item(T) }\n",
         ),
@@ -1217,6 +1280,7 @@ fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
     for (name, form) in [
         ("Imported", "Internal"),
         ("Aliased", "Internal"),
+        ("ImportedAlias", "Internal"),
         ("Generic", "Adjacent"),
     ] {
         assert!(
@@ -1226,6 +1290,52 @@ fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
             "{name}: {problems:#?}"
         );
     }
+    assert_eq!(problems.len(), 4, "{problems:#?}");
+}
+
+#[test]
+fn a_module_qualified_payload_resolves_in_the_module_it_names() {
+    let root = std::env::temp_dir().join(format!(
+        "cadmpeg-wire-form-census-qualified-{}",
+        std::process::id()
+    ));
+    let sources = [
+        ("crates/cadmpeg-core/src/lib.rs", ""),
+        (
+            "crates/cadmpeg-ir/src/user/inner.rs",
+            "#[derive(Serialize)] pub struct Payload { pub a: u32 }\n",
+        ),
+        (
+            "crates/cadmpeg-ir/src/other.rs",
+            "#[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Payload { A(u32) }\n",
+        ),
+        (
+            "crates/cadmpeg-ir/src/user.rs",
+            "#[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Qualified { Item(inner::Payload) }\n\
+             #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Bare { Item(Payload) }\n",
+        ),
+    ];
+    for (path, text) in sources {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let problems = census(&root);
+    std::fs::remove_dir_all(&root).unwrap();
+    assert!(
+        problems
+            .iter()
+            .any(|problem| problem.contains(" Qualified: enum must take form Internal")),
+        "{problems:#?}"
+    );
+    assert!(
+        problems.iter().any(|problem| problem
+            .contains("Bare::Item: payload unresolved: Payload has more than one declaration")),
+        "{problems:#?}"
+    );
     assert_eq!(problems.len(), 3, "{problems:#?}");
 }
 
