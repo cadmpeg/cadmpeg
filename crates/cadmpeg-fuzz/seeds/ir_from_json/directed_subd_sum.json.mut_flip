@@ -143,13 +143,13 @@
               "vertices": [
                 1,
                 2
-        ß     ],
+              ],
               "sharpness": [
                 0.0,
                 0.5
               ],
               "tag": "smooth_x",
-              "sector_coefficients": [
+       ß      "sector_coefficients": [
                 0.25,
                 0.75
               ]
@@ -267,7 +267,20 @@
     "point_clouds": [],
     "history_bodies": []
   },
-  "design": {},
+  "design": {
+    "scopes": [],
+    "containers": [],
+    "features": [],
+    "parameters": [],
+    "spreadsheets": [],
+    "sheet_metal_rules": [],
+    "programs": [],
+    "configurations": [],
+    "arrangements": [],
+    "publications": [],
+    "evaluations": [],
+    "names": []
+  },
   "process": {},
   "native": {}
 }

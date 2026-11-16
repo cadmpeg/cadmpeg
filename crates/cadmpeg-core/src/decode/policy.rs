@@ -57,6 +57,11 @@ pub struct ResourceLimits {
     /// reading CADIR admits.
     #[serde(default = "default_max_construction_depth")]
     pub max_construction_depth: u64,
+    /// Maximum depth of a chain of state bases that reading CADIR admits:
+    /// the evaluations with content that a chain of `StateBase::Evaluation`
+    /// bases passes through, counting the evaluation it starts from.
+    #[serde(default = "default_max_state_chain_depth")]
+    pub max_state_chain_depth: u64,
 }
 
 impl ResourceLimits {
@@ -73,6 +78,7 @@ impl ResourceLimits {
             max_name_depth: 32,
             max_pick_depth: 16,
             max_construction_depth: 16,
+            max_state_chain_depth: 4096,
         }
     }
 
@@ -89,6 +95,7 @@ impl ResourceLimits {
             max_name_depth: 16,
             max_pick_depth: 8,
             max_construction_depth: 8,
+            max_state_chain_depth: 2048,
         }
     }
 }
@@ -178,6 +185,10 @@ const fn default_max_construction_depth() -> u64 {
     ResourceLimits::desktop().max_construction_depth
 }
 
+const fn default_max_state_chain_depth() -> u64 {
+    ResourceLimits::desktop().max_state_chain_depth
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -197,6 +208,7 @@ mod tests {
         assert_eq!(d.max_name_depth, 32);
         assert_eq!(d.max_pick_depth, 16);
         assert_eq!(d.max_construction_depth, 16);
+        assert_eq!(d.max_state_chain_depth, 4096);
     }
 
     #[test]
@@ -212,6 +224,7 @@ mod tests {
         assert_eq!(s.max_name_depth, 16);
         assert_eq!(s.max_pick_depth, 8);
         assert_eq!(s.max_construction_depth, 8);
+        assert_eq!(s.max_state_chain_depth, 2048);
     }
 
     #[test]
@@ -233,6 +246,7 @@ mod tests {
             limits.max_construction_depth,
             desktop.max_construction_depth
         );
+        assert_eq!(limits.max_state_chain_depth, desktop.max_state_chain_depth);
     }
 
     #[test]

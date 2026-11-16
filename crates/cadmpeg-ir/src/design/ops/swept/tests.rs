@@ -24,6 +24,7 @@ use crate::design::read;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
 };
+use crate::design::tests::arm_failures;
 use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
 use crate::features::{FinitePoint3, ParameterId};
 use crate::math::Point3;
@@ -1249,6 +1250,24 @@ fn every_swept_type_round_trips() {
         ],
     );
     assert!(report.failures.is_empty(), "{:#?}", report.failures);
+}
+
+/// §5.10: each swept operation is the `FeatureOperation` arm its family
+/// names, holding the operation as its value.
+#[test]
+fn every_swept_operation_is_a_feature_operation_arm() {
+    use crate::design::feature::{FeatureOperation as Op, OperationFamily as Family};
+    let failures = [
+        arm_failures(Family::Extrude, extrudes(), Op::Extrude),
+        arm_failures(Family::Revolve, revolves(), Op::Revolve),
+        arm_failures(Family::Sweep, sweeps(), Op::Sweep),
+        arm_failures(Family::HelicalSweep, helical_sweeps(), Op::HelicalSweep),
+        arm_failures(Family::Rib, ribs(), Op::Rib),
+        arm_failures(Family::Primitive, primitives(), Op::Primitive),
+        arm_failures(Family::Loft, lofts(), Op::Loft),
+    ]
+    .concat();
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 /// §2.5: every `Option` field is omitted for `None` and refuses `null`, and
