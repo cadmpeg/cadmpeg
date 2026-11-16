@@ -22,6 +22,10 @@ use crate::container::{self, ContainerScan};
 use crate::history_records::AsmHistory;
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
+use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 
 const MAX_HISTORY_BODIES: usize = 64;
 const MAX_HISTORY_BODY_WORK: usize = 1 << 21;
@@ -34,6 +38,26 @@ struct Want<'a> {
     consumer: Option<&'a Feature>,
     state: i64,
     slot: i64,
+    /// A slot that the state names only by the persistent design identity of
+    /// its body. `slot` is not read while this is present.
+    identity: Option<BodyIdentity>,
+}
+
+/// The persistent design identity that a Split body recipe stores for its
+/// target, and the body slots that the Split transition revises or deletes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BodyIdentity {
+    design_id: String,
+    selector: i64,
+    revised: Vec<i64>,
+}
+
+/// A consumed history body found through its design identity. A producing
+/// feature whose nest has equal records joins this nest.
+struct Joinable {
+    slot: i64,
+    index: usize,
+    topology: BodyTopology,
 }
 
 #[derive(Clone, Copy)]
@@ -43,6 +67,9 @@ pub(crate) struct Inputs<'a> {
     pub(crate) histories: &'a [AsmHistory],
     pub(crate) bindings: &'a HashMap<String, String>,
     pub(crate) primary_brep: Option<&'a str>,
+    pub(crate) groups: &'a [DesignConstructionOperandGroup],
+    pub(crate) operands: &'a [DesignBodyRecipeOperand],
+    pub(crate) recipes: &'a [ConstructionRecipe],
 }
 
 pub(crate) fn fill(
@@ -57,6 +84,7 @@ pub(crate) fn fill(
         histories,
         bindings,
         primary_brep,
+        ..
     } = inputs;
     let mut bodies_out = Vec::new();
     let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
@@ -110,6 +138,7 @@ pub(crate) fn fill(
                     consumer: None,
                     state: current,
                     slot,
+                    identity: None,
                 });
             }
         }
@@ -128,6 +157,7 @@ pub(crate) fn fill(
                 consumer: None,
                 state,
                 slot,
+                identity: None,
             });
         }
     }
@@ -150,9 +180,23 @@ pub(crate) fn fill(
                     consumer: Some(feature),
                     state,
                     slot,
+                    identity: None,
                 }),
             }
         }
+    }
+    for feature in features {
+        let Some((history_index, state, identity)) = split_identity_target(feature, inputs) else {
+            continue;
+        };
+        wants.entry(history_index).or_default().push(Want {
+            origin: feature,
+            producer: None,
+            consumer: Some(feature),
+            state,
+            slot: -1,
+            identity: Some(identity),
+        });
     }
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
     for (index, wants) in wants {
@@ -287,6 +331,108 @@ fn split_targets(
     Some((index, input, slots))
 }
 
+/// The history, input state and body identity of a Split whose target
+/// selection stays native: one body-recipe operand names the target by the
+/// design identifier and selector of the body's persistent design link, and
+/// the Split transition directly follows the input state.
+fn split_identity_target(
+    feature: &Feature,
+    inputs: Inputs<'_>,
+) -> Option<(usize, i64, BodyIdentity)> {
+    let FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        targets: BodySelection::Native(group_id),
+        ..
+    }) = feature.evaluation.definition()
+    else {
+        return None;
+    };
+    let native = feature.native_ref.as_deref()?;
+    let scope = inputs.scopes.iter().find(|scope| scope.id == native)?;
+    let current = scope.history_state_id()?;
+    let input = super::effective_scope_previous_history_state_id(scope, inputs.histories)?;
+    let index = scope_history(native, (current, input), inputs.histories, inputs.bindings)?;
+    let state = inputs.histories[index]
+        .states()
+        .iter()
+        .find(|state| state.state_id == current)?;
+    let transition = state.transition.as_ref()?;
+    if transition.previous_state_id != Some(input) {
+        return None;
+    }
+    let stream = crate::ids::native_stream(&scope.id);
+    let mut groups = inputs.groups.iter().filter(|group| {
+        group.id == *group_id
+            && group.scope_record_index == scope.record_index
+            && group.role() == DesignOperandRole::BODIES_A
+            && crate::ids::native_stream(&group.id) == stream
+    });
+    let group = groups.next()?;
+    let [member] = group.members() else {
+        return None;
+    };
+    if groups.next().is_some() {
+        return None;
+    }
+    let mut operands = inputs.operands.iter().filter(|operand| {
+        operand.owner.group() == Some((group.record_index, 0))
+            && operand.record_index() == member.value
+            && crate::ids::native_stream(&operand.id) == stream
+    });
+    let operand = operands.next()?;
+    if operands.next().is_some() {
+        return None;
+    }
+    let mut recipes = inputs
+        .recipes
+        .iter()
+        .filter(|recipe| recipe.id == operand.recipe_id);
+    let recipe = recipes.next()?;
+    if recipes.next().is_some() || recipe.kind != ConstructionRecipeKind::Body {
+        return None;
+    }
+    let design = recipe.design.as_ref()?;
+    let selector = i64::from(design.selector?.value);
+    let bodies = &transition.topology.bodies;
+    let mut revised = bodies.updated.clone();
+    revised.extend(&bodies.deleted);
+    Some((
+        index,
+        input,
+        BodyIdentity {
+            design_id: design.id.value.clone(),
+            selector,
+            revised,
+        },
+    ))
+}
+
+/// The one body slot of a decoded input state that carries the persistent
+/// design link of the identity, when the Split transition revises it.
+fn identity_slot(
+    brep: &cadmpeg_asm::brep::AsmBrep,
+    identity: &BodyIdentity,
+) -> Result<Option<i64>, CodecError> {
+    let mut carriers = BTreeSet::new();
+    for attribute in &brep.attributes {
+        let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &attribute.target else {
+            continue;
+        };
+        let Some(slot) = super::stable_ref(body.as_str()) else {
+            continue;
+        };
+        for link in crate::brep::persistent_design_links(attribute)? {
+            if link.design_id.as_str() == identity.design_id
+                && link.design_reference == identity.selector
+            {
+                carriers.insert(slot);
+            }
+        }
+    }
+    let mut carriers = carriers.into_iter();
+    let slot = carriers.next();
+    Ok(slot.filter(|slot| carriers.next().is_none() && identity.revised.contains(slot)))
+}
+
 fn output_history<'a>(
     bodies: impl Iterator<Item = &'a str>,
     histories: &'a [AsmHistory],
@@ -341,6 +487,7 @@ fn fill_history(
         .into_iter()
         .collect::<Vec<_>>();
     let mut subtypes = None;
+    let mut joinable = Vec::<Joinable>::new();
     let mut newer = HashMap::<i64, HashSet<Option<i64>>>::new();
     let mut visited = 0;
     let mut failure = None;
@@ -361,9 +508,11 @@ fn fill_history(
                     .get(&want.slot)
                     .is_some_and(|seen| seen.iter().any(|new| *new != revision));
                 // A later state that deletes or revises the slot leaves the
-                // body as this state holds it only in the record archive.
+                // body as this state holds it only in the record archive. The
+                // transition of a Split that names its target by identity
+                // states the revision.
                 let produced = want.producer.filter(|_| changed);
-                let consumed = want.consumer.filter(|_| changed);
+                let consumed = want.consumer.filter(|_| changed || want.identity.is_some());
                 if produced.is_none() && consumed.is_none() {
                     continue;
                 }
@@ -393,6 +542,45 @@ fn fill_history(
                 let subtypes = subtypes.get_or_insert_with(|| {
                     archive_subtypes(archive, header.metadata.save_format_version)
                 });
+                let by_identity = want.identity.is_some();
+                let resolved;
+                let want = match &want.identity {
+                    None => want,
+                    Some(identity) => {
+                        match identity_body_slot(
+                            ctx,
+                            (archive, versions),
+                            bytes,
+                            (&header.metadata, subtypes),
+                            identity,
+                        ) {
+                            Ok(Some(slot)) => {
+                                resolved = Want {
+                                    origin: want.origin,
+                                    producer: None,
+                                    consumer: want.consumer,
+                                    state: want.state,
+                                    slot,
+                                    identity: None,
+                                };
+                                &resolved
+                            }
+                            Ok(None) => continue,
+                            Err(error) => {
+                                failure = Some(error);
+                                break;
+                            }
+                        }
+                    }
+                };
+                // A producing feature of the same body at an earlier state
+                // joins the nest of the consuming feature when the records of
+                // the two states are equal.
+                let join = if produced.is_some() && consumed.is_none() {
+                    joinable.iter().position(|found| found.slot == want.slot)
+                } else {
+                    None
+                };
                 match build(
                     ctx,
                     (archive, versions),
@@ -401,8 +589,11 @@ fn fill_history(
                     want,
                     (produced, consumed),
                     (ordinal, bodies.len()),
+                    by_identity || join.is_some(),
                 ) {
-                    Ok(Some(body)) => bodies.push(body),
+                    Ok(Some(built)) => {
+                        place(bodies, &mut joinable, built, want.slot, (by_identity, join))
+                    }
                     Ok(None) => {
                         losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
                             "{} body slot {} state {state_id} has an incomplete or invalid geometry closure",
@@ -412,7 +603,7 @@ fn fill_history(
                     Err(error) => failure = Some(error),
                 }
             }
-            for want in wants {
+            for want in wants.iter().filter(|want| want.identity.is_none()) {
                 newer
                     .entry(want.slot)
                     .or_default()
@@ -446,7 +637,8 @@ fn build(
     want: &Want<'_>,
     owners: (Option<&Feature>, Option<&Feature>),
     position: (usize, usize),
-) -> Result<Option<HistoryBody>, CodecError> {
+    keep_records: bool,
+) -> Result<Option<Built>, CodecError> {
     let (ordinal, nest_index) = position;
     let Some(table) =
         cadmpeg_asm::history::materialize_record_table(versions, |revision| archive.get(&revision))
@@ -479,6 +671,7 @@ fn build(
     let Extract::Nest(topology) = extract(ctx, &scratch.model, body.as_str())? else {
         return Ok(None);
     };
+    let records = keep_records.then(|| (*topology).clone());
     let mut map = IdentityMap::new(|id: &str| {
         let (_, rest) = id
             .split_once(':')
@@ -498,7 +691,7 @@ fn build(
         cadmpeg_core::decode::u64_from_index(topology.record_count()),
         "admit history body records",
     )?;
-    admit(
+    let body = admit(
         ctx,
         HistoryBody {
             id: HistoryBodyId::mint(format!("f3d:history-body:nest#h{nest_index:04}"))
@@ -513,7 +706,76 @@ fn build(
             topology,
         },
         want.origin,
-    )
+    )?;
+    Ok(body.map(|body| Built { body, records }))
+}
+
+/// Add a built nest, or join its producing feature onto the equal consumed
+/// nest that `join` names. A nest found by identity stays open to a join.
+fn place(
+    bodies: &mut Vec<HistoryBody>,
+    joinable: &mut Vec<Joinable>,
+    built: Built,
+    slot: i64,
+    (by_identity, join): (bool, Option<usize>),
+) {
+    let equal =
+        join.filter(|&position| built.records.as_ref() == Some(&joinable[position].topology));
+    if let Some(position) = equal {
+        let found = joinable.remove(position);
+        let nest = &mut bodies[found.index];
+        nest.produced_by = built.body.produced_by;
+        nest.state = built.body.state;
+        return;
+    }
+    if by_identity {
+        if let Some(topology) = built.records {
+            joinable.push(Joinable {
+                slot,
+                index: bodies.len(),
+                topology,
+            });
+        }
+    }
+    bodies.push(built.body);
+}
+
+/// A history body, and its records before the nest identities, when kept.
+struct Built {
+    body: HistoryBody,
+    records: Option<BodyTopology>,
+}
+
+/// The body slot of the state that carries the identity. Decoding the state
+/// reads the persistent design links on its bodies.
+fn identity_body_slot(
+    ctx: &DecodeContext<'_>,
+    (archive, versions): (&super::HistoricalRecordArchive, &BTreeMap<i64, i64>),
+    bytes: &[u8],
+    tables: (
+        &cadmpeg_asm::kernel_header::KernelHeader,
+        &cadmpeg_asm::nurbs::toks::SubtypeTable,
+    ),
+    identity: &BodyIdentity,
+) -> Result<Option<i64>, CodecError> {
+    let Some(table) =
+        cadmpeg_asm::history::materialize_record_table(versions, |revision| archive.get(&revision))
+    else {
+        return Ok(None);
+    };
+    match cadmpeg_asm::brep::decode_with_table(
+        ctx,
+        &table,
+        bytes,
+        (Some(tables.0), tables.1),
+        "f3d:history",
+        crate::ids::ID_FORMAT,
+        cadmpeg_asm::brep::DecodePurpose::Model,
+    ) {
+        Ok(brep) => identity_slot(&brep, identity),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(None),
+    }
 }
 
 fn admit(
