@@ -155,14 +155,14 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
         .report()
         .losses
         .iter()
-        .any(|loss| { loss.code == crate::loss::StepLossCode::ParseRecordOmitted.kind() }));
+        .any(|loss| { loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind() }));
     assert!(recovered
         .ir()
         .native_unknowns("step")
         .unwrap()
         .iter()
         .any(|record| {
-            record.id.as_str().starts_with("step:file:omitted#")
+            record.id.as_str().starts_with("step:source:part#")
                 && recovered
                     .source_fidelity()
                     .retained_record(record.id.as_str())

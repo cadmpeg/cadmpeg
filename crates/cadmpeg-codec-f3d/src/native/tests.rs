@@ -1393,13 +1393,16 @@ fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
     let target = b"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
     set_zip_entry_uncompressed_size(&mut archive, target, u32::MAX - 1);
 
+    // The Part refusal gives up the entry before any allocation; the design
+    // body map that needs the entry then refuses the document.
     let error = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect_err("oversized inflated entry must be rejected");
     assert!(
         matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(_))
+            &error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
+                if message.contains("missing BREP entry Body1.smbh")
         ),
         "{error:?}"
     );
