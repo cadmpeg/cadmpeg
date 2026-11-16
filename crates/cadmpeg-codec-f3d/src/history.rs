@@ -2273,8 +2273,10 @@ pub(crate) fn bind_feature_body_selections(
                 definition
             {
                 let refusal = combine_selection::refine(operands, feature_id, |target, tools| {
-                        let (Some(state_id), Some(previous_state_id)) =
-                            (scope.history_state_id(), scope.previous_history_state_id())
+                        let (Some(state_id), Some(previous_state_id)) = (
+                            scope.history_state_id(),
+                            effective_scope_previous_history_state_id(scope, histories),
+                        )
                         else {
                             bind_direct_body_recipe_body_selection(target, scope, inputs, &mut body_candidates);
                             bind_direct_body_recipe_body_selection(tools, scope, inputs, &mut body_candidates);
