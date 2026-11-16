@@ -483,6 +483,19 @@ impl DesignParameter {
         }
     }
 
+    /// The source kind with a trailing `-<digits>` instance suffix removed.
+    pub(crate) fn dimension_kind(&self) -> NonBlankString {
+        let source_kind = self.source_kind();
+        source_kind
+            .as_str()
+            .rsplit_once('-')
+            .filter(|(_, instance)| {
+                !instance.is_empty() && instance.bytes().all(|byte| byte.is_ascii_digit())
+            })
+            .and_then(|(stem, _)| NonBlankString::new(stem))
+            .unwrap_or_else(|| source_kind.clone())
+    }
+
     /// The source kind as text.
     pub(crate) fn source_kind_str(&self) -> &str {
         self.source_kind().as_str()
