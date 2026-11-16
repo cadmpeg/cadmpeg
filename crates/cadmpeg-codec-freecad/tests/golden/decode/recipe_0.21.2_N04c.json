@@ -6,33 +6,21 @@
       "bodies": [
         {
           "id": "fcstd:model:body#Body:Shape:PartShape.brp:13%40location1",
-          "kind": "solid",
-          "regions": [
-            "fcstd:model:region#Body:Shape:PartShape.brp:13%40location1"
-          ]
+          "kind": "solid"
         },
         {
           "id": "fcstd:model:body#Pad:AddSubShape:PartShape2.brp:9",
           "kind": "solid",
-          "regions": [
-            "fcstd:model:region#Pad:AddSubShape:PartShape2.brp:9"
-          ],
           "visible": false
         },
         {
           "id": "fcstd:model:body#Pad:Shape:PartShape3.brp:9%40location1",
           "kind": "solid",
-          "regions": [
-            "fcstd:model:region#Pad:Shape:PartShape3.brp:9%40location1"
-          ],
           "visible": false
         },
         {
           "id": "fcstd:model:body#Sketch:Shape:PartShape1.brp:3%40location1",
           "kind": "wire",
-          "regions": [
-            "fcstd:model:region#Sketch:Shape:PartShape1.brp:3%40location1"
-          ],
           "visible": false
         }
       ],
@@ -1102,9 +1090,11 @@
               5.0
             ]
           },
-          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location19",
+          "ends": {
+            "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location19",
+            "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location19"
+          },
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:3%40location1",
-          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location19",
           "tolerance": 1e-7
         },
         {
@@ -1115,9 +1105,11 @@
               3.0
             ]
           },
-          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location19",
+          "ends": {
+            "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location19",
+            "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location19"
+          },
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:4%40location21",
-          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location19",
           "tolerance": 1e-7
         },
         {
@@ -1128,9 +1120,11 @@
               3.0
             ]
           },
-          "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location19",
+          "ends": {
+            "end": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location19",
+            "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location19"
+          },
           "id": "fcstd:model:edge#Body:Shape:PartShape.brp:5%40location18",
-          "start": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location19",
           "tolerance": 1e-7
         },
         {
@@ -1141,9 +1135,11 @@
               5.0
             ]
           },
-          "end": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location6",
+          "ends": {
+            "end": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location6",
+            "start": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location4"
+          },
           "id": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:2",
-          "start": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location4",
           "tolerance": 1e-7
         },
         {
@@ -1154,9 +1150,11 @@
               3.0
             ]
           },
-          "end": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location4",
+          "ends": {
+            "end": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location4",
+            "start": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location4"
+          },
           "id": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:3%40location4",
-          "start": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location4",
           "tolerance": 1e-7
         },
         {
@@ -1167,9 +1165,11 @@
               3.0
             ]
           },
-          "end": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location6",
+          "ends": {
+            "end": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location6",
+            "start": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location6"
+          },
           "id": "fcstd:model:edge#Pad:AddSubShape:PartShape2.brp:3%40location6",
-          "start": "fcstd:model:vertex#Pad:AddSubShape:PartShape2.brp:1%40location6",
           "tolerance": 1e-7
         },
         {
@@ -1180,9 +1180,11 @@
               5.0
             ]
           },
-          "end": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location14",
+          "ends": {
+            "end": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location14",
+            "start": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location16"
+          },
           "id": "fcstd:model:edge#Pad:Shape:PartShape3.brp:2%40location1",
-          "start": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location16",
           "tolerance": 1e-7
         },
         {
@@ -1193,9 +1195,11 @@
               3.0
             ]
           },
-          "end": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location14",
+          "ends": {
+            "end": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location14",
+            "start": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location14"
+          },
           "id": "fcstd:model:edge#Pad:Shape:PartShape3.brp:3%40location14",
-          "start": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location14",
           "tolerance": 1e-7
         },
         {
@@ -1206,9 +1210,11 @@
               3.0
             ]
           },
-          "end": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location16",
+          "ends": {
+            "end": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location16",
+            "start": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location16"
+          },
           "id": "fcstd:model:edge#Pad:Shape:PartShape3.brp:3%40location16",
-          "start": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location16",
           "tolerance": 1e-7
         },
         {
@@ -1219,9 +1225,11 @@
               3.0
             ]
           },
-          "end": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:1%40location1",
+            "start": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Sketch:Shape:PartShape1.brp:2%40location1",
-          "start": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:1%40location1",
           "tolerance": 1e-7
         }
       ],
@@ -1925,56 +1933,17 @@
       "shells": [
         {
           "id": "fcstd:model:shell#Body:Shape:PartShape.brp:12%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:face#Body:Shape:PartShape.brp:7%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Body:Shape:PartShape.brp:9%40location20",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Body:Shape:PartShape.brp:11%40location17",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#Body:Shape:PartShape.brp:13%40location1"
         },
         {
           "id": "fcstd:model:shell#Pad:AddSubShape:PartShape2.brp:8",
-          "members": [
-            {
-              "id": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:5",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:7%40location9",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Pad:AddSubShape:PartShape2.brp:7%40location11",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#Pad:AddSubShape:PartShape2.brp:9"
         },
         {
           "id": "fcstd:model:shell#Pad:Shape:PartShape3.brp:8%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:face#Pad:Shape:PartShape3.brp:5%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Pad:Shape:PartShape3.brp:7%40location15",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Pad:Shape:PartShape3.brp:7%40location13",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#Pad:Shape:PartShape3.brp:9%40location1"
         },
         {

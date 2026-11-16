@@ -6,10 +6,7 @@
       "bodies": [
         {
           "id": "step:data:body#31",
-          "kind": "sheet",
-          "regions": [
-            "step:data:region#31"
-          ]
+          "kind": "sheet"
         }
       ],
       "coedges": [
@@ -128,9 +125,11 @@
               10.0
             ]
           },
-          "end": "step:data:vertex#7",
-          "id": "step:data:edge#19",
-          "start": "step:data:vertex#6"
+          "ends": {
+            "end": "step:data:vertex#7",
+            "start": "step:data:vertex#6"
+          },
+          "id": "step:data:edge#19"
         },
         {
           "carrier": {
@@ -140,9 +139,11 @@
               14.142135623730953
             ]
           },
-          "end": "step:data:vertex#8",
-          "id": "step:data:edge#20",
-          "start": "step:data:vertex#7"
+          "ends": {
+            "end": "step:data:vertex#8",
+            "start": "step:data:vertex#7"
+          },
+          "id": "step:data:edge#20"
         },
         {
           "carrier": {
@@ -152,18 +153,20 @@
               10.0
             ]
           },
-          "end": "step:data:vertex#6",
-          "id": "step:data:edge#21",
-          "start": "step:data:vertex#8"
+          "ends": {
+            "end": "step:data:vertex#6",
+            "start": "step:data:vertex#8"
+          },
+          "id": "step:data:edge#21"
         }
       ],
       "faces": [
         {
           "color": {
             "a": 1.0,
-            "b": 0.10000000149011612,
-            "g": 0.10000000149011612,
-            "r": 0.8999999761581421
+            "b": 0.1,
+            "g": 0.1,
+            "r": 0.9
           },
           "id": "step:data:face#29",
           "loops": {
@@ -269,12 +272,7 @@
       "shells": [
         {
           "id": "step:data:shell#30",
-          "members": [
-            {
-              "id": "step:data:face#29",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "step:data:region#31"
         }
       ],
@@ -354,9 +352,9 @@
         {
           "base_color": {
             "a": 1.0,
-            "b": 0.10000000149011612,
-            "g": 0.10000000149011612,
-            "r": 0.8999999761581421
+            "b": 0.1,
+            "g": 0.1,
+            "r": 0.9
           },
           "id": "step:presentation:appearance#40",
           "name": "override red",
@@ -367,9 +365,9 @@
         {
           "base_color": {
             "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
+            "b": 0.6,
+            "g": 0.4,
+            "r": 0.2
           },
           "id": "step:presentation:appearance#60",
           "name": "blue green",

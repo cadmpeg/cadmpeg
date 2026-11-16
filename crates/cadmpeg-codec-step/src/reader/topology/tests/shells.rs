@@ -98,19 +98,11 @@ fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
         ["step:data:shell#31", "step:data:shell#32"]
     );
     let face_sense = |document: &CadIr, shell_id: &cadmpeg_ir::ids::ShellId| {
-        let shell = document
-            .geometry
-            .shells
-            .iter()
-            .find(|shell| &shell.id == shell_id)
-            .expect("shell carrier");
-        let face_id = shell.faces().first().expect("shell face");
         document
             .geometry
-            .faces
-            .iter()
-            .find(|face| &face.id == face_id)
-            .expect("face carrier")
+            .shell_faces(shell_id)
+            .next()
+            .expect("shell face")
             .sense
     };
     assert_eq!(
@@ -747,7 +739,6 @@ pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
     region.id = "zzzz:test:region#second"
         .try_into()
         .expect("valid identity");
-    ir.geometry.bodies[0].regions.push(region.id.clone());
     ir.geometry.regions.push(region);
     let mut builder = Builder::new(
         &ir,
@@ -862,8 +853,8 @@ fn loop_starts(ir: &CadIr, loop_id: &cadmpeg_ir::ids::LoopId) -> Vec<[f64; 3]> {
             .find(|edge| edge.id == coedge.edge)
             .expect("edge carrier");
         let vertex_id = match coedge.sense {
-            Sense::Forward => &edge.start,
-            Sense::Reversed => &edge.end,
+            Sense::Forward => &edge.ends.as_ref().unwrap().start,
+            Sense::Reversed => &edge.ends.as_ref().unwrap().end,
         };
         let vertex = geometry
             .vertices

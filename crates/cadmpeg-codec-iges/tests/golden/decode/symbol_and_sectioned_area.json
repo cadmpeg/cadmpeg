@@ -7,10 +7,7 @@
         {
           "id": "iges:model:body#free-geometry",
           "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
+          "name": "IGES free geometry"
         }
       ],
       "coedges": [],
@@ -139,9 +136,11 @@
               6.283185307179586
             ]
           },
-          "end": "iges:model:vertex#D11-end",
-          "id": "iges:model:edge#D11",
-          "start": "iges:model:vertex#D11-start"
+          "ends": {
+            "end": "iges:model:vertex#D11-end",
+            "start": "iges:model:vertex#D11-start"
+          },
+          "id": "iges:model:edge#D11"
         },
         {
           "carrier": {
@@ -151,9 +150,11 @@
               6.283185307179586
             ]
           },
-          "end": "iges:model:vertex#D9-end",
-          "id": "iges:model:edge#D9",
-          "start": "iges:model:vertex#D9-start"
+          "ends": {
+            "end": "iges:model:vertex#D9-end",
+            "start": "iges:model:vertex#D9-start"
+          },
+          "id": "iges:model:edge#D9"
         }
       ],
       "faces": [],

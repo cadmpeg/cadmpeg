@@ -12,11 +12,11 @@ fn model() -> CadIr {
     ir.geometry.bodies.push(crate::topology::Body {
         id: "test:model:body#result".try_into().unwrap(),
         kind: crate::topology::BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({

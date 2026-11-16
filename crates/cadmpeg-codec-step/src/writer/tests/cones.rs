@@ -187,10 +187,11 @@ fn point_edge_ring_is_written_as_vertex_loop() {
                 .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let edge = &mut ir.geometry.edges[0];
     edge.carrier = cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(point_curve));
-    edge.end = edge.start.clone();
+    edge.ends.as_mut().unwrap().end = edge.ends.as_ref().unwrap().start.clone();
 
     let mut output = Vec::new();
     let report = write_step(
@@ -322,4 +323,60 @@ fn unmappable_negative_cone_pcurve_loss_names_its_face() {
             && loss.message.contains(face_id.as_str())
             && loss.message.contains(ir.geometry.pcurves[0].id.as_str())
     }));
+}
+
+/// Plans a document whose single surface is a circular cone of `half_angle`.
+fn circular_cone_plan(
+    half_angle: f64,
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            half_angle,
+        )
+        .unwrap(),
+    ));
+
+    crate::StepCodec::default().plan(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Explicit(crate::StepSchema::Ap214.descriptor().id.as_str()),
+    )
+}
+
+#[test]
+fn cone_semi_angle_inside_wr2_is_planned() {
+    assert!(circular_cone_plan(0.5).is_ok());
+}
+
+#[test]
+fn zero_cone_semi_angle_is_planned_as_a_cylinder() {
+    assert!(circular_cone_plan(0.0).is_ok());
+}
+
+#[test]
+fn negative_cone_semi_angle_inside_wr2_is_planned() {
+    assert!(circular_cone_plan(-0.715_584_993_317_674_8).is_ok());
+}
+
+#[test]
+fn right_angle_cone_semi_angle_is_refused_at_planning() {
+    let error = circular_cone_plan(std::f64::consts::FRAC_PI_2)
+        .expect_err("right angle cone is outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
+    );
+}
+
+#[test]
+fn negative_right_angle_cone_semi_angle_is_refused_at_planning() {
+    let error = circular_cone_plan(-std::f64::consts::FRAC_PI_2)
+        .expect_err("negative right angle cone is outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
+    );
 }

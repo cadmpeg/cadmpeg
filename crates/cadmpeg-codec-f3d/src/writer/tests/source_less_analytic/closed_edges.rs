@@ -28,7 +28,7 @@ fn generated_source_less_closed_circle_edge_without_range_spans_one_revolution()
     let circle_ranges = geometry
         .edges
         .iter()
-        .filter(|edge| edge.start == edge.end)
+        .filter(|edge| edge.ends.as_ref().unwrap().start == edge.ends.as_ref().unwrap().end)
         .filter(|edge| {
             edge.curve().is_some_and(|curve_id| {
                 geometry.curves.iter().any(|curve| {

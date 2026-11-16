@@ -227,6 +227,7 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.points.extend([
             Point::new(
@@ -247,20 +248,25 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
                 id: start_vertex.clone(),
                 point: start_id,
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: end_vertex.clone(),
                 point: end_id,
                 tolerance: None,
+                native_ref: None,
             },
         ]);
         ir.geometry.edges.push(Edge {
             id: EdgeId::mint("test:model:edge#edge").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some(interval))
                 .unwrap(),
-            start: start_vertex,
-            end: end_vertex,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                start_vertex,
+                end_vertex,
+            )),
             tolerance: None,
+            native_ref: None,
         });
 
         let (carrier, _) =

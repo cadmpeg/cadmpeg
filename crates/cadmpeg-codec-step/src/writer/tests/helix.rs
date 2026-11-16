@@ -40,7 +40,8 @@ fn helix_edge_doc(cache: bool) -> CadIr {
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
         None,
     );
-    ir.geometry.edges[0].end = ir.geometry.edges[0].start.clone();
+    ir.geometry.edges[0].ends.as_mut().unwrap().end =
+        ir.geometry.edges[0].ends.as_ref().unwrap().start.clone();
     let fitted = cadmpeg_ir::eval::helix_nurbs::helix_nurbs(&helix, ir.tolerances.linear).unwrap();
     ir.geometry.curves.push(Curve {
         parameter_range: None,
@@ -50,6 +51,7 @@ fn helix_edge_doc(cache: bool) -> CadIr {
             cache: cache.then_some(cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(fitted)),
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction_id,
@@ -106,6 +108,7 @@ fn an_edge_on_a_subset_of_an_uncached_helix_is_written_on_a_trimmed_fitted_bspli
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction_id,

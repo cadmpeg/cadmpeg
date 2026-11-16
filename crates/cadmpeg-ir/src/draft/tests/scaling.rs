@@ -67,6 +67,7 @@ fn rejected_candidates_keep_the_reusable_admission_facts() {
         id: "test:model:vertex#dangling".try_into().unwrap(),
         point: "test:model:point#missing".try_into().unwrap(),
         tolerance: None,
+        native_ref: None,
     });
     // An invalid candidate and a valid one its caller refuses both roll
     // back; the facts still describe the one admitted asset.

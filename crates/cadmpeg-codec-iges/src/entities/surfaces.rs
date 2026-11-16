@@ -1480,6 +1480,7 @@ pub(super) fn project(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
             )),
             source_object: Some(source_object(entry)?),
+            native_ref: None,
         });
         decoded.insert(entry.sequence);
     }
@@ -1643,6 +1644,7 @@ pub(super) fn project(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
+            native_ref: None,
         });
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
@@ -1860,6 +1862,7 @@ pub(super) fn project(
                         .map_err(CodecError::malformed)?,
                     )),
                     source_object: Some(source_object(entry)?),
+                    native_ref: None,
                 });
                 placed_id
             } else {
@@ -1878,6 +1881,7 @@ pub(super) fn project(
                     cache: None,
                 },
                 source_object: Some(source_object(entry)?),
+                native_ref: None,
             });
             let parameter_interval = FiniteVector::new(source_interval).ok_or_else(|| {
                 CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
@@ -2080,6 +2084,7 @@ pub(super) fn project(
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_directrix)),
                 source_object: Some(source_object(entry)?),
+                native_ref: None,
             });
         }
         sequences.record_surface(&surface_id, entry.sequence);
@@ -2089,6 +2094,7 @@ pub(super) fn project(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
+            native_ref: None,
         });
         let parameter_interval = FiniteVector::new(source_interval).ok_or_else(|| {
             CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
@@ -2293,6 +2299,7 @@ pub(super) fn project(
                         .map_err(CodecError::malformed)?,
                     )),
                     source_object: Some(source_object(entry)?),
+                    native_ref: None,
                 });
                 let placed_origin =
                     transform
@@ -2329,6 +2336,7 @@ pub(super) fn project(
                     cache: None,
                 },
                 source_object: Some(source_object(entry)?),
+                native_ref: None,
             });
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
@@ -2477,6 +2485,7 @@ pub(super) fn project(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
+            native_ref: None,
         });
         let mut procedural_directrix =
             crate::ids::curve(&crate::ids::Stem::directory(generatrix_sequence));
@@ -2510,6 +2519,7 @@ pub(super) fn project(
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
                 source_object: Some(source_object(entry)?),
+                native_ref: None,
             });
             let placed_origin = transform
                 .apply_point(admitted_axis.0.get())
@@ -2989,6 +2999,7 @@ pub(super) fn project(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
+            native_ref: None,
         });
         let [u_lower, u_upper] = u_range.finite_endpoints();
         let [v_lower, v_upper] = v_range.finite_endpoints();
@@ -3156,6 +3167,7 @@ pub(super) fn project(
             id: surface_id.clone(),
             geometry,
             source_object: Some(source_object(entry)?),
+            native_ref: None,
         });
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;

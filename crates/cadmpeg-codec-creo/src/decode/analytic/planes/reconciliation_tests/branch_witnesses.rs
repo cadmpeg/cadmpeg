@@ -166,6 +166,7 @@ fn resolved_adjacent_plane_selects_the_bound_reference_circle() {
             .expect("plane"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let legacy = CylinderEquation {
         origin: [0.0, 0.0, 0.0],

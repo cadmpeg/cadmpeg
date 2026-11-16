@@ -39,9 +39,12 @@ pub fn closed_edge(edge: &str, curve: &str, vertex: &str) -> Edge {
         id: id(EdgeId::mint, "edge", edge),
         carrier: EdgeCarrier::new(Some(id(CurveId::mint, "curve", curve)), None)
             .expect("a curve with no range is a carrier"),
-        start: id(VertexId::mint, "vertex", vertex),
-        end: id(VertexId::mint, "vertex", vertex),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            id(VertexId::mint, "vertex", vertex),
+            id(VertexId::mint, "vertex", vertex),
+        )),
         tolerance: None,
+        native_ref: None,
     }
 }
 
@@ -75,6 +78,7 @@ pub fn cylinder_with_curve_sources(
             id: id(VertexId::mint, "vertex", key),
             point: id(PointId::mint, "point", key),
             tolerance: None,
+            native_ref: None,
         });
         ir.geometry.curves.push(Curve {
             parameter_range: None,
@@ -83,6 +87,7 @@ pub fn cylinder_with_curve_sources(
                 CircleCurve::try_new(Point3::new(0.0, 0.0, z), axis, reference, r).expect("circle"),
             )),
             source_object: curve_source(key),
+            native_ref: None,
         });
         ir.geometry.edges.push(closed_edge(key, key, key));
         ir.geometry.surfaces.push(Surface {
@@ -91,6 +96,7 @@ pub fn cylinder_with_curve_sources(
                 PlaneSurface::try_new(Point3::new(0.0, 0.0, z), axis, reference).expect("plane"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     ir.geometry.curves.push(Curve {
@@ -100,14 +106,18 @@ pub fn cylinder_with_curve_sources(
             LineCurve::try_new(Point3::new(r, 0.0, 0.0), axis).expect("line"),
         )),
         source_object: curve_source("seam"),
+        native_ref: None,
     });
     ir.geometry.edges.push(Edge {
         id: id(EdgeId::mint, "edge", "seam"),
         carrier: EdgeCarrier::new(Some(id(CurveId::mint, "curve", "seam")), Some([0.0, h]))
             .expect("bounded seam"),
-        start: id(VertexId::mint, "vertex", "bottom"),
-        end: id(VertexId::mint, "vertex", "top"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            id(VertexId::mint, "vertex", "bottom"),
+            id(VertexId::mint, "vertex", "top"),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: id(SurfaceId::mint, "surface", "side"),
@@ -116,6 +126,7 @@ pub fn cylinder_with_curve_sources(
                 .expect("cylinder"),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     // (coedge, loop, edge, sense, radial partner). The side ring runs
@@ -150,6 +161,7 @@ pub fn cylinder_with_curve_sources(
             sense,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
     }
 
@@ -175,6 +187,7 @@ pub fn cylinder_with_curve_sources(
                 )
                 .expect("non-empty ring"),
             ),
+            native_ref: None,
         });
         ir.geometry.faces.push(Face {
             id: id(FaceId::mint, "face", face),
@@ -185,35 +198,28 @@ pub fn cylinder_with_curve_sources(
             name: Some(face.to_owned()),
             color: None,
             tolerance: None,
+            native_ref: None,
         });
     }
 
-    ir.geometry.shells.push(
-        Shell::new(
-            id(ShellId::mint, "shell", "cylinder"),
-            id(RegionId::mint, "region", "cylinder"),
-            faces
-                .iter()
-                .map(|(face, ..)| id(FaceId::mint, "face", face))
-                .collect(),
-            Vec::new(),
-            Vec::new(),
-        )
-        .expect("shell with faces"),
-    );
+    ir.geometry.shells.push(Shell::new(
+        id(ShellId::mint, "shell", "cylinder"),
+        id(RegionId::mint, "region", "cylinder"),
+    ));
     ir.geometry.regions.push(Region {
         id: id(RegionId::mint, "region", "cylinder"),
         body: id(BodyId::mint, "body", "cylinder"),
         shells: vec![id(ShellId::mint, "shell", "cylinder")],
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: id(BodyId::mint, "body", "cylinder"),
         kind: BodyKind::Solid,
-        regions: vec![id(RegionId::mint, "region", "cylinder")],
         transform: None,
         name: Some("cylinder".into()),
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.finalize();
     ir

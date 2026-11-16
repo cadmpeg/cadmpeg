@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
 const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-12;
@@ -304,14 +303,9 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
         let result = decode(&archive_version(version, &[object]));
         assert_eq!(result.ir().geometry.subds.len(), 1, "archive {version}");
         assert_eq!(
-            wire::field::<Vec<subd::SubdEdgeUse>>(
-                &(wire::field::<Vec<subd::SubdFace>>(
-                    &(result.ir().geometry.subds[0].cage),
-                    "faces"
-                )[0]),
-                "edges"
-            )
-            .len(),
+            result.ir().geometry.subds[0].cage.faces()[0]
+                .edge_uses()
+                .count(),
             4
         );
         assert!(!result
@@ -824,11 +818,9 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     let shell = &geometry.shells[0];
     let face = &geometry.faces[0];
     let loop_record = &geometry.loops[0];
-    assert_eq!(body.regions, vec![region.id.clone()]);
     assert_eq!(region.body, body.id);
     assert_eq!(region.shells, vec![shell.id.clone()]);
     assert_eq!(shell.region, region.id);
-    assert_eq!(shell.faces(), vec![face.id.clone()]);
     assert_eq!(face.shell, shell.id);
     assert_eq!(face.loops, vec![loop_record.id.clone()]);
     assert_eq!(loop_record.face, face.id);

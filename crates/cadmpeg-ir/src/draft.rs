@@ -1263,6 +1263,7 @@ mod tests {
                 id: id.try_into().expect("valid identity"),
                 point: point.try_into().expect("valid identity"),
                 tolerance: None,
+                native_ref: None,
             })
             .expect("insert vertex into draft");
         draft
@@ -1480,6 +1481,7 @@ mod tests {
             id: owner.try_into().expect("valid identity"),
             point: target.try_into().expect("valid identity"),
             tolerance: None,
+            native_ref: None,
         });
         let mut ir = CadIr::empty();
 
@@ -1674,6 +1676,7 @@ mod tests {
                     .try_into()
                     .expect("valid identity"),
                 tolerance: None,
+                native_ref: None,
             })
             .expect("insert rejected vertex");
         assert!(!session.contains(rejected_identity).unwrap());

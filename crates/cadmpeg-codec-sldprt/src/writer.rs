@@ -984,16 +984,10 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .bodies
         .retain(|body| selected.contains(&body.id));
-    let regions = subset
-        .geometry
-        .bodies
-        .iter()
-        .flat_map(|body| body.regions.iter().cloned())
-        .collect::<HashSet<_>>();
     subset
         .geometry
         .regions
-        .retain(|region| regions.contains(&region.id));
+        .retain(|region| selected.contains(&region.body));
     let shells = subset
         .geometry
         .regions
@@ -1004,16 +998,10 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .shells
         .retain(|shell| shells.contains(&shell.id));
-    let faces = subset
-        .geometry
-        .shells
-        .iter()
-        .flat_map(|shell| shell.faces().iter().cloned())
-        .collect::<HashSet<_>>();
     subset
         .geometry
         .faces
-        .retain(|face| faces.contains(&face.id));
+        .retain(|face| shells.contains(&face.shell));
     let loops = subset
         .geometry
         .faces
@@ -1041,7 +1029,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .map(|coedge| coedge.edge.clone())
         .collect::<HashSet<_>>();
     for shell in &subset.geometry.shells {
-        edges.extend(shell.wire_edges().iter().cloned());
+        edges.extend(shell.wire_edges().cloned());
     }
     subset
         .geometry
@@ -1051,10 +1039,10 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .edges
         .iter()
-        .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
+        .flat_map(|edge| edge.vertices().cloned())
         .collect::<HashSet<_>>();
     for shell in &subset.geometry.shells {
-        vertices.extend(shell.free_vertices().iter().cloned());
+        vertices.extend(shell.free_vertices().cloned());
     }
     subset
         .geometry
@@ -2958,8 +2946,8 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     let mut out = b"moVisualProperties_c".to_vec();
     // Every `Color` construction path admits components in [0, 1], so the
     // rounded product is in [0, 255].
-    let component = |value: f32| {
-        truncate_f64_to_u8(f64::from((value * 255.0).round())).ok_or_else(|| {
+    let component = |value: f64| {
+        truncate_f64_to_u8((value * 255.0).round()).ok_or_else(|| {
             CodecError::Malformed("SLDPRT material color component is out of range".into())
         })
     };
@@ -3175,10 +3163,11 @@ pub(crate) fn brep_body(
         be16(&mut out, vertex_owners[&vertex.id]);
     }
     for edge in &ir.geometry.edges {
+        let ends = edge_ends(edge)?;
         let owner = vertex_owners
-            .get(&edge.start)
+            .get(&ends.start)
             .ok_or_else(|| CodecError::Malformed("SLDPRT EDGE start has no BODY owner".into()))?;
-        if vertex_owners.get(&edge.end) != Some(owner) {
+        if vertex_owners.get(&ends.end) != Some(owner) {
             return Err(CodecError::NotImplemented(
                 "SLDPRT EDGE endpoints do not have one BODY owner".into(),
             ));
@@ -3212,10 +3201,11 @@ pub(crate) fn brep_body(
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .ok_or_else(|| CodecError::Malformed("coedge references missing edge".into()))?;
+        let ends = edge_ends(edge)?;
         let forward_vertex = if coedge.sense == Sense::Forward {
-            &edge.end
+            &ends.end
         } else {
-            &edge.start
+            &ends.start
         };
         let (next, previous) =
             cadmpeg_ir::topology::coedge_ring_neighbors(&ir.geometry.loops, coedge).ok_or_else(
@@ -3356,20 +3346,11 @@ fn write_body_hierarchy(
         .iter()
         .map(|shell| (shell.id.clone(), shell))
         .collect::<HashMap<_, _>>();
-    let regions = ir
-        .geometry
-        .regions
-        .iter()
-        .map(|region| (region.id.clone(), region))
-        .collect::<HashMap<_, _>>();
     let mut assigned = HashSet::new();
     for body in &ir.geometry.bodies {
         let root = take_attr(next)?;
         let mut native_regions = Vec::new();
-        for region_id in &body.regions {
-            let region = regions
-                .get(region_id)
-                .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
+        for region in ir.geometry.body_regions(&body.id) {
             if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT sheet regions require exactly one shell".into(),
@@ -3383,7 +3364,8 @@ fn write_body_hierarchy(
                     CodecError::Malformed("region references missing shell".into())
                 })?;
                 let mut owned = Vec::new();
-                for face in shell.faces() {
+                for face in ir.geometry.shell_faces(&shell.id) {
+                    let face = &face.id;
                     if !faces.contains_key(face) {
                         return Err(CodecError::Malformed(
                             "shell references missing face".into(),
@@ -3494,30 +3476,23 @@ fn write_typed_body_hierarchy(
         .map(|shell| Ok((shell.id.clone(), take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut face_shells = HashMap::new();
-    for shell in &ir.geometry.shells {
-        let shell_attr = shell_attrs[&shell.id];
-        for face in shell.faces() {
-            if face_shells.insert(face.clone(), shell_attr).is_some() {
-                return Err(CodecError::Malformed(
-                    "face belongs to multiple typed shells".into(),
-                ));
-            }
+    for face in &ir.geometry.faces {
+        if let Some(shell_attr) = shell_attrs.get(&face.shell) {
+            face_shells.insert(face.id.clone(), *shell_attr);
         }
     }
 
     for (index, body) in ir.geometry.bodies.iter().enumerate() {
         let body_attr = body_attrs[&body.id];
-        let first_region = body
-            .regions
-            .first()
-            .ok_or_else(|| CodecError::Malformed("body has no typed region".into()))?;
-        let first_region = region_attrs[first_region];
-        let first_shell = ir
+        let first_body_region = ir
             .geometry
-            .regions
-            .iter()
-            .find(|region| region.id.as_str() == body.regions[0].as_str())
-            .and_then(|region| region.shells.first())
+            .body_regions(&body.id)
+            .next()
+            .ok_or_else(|| CodecError::Malformed("body has no typed region".into()))?;
+        let first_region = region_attrs[&first_body_region.id];
+        let first_shell = first_body_region
+            .shells
+            .first()
             .map(|shell| shell_attrs[shell])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
         typed_prefix(
@@ -3594,23 +3569,20 @@ fn write_typed_body_hierarchy(
         let body = body_attrs[&region.body];
         let body_regions = ir
             .geometry
-            .bodies
-            .iter()
-            .find(|candidate| candidate.id == region.body)
-            .ok_or_else(|| CodecError::Malformed("typed region has no body".into()))?;
+            .body_regions(&region.body)
+            .map(|candidate| &candidate.id)
+            .collect::<Vec<_>>();
         let position = body_regions
-            .regions
             .iter()
-            .position(|candidate| candidate == &region.id)
+            .position(|candidate| *candidate == &region.id)
             .ok_or_else(|| CodecError::Malformed("body does not reference typed region".into()))?;
         let next_region = body_regions
-            .regions
             .get(position + 1)
-            .map_or(1, |id| region_attrs[id]);
+            .map_or(1, |id| region_attrs[*id]);
         let previous_region = position
             .checked_sub(1)
-            .and_then(|position| body_regions.regions.get(position))
-            .map_or(1, |id| region_attrs[id]);
+            .and_then(|position| body_regions.get(position))
+            .map_or(1, |id| region_attrs[*id]);
         let shell_head = region
             .shells
             .first()
@@ -3731,7 +3703,7 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     be32(out, 3);
     be16(out, attr);
     for value in [color.r(), color.g(), color.b()] {
-        bef64(out, f64::from(value));
+        bef64(out, value);
     }
 }
 
@@ -4735,6 +4707,18 @@ mod nurbs_write_tests {
                     && message.contains("knot multiplicity")
         ));
     }
+}
+
+/// The two vertices that bound an edge. A `SolidWorks` edge record names both.
+fn edge_ends(
+    edge: &cadmpeg_ir::topology::Edge,
+) -> Result<&cadmpeg_ir::topology::EdgeEnds, CodecError> {
+    edge.ends.as_ref().ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT writer does not encode edge {} with no vertex",
+            edge.id
+        ))
+    })
 }
 
 #[cfg(test)]

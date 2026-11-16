@@ -23,6 +23,7 @@ fn line_in_nurbs_carrier() -> (CadIr, CurveId) {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
         source_object: None,
+        native_ref: None,
     });
     (ir, curve_id)
 }

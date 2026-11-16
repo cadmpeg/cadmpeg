@@ -82,22 +82,38 @@
             ],
             "faces": [
               {
-                "edges": [
+                "sides": [
                   {
-                    "edge": 0,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 0,
+                        "reversed": false
+                      }
+                    ]
                   },
                   {
-                    "edge": 1,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 1,
+                        "reversed": false
+                      }
+                    ]
                   },
                   {
-                    "edge": 2,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 2,
+                        "reversed": false
+                      }
+                    ]
                   },
                   {
-                    "edge": 3,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 3,
+                        "reversed": false
+                      }
+                    ]
                   }
                 ]
               }

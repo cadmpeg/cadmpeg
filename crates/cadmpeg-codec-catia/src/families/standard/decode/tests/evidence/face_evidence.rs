@@ -62,6 +62,7 @@ fn standard_free_vertex_owner_limit_refuses_before_shell_creation() {
         id: VertexId::mint("catia:test:vertex#v").expect("identity grammar"),
         point: PointId::mint("catia:test:point#p").expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     });
     let mut annotations = AnnotationBuilder::new();
     crate::test_support::with_entity_limit(0, |ctx| {
@@ -89,6 +90,7 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
         id: VertexId::mint("catia:test:vertex#v".to_string()).expect("identity grammar"),
         point: PointId::mint("catia:test:point#p".to_string()).expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     });
     let mut annotations = AnnotationBuilder::new();
     crate::test_support::with_service_context(|ctx| {
@@ -100,7 +102,10 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
     assert_eq!(ir.geometry.regions.len(), 1);
     assert_eq!(ir.geometry.shells.len(), 1);
     assert_eq!(
-        ir.geometry.shells[0].free_vertices(),
+        ir.geometry.shells[0]
+            .free_vertices()
+            .cloned()
+            .collect::<Vec<_>>(),
         [VertexId::mint("catia:test:vertex#v".to_string()).expect("identity grammar")]
     );
 }
@@ -121,6 +126,7 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
     }
     let bindings = [
@@ -249,6 +255,7 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     let bindings = [
@@ -325,6 +332,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     let bindings = [
@@ -407,6 +415,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     let bindings = [
@@ -603,13 +612,14 @@ fn free_vertices_attach_to_a_shell() {
         id: VertexId::mint("catia:test:vertex#limit").expect("identity grammar"),
         point: PointId::mint("catia:test:point#limit").expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     });
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         attach_free_vertices(&mut ir, &mut AnnotationBuilder::new(), &mut admission)
     })
     .expect("attach free vertices");
-    assert_eq!(ir.geometry.shells[0].free_vertices().len(), 1);
+    assert_eq!(ir.geometry.shells[0].free_vertices().count(), 1);
 }
 
 #[test]
@@ -690,7 +700,10 @@ fn standard_face_attachment_mints_face_body_region_and_shell_ids() {
         ir.geometry.shells[0].id.as_str(),
         "catia:standard:shell#0-0"
     );
-    assert_eq!(ir.geometry.shells[0].faces().len(), 1);
+    assert_eq!(
+        ir.geometry.shell_faces(&ir.geometry.shells[0].id).count(),
+        1
+    );
 }
 
 #[test]
@@ -749,7 +762,13 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
         "catia:standard:shell#0-1"
     );
     assert_eq!(
-        base_ir.geometry.shells[1].faces()[0].as_str(),
+        base_ir
+            .geometry
+            .shell_faces(&base_ir.geometry.shells[1].id)
+            .next()
+            .expect("shell face")
+            .id
+            .as_str(),
         "catia:standard:face#1"
     );
 }

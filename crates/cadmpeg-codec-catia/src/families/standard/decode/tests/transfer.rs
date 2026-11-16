@@ -48,17 +48,17 @@ const EPS_TRANSFER_PLANE_FRAME: f64 = 1.0e-6;
 fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
     use super::super::StandardPopulationScope;
     use cadmpeg_ir::document::EntityRewrite;
-    use cadmpeg_ir::ids::{BodyId, RegionId};
+    use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
     let source_id = "catia:standard:body#source";
     let body = Body {
         id: BodyId::mint(source_id).unwrap(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("catia:standard:region#source").unwrap()],
         transform: None,
         name: Some(source_id.into()),
         color: None,
         visible: None,
+        native_ref: None,
     };
     let scoped = crate::test_support::with_service_context(|ctx| {
         StandardPopulationScope {
@@ -71,10 +71,6 @@ fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
     assert_eq!(
         scoped.id.as_str(),
         "catia:standard:population-1/body#source"
-    );
-    assert_eq!(
-        scoped.regions[0].as_str(),
-        "catia:standard:population-1/region#source"
     );
     assert_eq!(scoped.name.as_deref(), Some(source_id));
 }
@@ -243,7 +239,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         result.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert_eq!(result.ir().geometry.shells[0].free_vertices().len(), 3);
+    assert_eq!(result.ir().geometry.shells[0].free_vertices().count(), 3);
     assert!(result.ir().geometry.edges.is_empty());
     assert!(result
         .report()
@@ -1089,11 +1085,11 @@ fn population_scope_prefixes_rewritten_body_ids() {
     let body = Body {
         id: BodyId::mint("catia:standard:body#0").expect("identity"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     let admitted = crate::test_support::with_service_context(|ctx| {
         StandardPopulationScope {

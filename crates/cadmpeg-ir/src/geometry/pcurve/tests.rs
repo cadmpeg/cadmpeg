@@ -338,6 +338,7 @@ fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
             )
             .unwrap(),
         },
+        native_ref: None,
     };
     let value = serde_json::to_value(&pcurve).unwrap();
     assert_eq!(

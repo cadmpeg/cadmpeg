@@ -9,7 +9,7 @@ const EPS_AREA_SUM: f64 = 1e-10;
 fn sole_surface_owner_respects_its_planar_trim() {
     let mut ir = super::model_with_body();
     let face = super::add_square_face(&mut ir, "bounded", 0.);
-    super::set_shell_faces(&mut ir, vec![face]);
+    super::set_shell_faces(&mut ir, &[face]);
     ir.model.tessellations.push(
         cadmpeg_ir::tessellation::Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#outside")
@@ -56,7 +56,7 @@ fn owner_work_cap_leaves_tables_unassigned_and_names_the_bound() {
     let ir = || {
         let mut ir = super::model_with_body();
         let face = super::add_square_face(&mut ir, "bounded", 0.);
-        super::set_shell_faces(&mut ir, vec![face]);
+        super::set_shell_faces(&mut ir, &[face]);
         ir.model
             .tessellations
             .push(mesh("synthetic:test:tessellation#first"));

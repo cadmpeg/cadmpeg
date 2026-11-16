@@ -346,33 +346,33 @@ mod tests {
     fn graph_follows_array_of_ids() {
         let document = doc(&json!({
             "geometry": {
-                "bodies": [{"id": "b1", "regions": ["r1", "r2"]}],
-                "regions": [{"id": "r1"}, {"id": "r2"}]
+                "regions": [{"id": "r1", "shells": ["s1", "s2"]}],
+                "shells": [{"id": "s1"}, {"id": "s2"}]
             }
         }));
-        let results = walk_ids(&document, "bodies", &["b1"], 1, None, false);
+        let results = walk_ids(&document, "regions", &["r1"], 1, None, false);
         let mut ids = reached_ids(&results);
         ids.sort();
-        assert_eq!(ids, vec!["b1", "r1", "r2"]);
-        assert_eq!(paths_to(&results, "r1"), vec![vec!["regions"]]);
-        assert_eq!(paths_to(&results, "r2"), vec![vec!["regions"]]);
+        assert_eq!(ids, vec!["r1", "s1", "s2"]);
+        assert_eq!(paths_to(&results, "s1"), vec![vec!["shells"]]);
+        assert_eq!(paths_to(&results, "s2"), vec![vec!["shells"]]);
     }
 
     #[test]
     fn graph_hops_1_vs_2() {
         let document = doc(&json!({
             "geometry": {
-                "bodies": [{"id": "b1", "regions": ["r1"]}],
-                "regions": [{"id": "r1", "shells": ["s1"]}],
-                "shells": [{"id": "s1"}]
+                "faces": [{"id": "f1", "loops": ["l1"]}],
+                "loops": [{"id": "l1", "coedges": ["c1"]}],
+                "coedges": [{"id": "c1"}]
             }
         }));
-        let h1 = walk_ids(&document, "bodies", &["b1"], 1, None, false);
-        assert_eq!(reached_ids(&h1), vec!["b1", "r1"]);
-        let h2 = walk_ids(&document, "bodies", &["b1"], 2, None, false);
-        assert_eq!(reached_ids(&h2), vec!["b1", "r1", "s1"]);
-        let h0 = walk_ids(&document, "bodies", &["b1"], 0, None, false);
-        assert_eq!(reached_ids(&h0), vec!["b1"]);
+        let h1 = walk_ids(&document, "faces", &["f1"], 1, None, false);
+        assert_eq!(reached_ids(&h1), vec!["f1", "l1"]);
+        let h2 = walk_ids(&document, "faces", &["f1"], 2, None, false);
+        assert_eq!(reached_ids(&h2), vec!["f1", "l1", "c1"]);
+        let h0 = walk_ids(&document, "faces", &["f1"], 0, None, false);
+        assert_eq!(reached_ids(&h0), vec!["f1"]);
         assert!(h0[0]["path"].as_array().unwrap().is_empty());
     }
 

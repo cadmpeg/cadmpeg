@@ -93,16 +93,14 @@ fn disconnected_cycles_become_separate_open_sheet_bodies() {
     assert_eq!(ir.geometry.loops.len(), 2);
     assert_eq!(ir.geometry.regions.len(), 2);
     assert_eq!(ir.geometry.shells.len(), 2);
-    assert!(ir
-        .geometry
-        .bodies
-        .iter()
-        .all(|body| body.kind == BodyKind::Sheet && body.regions.len() == 1));
+    assert!(ir.geometry.bodies.iter().all(
+        |body| body.kind == BodyKind::Sheet && ir.geometry.body_regions(&body.id).count() == 1
+    ));
     assert!(ir
         .geometry
         .shells
         .iter()
-        .all(|shell| shell.faces().len() == 1));
+        .all(|shell| ir.geometry.shell_faces(&shell.id).count() == 1));
     assert!(ir
         .geometry
         .coedges
@@ -164,8 +162,14 @@ fn reversed_use_preserves_native_line_and_endpoint_parameterization() {
             .position()
             .get()
     };
-    assert_eq!(point(&edge.start), Point3::new(4.0, 0.0, 0.0));
-    assert_eq!(point(&edge.end), Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(
+        point(&edge.ends.as_ref().expect("edge has vertices").start),
+        Point3::new(4.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        point(&edge.ends.as_ref().expect("edge has vertices").end),
+        Point3::new(0.0, 0.0, 0.0)
+    );
     assert_eq!(ir.geometry.coedges[0].sense, Sense::Reversed);
     assert_eq!(ir.geometry.faces[0].sense, Sense::Forward);
     validate(&mut ir, &annotations);

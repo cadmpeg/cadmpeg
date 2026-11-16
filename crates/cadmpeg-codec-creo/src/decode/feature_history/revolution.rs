@@ -274,6 +274,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -339,6 +340,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                             layer: None,
                             instance_path: Vec::new(),
                         }),
+                        native_ref: None,
                     },
                 )?;
                 transferred += 1;
@@ -456,6 +458,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             source_carriers.admit_procedural_surface(
@@ -604,6 +607,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -702,6 +706,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;

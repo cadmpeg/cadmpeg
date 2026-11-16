@@ -84,8 +84,8 @@ fn assert_closed_cylinder(brep: &str) {
     let [shell] = ir.geometry.shells.as_slice() else {
         panic!("one closed shell");
     };
-    assert_eq!(shell.faces().len(), 3);
-    let [wire_edge] = shell.wire_edges() else {
+    assert_eq!(ir.geometry.shell_faces(&shell.id).count(), 3);
+    let [wire_edge] = shell.wire_edges().collect::<Vec<_>>()[..] else {
         panic!("additional edge remains shell wire geometry");
     };
     let edge = ir
@@ -94,7 +94,10 @@ fn assert_closed_cylinder(brep: &str) {
         .iter()
         .find(|edge| &edge.id == wire_edge)
         .unwrap();
-    assert_ne!(edge.start, edge.end);
+    assert_ne!(
+        edge.ends.as_ref().unwrap().start,
+        edge.ends.as_ref().unwrap().end
+    );
     assert!(edge.curve().is_some());
     assert!(ir
         .geometry
@@ -122,8 +125,14 @@ fn assert_closed_cylinder(brep: &str) {
                     .find(|edge| edge.id == coedge.edge)
                     .unwrap();
                 match coedge.sense {
-                    Sense::Forward => (&edge.start, &edge.end),
-                    Sense::Reversed => (&edge.end, &edge.start),
+                    Sense::Forward => (
+                        &edge.ends.as_ref().unwrap().start,
+                        &edge.ends.as_ref().unwrap().end,
+                    ),
+                    Sense::Reversed => (
+                        &edge.ends.as_ref().unwrap().end,
+                        &edge.ends.as_ref().unwrap().start,
+                    ),
                 }
             })
             .collect();
@@ -212,7 +221,10 @@ fn an_internal_use_of_a_boundary_edge_keeps_one_edge_owner() {
     assert_valid_document(decoded.ir());
     assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Solid);
     assert_eq!(decoded.ir().geometry.edges.len(), 3);
-    assert!(decoded.ir().geometry.shells[0].wire_edges().is_empty());
+    assert!(decoded.ir().geometry.shells[0]
+        .wire_edges()
+        .next()
+        .is_none());
 }
 
 #[test]
@@ -222,5 +234,5 @@ fn a_face_root_keeps_its_internal_edge_as_shell_wire_geometry() {
     assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Sheet);
     assert_eq!(decoded.ir().geometry.faces.len(), 1);
     assert_eq!(decoded.ir().geometry.loops.len(), 1);
-    assert_eq!(decoded.ir().geometry.shells[0].wire_edges().len(), 1);
+    assert_eq!(decoded.ir().geometry.shells[0].wire_edges().count(), 1);
 }

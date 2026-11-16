@@ -192,7 +192,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
             Some((
                 table_index,
                 [color.r(), color.g(), color.b()]
-                    .map(|value| truncate_f64_to_u8(f64::from((value * 255.0).round())).unwrap()),
+                    .map(|value| truncate_f64_to_u8((value * 255.0).round()).unwrap()),
             ))
         })
         .collect::<Vec<_>>();
@@ -200,7 +200,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
     colors.into_iter().map(|(_, color)| color).collect()
 }
 
-const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+const EPS_COLOR_COMPONENT: f64 = 1.0e-6;
 
 #[test]
 fn packed_rgb_uses_low_to_high_red_green_blue_bytes() {

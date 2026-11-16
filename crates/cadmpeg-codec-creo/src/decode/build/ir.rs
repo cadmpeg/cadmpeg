@@ -266,6 +266,7 @@ fn transfer_reference_lines(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -348,6 +349,7 @@ fn transfer_reference_circles(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -433,6 +435,7 @@ fn transfer_reference_ellipses(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -619,6 +622,7 @@ fn transfer_datum_plane_surfaces(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -741,6 +745,7 @@ fn transfer_placed_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }

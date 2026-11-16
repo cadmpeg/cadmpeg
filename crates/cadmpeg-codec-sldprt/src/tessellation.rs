@@ -2216,8 +2216,8 @@ fn closed_planar_circle(
     let center = circle_curve.center().get();
     let axis = *circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
-    let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
-    let end_point = *points.get(&vertices.get(&edge.end)?.point)?;
+    let boundary_point = *points.get(&vertices.get(edge.start()?)?.point)?;
+    let end_point = *points.get(&vertices.get(edge.end()?)?.point)?;
     if radius <= tolerance
         || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
         || analytic_surface_residual(surface.solved()?, center)? > tolerance
@@ -2521,9 +2521,10 @@ fn planar_trim(
             if coedge.owner_loop != loop_.id {
                 return None;
             }
+            let ends = edge.ends.as_ref()?;
             let (start, end) = match coedge.sense {
-                Sense::Forward => (&edge.start, &edge.end),
-                Sense::Reversed => (&edge.end, &edge.start),
+                Sense::Forward => (&ends.start, &ends.end),
+                Sense::Reversed => (&ends.end, &ends.start),
             };
             let start = *points.get(&vertices.get(start)?.point)?;
             let end = *points.get(&vertices.get(end)?.point)?;
@@ -2759,7 +2760,7 @@ fn cylindrical_trim(
             }
             _ => return None,
         }
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             let vertex = vertices.get(vertex_id)?;
             let point = *points.get(&vertex.point)?;
             if analytic_surface_residual(surface.solved()?, point)? > tolerance {
@@ -2780,7 +2781,7 @@ fn cylindrical_trim(
     for coedge_id in loop_.coedges() {
         let coedge = coedges.get(coedge_id)?;
         let edge = edges.get(&coedge.edge)?;
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             let vertex = vertices.get(vertex_id)?;
             let point = *points.get(&vertex.point)?;
             let angle = cylinder_angle(point, origin, &frame)?;
@@ -2917,7 +2918,7 @@ fn conical_trim(
             }
             _ => return None,
         }
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             let vertex = vertices.get(vertex_id)?;
             let point = *points.get(&vertex.point)?;
             if analytic_surface_residual(surface.solved()?, point)? > tolerance {

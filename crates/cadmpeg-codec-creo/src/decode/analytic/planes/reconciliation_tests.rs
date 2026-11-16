@@ -66,6 +66,7 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
                     .expect("source plane"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         )
     })
@@ -289,6 +290,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             .expect("valid CircleCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     let transferred = crate::decode::with_service_context(|ctx| {
@@ -397,6 +399,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
                 None,
             ),
             source_object: None,
+            native_ref: None,
         });
     }
 

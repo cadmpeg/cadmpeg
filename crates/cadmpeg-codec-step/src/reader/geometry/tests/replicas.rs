@@ -416,11 +416,13 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
         id: CurveId::mint("test:model:curve#transformed-curve").expect("identity grammar"),
         geometry: CurveGeometry::Solved(curve_geometry.clone()),
         source_object: None,
+        native_ref: None,
     });
     source.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#transformed-surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(surface_geometry.clone()),
         source_object: None,
+        native_ref: None,
     });
 
     let mut output = Vec::new();

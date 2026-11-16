@@ -6,10 +6,7 @@
       "bodies": [
         {
           "id": "sat:brep:entity#1",
-          "kind": "solid",
-          "regions": [
-            "sat:brep:entity#2"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [],
@@ -44,12 +41,7 @@
       "shells": [
         {
           "id": "sat:brep:entity#3",
-          "members": [
-            {
-              "id": "sat:brep:entity#4",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "sat:brep:entity#2"
         }
       ],

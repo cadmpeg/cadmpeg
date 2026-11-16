@@ -58,6 +58,7 @@ fn oblique_extrusion(unknown_cache: bool) -> CadIr {
         )),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
