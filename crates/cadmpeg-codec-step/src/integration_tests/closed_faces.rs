@@ -45,6 +45,7 @@ fn solid(ir: &mut CadIr, surfaces: Vec<(SolvedSurfaceGeometry, Sense)>) {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.faces.push(Face {
             id: face.clone(),
@@ -55,25 +56,27 @@ fn solid(ir: &mut CadIr, surfaces: Vec<(SolvedSurfaceGeometry, Sense)>) {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         ir.geometry
             .shells
-            .push(Shell::with_face(shell.clone(), region.clone(), face));
+            .push(Shell::new(shell.clone(), region.clone()));
         shells.push(shell);
     }
     ir.geometry.regions.push(Region {
         id: region.clone(),
         body: body.clone(),
         shells,
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::Solid,
-        regions: vec![region],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
 }
 
@@ -183,6 +186,7 @@ fn pole_pair(ir: &mut CadIr, height: f64) {
             id: vertex.clone(),
             point,
             tolerance: None,
+            native_ref: None,
         });
         ir.geometry.loops.push(Loop {
             id: lp.clone(),
@@ -191,6 +195,7 @@ fn pole_pair(ir: &mut CadIr, height: f64) {
                 vertex,
                 pcurves: Vec::new(),
             },
+            native_ref: None,
         });
         let mut loops: Vec<_> = ir.geometry.faces[0].loops.iter().cloned().collect();
         loops.push(lp);

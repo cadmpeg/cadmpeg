@@ -248,7 +248,7 @@ fn face_vertices(ir: &CadIr) -> Vec<Option<Vec<Point3>>> {
                 for coedge_id in boundary.coedges() {
                     let coedge = coedges.get(coedge_id.as_str())?;
                     let edge = edges.get(coedge.edge.as_str())?;
-                    for id in [&edge.start, &edge.end] {
+                    for id in edge.vertices() {
                         add_vertex(id)?;
                     }
                 }
@@ -286,6 +286,7 @@ mod tests {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: None,
+            native_ref: None,
         });
         ir.geometry.loops.push(Loop {
             id: loop_id.clone(),
@@ -294,6 +295,7 @@ mod tests {
                 vertex: vertex_id,
                 pcurves: Vec::new(),
             },
+            native_ref: None,
         });
         ir.geometry.faces.push(Face {
             id: face_id,
@@ -304,6 +306,7 @@ mod tests {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         let witnesses = face_vertices(&ir);
         let [Some(points)] = witnesses.as_slice() else {

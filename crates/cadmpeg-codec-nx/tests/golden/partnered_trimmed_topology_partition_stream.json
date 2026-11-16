@@ -7,10 +7,7 @@
         "bodies": [
           {
             "id": "nx:s0:body#2",
-            "kind": "solid",
-            "regions": [
-              "nx:s0:region#12"
-            ]
+            "kind": "solid"
           }
         ],
         "coedges": [
@@ -61,9 +58,11 @@
                 0.75
               ]
             },
-            "end": "nx:s0:vertex#23",
+            "ends": {
+              "end": "nx:s0:vertex#23",
+              "start": "nx:s0:vertex#10"
+            },
             "id": "nx:s0:edge#8",
-            "start": "nx:s0:vertex#10",
             "tolerance": 0.3
           }
         ],
@@ -152,16 +151,7 @@
         "shells": [
           {
             "id": "nx:s0:shell#3",
-            "members": [
-              {
-                "id": "nx:s0:face#4",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#20",
-                "kind": "face"
-              }
-            ],
+            "members": [],
             "region": "nx:s0:region#12"
           }
         ],

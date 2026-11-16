@@ -190,6 +190,7 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.points.extend([
         Point::new(
@@ -222,22 +223,26 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
             id: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#matching-start-point")
                 .expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         },
     ]);
     ir.geometry.edges.extend([
@@ -248,9 +253,12 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
                 Some([5.0, 6.0]),
             )
             .unwrap(),
-            start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+                VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
@@ -259,9 +267,12 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
                 Some([0.0, 2.0]),
             )
             .unwrap(),
-            start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+                VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         },
     ]);
 
@@ -490,7 +501,7 @@ fn decode_maps_absolute_arc_parameters_to_the_neutral_domain() {
         .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == edge.start)
+        .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
         .and_then(|vertex| {
             result
                 .ir()

@@ -280,6 +280,7 @@ fn cube_with_one_coedge_pcurve(
         id: id.clone(),
         geometry,
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     });
     let coedge = ir
         .geometry
@@ -552,6 +553,7 @@ fn carrier_reachability_preserves_orphan_arena_order() {
         id: "test:model:pcurve#orphan".try_into().unwrap(),
         geometry: line_pcurve_leaf(),
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     });
     let mut point = ir.geometry.points[0].clone();
     point.id = "test:model:point#orphan".try_into().unwrap();
@@ -596,6 +598,7 @@ fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
             )),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         let edge = ir.geometry.edges[0].clone();
         let curve = edge.curve().unwrap().clone();

@@ -25,6 +25,7 @@ fn resolved_hole_face() -> Face {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     }
 }
 
@@ -168,6 +169,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     assert!(matches!(
         crate::decode::with_service_context(|ctx| schema_feature_definition(
@@ -239,6 +241,7 @@ fn plane_surface(origin_y: f64) -> Surface {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 

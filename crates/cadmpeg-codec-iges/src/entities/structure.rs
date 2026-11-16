@@ -1732,9 +1732,14 @@ fn plane_boundary_edge(
     )? {
         return Err(PlaneBoundaryError::NotCoplanar);
     }
-    let start =
-        vertex_position(index, &source_edge.start).ok_or(PlaneBoundaryError::MissingStart)?;
-    let end = vertex_position(index, &source_edge.end).ok_or(PlaneBoundaryError::MissingEnd)?;
+    let start = source_edge
+        .start()
+        .and_then(|vertex| vertex_position(index, vertex))
+        .ok_or(PlaneBoundaryError::MissingStart)?;
+    let end = source_edge
+        .end()
+        .and_then(|vertex| vertex_position(index, vertex))
+        .ok_or(PlaneBoundaryError::MissingEnd)?;
     if start.distance(end) > resolution {
         return Err(PlaneBoundaryError::NotClosed);
     }
@@ -1783,6 +1788,7 @@ fn plane_face_draft(
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
         let ring_coedges = vec![coedge_id];
         let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ring_coedges, Vec::new()) else {
@@ -1794,6 +1800,7 @@ fn plane_face_draft(
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+            native_ref: None,
         });
         loop_ids.push(loop_id);
     }
@@ -1814,16 +1821,9 @@ fn plane_face_draft(
         name: None,
         color: None,
         tolerance,
+        native_ref: None,
     });
-    let shell_faces = vec![face_id];
-    let shell = Shell::new(
-        shell_id.clone(),
-        region_id.clone(),
-        shell_faces,
-        Vec::new(),
-        Vec::new(),
-    )
-    .map_err(|_| LegacyPlaneError::Invalid("legacy plane shell is empty"))?;
+    let shell = Shell::new(shell_id.clone(), region_id.clone());
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.geometry_mut().shells.push(shell);
@@ -1834,18 +1834,18 @@ fn plane_face_draft(
         id: region_id.clone(),
         body: body_id.clone(),
         shells: region_shells,
+        native_ref: None,
     });
-    let body_regions = vec![region_id];
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.geometry_mut().bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
-        regions: body_regions,
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     candidate.model_mut().finalize();
     Ok(candidate)
@@ -1964,7 +1964,9 @@ fn legacy_single_parent_face(
                 .tail_index(boundary_index),
         );
         edge.id = edge_id.clone();
-        edge.end = edge.start.clone();
+        if let Some(ends) = &mut edge.ends {
+            ends.end = ends.start.clone();
+        }
         boundary_edges.push(edge);
     }
     let stem =
@@ -2927,7 +2929,9 @@ pub(super) fn project(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
                     ));
-                    edge.end = edge.start.clone();
+                    if let Some(ends) = &mut edge.ends {
+                        ends.end = ends.start.clone();
+                    }
                     let stem = crate::ids::Stem::word_directory(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,

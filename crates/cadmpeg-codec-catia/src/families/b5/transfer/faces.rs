@@ -374,9 +374,7 @@ pub(super) fn emit_faces(
         "single_body",
         Exactness::Inferred,
     )?;
-    for field in ["kind", "regions"] {
-        annotations.derived(body_id.as_str(), field)?;
-    }
+    annotations.derived(body_id.as_str(), "kind")?;
     let mut body_regions = Vec::new();
     for id in region_ids.values() {
         let id = id.clone();
@@ -387,11 +385,11 @@ pub(super) fn emit_faces(
     ir.geometry.bodies.push(Body {
         id: body_record_id,
         kind: ownership.body_kind,
-        regions: body_regions,
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     for (component_index, component_faces) in &components {
         let region_id = region_ids[component_index].clone();
@@ -419,6 +417,7 @@ pub(super) fn emit_faces(
             id: region_record_id,
             body: region_body_id,
             shells: region_shells,
+            native_ref: None,
         });
         annotate(
             annotations,
@@ -427,9 +426,7 @@ pub(super) fn emit_faces(
             "derived_shell",
             Exactness::Inferred,
         )?;
-        for field in ["region", "faces"] {
-            annotations.derived(shell_id.as_str(), field)?;
-        }
+        annotations.derived(shell_id.as_str(), "region")?;
         let mut shell_faces = Vec::new();
         for face in component_faces {
             let face_id = crate::resource::compose_u32_id(
@@ -440,14 +437,10 @@ pub(super) fn emit_faces(
             shell_faces.push(face_id);
         }
         admission.charge()?;
-        ir.geometry.shells.push(
-            match Shell::new(shell_id, region_id, shell_faces, Vec::new(), Vec::new()) {
-                Ok(shell) => shell,
-                Err(_) => {
-                    return Ok(false);
-                }
-            },
-        );
+        if shell_faces.is_empty() {
+            return Ok(false);
+        }
+        ir.geometry.shells.push(Shell::new(shell_id, region_id));
     }
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
@@ -487,6 +480,7 @@ pub(super) fn emit_faces(
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         for loop_id_value in &face.loops {
             let loop_ = &graph.loops[loop_id_value];
@@ -549,6 +543,7 @@ pub(super) fn emit_faces(
                 id: loop_record_id,
                 face: loop_face_id,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                native_ref: None,
             });
             for member in orientation.member_order() {
                 let edge = loop_.members[member].edge;
@@ -604,6 +599,7 @@ pub(super) fn emit_faces(
                     },
                     pcurves: coedge_pcurves,
                     use_curve: None,
+                    native_ref: None,
                 });
             }
         }

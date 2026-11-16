@@ -604,8 +604,14 @@ fn a_planar_face_loop_runs_counter_clockwise_about_its_normal() {
         let coedge = geometry.coedges.iter().find(|c| &c.id == id).unwrap();
         let edge = geometry.edges.iter().find(|e| e.id == coedge.edge).unwrap();
         let (start, end) = match coedge.sense {
-            cadmpeg_ir::topology::Sense::Forward => (&edge.start, &edge.end),
-            cadmpeg_ir::topology::Sense::Reversed => (&edge.end, &edge.start),
+            cadmpeg_ir::topology::Sense::Forward => (
+                &edge.ends.as_ref().unwrap().start,
+                &edge.ends.as_ref().unwrap().end,
+            ),
+            cadmpeg_ir::topology::Sense::Reversed => (
+                &edge.ends.as_ref().unwrap().end,
+                &edge.ends.as_ref().unwrap().start,
+            ),
         };
         let (a, b) = (position(start), position(end));
         twice_area += a.x * b.y - b.x * a.y;

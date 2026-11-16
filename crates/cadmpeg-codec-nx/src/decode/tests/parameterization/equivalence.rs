@@ -34,6 +34,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     let offsets = [
@@ -51,6 +52,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             construction,
@@ -77,6 +79,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         id: carrier.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     let _attached = ir.geometry.add_procedural_curve(
         &carrier,
@@ -209,6 +212,7 @@ fn cyclic_offset_supports_are_not_parameterization_equivalent() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             construction,

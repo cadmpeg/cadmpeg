@@ -21,6 +21,7 @@ fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry,
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -679,6 +680,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
             .expect("valid CircleCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut ir = CadIr::empty();
     ir.geometry.curves.extend([curve.clone(), curve]);

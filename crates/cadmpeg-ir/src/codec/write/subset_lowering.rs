@@ -235,7 +235,9 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
             edge.set_param_range(Some(map.interval(range.get())?));
         }
         if !map.forward {
-            std::mem::swap(&mut edge.start, &mut edge.end);
+            if let Some(ends) = &mut edge.ends {
+                std::mem::swap(&mut ends.start, &mut ends.end);
+            }
             reversed.insert(edge.id.clone());
         }
     }

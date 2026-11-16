@@ -259,6 +259,7 @@ mod full_turn_carrier_tests {
                 id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("surface ID"),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
+                native_ref: None,
             });
         };
         add(

@@ -125,6 +125,7 @@ fn rejection_occurs_before_output() {
                 .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let mut output = vec![0xaa];
     assert!(RhinoCodec
@@ -153,6 +154,7 @@ fn source_less_circle_round_trips_with_its_frame() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let mut bytes = Vec::new();
     RhinoCodec
@@ -206,6 +208,7 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
             .expect("valid rational curve"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let mut bytes = Vec::new();
     RhinoCodec
@@ -261,6 +264,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#nurbs").expect("identity grammar"),
@@ -289,6 +293,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
             .expect("valid rational surface"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.finalize();
     let expected = ir
@@ -601,34 +606,34 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
     ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: body_id.clone(),
         kind: cadmpeg_ir::topology::BodyKind::General,
-        regions: vec![region_id.clone()],
         transform: None,
         name: Some("survey points".into()),
         color: Some(
             cadmpeg_ir::topology::Color::new(1.0, 0.0, 128.0 / 255.0, 1.0).expect("valid color"),
         ),
         visible: Some(false),
+        native_ref: None,
     });
     ir.geometry.regions.push(cadmpeg_ir::topology::Region {
         id: region_id.clone(),
         body: body_id,
         shells: vec![shell_id.clone()],
+        native_ref: None,
     });
-    ir.geometry.shells.push(
-        cadmpeg_ir::topology::Shell::new(
+    ir.geometry
+        .shells
+        .push(cadmpeg_ir::topology::Shell::with_members(
             shell_id,
             region_id,
             Vec::new(),
-            Vec::new(),
             vertex_ids.to_vec(),
-        )
-        .unwrap(),
-    );
+        ));
     for (index, (vertex, point)) in vertex_ids.into_iter().zip(point_ids).enumerate() {
         ir.geometry.vertices.push(cadmpeg_ir::topology::Vertex {
             id: vertex,
             point: point.clone(),
             tolerance: None,
+            native_ref: None,
         });
         ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
             point,
@@ -783,6 +788,7 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
             .expect("valid periodic fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let mut output = vec![0xaa];
     assert!(RhinoCodec
@@ -883,6 +889,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         ))),
         parameter_range: None,
         source_object: Some(support),
+        native_ref: None,
     });
     let plan = RhinoCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)

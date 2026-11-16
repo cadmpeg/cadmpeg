@@ -7,9 +7,6 @@
         {
           "id": "iges:model:body#D109",
           "kind": "solid",
-          "regions": [
-            "iges:model:region#D109"
-          ],
           "visible": true
         }
       ],
@@ -602,9 +599,11 @@
               4.0
             ]
           },
-          "end": "iges:model:vertex#D109:D33:2",
-          "id": "iges:model:edge#D109:D35:1",
-          "start": "iges:model:vertex#D109:D33:1"
+          "ends": {
+            "end": "iges:model:vertex#D109:D33:2",
+            "start": "iges:model:vertex#D109:D33:1"
+          },
+          "id": "iges:model:edge#D109:D35:1"
         },
         {
           "carrier": {
@@ -614,9 +613,11 @@
               4.0
             ]
           },
-          "end": "iges:model:vertex#D109:D33:3",
-          "id": "iges:model:edge#D109:D35:2",
-          "start": "iges:model:vertex#D109:D33:1"
+          "ends": {
+            "end": "iges:model:vertex#D109:D33:3",
+            "start": "iges:model:vertex#D109:D33:1"
+          },
+          "id": "iges:model:edge#D109:D35:2"
         },
         {
           "carrier": {
@@ -626,9 +627,11 @@
               4.0
             ]
           },
-          "end": "iges:model:vertex#D109:D33:4",
-          "id": "iges:model:edge#D109:D35:3",
-          "start": "iges:model:vertex#D109:D33:1"
+          "ends": {
+            "end": "iges:model:vertex#D109:D33:4",
+            "start": "iges:model:vertex#D109:D33:1"
+          },
+          "id": "iges:model:edge#D109:D35:3"
         },
         {
           "carrier": {
@@ -638,9 +641,11 @@
               5.656854249492381
             ]
           },
-          "end": "iges:model:vertex#D109:D33:3",
-          "id": "iges:model:edge#D109:D35:4",
-          "start": "iges:model:vertex#D109:D33:2"
+          "ends": {
+            "end": "iges:model:vertex#D109:D33:3",
+            "start": "iges:model:vertex#D109:D33:2"
+          },
+          "id": "iges:model:edge#D109:D35:4"
         },
         {
           "carrier": {
@@ -650,9 +655,11 @@
               5.656854249492381
             ]
           },
-          "end": "iges:model:vertex#D109:D33:4",
-          "id": "iges:model:edge#D109:D35:5",
-          "start": "iges:model:vertex#D109:D33:2"
+          "ends": {
+            "end": "iges:model:vertex#D109:D33:4",
+            "start": "iges:model:vertex#D109:D33:2"
+          },
+          "id": "iges:model:edge#D109:D35:5"
         },
         {
           "carrier": {
@@ -662,9 +669,11 @@
               5.656854249492381
             ]
           },
-          "end": "iges:model:vertex#D109:D33:4",
-          "id": "iges:model:edge#D109:D35:6",
-          "start": "iges:model:vertex#D109:D33:3"
+          "ends": {
+            "end": "iges:model:vertex#D109:D33:4",
+            "start": "iges:model:vertex#D109:D33:3"
+          },
+          "id": "iges:model:edge#D109:D35:6"
         },
         {
           "carrier": {
@@ -674,9 +683,11 @@
               0.5
             ]
           },
-          "end": "iges:model:vertex#D109:D87:2",
-          "id": "iges:model:edge#D109:D89:1",
-          "start": "iges:model:vertex#D109:D87:1"
+          "ends": {
+            "end": "iges:model:vertex#D109:D87:2",
+            "start": "iges:model:vertex#D109:D87:1"
+          },
+          "id": "iges:model:edge#D109:D89:1"
         },
         {
           "carrier": {
@@ -686,9 +697,11 @@
               0.5
             ]
           },
-          "end": "iges:model:vertex#D109:D87:3",
-          "id": "iges:model:edge#D109:D89:2",
-          "start": "iges:model:vertex#D109:D87:1"
+          "ends": {
+            "end": "iges:model:vertex#D109:D87:3",
+            "start": "iges:model:vertex#D109:D87:1"
+          },
+          "id": "iges:model:edge#D109:D89:2"
         },
         {
           "carrier": {
@@ -698,9 +711,11 @@
               0.5
             ]
           },
-          "end": "iges:model:vertex#D109:D87:4",
-          "id": "iges:model:edge#D109:D89:3",
-          "start": "iges:model:vertex#D109:D87:1"
+          "ends": {
+            "end": "iges:model:vertex#D109:D87:4",
+            "start": "iges:model:vertex#D109:D87:1"
+          },
+          "id": "iges:model:edge#D109:D89:3"
         },
         {
           "carrier": {
@@ -710,9 +725,11 @@
               0.7071067811865476
             ]
           },
-          "end": "iges:model:vertex#D109:D87:3",
-          "id": "iges:model:edge#D109:D89:4",
-          "start": "iges:model:vertex#D109:D87:2"
+          "ends": {
+            "end": "iges:model:vertex#D109:D87:3",
+            "start": "iges:model:vertex#D109:D87:2"
+          },
+          "id": "iges:model:edge#D109:D89:4"
         },
         {
           "carrier": {
@@ -722,9 +739,11 @@
               0.7071067811865476
             ]
           },
-          "end": "iges:model:vertex#D109:D87:4",
-          "id": "iges:model:edge#D109:D89:5",
-          "start": "iges:model:vertex#D109:D87:2"
+          "ends": {
+            "end": "iges:model:vertex#D109:D87:4",
+            "start": "iges:model:vertex#D109:D87:2"
+          },
+          "id": "iges:model:edge#D109:D89:5"
         },
         {
           "carrier": {
@@ -734,9 +753,11 @@
               0.7071067811865476
             ]
           },
-          "end": "iges:model:vertex#D109:D87:4",
-          "id": "iges:model:edge#D109:D89:6",
-          "start": "iges:model:vertex#D109:D87:3"
+          "ends": {
+            "end": "iges:model:vertex#D109:D87:4",
+            "start": "iges:model:vertex#D109:D87:3"
+          },
+          "id": "iges:model:edge#D109:D89:6"
         }
       ],
       "faces": [
@@ -1017,46 +1038,12 @@
       "shells": [
         {
           "id": "iges:model:shell#D109:D107",
-          "members": [
-            {
-              "id": "iges:model:face#D109:D107:D99",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D109:D107:D101",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D109:D107:D103",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D109:D107:D105",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D109"
         },
         {
           "id": "iges:model:shell#D109:D53",
-          "members": [
-            {
-              "id": "iges:model:face#D109:D53:D45",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D109:D53:D47",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D109:D53:D49",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D109:D53:D51",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D109"
         }
       ],

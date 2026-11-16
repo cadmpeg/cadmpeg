@@ -6,10 +6,7 @@
       "bodies": [
         {
           "id": "step:data:body#18",
-          "kind": "solid",
-          "regions": [
-            "step:data:region#18"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [],
@@ -95,12 +92,7 @@
       "shells": [
         {
           "id": "step:data:shell#17",
-          "members": [
-            {
-              "id": "step:data:face#16",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "step:data:region#18"
         }
       ],

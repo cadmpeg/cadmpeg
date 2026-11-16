@@ -7,14 +7,12 @@
         {
           "id": "usd:stage:body#/Assembly/Plate/Large",
           "kind": "general",
-          "name": "Large",
-          "regions": []
+          "name": "Large"
         },
         {
           "id": "usd:stage:body#prototype0/Shank",
           "kind": "general",
-          "name": "Shank",
-          "regions": []
+          "name": "Shank"
         }
       ],
       "coedges": [],

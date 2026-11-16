@@ -6,10 +6,7 @@
       "bodies": [
         {
           "id": "sldprt:brep:body#700",
-          "kind": "solid",
-          "regions": [
-            "sldprt:brep:region#80"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -42,21 +39,27 @@
       "edges": [
         {
           "carrier": {},
-          "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
+          "ends": {
+            "end": "sldprt:brep:vertex#51",
+            "start": "sldprt:brep:vertex#50"
+          },
+          "id": "sldprt:brep:edge#40"
         },
         {
           "carrier": {},
-          "end": "sldprt:brep:vertex#52",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
+          "ends": {
+            "end": "sldprt:brep:vertex#52",
+            "start": "sldprt:brep:vertex#51"
+          },
+          "id": "sldprt:brep:edge#41"
         },
         {
           "carrier": {},
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#52"
+          "ends": {
+            "end": "sldprt:brep:vertex#50",
+            "start": "sldprt:brep:vertex#52"
+          },
+          "id": "sldprt:brep:edge#42"
         }
       ],
       "faces": [
@@ -135,12 +138,7 @@
       "shells": [
         {
           "id": "sldprt:brep:shell#70",
-          "members": [
-            {
-              "id": "sldprt:brep:face#10",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "sldprt:brep:region#80"
         }
       ],

@@ -712,6 +712,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut ir = CadIr::empty();
     ir.geometry
@@ -1260,6 +1261,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut ir = CadIr::empty();
     ir.geometry
@@ -1480,6 +1482,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     assert_eq!(

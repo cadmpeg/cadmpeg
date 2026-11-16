@@ -143,6 +143,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -268,6 +269,7 @@ pub(in super::super) fn transfer_positional_tori(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -392,6 +394,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
@@ -414,6 +417,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         source_carriers.admit_procedural_surface(
@@ -617,6 +621,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
@@ -639,6 +644,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         source_carriers.admit_procedural_surface(

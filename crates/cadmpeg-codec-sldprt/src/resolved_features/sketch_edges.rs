@@ -175,8 +175,11 @@ pub(super) fn nurbs_edge_trim_range(
     if nurbs.periodic() {
         return Ok(None);
     }
+    let Some(ends) = &edge.ends else {
+        return Ok(None);
+    };
     let (Some(start_vertex), Some(end_vertex)) =
-        (vertices.get(&edge.start), vertices.get(&edge.end))
+        (vertices.get(&ends.start), vertices.get(&ends.end))
     else {
         return Ok(None);
     };
@@ -193,8 +196,8 @@ pub(super) fn nurbs_edge_trim_range(
     };
     let tolerance = EdgeProjectionTolerance::of(edge)
         .map_or(0.0, EdgeProjectionTolerance::get)
-        .max(vertex_tolerance(&edge.start))
-        .max(vertex_tolerance(&edge.end))
+        .max(vertex_tolerance(&ends.start))
+        .max(vertex_tolerance(&ends.end))
         .max(EPS_SKETCH_EDGES_NURBS_VERTEX_INVERSION_MM);
     if nurbs.degree() == 1 {
         let (Some(start), Some(end)) = (
@@ -347,9 +350,10 @@ pub(super) fn project_edge(
         u_axis,
         v_axis,
     } = frame;
-    let start_point = points.get(vertices.get(&edge.start)?)?;
+    let ends = edge.ends.as_ref()?;
+    let start_point = points.get(vertices.get(&ends.start)?)?;
     let start = project_point(*start_point, origin, u_axis, v_axis);
-    let end_point = points.get(vertices.get(&edge.end)?)?;
+    let end_point = points.get(vertices.get(&ends.end)?)?;
     let end = project_point(*end_point, origin, u_axis, v_axis);
     let line = || SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
     let tolerance = EdgeProjectionTolerance::of(edge)?.get();
@@ -362,7 +366,7 @@ pub(super) fn project_edge(
                 .flatten()
         });
         let nurbs_trim = nurbs_trim.filter(|_| clamped.is_some());
-        let whole = nurbs.periodic() || edge.start == edge.end;
+        let whole = nurbs.periodic() || ends.start == ends.end;
         let Some(nurbs) = clamped.as_ref().or_else(|| whole.then_some(nurbs)) else {
             return line().map(|geometry| (geometry, true));
         };
@@ -573,7 +577,7 @@ pub(super) fn project_edge(
             )
         }
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))) => None,
-        None if edge.start == edge.end => Some(
+        None if ends.start == ends.end => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point { position: start }).ok()?,
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) | None => line(),

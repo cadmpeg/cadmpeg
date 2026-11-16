@@ -3,8 +3,7 @@
 
 use super::SourceSequences;
 use crate::directory::{DirectoryEntry, Subordinate};
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::{ids::ShellId, CadIr};
+use cadmpeg_ir::{ids::ShellId, topology::ShellMember, CadIr};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn retain_independent(
@@ -12,14 +11,14 @@ pub(super) fn retain_independent(
     shell_id: &ShellId,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     sequences: &mut SourceSequences,
-) -> Result<(), CodecError> {
+) {
     let Some(shell_index) = ir
         .geometry
         .shells
         .iter()
         .position(|shell| shell.id == *shell_id)
     else {
-        return Ok(());
+        return;
     };
     let mut removed_edges = BTreeSet::new();
 
@@ -60,13 +59,15 @@ pub(super) fn retain_independent(
     }
     drop(edges);
     if removed_edges.is_empty() {
-        return Ok(());
+        return;
     }
     if ir.geometry.shells[shell_index]
         .wire_edges()
-        .iter()
         .all(|id| removed_edges.contains(id))
-        && ir.geometry.shells[shell_index].free_vertices().is_empty()
+        && ir.geometry.shells[shell_index]
+            .free_vertices()
+            .next()
+            .is_none()
     {
         let region = ir.geometry.shells[shell_index].region.clone();
         let body = ir
@@ -83,11 +84,9 @@ pub(super) fn retain_independent(
             ir.geometry.bodies.retain(|candidate| candidate.id != body);
         }
     } else {
-        ir.geometry.shells[shell_index]
-            .edit_topology(|_, wire_edges, _| {
-                wire_edges.retain(|id| !removed_edges.contains(id));
-            })
-            .map_err(CodecError::malformed)?;
+        ir.geometry.shells[shell_index].members.retain(
+            |member| !matches!(member, ShellMember::WireEdge { id } if removed_edges.contains(id)),
+        );
     }
     let mut used_edges = BTreeSet::new();
     for coedge in &ir.geometry.coedges {
@@ -101,7 +100,7 @@ pub(super) fn retain_independent(
     let mut removed_vertices = BTreeSet::new();
     for edge in &ir.geometry.edges {
         if removed_edges.contains(&edge.id) && !used_edges.contains(&edge.id) {
-            for vertex in [&edge.start, &edge.end] {
+            for vertex in edge.vertices() {
                 removed_vertices.insert(vertex.clone());
             }
         }
@@ -111,7 +110,7 @@ pub(super) fn retain_independent(
         .retain(|edge| !removed_edges.contains(&edge.id) || used_edges.contains(&edge.id));
     let mut used_vertices = BTreeSet::new();
     for edge in &ir.geometry.edges {
-        for vertex in [&edge.start, &edge.end] {
+        for vertex in edge.vertices() {
             used_vertices.insert(vertex);
         }
     }
@@ -146,5 +145,4 @@ pub(super) fn retain_independent(
         live_points.insert(&point.id);
     }
     sequences.points.retain(|id, _| live_points.contains(id));
-    Ok(())
 }

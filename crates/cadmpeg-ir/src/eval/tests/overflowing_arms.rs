@@ -555,6 +555,7 @@ fn a_nurbs_surface_whose_point_overflows_reports_the_point_it_reached() {
         id: id.clone(),
         geometry: surface,
         source_object: None,
+        native_ref: None,
     });
     let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
@@ -662,6 +663,7 @@ fn procedural_surface_model(
             id: support_id.clone(),
             geometry: support,
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: surface_id.clone(),
@@ -670,6 +672,7 @@ fn procedural_surface_model(
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         },
     ]);
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
@@ -780,11 +783,13 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
             id: supports[0].clone(),
             geometry: plane(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: supports[1].clone(),
             geometry: plane(Vector3::new(0.0, -1.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
             source_object: None,
+            native_ref: None,
         },
     ]);
     ir.geometry.curves.push(Curve {
@@ -798,6 +803,7 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
             .expect("line fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_curve(
@@ -903,6 +909,7 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
             .expect("line fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     for ordinal in 0..70 {
         let replica =
@@ -912,6 +919,7 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
             id: replica.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry
             .add_procedural_curve(
@@ -968,6 +976,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
             .expect("line curve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_curve(
@@ -985,6 +994,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_surface(
@@ -1076,6 +1086,7 @@ fn a_contact_track_evaluates_its_support_where_its_offset_pcurve_point_overflows
         id: id.clone(),
         geometry: plane,
         source_object: None,
+        native_ref: None,
     });
     let index = crate::index::ModelIndex::build(&ir);
     let side = |pcurve| RollingBallSide {
@@ -1254,6 +1265,7 @@ fn an_analytic_surface_whose_point_overflows_has_no_partials() {
         id: id.clone(),
         geometry: plane,
         source_object: None,
+        native_ref: None,
     });
     let index = crate::index::ModelIndex::build(&ir);
     assert!(reached(
