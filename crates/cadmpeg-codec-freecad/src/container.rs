@@ -113,6 +113,16 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     let mut losses = Vec::new();
     let document_xml = admit_document(ctx, document_bytes)?;
     let (document, schema_version) = parse_document(&document_xml, &mut losses)?;
+    let physical_ledger = archive.physical_ledger()?;
+    let mut ledger = Vec::new();
+    for (index, span) in physical_ledger.into_iter().enumerate() {
+        ledger.push(ArchiveSpan {
+            id: crate::native::native_id("archive-span", index.to_string()),
+            span: crate::native::ByteSpan::try_new(span.start, span.end)
+                .map_err(CodecError::Malformed)?,
+            role: crate::native::ArchiveSpanRole::from(&span.role),
+        });
+    }
     let mut data = BTreeMap::new();
     let mut given_up = Vec::new();
     let mut unreadable_names = BTreeSet::new();
@@ -135,11 +145,22 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
                         .zip(usize::try_from(range.end).ok())
                         .and_then(|(start, end)| root.child(start, end))
                         .ok_or_else(|| CodecError::malformed("ZIP payload escapes archive"))?;
-                    let document = Identity::new(crate::native::native_id("document", "0"))
-                        .map_err(CodecError::malformed)?;
+                    // The ledger span of the stored payload names the entry;
+                    // an empty payload has no span and belongs to the document.
+                    let containing = ledger
+                        .iter()
+                        .find(|span| {
+                            matches!(&span.role,
+                                crate::native::ArchiveSpanRole::CompressedPayload(entry)
+                                    if *entry == name)
+                        })
+                        .map_or_else(
+                            || crate::native::native_id("document", "0"),
+                            |span| span.id.clone(),
+                        );
                     let part = Part::new("fcstd", "archive-entry", stored)
                         .named(name.as_str())
-                        .contained_in(document);
+                        .contained_in(Identity::new(containing).map_err(CodecError::malformed)?);
                     given_up.push(ctx.give_up_part(part, error)?);
                     unreadable_names.insert(name);
                     continue;
@@ -147,16 +168,6 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
             }
         };
         data.insert(name, view);
-    }
-    let physical_ledger = archive.physical_ledger()?;
-    let mut ledger = Vec::new();
-    for (index, span) in physical_ledger.into_iter().enumerate() {
-        ledger.push(ArchiveSpan {
-            id: crate::native::native_id("archive-span", index.to_string()),
-            span: crate::native::ByteSpan::try_new(span.start, span.end)
-                .map_err(CodecError::Malformed)?,
-            role: crate::native::ArchiveSpanRole::from(&span.role),
-        });
     }
     Ok(Scan {
         losses,

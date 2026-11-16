@@ -16,7 +16,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, SourceMeta, Topology};
-use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::{BodyId, Identity};
+use cadmpeg_ir::products::ProductDefinition;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
@@ -72,12 +73,19 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                     &mut given_up,
                 )?;
             }
-            Err(error) => given_up.push(give_up_member(
-                ctx,
-                &package,
-                package.structure_name(),
-                error,
-            )?),
+            Err(error) => {
+                let part = Part::new(
+                    "pvz",
+                    "archive-entry",
+                    package.stored(package.structure_name())?,
+                )
+                .named(package.structure_name())
+                .costing(format!(
+                    "the package carries no product structure, and none of its \
+                     {geometry_members} .ol geometry members was placed"
+                ));
+                given_up.push(ctx.give_up_part(part, error)?);
+            }
         }
     }
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
@@ -94,14 +102,19 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     })
 }
 
-/// Gives up the member `name`, keeping its stored bytes.
+/// Gives up the geometry member `name`, keeping its stored bytes, linked to
+/// the first product definition that names it.
 fn give_up_member(
     ctx: &DecodeContext<'_>,
     package: &Package<'_>,
     name: &str,
+    owner: Option<&ProductDefinition>,
     error: CodecError,
 ) -> Result<GivenUpPart, CodecError> {
-    let part = Part::new("pvz", "archive-entry", package.stored(name)?).named(name);
+    let mut part = Part::new("pvz", "archive-entry", package.stored(name)?).named(name);
+    if let Some(owner) = owner {
+        part = part.contained_in(Identity::from(owner.id.clone()));
+    }
     ctx.give_up_part(part, error)
 }
 
@@ -146,7 +159,11 @@ fn decode_model(
         let (member, geometry) = match decoded {
             Ok(decoded) => decoded,
             Err(error) => {
-                given_up.push(give_up_member(ctx, package, name, error)?);
+                let owner = owners
+                    .get(name)
+                    .and_then(|indices| indices.first())
+                    .and_then(|index| ir.model.product_definitions.get(*index));
+                given_up.push(give_up_member(ctx, package, name, owner, error)?);
                 continue;
             }
         };

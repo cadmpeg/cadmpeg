@@ -490,7 +490,16 @@ impl MergeSession<'_, '_> {
                         true,
                     );
                 }
+                let given_up = targets
+                    .iter()
+                    .filter(|(id, _)| id.contains(":source:part#"))
+                    .collect::<Vec<_>>();
                 for loss in &mut component_report.losses {
+                    for (from, to) in &given_up {
+                        if cadmpeg_ir::unknown::part::restate_loss(loss, from, to) {
+                            break;
+                        }
+                    }
                     loss.message = format!("xref {label}: {}", loss.message);
                 }
                 parent_report.losses.append(&mut component_report.losses);

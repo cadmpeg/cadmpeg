@@ -18,7 +18,9 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::{DecodeArena, DecodeCheckpoint, DecodeContext, View};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeCheckpoint, DecodeContext, LimitScope, ResourceLimit, View,
+};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -553,6 +555,12 @@ fn scan_in<'a>(
                         | ContainerRole::Image
                         | ContainerRole::OgsCache
                         | ContainerRole::Other
+                ) || matches!(
+                    error,
+                    CodecError::ResourceLimit(ResourceLimit {
+                        scope: LimitScope::Part,
+                        ..
+                    })
                 ) =>
             {
                 let range = file.stored_range()?;
@@ -562,7 +570,10 @@ fn scan_in<'a>(
                     .and_then(|(start, end)| View::over_retained(source_image).child(start, end))
                     .ok_or_else(|| CodecError::malformed("F3D ZIP payload escapes the archive"))?;
                 attributes.insert("payload_error".to_owned(), error.to_string());
-                let mut part = Part::new("f3d", "archive-entry", stored).named(name.as_str());
+                // The source image record keeps every stored byte of the archive.
+                let mut part = Part::new("f3d", "archive-entry", stored)
+                    .named(name.as_str())
+                    .digest_only();
                 if let Some(stream) = stream {
                     part = part.in_stream(stream.clone());
                 }
@@ -572,7 +583,7 @@ fn scan_in<'a>(
             Err(error) => return Err(error),
         };
         let buf = view.map_or(&[][..], |view| view.window());
-        if is_brep {
+        if is_brep && view.is_some() {
             let kernel = if asm_header::has_asm_magic(buf) {
                 asm_header::parse(buf).map(|header| KernelFraming::Asm {
                     solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),

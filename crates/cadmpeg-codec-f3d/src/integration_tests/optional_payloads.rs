@@ -159,13 +159,22 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
                 .iter()
                 .find(|stub| losses[0].message.contains(&format!("record={}", stub.id)))
                 .expect("the loss names the stub");
+            // No product definition stands for this document, so no record
+            // contains the entry.
+            assert!(decoded.ir().model.product_definitions.is_empty());
+            assert!(stub.links.is_empty());
             let retained = decoded
                 .source_fidelity()
                 .retained_record(stub.id.as_str())
-                .expect("the entry's stored bytes are retained");
+                .expect("the entry's stored bytes are named");
             let start = usize::try_from(retained.offset()).unwrap();
             let end = usize::try_from(retained.end_offset()).unwrap();
-            assert_eq!(retained.data(), Some(&changed[start..end]));
+            // The source image holds the bytes once; the part keeps their digest.
+            assert_eq!(retained.data(), None);
+            assert_eq!(
+                retained.sha256(),
+                cadmpeg_ir::hash::digest::Sha256Digest::digest(&changed[start..end]).as_str()
+            );
             assert!(decoded
                 .source_fidelity()
                 .retained_records()
@@ -218,6 +227,27 @@ fn optional_asset_past_the_per_expansion_allowance_is_given_up_alone() {
         "part archive-entry \"FusionAssetName[Active]/Previews/thumbnail.png\" stream=\"\" offset="
     ));
     assert!(loss.message.contains("scope Part"));
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn a_required_entry_past_the_per_expansion_allowance_is_given_up_alone() {
+    let smbh = synthetic_geometry_smbh();
+    let bytes = crate::test_support::zip_test::f3d_with_deflated_smbh(&smbh);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_per_expand = u64::try_from(smbh.len() - 1).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).expect("a Part refusal refuses no file");
+    let [given_up] = scan.given_up.as_slice() else {
+        panic!("one given-up part");
+    };
+    let loss = given_up.loss();
+    assert!(loss.message.starts_with(
+        "part archive-entry \"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" stream=\"\" offset="
+    ));
+    assert!(loss.message.contains("scope Part"));
+    assert!(scan.breps.is_empty());
     assert!(ctx.resource_refusal().is_none());
 }
 

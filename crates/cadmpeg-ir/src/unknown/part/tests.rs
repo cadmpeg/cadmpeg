@@ -172,10 +172,10 @@ fn a_rescoped_stub_is_restated_in_its_loss() {
         &from.as_str()["synthetic:".len()..]
     );
     let mut loss = given_up.loss();
-    assert!(restate_loss(&mut loss, &from, &to));
+    assert!(restate_loss(&mut loss, from.as_str(), &to));
     assert!(loss.message.contains(&format!(" record={to}: ")));
     assert!(!loss.message.contains(&format!(" record={from}: ")));
-    assert!(!restate_loss(&mut loss, &from, &to));
+    assert!(!restate_loss(&mut loss, from.as_str(), &to));
 }
 
 #[test]

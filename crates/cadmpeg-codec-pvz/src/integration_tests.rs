@@ -126,6 +126,15 @@ fn decode_classifies_the_package_and_reports_an_undecodable_structure() {
 
     assert!(!result.report().geometry_transferred());
     assert_eq!(loss_codes(&result), [record_unreadable_kind()]);
+    let message = &result.report().losses[0].message;
+    assert!(
+        message.starts_with("part archive-entry \"model.pvs\" stream=\"\" offset=")
+            && message.ends_with(
+                "; the package carries no product structure, and none of its 1 .ol geometry \
+                 members was placed; dropped=[]"
+            ),
+        "{message}"
+    );
     assert!(result.ir().model.product_definitions.is_empty());
     assert!(result.ir().model.tessellations.is_empty());
 
@@ -307,7 +316,15 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
     let [stub] = stubs.as_slice() else {
         panic!("one stub: {stubs:?}");
     };
-    assert!(stub.links.is_empty());
+    let [link] = stub.links.as_slice() else {
+        panic!("the stub links the definition that names the member");
+    };
+    assert!(result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .any(|definition| cadmpeg_ir::ids::Identity::from(definition.id.clone()) == *link));
     assert!(malformed[0]
         .message
         .contains(&format!("record={}", stub.id)));

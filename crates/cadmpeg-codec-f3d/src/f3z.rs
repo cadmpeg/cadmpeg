@@ -87,12 +87,10 @@ fn compose(
         .source
         .take()
         .ok_or_else(|| CodecError::malformed("F3Z root has no source metadata"))?;
+    inline_given_up_parts(ctx, &mut fidelity, &model_root)?;
     fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
-    for given_up in scan.given_up.iter().cloned() {
-        // `header_losses` already put the part's loss in the archive's losses.
-        given_up.commit(ctx, &mut ir, &mut fidelity)?;
-    }
+    crate::decode::commit_given_up_parts(ctx, scan, &mut ir, &mut fidelity)?;
     if let Some(drawing_root) = &session.omitted_drawing_root {
         push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
@@ -122,6 +120,7 @@ fn compose(
         &mut fidelity,
     )?;
     if merged > 0 {
+        inline_given_up_parts(ctx, &mut fidelity, "")?;
         fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
         report.notes.push(format!(
             "{merged} resolved external occurrence(s) retain shared member definitions, native records, and source bytes"
@@ -134,6 +133,52 @@ fn compose(
     crate::scene::bind(ctx, &mut ir, &scene_sources, &mut report.losses)?;
     report.losses.append(&mut outer_losses);
     finalize_result(ctx, ir, source, report, fidelity)
+}
+
+/// Gives each given-up part in `stream` that keeps only a digest a copy of
+/// its bytes from the source image record, before that record is removed.
+fn inline_given_up_parts(
+    ctx: &DecodeContext<'_>,
+    fidelity: &mut cadmpeg_ir::SourceFidelity,
+    stream: &str,
+) -> Result<(), CodecError> {
+    let Some(image) = fidelity
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .and_then(cadmpeg_ir::source_fidelity::RetainedSourceRecord::data)
+    else {
+        return Ok(());
+    };
+    let mut inlined = Vec::new();
+    for (id, record) in fidelity.retained_records() {
+        if record.data().is_some()
+            || record.stream() != stream
+            || !id.as_str().contains(":source:part#")
+        {
+            continue;
+        }
+        let bytes = usize::try_from(record.offset())
+            .ok()
+            .zip(usize::try_from(record.end_offset()).ok())
+            .and_then(|(start, end)| image.get(start..end))
+            .ok_or_else(|| CodecError::malformed("given-up F3D part escapes its source image"))?;
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "given-up part source bytes",
+        )?;
+        let mut data = ctx.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
+        data.copy_from_slice(bytes);
+        let retained = cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
+            stream.to_owned(),
+            record.offset(),
+            cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data },
+        )?;
+        inlined.push((id.clone(), retained));
+    }
+    for (id, retained) in inlined {
+        fidelity.remove_retained_record(id.as_str());
+        fidelity.insert_retained_record(id, retained)?;
+    }
+    Ok(())
 }
 
 fn finalize_result(

@@ -240,7 +240,7 @@ impl GivenUpPart {
 /// Restates the `record.unreadable` loss of the part whose stub id changed
 /// from `from` to `to`, as when a decoder composing several documents
 /// rescopes one document's records. Returns whether `loss` names `from`.
-pub fn restate_loss(loss: &mut LossNote, from: &UnknownId, to: &str) -> bool {
+pub fn restate_loss(loss: &mut LossNote, from: &str, to: &str) -> bool {
     if loss.code != record_unreadable_kind() {
         return false;
     }

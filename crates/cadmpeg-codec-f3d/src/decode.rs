@@ -4956,10 +4956,7 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
-    for given_up in scan.given_up.iter().cloned() {
-        // `header_losses` already put the part's loss in the report.
-        given_up.commit(ctx, &mut ir, &mut source_fidelity)?;
-    }
+    commit_given_up_parts(ctx, scan, &mut ir, &mut source_fidelity)?;
     let mut source = crate::report::classify_document(
         scan,
         report_scope,
@@ -4988,6 +4985,43 @@ fn decode_result(
         body: report,
         source_fidelity,
     })
+}
+
+/// Commits each archive entry the scan gave up, its stub linked to the
+/// document's root product definition when the document has exactly one.
+/// `header_losses` already put each part's loss in the report.
+pub(crate) fn commit_given_up_parts(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    ir: &mut CadIr,
+    fidelity: &mut cadmpeg_ir::SourceFidelity,
+) -> Result<(), CodecError> {
+    let placed = ir
+        .model
+        .occurrences
+        .iter()
+        .filter_map(|occurrence| match &occurrence.prototype {
+            cadmpeg_ir::products::PrototypeReference::Local { definition } => Some(definition),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut roots = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| !placed.contains(&definition.id));
+    let root = match (roots.next(), roots.next()) {
+        (Some(root), None) => Some(cadmpeg_ir::ids::Identity::from(root.id.clone())),
+        _ => None,
+    };
+    for given_up in scan.given_up.iter().cloned() {
+        let given_up = match &root {
+            Some(root) => given_up.contained_in(root.clone()),
+            None => given_up,
+        };
+        given_up.commit(ctx, ir, fidelity)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {

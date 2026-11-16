@@ -181,13 +181,22 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
         .into_iter()
         .find(|stub| stub.id == *given_up.id())
         .expect("the given-up entry has a stub");
-    assert_eq!(
-        stub.links
-            .iter()
-            .map(cadmpeg_ir::ids::Identity::as_str)
-            .collect::<Vec<_>>(),
-        ["fcstd:native:document#0"]
-    );
+    let [link] = stub.links.as_slice() else {
+        panic!("one link: {:?}", stub.links);
+    };
+    let ledger = ir
+        .native
+        .namespace("fcstd")
+        .expect("native graph")
+        .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
+        .expect("physical ledger");
+    let span = ledger
+        .iter()
+        .find(|span| span.id == link.as_str())
+        .expect("the stub links a ledger span");
+    assert!(matches!(&span.role,
+        crate::native::ArchiveSpanRole::CompressedPayload(entry)
+            if entry == "thumbnails/Thumbnail.png"));
     let retained = fidelity
         .retained_record(given_up.id().as_str())
         .expect("the entry's stored bytes are retained");

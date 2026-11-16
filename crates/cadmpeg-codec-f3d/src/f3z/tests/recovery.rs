@@ -178,6 +178,91 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
 }
 
 #[test]
+fn a_merged_member_part_loss_names_the_stub_in_the_document() {
+    let preview = "FusionAssetName[Active]/Previews/thumbnail.png";
+    let mut component = crate::test_support::zip_test::f3d_with_configuration(
+        &synthetic_geometry_smbh(),
+        preview,
+        b"preview",
+    );
+    damage_local_frame(&mut component, preview);
+    let root = f3d_without_brep(
+        "assembly-design",
+        "root.f3d",
+        &[("component.f3d", XREF_ROLE)],
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[("root.f3d", &root), ("component.f3d", &component)],
+    );
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(&archive),
+            &DecodeOptions::default(),
+        )
+        .unwrap(),
+    );
+    assert!(!decoded.ir().geometry.faces.is_empty());
+    let losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .collect::<Vec<_>>();
+    let [loss] = losses.as_slice() else {
+        panic!("one record.unreadable loss: {losses:?}");
+    };
+    let stubs = decoded.ir().native_unknowns("f3d").unwrap();
+    let stub = stubs
+        .iter()
+        .find(|stub| stub.id.as_str().contains("/source:part#"))
+        .expect("the member's given-up preview has a stub");
+    assert!(stub.id.as_str().starts_with("f3d:xref/"), "{}", stub.id);
+    assert!(
+        loss.message.contains(&format!(" record={}: ", stub.id)),
+        "{}",
+        loss.message
+    );
+    let retained = decoded
+        .source_fidelity()
+        .retained_record(stub.id.as_str())
+        .expect("the part is named in the sidecar");
+    assert_eq!(retained.data(), None);
+}
+
+#[test]
+fn a_model_root_part_keeps_its_bytes_when_the_root_source_image_is_replaced() {
+    let preview = "FusionAssetName[Active]/Previews/thumbnail.png";
+    let mut root = crate::test_support::zip_test::f3d_with_configuration(
+        &synthetic_geometry_smbh(),
+        preview,
+        b"preview",
+    );
+    damage_local_frame(&mut root, preview);
+    let archive = f3z_archive("root.f3d", &[("root.f3d", &root)]);
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(&archive),
+            &DecodeOptions::default(),
+        )
+        .unwrap(),
+    );
+    let stubs = decoded.ir().native_unknowns("f3d").unwrap();
+    let stub = stubs
+        .iter()
+        .find(|stub| stub.id.as_str().starts_with("f3d:source:part#"))
+        .expect("the root's given-up preview has a stub");
+    let retained = decoded
+        .source_fidelity()
+        .retained_record(stub.id.as_str())
+        .expect("the part is retained");
+    assert_eq!(retained.stream(), "root.f3d");
+    let start = usize::try_from(retained.offset()).unwrap();
+    let end = usize::try_from(retained.end_offset()).unwrap();
+    assert_eq!(retained.data(), Some(&root[start..end]));
+}
+
+#[test]
 fn failed_member_placed_by_two_parents_reports_each_reference() {
     // An invalid text BREP stream passes the archive scan and fails inside
     // member decode.
