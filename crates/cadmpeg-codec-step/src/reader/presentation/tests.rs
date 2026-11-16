@@ -472,7 +472,7 @@ fn presentation_graph_search_does_not_hide_unmodeled_tessellated_carriers() {
     }
     assert!(result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve.id.as_str() == "step:data:curve#12"));
@@ -488,7 +488,7 @@ fn styled_free_curve_is_a_reachable_source_carrier() {
     );
     let curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#7")
@@ -546,7 +546,7 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "step:data:face#29")
@@ -590,7 +590,7 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
             .expect("decode independent style permutation");
         let face = result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id.as_str() == "step:data:face#29")
@@ -632,7 +632,7 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
 
 #[test]
 fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
-    const EPS_ALPHA: f32 = 0.000_001;
+    const EPS_ALPHA: f64 = 0.000_001;
 
     let source = String::from_utf8(
         include_bytes!("tests/data/ap05_independent_styles_first.p21").to_vec(),
@@ -659,7 +659,7 @@ fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
         .expect("decode same-RGB independent styles");
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "step:data:face#29")
@@ -699,7 +699,7 @@ fn same_type_surface_colors_do_not_select_by_alpha_or_source_order() {
         }));
         assert!(result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .all(|face| face.color.is_none()));
@@ -787,7 +787,7 @@ fn context_dependent_styles_remain_native_for_distinct_contexts() {
         .any(|record| record.id.as_str() == "step:data:styled_item#15"));
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#3"));
@@ -851,7 +851,7 @@ fn complex_representation_invisibility_reaches_surface_body() {
 
     let body = decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| body.id.as_str() == "step:data:body#38")
@@ -919,7 +919,7 @@ fn styled_item_invisibility_is_binding_scoped() {
 
 #[test]
 fn surface_style_transparency_transfers_to_appearance_alpha() {
-    const EPS_ALPHA: f32 = 0.000_001;
+    const EPS_ALPHA: f64 = 0.000_001;
 
     let result = decode_inline(
         "#1=CARTESIAN_POINT('surface origin',(0.,0.,0.));
@@ -1097,7 +1097,7 @@ fn presentation_records_retain_non_color_geometry_owners() {
 
     let curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#3")
@@ -1112,7 +1112,7 @@ fn presentation_records_retain_non_color_geometry_owners() {
     );
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#9")
@@ -1146,7 +1146,7 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
 
     let curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#3")
@@ -1261,7 +1261,7 @@ fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
         );
         let face = result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id.as_str() == "step:data:face#29")
@@ -1343,14 +1343,13 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
-    let mut region = ir.model.regions[0].clone();
+    let body = ir.geometry.bodies[0].id.clone();
+    let mut region = ir.geometry.regions[0].clone();
     region.id = "zzzz:test:region#second"
         .try_into()
         .expect("valid identity");
-    ir.model.bodies[0].regions.push(region.id.clone());
-    ir.model.regions.push(region);
-    ir.model.bodies[0].visible = Some(false);
+    ir.geometry.regions.push(region);
+    ir.geometry.bodies[0].visible = Some(false);
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#body").expect("identity grammar"),
         name: "all body regions".into(),
@@ -1486,7 +1485,7 @@ fn presentation_reader_resolves_complex_datum_reference_inheritance() {
 #[test]
 pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].visible = Some(false);
+    ir.geometry.bodies[0].visible = Some(false);
     let mut buf = Vec::new();
     let report = write_step(
         &ir,
@@ -1503,11 +1502,11 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(s.into_bytes()), &DecodeOptions::default())
         .expect("decode hidden body");
-    assert_eq!(decoded.ir().model.bodies[0].visible, Some(false));
+    assert_eq!(decoded.ir().geometry.bodies[0].visible, Some(false));
 
     let mut transformed = unit_cube().expect("unit cube fixture is admitted");
-    transformed.model.bodies[0].visible = Some(false);
-    transformed.model.bodies[0].transform = Some(
+    transformed.geometry.bodies[0].visible = Some(false);
+    transformed.geometry.bodies[0].transform = Some(
         cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -1524,11 +1523,11 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
             &DecodeOptions::default(),
         )
         .expect("decode hidden transformed body");
-    assert_eq!(decoded.ir().model.bodies[0].visible, Some(false));
+    assert_eq!(decoded.ir().geometry.bodies[0].visible, Some(false));
 
     // An explicitly visible body exports unchanged.
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].visible = Some(true);
+    ir.geometry.bodies[0].visible = Some(true);
     let s = export(&ir);
     assert!(s.contains("MANIFOLD_SOLID_BREP"));
 }
@@ -1536,9 +1535,9 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
 #[test]
 pub(crate) fn body_color_becomes_per_face_styled_item_presentation() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].color =
+    ir.geometry.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).expect("valid color"));
-    let face_count = ir.model.faces.len();
+    let face_count = ir.geometry.faces.len();
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.25,0.5,0.75)"));
     assert!(s.contains("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"));
@@ -1573,7 +1572,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let face = ir.model.faces[0].id.clone();
+    let face = ir.geometry.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
@@ -1623,7 +1622,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let vertex = ir.model.vertices[0].id.clone();
+    let vertex = ir.geometry.vertices[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("test:model:appearance#vertex".to_string())
             .expect("identity grammar"),
@@ -1679,7 +1678,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let point = ir.model.points[0].id.clone();
+    let point = ir.geometry.points[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#point".to_string()).expect("identity grammar"),
         name: "point layer".to_string(),
@@ -1712,7 +1711,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition};
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let parent_product =
         ProductDefinitionId::mint("test:model:product#parent").expect("identity grammar");
     let child_product =
@@ -1851,12 +1850,12 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let face_count = ir.model.faces.len();
+    let face_count = ir.geometry.faces.len();
     // White body base color.
-    ir.model.bodies[0].color =
+    ir.geometry.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(1.0, 1.0, 1.0, 1.0).expect("valid color"));
     // Black override on a single face, via an appearance binding.
-    let face = ir.model.faces[0].id.clone();
+    let face = ir.geometry.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),

@@ -192,7 +192,7 @@ fn current_gradient_userdata_reaches_the_hatch_native_parameter() {
     assert!(parameters
         .get("gradient")
         .is_some_and(|value| value.contains("linear")));
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert_valid(&result);
 }
 
@@ -208,7 +208,7 @@ fn future_gradient_userdata_retains_typed_hatch_and_complete_object_record() {
 
     let parameters = hatch_parameters(&result);
     assert!(!parameters.contains_key("gradient"));
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("hatch userdata extension failed")
             && loss
@@ -240,7 +240,7 @@ fn malformed_gradient_userdata_retains_typed_hatch_and_complete_object_record() 
 
     let parameters = hatch_parameters(&result);
     assert!(!parameters.contains_key("gradient"));
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("hatch userdata extension failed")
             && loss.message.contains("invalid gradient type")

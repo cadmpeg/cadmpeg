@@ -49,6 +49,22 @@ fn external_root(name: &str) -> bool {
     )
 }
 
+/// `segments` as an external path when its root binds its real crate from
+/// `source_path`; a root something else can bind there resolves to nothing.
+fn external(
+    source_path: &str,
+    segments: &[String],
+    absolute: bool,
+    index: &SourceIndex,
+) -> ResolvedPath {
+    match segments.first() {
+        Some(root) if index.shadows.failure(source_path, root, absolute).is_some() => {
+            ResolvedPath::Unknown
+        }
+        _ => ResolvedPath::External(segments.to_owned()),
+    }
+}
+
 fn standard_prelude(name: &str) -> Option<Vec<String>> {
     if primitive_name(name) {
         return Some(vec!["primitive".to_owned(), name.to_owned()]);
@@ -184,7 +200,7 @@ fn resolve_absolute_path(
         return ResolvedPath::Unknown;
     };
     if external_root(first) {
-        return ResolvedPath::External(segments.to_owned());
+        return external(source_path, segments, true, index);
     }
     // A leading `::` starts at the crate or extern prelude root. Lexical
     // imports in the current source module must not rewrite it: consulting
@@ -335,7 +351,7 @@ fn resolve_from_module(
         return candidates.remove(0);
     }
     if external_root(first) {
-        return ResolvedPath::External(segments.to_owned());
+        return external(source_path, segments, false, index);
     }
     if !module_scope.is_empty() {
         // A nested module can use an item from its parent without a `use`.
@@ -345,7 +361,7 @@ fn resolve_from_module(
     }
     if segments.len() == 1 {
         if external_root(first) {
-            return ResolvedPath::External(vec![first.clone()]);
+            return external(source_path, segments, false, index);
         }
         if let Some(path) = standard_prelude(first) {
             return ResolvedPath::External(path);

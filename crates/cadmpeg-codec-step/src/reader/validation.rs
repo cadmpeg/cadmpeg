@@ -201,7 +201,7 @@ pub(super) fn decode(
             }
         }
     }
-    ir.model.points.retain(|point| {
+    ir.geometry.points.retain(|point| {
         let Some(id) = point
             .id
             .as_str()

@@ -3523,6 +3523,7 @@ mod tests {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         }];
         (operand, group, faces)
     }

@@ -83,7 +83,7 @@ pub(super) fn strip(
         .collect::<Result<_, _>>()?;
     replacements.extend(scopes);
     if let (Some(source), Some(codec)) = (value.get_mut("source"), source_codec) {
-        *source = serde_json::json!({"identity": {"classification": "unclassified", "format": codec}, "attributes": {}});
+        *source = serde_json::json!({"identity": {"kind": "unclassified", "format": codec}, "attributes": {}});
     }
     let empty = BTreeSet::new();
     for row in rows(&value)

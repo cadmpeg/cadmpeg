@@ -206,7 +206,7 @@ fn member_bodies<'ir>(
     ir: &'ir CadIr,
     measure: &DeclaredMeasure,
 ) -> Result<Vec<&'ir Body>, Unmeasured> {
-    let body = |id: &BodyId| ir.model.bodies.iter().find(|body| &body.id == id);
+    let body = |id: &BodyId| ir.geometry.bodies.iter().find(|body| &body.id == id);
     match &measure.target {
         DeclaredTarget::Unresolved {} => Err(Unmeasured::gap(
             Gap::TargetUnresolved,

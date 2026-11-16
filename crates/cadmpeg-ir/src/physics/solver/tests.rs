@@ -56,9 +56,10 @@ fn solver_settings_round_trip_through_json() {
         json["values"]["physxJoint:armature"]["dimension"],
         serde_json::json!({"length": 2, "mass": 1, "angle": 0})
     );
-    assert!(json["values"]["physxJoint:jointFriction"]
-        .get("dimension")
-        .is_none());
+    assert_eq!(
+        json["values"]["physxJoint:jointFriction"]["dimension"],
+        serde_json::json!({"length": 0, "mass": 0, "angle": 0})
+    );
     assert_eq!(
         serde_json::from_value::<SolverSettings>(json).unwrap(),
         record

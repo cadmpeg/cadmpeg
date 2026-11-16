@@ -311,25 +311,90 @@ pub(crate) struct DesignSketchProfileRegionSelection {
     pub(crate) region_count_offset: u64,
     /// Member lists in source order.
     pub(crate) regions: Vec<DesignSketchProfileRegion>,
+    /// Atomic regions that make up the selected regions, in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) atomic_regions: Vec<DesignSketchProfileAtomicRegion>,
     /// Source per-file dynamic three-digit ASCII companion class tag.
     pub(crate) companion_class_tag: DesignClassTag,
     /// Byte offset of the same-index companion header.
     pub(crate) companion_byte_offset: u64,
 }
 
-/// One member list of a nested sketch-profile selection.
+/// One boundary loop of a nested sketch-profile selection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSketchProfileRegion {
     /// Byte offset of this list's member count.
     pub(crate) member_count_offset: u64,
     /// Persistent curve members in source order.
     pub(crate) members: Vec<DesignSketchProfileRegionMember>,
+    /// Zero-based selected region that owns the loop.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(crate) region_ordinal: u32,
+}
+
+/// One atomic region of a selected region in a nested sketch-profile
+/// selection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignSketchProfileAtomicRegion {
+    /// Zero-based selected region that the atomic region is part of.
+    pub(crate) region_ordinal: u32,
+    /// Byte offset of the atomic region's loop count.
+    pub(crate) loop_count_offset: u64,
+    /// Boundary loops in source order.
+    pub(crate) loops: Vec<DesignSketchProfileRegion>,
+}
+
+// Serde requires `skip_serializing_if` predicates to borrow the field.
+fn is_zero<T: Copy + Into<u64>>(value: &T) -> bool {
+    (*value).into() == 0
 }
 
 impl DesignSketchProfileRegionSelection {
+    /// The member rings that select regions. For each selected region,
+    /// these are the loops of its atomic regions when it has atomic regions
+    /// and they name every curve of the selected region, otherwise the
+    /// selected region's own loops. `None` when atomic regions omit a curve
+    /// of their selected region.
+    pub(crate) fn resolution_regions(&self) -> Option<Vec<&DesignSketchProfileRegion>> {
+        let mut rings = Vec::new();
+        let mut start = 0;
+        while let Some(first) = self.regions.get(start) {
+            let ordinal = first.region_ordinal;
+            let own = self
+                .regions
+                .iter()
+                .skip(start)
+                .take_while(|region| region.region_ordinal == ordinal)
+                .collect::<Vec<_>>();
+            start += own.len();
+            let atomic = self
+                .atomic_regions
+                .iter()
+                .filter(|atomic| atomic.region_ordinal == ordinal)
+                .flat_map(|atomic| &atomic.loops)
+                .collect::<Vec<_>>();
+            if atomic.is_empty() {
+                rings.extend(own);
+                continue;
+            }
+            let covered = own.iter().flat_map(|region| &region.members).all(|member| {
+                atomic
+                    .iter()
+                    .flat_map(|region| &region.members)
+                    .any(|atomic| atomic.curve_primary_id == member.curve_primary_id)
+            });
+            if !covered {
+                return None;
+            }
+            rings.extend(atomic);
+        }
+        Some(rings)
+    }
+
     pub(crate) fn has_extended_incidence(&self) -> bool {
         self.regions
             .iter()
+            .chain(self.atomic_regions.iter().flat_map(|atomic| &atomic.loops))
             .flat_map(|region| &region.members)
             .any(|member| {
                 member

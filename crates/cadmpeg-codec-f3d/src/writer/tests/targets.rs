@@ -25,7 +25,7 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
 fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable() {
     let ir = sourced_ir("f3d:f3z-multi-document");
     let data = b"present retained image".to_vec();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&data));
     fidelity
         .insert_retained_record(
             crate::ids::file_source_image_id(),
@@ -64,7 +64,7 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
 #[test]
 fn cross_format_write_has_no_dialect_displacement() {
     let ir = sourced_ir("step:ap242-edition-3");
-    let fidelity = SourceFidelity::default();
+    let fidelity = SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b""));
     let plan = Encoder::plan(
         &F3dCodec,
         EncodeInput::new(&ir, Some(&fidelity)),

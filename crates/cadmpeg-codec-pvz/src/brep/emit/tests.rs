@@ -43,7 +43,7 @@ fn emit_edited(
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("part.ol"));
     let scope = IdentityKey::encode_segment("part.ol");
     let mut sink = Sink {
-        model: &mut ir.model,
+        geometry: &mut ir.geometry,
         annotations: &mut annotations,
         losses: &mut losses,
         stream: &stream,
@@ -54,7 +54,7 @@ fn emit_edited(
         None => emit(&ctx, &model, &scope, &mut sink),
     }
     .unwrap();
-    ir.model.finalize();
+    ir.finalize();
     (ir, losses, body)
 }
 
@@ -66,12 +66,16 @@ fn cube_becomes_a_valid_outward_solid() {
         [false, true, false, false, true, true],
     ));
     assert!(losses.is_empty(), "{losses:?}");
-    let model = &ir.model;
-    assert_eq!(body, [model.bodies[0].id.clone()]);
-    assert_eq!(model.bodies[0].kind, BodyKind::Solid);
-    assert_eq!((model.faces.len(), model.shells.len()), (6, 1));
+    let geometry = &ir.geometry;
+    assert_eq!(body, [geometry.bodies[0].id.clone()]);
+    assert_eq!(geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!((geometry.faces.len(), geometry.shells.len()), (6, 1));
     assert_eq!(
-        (model.edges.len(), model.vertices.len(), model.coedges.len()),
+        (
+            geometry.edges.len(),
+            geometry.vertices.len(),
+            geometry.coedges.len()
+        ),
         (12, 8, 24)
     );
     let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
@@ -82,8 +86,8 @@ fn cube_becomes_a_valid_outward_solid() {
         .collect();
     assert!(serious.is_empty(), "{serious:?}");
     let centre_mm = CUBE_SIZE * 1000.0 / 2.0;
-    for face in &model.faces {
-        let surface = model
+    for face in &geometry.faces {
+        let surface = geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
@@ -125,8 +129,11 @@ fn faces_without_loops_are_left_out() {
         model.faces.push(face);
     });
     assert_eq!(body.len(), 1);
-    assert_eq!(ir.model.bodies[0].kind, BodyKind::Solid);
-    assert_eq!((ir.model.faces.len(), ir.model.surfaces.len()), (6, 6));
+    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(
+        (ir.geometry.faces.len(), ir.geometry.surfaces.len()),
+        (6, 6)
+    );
     assert!(losses
         .iter()
         .any(|note| note.code == PvzLossCode::ExactFaceUnboundedOmitted.kind()));
@@ -134,7 +141,7 @@ fn faces_without_loops_are_left_out() {
     lone.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
     let (ir, _, body) = emit_stream(lone);
     assert!(body.is_empty());
-    assert!(ir.model.faces.is_empty());
+    assert!(ir.geometry.faces.is_empty());
 }
 
 #[test]
@@ -152,9 +159,9 @@ fn open_shells_form_a_sheet_body_beside_the_solid() {
         model.faces.push(face);
     });
     assert_eq!(body.len(), 2);
-    let kinds: Vec<BodyKind> = ir.model.bodies.iter().map(|body| body.kind).collect();
+    let kinds: Vec<BodyKind> = ir.geometry.bodies.iter().map(|body| body.kind).collect();
     assert_eq!(kinds, [BodyKind::Solid, BodyKind::Sheet]);
-    assert_eq!(ir.model.shells.len(), 2);
+    assert_eq!(ir.geometry.shells.len(), 2);
 }
 
 #[test]
@@ -162,7 +169,7 @@ fn stream_without_faces_writes_nothing() {
     let (ir, losses, body) = emit_stream(Stream::new(false));
     assert!(body.is_empty());
     assert!(losses.is_empty());
-    assert!(ir.model.bodies.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
 }
 
 /// Line edges and line pcurves of a plane stream, written after its faces.
@@ -231,8 +238,8 @@ fn two_region_plane() -> Stream {
 #[test]
 fn inner_loop_joins_the_outer_loop_that_contains_it() {
     let (ir, losses, _) = emit_stream(two_region_plane());
-    assert_eq!(ir.model.faces.len(), 2);
-    let FaceLoops::Classified { inner, .. } = &ir.model.faces[1].loops else {
+    assert_eq!(ir.geometry.faces.len(), 2);
+    let FaceLoops::Classified { inner, .. } = &ir.geometry.faces[1].loops else {
         panic!("classified loops");
     };
     assert_eq!(inner.len(), 1);
@@ -244,7 +251,7 @@ fn inner_loop_joins_the_outer_loop_that_contains_it() {
 #[test]
 fn exhausted_nesting_is_reported() {
     let (ir, losses, _) = emit_stream_with(two_region_plane(), Some(1));
-    assert_eq!(ir.model.faces.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 1);
     assert!(losses
         .iter()
         .any(|note| note.code == PvzLossCode::ExactTopologyWorkExhausted.kind()));
@@ -267,11 +274,11 @@ fn edges_stored_once_per_use_become_shared_edges() {
             emit_edited(cube_stream(true, [false; 6], [false; 6]), None, |model| {
                 crate::test_support::exact::split_shared_edges(model, reverse);
             });
-        let model = &ir.model;
-        assert_eq!(model.bodies[0].kind, BodyKind::Solid);
-        assert_eq!(model.shells.len(), 1);
-        assert_eq!((model.edges.len(), model.vertices.len()), (12, 8));
-        assert!(model.edges.iter().all(|edge| edge.tolerance.is_some()));
+        let geometry = &ir.geometry;
+        assert_eq!(geometry.bodies[0].kind, BodyKind::Solid);
+        assert_eq!(geometry.shells.len(), 1);
+        assert_eq!((geometry.edges.len(), geometry.vertices.len()), (12, 8));
+        assert!(geometry.edges.iter().all(|edge| edge.tolerance.is_some()));
         let findings = serious_findings(&ir);
         assert!(findings.is_empty(), "{findings:?}");
         assert!(losses
@@ -314,7 +321,7 @@ fn polyline_pcurve_carries_its_chord_deviation() {
     stream.record(crate::layout::token::EXACT_PCURVE, &polyline);
     let (ir, _, _) = emit_stream(stream);
     let sagitta_mm = radius * (1.0 - (std::f64::consts::PI / f64::from(segments)).cos()) * 1000.0;
-    let fit = ir.model.pcurves[0].fit_tolerance().unwrap().get();
+    let fit = ir.geometry.pcurves[0].fit_tolerance().unwrap().get();
     assert!(
         fit >= sagitta_mm && fit <= 2.0 * sagitta_mm,
         "{fit} {sagitta_mm}"
@@ -356,13 +363,13 @@ fn square_with_collapsed_corner(extent: f64) -> Stream {
 #[test]
 fn collapsed_singular_coedge_leaves_its_loop() {
     let (ir, losses, _) = emit_stream(square_with_collapsed_corner(0.0));
-    assert_eq!(ir.model.coedges.len(), 4);
-    assert_eq!(ir.model.edges.len(), 4);
+    assert_eq!(ir.geometry.coedges.len(), 4);
+    assert_eq!(ir.geometry.edges.len(), 4);
     assert!(losses
         .iter()
         .any(|note| note.code == PvzLossCode::ExactCoedgeDegenerateOmitted.kind()));
     let (ir, losses, _) = emit_stream(square_with_collapsed_corner(1.0));
-    assert_eq!(ir.model.coedges.len(), 5);
+    assert_eq!(ir.geometry.coedges.len(), 5);
     assert!(!losses
         .iter()
         .any(|note| note.code == PvzLossCode::ExactCoedgeDegenerateOmitted.kind()));
@@ -412,18 +419,18 @@ fn spindle_torus_with_secondary_pcurves_is_written_as_its_bspline() {
         |losses: &[LossNote], code: PvzLossCode| losses.iter().any(|note| note.code == code.kind());
     let (ir, losses, _) = emit_stream(torus_with_secondary_pcurves(0.004, 0.037));
     assert!(matches!(
-        ir.model.surfaces[0].geometry,
+        ir.geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
     ));
     assert!(has(&losses, PvzLossCode::ExactSurfaceAsBspline));
-    assert_eq!(ir.model.coedges[0].pcurves.len(), 1);
+    assert_eq!(ir.geometry.coedges[0].pcurves.len(), 1);
     let (ir, losses, _) = emit_stream(torus_with_secondary_pcurves(0.05, 0.01));
     assert!(matches!(
-        ir.model.surfaces[0].geometry,
+        ir.geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
     ));
     assert!(has(&losses, PvzLossCode::ExactSecondaryPcurveOmitted));
-    assert!(ir.model.coedges[0].pcurves.is_empty());
+    assert!(ir.geometry.coedges[0].pcurves.is_empty());
 }
 
 /// Whether `losses` hold a note of `code`.
@@ -467,7 +474,7 @@ fn undefined_surface_type_is_reported() {
     let (ir, losses, _) = emit_stream(stream);
     assert!(reports(&losses, PvzLossCode::ExactSurfaceUntyped));
     assert!(matches!(
-        ir.model.surfaces[0].geometry,
+        ir.geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
 }
@@ -481,7 +488,7 @@ fn composite_edge_curve_is_reported() {
         model.edges[last].geometry = CurveGeometry::Composite(vec![last + 1]);
     });
     assert!(reports(&losses, PvzLossCode::ExactCurveUntyped));
-    assert_eq!(ir.model.curves.len(), 3);
+    assert_eq!(ir.geometry.curves.len(), 3);
 }
 
 #[test]
@@ -493,7 +500,7 @@ fn coedges_without_pcurves_are_reported() {
     });
     assert!(reports(&losses, PvzLossCode::ExactPcurveUntransferred));
     assert!(ir
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
@@ -510,7 +517,7 @@ fn pcurve_ends_off_the_edge_are_admitted_by_the_face_tolerance() {
         }
     });
     assert!(reports(&losses, PvzLossCode::ExactEndpointMismatch));
-    let tolerance = ir.model.faces[0].tolerance.unwrap().get();
+    let tolerance = ir.geometry.faces[0].tolerance.unwrap().get();
     assert!(tolerance >= offset * 1000.0, "{tolerance}");
 }
 
@@ -523,6 +530,6 @@ fn loop_that_does_not_close_is_reported() {
 #[test]
 fn face_side_of_an_open_sheet_is_a_gauge() {
     let (ir, losses, _) = emit_stream(square_face(&[0, 1, 2, 3]));
-    assert_eq!(ir.model.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Sheet);
     assert!(reports(&losses, PvzLossCode::ExactFaceSideGauge));
 }

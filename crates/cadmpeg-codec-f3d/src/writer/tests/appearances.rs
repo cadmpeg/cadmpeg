@@ -148,8 +148,8 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
 #[test]
 fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    source_less.model.bodies[0].visible = Some(false);
-    let body = source_less.model.bodies[0].id.clone();
+    source_less.geometry.bodies[0].visible = Some(false);
+    let body = source_less.geometry.bodies[0].id.clone();
     f3d_native_mut(&mut source_less).body_visibilities = [985, 986]
         .into_iter()
         .enumerate()

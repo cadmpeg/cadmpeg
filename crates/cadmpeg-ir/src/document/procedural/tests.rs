@@ -9,16 +9,17 @@ use crate::geometry::{
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-fn curves(count: usize) -> (Model, Vec<(CurveId, ProceduralCurve)>) {
-    let mut model = Model::default();
+fn curves(count: usize) -> (Topology, Vec<(CurveId, ProceduralCurve)>) {
+    let mut geometry = Topology::default();
     let rows = (0..count)
         .map(|index| {
             let owner = CurveId::mint(format!("test:model:curve#{index:04}")).unwrap();
-            model.curves.push(Curve {
+            geometry.curves.push(Curve {
                 id: owner.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 parameter_range: None,
                 source_object: None,
+                native_ref: None,
             });
             let procedural = ProceduralCurve::new(
                 ProceduralCurveId::mint(format!("test:model:construction#{index:04}")).unwrap(),
@@ -27,18 +28,19 @@ fn curves(count: usize) -> (Model, Vec<(CurveId, ProceduralCurve)>) {
             (owner, procedural)
         })
         .collect();
-    (model, rows)
+    (geometry, rows)
 }
 
-fn surfaces(count: usize) -> (Model, Vec<(SurfaceId, ProceduralSurface)>) {
-    let mut model = Model::default();
+fn surfaces(count: usize) -> (Topology, Vec<(SurfaceId, ProceduralSurface)>) {
+    let mut geometry = Topology::default();
     let rows = (0..count)
         .map(|index| {
             let owner = SurfaceId::mint(format!("test:model:surface#{index:04}")).unwrap();
-            model.surfaces.push(Surface {
+            geometry.surfaces.push(Surface {
                 id: owner.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             });
             let procedural = ProceduralSurface::new(
                 ProceduralSurfaceId::mint(format!("test:model:construction#{index:04}")).unwrap(),
@@ -51,54 +53,56 @@ fn surfaces(count: usize) -> (Model, Vec<(SurfaceId, ProceduralSurface)>) {
             (owner, procedural)
         })
         .collect();
-    (model, rows)
+    (geometry, rows)
 }
 
 #[test]
 fn indexed_curve_batch_preserves_single_attachment_rejections() {
     for case in 0..6 {
-        let (mut model, mut rows) = curves(2);
+        let (mut geometry, mut rows) = curves(2);
         match case {
-            0 => model.procedural_curves.push(rows[0].1.clone()),
+            0 => geometry.procedural_curves.push(rows[0].1.clone()),
             1 => rows[0].0 = CurveId::mint("test:model:curve#missing").unwrap(),
             2 => {
-                model.curves[1].geometry = CurveGeometry::Procedural {
+                geometry.curves[1].geometry = CurveGeometry::Procedural {
                     construction: rows[0].1.id.clone(),
                     cache: None,
                 }
             }
             3 => {
-                model.curves[0].geometry = CurveGeometry::Procedural {
+                geometry.curves[0].geometry = CurveGeometry::Procedural {
                     construction: rows[1].1.id.clone(),
                     cache: None,
                 }
             }
             4 => {
-                model.curves[0].geometry = CurveGeometry::Procedural {
+                geometry.curves[0].geometry = CurveGeometry::Procedural {
                     construction: rows[0].1.id.clone(),
                     cache: Some(SolvedCurveGeometry::Unknown { record: None }),
                 }
             }
             5 => {
-                model.curves[0].geometry = CurveGeometry::Procedural {
+                geometry.curves[0].geometry = CurveGeometry::Procedural {
                     construction: rows[0].1.id.clone(),
                     cache: None,
                 };
             }
             _ => unreachable!(),
         }
-        let before = model.clone();
-        let mut scanned = model.clone();
+        let before = geometry.clone();
+        let mut scanned = geometry.clone();
         let expected = scanned.add_procedural_curve(&rows[0].0, rows[0].1.clone());
-        let actual = model.add_procedural_curves(vec![rows.remove(0)]).unwrap();
+        let actual = geometry
+            .add_procedural_curves(vec![rows.remove(0)])
+            .unwrap();
         assert_eq!(
             actual.as_ref().map_err(ToString::to_string),
             expected.as_ref().map_err(ToString::to_string)
         );
         if actual.is_err() {
-            assert_eq!(model, before);
+            assert_eq!(geometry, before);
         } else {
-            assert_eq!(model, scanned);
+            assert_eq!(geometry, scanned);
         }
     }
 }
@@ -106,17 +110,17 @@ fn indexed_curve_batch_preserves_single_attachment_rejections() {
 #[test]
 fn indexed_batch_rejects_repeated_constructions_and_owners_after_the_accepted_prefix() {
     for same_construction in [false, true] {
-        let (mut model, mut rows) = surfaces(2);
+        let (mut geometry, mut rows) = surfaces(2);
         if same_construction {
             rows[1].1 = rows[0].1.clone();
         } else {
             rows[1].0 = rows[0].0.clone();
         }
-        let before = model.clone();
-        assert!(model.add_procedural_surfaces(rows).unwrap().is_err());
-        assert_eq!(model.surfaces[1], before.surfaces[1]);
-        assert_eq!(model.procedural_surfaces.len(), 1);
-        assert!(model.surfaces[0]
+        let before = geometry.clone();
+        assert!(geometry.add_procedural_surfaces(rows).unwrap().is_err());
+        assert_eq!(geometry.surfaces[1], before.surfaces[1]);
+        assert_eq!(geometry.procedural_surfaces.len(), 1);
+        assert!(geometry.surfaces[0]
             .geometry
             .procedural_construction()
             .is_some());
@@ -126,44 +130,49 @@ fn indexed_batch_rejects_repeated_constructions_and_owners_after_the_accepted_pr
 #[test]
 fn indexed_admission_rejects_another_model_and_a_changed_owner_slot() {
     for another_model in [false, true] {
-        let (mut model, mut rows) = curves(2);
-        let mut admission = ProceduralAdmission::new(&model);
+        let (mut geometry, mut rows) = curves(2);
+        let mut admission = ProceduralAdmission::new(&geometry);
         let (owner, procedural) = rows.remove(0);
         admission
-            .add_curve(&mut model, &owner, procedural)
+            .add_curve(&mut geometry, &owner, procedural)
             .unwrap()
             .unwrap();
         let (owner, procedural) = rows.remove(0);
         let error = if another_model {
-            let mut other = model.clone();
+            let mut other = geometry.clone();
             admission
                 .add_curve(&mut other, &owner, procedural)
                 .unwrap_err()
         } else {
-            model.curves.swap(0, 1);
+            geometry.curves.swap(0, 1);
             admission
-                .add_curve(&mut model, &owner, procedural)
+                .add_curve(&mut geometry, &owner, procedural)
                 .unwrap_err()
         };
         assert!(matches!(error, CodecError::Malformed(_)));
-        assert_eq!(model.procedural_curves.len(), 1);
+        assert_eq!(geometry.procedural_curves.len(), 1);
     }
 }
 
 #[test]
 fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
-    let (mut model, rows) = curves(4096);
-    model.add_procedural_curves(rows).unwrap().unwrap();
+    let (mut geometry, rows) = curves(4096);
+    geometry.add_procedural_curves(rows).unwrap().unwrap();
     let (surface_model, rows) = surfaces(4096);
-    model.surfaces = surface_model.surfaces;
-    model.add_procedural_surfaces(rows).unwrap().unwrap();
-    let encoded = serde_json::to_value(&model).unwrap();
-    let reconstructed: Model = serde_json::from_value(encoded.clone()).unwrap();
-    assert_eq!(reconstructed, model);
+    geometry.surfaces = surface_model.surfaces;
+    geometry.add_procedural_surfaces(rows).unwrap().unwrap();
+    let encoded = serde_json::to_value(&geometry).unwrap();
+    let reconstructed: Topology = serde_json::from_value(encoded.clone()).unwrap();
+    assert_eq!(reconstructed, geometry);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let snapshot = serde_json::to_value(model.geometry_snapshot("brep").unwrap()).unwrap();
+    let snapshot = serde_json::to_value(
+        geometry
+            .geometry_snapshot(&crate::document::Model::default(), "brep")
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(snapshot["procedural_curves"], encoded["procedural_curves"]);
     assert_eq!(
         snapshot["procedural_surfaces"],
@@ -174,10 +183,10 @@ fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
 
 #[test]
 fn procedural_batches_link_every_carrier_to_its_construction() {
-    let (mut model, rows) = curves(4096);
-    model.add_procedural_curves(rows).unwrap().unwrap();
-    assert_eq!(model.procedural_curves.len(), 4096);
-    for (curve, procedural) in model.curves.iter().zip(&model.procedural_curves) {
+    let (mut geometry, rows) = curves(4096);
+    geometry.add_procedural_curves(rows).unwrap().unwrap();
+    assert_eq!(geometry.procedural_curves.len(), 4096);
+    for (curve, procedural) in geometry.curves.iter().zip(&geometry.procedural_curves) {
         assert_eq!(
             curve.geometry.procedural_construction(),
             Some(&procedural.id)
@@ -187,10 +196,10 @@ fn procedural_batches_link_every_carrier_to_its_construction() {
             Some(SolvedCurveGeometry::Unknown { record: None })
         ));
     }
-    let (mut model, rows) = surfaces(4096);
-    model.add_procedural_surfaces(rows).unwrap().unwrap();
-    assert_eq!(model.procedural_surfaces.len(), 4096);
-    for (surface, procedural) in model.surfaces.iter().zip(&model.procedural_surfaces) {
+    let (mut geometry, rows) = surfaces(4096);
+    geometry.add_procedural_surfaces(rows).unwrap().unwrap();
+    assert_eq!(geometry.procedural_surfaces.len(), 4096);
+    for (surface, procedural) in geometry.surfaces.iter().zip(&geometry.procedural_surfaces) {
         assert_eq!(
             surface.geometry.procedural_construction(),
             Some(&procedural.id)
@@ -204,15 +213,15 @@ fn procedural_batches_link_every_carrier_to_its_construction() {
 
 #[test]
 fn indexed_admission_tracks_carriers_appended_after_it_was_built() {
-    let (mut model, rows) = curves(4096);
-    let carriers = std::mem::take(&mut model.curves);
-    let mut admission = ProceduralAdmission::new(&model);
+    let (mut geometry, rows) = curves(4096);
+    let carriers = std::mem::take(&mut geometry.curves);
+    let mut admission = ProceduralAdmission::new(&geometry);
     for (carrier, (owner, procedural)) in carriers.into_iter().zip(rows) {
-        model.curves.push(carrier);
+        geometry.curves.push(carrier);
         admission
-            .add_curve(&mut model, &owner, procedural)
+            .add_curve(&mut geometry, &owner, procedural)
             .unwrap()
             .unwrap();
     }
-    assert_eq!(model.procedural_curves.len(), 4096);
+    assert_eq!(geometry.procedural_curves.len(), 4096);
 }

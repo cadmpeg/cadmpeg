@@ -42,6 +42,27 @@ pub(crate) fn other_type_row(meta_stream: &str, identity: u64) -> SegmentType {
     )
 }
 
+/// One component naming-space row that registers `identities`.
+pub(crate) fn component_row(
+    meta_stream: &str,
+    identities: impl IntoIterator<Item = u64>,
+) -> SegmentType {
+    registered_row(
+        meta_stream,
+        "0F1E2D3C-4B5A-4978-8695-A4B3C2D1E0F0",
+        400,
+        "Component",
+        BaseTypeGuid::Guid {
+            value: "21F379C8-CAFD-4985-B461-767673A4C502"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            offset: 0,
+        },
+        identities,
+    )
+}
+
 const AXIS_TYPE_GUID: &str = "19031004-3AB6-4D13-ABBF-C51EE214688D";
 
 fn type_row(
@@ -50,16 +71,34 @@ fn type_row(
     byte_offset: u64,
     identities: impl IntoIterator<Item = u64>,
 ) -> SegmentType {
+    registered_row(
+        meta_stream,
+        guid,
+        byte_offset,
+        "Geometry",
+        BaseTypeGuid::Absent,
+        identities,
+    )
+}
+
+fn registered_row(
+    meta_stream: &str,
+    guid: &str,
+    byte_offset: u64,
+    module: &str,
+    base_type_guid: BaseTypeGuid,
+    identities: impl IntoIterator<Item = u64>,
+) -> SegmentType {
     SegmentType::try_new(
         format!("{meta_stream}:design-type#{byte_offset}"),
         SegmentTypeData {
             byte_offset,
             type_guid: guid.to_owned().try_into().unwrap(),
             type_guid_offset: 0,
-            base_type_guid: BaseTypeGuid::Absent,
+            base_type_guid,
             version: 0,
             version_offset: 0,
-            module: "Geometry".to_owned(),
+            module: module.to_owned(),
             entities: ReferenceRun::located(
                 identities
                     .into_iter()

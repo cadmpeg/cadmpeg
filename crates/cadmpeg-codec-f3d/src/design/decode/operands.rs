@@ -93,6 +93,7 @@ use crate::records::{
         extrude_selection::DesignExtrudeSelectionScopeTail, extrude_selection::DesignOperandRole,
         face::DesignFaceOperand, face::DesignFaceSourceGroup, face::DesignFaceSourceMember,
         fillet::DesignFilletRadiusGroup, fillet::DesignFilletRadiusLaw,
+        sketch_profile::DesignSketchProfileAtomicRegion,
         sketch_profile::DesignSketchProfileOperand, sketch_profile::DesignSketchProfileRegion,
         sketch_profile::DesignSketchProfileRegionMember,
         sketch_profile::DesignSketchProfileRegionSelection,
@@ -5698,9 +5699,16 @@ fn parse_sketch_profile_region_selection(
     profile_record_index: u32,
     paired_at: usize,
 ) -> Option<DesignSketchProfileRegionSelection> {
-    const REGION_MARKER_LEN: usize = 1;
-    const REGION_COUNT_LEN: usize = 4;
-    const TERMINATOR_LEN: usize = 5;
+    const COUNT_LEN: usize = 4;
+    // Each counted region stores at least its four-byte loop count, so the
+    // bytes after a count bound it.
+    let fits = |count: u32, after: usize| {
+        usize::try_from(count)
+            .ok()
+            .and_then(|count| count.checked_mul(COUNT_LEN))
+            .zip(bytes.len().checked_sub(after))
+            .is_some_and(|(needed, left)| needed <= left)
+    };
 
     let next_header = |position, expected| {
         let at = next_indexed_record_offset(bytes, position)?;
@@ -5732,120 +5740,41 @@ fn parse_sketch_profile_region_selection(
         ) != Some(profile_record_index)
         || bytes.get(
             selection_at + region_selection::ZERO_RUN_6
-                ..selection_at + region_selection::FORMAT_VERSION,
+                ..selection_at + region_selection::REGION_COUNT,
         )? != [0; 6]
-        || View::u32_le_at(bytes, selection_at + region_selection::FORMAT_VERSION)? != 1
     {
         return None;
     }
-    let region_count = usize::try_from(View::u32_le_at(
-        bytes,
-        selection_at + region_selection::REGION_COUNT,
-    )?)
-    .ok()?;
-    if region_count == 0 {
+    if selection_at.checked_add(region_selection::LEN)? > bytes.len() {
         return None;
     }
-    let minimum_regions_len = region_count
-        .checked_mul(REGION_COUNT_LEN.checked_add(region_member::LEN)?)?
-        .checked_add(
-            region_count
-                .checked_sub(1)?
-                .checked_mul(REGION_MARKER_LEN)?,
-        )?
-        .checked_add(TERMINATOR_LEN)?
-        .checked_add(indexed_header::LEN)?;
-    let mut cursor = selection_at.checked_add(region_selection::LEN)?;
-    if cursor.checked_add(minimum_regions_len)? > bytes.len() {
+    let region_count = View::u32_le_at(bytes, selection_at + region_selection::REGION_COUNT)?;
+    let mut cursor = selection_at.checked_add(region_selection::LOOP_COUNT)?;
+    if region_count == 0 || !fits(region_count, cursor) {
         return None;
     }
-
     let mut regions = Vec::new();
+    let mut atomic_regions = Vec::new();
     for region_ordinal in 0..region_count {
-        if region_ordinal != 0 {
-            if bytes.get(cursor) != Some(&1) {
-                return None;
-            }
-            cursor = cursor.checked_add(1)?;
-        }
-        let member_count_offset = cursor;
-        let member_count = usize::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
-        cursor = cursor.checked_add(REGION_COUNT_LEN)?;
-        if member_count == 0 {
+        let (loops, next) = parse_sketch_profile_region_loops(bytes, cursor, region_ordinal)?;
+        regions.extend(loops);
+        let atomic_count = View::u32_le_at(bytes, next)?;
+        cursor = next.checked_add(COUNT_LEN)?;
+        if !fits(atomic_count, cursor) {
             return None;
         }
-        let remaining_regions = region_count.checked_sub(region_ordinal.checked_add(1)?)?;
-        let trailing_minimum_len = remaining_regions
-            .checked_mul(
-                REGION_MARKER_LEN
-                    .checked_add(REGION_COUNT_LEN)?
-                    .checked_add(region_member::LEN)?,
-            )?
-            .checked_add(TERMINATOR_LEN)?
-            .checked_add(indexed_header::LEN)?;
-        let member_run_len = member_count.checked_mul(region_member::LEN)?;
-        if cursor
-            .checked_add(member_run_len)?
-            .checked_add(trailing_minimum_len)?
-            > bytes.len()
-        {
-            return None;
-        }
-
-        let mut members = Vec::new();
-        for _ in 0..member_count {
-            let kind_offset = cursor;
-            let kind = View::u32_le_at(bytes, cursor)?;
-            let curve_primary_id = std::num::NonZeroU32::new(View::u32_le_at(
-                bytes,
-                cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
-            )?)?;
-            let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORDS_3)?;
-            let mut incidence_words = [0; 8];
-            for (ordinal, word) in incidence_words.iter_mut().enumerate() {
-                *word = View::u32_le_at(
-                    bytes,
-                    incidence_words_offset.checked_add(ordinal.checked_mul(4)?)?,
-                )?;
-            }
-            if kind != 3
-                || incidence_words[..3] != [0; 3]
-                || !matches!(incidence_words[3], 0 | 1)
-                || incidence_words[6..] != [0; 2]
-            {
-                return None;
-            }
-            members.push(DesignSketchProfileRegionMember {
-                kind_offset: u64::try_from(kind_offset).ok()?,
-                curve_primary_id,
-                curve_primary_id_offset: u64::try_from(
-                    cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
-                )
-                .ok()?,
-                incidence_flag: incidence_words[3] == 1,
-                incidence_values: [
-                    crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
-                        incidence_words[4],
-                    )
-                    .ok()?,
-                    crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
-                        incidence_words[5],
-                    )
-                    .ok()?,
-                ],
-                incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
+        for _ in 0..atomic_count {
+            let (loops, next) = parse_sketch_profile_region_loops(bytes, cursor, region_ordinal)?;
+            atomic_regions.push(DesignSketchProfileAtomicRegion {
+                region_ordinal,
+                loop_count_offset: u64::try_from(cursor).ok()?,
+                loops,
             });
-            cursor = cursor.checked_add(region_member::LEN)?;
+            cursor = next;
         }
-        regions.push(DesignSketchProfileRegion {
-            member_count_offset: u64::try_from(member_count_offset).ok()?,
-            members,
-        });
     }
-    let companion_at = cursor.checked_add(TERMINATOR_LEN)?;
-    if !matches!(bytes.get(cursor..companion_at)?, [0 | 1, 0, 0, 0, 0])
-        || next_header(companion_at, selection_record_index)? != companion_at
-    {
+    let companion_at = cursor;
+    if next_header(companion_at, selection_record_index)? != companion_at {
         return None;
     }
     let (companion_class_tag, after_companion_class_tag) =
@@ -5857,15 +5786,130 @@ fn parse_sketch_profile_region_selection(
         record_index: selection_record_index,
         byte_offset: u64::try_from(selection_at).ok()?,
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
-        region_count_offset: u64::try_from(
-            selection_at.checked_add(region_selection::REGION_COUNT)?,
-        )
-        .ok()?,
+        region_count_offset: u64::try_from(selection_at.checked_add(region_selection::LOOP_COUNT)?)
+            .ok()?,
         regions,
+        atomic_regions,
         companion_class_tag: crate::design::decode::text::class_tag_from_view(companion_class_tag)
             .ok()?,
         companion_byte_offset: u64::try_from(companion_at).ok()?,
     })
+}
+
+/// The boundary loops of one selected or atomic region, starting at its
+/// nonzero u32 loop count. Each loop ends with an exterior byte. Returns the
+/// loops and the offset after the last exterior byte.
+fn parse_sketch_profile_region_loops(
+    bytes: &[u8],
+    at: usize,
+    region_ordinal: u32,
+) -> Option<(Vec<DesignSketchProfileRegion>, usize)> {
+    const COUNT_LEN: usize = 4;
+    const EXTERIOR_LEN: usize = 1;
+    let loop_count = View::u32_le_at(bytes, at)?;
+    // Each loop holds at least a count, one member, and its exterior byte.
+    let minimum_loop_len = COUNT_LEN
+        .checked_add(region_member::LEN)?
+        .checked_add(EXTERIOR_LEN)?;
+    let mut cursor = at.checked_add(COUNT_LEN)?;
+    if loop_count == 0
+        || usize::try_from(loop_count)
+            .ok()?
+            .checked_mul(minimum_loop_len)?
+            .checked_add(cursor)?
+            > bytes.len()
+    {
+        return None;
+    }
+    let mut loops = Vec::new();
+    for _ in 0..loop_count {
+        let (mut ring, next) = parse_sketch_profile_region_members(bytes, cursor, EXTERIOR_LEN)?;
+        if !matches!(bytes.get(next), Some(0 | 1)) {
+            return None;
+        }
+        ring.region_ordinal = region_ordinal;
+        loops.push(ring);
+        cursor = next.checked_add(EXTERIOR_LEN)?;
+    }
+    Some((loops, cursor))
+}
+
+/// One counted member list of a nested sketch-profile selection, starting
+/// at its u32 member count. `trailing_minimum_len` bytes must follow the
+/// list. Returns the list and the offset after its last member.
+fn parse_sketch_profile_region_members(
+    bytes: &[u8],
+    mut cursor: usize,
+    trailing_minimum_len: usize,
+) -> Option<(DesignSketchProfileRegion, usize)> {
+    const REGION_COUNT_LEN: usize = 4;
+    let member_count_offset = cursor;
+    let member_count = usize::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
+    cursor = cursor.checked_add(REGION_COUNT_LEN)?;
+    if member_count == 0 {
+        return None;
+    }
+    let member_run_len = member_count.checked_mul(region_member::LEN)?;
+    if cursor
+        .checked_add(member_run_len)?
+        .checked_add(trailing_minimum_len)?
+        > bytes.len()
+    {
+        return None;
+    }
+    let mut members = Vec::new();
+    for _ in 0..member_count {
+        let kind_offset = cursor;
+        let kind = View::u32_le_at(bytes, cursor)?;
+        let curve_primary_id = std::num::NonZeroU32::new(View::u32_le_at(
+            bytes,
+            cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
+        )?)?;
+        let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORDS_3)?;
+        let mut incidence_words = [0; 8];
+        for (ordinal, word) in incidence_words.iter_mut().enumerate() {
+            *word = View::u32_le_at(
+                bytes,
+                incidence_words_offset.checked_add(ordinal.checked_mul(4)?)?,
+            )?;
+        }
+        if kind != 3
+            || incidence_words[..3] != [0; 3]
+            || !matches!(incidence_words[3], 0 | 1)
+            || incidence_words[6..] != [0; 2]
+        {
+            return None;
+        }
+        members.push(DesignSketchProfileRegionMember {
+            kind_offset: u64::try_from(kind_offset).ok()?,
+            curve_primary_id,
+            curve_primary_id_offset: u64::try_from(
+                cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
+            )
+            .ok()?,
+            incidence_flag: incidence_words[3] == 1,
+            incidence_values: [
+                crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
+                    incidence_words[4],
+                )
+                .ok()?,
+                crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
+                    incidence_words[5],
+                )
+                .ok()?,
+            ],
+            incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
+        });
+        cursor = cursor.checked_add(region_member::LEN)?;
+    }
+    Some((
+        DesignSketchProfileRegion {
+            member_count_offset: u64::try_from(member_count_offset).ok()?,
+            members,
+            region_ordinal: 0,
+        },
+        cursor,
+    ))
 }
 
 struct ParsedRecipeOperand {

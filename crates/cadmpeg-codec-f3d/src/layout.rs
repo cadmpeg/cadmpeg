@@ -493,7 +493,7 @@ pub(crate) mod design_parameter_tail {
 /// Spec §3.1. Record length 11 B.
 ///
 /// ```text
-/// This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0 or 6.
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0, 5 or 6.
 /// ```
 pub(crate) mod design_parameter_wide_expression_trailer {
     /// Record length in bytes. Spec §3.1.
@@ -2812,7 +2812,7 @@ pub(crate) mod legacy_pipe_operation_prefix {
 /// Spec §3.1. Record length 40 B.
 ///
 /// ```text
-/// Offsets are relative to the N+3 selection header. The ordered variable-length region run starts at offset 40.
+/// Offsets are relative to the N+3 selection header. The first selected region's loop count is at offset 36, and its ordered variable-length loop run starts at offset 40.
 /// ```
 pub(crate) mod sketch_profile_region_selection_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -2823,10 +2823,10 @@ pub(crate) mod sketch_profile_region_selection_prefix {
     pub(crate) const PROFILE_REFERENCE_MARKER: usize = 21;
     /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
     pub(crate) const ZERO_RUN_6: usize = 26;
-    /// Offset of `format_version` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FORMAT_VERSION: usize = 32;
     /// Offset of `region_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REGION_COUNT: usize = 36;
+    pub(crate) const REGION_COUNT: usize = 32;
+    /// Offset of `loop_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LOOP_COUNT: usize = 36;
 }
 
 /// Byte offsets for the `sketch_profile_region_member` record.
@@ -3003,7 +3003,7 @@ pub(crate) mod base_feature_class_452_262_expanded;
 /// Spec §3.1. Record length 24 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The two parallel 15-byte body-entry runs begin at offset 24.
+/// Offsets are relative to the primary indexed header. The two parallel 15-byte body-entry runs begin at offset 24. Layout record `base_feature_suffix_result_body` gives the suffix result-body form.
 /// ```
 pub(crate) mod base_feature_result_body_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -3221,7 +3221,7 @@ pub(crate) mod base_feature_result_body_entry {
 /// Spec §3.1. Record length 15 B.
 ///
 /// ```text
-/// Offsets are relative to the byte after the two parallel 15-byte body-entry runs of the ordinary form.
+/// Offsets are relative to the byte after the two parallel 15-byte body-entry runs of the ordinary form, or after the body-entry run of the suffix result-body form.
 /// ```
 pub(crate) mod base_feature_null_reference_count {
     /// Record length in bytes. Spec §3.1.
@@ -3236,6 +3236,45 @@ pub(crate) mod base_feature_null_reference_count {
     pub(crate) const NULL_REFERENCE_ZERO: usize = 10;
     /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const BODY_COUNT: usize = 11;
+}
+
+/// Byte offsets for the `base_feature_suffix_result_body` record.
+///
+/// Spec §3.1. Record length 104 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The LP-UTF16 scope kind payload begins at offset 206.
+/// ```
+pub(crate) mod base_feature_suffix_result_body {
+    /// Record length in bytes. Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 104;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `body_count_marker` (`u8`). Spec §3.1.
+    pub(crate) const BODY_COUNT_MARKER: usize = 19;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_COUNT: usize = 20;
+    /// Offset of `body_marker` (`u8`). Spec §3.1.
+    pub(crate) const BODY_MARKER: usize = 24;
+    /// Offset of `body_entity_suffix` (`u64`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const BODY_ENTITY_SUFFIX: usize = 25;
+    /// Offset of `null_reference_flag` (`u8`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const NULL_REFERENCE_FLAG: usize = 48;
+    /// Offset of `repeated_body_entity_suffix` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const REPEATED_BODY_ENTITY_SUFFIX: usize = 55;
+    /// Offset of `metadata_record` (`u64`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const METADATA_RECORD: usize = 67;
+    /// Offset of `result_record` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const RESULT_RECORD: usize = 86;
+    /// Offset of `zero_tail` (`bytes[8]`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const ZERO_TAIL: usize = 96;
 }
 
 /// Byte offsets for the `base_feature_compact_result_body_count` record.
@@ -8906,10 +8945,8 @@ pub(crate) mod thread_extended_standard_trailer {
     pub(crate) const LENGTH_REFERENCE: usize = 1;
     /// Offset of `offset_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const OFFSET_REFERENCE: usize = 12;
-    /// Offset of `end_flag` (`u8`). Spec §3.1.
-    pub(crate) const END_FLAG: usize = 23;
-    /// Stated value of `end_flag` (`u8`). Spec §3.1.
-    pub(crate) const END_FLAG_VALUE: u8 = 1;
+    /// Offset of `right_handed` (`u8`). Spec §3.1.
+    pub(crate) const RIGHT_HANDED: usize = 23;
 }
 
 /// Byte offsets for the `thread_extended_compact_trailer` record.

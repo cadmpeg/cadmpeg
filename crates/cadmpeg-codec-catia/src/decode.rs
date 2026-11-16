@@ -10,14 +10,17 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
+use std::collections::BTreeSet;
 
 use crate::assemble::{build_container_report, build_metadata_fallback};
 use crate::container::{self, ContainerScan};
@@ -76,10 +79,17 @@ fn decode_over_routes(
     let matched = crate::dialect::classify(&scan)?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
+        let (ir, annotations, unknowns, untyped) = build_metadata_fallback(ctx, &scan)?;
         let mut report = build_container_report(&scan);
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
-        return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
+        return decode_result(
+            ctx,
+            &scan,
+            &matched,
+            ir,
+            report,
+            (annotations, unknowns, untyped),
+        );
     }
 
     let applicable = routes
@@ -100,6 +110,7 @@ fn decode_over_routes(
                     report: out.report,
                     annotations: out.annotations,
                     unknowns: out.unknowns,
+                    untyped: BTreeSet::new(),
                     admitted_model_entities: out.admitted_model_entities,
                     standard_face_population: route.standard_face_population,
                     fell_through: &fell_through,
@@ -121,7 +132,7 @@ fn decode_over_routes(
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
+    let (ir, annotations, unknowns, untyped) = build_metadata_fallback(ctx, &scan)?;
     let report = build_container_report(&scan);
     finish_decode(
         ctx,
@@ -132,6 +143,7 @@ fn decode_over_routes(
             report,
             annotations,
             unknowns,
+            untyped,
             admitted_model_entities: 0,
             standard_face_population: false,
             fell_through: &fell_through,
@@ -196,6 +208,9 @@ struct FinishDecodeInputs<'input0, 'input1, 'input2, 'input3> {
     report: DecodeBody,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
+    /// Classes every retained unknown holds undecoded; empty when a route
+    /// decoded their bytes.
+    untyped: BTreeSet<ArenaClass>,
     admitted_model_entities: u64,
     standard_face_population: bool,
     fell_through: &'input2 [String],
@@ -213,6 +228,7 @@ fn finish_decode(
         mut report,
         mut annotations,
         unknowns,
+        untyped,
         mut admitted_model_entities,
         standard_face_population,
         fell_through,
@@ -235,7 +251,7 @@ fn finish_decode(
         report.losses.push(note);
     }
     ctx.admit_entities(
-        u64_from_index(ir.model.entity_count()),
+        u64_from_index(ir.entity_count()),
         &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
@@ -252,7 +268,7 @@ fn finish_decode(
     }
     let modeling_graph_scope =
         modeling_graph_scope(scan.has_outer_container_declarations, &native.object_graphs);
-    crate::native::project_range::bind(ctx, &mut native, &ir.model, &modeling_graph_scope)?;
+    crate::native::project_range::bind(ctx, &mut native, &ir.geometry, &modeling_graph_scope)?;
     let modeling_object_records = (native
         .object_graphs
         .iter()
@@ -1886,7 +1902,7 @@ fn finish_decode(
         .map(|block| block.schema_selections.len())
         .sum();
     let transferred_line_profile_count = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -2003,7 +2019,7 @@ fn finish_decode(
         ),
         (
             crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT,
-            ir.model
+            ir.geometry
                 .procedural_surfaces
                 .iter()
                 .filter(|surface| {
@@ -3557,7 +3573,14 @@ fn finish_decode(
             )));
     }
     native.store_owned(ctx, ir.native.namespace_mut("catia"))?;
-    decode_result(ctx, scan, matched, ir, report, annotations, unknowns)
+    decode_result(
+        ctx,
+        scan,
+        matched,
+        ir,
+        report,
+        (annotations, unknowns, untyped),
+    )
 }
 
 /// Modeling scope of a part's decoded object graphs.
@@ -3626,16 +3649,26 @@ fn decode_result(
     matched: &DialectMatch,
     mut ir: CadIr,
     mut body: DecodeBody,
-    annotations: Annotations,
-    unknowns: Vec<UnknownRecord>,
+    retained: (Annotations, Vec<UnknownRecord>, BTreeSet<ArenaClass>),
 ) -> Result<Decoded, CodecError> {
+    let (annotations, unknowns, untyped) = retained;
     ir.source = Some(crate::assemble::source_meta(scan, matched)?);
     body.notes = crate::container::notes(scan);
     if let Some(loss) = crate::dialect::dialect_loss(matched) {
         body.losses.push(loss);
     }
-    let mut source_fidelity = SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity =
+        SourceFidelity::with_annotations(annotations, Sha256Digest::digest(&scan.data));
+    let ids = unknowns
+        .iter()
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns, ctx)?;
+    if !untyped.is_empty() {
+        for id in &ids {
+            source_fidelity.mark_untyped(id.as_str(), untyped.iter().copied())?;
+        }
+    }
     Ok(Decoded {
         ir,
         body,

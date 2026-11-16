@@ -37,24 +37,25 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
             let edge = EdgeId::mint(format!("test:thread:edge#{key}")).unwrap();
             let coedge = CoedgeId::mint(format!("test:thread:coedge#{key}")).unwrap();
             let boundary = LoopId::mint(format!("test:thread:loop#{key}")).unwrap();
-            ir.model.points.push(Point::new(
+            ir.geometry.points.push(Point::new(
                 point.clone(),
                 FinitePoint3::new(Point3::new(radius, 0., z)).unwrap(),
                 None,
             ));
-            ir.model.vertices.push(Vertex {
+            ir.geometry.vertices.push(Vertex {
                 id: vertex.clone(),
                 point,
                 tolerance: None,
+                native_ref: None,
             });
-            ir.model.edges.push(Edge {
+            ir.geometry.edges.push(Edge {
                 id: edge.clone(),
-                start: vertex.clone(),
-                end: vertex,
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
                 carrier: EdgeCarrier::Free,
                 tolerance: None,
+                native_ref: None,
             });
-            ir.model.coedges.push(Coedge {
+            ir.geometry.coedges.push(Coedge {
                 id: coedge.clone(),
                 owner_loop: boundary.clone(),
                 edge,
@@ -62,15 +63,17 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,
+                native_ref: None,
             });
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: boundary.clone(),
                 face: face.clone(),
                 boundary: LoopBoundary::Ring(LoopRing::single(coedge)),
+                native_ref: None,
             });
             loops.push(boundary);
         }
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -82,8 +85,9 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: face.clone(),
             shell: shell.clone(),
             surface,
@@ -92,33 +96,26 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
-        if let Some(existing) = ir.model.shells.iter_mut().find(|s| s.id == shell) {
-            existing.add_face(face);
-        } else {
-            ir.model.shells.push(
-                Shell::new(
-                    shell.clone(),
-                    region.clone(),
-                    vec![face],
-                    Vec::new(),
-                    Vec::new(),
-                )
-                .unwrap(),
-            );
-            ir.model.regions.push(Region {
+        if !ir.geometry.shells.iter().any(|s| s.id == shell) {
+            ir.geometry
+                .shells
+                .push(Shell::new(shell.clone(), region.clone()));
+            ir.geometry.regions.push(Region {
                 id: region.clone(),
                 body: body.clone(),
                 shells: vec![shell],
+                native_ref: None,
             });
-            ir.model.bodies.push(Body {
+            ir.geometry.bodies.push(Body {
                 id: body,
                 kind: BodyKind::Sheet,
-                regions: vec![region],
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             });
         }
     }
@@ -176,7 +173,7 @@ fn symbolic_thread_selection_abstains_for_zero_multiple_or_incomplete_ownership(
     let FaceSelection::Resolved { faces, native } = selected(&ir) else {
         panic!("unique radius-bounded candidate")
     };
-    assert_eq!(faces, vec![ir.model.faces[0].id.clone()]);
+    assert_eq!(faces, vec![ir.geometry.faces[0].id.clone()]);
     assert_eq!(native, "thread");
     assert_eq!(
         selected(&fixture(&[("first", "a", 1.), ("second", "b", 1.)])),
@@ -188,19 +185,16 @@ fn symbolic_thread_selection_abstains_for_zero_multiple_or_incomplete_ownership(
     };
     assert_eq!(
         faces,
-        seam.model
+        seam.geometry
             .faces
             .iter()
             .map(|face| face.id.clone())
             .collect::<Vec<_>>()
     );
-    let mut duplicate = fixture(&[("first", "a", 1.)]);
-    duplicate.model.shells[0].add_face(duplicate.model.faces[0].id.clone());
-    assert_eq!(selected(&duplicate), FaceSelection::Unresolved);
     let mut placed = fixture(&[("first", "a", 1.)]);
-    placed.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform::identity());
+    placed.geometry.bodies[0].transform = Some(cadmpeg_ir::transform::Transform::identity());
     assert_eq!(selected(&placed), FaceSelection::Unresolved);
     let mut missing = fixture(&[("first", "a", 1.)]);
-    missing.model.points.pop();
+    missing.geometry.points.pop();
     assert_eq!(selected(&missing), FaceSelection::Unresolved);
 }

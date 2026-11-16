@@ -262,8 +262,8 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         for id in members {
             let Some((start, end)) = edges.get(id.as_str()).and_then(|edge| {
                 Some((
-                    *vertices.get(edge.start.as_str())?,
-                    *vertices.get(edge.end.as_str())?,
+                    *vertices.get(edge.start()?.as_str())?,
+                    *vertices.get(edge.end()?.as_str())?,
                 ))
             }) else {
                 wire_edges.clear();

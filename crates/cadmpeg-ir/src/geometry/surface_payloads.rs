@@ -107,7 +107,6 @@ pub struct TaperSurfaceConstruction {
     taper: TaperSurfaceKind<FiniteReal, FiniteVector3>,
     /// Cache contract: the revision-gated form, or the legacy
     /// solved-cache tolerance this construction states instead.
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
 
@@ -132,7 +131,6 @@ struct TaperSurfaceConstructionWire {
     taper: TaperSurfaceKind,
     /// Cache contract: the revision-gated form, or the legacy
     /// solved-cache tolerance this construction states instead.
-    #[serde(default)]
     cache: CacheContract<RevisionSurfaceForm>,
 }
 
@@ -239,7 +237,6 @@ pub struct ExtrusionSurfaceConstruction {
     /// Cache contract: the revision-gated form, or the legacy
     /// solved-cache tolerance this construction states instead.
     /// The directrix parameter interval is `parameter_interval`.
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
 
@@ -270,7 +267,6 @@ struct ExtrusionSurfaceConstructionWire {
     /// Cache contract: the revision-gated form, or the legacy
     /// solved-cache tolerance this construction states instead.
     /// The directrix parameter interval is `parameter_interval`.
-    #[serde(default)]
     cache: CacheContract<RevisionSurfaceForm>,
 }
 
@@ -451,7 +447,6 @@ pub struct RevolutionSurfaceConstruction {
     /// Cache contract: the revision-gated form, or the legacy
     /// solved-cache tolerance this construction states instead.
     /// The profile curve's optional endpoints are `reference_endpoints`.
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
 
@@ -490,7 +485,6 @@ struct RevolutionSurfaceConstructionWire {
     /// Cache contract: the revision-gated form, or the legacy
     /// solved-cache tolerance this construction states instead.
     /// The profile curve's optional endpoints are `reference_endpoints`.
-    #[serde(default)]
     cache: CacheContract<RevisionSurfaceForm>,
 }
 
@@ -661,7 +655,6 @@ pub struct OffsetSurfaceConstruction {
     v_sense: Option<i64>,
     /// Whether the support continues as ruled linear strips outside its
     /// active NURBS rectangle.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     linear_support_extension: bool,
     /// Legacy conditional extension flags or the revision-gated form.
     extension: OffsetExtension<FiniteReal>,
@@ -691,7 +684,6 @@ struct OffsetSurfaceConstructionWire {
     v_sense: Option<i64>,
     /// Whether the support continues as ruled linear strips outside its
     /// active NURBS rectangle.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     linear_support_extension: bool,
     /// Legacy conditional extension flags or the revision-gated form.
     extension: OffsetExtension,
@@ -959,6 +951,7 @@ pub struct ParallelOffsetSurfaceConstruction {
     /// Signed offset distance.
     distance: FiniteReal,
     /// Whether the source classifies the result as self-intersecting.
+    #[serde(skip_serializing_if = "Option::is_none")]
     self_intersect: Option<bool>,
 }
 
@@ -971,7 +964,7 @@ struct ParallelOffsetSurfaceConstructionWire {
     /// Signed offset distance.
     distance: f64,
     /// Whether the source classifies the result as self-intersecting.
-    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    #[serde(default, deserialize_with = "deserialize_self_intersect")]
     self_intersect: Option<bool>,
 }
 
@@ -1165,7 +1158,6 @@ pub struct SumSurfaceConstruction {
     /// solved-cache tolerance this construction states instead.
     /// The first curve's optional endpoints are `reference_endpoints`
     /// and the second curve's are `second_endpoints`.
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
 
@@ -1181,7 +1173,6 @@ struct SumSurfaceConstructionWire {
     basepoint: Vector3,
     /// Cache contract: the revision-gated form, or the legacy
     /// solved-cache tolerance this construction states instead.
-    #[serde(default)]
     cache: CacheContract<RevisionSurfaceForm>,
 }
 
@@ -1373,7 +1364,6 @@ pub struct LoftSurfacePayload {
 
     bridge: Vec<LoftBridgeToken<FiniteReal>>,
 
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<LoftRevisionForm<FiniteReal>>,
 }
 #[derive(Deserialize)]
@@ -1399,7 +1389,6 @@ struct LoftSurfacePayloadWire {
     bridge: Vec<LoftBridgeToken>,
 
     /// Cache contract: the revision-gated loft form, or the legacy solved-cache tolerance this construction states instead.
-    #[serde(default)]
     cache: CacheContract<LoftRevisionForm>,
 }
 impl LoftSurfacePayload {
@@ -2074,7 +2063,6 @@ pub struct BlendSurfacePayload {
 
     /// Cache contract: the native rolling-ball construction, which states its
     /// own cache form, or the legacy solved-cache tolerance stated instead.
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<Box<RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>>>,
 
     #[serde(skip)]
@@ -2103,7 +2091,6 @@ struct BlendSurfacePayloadWire {
 
     /// Cache contract: the native rolling-ball construction, which states its
     /// own cache form, or the legacy solved-cache tolerance stated instead.
-    #[serde(default)]
     cache: CacheContract<Box<RollingBallConstruction>>,
 }
 impl BlendSurfacePayload {
@@ -2659,3 +2646,5 @@ cadmpeg_core::named_optional_field!(deserialize_native, Box<SweepSurfaceConstruc
 cadmpeg_core::named_optional_field!(deserialize_spine, CurveId, "spine");
 
 mod identity_rewrite;
+
+cadmpeg_core::named_optional_field!(deserialize_self_intersect, bool, "self_intersect");

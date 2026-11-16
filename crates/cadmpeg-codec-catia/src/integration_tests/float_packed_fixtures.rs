@@ -10,22 +10,22 @@ fn assert_native_fixture(
     expected_loops: usize,
 ) -> cadmpeg_test_support::EditableDecodeResult {
     let result = decode(bytes.to_vec());
-    let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let count = expected_points.len();
     assert!(result.report().geometry_transferred());
-    assert_eq!(model.bodies.len(), 1);
-    assert_eq!(model.regions.len(), 1);
-    assert_eq!(model.shells.len(), 1);
-    assert_eq!(model.faces.len(), 1);
-    assert_eq!(model.loops.len(), expected_loops);
-    assert_eq!(model.surfaces.len(), 1);
-    assert_eq!(model.coedges.len(), count);
-    assert_eq!(model.edges.len(), count);
-    assert_eq!(model.vertices.len(), count);
-    assert_eq!(model.pcurves.len(), count);
-    assert_eq!(model.points.len(), count);
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.regions.len(), 1);
+    assert_eq!(geometry.shells.len(), 1);
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.loops.len(), expected_loops);
+    assert_eq!(geometry.surfaces.len(), 1);
+    assert_eq!(geometry.coedges.len(), count);
+    assert_eq!(geometry.edges.len(), count);
+    assert_eq!(geometry.vertices.len(), count);
+    assert_eq!(geometry.pcurves.len(), count);
+    assert_eq!(geometry.points.len(), count);
     for expected in expected_points {
-        assert!(model.points.iter().any(|point| {
+        assert!(geometry.points.iter().any(|point| {
             let position = point.position().get();
             (position.x - expected[0])
                 .hypot(position.y - expected[1])
@@ -130,7 +130,7 @@ fn frozen_native_plane_hole_uses_location_controls_with_nurbs_boundaries() {
         2,
     );
     assert_eq!(
-        result.ir().model.faces[0].loops,
+        result.ir().geometry.faces[0].loops,
         cadmpeg_ir::topology::FaceLoops::classified(
             cadmpeg_ir::ids::LoopId::mint("catia:b5:loop#400".to_string())
                 .expect("fixture identity"),
@@ -140,7 +140,7 @@ fn frozen_native_plane_hole_uses_location_controls_with_nurbs_boundaries() {
             ],
         )
     );
-    assert!(result.ir().model.pcurves.iter().all(|pcurve| matches!(
+    assert!(result.ir().geometry.pcurves.iter().all(|pcurve| matches!(
         pcurve.geometry,
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
     )));
@@ -154,12 +154,12 @@ fn reflected_native_plane_fixture_retains_negative_exterior_orientation() {
         1,
     );
     assert_eq!(
-        result.ir().model.faces[0].sense,
+        result.ir().geometry.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
     let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
-    ) = &result.ir().model.surfaces[0].geometry
+    ) = &result.ir().geometry.surfaces[0].geometry
     else {
         panic!("unchanged XY plane");
     };

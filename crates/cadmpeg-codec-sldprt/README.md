@@ -33,8 +33,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "{} bodies, {} faces, {} diagnostics",
-        decoded.ir().model.bodies.len(),
-        decoded.ir().model.faces.len(),
+        decoded.ir().geometry.bodies.len(),
+        decoded.ir().geometry.faces.len(),
         decoded.report().losses.len(),
     );
     Ok(())

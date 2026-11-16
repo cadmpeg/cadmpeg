@@ -51,7 +51,6 @@ use crate::{design, history, ids, native, records};
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{
@@ -445,9 +444,37 @@ fn valid_sketch_profile_region_selection(
     profile: &records::topology::sketch_profile::DesignSketchProfileOperand,
     selection: &records::topology::sketch_profile::DesignSketchProfileRegionSelection,
 ) -> bool {
+    use records::topology::sketch_profile::DesignSketchProfileRegion;
+
+    /// The offset after `loops`, which start with their loop count at
+    /// `cursor` and each end with an exterior byte.
+    fn loops_end(cursor: u64, loops: &[&DesignSketchProfileRegion]) -> Option<u64> {
+        let mut cursor = cursor.checked_add(4)?;
+        if loops.is_empty() {
+            return None;
+        }
+        for region in loops {
+            if region.member_count_offset != cursor || region.members.is_empty() {
+                return None;
+            }
+            cursor = cursor.checked_add(4)?;
+            for member in &region.members {
+                if member.kind_offset != cursor
+                    || member.curve_primary_id_offset != cursor.checked_add(4)?
+                    || member.incidence_words_offset != cursor.checked_add(8)?
+                {
+                    return None;
+                }
+                cursor = cursor.checked_add(40)?;
+            }
+            cursor = cursor.checked_add(1)?;
+        }
+        Some(cursor)
+    }
+
     let Some(expected_region_count_offset) = selection
         .byte_offset
-        .checked_add(u64_from_index(region_selection::REGION_COUNT))
+        .checked_add(u64_from_index(region_selection::LOOP_COUNT))
     else {
         return false;
     };
@@ -458,44 +485,37 @@ fn valid_sketch_profile_region_selection(
     {
         return false;
     }
-    let Some(mut cursor) = selection
-        .byte_offset
-        .checked_add(u64_from_index(region_selection::LEN))
-    else {
-        return false;
-    };
-    for (region_ordinal, region) in selection.regions.iter().enumerate() {
-        if region_ordinal != 0 {
-            let Some(next) = cursor.checked_add(1) else {
-                return false;
-            };
-            cursor = next;
-        }
-        if region.member_count_offset != cursor || region.members.is_empty() {
-            return false;
-        }
-        let Some(next) = cursor.checked_add(4) else {
-            return false;
-        };
-        cursor = next;
-        for member in &region.members {
-            let (Some(curve_primary_id_offset), Some(incidence_words_offset), Some(next)) = (
-                cursor.checked_add(4),
-                cursor.checked_add(8),
-                cursor.checked_add(40),
-            ) else {
-                return false;
-            };
-            if member.kind_offset != cursor
-                || member.curve_primary_id_offset != curve_primary_id_offset
-                || member.incidence_words_offset != incidence_words_offset
+    let walk = || -> Option<u64> {
+        let mut cursor = selection.region_count_offset;
+        let mut start = 0;
+        let mut ordinal = 0;
+        let mut atomic_seen = 0;
+        while start < selection.regions.len() {
+            let own = selection
+                .regions
+                .iter()
+                .skip(start)
+                .take_while(|region| region.region_ordinal == ordinal)
+                .collect::<Vec<_>>();
+            start = start.checked_add(own.len())?;
+            cursor = loops_end(cursor, &own)?;
+            cursor = cursor.checked_add(4)?;
+            for atomic in selection
+                .atomic_regions
+                .iter()
+                .filter(|atomic| atomic.region_ordinal == ordinal)
             {
-                return false;
+                if atomic.loop_count_offset != cursor {
+                    return None;
+                }
+                cursor = loops_end(cursor, &atomic.loops.iter().collect::<Vec<_>>())?;
+                atomic_seen += 1;
             }
-            cursor = next;
+            ordinal = ordinal.checked_add(1)?;
         }
-    }
-    cursor.checked_add(5) == Some(selection.companion_byte_offset)
+        (atomic_seen == selection.atomic_regions.len()).then_some(cursor)
+    };
+    walk() == Some(selection.companion_byte_offset)
 }
 
 fn design_header_matches(
@@ -983,11 +1003,11 @@ impl<'a, 'd> Ctx<'a, 'd> {
     }
 
     /// Whether the document holds the design-intent records and the record
-    /// headers they read. A decode below full depth stops before them, and a
-    /// contained design-intent failure drops them, so in either case the
-    /// stored scopes and owners carry no design-intent bindings.
+    /// headers they read. A decode whose scope excludes design stops before
+    /// them, and a contained design-intent failure drops them, so in either
+    /// case the stored scopes and owners carry no design-intent bindings.
     fn holds_design_intent(&self) -> bool {
-        self.ir.decode_depth() == DecodeDepth::Full && self.native.design_intent_failures.is_empty()
+        self.ir.scope().design && self.native.design_intent_failures.is_empty()
     }
 }
 
@@ -3318,7 +3338,22 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .values()
                     .copied()
                     .collect::<Vec<_>>();
-                let expected_groups = construction.form.face_groups(&references);
+                let expected_groups = if construction.form
+                    == records::feature::thread::DesignThreadForm::StandardExtended
+                {
+                    construction
+                        .form
+                        .owner_ordinals(scope, &native.design_parameter_owners)
+                        .map(|ordinals| {
+                            records::feature::thread::DesignThreadForm::extended_standard_face_groups(
+                                &references,
+                                ordinals,
+                            )
+                        })
+                        .unwrap_or_default()
+                } else {
+                    construction.form.face_groups(&references)
+                };
                 construction
                     .form
                     .owners_hold(scope, &native.design_parameter_owners)
@@ -9464,7 +9499,7 @@ fn validate_body_links(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let ir = ctx.ir;
     let body_ids = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| &body.id)
@@ -9508,13 +9543,13 @@ fn validate_subentity_tags(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let ir = ctx.ir;
     let face_ids = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| &face.id)
         .collect::<std::collections::HashSet<_>>();
     let edge_ids = ir
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| &edge.id)
