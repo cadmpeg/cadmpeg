@@ -941,19 +941,22 @@ fn membership_checks_order_and_complete_closure_evidence() {
 #[test]
 fn resource_associations_are_checked_and_round_trip() {
     let empty = FormConstruction::complete(Vec::new()).unwrap();
-    let omitted = serde_json::to_value(&empty).unwrap();
-    assert!(omitted["inputs"].get("resource_associations").is_none());
+    let explicit_empty = serde_json::to_value(&empty).unwrap();
     assert_eq!(
-        serde_json::from_value::<FormConstruction>(omitted.clone()).unwrap(),
+        explicit_empty["inputs"]["resource_associations"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        serde_json::from_value::<FormConstruction>(explicit_empty.clone()).unwrap(),
         empty
     );
-    let mut explicit_empty = omitted.clone();
-    explicit_empty["inputs"]["resource_associations"] = serde_json::json!([]);
-    assert_eq!(
-        serde_json::from_value::<FormConstruction>(explicit_empty).unwrap(),
-        empty
-    );
-    let mut null = omitted;
+    let mut omitted = explicit_empty.clone();
+    omitted["inputs"]
+        .as_object_mut()
+        .unwrap()
+        .remove("resource_associations");
+    assert!(serde_json::from_value::<FormConstruction>(omitted).is_err());
+    let mut null = explicit_empty;
     null["inputs"]["resource_associations"] = serde_json::Value::Null;
     assert!(serde_json::from_value::<FormConstruction>(null).is_err());
     let cage = SubdId::mint("test:model:subd#a").unwrap();
@@ -1174,7 +1177,7 @@ fn resource_association_schema_requires_unique_items() {
         schema["$defs"]["FormInputs"]["properties"]["resource_associations"]["type"],
         "array"
     );
-    assert!(!schema["$defs"]["FormInputs"]["required"]
+    assert!(schema["$defs"]["FormInputs"]["required"]
         .as_array()
         .unwrap()
         .iter()

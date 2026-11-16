@@ -65,7 +65,6 @@ pub struct FormInputs {
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormResourceAssociation>")
     )]
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[doc = include_str!("form-api-item.md")]
     pub resource_associations: Vec<FormResourceAssociation>,
     #[cfg_attr(
