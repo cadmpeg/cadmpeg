@@ -29,7 +29,10 @@ fn cube_with_spline_edge(poles: impl FnOnce(Point3, Point3) -> Vec<Point3>) -> C
             .get()
     };
     let edge = &ir.geometry.edges[0];
-    let (start, end) = (position(&ir, &edge.start), position(&ir, &edge.end));
+    let (start, end) = (
+        position(&ir, &edge.ends.as_ref().unwrap().start),
+        position(&ir, &edge.ends.as_ref().unwrap().end),
+    );
     let curve_id = edge.curve().cloned().expect("cube edge curve");
     assert_eq!(
         ir.geometry

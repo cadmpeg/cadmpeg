@@ -553,7 +553,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
         let start = geometry
             .vertices
             .iter()
-            .find(|vertex| vertex.id == edge.start)
+            .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
             .and_then(|vertex| {
                 geometry
                     .points
@@ -566,7 +566,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
         let end = geometry
             .vertices
             .iter()
-            .find(|vertex| vertex.id == edge.end)
+            .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().end)
             .and_then(|vertex| {
                 geometry
                     .points

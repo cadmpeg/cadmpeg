@@ -68,8 +68,9 @@ pub(super) fn vertex_body_owners(
         for coedge in boundary.coedges() {
             let coedge = coedges.get(coedge).ok_or_else(missing)?;
             let edge = edges.get(&coedge.edge).ok_or_else(missing)?;
-            assign(&edge.start, owner)?;
-            assign(&edge.end, owner)?;
+            for vertex in edge.vertices() {
+                assign(vertex, owner)?;
+            }
         }
     }
     if ir

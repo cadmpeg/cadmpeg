@@ -663,6 +663,7 @@ fn circle_pair_selection_bound_rejects_the_solution_with_a_loss() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
@@ -1321,6 +1322,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let support = StandardCurveSupport {
         pos: 10,
@@ -1446,6 +1448,7 @@ fn limit_curve_point_search_bound_skips_the_curve_with_a_loss() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let support = StandardCurveSupport {
         pos: 10,
@@ -1616,6 +1619,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
             .expect("valid CylinderSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let bindings = [(surface_id.clone(), true, 0), (surface_id.clone(), true, 0)];
     let indices = [(surface_id, 0)].into_iter().collect();

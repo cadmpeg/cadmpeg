@@ -23,23 +23,26 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let edge_id = ir.geometry.edges[0].id.clone();
-        let expected_endpoints =
-            [&ir.geometry.edges[0].start, &ir.geometry.edges[0].end].map(|vertex_id| {
-                let point_id = &ir
-                    .geometry
-                    .vertices
-                    .iter()
-                    .find(|vertex| &vertex.id == vertex_id)
-                    .expect("edge vertex")
-                    .point;
-                ir.geometry
-                    .points
-                    .iter()
-                    .find(|point| &point.id == point_id)
-                    .expect("vertex point")
-                    .position()
-                    .get()
-            });
+        let expected_endpoints = [
+            &ir.geometry.edges[0].ends.as_ref().unwrap().start,
+            &ir.geometry.edges[0].ends.as_ref().unwrap().end,
+        ]
+        .map(|vertex_id| {
+            let point_id = &ir
+                .geometry
+                .vertices
+                .iter()
+                .find(|vertex| &vertex.id == vertex_id)
+                .expect("edge vertex")
+                .point;
+            ir.geometry
+                .points
+                .iter()
+                .find(|point| &point.id == point_id)
+                .expect("vertex point")
+                .position()
+                .get()
+        });
         ir.geometry.edges[0].set_curve(None).unwrap();
         ir.geometry.edges[0].set_param_range(None);
         ir.geometry.edges[0].tolerance =
@@ -122,7 +125,12 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         assert_eq!(tolerance, 0.01);
         assert_eq!(*parameterization, None);
 
-        let start = off_support_ir.geometry.edges[0].start.clone();
+        let start = off_support_ir.geometry.edges[0]
+            .ends
+            .as_ref()
+            .unwrap()
+            .start
+            .clone();
         let point_id = off_support_ir
             .geometry
             .vertices
@@ -520,6 +528,7 @@ fn cylinder_plane_transfer_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: target.clone(),
@@ -532,6 +541,7 @@ fn cylinder_plane_transfer_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let curve =
@@ -546,6 +556,7 @@ fn cylinder_plane_transfer_fixture(
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction,
@@ -581,12 +592,15 @@ fn cylinder_plane_transfer_fixture(
     ir.geometry.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:edge").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
-        start: VertexId::mint("test:model:entity#synthetic:start").expect("identity grammar"),
-        end: VertexId::mint("test:model:entity#synthetic:end").expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("test:model:entity#synthetic:start").expect("identity grammar"),
+            VertexId::mint("test:model:entity#synthetic:end").expect("identity grammar"),
+        )),
         tolerance: Some(
             cadmpeg_ir::scalar::PositiveReal::new(edge_tolerance)
                 .expect("positive finite tolerance"),
         ),
+        native_ref: None,
     });
     ir
 }
@@ -625,6 +639,7 @@ fn blend_contact_transfer_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: other_support.clone(),
@@ -637,6 +652,7 @@ fn blend_contact_transfer_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: offset.clone(),
@@ -649,6 +665,7 @@ fn blend_contact_transfer_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: target.clone(),
@@ -660,6 +677,7 @@ fn blend_contact_transfer_fixture(
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         },
     ]);
 
@@ -676,6 +694,7 @@ fn blend_contact_transfer_fixture(
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let contact_pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
@@ -759,6 +778,7 @@ fn blend_contact_transfer_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let procedural = ProceduralCurve::new(
             ProceduralCurveId::mint(format!(
@@ -822,6 +842,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                 id: source.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: other_support.clone(),
@@ -834,6 +855,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: target.clone(),
@@ -842,6 +864,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let spine =
@@ -857,6 +880,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             target_construction,
@@ -898,6 +922,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let _attached = ir.geometry.add_procedural_curve(
             &curve,
@@ -937,14 +962,17 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             id: EdgeId::mint("test:model:entity#synthetic:boundary-edge")
                 .expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
-            start: VertexId::mint("test:model:entity#synthetic:boundary-start")
-                .expect("identity grammar"),
-            end: VertexId::mint("test:model:entity#synthetic:boundary-end")
-                .expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("test:model:entity#synthetic:boundary-start")
+                    .expect("identity grammar"),
+                VertexId::mint("test:model:entity#synthetic:boundary-end")
+                    .expect("identity grammar"),
+            )),
             tolerance: Some(
                 cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
                     .expect("positive finite tolerance"),
             ),
+            native_ref: None,
         });
 
         crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(
@@ -1013,6 +1041,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                     .expect("valid boundary surface"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: plane.clone(),
@@ -1025,6 +1054,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let curve =
@@ -1046,6 +1076,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let _attached = ir.geometry.add_procedural_curve(
             &curve,
@@ -1093,6 +1124,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                     cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
                         .expect("positive finite tolerance"),
                 ),
+                native_ref: None,
             },
             Vertex {
                 id: vertex_ids[1].clone(),
@@ -1101,18 +1133,22 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                     cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
                         .expect("positive finite tolerance"),
                 ),
+                native_ref: None,
             },
         ]);
         ir.geometry.edges.push(Edge {
             id: EdgeId::mint("test:model:entity#synthetic:boundary-edge")
                 .expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
-            start: vertex_ids[0].clone(),
-            end: vertex_ids[1].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertex_ids[0].clone(),
+                vertex_ids[1].clone(),
+            )),
             tolerance: Some(
                 cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
                     .expect("positive finite tolerance"),
             ),
+            native_ref: None,
         });
 
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
@@ -1229,6 +1265,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: second_support.clone(),
@@ -1241,6 +1278,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         let curve =
@@ -1259,6 +1297,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let points = [
             (
@@ -1293,22 +1332,27 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 id: vertices[0].clone(),
                 point: points[0].0.clone(),
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: vertices[1].clone(),
                 point: points[1].0.clone(),
                 tolerance: None,
+                native_ref: None,
             },
         ]);
         ir.geometry.edges.push(Edge {
             id: EdgeId::mint("test:model:entity#nx:test:boundary-edge").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve.clone())),
-            start: vertices[0].clone(),
-            end: vertices[1].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertices[0].clone(),
+                vertices[1].clone(),
+            )),
             tolerance: Some(
                 cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
                     .expect("positive finite tolerance"),
             ),
+            native_ref: None,
         });
         let procedural = ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#nx:test:serialized-boundary")

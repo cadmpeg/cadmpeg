@@ -2306,6 +2306,13 @@ pub struct Pcurve {
     pub geometry: PcurveGeometry,
     /// Source parameterization metadata.
     pub metadata: PcurveMetadata,
+    /// The source record this pcurve projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 impl Pcurve {
@@ -2639,6 +2646,7 @@ impl PcurveGeneralForm {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_uv_offset, [f64; 2], "uv_offset");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_wrapper_reversed, bool, "wrapper_reversed");
 cadmpeg_core::named_optional_field!(deserialize_parameter_range, [f64; 2], "parameter_range");
 cadmpeg_core::named_optional_field!(

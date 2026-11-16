@@ -49,6 +49,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
@@ -64,6 +65,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ];
     ir.geometry.surfaces.push(Surface {
@@ -73,6 +75,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction_id,

@@ -72,7 +72,7 @@ fn complete_authored_inputs_cover_nested_sketch_geometry_and_constraints() {
 fn complete_authored_inputs_cover_presentation_metadata_and_pmi() {
     use cadmpeg_ir::appearance::AppearanceTarget;
     use cadmpeg_ir::attributes::AttributeValue;
-    const EPS_AUTHORED_COLOR_COMPONENT: f32 = f32::EPSILON;
+    const EPS_AUTHORED_COLOR_COMPONENT: f64 = 1.0e-7;
     let fixtures = harness().fixture_inputs();
     for name in [
         "authored_partition_deltas_color",

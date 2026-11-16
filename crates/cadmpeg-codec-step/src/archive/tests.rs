@@ -1291,16 +1291,27 @@ fn zip_root_parse_obeys_caller_recursion_ceiling() {
     let bytes = step_zip(&[(ROOT_NAME, root, CompressionMethod::Stored)]);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_recursion_depth = 6;
+    let given_up = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
+        losses
+            .iter()
+            .filter(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    && loss.message.contains("RecursionDepth")
+            })
+            .count()
+    };
     for input in [root.as_slice(), bytes.as_slice()] {
-        assert!(
-            matches!(StepCodec::default().decode(&mut Cursor::new(input), &options), Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))) if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth)
-        );
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(input), &options)
+            .expect("the record past the ceiling is given up alone");
+        assert_eq!(given_up(&decoded.report().losses), 1);
         let inspect = InspectOptions {
             limits: options.policy.limits,
         };
-        assert!(
-            matches!(StepCodec::default().inspect(&mut Cursor::new(input), &inspect), Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth)
-        );
+        let summary = StepCodec::default()
+            .inspect(&mut Cursor::new(input), &inspect)
+            .expect("inspection reports the given-up record");
+        assert_eq!(given_up(&summary.losses), 1);
     }
     StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

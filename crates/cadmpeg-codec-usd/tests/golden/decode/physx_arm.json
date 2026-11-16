@@ -7,8 +7,7 @@
         {
           "id": "usd:stage:body#/Arm/Base/Geom",
           "kind": "general",
-          "name": "Geom",
-          "regions": []
+          "name": "Geom"
         }
       ],
       "coedges": [],

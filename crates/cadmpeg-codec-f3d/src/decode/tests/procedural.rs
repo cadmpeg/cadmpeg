@@ -309,6 +309,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
         source_less.geometry.procedural_surfaces[0].edit_definition(|definition| {
             let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) = definition else {

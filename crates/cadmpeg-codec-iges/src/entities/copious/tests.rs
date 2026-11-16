@@ -316,8 +316,8 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
                 Some(0.001)
             );
             assert_eq!(
-                result.ir().geometry.edges[0].start,
-                result.ir().geometry.edges[0].end
+                result.ir().geometry.edges[0].ends.as_ref().unwrap().start,
+                result.ir().geometry.edges[0].ends.as_ref().unwrap().end
             );
             assert!(result.report().losses.is_empty());
             let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())

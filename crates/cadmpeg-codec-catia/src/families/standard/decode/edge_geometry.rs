@@ -1502,6 +1502,7 @@ pub(super) fn build_standard_edge_curve(
         id: id.clone(),
         geometry,
         source_object: Some(cgm_source("edge-support", support.tag)?),
+        native_ref: None,
     });
     if matches!(
         &support.geometry,
@@ -1682,6 +1683,7 @@ pub(super) fn ensure_native_edge_support_surface(
         id: id.clone(),
         geometry,
         source_object: Some(source),
+        native_ref: None,
     });
     if let (
         Some(procedural_id),
@@ -2095,6 +2097,7 @@ pub(super) fn attach_standard_circles(
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
             source_object: Some(cgm_source("edge-support", support.tag)?),
+            native_ref: None,
         });
     }
     Ok(())
@@ -2315,6 +2318,7 @@ pub(super) fn attach_standard_lines(
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),
             source_object: Some(cgm_source("edge-support", support.tag)?),
+            native_ref: None,
         });
     }
     Ok(())

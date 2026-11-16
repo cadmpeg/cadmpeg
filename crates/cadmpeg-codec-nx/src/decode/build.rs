@@ -368,6 +368,7 @@ pub(super) fn try_decode_geometry(
                 id: vid.clone(),
                 point: pid.clone(),
                 tolerance: None,
+                native_ref: None,
             });
             points_by_xmt.insert(node.xmt(), pid);
             counts.points += 1;
@@ -414,6 +415,7 @@ pub(super) fn try_decode_geometry(
                 id: id.clone(),
                 geometry,
                 source_object: None,
+                native_ref: None,
             });
             surfaces_by_xmt.insert(node.xmt(), id);
         }
@@ -433,6 +435,7 @@ pub(super) fn try_decode_geometry(
                 id: id.clone(),
                 geometry: surf.geometry,
                 source_object: None,
+                native_ref: None,
             });
             if let Some(node) = graph.at_pos(surf.pos) {
                 surfaces_by_xmt.insert(node.xmt(), id);
@@ -491,6 +494,7 @@ pub(super) fn try_decode_geometry(
                             layer: None,
                             instance_path: Vec::new(),
                         }),
+                        native_ref: None,
                     });
                     (surface_id, None)
                 };
@@ -566,6 +570,7 @@ pub(super) fn try_decode_geometry(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             });
             annotations.note(
                 procedural_id.as_str(),
@@ -665,6 +670,7 @@ pub(super) fn try_decode_geometry(
                 id: id.clone(),
                 geometry,
                 source_object: None,
+                native_ref: None,
             });
             curves_by_xmt.insert(node.xmt(), id);
         }
@@ -685,6 +691,7 @@ pub(super) fn try_decode_geometry(
                 id: id.clone(),
                 geometry: crv.geometry,
                 source_object: None,
+                native_ref: None,
             });
             if let Some(node) = graph.at_pos(crv.pos) {
                 curves_by_xmt.insert(node.xmt(), id);
@@ -706,6 +713,7 @@ pub(super) fn try_decode_geometry(
                 id: id.clone(),
                 geometry: pcurve.geometry,
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+                native_ref: None,
             });
             if let Some(node) = graph.at_pos(pcurve.pos) {
                 pcurves_by_xmt.insert(node.xmt(), id);
@@ -912,6 +920,7 @@ pub(super) fn try_decode_geometry(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             });
             annotations.note(
                 procedural_id.as_str(),
@@ -1971,8 +1980,7 @@ fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
     ir.geometry.edges.retain(|edge| edges.contains(&edge.id));
     let mut vertices: BTreeSet<VertexId> = BTreeSet::new();
     for edge in &ir.geometry.edges {
-        vertices.insert(edge.start.clone());
-        vertices.insert(edge.end.clone());
+        vertices.extend(edge.vertices().cloned());
     }
     for shell in &ir.geometry.shells {
         for vertex in shell.free_vertices() {
@@ -2150,41 +2158,37 @@ fn finalize_point_topology(
             id: vertex_id.clone(),
             point: point.id.clone(),
             tolerance: None,
+            native_ref: None,
         });
         free_vertices.push(vertex_id);
     }
+    if free_vertices.is_empty() {
+        return Ok(());
+    }
 
-    ir.geometry.shells.push(
-        match Shell::new(
-            shell_id.clone(),
-            region_id.clone(),
-            Vec::new(),
-            Vec::new(),
-            free_vertices,
-        ) {
-            Ok(shell) => shell,
-            Err(_) => {
-                return Ok(());
-            }
-        },
-    );
+    ir.geometry.shells.push(Shell::with_members(
+        shell_id.clone(),
+        region_id.clone(),
+        Vec::new(),
+        free_vertices,
+    ));
 
     let region_shells = vec![shell_id];
     ir.geometry.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
         shells: region_shells,
+        native_ref: None,
     });
 
-    let body_regions = vec![region_id];
     ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::General,
-        regions: body_regions,
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     Ok(())
 }

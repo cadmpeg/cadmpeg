@@ -35,7 +35,7 @@ fn cone_support_binds_display_list_face() {
             Point3::new(0.0, -local_radius * 0.5, v),
         ],
     );
-    set_shell_faces(&mut ir, vec![face.clone()]);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
     ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#cone-mesh")
@@ -91,7 +91,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
             Point3::new(0.0, -surface_radius * 0.5, axial),
         ],
     );
-    set_shell_faces(&mut ir, vec![face.clone()]);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
     let cache_radius = surface_radius - 0.1;
     let vertices = vec![
         Point3::new(cache_radius, 0.0, axial),

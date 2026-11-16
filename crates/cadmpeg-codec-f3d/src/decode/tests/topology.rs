@@ -180,8 +180,8 @@ fn decode_transfers_generated_wire_body_topology() {
         cadmpeg_ir::topology::BodyKind::Wire
     );
     assert_eq!(result.ir().geometry.shells.len(), 1);
-    assert!(result.ir().geometry.shells[0].faces().is_empty());
-    assert_eq!(result.ir().geometry.shells[0].wire_edges().len(), 1);
+    assert!(result.ir().geometry.faces.is_empty());
+    assert_eq!(result.ir().geometry.shells[0].wire_edges().count(), 1);
     assert_eq!(result.ir().geometry.edges.len(), 1);
     assert_eq!(result.ir().geometry.vertices.len(), 2);
     assert_eq!(result.ir().geometry.points.len(), 2);
@@ -192,7 +192,10 @@ fn decode_transfers_generated_wire_body_topology() {
         cadmpeg_asm::brep::records::WireSide::Out
     );
     assert_eq!(
-        result.ir().geometry.shells[0].wire_edges()[0],
+        *result.ir().geometry.shells[0]
+            .wire_edges()
+            .next()
+            .expect("wire edge"),
         result.ir().geometry.edges[0].id
     );
     assert!(!result
@@ -235,8 +238,8 @@ fn decode_transfers_isolated_vertex_wire_topology() {
         result.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert!(result.ir().geometry.shells[0].wire_edges().is_empty());
-    assert_eq!(result.ir().geometry.shells[0].free_vertices().len(), 1);
+    assert!(result.ir().geometry.shells[0].wire_edges().next().is_none());
+    assert_eq!(result.ir().geometry.shells[0].free_vertices().count(), 1);
     assert_eq!(result.ir().geometry.vertices.len(), 1);
     assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(
@@ -278,7 +281,7 @@ fn decode_classifies_generated_mixed_face_wire_body_as_general() {
         cadmpeg_ir::topology::BodyKind::General
     );
     assert_eq!(result.ir().geometry.faces.len(), 1);
-    assert_eq!(result.ir().geometry.shells[0].wire_edges().len(), 1);
+    assert_eq!(result.ir().geometry.shells[0].wire_edges().count(), 1);
     assert_eq!(result.ir().geometry.edges.len(), 4);
     assert_eq!(result.ir().geometry.curves.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -409,7 +412,7 @@ fn generated_source_less_writes_general_face_wire_body() {
         cadmpeg_ir::topology::BodyKind::General
     );
     assert_eq!(round_trip.ir().geometry.faces.len(), 1);
-    assert_eq!(round_trip.ir().geometry.shells[0].wire_edges().len(), 1);
+    assert_eq!(round_trip.ir().geometry.shells[0].wire_edges().count(), 1);
     assert_eq!(round_trip.ir().geometry.edges.len(), 4);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
         .expect("validate the neutral model");
@@ -470,8 +473,11 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
         cadmpeg_ir::topology::BodyKind::General
     );
     assert_eq!(round_trip.ir().geometry.faces.len(), 1);
-    assert_eq!(round_trip.ir().geometry.shells[0].wire_edges().len(), 1);
-    assert_eq!(round_trip.ir().geometry.shells[0].free_vertices().len(), 1);
+    assert_eq!(round_trip.ir().geometry.shells[0].wire_edges().count(), 1);
+    assert_eq!(
+        round_trip.ir().geometry.shells[0].free_vertices().count(),
+        1
+    );
     assert_eq!(f3d_native(round_trip.ir()).wire_topologies.len(), 2);
     assert!(f3d_native(round_trip.ir())
         .wire_topologies
@@ -551,7 +557,7 @@ fn generated_source_less_writes_solid_and_wire_bodies_together() {
         ]
     );
     assert_eq!(round_trip.ir().geometry.faces.len(), 6);
-    assert_eq!(round_trip.ir().geometry.shells[1].wire_edges().len(), 1);
+    assert_eq!(round_trip.ir().geometry.shells[1].wire_edges().count(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(
@@ -598,7 +604,7 @@ fn generated_source_less_writes_wire_body_topology() {
         round_trip.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert_eq!(round_trip.ir().geometry.shells[0].wire_edges().len(), 1);
+    assert_eq!(round_trip.ir().geometry.shells[0].wire_edges().count(), 1);
     assert_eq!(
         f3d_native(round_trip.ir()).wire_topologies[0].side,
         cadmpeg_asm::brep::records::WireSide::In
@@ -654,8 +660,14 @@ fn generated_source_less_writes_isolated_vertex_wire() {
         round_trip.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert!(round_trip.ir().geometry.shells[0].wire_edges().is_empty());
-    assert_eq!(round_trip.ir().geometry.shells[0].free_vertices().len(), 1);
+    assert!(round_trip.ir().geometry.shells[0]
+        .wire_edges()
+        .next()
+        .is_none());
+    assert_eq!(
+        round_trip.ir().geometry.shells[0].free_vertices().count(),
+        1
+    );
     assert!(round_trip.ir().geometry.edges.is_empty());
     assert_eq!(round_trip.ir().geometry.vertices.len(), 1);
     assert_eq!(
@@ -725,8 +737,11 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less mixed-wire shell round trip");
-    assert_eq!(round_trip.ir().geometry.shells[0].wire_edges().len(), 1);
-    assert_eq!(round_trip.ir().geometry.shells[0].free_vertices().len(), 2);
+    assert_eq!(round_trip.ir().geometry.shells[0].wire_edges().count(), 1);
+    assert_eq!(
+        round_trip.ir().geometry.shells[0].free_vertices().count(),
+        2
+    );
     assert_eq!(f3d_native(round_trip.ir()).wire_topologies.len(), 3);
     assert!(f3d_native(round_trip.ir())
         .wire_topologies
@@ -892,7 +907,7 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less multi-edge wire round trip");
-    assert_eq!(round_trip.ir().geometry.shells[0].wire_edges().len(), 2);
+    assert_eq!(round_trip.ir().geometry.shells[0].wire_edges().count(), 2);
     assert_eq!(round_trip.ir().geometry.edges.len(), 2);
     assert_eq!(round_trip.ir().geometry.curves.len(), 2);
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
@@ -924,9 +939,7 @@ fn generated_source_less_writes_multi_region_wire_body() {
     let mut second = cadmpeg_ir::document::CadIr::from_json(&second_json)
         .expect("renamed second wire region IR");
     let body_id = source_less.geometry.bodies[0].id.clone();
-    let region_id = second.geometry.regions[0].id.clone();
     second.geometry.regions[0].body = body_id;
-    source_less.geometry.bodies[0].regions.push(region_id);
     source_less
         .geometry
         .regions
@@ -961,7 +974,14 @@ fn generated_source_less_writes_multi_region_wire_body() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less multi-region wire round trip");
     assert_eq!(round_trip.ir().geometry.bodies.len(), 1);
-    assert_eq!(round_trip.ir().geometry.bodies[0].regions.len(), 2);
+    assert_eq!(
+        round_trip
+            .ir()
+            .geometry
+            .body_regions(&round_trip.ir().geometry.bodies[0].id)
+            .count(),
+        2
+    );
     assert_eq!(round_trip.ir().geometry.regions.len(), 2);
     assert_eq!(round_trip.ir().geometry.shells.len(), 2);
     assert!(round_trip

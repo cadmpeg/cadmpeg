@@ -6,10 +6,7 @@
       "bodies": [
         {
           "id": "step:data:body#38",
-          "kind": "sheet",
-          "regions": [
-            "step:data:region#38"
-          ]
+          "kind": "sheet"
         }
       ],
       "coedges": [
@@ -124,9 +121,11 @@
               10.0
             ]
           },
-          "end": "step:data:vertex#14",
-          "id": "step:data:edge#26",
-          "start": "step:data:vertex#13"
+          "ends": {
+            "end": "step:data:vertex#14",
+            "start": "step:data:vertex#13"
+          },
+          "id": "step:data:edge#26"
         },
         {
           "carrier": {
@@ -136,9 +135,11 @@
               14.142135623730953
             ]
           },
-          "end": "step:data:vertex#15",
-          "id": "step:data:edge#27",
-          "start": "step:data:vertex#14"
+          "ends": {
+            "end": "step:data:vertex#15",
+            "start": "step:data:vertex#14"
+          },
+          "id": "step:data:edge#27"
         },
         {
           "carrier": {
@@ -148,9 +149,11 @@
               10.0
             ]
           },
-          "end": "step:data:vertex#13",
-          "id": "step:data:edge#28",
-          "start": "step:data:vertex#15"
+          "ends": {
+            "end": "step:data:vertex#13",
+            "start": "step:data:vertex#15"
+          },
+          "id": "step:data:edge#28"
         }
       ],
       "faces": [
@@ -240,12 +243,7 @@
       "shells": [
         {
           "id": "step:data:shell#37",
-          "members": [
-            {
-              "id": "step:data:face#36",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "step:data:region#38"
         }
       ],
@@ -315,9 +313,9 @@
         {
           "base_color": {
             "a": 1.0,
-            "b": 0.20000000298023224,
-            "g": 0.800000011920929,
-            "r": 0.10000000149011612
+            "b": 0.2,
+            "g": 0.8,
+            "r": 0.1
           },
           "id": "step:presentation:appearance#70",
           "name": "mesh green",

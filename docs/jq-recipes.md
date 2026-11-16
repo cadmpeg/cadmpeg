@@ -30,10 +30,11 @@ cadmpeg query graph doc.json model.features ID \
   --follow definition.parameters.segment_0_object --hops 1
 ```
 
-Walk BREP children (`body.regions` → `region.shells` → `shell.faces`):
+Walk BREP children, which name their parents (`region.body`, `shell.region`,
+`face.shell`):
 
 ```sh
-cadmpeg query graph doc.json geometry.bodies BODY_ID --hops 3
+cadmpeg query graph doc.json geometry.bodies BODY_ID --reverse --hops 3
 ```
 
 Incoming references to one record:

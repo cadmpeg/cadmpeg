@@ -873,6 +873,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             bodies: geometry.bodies,
             regions: geometry.regions,
             shells: geometry.shells,
+            faces: geometry.faces,
         },
     ));
     losses.extend(crate::history::combine_history_tools::bind(

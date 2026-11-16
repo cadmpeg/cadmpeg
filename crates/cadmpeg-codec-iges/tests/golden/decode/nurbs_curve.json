@@ -7,10 +7,7 @@
         {
           "id": "iges:model:body#free-geometry",
           "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
+          "name": "IGES free geometry"
         }
       ],
       "coedges": [],
@@ -86,9 +83,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D1-end",
-          "id": "iges:model:edge#D1",
-          "start": "iges:model:vertex#D1-start"
+          "ends": {
+            "end": "iges:model:vertex#D1-end",
+            "start": "iges:model:vertex#D1-start"
+          },
+          "id": "iges:model:edge#D1"
         }
       ],
       "faces": [],

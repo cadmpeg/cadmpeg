@@ -130,7 +130,7 @@ fn a_cylinder_with_a_seam_decodes_to_a_closed_solid() {
     let seam = geometry
         .edges
         .iter()
-        .find(|edge| edge.start != edge.end)
+        .find(|edge| edge.ends.as_ref().unwrap().start != edge.ends.as_ref().unwrap().end)
         .unwrap();
     let uses: Vec<_> = geometry
         .coedges
@@ -169,7 +169,10 @@ fn a_cone_with_a_singular_apex_decodes_to_a_closed_solid() {
             })
         })
         .expect("apex edge on a degenerate curve");
-    assert_eq!(apex.start, apex.end);
+    assert_eq!(
+        apex.ends.as_ref().unwrap().start,
+        apex.ends.as_ref().unwrap().end
+    );
 }
 
 #[test]

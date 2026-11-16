@@ -37,6 +37,7 @@ fn rectangle() -> CadIr {
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(basis)),
         source_object: None,
+        native_ref: None,
     });
     ir
 }
@@ -406,7 +407,7 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
                 .geometry
                 .regions
                 .iter()
-                .find(|region| region.id == body.regions[0])
+                .find(|region| region.body == body.id)
                 .unwrap();
             let shell = ir
                 .geometry
@@ -414,32 +415,28 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
                 .iter_mut()
                 .find(|shell| shell.id == region.shells[0])
                 .unwrap();
-            let mut vertices = shell.free_vertices().to_vec();
+            let mut vertices = shell.free_vertices().cloned().collect::<Vec<_>>();
             vertices.push(vertex.id);
-            *shell = cadmpeg_ir::topology::Shell::new(
+            *shell = cadmpeg_ir::topology::Shell::with_members(
                 shell.id.clone(),
                 shell.region.clone(),
-                shell.faces().to_vec(),
-                shell.wire_edges().to_vec(),
+                shell.wire_edges().cloned().collect::<Vec<_>>(),
                 vertices,
-            )
-            .unwrap();
+            );
         } else {
             ir.geometry.bodies.extend(free.ir().geometry.bodies.clone());
             ir.geometry
                 .regions
                 .extend(free.ir().geometry.regions.clone());
             let shell = &free.ir().geometry.shells[0];
-            ir.geometry.shells.push(
-                cadmpeg_ir::topology::Shell::new(
+            ir.geometry
+                .shells
+                .push(cadmpeg_ir::topology::Shell::with_members(
                     shell.id.clone(),
                     shell.region.clone(),
                     Vec::new(),
-                    Vec::new(),
                     vec![vertex.id],
-                )
-                .unwrap(),
-            );
+                ));
         }
         let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
         assert!(generated.losses.iter().any(|loss| loss.code
@@ -540,6 +537,7 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
         ),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     let topology_edge = ir.geometry.coedges[0].edge.clone();
     let mut duplicate = ir

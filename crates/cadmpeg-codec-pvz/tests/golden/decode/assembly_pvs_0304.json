@@ -7,14 +7,12 @@
         {
           "id": "pvz:model:body#bracket.ol",
           "kind": "general",
-          "name": "bracket.ol",
-          "regions": []
+          "name": "bracket.ol"
         },
         {
           "id": "pvz:model:body#plate.ol",
           "kind": "general",
-          "name": "plate.ol",
-          "regions": []
+          "name": "plate.ol"
         }
       ],
       "coedges": [],

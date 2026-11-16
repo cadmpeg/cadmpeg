@@ -719,6 +719,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
         }
         let pattern_plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
@@ -890,6 +891,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
         }
         let entry = |sequence, entity_type| DirectoryEntry {

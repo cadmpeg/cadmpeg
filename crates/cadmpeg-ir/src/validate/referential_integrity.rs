@@ -104,6 +104,7 @@ mod tests {
             id: "test:model:vertex#owner".try_into().unwrap(),
             point: "test:model:point#missing".try_into().unwrap(),
             tolerance: None,
+            native_ref: None,
         });
         let identities = crate::index::identities::BorrowedIdentities::<()>::new();
         let arena = DecodeArena::new();

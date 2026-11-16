@@ -270,8 +270,8 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
             .position()
             .get()
     };
-    let start = vertex_position(&edge.start);
-    let end = vertex_position(&edge.end);
+    let start = vertex_position(&edge.ends.as_ref().unwrap().start);
+    let end = vertex_position(&edge.ends.as_ref().unwrap().end);
     let at_bottom = |point: cadmpeg_ir::math::Point3| {
         point.x.abs() < LENGTH_TOLERANCE
             && point.y.abs() < LENGTH_TOLERANCE

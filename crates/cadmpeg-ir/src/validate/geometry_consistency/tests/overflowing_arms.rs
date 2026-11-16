@@ -100,6 +100,7 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
             .unwrap(),
         ),
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     });
     let coedge = ir
         .geometry
@@ -251,11 +252,13 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
             id: supports[0].clone(),
             geometry: plane(Vector3::new(0.0, 0.0, 1.0)),
             source_object: None,
+            native_ref: None,
         },
         crate::geometry::Surface {
             id: supports[1].clone(),
             geometry: plane(Vector3::new(0.0, -1.0, 0.0)),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let curve = crate::ids::CurveId::mint("test:model:curve#intersection").unwrap();
@@ -270,6 +273,7 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = PcurveGeometry::Line(
         crate::geometry::pcurve::LinePcurve::try_new(
@@ -326,7 +330,7 @@ fn cube_with_an_overflowing_edge_curve() -> crate::document::CadIr {
         .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == edge.start)
+        .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
         .and_then(|vertex| {
             ir.geometry
                 .points
@@ -445,6 +449,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: second.clone(),
@@ -457,6 +462,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     ir.geometry.curves.push(crate::geometry::Curve {
@@ -470,6 +476,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .surfaces
@@ -607,6 +614,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
                 ),
             ),
             source_object: None,
+            native_ref: None,
         }
     }));
     make_steep_circular_blend(&mut ir, &supports[0]);
@@ -622,6 +630,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = PcurveGeometry::Line(
         crate::geometry::pcurve::LinePcurve::try_new(
