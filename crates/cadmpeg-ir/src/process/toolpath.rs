@@ -169,6 +169,7 @@ pub enum Motion {
         speed: Fraction,
     },
     /// The pierce that starts a jet cut, before its lead-in.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Pierce,
     /// A motion whose target the stored path does not determine in full,
     /// with its words.

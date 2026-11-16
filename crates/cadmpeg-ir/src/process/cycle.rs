@@ -160,18 +160,25 @@ pub struct Cycle {
 )]
 pub enum CycleKind {
     /// A drilling cycle.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Drill,
     /// A pecking cycle with full retract.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Deep,
     /// A pecking cycle without full retract.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ChipBreak,
     /// A boring cycle that feeds out.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Bore,
     /// A reaming cycle.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Ream,
     /// A tapping cycle.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Tap,
     /// A turning groove cycle.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Groove,
     /// A probing cycle, with the nominal faces it measures.
     Probe(ProbeTarget),

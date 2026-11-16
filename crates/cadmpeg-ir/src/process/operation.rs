@@ -209,21 +209,29 @@ pub enum OperationClass {
     /// A turning operation.
     Turning(TurningClass),
     /// Touch probing.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Probing,
     /// Thread milling.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ThreadMilling,
     /// Engraving.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Engraving,
     /// Chamfering.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Chamfering,
     /// Jet cutting.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Jet,
     /// Wire EDM.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     WireEdm,
     /// Additive manufacturing.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Additive,
     /// A class that no arm states; the operation's `native_kind` holds the
     /// source's name.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unclassified,
 }
 
@@ -409,18 +417,25 @@ pub struct ProcessGeometry {
 )]
 pub enum GeometryRole {
     /// The drive geometry: contours, pockets, faces, holes.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Machine,
     /// A boundary of the cut.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Boundary,
     /// Geometry the tool avoids.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Check,
     /// Picks the operation removes from its drive geometry.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Exclude,
     /// A start point the operation uses.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Start,
     /// Geometry that orients the tool.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Orientation,
     /// Geometry that a limit, a height, or a radial base names by `slot`.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Reference,
     /// A role that no arm states, by the source's name.
     Native(NonBlankString),

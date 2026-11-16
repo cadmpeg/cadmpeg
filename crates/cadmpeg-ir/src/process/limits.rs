@@ -114,8 +114,10 @@ pub enum RadialLimit {
 )]
 pub enum RadiusFrom {
     /// The stock's outer radius.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     StockOuter,
     /// The stock's inner radius; the spindle axis for a solid stock.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     StockInner,
     /// The least radius of the `Reference` geometry whose slot it names.
     SelectionMin(NonBlankString),
@@ -183,11 +185,14 @@ pub struct AxialLimit {
 pub enum AxialFrom {
     /// The frontmost point along the axis of the model's solids turned in
     /// the setup.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ModelFront,
     /// The backmost point along the axis of the model's solids turned in the
     /// setup.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ModelBack,
     /// The stock's front face.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     StockFront,
     /// A base that no arm states, by the source's mode.
     Native(NonBlankString),
@@ -215,20 +220,26 @@ pub enum LimitPoint {
 )]
 pub enum HeightFrom {
     /// The work coordinate system's origin: an absolute height.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Wcs,
     /// The stock's top.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     StockTop,
     /// The stock's bottom.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     StockBottom,
     /// The highest point of the setup's model along the tool axis.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ModelTop,
     /// The lowest point of the setup's model along the tool axis.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ModelBottom,
     /// Another height of the same operation.
     Height(HeightRole),
     /// The `Reference` geometry of the same operation whose slot it names.
     Selection(NonBlankString),
     /// The operation's `Machine` geometry.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Geometry,
     /// A reference that no arm states, by the source's mode.
     Native(NonBlankString),

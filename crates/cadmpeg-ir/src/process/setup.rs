@@ -100,14 +100,19 @@ pub struct Setup {
 )]
 pub enum JobKind {
     /// Milling.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Milling,
     /// Turning.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Turning,
     /// Jet cutting.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Jet,
     /// Wire EDM.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     WireEdm,
     /// Additive manufacturing.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Additive,
     /// A family that no arm states, by the source's name.
     Native(NonBlankString),
@@ -160,6 +165,7 @@ pub struct WorkpieceSetup {
 )]
 pub enum WorkOffset {
     /// The source's explicit default offset.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Default,
     /// The control's n-th work offset; 1 is G54.
     Number(NonZeroU32),
@@ -228,8 +234,10 @@ pub struct FunctionStep {
 )]
 pub enum NcFunction {
     /// A program stop.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Stop,
     /// An optional stop.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     OptionalStop,
     /// An operator message.
     Message(String),

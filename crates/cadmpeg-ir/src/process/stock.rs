@@ -216,6 +216,7 @@ pub struct Wcs {
 )]
 pub enum WcsOrientation {
     /// The model's orientation.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Model,
     /// Two axes, each set along a direction, with a flip per axis.
     Axes {
@@ -254,8 +255,10 @@ pub struct AxisSpec {
 )]
 pub enum WcsOrigin {
     /// The model's origin.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ModelOrigin,
     /// The origin of the `Frame` orientation.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     FrameOrigin,
     /// A point of the stock's bounding box.
     StockPoint(BoxPoint),

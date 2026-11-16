@@ -210,10 +210,13 @@ pub struct PlungeStrategy {
 )]
 pub enum PlungeKind {
     /// Along the tool axis.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ToolAxis,
     /// Down a helix.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Helix,
     /// Along the cut.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Ramp,
     /// A move that no arm states, by the source's name.
     Native(NonBlankString),
@@ -305,8 +308,10 @@ pub struct PassClearance {
 )]
 pub enum RetractPolicy {
     /// To the retract height or above.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Full,
     /// As high as the strategy needs, possibly below the retract height.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Minimum,
     /// A policy that no arm states, by the source's name.
     Native(NonBlankString),

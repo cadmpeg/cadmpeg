@@ -315,30 +315,42 @@ pub struct Technology {
 )]
 pub enum FeedRole {
     /// The cutting feed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Cutting,
     /// The plunge feed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Plunge,
     /// The ramp feed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Ramp,
     /// The feed into the cut.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Entry,
     /// The feed out of the cut.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Exit,
     /// The retract feed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Retract,
     /// The approach feed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Approach,
     /// The departure feed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Departure,
     /// The feed of a direct link between passes that keeps the cutting
     /// level.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Link,
     /// The feed of a link that may leave the cutting level. A technology
     /// that states none feeds those links at its `Cutting` feed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Transition,
     /// The feed of the finishing movement class.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Finishing,
     /// The feed of the reduced movement class.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Reduced,
     /// A role that no arm states, by the source's name.
     Native(NonBlankString),
@@ -412,14 +424,19 @@ pub enum SpindleDirection {
 )]
 pub enum Coolant {
     /// No coolant.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Off,
     /// Flood coolant.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Flood,
     /// Mist coolant.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Mist,
     /// Air.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Air,
     /// Coolant through the tool.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ThroughTool,
     /// A mode that no arm states, by the source's name.
     Native(NonBlankString),
@@ -437,10 +454,13 @@ pub enum Coolant {
 pub enum CutMode {
     /// The material on the tool's right with a clockwise spindle, and on its
     /// left with a counterclockwise spindle.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Climb,
     /// The other way from `Climb`.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Conventional,
     /// Successive passes in opposite directions.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Both,
     /// A mode that no arm states, by the source's name.
     Native(NonBlankString),
@@ -484,11 +504,14 @@ pub struct FinishingSteps {
 pub enum Compensation {
     /// The tool centre offset to the left by the tool radius plus the radial
     /// stock to leave.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Left,
     /// The tool centre offset to the right by the tool radius plus the
     /// radial stock to leave.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Right,
     /// On the contour.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Center,
     /// A compensation that no arm states, by the source's name.
     Native(NonBlankString),
@@ -591,8 +614,10 @@ pub struct ChamferCut {
 )]
 pub enum JetCut {
     /// Pierces the sheet before each cut.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Through,
     /// Marks the surface without piercing.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Mark,
     /// A mode that no arm states, by the source's name.
     Native(NonBlankString),
@@ -610,8 +635,10 @@ pub enum JetCut {
 pub enum RestSource {
     /// The material every earlier operation of the setup left on the setup's
     /// stock.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     EarlierOperations,
     /// The setup's stock with no operation removed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     SetupStock,
     /// A source that no arm states, by the source's name.
     Native(NonBlankString),

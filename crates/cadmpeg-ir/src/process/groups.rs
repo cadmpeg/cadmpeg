@@ -33,6 +33,7 @@ pub enum ProcessDefinition {
     Expression(Expression<ParamRef>),
     /// A value that the application computes from stock, model, or tool and
     /// stores; expressions bind it.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Computed,
 }
 
@@ -109,6 +110,7 @@ pub struct ProcessGroup {
 pub enum GroupKind {
     /// A group whose values are parameters it owns; an operation value that
     /// inherits one binds it.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Method,
     /// A group that holds geometry by role. An operation's geometry for a
     /// role it states no geometry for is its geometry group's, else that
