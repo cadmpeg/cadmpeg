@@ -82,6 +82,9 @@ impl<'a> ModelEvaluationDepthGuard<'a> {
                 },
                 (None, Some(budget)) => FrameDepth::Slice {
                     _guard: budget.recursion_guard().map_err(|_| ResourceLimit {
+                        scope: cadmpeg_core::decode::LimitScope::for_dimension(
+                            ResourceDimension::RecursionDepth,
+                        ),
                         dimension: ResourceDimension::RecursionDepth,
                         reason: ResourceFailure::BudgetExceeded,
                         limit: cadmpeg_core::decode::u64_from_index(WorkBudget::RECURSION_DEPTH),
@@ -93,6 +96,9 @@ impl<'a> ModelEvaluationDepthGuard<'a> {
                 (None, None) => {
                     if identities.len() >= INDEPENDENT_MODEL_EVALUATION_DEPTH {
                         return Err(ResourceLimit {
+                            scope: cadmpeg_core::decode::LimitScope::for_dimension(
+                                ResourceDimension::RecursionDepth,
+                            ),
                             dimension: ResourceDimension::RecursionDepth,
                             reason: ResourceFailure::BudgetExceeded,
                             limit: cadmpeg_core::decode::u64_from_index(

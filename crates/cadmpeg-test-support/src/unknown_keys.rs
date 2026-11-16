@@ -21,7 +21,7 @@ pub const UNKNOWN_KEY: &str = "zz_bogus";
 /// accepts one spelling and refuses the others, and one probe value alone
 /// cannot see that. A map whose values are arrays, for one, is visible only to
 /// the `[]` probe.
-fn probe_values() -> [Value; 7] {
+pub(crate) fn probe_values() -> [Value; 7] {
     [
         Value::Null,
         Value::from(1),
@@ -34,8 +34,8 @@ fn probe_values() -> [Value; 7] {
 }
 
 /// One step of a concrete JSON path.
-#[derive(Clone)]
-enum Step {
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Step {
     /// Object member.
     Key(String),
     /// Array element.
@@ -123,7 +123,7 @@ fn sweep(
 /// Source maps may legally contain the default sentinel as an ordinary key.
 /// Choosing a stable suffix in that case keeps the existing member intact and
 /// still inserts a key the surrounding typed object does not declare.
-fn probe_key(fields: &Map<String, Value>) -> String {
+pub(crate) fn probe_key(fields: &Map<String, Value>) -> String {
     let mut candidate = UNKNOWN_KEY.to_owned();
     while fields.contains_key(&candidate) {
         candidate.push('_');
@@ -137,7 +137,11 @@ fn probe_key(fields: &Map<String, Value>) -> String {
 /// The graft is `empty` carrying the shape's own array element, or its own
 /// top-level subtree when the shape sits in no array. `None` states a path the
 /// graft cannot carry.
-fn grafted_document(ir: &Value, empty: &Value, path: &[Step]) -> Option<(Value, Vec<Step>)> {
+pub(crate) fn grafted_document(
+    ir: &Value,
+    empty: &Value,
+    path: &[Step],
+) -> Option<(Value, Vec<Step>)> {
     if path.is_empty() {
         return Some((ir.clone(), Vec::new()));
     }
@@ -222,12 +226,14 @@ fn collect_shapes(value: &Value, path: &mut Vec<Step>, found: &mut Vec<Vec<Step>
     }
 }
 
-/// The path with every array index replaced by `#`.
-fn normalise(path: &[Step]) -> String {
+/// The path with every array index replaced by `#` and every key that is an
+/// entity id, a key of a map keyed by id, replaced by `{id}`.
+pub(crate) fn normalise(path: &[Step]) -> String {
     let mut text = String::new();
     for step in path {
         text.push('/');
         match step {
+            Step::Key(key) if is_entity_id(key) => text.push_str("{id}"),
             Step::Key(key) => text.push_str(&key.replace('~', "~0").replace('/', "~1")),
             Step::Index(_) => text.push('#'),
         }
@@ -235,7 +241,14 @@ fn normalise(path: &[Step]) -> String {
     text
 }
 
-fn object_at_mut<'a>(
+/// Whether `key` has the `<format>:<scope>:<kind>#<key>` form of an entity id.
+fn is_entity_id(key: &str) -> bool {
+    key.split_once('#').is_some_and(|(head, tail)| {
+        !tail.is_empty() && head.split(':').filter(|part| !part.is_empty()).count() >= 3
+    })
+}
+
+pub(crate) fn object_at_mut<'a>(
     value: &'a mut Value,
     path: &[Step],
 ) -> Result<&'a mut Map<String, Value>, serde_json::Error> {
@@ -276,13 +289,17 @@ fn object_at_mut<'a>(
 ///   `BTreeMap<String, f64>` of source renderer properties;
 /// * `/model/configurations/#/properties` - `DesignConfiguration::properties`,
 ///   configuration-local named values;
+/// * `/model/configurations/#/feature_states/{id}/definition/value/value/parameters`
+///   - the native operation's own fields in a configuration's feature state;
 /// * `/model/drawings/#/parameters` - `Drawing::parameters`, retained drawing
 ///   parameters by source name;
 /// * `/model/drawings/#/relationships` - `Drawing::relationships`,
 ///   `BTreeMap<String, Vec<ReferenceSelection>>`, the source's relationship
 ///   roles by name, each holding the references that role states;
-/// * `/model/features/#/definition/parameters` -
+/// * `/model/features/#/definition/value/value/parameters` -
 ///   `FeatureOperation::Native::parameters`, the native operation's own fields;
+/// * `/model/features/#/definition/value/value/inputs/parameters` -
+///   `FormInputs::parameters`, the Form construction's source parameters;
 /// * `/model/features/#/source_properties` - `Feature::source_properties`,
 ///   source operation attributes the neutral definition does not consume;
 /// * `/model/parameters/#/properties` - `Parameter::properties`, source
@@ -297,6 +314,8 @@ fn object_at_mut<'a>(
 ///   fields;
 /// * `/model/semantic_annotations/#/parameters` -
 ///   `SemanticAnnotation::parameters`, the native note's own fields;
+/// * `/model/sketch_constraints/#/definition/native_properties` - the native
+///   sketch relation's own properties;
 /// * `/model/semantic_annotations/#/references` -
 ///   `SemanticAnnotation::references`, `BTreeMap<String,
 ///   Vec<ReferenceSelection>>`, the native note's reference roles by name;
@@ -309,10 +328,12 @@ fn object_at_mut<'a>(
 pub const FREE_FORM_SHAPES: &[&str] = &[
     "/model/appearance_bindings/#/channels",
     "/model/appearances/#/properties",
+    "/model/configurations/#/feature_states/{id}/definition/value/value/parameters",
     "/model/configurations/#/properties",
     "/model/drawings/#/parameters",
     "/model/drawings/#/relationships",
-    "/model/features/#/definition/parameters",
+    "/model/features/#/definition/value/value/inputs/parameters",
+    "/model/features/#/definition/value/value/parameters",
     "/model/features/#/source_properties",
     "/model/parameters/#/properties",
     "/model/presentation_documents/#/states/#/attributes",
@@ -320,6 +341,7 @@ pub const FREE_FORM_SHAPES: &[&str] = &[
     "/model/product_definitions/#/bom_properties",
     "/model/semantic_annotations/#/parameters",
     "/model/semantic_annotations/#/references",
+    "/model/sketch_constraints/#/definition/native_properties",
     "/model/view_presentations/#/properties",
     "/source/attributes",
     "/source/identity/dialects/extra/#/declared",

@@ -10,28 +10,31 @@
         "property_specs": "12",
         "upAxis": "Y"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "layer",
       "role": "document",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 1739
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "version": "0.8.0"
         },
         "dialect": "usd:usdc-0.8.0"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "prim types: Mesh 1, Xform 1"
   ]

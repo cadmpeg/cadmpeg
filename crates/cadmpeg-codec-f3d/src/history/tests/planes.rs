@@ -1031,7 +1031,13 @@ fn a_construction_plane_identity_names_the_next_work_plane_without_an_assumption
     assert_eq!(bound(plane_types(), 500), (None, false, false));
     let mut partial_run = crate::test_support::origin_types::origin_design_types(meta, 39);
     partial_run.push(crate::test_support::origin_types::plane_row(meta, 368));
-    assert_eq!(bound(partial_run, 369), (None, false, false));
+    assert_eq!(bound(partial_run.clone(), 369), (None, false, false));
+    let mut every_origin_listed = partial_run;
+    every_origin_listed.push(crate::test_support::origin_types::component_row(meta, [1]));
+    assert_eq!(
+        bound(every_origin_listed, 369),
+        (Some((369, 21)), false, false)
+    );
 }
 
 #[test]

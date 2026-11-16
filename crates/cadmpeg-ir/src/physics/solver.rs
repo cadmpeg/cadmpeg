@@ -72,13 +72,10 @@ pub enum SolverTarget {
 #[serde(deny_unknown_fields)]
 pub struct Dimension {
     /// Exponent of length; the value is in millimetres to this power.
-    #[serde(default)]
     pub length: i8,
     /// Exponent of mass; the value is in kilograms to this power.
-    #[serde(default)]
     pub mass: i8,
     /// Exponent of angle; the value is in radians to this power.
-    #[serde(default)]
     pub angle: i8,
 }
 
@@ -137,7 +134,6 @@ pub enum SolverValue {
         /// The value.
         value: FiniteReal,
         /// The unit of the value.
-        #[serde(default, skip_serializing_if = "Dimension::is_none")]
         dimension: Dimension,
     },
     /// An infinite real value: no bound.
@@ -150,7 +146,6 @@ pub enum SolverValue {
         /// The values.
         values: Vec<FiniteReal>,
         /// The unit of every value.
-        #[serde(default, skip_serializing_if = "Dimension::is_none")]
         dimension: Dimension,
     },
     /// A token from the schema's vocabulary.
@@ -185,7 +180,7 @@ pub struct SolverSettings {
     /// The record the settings apply to.
     pub target: SolverTarget,
     /// The properties by their schema names.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub values: BTreeMap<String, SolverValue>,
     /// Format-native record supplying these settings.
     #[serde(

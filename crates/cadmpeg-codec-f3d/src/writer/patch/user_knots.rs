@@ -10,14 +10,14 @@ pub(super) fn edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, SubdCage>, CodecError> {
-    let before = &baseline.model.subds;
+    let before = &baseline.geometry.subds;
     let after: BTreeMap<_, _> = target
-        .model
+        .geometry
         .subds
         .iter()
         .map(|surface| (&surface.id, surface))
         .collect();
-    if before.len() != after.len() || after.len() != target.model.subds.len() {
+    if before.len() != after.len() || after.len() != target.geometry.subds.len() {
         return Err(CodecError::NotImplemented(
             "T-spline user-knot edits require the unchanged surface-id set".into(),
         ));

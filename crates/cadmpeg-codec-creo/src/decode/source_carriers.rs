@@ -60,7 +60,7 @@ impl SourceUnitCarriers {
         if let Some(transform) = body.transform.as_mut() {
             self.scale_product_translation(transform)?;
         }
-        ir.model.bodies.push(body);
+        ir.geometry.bodies.push(body);
         Ok(())
     }
 
@@ -228,7 +228,7 @@ impl SourceUnitCarriers {
             )?;
         }
         self.surfaces.insert(source_id, source_geometry);
-        ir.model.surfaces.push(surface);
+        ir.geometry.surfaces.push(surface);
         Ok(())
     }
 
@@ -277,7 +277,7 @@ impl SourceUnitCarriers {
             )?;
         }
         self.curves.insert(source_id, source_geometry);
-        ir.model.curves.push(curve);
+        ir.geometry.curves.push(curve);
         Ok(())
     }
 
@@ -319,7 +319,7 @@ impl SourceUnitCarriers {
             })?;
             point.set_position(position);
         }
-        ir.model.points.push(point);
+        ir.geometry.points.push(point);
         Ok(())
     }
 
@@ -340,13 +340,13 @@ impl SourceUnitCarriers {
         mut vertex: Vertex,
     ) -> Result<(), CodecError> {
         self.scale_tolerance(&mut vertex.tolerance)?;
-        ir.model.vertices.push(vertex);
+        ir.geometry.vertices.push(vertex);
         Ok(())
     }
 
     pub(super) fn admit_face(&self, ir: &mut CadIr, mut face: Face) -> Result<(), CodecError> {
         self.scale_tolerance(&mut face.tolerance)?;
-        ir.model.faces.push(face);
+        ir.geometry.faces.push(face);
         Ok(())
     }
 
@@ -361,7 +361,11 @@ impl SourceUnitCarriers {
         if let (Some(scale), EdgeCarrier::Bounded(curve_id, interval)) =
             (self.length_scale_mm, &mut edge.carrier)
         {
-            let curve = ir.model.curves.iter().find(|curve| curve.id == *curve_id);
+            let curve = ir
+                .geometry
+                .curves
+                .iter()
+                .find(|curve| curve.id == *curve_id);
             let parameter_scale = curve
                 .and_then(|curve| self.curve_geometry(curve).solved())
                 .map(|geometry| {
@@ -384,7 +388,7 @@ impl SourceUnitCarriers {
                 self.edge_parameter_ranges.insert(id, source_range);
             }
         }
-        ir.model.edges.push(edge);
+        ir.geometry.edges.push(edge);
         Ok(())
     }
 
@@ -403,7 +407,7 @@ impl SourceUnitCarriers {
     ) -> Result<(), CodecError> {
         if let (Some(scale), Some(use_curve)) = (self.length_scale_mm, &mut coedge.use_curve) {
             let curve = ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == use_curve.curve);
@@ -425,7 +429,7 @@ impl SourceUnitCarriers {
                     })?;
             }
         }
-        ir.model.coedges.push(coedge);
+        ir.geometry.coedges.push(coedge);
         Ok(())
     }
 
@@ -442,7 +446,10 @@ impl SourceUnitCarriers {
             pcurve,
             surface_id,
             &crate::decode::uniqueness::ExactIdPositions::new(
-                ir.model.surfaces.iter().map(|surface| surface.id.as_str()),
+                ir.geometry
+                    .surfaces
+                    .iter()
+                    .map(|surface| surface.id.as_str()),
             ),
         )
     }
@@ -458,7 +465,7 @@ impl SourceUnitCarriers {
         let scales = {
             let surface = surfaces
                 .first(surface_id.as_str())
-                .and_then(|position| ir.model.surfaces.get(position))
+                .and_then(|position| ir.geometry.surfaces.get(position))
                 .ok_or_else(|| CodecError::malformed("Creo pcurve has no owning surface"))?;
             self.length_scale_mm
                 .and_then(|scale| {
@@ -511,7 +518,7 @@ impl SourceUnitCarriers {
                     ))
                 })?;
         }
-        ir.model.pcurves.push(pcurve);
+        ir.geometry.pcurves.push(pcurve);
         Ok(())
     }
 
@@ -526,7 +533,7 @@ impl SourceUnitCarriers {
         }
 
         self.procedural_index
-            .add_surface(&mut ir.model, owner, procedural)?
+            .add_surface(&mut ir.geometry, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -541,7 +548,7 @@ impl SourceUnitCarriers {
         }
 
         self.procedural_index
-            .add_curve(&mut ir.model, owner, procedural)?
+            .add_curve(&mut ir.geometry, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -654,6 +661,7 @@ mod tests {
             id: CurveId::mint("creo:test:replacement-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         };
         let geometry = curve.geometry.clone();
         let mut carriers = SourceUnitCarriers::default();
@@ -679,6 +687,7 @@ mod tests {
             id,
             geometry: geometry.clone(),
             source_object: None,
+            native_ref: None,
         };
         let mut carriers = SourceUnitCarriers::default();
         crate::decode::with_service_context(|ctx| {
@@ -694,6 +703,7 @@ mod tests {
             id: SurfaceId::mint("creo:test:replacement-surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         };
         let geometry = surface.geometry.clone();
         let mut carriers = SourceUnitCarriers::default();
@@ -718,6 +728,7 @@ mod tests {
             id,
             geometry: geometry.clone(),
             source_object: None,
+            native_ref: None,
         };
         let mut carriers = SourceUnitCarriers::default();
         crate::decode::with_service_context(|ctx| {
@@ -734,6 +745,7 @@ mod tests {
             id: CurveId::mint("creo:test:source-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::default();
@@ -741,10 +753,10 @@ mod tests {
             carriers.admit_curve(ctx, &mut ir, curve.clone())
         })
         .expect("admit the curve");
-        assert_eq!(ir.model.curves, vec![curve]);
+        assert_eq!(ir.geometry.curves, vec![curve]);
         assert_eq!(
-            carriers.curve_geometry(&ir.model.curves[0]),
-            &ir.model.curves[0].geometry
+            carriers.curve_geometry(&ir.geometry.curves[0]),
+            &ir.geometry.curves[0].geometry
         );
     }
 
@@ -763,6 +775,7 @@ mod tests {
             id,
             geometry: geometry.clone(),
             source_object: None,
+            native_ref: None,
         };
         let mut carriers = SourceUnitCarriers::default();
         let mut ir = CadIr::empty();
@@ -770,7 +783,7 @@ mod tests {
             carriers.admit_curve(ctx, &mut ir, curve.clone())
         })
         .expect("valid test setup or admitted service result");
-        assert_eq!(carriers.curve_geometry(&ir.model.curves[0]), &geometry);
+        assert_eq!(carriers.curve_geometry(&ir.geometry.curves[0]), &geometry);
     }
 
     #[test]
@@ -779,6 +792,7 @@ mod tests {
             id: SurfaceId::mint("creo:test:source-surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::default();
@@ -786,10 +800,10 @@ mod tests {
             carriers.admit_surface(ctx, &mut ir, surface.clone())
         })
         .expect("admit the surface");
-        assert_eq!(ir.model.surfaces, vec![surface]);
+        assert_eq!(ir.geometry.surfaces, vec![surface]);
         assert_eq!(
-            carriers.surface_geometry(&ir.model.surfaces[0]),
-            &ir.model.surfaces[0].geometry
+            carriers.surface_geometry(&ir.geometry.surfaces[0]),
+            &ir.geometry.surfaces[0].geometry
         );
     }
 
@@ -807,6 +821,7 @@ mod tests {
             id,
             geometry: geometry.clone(),
             source_object: None,
+            native_ref: None,
         };
         let mut carriers = SourceUnitCarriers::default();
         let mut ir = CadIr::empty();
@@ -814,7 +829,10 @@ mod tests {
             carriers.admit_surface(ctx, &mut ir, surface.clone())
         })
         .expect("valid test setup or admitted service result");
-        assert_eq!(carriers.surface_geometry(&ir.model.surfaces[0]), &geometry);
+        assert_eq!(
+            carriers.surface_geometry(&ir.geometry.surfaces[0]),
+            &geometry
+        );
     }
 
     fn admission_pcurve() -> cadmpeg_ir::geometry::pcurve::Pcurve {
@@ -828,6 +846,7 @@ mod tests {
                 .expect("source pcurve"),
             ),
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(None, None, None),
+            native_ref: None,
         }
     }
 
@@ -1132,11 +1151,11 @@ mod tests {
                     id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
                         .expect("identity grammar"),
                     kind: BodyKind::Solid,
-                    regions: Vec::new(),
                     transform: Some(translated_product_transform(1.0)),
                     name: None,
                     color: None,
                     visible: None,
+                    native_ref: None,
                 },
             )
         }
@@ -1152,7 +1171,7 @@ mod tests {
         }
         .expect("occurrence admission");
         assert_eq!(
-            ir.model.bodies[0]
+            ir.geometry.bodies[0]
                 .transform
                 .expect("body transform")
                 .affine_rows()[0][3],
@@ -1200,6 +1219,7 @@ mod tests {
             id: SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
@@ -1208,7 +1228,7 @@ mod tests {
         })
         .expect_err("millimeter radius cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
-        assert!(ir.model.surfaces.is_empty());
+        assert!(ir.geometry.surfaces.is_empty());
     }
 
     #[test]
@@ -1223,6 +1243,7 @@ mod tests {
             id: CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(geometry)),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
@@ -1231,7 +1252,7 @@ mod tests {
         })
         .expect_err("millimeter origin cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
-        assert!(ir.model.curves.is_empty());
+        assert!(ir.geometry.curves.is_empty());
     }
 
     #[test]
@@ -1248,6 +1269,7 @@ mod tests {
                 .expect("valid plane fixture"),
             )),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         let scale = PositiveReal::new(25.4).expect("inch scale");
@@ -1274,13 +1296,13 @@ mod tests {
             .admit_procedural_surface(&mut ir, &surface_id, procedural)
             .expect("procedural attachment");
         let ProceduralSurfaceDefinition::Extrusion(construction) =
-            ir.model.procedural_surfaces[0].definition()
+            ir.geometry.procedural_surfaces[0].definition()
         else {
             panic!("procedural construction changed family");
         };
         assert_eq!(construction.direction().get(), Vector3::new(0.0, 0.0, 25.4));
         let ProceduralSurfaceDefinition::Extrusion(construction) =
-            ir.model.procedural_surfaces[0].definition()
+            ir.geometry.procedural_surfaces[0].definition()
         else {
             panic!("procedural construction changed family");
         };
@@ -1311,7 +1333,7 @@ mod tests {
         ))
         .expect_err("missing owner must refuse attachment");
         assert!(matches!(error, CodecError::Malformed(_)), "{error}");
-        assert!(ir.model.procedural_surfaces.is_empty());
+        assert!(ir.geometry.procedural_surfaces.is_empty());
     }
 
     #[test]
@@ -1328,15 +1350,16 @@ mod tests {
             None,
         );
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: owner.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         SourceUnitCarriers::default()
             .admit_procedural_surface(&mut ir, &owner, procedural)
             .expect("valid test setup or admitted service result");
-        assert_eq!(ir.model.procedural_surfaces.len(), 1);
+        assert_eq!(ir.geometry.procedural_surfaces.len(), 1);
     }
 
     #[test]
@@ -1349,16 +1372,17 @@ mod tests {
             ProceduralCurveDefinition::Exact { cache: None },
         );
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         SourceUnitCarriers::default()
             .admit_procedural_curve(&mut ir, &owner, procedural)
             .expect("valid test setup or admitted service result");
-        assert_eq!(ir.model.procedural_curves.len(), 1);
+        assert_eq!(ir.geometry.procedural_curves.len(), 1);
     }
 
     #[test]
@@ -1375,6 +1399,7 @@ mod tests {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1403,7 +1428,7 @@ mod tests {
                 ),
             )
             .expect("helix attachment");
-        let ProceduralCurveDefinition::Helix(helix) = ir.model.procedural_curves[0].definition()
+        let ProceduralCurveDefinition::Helix(helix) = ir.geometry.procedural_curves[0].definition()
         else {
             panic!("helix construction changed family");
         };
@@ -1425,7 +1450,7 @@ mod tests {
             .admit_point(&mut ir, point)
             .expect("point admission");
         assert_eq!(
-            ir.model.points[0].position().get(),
+            ir.geometry.points[0].position().get(),
             Point3::new(25.4, 0.0, 0.0)
         );
     }
@@ -1450,6 +1475,7 @@ mod tests {
                         .expect("source line"),
                     )),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1459,24 +1485,24 @@ mod tests {
         let edge = Edge {
             id: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1").expect("identity grammar"),
             carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, 2.0])).expect("bounded line"),
-            start: vertex.clone(),
-            end: vertex,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
             tolerance: PositiveReal::new(0.1),
+            native_ref: None,
         };
         crate::decode::with_service_context(|ctx| source_carriers.admit_edge(ctx, &mut ir, edge))
             .expect("edge admission");
         assert_eq!(
-            ir.model.edges[0]
+            ir.geometry.edges[0]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 50.8])
         );
         assert_eq!(
-            source_carriers.source_edge_parameter_range(&ir.model.edges[0]),
+            source_carriers.source_edge_parameter_range(&ir.geometry.edges[0]),
             Some([0.0, 2.0])
         );
         assert_eq!(
-            ir.model.edges[0].tolerance.map(PositiveReal::get),
+            ir.geometry.edges[0].tolerance.map(PositiveReal::get),
             Some(2.54)
         );
     }
@@ -1500,6 +1526,7 @@ mod tests {
                         .expect("source line"),
                     )),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1521,15 +1548,15 @@ mod tests {
                         .expect("identity grammar"),
                     carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, f64::MAX]))
                         .expect("finite source range"),
-                    start: vertex.clone(),
-                    end: vertex,
+                    ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
                     tolerance: None,
+                    native_ref: None,
                 },
             )
         })
         .expect_err("millimeter range overflows");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
-        assert!(ir.model.edges.is_empty());
+        assert!(ir.geometry.edges.is_empty());
     }
 
     #[test]
@@ -1556,11 +1583,12 @@ mod tests {
                             parameter_range: ParameterInterval::try_from([0.0, f64::MAX])
                                 .expect("finite source interval"),
                         }),
+                        native_ref: None,
                     },
                 )
                 .expect_err("millimeter use range overflows");
             assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
-            assert!(ir.model.coedges.is_empty());
+            assert!(ir.geometry.coedges.is_empty());
         });
     }
 
@@ -1585,6 +1613,7 @@ mod tests {
                             .expect("source line"),
                         )),
                         source_object: None,
+                        native_ref: None,
                     },
                 )
             })
@@ -1598,6 +1627,7 @@ mod tests {
                         point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
                             .expect("identity grammar"),
                         tolerance: PositiveReal::new(0.5),
+                        native_ref: None,
                     },
                 )
                 .expect("vertex admission");
@@ -1616,6 +1646,7 @@ mod tests {
                         name: None,
                         color: None,
                         tolerance: PositiveReal::new(0.25),
+                        native_ref: None,
                     },
                 )
                 .expect("face admission");
@@ -1639,19 +1670,20 @@ mod tests {
                             parameter_range: ParameterInterval::try_from([1.0, 2.0])
                                 .expect("bounded source interval"),
                         }),
+                        native_ref: None,
                     },
                 )
                 .expect("coedge admission");
             assert_eq!(
-                ir.model.vertices[0].tolerance.map(PositiveReal::get),
+                ir.geometry.vertices[0].tolerance.map(PositiveReal::get),
                 Some(12.7)
             );
             assert_eq!(
-                ir.model.faces[0].tolerance.map(PositiveReal::get),
+                ir.geometry.faces[0].tolerance.map(PositiveReal::get),
                 Some(6.35)
             );
             assert_eq!(
-                ir.model.coedges[0]
+                ir.geometry.coedges[0]
                     .use_curve
                     .as_ref()
                     .map(|use_curve| use_curve.parameter_range.endpoints()),
@@ -1674,11 +1706,12 @@ mod tests {
                         point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
                             .expect("identity grammar"),
                         tolerance: PositiveReal::new(f64::MAX),
+                        native_ref: None,
                     },
                 )
                 .expect_err("millimeter tolerance cannot be represented");
             assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
-            assert!(ir.model.vertices.is_empty());
+            assert!(ir.geometry.vertices.is_empty());
         };
     }
 
@@ -1703,6 +1736,7 @@ mod tests {
                             .expect("source plane"),
                         )),
                         source_object: None,
+                        native_ref: None,
                     },
                 )
             })
@@ -1724,12 +1758,13 @@ mod tests {
                         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None, None, None,
                         ),
+                        native_ref: None,
                     },
                     &surface_id,
                 )
                 .expect("pcurve admission");
             let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) =
-                &ir.model.pcurves[0].geometry
+                &ir.geometry.pcurves[0].geometry
             else {
                 panic!("pcurve changed family");
             };
@@ -1762,12 +1797,13 @@ mod tests {
                         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None, None, None,
                         ),
+                        native_ref: None,
                     },
                     &SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
                 )
                 .expect_err("pcurve has no owning surface");
             assert!(matches!(error, CodecError::Malformed(_)), "{error}");
-            assert!(ir.model.pcurves.is_empty());
+            assert!(ir.geometry.pcurves.is_empty());
         });
     }
 
@@ -1792,6 +1828,7 @@ mod tests {
                             .expect("source plane"),
                         )),
                         source_object: None,
+                        native_ref: None,
                     },
                 )
             })
@@ -1813,12 +1850,13 @@ mod tests {
                         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None, None, None,
                         ),
+                        native_ref: None,
                     },
                     &surface_id,
                 )
                 .expect_err("scaled pcurve coordinate overflows");
             assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
-            assert!(ir.model.pcurves.is_empty());
+            assert!(ir.geometry.pcurves.is_empty());
         });
     }
 

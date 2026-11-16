@@ -363,6 +363,7 @@ fn sheet_mode_requires_known_new_body_operation() {
 fn profile_carrier_is_preserved_without_widening_to_whole_sketch() {
     let (bytes, mut scope) = fixture();
     let carrier = DesignSketchProfileOperand::try_new(DesignSketchProfileOperandDraft {
+        sketch_absent: false,
         scope_reference_ordinal: 0,
         record_index: 130,
         byte_offset: 2000,
@@ -436,11 +437,11 @@ fn complete_output_facts_reject_partial_mixed_and_duplicate_bodies() {
     let body = Body {
         id: BodyId::mint("test:model:body#one").unwrap(),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     feature
         .evaluation

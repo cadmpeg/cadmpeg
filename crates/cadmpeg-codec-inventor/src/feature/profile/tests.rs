@@ -269,15 +269,12 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
         id: id(2).try_into().expect("synthetic identity"),
         body: id(1).try_into().expect("synthetic identity"),
         shells: vec![id(3).try_into().expect("synthetic identity")],
+        native_ref: None,
     });
-    brep.shells.push(
-        Shell::with_faces(
-            id(3).try_into().expect("synthetic identity"),
-            id(2).try_into().expect("synthetic identity"),
-            vec![id(4).try_into().expect("synthetic identity")],
-        )
-        .expect("synthetic profile fixture"),
-    );
+    brep.shells.push(Shell::new(
+        id(3).try_into().expect("synthetic identity"),
+        id(2).try_into().expect("synthetic identity"),
+    ));
     brep.faces.push(Face {
         id: id(4).try_into().expect("synthetic identity"),
         shell: id(3).try_into().expect("synthetic identity"),
@@ -290,6 +287,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     brep.loops.push(Loop {
         id: id(5).try_into().expect("synthetic identity"),
@@ -303,6 +301,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             )
             .expect("synthetic profile fixture"),
         ),
+        native_ref: None,
     });
     let points = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)];
     for (i, (x, y)) in (0..4).zip(points) {
@@ -316,13 +315,17 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             id: id(31 + i).try_into().expect("synthetic identity"),
             point: id(41 + i).try_into().expect("synthetic identity"),
             tolerance: None,
+            native_ref: None,
         });
         brep.edges.push(Edge {
             id: id(11 + i).try_into().expect("synthetic identity"),
             carrier: EdgeCarrier::unbounded(None),
-            start: id(31 + i).try_into().expect("synthetic identity"),
-            end: id(31 + (i + 1) % 4).try_into().expect("synthetic identity"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                id(31 + i).try_into().expect("synthetic identity"),
+                id(31 + (i + 1) % 4).try_into().expect("synthetic identity"),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         brep.coedges.push(Coedge {
             id: id(21 + i).try_into().expect("synthetic identity"),
@@ -332,6 +335,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             sense: Sense::Forward,
             pcurves: vec![],
             use_curve: None,
+            native_ref: None,
         });
         let mut values = naming_values(i64::from(NAMING_TYPE), i64::from(i + 1), 2);
         values.splice(

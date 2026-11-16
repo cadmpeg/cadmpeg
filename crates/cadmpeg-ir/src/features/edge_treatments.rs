@@ -179,10 +179,12 @@ impl<'de> Deserialize<'de> for FullRoundFilletGroup {
 #[serde(deny_unknown_fields)]
 pub enum FullRoundSideSelection {
     /// The kernel infers this side from the center-face selection.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Automatic,
     /// Explicit side-face selection.
     Explicit(FaceSelection),
     /// A side-face selection exists but cannot be resolved.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
 }
 

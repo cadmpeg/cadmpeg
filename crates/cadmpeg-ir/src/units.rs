@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub(crate) struct CanonicalUnitsWire {
     length: CanonicalLengthUnitWire,
+    angle: CanonicalAngleUnitWire,
+    mass: CanonicalMassUnitWire,
+    time: CanonicalTimeUnitWire,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +31,33 @@ pub(crate) struct CanonicalUnitsWire {
 enum CanonicalLengthUnitWire {
     #[default]
     Millimeter,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum CanonicalAngleUnitWire {
+    #[default]
+    Radian,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum CanonicalMassUnitWire {
+    #[default]
+    Kilogram,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum CanonicalTimeUnitWire {
+    #[default]
+    Second,
 }
 
 /// Maximum distance, in the document's length unit, between an evaluated

@@ -43,6 +43,7 @@ use cadmpeg_ir::sketches::{
 use std::collections::{HashMap, HashSet};
 
 mod crossing_loops;
+mod duplicate_identities;
 mod loft_sketch_profile_binding;
 mod path_pattern_binding;
 mod resolution_rules;
@@ -191,6 +192,7 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         secondary_id,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     }
 }
 
@@ -479,6 +481,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     }];
     let profile_operand = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            sketch_absent: false,
             scope_reference_ordinal: 0,
             record_index: 10,
             byte_offset: 0,
@@ -493,6 +496,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             entity_reference_offset: 80,
             compact_tail_flags: None,
             region_selection: Some(DesignSketchProfileRegionSelection {
+                atomic_regions: Vec::new(),
                 record_index: 13,
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("303".to_owned())
@@ -501,10 +505,12 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                 regions: vec![
                     DesignSketchProfileRegion {
                         member_count_offset: 0,
+                        region_ordinal: 0,
                         members: vec![profile_region_member(100)],
                     },
                     DesignSketchProfileRegion {
                         member_count_offset: 0,
+                        region_ordinal: 0,
                         members: vec![
                             profile_region_member(200),
                             profile_region_member(201),
@@ -566,6 +572,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
 
     let whole_sketch_operand = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            sketch_absent: false,
             compact_tail_flags: None,
             region_selection: None,
             ..profile_operand.clone().into_draft()
@@ -987,6 +994,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
     };
     let operand = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            sketch_absent: false,
             scope_reference_ordinal: 0,
             record_index: 10,
             byte_offset: 0,
@@ -1001,6 +1009,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
             entity_reference_offset: 80,
             compact_tail_flags: None,
             region_selection: Some(DesignSketchProfileRegionSelection {
+                atomic_regions: Vec::new(),
                 record_index: 11,
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
@@ -1009,10 +1018,12 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
                 regions: vec![
                     DesignSketchProfileRegion {
                         member_count_offset: 0,
+                        region_ordinal: 0,
                         members: vec![profile_region_member(200)],
                     },
                     DesignSketchProfileRegion {
                         member_count_offset: 0,
+                        region_ordinal: 0,
                         members: vec![profile_region_member(100)],
                     },
                 ],

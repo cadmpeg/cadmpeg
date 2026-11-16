@@ -74,7 +74,7 @@ fn authored_constraint_families_keep_operands_and_values() {
             .to_owned()
     };
     let parameter = |name: &str, i: usize| format!("fcstd:design:parameter#{name}:constraint:{i}");
-    let loc = |kind: &str, id: String| json!({"kind":kind,"entity":id});
+    let loc = |kind: &str, id: String| json!({"kind":kind,"value":id});
     let mut cases: Vec<(&str, usize, Vec<Value>)> = Vec::new();
     let n = "GeometricRelations";
     cases.push((n,15,vec![
@@ -107,7 +107,7 @@ fn authored_constraint_families_keep_operands_and_values() {
         vec![json!({"kind":"horizontal","entity":entity(n,1)})],
     ));
     let n = "InternalAlignmentRelations";
-    let alignment = |n: &str, helper, kind: &str| json!({"kind":"internal_alignment","helper":entity(n,helper),"parent":entity(n,1),"alignment":{"alignment":kind}});
+    let alignment = |n: &str, helper, kind: &str| json!({"kind":"internal_alignment","helper":entity(n,helper),"parent":entity(n,1),"alignment":{"kind":kind}});
     cases.push((
         n,
         5,
@@ -121,7 +121,7 @@ fn authored_constraint_families_keep_operands_and_values() {
     let n = "OpticalRelation";
     cases.push((n,3,vec![json!({"kind":"snells_law","incident":loc("end",entity(n,1)),"refracted":loc("start",entity(n,2)),"interface":entity(n,3),"parameter":parameter(n,1)})]));
     let n = "SplineWeightRelation";
-    let spline_alignment = |helper, kind: &str, index| json!({"kind":"internal_alignment","helper":entity(n,helper),"parent":entity(n,1),"alignment":{"alignment":kind,"index":index}});
+    let spline_alignment = |helper, kind: &str, index| json!({"kind":"internal_alignment","helper":entity(n,helper),"parent":entity(n,1),"alignment":{"kind":kind,"index":index}});
     cases.push((
         n,
         7,

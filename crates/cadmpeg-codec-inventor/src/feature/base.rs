@@ -301,7 +301,7 @@ pub(crate) fn project(
     design: &DesignInventory,
     transforms: &[crate::sketch::PmDcTransform],
     keys: &[BodyNativeKey],
-    model: &mut cadmpeg_ir::document::Model,
+    ir: &mut cadmpeg_ir::CadIr,
 ) -> Result<Projection, CodecError> {
     let crate::kernel::ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
         return Ok(Projection::default());
@@ -365,7 +365,7 @@ pub(crate) fn project(
     let mut projection = Projection::default();
     let mut sources = std::collections::HashMap::new();
     let mut external_counts = std::collections::HashMap::new();
-    for feature in &mut model.features {
+    for feature in &mut ir.model.features {
         if !matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -507,7 +507,8 @@ pub(crate) fn project(
             }
             continue;
         };
-        if !model
+        if !ir
+            .geometry
             .bodies
             .iter()
             .any(|candidate| candidate.id == body.body)
@@ -520,7 +521,7 @@ pub(crate) fn project(
         let members = FeatureResultMembers::new(vec![body_id], Vec::new(), Vec::new(), Vec::new())
             .map_err(CodecError::malformed)?;
         ctx.charge_entities(1, "project Inventor Base result identity")?;
-        model
+        ir.model
             .feature_result_topologies
             .push(FeatureResultTopology::new(
                 FeatureResultTopologyId::compose(

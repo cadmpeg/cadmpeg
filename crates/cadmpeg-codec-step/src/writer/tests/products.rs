@@ -87,8 +87,8 @@ fn write_named(ir: &CadIr, product_name: &str) -> String {
 #[test]
 fn writer_names_unnamed_products_and_occurrences_distinctly() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = Some("Body1".into());
-    let body = ir.model.bodies[0].id.clone();
+    ir.geometry.bodies[0].name = Some("Body1".into());
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.product_definitions = vec![
         unnamed_definition("test:model:product-definition#assembly", Vec::new()),
         unnamed_definition("test:model:product-definition#part-0", vec![body]),
@@ -158,7 +158,7 @@ fn writer_names_unnamed_products_and_occurrences_distinctly() {
 #[test]
 fn writer_leaves_ambiguous_fallback_names_empty() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.product_definitions = vec![
         unnamed_definition("test:first:product-definition#part", vec![body]),
         unnamed_definition("test:second:product-definition#part", Vec::new()),
@@ -179,13 +179,13 @@ fn writer_leaves_ambiguous_fallback_names_empty() {
 #[test]
 fn writer_names_the_model_product_from_options_on_both_paths() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = Some("Body1".into());
+    ir.geometry.bodies[0].name = Some("Body1".into());
     let step = write_named(&ir, "Bracket model");
     assert_eq!(record_names(&step, "PRODUCT"), ["Bracket model"]);
 
     ir.model.product_definitions = vec![unnamed_definition(
         "test:model:product-definition#part-0",
-        vec![ir.model.bodies[0].id.clone()],
+        vec![ir.geometry.bodies[0].id.clone()],
     )];
     ir.model.occurrences = vec![unnamed_occurrence(
         "test:model:occurrence#root",
@@ -201,7 +201,7 @@ fn writer_names_a_product_by_its_part_number() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let mut definition = unnamed_definition(
         "test:model:product-definition#part-0",
-        vec![ir.model.bodies[0].id.clone()],
+        vec![ir.geometry.bodies[0].id.clone()],
     );
     definition.part_number = Some("P-1001".into());
     ir.model.product_definitions = vec![definition];
@@ -315,7 +315,7 @@ fn assert_synthetic_root_children(ir: &CadIr, expected: &[(&str, &str)]) {
 #[test]
 fn writer_preserves_distinct_identity_root_occurrences() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut first = unnamed_definition("test:model:product-definition#first", vec![body]);
     first.label = Some("First part".into());
     let mut second = unnamed_definition("test:model:product-definition#second", Vec::new());
@@ -358,7 +358,7 @@ fn writer_does_not_add_a_synthetic_root_for_reused_roots_with_children() {
     use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut assembly = unnamed_definition("test:model:product-definition#assembly", Vec::new());
     assembly.label = Some("Assembly".into());
     let mut component = unnamed_definition("test:model:product-definition#component", vec![body]);
@@ -461,7 +461,7 @@ fn writer_keeps_distinct_roots_when_reused_root_children_are_unrepresentable() {
     use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut assembly = unnamed_definition("test:model:product-definition#assembly", Vec::new());
     assembly.label = Some("Assembly".into());
     let mut component = unnamed_definition("test:model:product-definition#component", vec![body]);
@@ -580,7 +580,7 @@ fn writer_keeps_a_single_identity_root_as_the_direct_product() {
     use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut part = unnamed_definition("test:model:product-definition#part", vec![body]);
     part.label = Some("Part".into());
     ir.model.product_definitions = vec![part];
@@ -616,7 +616,7 @@ fn writer_keeps_a_single_identity_root_as_the_direct_product() {
 #[test]
 fn writer_keeps_representable_root_usage_when_another_root_is_scaled() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut valid = unnamed_definition("test:model:product-definition#valid", vec![body]);
     valid.label = Some("Valid part".into());
     let mut scaled = unnamed_definition("test:model:product-definition#scaled", Vec::new());
@@ -690,7 +690,7 @@ fn writer_keeps_representable_root_usage_when_another_root_is_scaled() {
 #[test]
 fn writer_places_rigid_root_occurrences_under_the_model_product() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut part = unnamed_definition("test:model:product-definition#part-0", vec![body]);
     part.label = Some("Cube".into());
     ir.model.product_definitions = vec![part];
@@ -753,7 +753,7 @@ fn writer_places_rigid_root_occurrences_under_the_model_product() {
 #[test]
 fn writer_reports_a_placed_external_root_occurrence_only_as_external() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.product_definitions = vec![unnamed_definition(
         "test:model:product-definition#part-0",
         vec![body],

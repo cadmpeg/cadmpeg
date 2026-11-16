@@ -388,7 +388,8 @@ fn deserialization_errors_and_execution_paths_are_load_bearing() {
 fn classify_fixture_reader(source: &str) -> Result<HandReaderClass, String> {
     let parsed = syn::parse_file(source).map_err(|error| error.to_string())?;
     let mut index = SourceIndex::default();
-    collect_source_items(&parsed.items, "fixture.rs", source, &[], &mut index);
+    index.read_file(&parsed.items, "fixture.rs", source, &[]);
+    index.record_foreign_globs();
     let reader = index
         .sources
         .iter()
@@ -525,6 +526,31 @@ fn helper_routes_resolve_the_declared_function_owner() {
         classify_fixture_reader(&hostile).is_err(),
         "a local function with a helper basename cannot inherit a codec route"
     );
+}
+
+#[test]
+fn a_helper_root_something_else_binds_is_no_helper() {
+    let relative = "cadmpeg_core::distinct_keys::json_object(d)?;";
+    let absolute = "::cadmpeg_core::distinct_keys::json_object(d)?;";
+    for (prefix, route) in [
+        ("mod cadmpeg_core { pub mod distinct_keys { pub fn json_object<T>(_: T) -> Result<(), ()> { Ok(()) } } }", relative),
+        ("macro_rules! module { ($name:ident) => { mod $name {} }; } module!(cadmpeg_core);", relative),
+        ("use serde_json::*;", relative),
+        ("extern crate serde_json as cadmpeg_core;", relative),
+        ("extern crate serde_json as cadmpeg_core;", absolute),
+    ] {
+        assert!(
+            classify_fixture_reader(&open_reader_fixture(prefix, route)).is_err(),
+            "a crate root bound to another item names no helper: {prefix} {route}"
+        );
+    }
+    for route in [relative, absolute] {
+        assert_eq!(
+            classify_fixture_reader(&open_reader_fixture("mod std {}", route)),
+            Ok(HandReaderClass::FreeForm),
+            "an unshadowed helper root keeps its route: {route}"
+        );
+    }
 }
 
 #[test]

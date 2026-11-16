@@ -17,7 +17,7 @@ pub(super) fn connected_components(edges: &[(Ref, &Edge)]) -> Vec<Vec<Ref>> {
     let mut ranks = vec![0u8; edges.len()];
     let mut vertices = HashMap::new();
     for (index, (_, edge)) in edges.iter().enumerate() {
-        for vertex in [&edge.start, &edge.end] {
+        for vertex in edge.vertices() {
             if let Some(&previous) = vertices.get(vertex) {
                 let left = root(&mut parents, index);
                 let right = root(&mut parents, previous);
@@ -59,15 +59,21 @@ mod tests {
 
     #[test]
     fn components_follow_topological_vertices_including_bridges_branches_and_cycles() {
-        let carrier = cadmpeg_ir::examples::unit_cube().expect("cube").model.edges[0]
+        let carrier = cadmpeg_ir::examples::unit_cube()
+            .expect("cube")
+            .geometry
+            .edges[0]
             .carrier
             .clone();
         let edge = |id: usize, start: usize, end: usize| Edge {
             id: EdgeId::mint(format!("test:model:edge#{id}")).expect("edge id"),
             carrier: carrier.clone(),
-            start: VertexId::mint(format!("test:model:vertex#{start}")).expect("vertex id"),
-            end: VertexId::mint(format!("test:model:vertex#{end}")).expect("vertex id"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint(format!("test:model:vertex#{start}")).expect("vertex id"),
+                VertexId::mint(format!("test:model:vertex#{end}")).expect("vertex id"),
+            )),
             tolerance: None,
+            native_ref: None,
         };
         let edges = [
             edge(1, 1, 2),

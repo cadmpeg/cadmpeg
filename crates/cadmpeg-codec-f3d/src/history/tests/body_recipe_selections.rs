@@ -131,34 +131,36 @@ fn face_geometry() -> (
     cadmpeg_ir::topology::Body,
     cadmpeg_ir::topology::Region,
     cadmpeg_ir::topology::Shell,
+    cadmpeg_ir::topology::Face,
 ) {
     use cadmpeg_ir::ids::{BodyId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
     let body = Body {
         id: BodyId::mint("f3d:brep:body#1").unwrap(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("f3d:model:region#1").unwrap()],
         transform: None,
         name: None,
         color: None,
         visible: Some(true),
+        native_ref: None,
     };
     let region = Region {
         id: RegionId::mint("f3d:model:region#1").unwrap(),
         body: body.id.clone(),
         shells: vec![ShellId::mint("f3d:model:shell#1").unwrap()],
+        native_ref: None,
     };
-    let shell = Shell::with_face(
+    let shell = Shell::new(
         ShellId::mint("f3d:model:shell#1").unwrap(),
         region.id.clone(),
-        cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#7").unwrap(),
     );
-    (body, region, shell)
+    let face = crate::test_support::bare_face("f3d:brep:entity#7", "f3d:model:shell#1");
+    (body, region, shell, face)
 }
 
 fn bind_direct(native_set: bool) -> BodySelection {
     let (scope, groups, mut operands, mut selection) = selection_fixture();
-    let (body, region, shell) = face_geometry();
+    let (body, region, shell, face) = face_geometry();
     if native_set {
         operands[0].owner =
             crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
@@ -180,6 +182,7 @@ fn bind_direct(native_set: bool) -> BodySelection {
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
     };
     super::super::bind_direct_body_recipe_body_selection(
         &mut selection,
@@ -189,6 +192,7 @@ fn bind_direct(native_set: bool) -> BodySelection {
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
@@ -198,11 +202,12 @@ fn bind_direct(native_set: bool) -> BodySelection {
 
 fn face_candidate() -> (bool, bool) {
     let (_, _, operands, _) = selection_fixture();
-    let (body, region, shell) = face_geometry();
+    let (body, region, shell, face) = face_geometry();
     let mut candidates = crate::history::body_candidates::BodyCandidates::new(
         std::slice::from_ref(&body),
         std::slice::from_ref(&region),
         std::slice::from_ref(&shell),
+        std::slice::from_ref(&face),
         &[],
         &[],
     );
@@ -212,11 +217,12 @@ fn face_candidate() -> (bool, bool) {
 
 fn external_body(source: Option<&str>) -> Option<cadmpeg_ir::ids::BodyId> {
     let (_, _, operands, _) = selection_fixture();
-    let (body, region, shell) = face_geometry();
+    let (body, region, shell, face) = face_geometry();
     crate::history::body_candidates::BodyCandidates::new(
         std::slice::from_ref(&body),
         std::slice::from_ref(&region),
         std::slice::from_ref(&shell),
+        std::slice::from_ref(&face),
         &[],
         &[],
     )
@@ -233,11 +239,11 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
     let body = cadmpeg_ir::topology::Body {
         id: cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#1").unwrap(),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: Some(true),
+        native_ref: None,
     };
     let recipe = ConstructionRecipe {
         id: operands[0].recipe_id.clone(),
@@ -269,8 +275,14 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
     let bodies = [body];
     let recipes = [recipe];
     let links = [link];
-    let mut candidates =
-        crate::history::body_candidates::BodyCandidates::new(&bodies, &[], &[], &recipes, &links);
+    let mut candidates = crate::history::body_candidates::BodyCandidates::new(
+        &bodies,
+        &[],
+        &[],
+        &[],
+        &recipes,
+        &links,
+    );
     candidates.linked(&operands[0])
 }
 
@@ -294,9 +306,12 @@ fn bind_single_native_design_record(
     selection: BodySelection,
     recipes: &[crate::records::recipes::ConstructionRecipe],
     links: &[crate::records::sketch_links::PersistentDesignLink],
-    bodies: &[cadmpeg_ir::topology::Body],
-    regions: &[cadmpeg_ir::topology::Region],
-    shells: &[cadmpeg_ir::topology::Shell],
+    (bodies, regions, shells, faces): (
+        &[cadmpeg_ir::topology::Body],
+        &[cadmpeg_ir::topology::Region],
+        &[cadmpeg_ir::topology::Shell],
+        &[cadmpeg_ir::topology::Face],
+    ),
 ) -> BodySelection {
     let (scope, groups, _, _) = selection_fixture();
     let mut selection = selection;
@@ -310,6 +325,7 @@ fn bind_single_native_design_record(
         bodies,
         regions,
         shells,
+        faces,
     };
     super::super::bind_direct_body_recipe_body_selection(
         &mut selection,
@@ -319,6 +335,7 @@ fn bind_single_native_design_record(
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
@@ -340,7 +357,7 @@ fn single_native_design_record_resolves_through_linked_recipe() {
     };
     let stream = "f3d:Design/BulkStream.dat";
     let selection = BodySelection::Native(format!("{stream}:design-record#21"));
-    let (body, region, shell) = face_geometry();
+    let (body, region, shell, face) = face_geometry();
     let recipe = ConstructionRecipe {
         id: operands[0].recipe_id.clone(),
         byte_offset: 0,
@@ -371,10 +388,15 @@ fn single_native_design_record_resolves_through_linked_recipe() {
     let bodies = [body];
     let regions = [region];
     let shells = [shell];
+    let faces = [face];
     let recipes = [recipe];
     let links = [link];
     let resolved = bind_single_native_design_record(
-        &operands, selection, &recipes, &links, &bodies, &regions, &shells,
+        &operands,
+        selection,
+        &recipes,
+        &links,
+        (&bodies, &regions, &shells, &faces),
     );
     assert!(matches!(resolved, BodySelection::ResolvedSet { .. }));
 }
@@ -384,10 +406,11 @@ fn single_native_design_record_without_recipe_match_stays_native() {
     let (_, _, operands, _) = selection_fixture();
     let stream = "f3d:Design/BulkStream.dat";
     let selection = BodySelection::Native(format!("{stream}:design-record#21"));
-    let (body, region, shell) = face_geometry();
+    let (body, region, shell, face) = face_geometry();
     let bodies = [body];
     let regions = [region];
     let shells = [shell];
+    let faces = [face];
     // The fixture operand is group-owned, so no scope-reference operand
     // matches the design-record identity.
     let resolved = bind_single_native_design_record(
@@ -395,9 +418,7 @@ fn single_native_design_record_without_recipe_match_stays_native() {
         selection,
         &[],
         &[],
-        &bodies,
-        &regions,
-        &shells,
+        (&bodies, &regions, &shells, &faces),
     );
     assert!(matches!(resolved, BodySelection::Native(_)));
 }

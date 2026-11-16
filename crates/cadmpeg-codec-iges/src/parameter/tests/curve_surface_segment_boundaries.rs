@@ -202,7 +202,7 @@ fn decode_uses_type114_entity_boundary_for_form7_association() {
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#3")
@@ -402,7 +402,7 @@ fn decode_uses_type128_entity_boundary_for_form7_association() {
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#5")
@@ -624,7 +624,7 @@ fn decode_uses_type144_entity_boundary_for_form0_association() {
         "{:#?}",
         result.report().losses
     );
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#15")

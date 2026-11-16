@@ -30,9 +30,10 @@ fn resolved_visible_body_roster_keeps_pool_surfaces_as_scoped_supports() {
     ] {
         let mut ir = CadIr::empty();
         for index in 0..3 {
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: SurfaceId::mint(format!("catia:test:surface#{index}")).expect("surface id"),
                 geometry: geometry.clone(),
+                native_ref: None,
                 source_object: Some(
                     crate::assemble::cgm_source_key("surface", index).expect("source identity"),
                 ),
@@ -61,8 +62,8 @@ fn resolved_visible_body_roster_keeps_pool_surfaces_as_scoped_supports() {
             )
         })
         .expect("body selection");
-        assert_eq!(ir.model.surfaces.len(), 3);
-        for (index, surface) in ir.model.surfaces.iter().enumerate() {
+        assert_eq!(ir.geometry.surfaces.len(), 3);
+        for (index, surface) in ir.geometry.surfaces.iter().enumerate() {
             assert_eq!(surface.geometry, geometry);
             assert_eq!(
                 surface

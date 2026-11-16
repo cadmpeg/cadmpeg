@@ -457,7 +457,7 @@ fn curve_point(curve: &NurbsCurve, t: f64) -> Option<Point3> {
 }
 
 fn rolling_ball(ir: &CadIr, surface: usize, radius: f64) -> Option<&ProceduralSurfaceDefinition> {
-    let geometry = &ir.model.surfaces.get(surface)?.geometry;
+    let geometry = &ir.geometry.surfaces.get(surface)?.geometry;
     let SurfaceGeometry::Procedural {
         construction,
         cache: None,
@@ -466,7 +466,7 @@ fn rolling_ball(ir: &CadIr, surface: usize, radius: f64) -> Option<&ProceduralSu
         return None;
     };
     let procedure = ir
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|p| &p.id == construction)?;
@@ -520,7 +520,7 @@ pub(super) fn append(
                 .iter()
                 .any(|extent| extent.range().contains(&position))
             {
-                if let Some(source) = ir.model.surfaces[index].source_object.as_mut() {
+                if let Some(source) = ir.geometry.surfaces[index].source_object.as_mut() {
                     source.geometry_role = Some(cadmpeg_ir::SourceGeometryRole::Support);
                 }
             }

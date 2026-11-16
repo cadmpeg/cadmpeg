@@ -1227,7 +1227,7 @@ fn materialize(
             });
         }
         faces.push(
-            SubdFace::new(face_edges)
+            SubdFace::from_edge_uses(face_edges)
                 .map_err(|error| malformed(face.base.source_offset, error.to_string()))?,
         );
     }
@@ -1237,6 +1237,7 @@ fn materialize(
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new())
             .map_err(|error| malformed(level.source_offset, error.to_string()))?,
+        native_ref: None,
     })
 }
 

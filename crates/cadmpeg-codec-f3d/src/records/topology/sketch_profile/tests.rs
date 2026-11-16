@@ -19,6 +19,7 @@ fn sketch_profile_operand_borrowed_wire_matches_owned_wire_bytes() {
     for selection in [
         None,
         Some(super::DesignSketchProfileRegionSelection {
+            atomic_regions: Vec::new(),
             record_index: 8,
             byte_offset: 90,
             class_tag: "302".to_owned().try_into().unwrap(),

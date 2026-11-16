@@ -100,8 +100,8 @@ fn rolling_extension_recovers_and_reports_a_bounded_cylindrical_strip() {
     let expected_gap = 4.0 * (0.0015 * std::f64::consts::FRAC_PI_2 / 2.0).sin();
     assert!((patch.recovery.rolling_extension_mm - expected_gap).abs() < 1.0e-9);
     let (ir, notes) = transfer(patch);
-    assert_eq!(ir.model.faces.len(), 1);
-    assert_eq!(ir.model.edges.len(), 4);
+    assert_eq!(ir.geometry.faces.len(), 1);
+    assert_eq!(ir.geometry.edges.len(), 4);
     let note = notes
         .iter()
         .find(|note| note.code.local_code() == "geometry.rolling-sheet-extended")
@@ -156,7 +156,7 @@ fn rolling_recovery_retains_the_active_spline_pcurve_interval() {
         .iter()
         .all(|side| matches!(side.pcurve, PcurveGeometry::Trimmed(_))));
     let (ir, _) = transfer(patch);
-    assert_eq!(ir.model.faces.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 1);
 }
 
 #[test]

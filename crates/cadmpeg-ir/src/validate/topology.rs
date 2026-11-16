@@ -180,20 +180,60 @@ pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
+/// In a Catmull–Clark cage every face side holds one edge use, and the edges
+/// that state a knot interval state one value.
+pub(super) fn check_subdivision_schemes(ir: &CadIr, findings: &mut Vec<Finding>) {
+    for surface in &ir.geometry.subds {
+        if surface.scheme != crate::subd::SubdScheme::CatmullClark {
+            continue;
+        }
+        if surface
+            .cage
+            .faces()
+            .iter()
+            .any(|face| face.sides().iter().any(|side| side.edges.len() != 1))
+        {
+            super::record_finding(
+                findings,
+                Check::GeometricConsistency,
+                Severity::Error,
+                Some(surface.id.as_str()),
+                format_args!("Catmull-Clark face side holds more than one edge"),
+            );
+        }
+        let mut intervals = surface
+            .cage
+            .edges()
+            .iter()
+            .filter_map(crate::subd::SubdEdge::knot_interval);
+        if let Some(first) = intervals.next() {
+            if intervals.any(|interval| interval != first) {
+                super::record_finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    Severity::Error,
+                    Some(surface.id.as_str()),
+                    format_args!("Catmull-Clark cage edges state different knot intervals"),
+                );
+            }
+        }
+    }
+}
+
 pub(super) fn check_topology_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
     for (id, tolerance) in ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|entity| (entity.id.as_str(), entity.tolerance))
         .chain(
-            ir.model
+            ir.geometry
                 .edges
                 .iter()
                 .map(|entity| (entity.id.as_str(), entity.tolerance)),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .faces
                 .iter()
                 .map(|entity| (entity.id.as_str(), entity.tolerance)),
@@ -217,17 +257,7 @@ pub(super) fn check_references(
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    for b in &ir.model.bodies {
-        for l in &b.regions {
-            if ids
-                .regions(l.as_str(), crate::index::StandardIndex)
-                .is_none()
-            {
-                ref_error(findings, b.id.as_str(), "region", l.as_str());
-            }
-        }
-    }
-    for l in &ir.model.regions {
+    for l in &ir.geometry.regions {
         if ids
             .bodies(l.body.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -243,17 +273,12 @@ pub(super) fn check_references(
             }
         }
     }
-    for s in &ir.model.shells {
+    for s in &ir.geometry.shells {
         if ids
             .regions(s.region.as_str(), crate::index::StandardIndex)
             .is_none()
         {
             ref_error(findings, s.id.as_str(), "region", s.region.as_str());
-        }
-        for f in s.faces() {
-            if ids.faces(f.as_str(), crate::index::StandardIndex).is_none() {
-                ref_error(findings, s.id.as_str(), "face", f.as_str());
-            }
         }
         for e in s.wire_edges() {
             if ids.edges(e.as_str(), crate::index::StandardIndex).is_none() {
@@ -269,7 +294,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for f in &ir.model.faces {
+    for f in &ir.geometry.faces {
         if ids
             .shells(f.shell.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -291,7 +316,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for lp in &ir.model.loops {
+    for lp in &ir.geometry.loops {
         if ids
             .faces(lp.face.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -365,7 +390,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for ce in &ir.model.coedges {
+    for ce in &ir.geometry.coedges {
         if ids
             .loops(ce.owner_loop.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -411,7 +436,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for e in &ir.model.edges {
+    for e in &ir.geometry.edges {
         if let Some(c) = e.curve() {
             if ids
                 .curves(c.as_str(), crate::index::StandardIndex)
@@ -420,20 +445,18 @@ pub(super) fn check_references(
                 ref_error(findings, e.id.as_str(), "curve", c.as_str());
             }
         }
-        if ids
-            .vertices(e.start.as_str(), crate::index::StandardIndex)
-            .is_none()
-        {
-            ref_error(findings, e.id.as_str(), "vertex(start)", e.start.as_str());
-        }
-        if ids
-            .vertices(e.end.as_str(), crate::index::StandardIndex)
-            .is_none()
-        {
-            ref_error(findings, e.id.as_str(), "vertex(end)", e.end.as_str());
+        if let Some(ends) = &e.ends {
+            for (role, vertex) in [("vertex(start)", &ends.start), ("vertex(end)", &ends.end)] {
+                if ids
+                    .vertices(vertex.as_str(), crate::index::StandardIndex)
+                    .is_none()
+                {
+                    ref_error(findings, e.id.as_str(), role, vertex.as_str());
+                }
+            }
         }
     }
-    for v in &ir.model.vertices {
+    for v in &ir.geometry.vertices {
         if ids
             .points(v.point.as_str(), crate::index::StandardIndex)
             .is_none()
@@ -571,7 +594,7 @@ pub(super) fn check_references(
             _ => {}
         }
     }
-    for s in &ir.model.surfaces {
+    for s in &ir.geometry.surfaces {
         match &s.geometry {
             SurfaceGeometry::Procedural { construction, .. } => {
                 if ids
@@ -594,7 +617,7 @@ pub(super) fn check_references(
             SurfaceGeometry::Solved(_) => {}
         }
     }
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         match &curve.geometry {
             CurveGeometry::Procedural { construction, .. } => {
                 if ids
@@ -635,7 +658,7 @@ pub(super) fn check_references(
         }
     }
     composite::check(ctx, ir, findings)?;
-    for procedural in &ir.model.procedural_surfaces {
+    for procedural in &ir.geometry.procedural_surfaces {
         match procedural.definition() {
             ProceduralSurfaceDefinition::Exact(..) => {}
             ProceduralSurfaceDefinition::Compound(definition_payload) => {
@@ -1570,7 +1593,7 @@ pub(super) fn check_references(
             }
         }
     }
-    for procedural in &ir.model.procedural_curves {
+    for procedural in &ir.geometry.procedural_curves {
         match procedural.definition() {
             ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {}
             ProceduralCurveDefinition::Law {
@@ -3115,6 +3138,11 @@ fn check_feature_references(
                     FeatureOperation::MeshImport { .. }
                         | FeatureOperation::MeshGenerateFaceGroups { .. }
                         | FeatureOperation::MeshCombineFaceGroups { .. }
+                        | FeatureOperation::MeshModify {
+                            modification: crate::features::mesh::MeshModification::Separate { .. }
+                                | crate::features::mesh::MeshModification::PlaneCut { .. },
+                            ..
+                        }
                 ) {
                     if let crate::features::mesh::MeshSelection::Unresolved { feature: origin } =
                         tessellations
@@ -3271,12 +3299,14 @@ fn check_feature_references(
                     );
                 }
             }
-            FeatureOperation::Form { cages } => {
+            FeatureOperation::Form(construction) => {
                 check_ids(
                     findings,
                     feature.id.as_str(),
                     "Form control cage",
-                    cages.iter().map(super::super::ids::SubdId::as_str),
+                    construction
+                        .referenced_cages()
+                        .map(super::super::ids::SubdId::as_str),
                     |identity| ids.subds(identity, crate::index::StandardIndex).is_some(),
                 );
             }
@@ -3295,11 +3325,53 @@ fn check_feature_references(
                     face_selections.push(face);
                 }
             }
-            FeatureOperation::SheetMetalEdgeFlange { edges, height, .. } => {
-                edge_selections.push(edges);
-                if matches!(height, crate::features::SheetMetalFlangeHeight::ToObject {
-                    target: crate::features::SheetMetalFlangeHeightTarget::Native(native), ..
-                } if native.is_empty())
+            FeatureOperation::SheetMetalContourFlange { .. } => {}
+            FeatureOperation::SheetMetalUnfold { construction } => {
+                face_selections.extend(construction.stationary.iter());
+                face_selections.extend(construction.bends.iter());
+            }
+            FeatureOperation::SheetMetalRefold { construction } => {
+                if let Some(source) = &construction.unfold {
+                    let candidate = feature_records.get(source.as_str());
+                    if !candidate.is_some_and(|candidate| {
+                        matches!(
+                            candidate.evaluation.definition().operation(),
+                            FeatureOperation::SheetMetalUnfold { .. }
+                        )
+                    }) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "refold Unfold",
+                            source.as_str(),
+                        );
+                    }
+                    if candidate.is_some_and(|candidate| candidate.ordinal >= feature.ordinal)
+                        || !feature.dependencies.contains(source)
+                    {
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "refold Unfold must precede Refold and occur in its dependencies",
+                        );
+                    }
+                }
+            }
+            FeatureOperation::SheetMetalBendLines { construction } => {
+                if let Some(stationary) = &construction.stationary {
+                    face_selections.push(stationary);
+                }
+                for bend in &construction.bends {
+                    if let Some(line) = &bend.line {
+                        paths.push(line);
+                    }
+                }
+            }
+            FeatureOperation::SheetMetalEdgeFlange(construction) => {
+                if let Some(edges) = &construction.edges {
+                    edge_selections.push(edges);
+                }
+                if matches!(&construction.height, Some(crate::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(&target.target, Some(crate::features::SheetMetalFlangeHeightTarget::Native(native)) if native.is_empty()))
                 {
                     geometry_error(
                         findings,
@@ -3501,6 +3573,12 @@ fn check_feature_references(
             }
             FeatureOperation::ExtendSurface { faces, .. } => {
                 face_selections.push(faces);
+            }
+            FeatureOperation::UntrimSurface { faces, loops, .. } => {
+                face_selections.push(faces);
+                if let crate::features::surfaces::UntrimLoops::Selected { edges } = loops {
+                    edge_selections.push(edges);
+                }
             }
             FeatureOperation::RuledSurface {
                 edges,
@@ -4638,6 +4716,9 @@ fn definition_profiles(
         crate::features::FeatureOperation::SheetMetalAttachedPlate { profile, .. }
         | crate::features::FeatureOperation::SheetMetalBaseFlange { profile, .. }
         | crate::features::FeatureOperation::Wrap { profile, .. } => profiles.push(profile),
+        crate::features::FeatureOperation::SheetMetalContourFlange { construction } => {
+            profiles.extend(construction.profile.as_ref());
+        }
         crate::features::FeatureOperation::Revolve { construction, .. } => {
             profiles.extend(construction.profile());
         }
@@ -4719,6 +4800,22 @@ fn definition_terminations(
                 ]);
             }
         },
+        crate::features::FeatureOperation::SheetMetalContourFlange { construction } => {
+            if let Some(extent) = &construction.extent {
+                match extent {
+                    crate::features::ExtrudeExtent::OneSided { side }
+                    | crate::features::ExtrudeExtent::Symmetric { side } => {
+                        terminations.push(TerminationRef::Linear(&side.termination));
+                    }
+                    crate::features::ExtrudeExtent::TwoSided { first, second } => {
+                        terminations.extend([
+                            TerminationRef::Linear(&first.termination),
+                            TerminationRef::Linear(&second.termination),
+                        ]);
+                    }
+                }
+            }
+        }
         crate::features::FeatureOperation::Revolve { construction, .. } => {
             match construction.extent() {
                 Some(
@@ -5083,6 +5180,9 @@ fn check_feature_sketch_references(
             FeatureOperation::SheetMetalAttachedPlate { profile, .. }
             | FeatureOperation::SheetMetalBaseFlange { profile, .. } => {
                 profiles.push(ProfileReference::Planar(profile));
+            }
+            FeatureOperation::SheetMetalContourFlange { construction } => {
+                profiles.extend(construction.profile.as_ref().map(ProfileReference::Planar));
             }
             FeatureOperation::Rib { construction, .. } => {
                 profiles.extend(construction.profile.as_ref().map(ProfileReference::Planar));

@@ -5552,7 +5552,7 @@ pub(crate) fn store(
         occurrence_definitions.insert(sequence, definition);
     }
     let mut occurrence_neutral_links = BTreeMap::<u32, Vec<String>>::new();
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         if let Some(sequence) = curve
             .source_object
             .as_ref()
@@ -5566,7 +5566,7 @@ pub(crate) fn store(
             );
         }
     }
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         if let Some(sequence) = surface
             .source_object
             .as_ref()
@@ -5580,12 +5580,12 @@ pub(crate) fn store(
             );
         }
     }
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         if let Some(sequence) = sequences.body_neutral_form(&body.id) {
             push_occurrence_neutral_link(&mut occurrence_neutral_links, sequence, body.id.as_str());
         }
     }
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         if let Some(sequence) = sequences.point(&point.id) {
             push_occurrence_neutral_link(
                 &mut occurrence_neutral_links,

@@ -18,6 +18,7 @@ mod blend_spine;
 mod body_candidates;
 mod body_index;
 mod cache;
+pub(crate) mod combine_history_tools;
 mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
@@ -29,6 +30,7 @@ mod face_recipe;
 mod fallback_face;
 pub(crate) mod fillet_blends;
 pub(crate) mod fragment_edge;
+pub(crate) mod history_bodies;
 mod hole_support;
 mod loop_index;
 mod move_face;
@@ -556,85 +558,13 @@ fn historical_record_archive(
     active_records: &[cadmpeg_asm::sab::Record],
     archived_frames: HashMap<i64, cadmpeg_asm::sab::Record>,
 ) -> Option<HistoricalRecordArchive> {
-    let active_count = i64::try_from(active_records.len()).ok()?;
-
-    let mut revision_entities = HashMap::new();
-
-    for entity_ref in 0..active_count {
-        revision_entities.insert(entity_ref, entity_ref);
-    }
-    for change in states
-        .iter()
-        .flat_map(|state| &state.bulletin_boards)
-        .flat_map(|board| &board.changes)
-    {
-        let Some(old_ref) = change.old_ref() else {
-            continue;
-        };
-        let entity_ref = change.new_ref().unwrap_or(old_ref);
-
-        if revision_entities.insert(old_ref, entity_ref).is_some() {
-            return None;
-        }
-    }
-
-    let mut records = HashMap::new();
-
-    for (revision, record) in active_records.iter().enumerate() {
-        let revision = i64::try_from(revision).ok()?;
-        records.insert(revision, clone_historical_record(record));
-    }
-    for (revision_id, framed) in archived_frames {
-        if records.insert(revision_id, framed).is_some() {
-            return None;
-        }
-    }
-    if records.len() != revision_entities.len() {
-        return None;
-    }
-    for (&revision_ref, record) in &mut records {
-        let &entity_ref = revision_entities.get(&revision_ref)?;
-        let index = usize::try_from(entity_ref).ok()?;
-        record.index = index;
-        if std::sync::Arc::strong_count(&record.tokens) > 1 {
-            let mut tokens = Vec::new();
-            for token in record.tokens.iter() {
-                tokens.push(clone_historical_token(token));
-            }
-            record.tokens = tokens.into();
-        }
-        for token in std::sync::Arc::make_mut(&mut record.tokens) {
-            let cadmpeg_asm::sab::Token::Ref(reference) = token else {
-                continue;
-            };
-            if *reference >= 0 {
-                let &entity_ref = revision_entities.get(reference)?;
-                *reference = entity_ref;
-            }
-        }
-    }
-    Some(records)
-}
-
-fn clone_historical_record(record: &cadmpeg_asm::sab::Record) -> cadmpeg_asm::sab::Record {
-    let name = record.name.clone();
-    cadmpeg_asm::sab::Record {
-        index: record.index,
-        name,
-        tokens: record.tokens.clone(),
-        offset: record.offset,
-        len: record.len,
-    }
-}
-
-fn clone_historical_token(token: &cadmpeg_asm::sab::Token) -> cadmpeg_asm::sab::Token {
-    use cadmpeg_asm::sab::Token;
-    match token {
-        Token::Str(value) => Token::Str(value.to_owned()),
-        Token::Ident(value) => Token::Ident(value.to_owned()),
-        Token::SubIdent(value) => Token::SubIdent(value.to_owned()),
-        _ => token.clone(),
-    }
+    cadmpeg_asm::history::historical_record_archive(
+        &delta_state_views(states),
+        cadmpeg_asm::history::RecordArchiveFrames {
+            active: active_records.to_vec(),
+            archived: archived_frames,
+        },
+    )
 }
 
 /// Release derived topologies after projection and retain only late-selection rows.
@@ -1914,6 +1844,7 @@ pub(crate) fn bind_feature_outputs(
                 .or_insert(formatted);
         }
         if deleted_set.is_empty() && !combine_states_applied_operation(feature, scopes) {
+            let mut assumed_cut = false;
             feature.evaluation.edit(|def, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Combine {
                     op,
@@ -1927,9 +1858,15 @@ pub(crate) fn bind_feature_outputs(
                 {
                     if *op == cadmpeg_ir::features::BooleanKind::Join && *keep_tools {
                         *op = cadmpeg_ir::features::BooleanKind::Cut;
+                        assumed_cut = true;
                     }
                 }
             });
+            if assumed_cut {
+                losses.push(crate::loss::F3dLossCode::FeatureCombineKeptToolsCutAssumed.note(
+                    format!("feature {} assumes Cut for a stored Join with kept tools and no deleted bodies", feature.id),
+                ));
+            }
         }
         if let Some(solid_outputs) = cur_key.and_then(|k| state_solid_outputs.get(&k)) {
             let mut filtered: Vec<i64> = if let (Some(before), Some(after)) =
@@ -2211,6 +2148,8 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub(crate) regions: &'a [cadmpeg_ir::topology::Region],
     /// Neutral region shells.
     pub(crate) shells: &'a [cadmpeg_ir::topology::Shell],
+    /// Neutral shell faces.
+    pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
 }
 
 pub(crate) fn bind_feature_body_selections(
@@ -2232,6 +2171,7 @@ pub(crate) fn bind_feature_body_selections(
         bodies,
         regions,
         shells,
+        inputs.faces,
         inputs.construction_recipes,
         inputs.persistent_design_links,
     );
@@ -3557,6 +3497,25 @@ pub(crate) fn bind_feature_face_selections(
                     );
                     crate::design::feature_project::thicken::list_thicken_whole_bodies(
                         faces, scope, groups,
+                    );
+                    selection::bind_body_recipe_face_selection(
+                        faces,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::UntrimSurface { faces, .. },
+                ) => {
+                    selection::bind_face_selection(
+                        faces,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
                     );
                     selection::bind_body_recipe_face_selection(
                         faces,
@@ -9563,6 +9522,43 @@ fn historical_topology(
         .collect::<Vec<_>>();
     surface_axes.sort_by_key(|a| a.surface);
 
+    let mut regions_by_body = HashMap::<&str, Vec<&str>>::new();
+    for region in &brep.regions {
+        regions_by_body
+            .entry(region.body.as_str())
+            .or_default()
+            .push(region.id.as_str());
+    }
+    for body in &brep.bodies {
+        if let Some(chain) = stable_ref(body.id.as_str())
+            .and_then(|record| brep.chain_order.body_regions.get(&record))
+        {
+            regions_by_body.insert(
+                body.id.as_str(),
+                chain
+                    .iter()
+                    .map(cadmpeg_ir::ids::RegionId::as_str)
+                    .collect(),
+            );
+        }
+    }
+    let mut faces_by_shell = HashMap::<&str, Vec<&str>>::new();
+    for face in &brep.faces {
+        faces_by_shell
+            .entry(face.shell.as_str())
+            .or_default()
+            .push(face.id.as_str());
+    }
+    for shell in &brep.shells {
+        if let Some(chain) = stable_ref(shell.id.as_str())
+            .and_then(|record| brep.chain_order.shell_faces.get(&record))
+        {
+            faces_by_shell.insert(
+                shell.id.as_str(),
+                chain.iter().map(cadmpeg_ir::ids::FaceId::as_str).collect(),
+            );
+        }
+    }
     let mut ring_neighbors = HashMap::new();
     for loop_ in &brep.loops {
         let ring = loop_.coedges();
@@ -9627,7 +9623,11 @@ fn historical_topology(
         body_regions: topology_some!(relations(brep.bodies.iter().map(|body| {
             (
                 body.id.as_str(),
-                body.regions.iter().map(cadmpeg_ir::ids::RegionId::as_str),
+                regions_by_body
+                    .get(body.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .copied(),
             )
         }))),
         region_shells: topology_some!(relations(brep.regions.iter().map(|region| {
@@ -9639,25 +9639,23 @@ fn historical_topology(
         shell_faces: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell.faces().iter().map(cadmpeg_ir::ids::FaceId::as_str),
+                faces_by_shell
+                    .get(shell.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .copied(),
             )
         }))),
         shell_wire_edges: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell
-                    .wire_edges()
-                    .iter()
-                    .map(cadmpeg_ir::ids::EdgeId::as_str),
+                shell.wire_edges().map(cadmpeg_ir::ids::EdgeId::as_str),
             )
         }))),
         shell_free_vertices: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell
-                    .free_vertices()
-                    .iter()
-                    .map(cadmpeg_ir::ids::VertexId::as_str),
+                shell.free_vertices().map(cadmpeg_ir::ids::VertexId::as_str),
             )
         }))),
         face_loops: topology_some!(relations(brep.faces.iter().map(|face| {
@@ -9698,8 +9696,8 @@ fn historical_topology(
             .map(|edge| {
                 Some(AsmHistoricalEdge {
                     edge: stable_ref(edge.id.as_str())?,
-                    start_vertex: stable_ref(edge.start.as_str())?,
-                    end_vertex: stable_ref(edge.end.as_str())?,
+                    start_vertex: stable_ref(edge.start()?.as_str())?,
+                    end_vertex: stable_ref(edge.end()?.as_str())?,
                 })
             })
             .collect::<Option<Vec<_>>>()),

@@ -38,11 +38,11 @@ fn loss_code_serializes_as_namespaced_object() {
     )
     .with_severity(Severity::Blocking);
     let value: serde_json::Value = serde_json::to_value(&note).expect("required invariant");
-    assert_eq!(value["code"]["scope"], "shared");
-    assert_eq!(value["code"]["kind"], "topology_not_transferred");
-    assert!(value["code"].get("namespace").is_none());
-    assert!(value["code"].get("code").is_none());
-    assert!(value["code"].get("strict_floor").is_none());
+    assert_eq!(value["code"]["kind"], "shared");
+    assert_eq!(value["code"]["value"]["kind"], "topology_not_transferred");
+    assert!(value["code"]["value"].get("namespace").is_none());
+    assert!(value["code"]["value"].get("code").is_none());
+    assert!(value["code"]["value"].get("strict_floor").is_none());
     assert_eq!(
         note.code.to_string(),
         format!("{SHARED_LOSS_NAMESPACE}/topology_not_transferred")
@@ -55,27 +55,25 @@ fn a_shared_loss_kind_carries_no_code_and_no_strict_floor() {
     let wire = serde_json::to_value(&shared).expect("serializes");
     assert_eq!(
         wire,
-        serde_json::json!({"scope": "shared", "kind": "topology_not_transferred"})
+        serde_json::json!({"kind": "shared", "value": {"kind": "topology_not_transferred"}})
     );
     assert_eq!(
         serde_json::from_value::<LossKind>(wire).expect("round trip"),
         shared
     );
 
-    let error = serde_json::from_value::<LossKind>(serde_json::json!({
-        "scope": "shared",
+    let error = serde_json::from_value::<LossKind>(serde_json::json!({"kind": "shared", "value": {
         "kind": "topology_not_transferred",
         "code": "geometry_not_transferred"
-    }))
+    }}))
     .unwrap_err()
     .to_string();
     assert!(error.contains("code"), "{error}");
 
-    let error = serde_json::from_value::<LossKind>(serde_json::json!({
-        "scope": "shared",
+    let error = serde_json::from_value::<LossKind>(serde_json::json!({"kind": "shared", "value": {
         "kind": "topology_not_transferred",
         "strict_floor": "error"
-    }))
+    }}))
     .unwrap_err()
     .to_string();
     assert!(error.contains("strict_floor"), "{error}");
@@ -93,27 +91,26 @@ fn a_shared_loss_kind_carries_no_code_and_no_strict_floor() {
     let wire = serde_json::to_value(&namespaced).expect("serializes");
     assert_eq!(
         wire,
-        serde_json::json!({
-            "scope": "namespaced",
+        serde_json::json!({"kind": "namespaced", "value": {
             "namespace": "rhino",
             "code": "brep.trim-pcurve-dropped",
             "kind": "topology_not_transferred",
             "strict_floor": "warning"
-        })
+        }})
     );
     assert_eq!(
         serde_json::from_value::<LossKind>(wire).expect("round trip"),
         namespaced
     );
 
-    let error = serde_json::from_value::<LossKind>(serde_json::json!({
-        "scope": "namespaced",
-        "namespace": "shared",
-        "code": "topology_not_transferred",
-        "kind": "topology_not_transferred"
-    }))
-    .unwrap_err()
-    .to_string();
+    let error =
+        serde_json::from_value::<LossKind>(serde_json::json!({"kind": "namespaced", "value": {
+            "namespace": "shared",
+            "code": "topology_not_transferred",
+            "kind": "topology_not_transferred"
+        }}))
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("shared"), "{error}");
 }
 
@@ -272,9 +269,11 @@ fn namespaced_loss_rejects_reserved_namespace() {
     assert_eq!(LossNamespace::new("shared"), Err(LossNamespaceError));
     let namespace = String::from("shared");
     assert_eq!(LossNamespace::new(&namespace), Err(LossNamespaceError));
-    assert!(serde_json::from_value::<LossKind>(serde_json::json!({
-        "namespace": "shared", "code": "wrong", "kind": "pcurve_omitted"
-    }))
+    assert!(serde_json::from_value::<LossKind>(
+        serde_json::json!({"kind": "namespaced", "value": {
+            "namespace": "shared", "code": "wrong", "kind": "pcurve_omitted"
+        }})
+    )
     .is_err());
 }
 
