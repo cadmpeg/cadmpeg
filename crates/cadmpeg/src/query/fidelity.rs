@@ -169,12 +169,12 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
     }
 }
 
-fn class_names(classes: &BTreeSet<cadmpeg_ir::ArenaClass>) -> Vec<&'static str> {
+fn class_names(classes: &BTreeSet<cadmpeg_core::decode::ArenaClass>) -> Vec<&'static str> {
     classes.iter().copied().map(arena_class_name).collect()
 }
 
 /// Comma-separated arena classes, or `-` for none.
-fn class_list(classes: &BTreeSet<cadmpeg_ir::ArenaClass>) -> String {
+fn class_list(classes: &BTreeSet<cadmpeg_core::decode::ArenaClass>) -> String {
     if classes.is_empty() {
         return "-".to_owned();
     }

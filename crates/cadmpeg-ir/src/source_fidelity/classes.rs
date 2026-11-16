@@ -9,22 +9,31 @@ use serde::de::{self, SeqAccess, Visitor};
 use serde::ser::SerializeSeq;
 use serde::{Deserializer, Serializer};
 
-use crate::document::ArenaClass;
+use cadmpeg_core::decode::ArenaClass;
 
 /// Returns the wire name of an arena class.
 pub(super) const fn name(class: ArenaClass) -> &'static str {
     match class {
         ArenaClass::Model => "model",
         ArenaClass::Design => "design",
+        ArenaClass::Process => "process",
     }
 }
 
-fn parse(text: &str) -> Option<ArenaClass> {
-    match text {
-        "model" => Some(ArenaClass::Model),
-        "design" => Some(ArenaClass::Design),
-        _ => None,
+const NAMES: [&str; ArenaClass::ALL.len()] = {
+    let mut names = [""; ArenaClass::ALL.len()];
+    let mut index = 0;
+    while index < names.len() {
+        names[index] = name(ArenaClass::ALL[index]);
+        index += 1;
     }
+    names
+};
+
+fn parse(text: &str) -> Option<ArenaClass> {
+    ArenaClass::ALL
+        .into_iter()
+        .find(|class| name(*class) == text)
 }
 
 /// Writes a class set as its sorted array of names.
@@ -60,8 +69,7 @@ impl<'de> Visitor<'de> for ClassSetVisitor {
         let mut classes = BTreeSet::new();
         let mut last = None;
         while let Some(text) = sequence.next_element::<String>()? {
-            let class = parse(&text)
-                .ok_or_else(|| de::Error::unknown_variant(&text, &["model", "design"]))?;
+            let class = parse(&text).ok_or_else(|| de::Error::unknown_variant(&text, &NAMES))?;
             if last.is_some_and(|last| class <= last) {
                 return Err(de::Error::custom(format_args!(
                     "arena class {text:?} repeats or is out of class order"
@@ -80,7 +88,7 @@ mod tests {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::document::ArenaClass;
+    use cadmpeg_core::decode::ArenaClass;
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct Holder {
@@ -91,10 +99,10 @@ mod tests {
     #[test]
     fn a_class_set_writes_its_names_in_class_order() {
         let holder = Holder {
-            classes: [ArenaClass::Design, ArenaClass::Model].into(),
+            classes: [ArenaClass::Process, ArenaClass::Design, ArenaClass::Model].into(),
         };
         let text = serde_json::to_string(&holder).expect("serializes");
-        assert_eq!(text, r#"{"classes":["model","design"]}"#);
+        assert_eq!(text, r#"{"classes":["model","design","process"]}"#);
         assert_eq!(
             serde_json::from_str::<Holder>(&text).expect("reads back"),
             holder

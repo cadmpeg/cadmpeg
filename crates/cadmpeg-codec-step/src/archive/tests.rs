@@ -520,13 +520,13 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#4"));
     assert!(!result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#12"));
@@ -538,7 +538,7 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         .expect("decode subsidiary independently");
     assert!(target_result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#12"));
@@ -1170,6 +1170,7 @@ fn optional_archive_profile_defects_preserve_geometry_and_declarations() {
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap(),
         );
+        assert_eq!(result.ir().geometry, baseline.ir().geometry);
         assert_eq!(result.ir().model, baseline.ir().model);
         assert!(
             result
@@ -1225,6 +1226,7 @@ fn zstd_window_past_the_allowance_skips_an_ancillary_member_and_leaves_the_root_
             )
             .expect("an ancillary member past the window allowance does not refuse the root"),
     );
+    assert_eq!(result.ir().geometry, baseline.ir().geometry);
     assert_eq!(result.ir().model, baseline.ir().model);
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::StepLossCode::ContainerMemberNoncanonical.kind()
@@ -1263,6 +1265,7 @@ fn damaged_first_ancillary_local_frame_keeps_required_root_readable() {
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .unwrap(),
     );
+    assert_eq!(result.ir().geometry, baseline.ir().geometry);
     assert_eq!(result.ir().model, baseline.ir().model);
     assert!(result
         .report()

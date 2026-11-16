@@ -263,19 +263,19 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
         .expect("decode target independently");
     assert!(root_result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#4"));
     assert!(target_result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#12"));
     assert!(!root_result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#12"));

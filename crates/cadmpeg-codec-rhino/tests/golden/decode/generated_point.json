@@ -1,12 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {},
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "color": {
@@ -24,17 +20,11 @@
         }
       ],
       "coedges": [],
-      "configurations": [],
       "curves": [],
-      "drawings": [],
       "edges": [],
       "faces": [],
-      "features": [],
       "loops": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "pmi": [],
       "points": [
         {
           "id": "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742",
@@ -51,17 +41,15 @@
               "r": 0.0
             },
             "format": "rhino",
+            "instance_path": [],
             "layer": "284434a6-8100-1c94-6093-9b8d5a958003",
             "object_id": "d000213c-3fed-dfd4-5d93-120ab2084742",
             "visible": true
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742",
@@ -71,7 +59,6 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "rhino:object:shell#d000213c-3fed-dfd4-5d93-120ab2084742",
@@ -84,21 +71,52 @@
           "region": "rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [],
-      "tessellations": [],
       "vertices": [
         {
           "id": "rhino:object:vertex#d000213c-3fed-dfd4-5d93-120ab2084742",
           "point": "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742"
         }
-      ],
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -224,6 +242,12 @@
         "windows_bitmaps": []
       }
     },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "absolute_tolerance_millimeters": "0.000001",
@@ -241,18 +265,20 @@
         "unit_value": "2"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "archive_version": "80",
               "opennurbs_writer_version": "200712190"
             },
             "dialect": "rhino:archive-80"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -260,31 +286,39 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "archive_version": "80",
             "opennurbs_writer_version": "200712190"
           },
           "dialect": "rhino:archive-80"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "object.record-census",
-          "kind": "object_records_untransferred",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "object.record-census",
+            "kind": "object_records_untransferred",
+            "namespace": "rhino"
+          }
         },
         "message": "decoded 1/1 Rhino object records",
         "severity": "info"
@@ -295,7 +329,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -303,21 +340,26 @@
       "exactness": {
         "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:shell#d000213c-3fed-dfd4-5d93-120ab2084742": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:vertex#d000213c-3fed-dfd4-5d93-120ab2084742": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         }
-      }
+      },
+      "provenance": {}
     },
     "decode_digest": "ecd6291d0a6e64203f211d205036e534c916e0b57d8befdc0b5e58a70800873c",
     "file_digests": {},
@@ -325,7 +367,7 @@
       "rhino:object:record#000000": {
         "bytes": {
           "data": "cIAAIKMAAAAAAAAAcQAAggEAAAAAAAAA+n8CAFUAAAAAAAAA+/8CABQAAAAAAAAAHRoQw1fx0xG/5wAQgwEi8ExUB6T8/wIAHQAAAAAAAAAQAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhA5Qs8Sf9/AoAAAAAAAAAAAHKAAAIaAAAAAAAAACA8IQDQ7T/U312TEgqyCEdCAAAAAAA+vfBQfwAAggAAAAAAAAAAAAAAAA==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 622,
         "stream": "",

@@ -148,14 +148,16 @@ fn inherited_writer_refuses_every_saved_property_edit() {
                     .filter(is_property)
                     .find(|row| row.name == "SavedName")
                     .unwrap();
-                row.values = vec![AttributeValue::float(0.0).unwrap()];
+                row.values = vec![AttributeValue::float(1.0).unwrap()];
             }
             _ => unreachable!(),
         }
         drop(ir);
+        let written = write(&decoded);
         assert!(
-            matches!(write(&decoded), Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved-property edits require a retained property serializer"),
-            "mutation {mutation}"
+            matches!(&written, Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved-property edits require a retained property serializer"),
+            "mutation {mutation}: {:?}",
+            written.map(|bytes| bytes.len())
         );
     }
 }

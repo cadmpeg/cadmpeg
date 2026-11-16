@@ -10,6 +10,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
@@ -18,7 +19,7 @@ use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{Annotations, ArenaClass, SourceFidelity};
+use cadmpeg_ir::{Annotations, SourceFidelity};
 use std::collections::BTreeSet;
 
 use crate::assemble::{build_container_report, build_metadata_fallback};
@@ -250,7 +251,7 @@ fn finish_decode(
         report.losses.push(note);
     }
     ctx.admit_entities(
-        u64_from_index(ir.model.entity_count()),
+        u64_from_index(ir.entity_count()),
         &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
@@ -267,7 +268,7 @@ fn finish_decode(
     }
     let modeling_graph_scope =
         modeling_graph_scope(scan.has_outer_container_declarations, &native.object_graphs);
-    crate::native::project_range::bind(ctx, &mut native, &ir.model, &modeling_graph_scope)?;
+    crate::native::project_range::bind(ctx, &mut native, &ir.geometry, &modeling_graph_scope)?;
     let modeling_object_records = (native
         .object_graphs
         .iter()
@@ -1901,7 +1902,7 @@ fn finish_decode(
         .map(|block| block.schema_selections.len())
         .sum();
     let transferred_line_profile_count = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -2018,7 +2019,7 @@ fn finish_decode(
         ),
         (
             crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT,
-            ir.model
+            ir.geometry
                 .procedural_surfaces
                 .iter()
                 .filter(|surface| {

@@ -148,11 +148,11 @@ fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
         ("coupled_joints", serde_json::json!(["test:model:joint#1"])),
         (
             "angular_limits",
-            serde_json::json!({"bounds": "range", "minimum": 0.0, "maximum": 1.0}),
+            serde_json::json!({"kind": "range", "minimum": 0.0, "maximum": 1.0}),
         ),
         (
             "linear_limits",
-            serde_json::json!({"bounds": "range", "minimum": 0.0, "maximum": 2.0}),
+            serde_json::json!({"kind": "range", "minimum": 0.0, "maximum": 2.0}),
         ),
     ];
     for (kind, allowed) in families {
@@ -165,7 +165,7 @@ fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
         );
         for (field, value) in &fields {
             let mut candidate = wire.clone();
-            candidate["operands"]["kind"][*field] = value.clone();
+            candidate["operands"]["value"]["kind"][*field] = value.clone();
             let result = serde_json::from_value::<AssemblyJoint>(candidate.clone());
             assert_eq!(result.is_ok(), allowed.contains(field), "{kind:?}: {field}");
             match result {
@@ -191,7 +191,7 @@ fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
 fn the_joint_wire_refuses_the_deleted_keys() {
     let joint = AssemblyJoint::grounded(joint_id(), connector(), None);
     let wire = serde_json::to_value(&joint).unwrap();
-    assert_eq!(wire["operands"]["arity"], "grounded");
+    assert_eq!(wire["operands"]["kind"], "grounded");
     assert!(wire.get("kind").is_none());
     assert!(wire.get("frames").is_none());
     assert!(wire.get("detached").is_none());
@@ -219,7 +219,7 @@ fn the_joint_wire_refuses_the_deleted_keys() {
     }
 
     let mut candidate = wire;
-    candidate["operands"]["distance"] = serde_json::json!(1);
+    candidate["operands"]["value"]["distance"] = serde_json::json!(1);
     let error = serde_json::from_value::<AssemblyJoint>(candidate)
         .unwrap_err()
         .to_string();
@@ -283,10 +283,10 @@ fn a_plane_coincidence_keeps_its_sense_path_and_driving_parameter() {
     joint.driving_parameter =
         Some(crate::features::ParameterId::mint("test:model:parameter#0").unwrap());
     let wire = serde_json::to_value(&joint).unwrap();
-    assert_eq!(wire["operands"]["kind"]["sense"], "aligned");
-    assert_eq!(wire["operands"]["kind"]["offset"], -2.5);
+    assert_eq!(wire["operands"]["value"]["kind"]["sense"], "aligned");
+    assert_eq!(wire["operands"]["value"]["kind"]["offset"], -2.5);
     assert_eq!(
-        wire["operands"]["connectors"][1]["operand"]["container"]["occurrence_path"],
+        wire["operands"]["value"]["connectors"][1]["operand"]["container"]["occurrence_path"],
         serde_json::json!(["2", "7"])
     );
     assert_eq!(wire["driving_parameter"], "test:model:parameter#0");
@@ -296,7 +296,7 @@ fn a_plane_coincidence_keeps_its_sense_path_and_driving_parameter() {
     );
 
     let mut missing_sense = wire.clone();
-    missing_sense["operands"]["kind"]
+    missing_sense["operands"]["value"]["kind"]
         .as_object_mut()
         .unwrap()
         .remove("sense");
@@ -304,7 +304,7 @@ fn a_plane_coincidence_keeps_its_sense_path_and_driving_parameter() {
 
     let flat = JointOperand::occurrence(occurrence, "part:object", Vec::new());
     let wire = serde_json::to_value(&flat).unwrap();
-    assert!(wire["container"].get("occurrence_path").is_none());
+    assert_eq!(wire["container"]["occurrence_path"], serde_json::json!([]));
     assert!(matches!(
         serde_json::from_value::<JointOperand>(wire).unwrap().container,
         OperandContainer::Occurrence { occurrence_path, .. } if occurrence_path.is_empty()
@@ -333,13 +333,13 @@ fn insert_and_tangent_joints_keep_their_sense_and_contact() {
     ] {
         let joint = AssemblyJoint::paired(joint_id(), kind, [connector(), connector()], None);
         let wire = serde_json::to_value(&joint).unwrap();
-        assert_eq!(wire["operands"]["kind"][key], value);
+        assert_eq!(wire["operands"]["value"]["kind"][key], value);
         assert_eq!(
             serde_json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
             joint
         );
         let mut missing = wire;
-        missing["operands"]["kind"]
+        missing["operands"]["value"]["kind"]
             .as_object_mut()
             .unwrap()
             .remove(key);
@@ -364,7 +364,7 @@ fn a_joint_frame_sense_round_trips_and_is_optional() {
         None,
     );
     let unsensed = serde_json::to_value(&joint).unwrap();
-    assert!(unsensed["operands"].get("frame_sense").is_none());
+    assert!(unsensed["operands"]["value"].get("frame_sense").is_none());
     assert_eq!(
         serde_json::from_value::<AssemblyJoint>(unsensed).unwrap(),
         joint
@@ -372,7 +372,7 @@ fn a_joint_frame_sense_round_trips_and_is_optional() {
 
     assert!(joint.set_frame_sense(Some(PlaneSense::Opposed)));
     let wire = serde_json::to_value(&joint).unwrap();
-    assert_eq!(wire["operands"]["frame_sense"], "opposed");
+    assert_eq!(wire["operands"]["value"]["frame_sense"], "opposed");
     assert_eq!(
         serde_json::from_value::<AssemblyJoint>(wire).unwrap(),
         joint
@@ -382,6 +382,6 @@ fn a_joint_frame_sense_round_trips_and_is_optional() {
     assert!(!grounded.set_frame_sense(Some(PlaneSense::Aligned)));
     assert_eq!(grounded.frame_sense(), None);
     let mut wire = serde_json::to_value(&grounded).unwrap();
-    wire["operands"]["frame_sense"] = serde_json::json!("aligned");
+    wire["operands"]["value"]["frame_sense"] = serde_json::json!("aligned");
     assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
 }

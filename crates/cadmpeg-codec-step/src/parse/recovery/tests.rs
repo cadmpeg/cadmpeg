@@ -48,7 +48,7 @@ fn bounded_defects_preserve_independent_instances_and_exact_bytes() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(&decoded_source), &DecodeOptions::default())
             .expect("independent points decode");
-        assert_eq!(decoded.ir().model.points.len(), 2);
+        assert_eq!(decoded.ir().geometry.points.len(), 2);
         assert!(decoded
             .report()
             .losses
@@ -212,7 +212,7 @@ fn draft_envelope_uses_declared_recovery_grammar_and_retains_header() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("draft point decoded");
-    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().geometry.points.len(), 1);
     assert!(decoded
         .report()
         .losses
@@ -295,7 +295,7 @@ fn bounded_draft_header_defects_retain_source_and_independent_geometry() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .expect("independent point");
-        assert_eq!(decoded.ir().model.points.len(), 1);
+        assert_eq!(decoded.ir().geometry.points.len(), 1);
         let (ir, report, fidelity) = decoded.into_parts();
         let unknowns = ir.native_unknowns("step").expect("retained statements");
         let omitted = unknowns

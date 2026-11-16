@@ -7,6 +7,7 @@ use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::{sab, sat};
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
@@ -14,7 +15,6 @@ use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::ArenaClass;
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
@@ -519,8 +519,9 @@ fn build_result(
         },
     ) = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
 
-    let geometry_transferred =
-        !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
+    let geometry_transferred = !(ir.geometry.surfaces.is_empty()
+        && ir.geometry.points.is_empty()
+        && ir.geometry.faces.is_empty());
     losses.extend(dialect_loss(&kernel));
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
@@ -607,7 +608,7 @@ fn unmapped_support_chart_losses(ir: &CadIr) -> Vec<cadmpeg_ir::report::loss::Lo
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
     let mut losses = Vec::new();
-    for curve in &ir.model.procedural_curves {
+    for curve in &ir.geometry.procedural_curves {
         let context = match curve.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => context,
             ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),

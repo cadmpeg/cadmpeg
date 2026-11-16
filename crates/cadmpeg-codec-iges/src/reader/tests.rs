@@ -49,7 +49,7 @@ fn the_source_image_is_untyped_model_content_while_it_holds_undecoded_geometry()
         (cadmpeg_core::decode::DecodeDepth::Full, vec![]),
         (
             cadmpeg_core::decode::DecodeDepth::Container,
-            vec![cadmpeg_ir::ArenaClass::Model],
+            vec![cadmpeg_core::decode::ArenaClass::Model],
         ),
     ] {
         let result = cadmpeg_test_support::EditableDecodeResult::from(
@@ -148,7 +148,7 @@ fn container_and_semantic_decode_retain_an_unknown_flag_three_name_without_geome
             result.ir().source.as_ref().unwrap().attributes["native_units"],
             "furlong"
         );
-        assert!(result.ir().model.points.is_empty());
+        assert!(result.ir().geometry.points.is_empty());
         assert_eq!(
             result
                 .report()
@@ -174,8 +174,8 @@ fn semantic_decode_applies_delegated_nmi_factor() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.points.len(), 1);
-    let point = &result.ir().model.points[0].position().get();
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    let point = &result.ir().geometry.points[0].position().get();
     for (actual, expected) in [
         (point.x, 1_852_000.0),
         (point.y, 3_704_000.0),
@@ -320,7 +320,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
 #[test]
 fn semantic_decode_barrier_rejects_invalid_cadir() {
     let mut ir = CadIr::empty();
-    ir.model.vertices.push(Vertex {
+    ir.geometry.vertices.push(Vertex {
         id: VertexId::mint("iges:model:vertex#invalid").expect("identity grammar"),
         point: PointId::mint("iges:model:point#missing").expect("identity grammar"),
         tolerance: None,

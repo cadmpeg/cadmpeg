@@ -1,12 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {},
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "sldprt:brep:body#900",
@@ -21,6 +17,7 @@
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [],
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
         },
@@ -28,6 +25,7 @@
           "edge": "sldprt:brep:edge#41",
           "id": "sldprt:brep:coedge#31",
           "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [],
           "radial_next": "sldprt:brep:coedge#31",
           "sense": "forward"
         },
@@ -35,25 +33,12 @@
           "edge": "sldprt:brep:edge#42",
           "id": "sldprt:brep:coedge#32",
           "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [],
           "radial_next": "sldprt:brep:coedge#32",
           "sense": "forward"
         }
       ],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#900"
-          ],
-          "id": "sldprt:model:configuration#348:0",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#348:0",
-          "ordinal": 0,
-          "source_index": 0
-        }
-      ],
       "curves": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {},
@@ -78,7 +63,7 @@
         {
           "id": "sldprt:brep:face#10",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "sldprt:brep:loop#20"
             ]
@@ -88,7 +73,6 @@
           "surface": "sldprt:brep:surf#10"
         }
       ],
-      "features": [],
       "loops": [
         {
           "boundary": {
@@ -97,16 +81,14 @@
               "sldprt:brep:coedge#31",
               "sldprt:brep:coedge#32"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "sldprt:brep:face#10",
           "id": "sldprt:brep:loop#20"
         }
       ],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "pmi": [],
       "points": [
         {
           "id": "sldprt:brep:point#60",
@@ -133,11 +115,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "sldprt:brep:body#900",
@@ -147,7 +126,6 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "sldprt:brep:shell#901",
@@ -160,37 +138,33 @@
           "region": "sldprt:brep:region#902"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "sldprt:brep:surf#10"
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "sldprt:brep:vertex#50",
@@ -204,7 +178,61 @@
           "id": "sldprt:brep:vertex#52",
           "point": "sldprt:brep:point#62"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [
+        {
+          "active": true,
+          "bodies": [
+            "sldprt:brep:body#900"
+          ],
+          "feature_states": {},
+          "id": "sldprt:model:configuration#348:0",
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#348:0",
+          "ordinal": 0,
+          "parameter_overrides": {},
+          "parameter_values": {},
+          "properties": {},
+          "source_index": 0
+        }
       ],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -248,16 +276,25 @@
         "sketch_input_entities": [],
         "unknowns": [
           {
-            "id": "sldprt:file:block#12"
+            "id": "sldprt:file:block#12",
+            "links": []
           },
           {
-            "id": "sldprt:file:block#348"
+            "id": "sldprt:file:block#348",
+            "links": []
           },
           {
-            "id": "sldprt:file:block#468"
+            "id": "sldprt:file:block#468",
+            "links": []
           }
         ]
       }
+    },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {
@@ -283,11 +320,12 @@
         "sw_configuration_name": "Default"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [
             {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "carrier": "block@12:Contents/Config-0-Partition+0",
                 "schema": "SCH_SW_33103_11000"
@@ -296,10 +334,14 @@
             }
           ],
           "primary": {
-            "admission": "residual",
+            "admission": {
+              "kind": "residual"
+            },
+            "declared": {},
             "dialect": "sldprt:unknown"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -307,16 +349,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [
           {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "carrier": "block@12:Contents/Config-0-Partition+0",
               "schema": "SCH_SW_33103_11000"
@@ -325,19 +372,25 @@
           }
         ],
         "primary": {
-          "admission": "residual",
+          "admission": {
+            "kind": "residual"
+          },
+          "declared": {},
           "dialect": "sldprt:unknown"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "source.dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "sldprt",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "sldprt",
+            "strict_floor": "warning"
+          }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
@@ -350,7 +403,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -360,7 +416,7 @@
           "fields": {
             "geometry.u_axis": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         }
       },
       "provenance": {
@@ -492,7 +548,7 @@
       "sldprt:file:block#12": {
         "bytes": {
           "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAB8AIAAzAAAAKAAAAAArABEAHwAAABQAIAAeADQAAAApAAAAACsAEQAgAAAAFAAeAB8AMgAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAOEABAAKQAAAAAAAMK8ko+ZbgAAAAAAAAAAAAAAAAAAA4QAEAAqAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAADhAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAA4QAEgAzAAAAAAAAAAAAAAAAAD3CvJKPmW4AAAOEABIANAAAAAAAAAAAAAAAAAA+wrySj5luAAADhAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAM/wOEAAGKJAAFAAYAAQABAAEAAUCPQAAAAAAAPkV5juIwjDoAAQABAAEBAAIBAQOFAAEAAQABAAEAAQABA4YAAQABAAEADf8DhQADEMUAAQOEAAEAAQABAAEDhgABABP/A4YABJdmAAEDhAABAAEDhVMADv8ACgAGGooAAcK8ko+ZbgAAAAEAAQAAA4UAZCs=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
         "stream": "Contents/Config-0-Partition",
@@ -501,7 +557,7 @@
       "sldprt:file:block#348": {
         "bytes": {
           "data": "PEtleXdvcmRzPjxDb25maWd1cmF0aW9uIE5hbWU9IkRlZmF1bHQiIFNvdXJjZUluZGV4PSIwIi8+PC9LZXl3b3Jkcz4=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
         "stream": "Contents/Keywords",
@@ -510,7 +566,7 @@
       "sldprt:file:block#468": {
         "bytes": {
           "data": "PHN3U29saWRXb3JrcyB4bWxucz0iaHR0cDovL3d3dy5zb2xpZHdvcmtzLmNvbS9zdzIwMDMvc2NoZW1hIj48c3dNb2RlbCBpZD0ibW9kZWwtMCIgc3dDb25maWd1cmF0aW9uTmFtZT0iRGVmYXVsdCIvPjxzd0NvbmZpZ3VyYXRpb25MaXN0Pjxzd0NvbmZpZ3VyYXRpb24gc3dJRD0iMCIgc3dNb2RlbFJlZj0ibW9kZWwtMCIgc3dNb3N0UmVjZW50Q29uZmlndXJhdGlvbj0iWUVTIi8+PC9zd0NvbmZpZ3VyYXRpb25MaXN0Pjwvc3dTb2xpZFdvcmtzPg==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
         "stream": "Contents/Features",
@@ -522,7 +578,7 @@
       "sldprt:file:source-image#0": {
         "bytes": {
           "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYKCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGAwYkhhQAHaqFzcwP4DKo0B+Bi4IIxDeyb1z8yDiooAcQqyJfxgIRCQA2sQBNIgZfIMCgzGQJYGSEobKCwPFlYASpsAWZowYQWwsBxQ2gjI0oIIC0C0odkNBcwtQHmwfjzyYINwyguBLUMAG5g6sBzI2QhgiyJngiJnBxiSnCyDDYocLiDLYIvMxRn+sgx26EIggKGe5z/QcsYuFQZWBjYGRgh06HcAy9m5VvY9MuixgogyMjAxMjK3whSBIHMblMX7HyjBLHAUKNSCIin8H0ixTE+DSTC3BjPw/QdGNZtUFwMjPHxBGhiARqRoAwBa2ciHFAAGAAgAQgAAACiHN+NJAAAARAAAABEAAAA09uZHVuZHN/K0Vpd39idGNwFEALv/PEtleXdvcmRzPjxDb25maWd1cmF0aW9uIE5hbWU9IkRlZmF1bHQiIFNvdXJjZUluZGV4PSIwIi8+PC9LZXl3b3Jkcz5a2ciHFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAA09uZHVuZHN/JkVhZHVydWN22Puw6CQBBFf4VML0u0MyyNWJiIBRTGcgOLbNyHYYaMn69L5Ua7yZzce3JL5C5YM1zD/MDs5axHCRPRcy8EM+cYIUeY98EJ5G1R7AT2k3YKqhK5CYO2mRkkuHhtCsiQD8GP5r7MikzwF+W0hFqParEEIoYSfjZIP89PyamWsLatilaPiaIJSK3utackJ+F27KJE/LWI77nVG0UrfigAABQABgAIACAAAABC5HlcFwEAAL0CAAAbAAAAAAAAAAEAAAAAAAAAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uZFK34oAAAUAAYACABCAAAAKIc340kAAABEAAAAEQAAAAAAAAABAAAAAABQAQAANPbmR1bmRzfytFaXd/YnRjdFK34oAAAUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAAAAAAAABAAAAAADIAQAANPbmR1bmRzfyZFYWR1cnVjefgl4CAAAAAAMAAwDHAAAAkAIAAAAA",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
         "stream": "source",

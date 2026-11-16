@@ -87,7 +87,7 @@ pub(super) fn check_products(
         }
     });
     let bodies = BorrowedIdentities::build(|add| {
-        for body in &ir.model.bodies {
+        for body in &ir.geometry.bodies {
             add(body.id.as_str(), ());
         }
     });
@@ -379,11 +379,11 @@ mod tests {
             native_ref: None,
         });
         let mut wire = serde_json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
-        wire["operands"]["connectors"][0]["operand"]["occurrence"] =
+        wire["operands"]["value"]["connectors"][0]["operand"]["occurrence"] =
             serde_json::json!(occurrence.as_str());
-        wire["operands"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
-            "path": "external.f3d",
-            "resolution": "unresolved"
+        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
+            "kind": "path",
+            "path": "external.f3d"
         });
         assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
     }

@@ -400,7 +400,7 @@ pub(super) fn decode(
         if let Some(surface_step) = complex_triangulated_face_surface(record) {
             let surface_id = ids::data(kind!("surface"), surface_step);
             if let Some(surface) = ir
-                .model
+                .geometry
                 .surfaces
                 .iter_mut()
                 .find(|surface| surface.id.as_str() == surface_id.as_str())

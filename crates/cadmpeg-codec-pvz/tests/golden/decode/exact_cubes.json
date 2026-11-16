@@ -1,82 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "pvz:model:appearance#cube32.ol:7",
-          "id": "pvz:model:appearance-binding#cube32.ol:0",
-          "target": {
-            "id": "pvz:model:tessellation#cube32.ol:0",
-            "kind": "tessellation"
-          }
-        },
-        {
-          "appearance": "pvz:model:appearance#cube64.ol:7",
-          "id": "pvz:model:appearance-binding#cube64.ol:0",
-          "target": {
-            "id": "pvz:model:tessellation#cube64.ol:0",
-            "kind": "tessellation"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.0,
-            "g": 0.0,
-            "r": 1.0
-          },
-          "id": "pvz:model:appearance#cube32.ol:7",
-          "name": "red",
-          "properties": {
-            "base.b": 0.0,
-            "base.g": 0.0,
-            "base.r": 1.0,
-            "diffuse.b": 0.0,
-            "diffuse.g": 0.0,
-            "diffuse.r": 0.800000011920929,
-            "emissive.b": 0.0,
-            "emissive.g": 0.0,
-            "emissive.r": 0.0,
-            "opacity": 1.0,
-            "shininess": 32.0,
-            "specular.b": 0.5,
-            "specular.g": 0.5,
-            "specular.r": 0.5
-          }
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.0,
-            "g": 0.0,
-            "r": 1.0
-          },
-          "id": "pvz:model:appearance#cube64.ol:7",
-          "name": "red",
-          "properties": {
-            "base.b": 0.0,
-            "base.g": 0.0,
-            "base.r": 1.0,
-            "diffuse.b": 0.0,
-            "diffuse.g": 0.0,
-            "diffuse.r": 0.800000011920929,
-            "emissive.b": 0.0,
-            "emissive.g": 0.0,
-            "emissive.r": 0.0,
-            "opacity": 1.0,
-            "shininess": 32.0,
-            "specular.b": 0.5,
-            "specular.g": 0.5,
-            "specular.r": 0.5
-          }
-        }
-      ],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {},
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "pvz:model:body#cube32.ol",
@@ -871,394 +797,464 @@
           "sense": "reversed"
         }
       ],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:0"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 9.999999776482582,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:1"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 9.999999776482582,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:10"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 9.999999776482582,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:11"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:2"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:3"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 9.999999776482582
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:4"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 0.0,
-              "z": 9.999999776482582
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:5"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 9.999999776482582,
-              "z": 9.999999776482582
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:6"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 9.999999776482582
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:7"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:8"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube32.ol:9"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:0"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:1"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:10"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 10.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 10.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:11"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:2"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:3"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:4"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 10.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:5"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 10.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:6"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:7"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:8"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:curve#cube64.ol:9"
         }
       ],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -1553,8 +1549,8 @@
         {
           "id": "pvz:model:face#cube32.ol:0:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube32.ol:0"
           },
           "sense": "forward",
@@ -1564,8 +1560,8 @@
         {
           "id": "pvz:model:face#cube32.ol:1:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube32.ol:1"
           },
           "sense": "forward",
@@ -1575,8 +1571,8 @@
         {
           "id": "pvz:model:face#cube32.ol:2:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube32.ol:2"
           },
           "sense": "forward",
@@ -1586,8 +1582,8 @@
         {
           "id": "pvz:model:face#cube32.ol:3:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube32.ol:3"
           },
           "sense": "forward",
@@ -1597,8 +1593,8 @@
         {
           "id": "pvz:model:face#cube32.ol:4:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube32.ol:4"
           },
           "sense": "forward",
@@ -1608,8 +1604,8 @@
         {
           "id": "pvz:model:face#cube32.ol:5:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube32.ol:5"
           },
           "sense": "forward",
@@ -1619,8 +1615,8 @@
         {
           "id": "pvz:model:face#cube64.ol:0:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube64.ol:0"
           },
           "sense": "forward",
@@ -1630,8 +1626,8 @@
         {
           "id": "pvz:model:face#cube64.ol:1:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube64.ol:1"
           },
           "sense": "forward",
@@ -1641,8 +1637,8 @@
         {
           "id": "pvz:model:face#cube64.ol:2:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube64.ol:2"
           },
           "sense": "forward",
@@ -1652,8 +1648,8 @@
         {
           "id": "pvz:model:face#cube64.ol:3:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube64.ol:3"
           },
           "sense": "forward",
@@ -1663,8 +1659,8 @@
         {
           "id": "pvz:model:face#cube64.ol:4:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube64.ol:4"
           },
           "sense": "forward",
@@ -1674,8 +1670,8 @@
         {
           "id": "pvz:model:face#cube64.ol:5:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "pvz:model:loop#cube64.ol:5"
           },
           "sense": "forward",
@@ -1683,7 +1679,6 @@
           "surface": "pvz:model:surface#cube64.ol:5"
         }
       ],
-      "features": [],
       "loops": [
         {
           "boundary": {
@@ -1693,7 +1688,8 @@
               "pvz:model:coedge#cube32.ol:0:2",
               "pvz:model:coedge#cube32.ol:0:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube32.ol:0:0",
           "id": "pvz:model:loop#cube32.ol:0"
@@ -1706,7 +1702,8 @@
               "pvz:model:coedge#cube32.ol:1:2",
               "pvz:model:coedge#cube32.ol:1:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube32.ol:1:0",
           "id": "pvz:model:loop#cube32.ol:1"
@@ -1719,7 +1716,8 @@
               "pvz:model:coedge#cube32.ol:2:2",
               "pvz:model:coedge#cube32.ol:2:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube32.ol:2:0",
           "id": "pvz:model:loop#cube32.ol:2"
@@ -1732,7 +1730,8 @@
               "pvz:model:coedge#cube32.ol:3:2",
               "pvz:model:coedge#cube32.ol:3:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube32.ol:3:0",
           "id": "pvz:model:loop#cube32.ol:3"
@@ -1745,7 +1744,8 @@
               "pvz:model:coedge#cube32.ol:4:2",
               "pvz:model:coedge#cube32.ol:4:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube32.ol:4:0",
           "id": "pvz:model:loop#cube32.ol:4"
@@ -1758,7 +1758,8 @@
               "pvz:model:coedge#cube32.ol:5:2",
               "pvz:model:coedge#cube32.ol:5:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube32.ol:5:0",
           "id": "pvz:model:loop#cube32.ol:5"
@@ -1771,7 +1772,8 @@
               "pvz:model:coedge#cube64.ol:0:2",
               "pvz:model:coedge#cube64.ol:0:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube64.ol:0:0",
           "id": "pvz:model:loop#cube64.ol:0"
@@ -1784,7 +1786,8 @@
               "pvz:model:coedge#cube64.ol:1:2",
               "pvz:model:coedge#cube64.ol:1:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube64.ol:1:0",
           "id": "pvz:model:loop#cube64.ol:1"
@@ -1797,7 +1800,8 @@
               "pvz:model:coedge#cube64.ol:2:2",
               "pvz:model:coedge#cube64.ol:2:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube64.ol:2:0",
           "id": "pvz:model:loop#cube64.ol:2"
@@ -1810,7 +1814,8 @@
               "pvz:model:coedge#cube64.ol:3:2",
               "pvz:model:coedge#cube64.ol:3:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube64.ol:3:0",
           "id": "pvz:model:loop#cube64.ol:3"
@@ -1823,7 +1828,8 @@
               "pvz:model:coedge#cube64.ol:4:2",
               "pvz:model:coedge#cube64.ol:4:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube64.ol:4:0",
           "id": "pvz:model:loop#cube64.ol:4"
@@ -1836,169 +1842,13 @@
               "pvz:model:coedge#cube64.ol:5:2",
               "pvz:model:coedge#cube64.ol:5:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "pvz:model:face#cube64.ol:5:0",
           "id": "pvz:model:loop#cube64.ol:5"
         }
       ],
-      "occurrences": [
-        {
-          "id": "pvz:model:occurrence#0",
-          "native_ref": "definition 0",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "pvz:model:definition#0",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "pvz:model:occurrence#1",
-          "name": "41",
-          "native_ref": "definition 0 occurrence 0",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#0"
-          },
-          "prototype": {
-            "definition": "pvz:model:definition#1",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "pvz:model:occurrence#2",
-          "name": "42",
-          "native_ref": "definition 0 occurrence 1",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#0"
-          },
-          "prototype": {
-            "definition": "pvz:model:definition#2",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              20.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "pvz:model:occurrence#3",
-          "name": "43",
-          "native_ref": "definition 0 occurrence 2",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#0"
-          },
-          "prototype": {
-            "definition": "pvz:model:definition#3",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              20.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -2015,7 +1865,7 @@
           "id": "pvz:model:pcurve#cube32.ol:0:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2033,7 +1883,7 @@
           "id": "pvz:model:pcurve#cube32.ol:0:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2051,7 +1901,7 @@
           "id": "pvz:model:pcurve#cube32.ol:0:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2069,7 +1919,7 @@
           "id": "pvz:model:pcurve#cube32.ol:0:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2087,7 +1937,7 @@
           "id": "pvz:model:pcurve#cube32.ol:1:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2105,7 +1955,7 @@
           "id": "pvz:model:pcurve#cube32.ol:1:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2123,7 +1973,7 @@
           "id": "pvz:model:pcurve#cube32.ol:1:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2141,7 +1991,7 @@
           "id": "pvz:model:pcurve#cube32.ol:1:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2159,7 +2009,7 @@
           "id": "pvz:model:pcurve#cube32.ol:2:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2177,7 +2027,7 @@
           "id": "pvz:model:pcurve#cube32.ol:2:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2195,7 +2045,7 @@
           "id": "pvz:model:pcurve#cube32.ol:2:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2213,7 +2063,7 @@
           "id": "pvz:model:pcurve#cube32.ol:2:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2231,7 +2081,7 @@
           "id": "pvz:model:pcurve#cube32.ol:3:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2249,7 +2099,7 @@
           "id": "pvz:model:pcurve#cube32.ol:3:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2267,7 +2117,7 @@
           "id": "pvz:model:pcurve#cube32.ol:3:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2285,7 +2135,7 @@
           "id": "pvz:model:pcurve#cube32.ol:3:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2303,7 +2153,7 @@
           "id": "pvz:model:pcurve#cube32.ol:4:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2321,7 +2171,7 @@
           "id": "pvz:model:pcurve#cube32.ol:4:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2339,7 +2189,7 @@
           "id": "pvz:model:pcurve#cube32.ol:4:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2357,7 +2207,7 @@
           "id": "pvz:model:pcurve#cube32.ol:4:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2375,7 +2225,7 @@
           "id": "pvz:model:pcurve#cube32.ol:5:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2393,7 +2243,7 @@
           "id": "pvz:model:pcurve#cube32.ol:5:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2411,7 +2261,7 @@
           "id": "pvz:model:pcurve#cube32.ol:5:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2429,7 +2279,7 @@
           "id": "pvz:model:pcurve#cube32.ol:5:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2447,7 +2297,7 @@
           "id": "pvz:model:pcurve#cube64.ol:0:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2465,7 +2315,7 @@
           "id": "pvz:model:pcurve#cube64.ol:0:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2483,7 +2333,7 @@
           "id": "pvz:model:pcurve#cube64.ol:0:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2501,7 +2351,7 @@
           "id": "pvz:model:pcurve#cube64.ol:0:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2519,7 +2369,7 @@
           "id": "pvz:model:pcurve#cube64.ol:1:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2537,7 +2387,7 @@
           "id": "pvz:model:pcurve#cube64.ol:1:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2555,7 +2405,7 @@
           "id": "pvz:model:pcurve#cube64.ol:1:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2573,7 +2423,7 @@
           "id": "pvz:model:pcurve#cube64.ol:1:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2591,7 +2441,7 @@
           "id": "pvz:model:pcurve#cube64.ol:2:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2609,7 +2459,7 @@
           "id": "pvz:model:pcurve#cube64.ol:2:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2627,7 +2477,7 @@
           "id": "pvz:model:pcurve#cube64.ol:2:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2645,7 +2495,7 @@
           "id": "pvz:model:pcurve#cube64.ol:2:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2663,7 +2513,7 @@
           "id": "pvz:model:pcurve#cube64.ol:3:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2681,7 +2531,7 @@
           "id": "pvz:model:pcurve#cube64.ol:3:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2699,7 +2549,7 @@
           "id": "pvz:model:pcurve#cube64.ol:3:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2717,7 +2567,7 @@
           "id": "pvz:model:pcurve#cube64.ol:3:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2735,7 +2585,7 @@
           "id": "pvz:model:pcurve#cube64.ol:4:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2753,7 +2603,7 @@
           "id": "pvz:model:pcurve#cube64.ol:4:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2771,7 +2621,7 @@
           "id": "pvz:model:pcurve#cube64.ol:4:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2789,7 +2639,7 @@
           "id": "pvz:model:pcurve#cube64.ol:4:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2807,7 +2657,7 @@
           "id": "pvz:model:pcurve#cube64.ol:5:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2825,7 +2675,7 @@
           "id": "pvz:model:pcurve#cube64.ol:5:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2843,7 +2693,7 @@
           "id": "pvz:model:pcurve#cube64.ol:5:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2861,11 +2711,10 @@
           "id": "pvz:model:pcurve#cube64.ol:5:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         }
       ],
-      "pmi": [],
       "points": [
         {
           "id": "pvz:model:point#cube32.ol:0",
@@ -2996,45 +2845,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [
-        {
-          "id": "pvz:model:definition#0",
-          "kind": "part",
-          "native_ref": "definition 0",
-          "source_name": "TOP.ASM"
-        },
-        {
-          "bodies": [
-            "pvz:model:body#cube64.ol"
-          ],
-          "id": "pvz:model:definition#1",
-          "kind": "part",
-          "native_ref": "definition 1",
-          "source_name": "CUBE64.PRT"
-        },
-        {
-          "bodies": [
-            "pvz:model:body#cube32.ol"
-          ],
-          "id": "pvz:model:definition#2",
-          "kind": "part",
-          "native_ref": "definition 2",
-          "source_name": "CUBE32.PRT"
-        },
-        {
-          "bodies": [
-            "pvz:model:body#plate.ol"
-          ],
-          "id": "pvz:model:definition#3",
-          "kind": "part",
-          "native_ref": "definition 3",
-          "source_name": "PLATE.PRT"
-        }
-      ],
       "regions": [
         {
           "body": "pvz:model:body#cube32.ol",
@@ -3051,7 +2863,6 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "pvz:model:shell#cube32.ol:0",
@@ -3114,271 +2925,694 @@
           "region": "pvz:model:region#cube64.ol:0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#cube32.ol:0"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 9.999999776482582
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#cube32.ol:1"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#cube32.ol:2"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 9.999999776482582,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "pvz:model:surface#cube32.ol:3"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "pvz:model:surface#cube32.ol:4"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#cube32.ol:5"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#cube64.ol:0"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#cube64.ol:1"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#cube64.ol:2"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "pvz:model:surface#cube64.ol:3"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "pvz:model:surface#cube64.ol:4"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "pvz:model:surface#cube64.ol:5"
         }
       ],
+      "vertices": [
+        {
+          "id": "pvz:model:vertex#cube32.ol:0",
+          "point": "pvz:model:point#cube32.ol:0",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:1",
+          "point": "pvz:model:point#cube32.ol:1",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:2",
+          "point": "pvz:model:point#cube32.ol:2",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:3",
+          "point": "pvz:model:point#cube32.ol:3",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:4",
+          "point": "pvz:model:point#cube32.ol:4",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:5",
+          "point": "pvz:model:point#cube32.ol:5",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:6",
+          "point": "pvz:model:point#cube32.ol:6",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:7",
+          "point": "pvz:model:point#cube32.ol:7",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:0",
+          "point": "pvz:model:point#cube64.ol:0",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:1",
+          "point": "pvz:model:point#cube64.ol:1",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:2",
+          "point": "pvz:model:point#cube64.ol:2",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:3",
+          "point": "pvz:model:point#cube64.ol:3",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:4",
+          "point": "pvz:model:point#cube64.ol:4",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:5",
+          "point": "pvz:model:point#cube64.ol:5",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:6",
+          "point": "pvz:model:point#cube64.ol:6",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:7",
+          "point": "pvz:model:point#cube64.ol:7",
+          "tolerance": 0.02
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "pvz:model:appearance#cube32.ol:7",
+          "channels": {},
+          "id": "pvz:model:appearance-binding#cube32.ol:0",
+          "target": {
+            "kind": "tessellation",
+            "value": "pvz:model:tessellation#cube32.ol:0"
+          }
+        },
+        {
+          "appearance": "pvz:model:appearance#cube64.ol:7",
+          "channels": {},
+          "id": "pvz:model:appearance-binding#cube64.ol:0",
+          "target": {
+            "kind": "tessellation",
+            "value": "pvz:model:tessellation#cube64.ol:0"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.0,
+            "g": 0.0,
+            "r": 1.0
+          },
+          "id": "pvz:model:appearance#cube32.ol:7",
+          "name": "red",
+          "properties": {
+            "base.b": 0.0,
+            "base.g": 0.0,
+            "base.r": 1.0,
+            "diffuse.b": 0.0,
+            "diffuse.g": 0.0,
+            "diffuse.r": 0.800000011920929,
+            "emissive.b": 0.0,
+            "emissive.g": 0.0,
+            "emissive.r": 0.0,
+            "opacity": 1.0,
+            "shininess": 32.0,
+            "specular.b": 0.5,
+            "specular.g": 0.5,
+            "specular.r": 0.5
+          },
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.0,
+            "g": 0.0,
+            "r": 1.0
+          },
+          "id": "pvz:model:appearance#cube64.ol:7",
+          "name": "red",
+          "properties": {
+            "base.b": 0.0,
+            "base.g": 0.0,
+            "base.r": 1.0,
+            "diffuse.b": 0.0,
+            "diffuse.g": 0.0,
+            "diffuse.r": 0.800000011920929,
+            "emissive.b": 0.0,
+            "emissive.g": 0.0,
+            "emissive.r": 0.0,
+            "opacity": 1.0,
+            "shininess": 32.0,
+            "specular.b": 0.5,
+            "specular.g": 0.5,
+            "specular.r": 0.5
+          },
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [
+        {
+          "id": "pvz:model:occurrence#0",
+          "native_ref": "definition 0",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#0",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "pvz:model:occurrence#1",
+          "name": "41",
+          "native_ref": "definition 0 occurrence 0",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "pvz:model:occurrence#0"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#1",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "pvz:model:occurrence#2",
+          "name": "42",
+          "native_ref": "definition 0 occurrence 1",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "pvz:model:occurrence#0"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#2",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              20.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "pvz:model:occurrence#3",
+          "name": "43",
+          "native_ref": "definition 0 occurrence 2",
+          "ordinal": 2,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "pvz:model:occurrence#0"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#3",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              20.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "pvz:model:definition#0",
+          "kind": "part",
+          "native_ref": "definition 0",
+          "sketches": [],
+          "source_name": "TOP.ASM"
+        },
+        {
+          "bodies": [
+            "pvz:model:body#cube64.ol"
+          ],
+          "bom_properties": {},
+          "id": "pvz:model:definition#1",
+          "kind": "part",
+          "native_ref": "definition 1",
+          "sketches": [],
+          "source_name": "CUBE64.PRT"
+        },
+        {
+          "bodies": [
+            "pvz:model:body#cube32.ol"
+          ],
+          "bom_properties": {},
+          "id": "pvz:model:definition#2",
+          "kind": "part",
+          "native_ref": "definition 2",
+          "sketches": [],
+          "source_name": "CUBE32.PRT"
+        },
+        {
+          "bodies": [
+            "pvz:model:body#plate.ol"
+          ],
+          "bom_properties": {},
+          "id": "pvz:model:definition#3",
+          "kind": "part",
+          "native_ref": "definition 3",
+          "sketches": [],
+          "source_name": "PLATE.PRT"
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [
         {
           "body": "pvz:model:body#cube32.ol",
           "channels": [],
+          "faces": [],
+          "feature_edges": [],
           "id": "pvz:model:tessellation#cube32.ol:0",
           "mesh": {
             "kind": "list",
@@ -3567,6 +3801,8 @@
               }
             ]
           },
+          "texture_assignments": [],
+          "texture_coordinates": [],
           "triangle_groups": [
             {
               "source_id": "patch 0",
@@ -3615,6 +3851,8 @@
         {
           "body": "pvz:model:body#cube64.ol",
           "channels": [],
+          "faces": [],
+          "feature_edges": [],
           "id": "pvz:model:tessellation#cube64.ol:0",
           "mesh": {
             "kind": "list",
@@ -3803,6 +4041,8 @@
               }
             ]
           },
+          "texture_assignments": [],
+          "texture_coordinates": [],
           "triangle_groups": [
             {
               "source_id": "patch 0",
@@ -3851,6 +4091,8 @@
         {
           "body": "pvz:model:body#plate.ol",
           "channels": [],
+          "faces": [],
+          "feature_edges": [],
           "id": "pvz:model:tessellation#plate.ol:0",
           "mesh": {
             "kind": "shaded_list",
@@ -3917,6 +4159,8 @@
               }
             ]
           },
+          "texture_assignments": [],
+          "texture_coordinates": [],
           "triangle_groups": [
             {
               "source_id": "patch 0",
@@ -3928,107 +4172,33 @@
           ]
         }
       ],
-      "vertices": [
-        {
-          "id": "pvz:model:vertex#cube32.ol:0",
-          "point": "pvz:model:point#cube32.ol:0",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube32.ol:1",
-          "point": "pvz:model:point#cube32.ol:1",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube32.ol:2",
-          "point": "pvz:model:point#cube32.ol:2",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube32.ol:3",
-          "point": "pvz:model:point#cube32.ol:3",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube32.ol:4",
-          "point": "pvz:model:point#cube32.ol:4",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube32.ol:5",
-          "point": "pvz:model:point#cube32.ol:5",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube32.ol:6",
-          "point": "pvz:model:point#cube32.ol:6",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube32.ol:7",
-          "point": "pvz:model:point#cube32.ol:7",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube64.ol:0",
-          "point": "pvz:model:point#cube64.ol:0",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube64.ol:1",
-          "point": "pvz:model:point#cube64.ol:1",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube64.ol:2",
-          "point": "pvz:model:point#cube64.ol:2",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube64.ol:3",
-          "point": "pvz:model:point#cube64.ol:3",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube64.ol:4",
-          "point": "pvz:model:point#cube64.ol:4",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube64.ol:5",
-          "point": "pvz:model:point#cube64.ol:5",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube64.ol:6",
-          "point": "pvz:model:point#cube64.ol:6",
-          "tolerance": 0.02
-        },
-        {
-          "id": "pvz:model:vertex#cube64.ol:7",
-          "point": "pvz:model:point#cube64.ol:7",
-          "tolerance": 0.02
-        }
-      ],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "structure_member": "model.pvs"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "pvs_signature": "PV-PVS0304"
             },
             "dialect": "pvz:pvs-0304"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -4036,72 +4206,88 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "pvs_signature": "PV-PVS0304"
           },
           "dialect": "pvz:pvs-0304"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "structure.bounds-not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "pvz",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "structure.bounds-not-transferred",
+            "kind": "metadata_not_transferred",
+            "namespace": "pvz"
+          }
         },
         "message": "3 geometry elements carry bounds; the model has no definition bounds field, so the bounds were not transferred (PVZ-27)",
         "severity": "info"
       },
       {
         "code": {
-          "code": "geometry.exact-undecoded",
-          "kind": "geometry_not_transferred",
-          "namespace": "pvz",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.exact-undecoded",
+            "kind": "geometry_not_transferred",
+            "namespace": "pvz",
+            "strict_floor": "warning"
+          }
         },
         "message": "geometry member \"plate.ol\": exact-geometry stream 0x01000004 did not decode into B-rep (malformed container: exact stream does not end with its stream terminator); the member keeps its tessellation",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "attributes.appearance-tail-undecoded",
-          "kind": "material_not_transferred",
-          "namespace": "pvz",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "attributes.appearance-tail-undecoded",
+            "kind": "material_not_transferred",
+            "namespace": "pvz"
+          }
         },
         "message": "2 appearance references carry a 17-byte tail whose meaning is an open item (PVZ-12); the tails were not transferred",
         "severity": "info"
       },
       {
         "code": {
-          "code": "tessellation.patch-fields-undecoded",
-          "kind": "record_not_typed",
-          "namespace": "pvz",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "tessellation.patch-fields-undecoded",
+            "kind": "record_not_typed",
+            "namespace": "pvz"
+          }
         },
         "message": "13 tessellation patch headers carry face_ref, flag, and refs fields whose meaning is an open item (PVZ-14); the fields were not transferred",
         "severity": "info"
       },
       {
         "code": {
-          "code": "tessellation.edges-not-transferred",
-          "kind": "geometry_not_transferred",
-          "namespace": "pvz",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "tessellation.edges-not-transferred",
+            "kind": "geometry_not_transferred",
+            "namespace": "pvz",
+            "strict_floor": "warning"
+          }
         },
         "message": "edge tessellation was decoded but not transferred: 1 edge polylines with 2 points and 1 segments, 1 edge index tables, and other records none; the model carries no edge display polylines (PVZ-16)",
         "severity": "warning"
@@ -4110,7 +4296,10 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -4118,923 +4307,1125 @@
       "exactness": {
         "pvz:model:body#cube32.ol": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:body#cube64.ol": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:0:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:0:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:0:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:0:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:1:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:1:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:1:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:1:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:2:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:2:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:2:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:2:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:3:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:3:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:3:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:3:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:4:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:4:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:4:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:4:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:5:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:5:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:5:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube32.ol:5:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:0:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:0:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:0:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:0:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:1:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:1:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:1:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:1:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:2:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:2:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:2:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:2:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:3:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:3:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:3:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:3:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:4:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:4:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:4:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:4:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:5:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:5:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:5:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:coedge#cube64.ol:5:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:10": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:11": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:6": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:7": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:8": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube32.ol:9": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:10": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:11": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:6": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:7": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:8": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:curve#cube64.ol:9": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:10": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:11": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:6": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:7": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:8": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube32.ol:9": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:10": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:11": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:6": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:7": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:8": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:edge#cube64.ol:9": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube32.ol:0:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube32.ol:1:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube32.ol:2:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube32.ol:3:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube32.ol:4:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube32.ol:5:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube64.ol:0:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube64.ol:1:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube64.ol:2:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube64.ol:3:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube64.ol:4:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:face#cube64.ol:5:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube32.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube32.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube32.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube32.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube32.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube32.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube64.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube64.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube64.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube64.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube64.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:loop#cube64.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:0:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:0:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:0:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:0:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:1:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:1:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:1:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:1:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:2:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:2:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:2:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:2:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:3:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:3:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:3:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:3:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:4:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:4:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:4:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:4:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:5:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:5:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:5:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube32.ol:5:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:0:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:0:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:0:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:0:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:1:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:1:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:1:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:1:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:2:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:2:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:2:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:2:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:3:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:3:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:3:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:3:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:4:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:4:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:4:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:4:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:5:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:5:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:5:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:pcurve#cube64.ol:5:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube32.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube32.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube32.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube32.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube32.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube32.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube32.ol:6": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube32.ol:7": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube64.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube64.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube64.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube64.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube64.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube64.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube64.ol:6": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:point#cube64.ol:7": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:region#cube32.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:region#cube64.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:shell#cube32.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:shell#cube64.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube32.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube32.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube32.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube32.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube32.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube32.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube64.ol:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube64.ol:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube64.ol:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube64.ol:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube64.ol:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:surface#cube64.ol:5": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "pvz:model:vertex#cube32.ol:0": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube32.ol:1": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube32.ol:2": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube32.ol:3": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube32.ol:4": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube32.ol:5": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube32.ol:6": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube32.ol:7": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube64.ol:0": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube64.ol:1": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube64.ol:2": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube64.ol:3": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube64.ol:4": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube64.ol:5": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube64.ol:6": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "pvz:model:vertex#cube64.ol:7": {
           "entity": "derived",
           "fields": {
             "tolerance": "inferred"
           },
-          "scope": "entity"
+          "kind": "entity"
         }
       },
       "provenance": {

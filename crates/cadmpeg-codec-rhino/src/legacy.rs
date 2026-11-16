@@ -1569,7 +1569,7 @@ fn append_legacy_brep(
     suffix: &str,
 ) -> Result<(), CodecError> {
     let mut draft = cadmpeg_ir::draft::ModelDraft::new();
-    let model = draft.model_mut();
+    let geometry = draft.geometry_mut();
     let suffix_key = legacy_identity_key(suffix.to_owned())?;
     let body_id = {
         Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::BodyId::compose(
@@ -1850,10 +1850,10 @@ fn append_legacy_brep(
         let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        model
+        geometry
             .points
             .push(Point::new(point_id.clone(), finite_position, None));
-        model.vertices.push(Vertex {
+        geometry.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: (tolerance > 0.0)
@@ -1889,7 +1889,7 @@ fn append_legacy_brep(
                 legacy_identity_key(format!("{suffix}.edge-{edge_index}"))?,
             );
             let domain = curve_domain(&curve)?;
-            model.curves.push(Curve {
+            geometry.curves.push(Curve {
                 parameter_range: None,
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -1906,7 +1906,7 @@ fn append_legacy_brep(
         let vertices = group_vertices
             .get(&root)
             .ok_or_else(|| CodecError::Malformed("V1 edge has no vertices".to_string()))?;
-        model.edges.push(Edge {
+        geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 curve_id.as_ref().map(|value| value.0.clone()),
@@ -1940,7 +1940,7 @@ fn append_legacy_brep(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "face"),
             legacy_identity_key(format!("{suffix}.slot-{face_index}"))?,
         );
-        model.surfaces.push(Surface {
+        geometry.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
             source_object: None,
@@ -1995,7 +1995,7 @@ fn append_legacy_brep(
                         }
                     }
                 }
-                model.pcurves.push(Pcurve {
+                geometry.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry: PcurveGeometry::Nurbs {
                         nurbs: PcurveNurbs::from_checked_lanes(
@@ -2036,7 +2036,7 @@ fn append_legacy_brep(
                     .or_default()
                     .push(coedge_id.clone());
                 coedge_ids.push(coedge_id.clone());
-                model.coedges.push(Coedge {
+                geometry.coedges.push(Coedge {
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: group_edges[&root].clone(),
@@ -2060,7 +2060,7 @@ fn append_legacy_brep(
             }
             let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
-            model.loops.push(Loop {
+            geometry.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -2093,7 +2093,7 @@ fn append_legacy_brep(
         } else {
             cadmpeg_ir::topology::FaceLoops::unspecified(face_loops)
         };
-        model.faces.push(Face {
+        geometry.faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
             surface: surface_id,
@@ -2111,18 +2111,18 @@ fn append_legacy_brep(
     }
 
     let mut coedge_positions = BTreeMap::new();
-    for (index, coedge) in model.coedges.iter().enumerate() {
+    for (index, coedge) in geometry.coedges.iter().enumerate() {
         let id = cadmpeg_ir::ids::CoedgeId::try_from(coedge.id.as_str().to_owned())
             .map_err(|error| CodecError::malformed(error.to_string()))?;
         coedge_positions.insert(id, index);
     }
     for ring in coedges_by_root.values() {
         for index in 0..ring.len() {
-            model.coedges[coedge_positions[&ring[index]]].radial_next =
+            geometry.coedges[coedge_positions[&ring[index]]].radial_next =
                 ring[(index + 1) % ring.len()].clone();
         }
     }
-    model.shells.push(
+    geometry.shells.push(
         Shell::new(
             shell_id.clone(),
             region_id.clone(),
@@ -2132,12 +2132,12 @@ fn append_legacy_brep(
         )
         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
     );
-    model.regions.push(Region {
+    geometry.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id],
     });
-    model.bodies.push(Body {
+    geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::General,
         regions: vec![region_id],
@@ -2671,25 +2671,25 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
                 suffix_key,
             );
-            ir.model
+            ir.geometry
                 .points
                 .push(Point::new(point_id.clone(), position, None));
-            ir.model.vertices.push(Vertex {
+            ir.geometry.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
             });
-            ir.model.shells.push(Shell::with_free_vertex(
+            ir.geometry.shells.push(Shell::with_free_vertex(
                 shell_id.clone(),
                 region_id.clone(),
                 vertex_id,
             ));
-            ir.model.regions.push(Region {
+            ir.geometry.regions.push(Region {
                 id: region_id.clone(),
                 body: body_id.clone(),
                 shells: vec![shell_id],
             });
-            ir.model.bodies.push(Body {
+            ir.geometry.bodies.push(Body {
                 id: body_id,
                 kind: BodyKind::General,
                 regions: vec![region_id],
@@ -2814,7 +2814,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         ];
                         let start = evaluate_nurbs(&segment, parameter_range[0])?;
                         let end = evaluate_nurbs(&segment, parameter_range[1])?;
-                        ir.model.curves.push(Curve {
+                        ir.geometry.curves.push(Curve {
                             parameter_range: None,
                             id: curve_id.clone(),
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
@@ -2826,11 +2826,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         let end = FinitePoint3::new(end)
                             .ok_or(Point::NON_FINITE_POSITION)
                             .map_err(cadmpeg_core::CodecError::malformed)?;
-                        ir.model.points.extend([
+                        ir.geometry.points.extend([
                             Point::new(start_point.clone(), start, None),
                             Point::new(end_point.clone(), end, None),
                         ]);
-                        ir.model.vertices.extend([
+                        ir.geometry.vertices.extend([
                             Vertex {
                                 id: start_vertex.clone(),
                                 point: start_point,
@@ -2842,7 +2842,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                                 tolerance: None,
                             },
                         ]);
-                        ir.model.edges.push(Edge {
+                        ir.geometry.edges.push(Edge {
                             id: edge_id.clone(),
                             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
@@ -2853,17 +2853,17 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             end: end_vertex,
                             tolerance: None,
                         });
-                        ir.model.shells.push(Shell::with_wire_edge(
+                        ir.geometry.shells.push(Shell::with_wire_edge(
                             shell_id.clone(),
                             region_id.clone(),
                             edge_id,
                         ));
-                        ir.model.regions.push(Region {
+                        ir.geometry.regions.push(Region {
                             id: region_id.clone(),
                             body: body_id.clone(),
                             shells: vec![shell_id],
                         });
-                        ir.model.bodies.push(Body {
+                        ir.geometry.bodies.push(Body {
                             id: body_id,
                             kind: BodyKind::General,
                             regions: vec![region_id],
@@ -2963,7 +2963,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             .set_arena(ctx, "legacy_v1_records", &direct_records)
             .map_err(CodecError::malformed)?;
     }
-    ir.model.finalize();
+    ir.finalize();
     let opaque_count = opaque_records.len();
     let opaque_bytes = opaque_records
         .iter()
@@ -3037,7 +3037,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         opaque_records.into_iter().chain(typed_source_records),
     )?;
     for id in untyped {
-        source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
+        source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
     }
     Ok(Decoded {
         ir,
@@ -3144,7 +3144,7 @@ mod tests {
             decode_v1(&data)
                 .expect("decode the version 1 archive")
                 .ir
-                .model
+                .geometry
                 .bodies
                 .len(),
             1
@@ -3806,7 +3806,7 @@ mod tests {
             decode_v1(&data)
                 .expect("decode the version 1 archive")
                 .ir
-                .model
+                .geometry
                 .curves
                 .len(),
             1
@@ -3831,7 +3831,7 @@ mod tests {
             decode_v1(&data)
                 .expect("decode the version 1 archive")
                 .ir
-                .model
+                .geometry
                 .bodies
                 .len(),
             1
@@ -3845,7 +3845,7 @@ mod tests {
             decode_v1(&data)
                 .expect("decode the version 1 archive")
                 .ir
-                .model
+                .geometry
                 .bodies
                 .len(),
             1
@@ -3898,7 +3898,7 @@ mod tests {
         }
         data.extend(chunk(TCODE_UNIT_AND_TOLERANCES, &units));
         let decoded = decode_v1(&data).expect("unset angular tolerance must decode");
-        assert_eq!(decoded.ir.model.points.len(), 1);
+        assert_eq!(decoded.ir.geometry.points.len(), 1);
         assert_eq!(
             decoded.ir.tolerances.angular,
             CadIr::empty().tolerances.angular
@@ -3918,7 +3918,7 @@ mod tests {
         missing.drain(32..comment.next_offset());
         let expected = decode_v1(&original).expect("original");
         let actual = decode_v1(&missing).expect("optional comment absent");
-        assert_eq!(actual.ir.model.points, expected.ir.model.points);
+        assert_eq!(actual.ir.geometry.points, expected.ir.geometry.points);
         assert!(actual
             .body
             .losses
@@ -3938,9 +3938,9 @@ mod tests {
                 .expect("valid V1 point archive"),
             false,
         );
-        assert_eq!(result.ir().model.points.len(), 2);
+        assert_eq!(result.ir().geometry.points.len(), 2);
         assert_eq!(
-            result.ir().model.points[0].position().get(),
+            result.ir().geometry.points[0].position().get(),
             Point3::new(1.0, 2.0, 3.0)
         );
         assert!(result.report().geometry_transferred());
@@ -3964,7 +3964,7 @@ mod tests {
             decode_v1(&data).expect("valid V1 point with attribute suffix"),
             false,
         ));
-        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.ir().geometry.points.len(), 1);
         let retained = result.source_fidelity().retained_records();
         assert_eq!(retained.len(), 1);
         let record = retained.values().next().expect("typed source boundary");
@@ -4010,7 +4010,7 @@ mod tests {
             decode_v1(&bytes).expect("framed malformed direct V1 record"),
             false,
         ));
-        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.ir().geometry.points.len(), 1);
         let retained = &result.source_fidelity().retained_records();
         // `53b52e008` retains the source boundary of a V1 record the decode
         // transfers as well as one it refuses, so the point chunk is here
@@ -4022,7 +4022,7 @@ mod tests {
             .expect("the malformed direct record is retained under its typecode");
         assert_eq!(
             malformed.untyped().iter().copied().collect::<Vec<_>>(),
-            [cadmpeg_ir::ArenaClass::Model]
+            [cadmpeg_core::decode::ArenaClass::Model]
         );
         assert!(retained
             .iter()
@@ -4137,14 +4137,14 @@ mod tests {
             decode_v1(&legacy_face_archive()).expect("valid V1 face archive"),
             false,
         );
-        let model = &result.ir().model;
-        assert_eq!(model.bodies.len(), 1, "{:?}", result.report());
-        assert_eq!(model.faces.len(), 1);
-        assert_eq!(model.loops.len(), 1);
-        assert_eq!(model.coedges.len(), 4);
-        assert_eq!(model.edges.len(), 4);
-        assert_eq!(model.pcurves.len(), 4);
-        assert_eq!(model.surfaces.len(), 1);
+        let geometry = &result.ir().geometry;
+        assert_eq!(geometry.bodies.len(), 1, "{:?}", result.report());
+        assert_eq!(geometry.faces.len(), 1);
+        assert_eq!(geometry.loops.len(), 1);
+        assert_eq!(geometry.coedges.len(), 4);
+        assert_eq!(geometry.edges.len(), 4);
+        assert_eq!(geometry.pcurves.len(), 4);
+        assert_eq!(geometry.surfaces.len(), 1);
         assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
             .expect("validate the neutral model");
@@ -4157,8 +4157,13 @@ mod tests {
             decode_v1(&legacy_shell_archive()).expect("valid V1 shell archive"),
             false,
         );
-        assert_eq!(result.ir().model.bodies.len(), 1, "{:?}", result.report());
-        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(
+            result.ir().geometry.bodies.len(),
+            1,
+            "{:?}",
+            result.report()
+        );
+        assert_eq!(result.ir().geometry.faces.len(), 1);
         assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
             .expect("validate the neutral model");
@@ -4172,7 +4177,7 @@ mod tests {
             decode_v1(&source).expect("valid legacy face baseline"),
             false,
         );
-        assert_eq!(baseline.ir().model.bodies.len(), 1);
+        assert_eq!(baseline.ir().geometry.bodies.len(), 1);
         let offsets = source
             .windows(4)
             .enumerate()
@@ -4223,7 +4228,7 @@ mod tests {
             decode_v1(&source).expect("invalid BREP remains source-retained"),
             false,
         ));
-        assert_eq!(result.ir().model.entity_count(), 0);
+        assert_eq!(result.ir().entity_count(), 0);
         assert!(result
             .source_fidelity()
             .retained_records()
@@ -4251,11 +4256,11 @@ mod tests {
                 .expect("nearby but topologically distinct V1 vertices are valid"),
             false,
         );
-        assert_eq!(result.ir().model.vertices.len(), 4);
-        assert_eq!(result.ir().model.edges.len(), 4);
+        assert_eq!(result.ir().geometry.vertices.len(), 4);
+        assert_eq!(result.ir().geometry.edges.len(), 4);
         let edge_endpoints = result
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .map(|edge| (edge.start.clone(), edge.end.clone()))
@@ -4281,11 +4286,11 @@ mod tests {
             .expect("explicit seam edge curves are valid"),
             false,
         );
-        assert_eq!(result.ir().model.edges.len(), 4);
-        assert_eq!(result.ir().model.curves.len(), 4);
+        assert_eq!(result.ir().geometry.edges.len(), 4);
+        assert_eq!(result.ir().geometry.curves.len(), 4);
         assert!(result
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .all(|edge| edge.curve().is_some()));
@@ -4308,9 +4313,9 @@ mod tests {
             .expect("curve-less seam partners are valid"),
             false,
         );
-        assert_eq!(result.ir().model.edges.len(), 2);
-        assert_eq!(result.ir().model.curves.len(), 2);
-        let coedges = &result.ir().model.coedges;
+        assert_eq!(result.ir().geometry.edges.len(), 2);
+        assert_eq!(result.ir().geometry.curves.len(), 2);
+        let coedges = &result.ir().geometry.coedges;
         assert_eq!(coedges[0].edge, coedges[1].edge);
         assert_eq!(coedges[2].edge, coedges[3].edge);
     }

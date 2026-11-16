@@ -15,17 +15,19 @@ use crate::query_support::write;
 use crate::support::cadmpeg;
 
 const CADIR_DOC: &str = r#"{
-  "ir_version": "10",
-  "model": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
+  "ir_version": "11",
+  "geometry": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
+  "model": {"features": []},
   "native": {"fcstd": {"objects": [1, 2, 3]}}
 }"#;
 
 const FIDELITY_SIDECAR: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "ir_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-  "report": {"identity": {"classification": "unclassified", "format": "f3d"},
-             "transfer": {"transfer": "full", "geometry_transferred": true},
-             "coverage": {}, "losses": [], "notes": []},
+  "report": {"identity": {"kind": "unclassified", "format": "f3d"},
+             "transfer": {"kind": "full", "geometry_transferred": true},
+             "coverage": {}, "losses": [], "notes": [],
+             "transfer_ledger": {"entries": []}},
   "fidelity": {
     "decode_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "file_digests": {},
@@ -34,11 +36,11 @@ const FIDELITY_SIDECAR: &str = r#"{
                     "exactness": {}},
     "retained_records": {
       "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0,
-             "bytes": {"retention": "inline", "data": "QUJDRA=="}, "untyped": []},
+             "bytes": {"kind": "inline", "data": "QUJDRA=="}, "untyped": []},
       "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4,
-             "bytes": {"retention": "inline", "data": "RUY="}, "untyped": ["model"]},
+             "bytes": {"kind": "inline", "data": "RUY="}, "untyped": ["model"]},
       "f3d:source:record#r3": {"stream": "Other", "offset": 0,
-             "bytes": {"retention": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
+             "bytes": {"kind": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
              "untyped": ["model", "design"]}
     }
   }

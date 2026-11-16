@@ -6,9 +6,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{Annotations, ArenaClass, SourceFidelity};
+use cadmpeg_ir::{Annotations, SourceFidelity};
 
 #[derive(Default)]
 pub(super) struct Retention {
@@ -77,9 +78,10 @@ impl Retention {
 #[cfg(test)]
 mod tests {
     use super::Retention;
+    use cadmpeg_core::decode::ArenaClass;
     use cadmpeg_ir::hash::digest::Sha256Digest;
     use cadmpeg_ir::ids::UnknownId;
-    use cadmpeg_ir::{Annotations, ArenaClass, RetainedSourceRecord, SourceFidelity};
+    use cadmpeg_ir::{Annotations, RetainedSourceRecord, SourceFidelity};
 
     #[test]
     fn marks_go_only_to_records_the_decode_retained() {

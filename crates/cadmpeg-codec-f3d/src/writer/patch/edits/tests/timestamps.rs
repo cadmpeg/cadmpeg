@@ -14,8 +14,8 @@ use crate::F3dCodec;
 #[test]
 fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
     let mut source = cadmpeg_ir::examples::unit_cube().unwrap();
-    let body = source.model.bodies[0].id.clone();
-    let face = source.model.faces[0].id.clone();
+    let body = source.geometry.bodies[0].id.clone();
+    let face = source.geometry.faces[0].id.clone();
     f3d_native_mut(&mut source).creation_timestamps = vec![
         CreationTimestamp {
             id: "f3d:generated:creation-timestamp#0".into(),

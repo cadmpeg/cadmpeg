@@ -325,7 +325,7 @@ fn full_history_document_retains_geometry_without_a_physical_binding() {
             assert_eq!(source.data(), Some(history_record.as_slice()));
             assert_eq!(
                 source.untyped().iter().copied().collect::<Vec<_>>(),
-                [cadmpeg_ir::ArenaClass::Model]
+                [cadmpeg_core::decode::ArenaClass::Model]
             );
             assert!(result.report().losses.iter().any(|loss| {
                 loss.code == crate::loss::RhinoLossCode::HistoryGeometryNotTransferred.kind()
@@ -434,7 +434,7 @@ fn an_unknown_history_record_kept_without_decoding_is_untyped_model_content() {
     assert_eq!(marked.len(), 1, "{marked:?}");
     assert!(marked[0].0.starts_with("rhino:opaque:record#"));
     assert_eq!(marked[0].1.as_deref(), Some(record.as_slice()));
-    assert_eq!(marked[0].2, [cadmpeg_ir::ArenaClass::Model]);
+    assert_eq!(marked[0].2, [cadmpeg_core::decode::ArenaClass::Model]);
 }
 
 #[test]

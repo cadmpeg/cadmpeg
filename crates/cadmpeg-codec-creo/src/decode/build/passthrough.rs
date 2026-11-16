@@ -4,12 +4,12 @@
 use crate::container::SectionRole;
 
 use crate::decode::native::CreoArena;
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::ArenaClass;
 use cadmpeg_ir::Exactness;
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -381,7 +381,7 @@ mod tests {
         assert_eq!(records[0].0.id().as_str(), "creo:VisibGeom:section#0");
         assert_eq!(
             records[0].1,
-            std::collections::BTreeSet::from([cadmpeg_ir::ArenaClass::Model])
+            std::collections::BTreeSet::from([cadmpeg_core::decode::ArenaClass::Model])
         );
     }
 
@@ -408,8 +408,8 @@ mod tests {
         assert_eq!(
             records[0].1,
             std::collections::BTreeSet::from([
-                cadmpeg_ir::ArenaClass::Model,
-                cadmpeg_ir::ArenaClass::Design
+                cadmpeg_core::decode::ArenaClass::Model,
+                cadmpeg_core::decode::ArenaClass::Design
             ])
         );
     }

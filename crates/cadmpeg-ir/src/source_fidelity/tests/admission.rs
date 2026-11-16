@@ -178,7 +178,7 @@ fn complete_sidecar_requires_the_current_ir_version_on_both_read_routes() {
         Some(serde_json::json!("7")),
         Some(serde_json::json!("8")),
         Some(serde_json::json!("9")),
-        Some(serde_json::json!("11")),
+        Some(serde_json::json!("12")),
         Some(serde_json::json!({})),
     ] {
         let mut wire = valid.clone();
@@ -226,7 +226,7 @@ fn complete_sidecar_admission_rejects_malformed_digests_and_record_keys() {
     }
     let mut wire = valid;
     wire["fidelity"]["retained_records"][id("a").as_str()]["bytes"] = serde_json::json!({
-        "retention": "digest", "byte_len": 3, "sha256": "wire-value"
+        "kind": "digest", "byte_len": 3, "sha256": "wire-value"
     });
     let error = DecodeSidecar::from_json(&wire.to_string()).unwrap_err();
     assert!(error.to_string().contains(id("a").as_str()), "{error}");
@@ -235,17 +235,14 @@ fn complete_sidecar_admission_rejects_malformed_digests_and_record_keys() {
 #[test]
 fn complete_sidecar_admission_checks_inline_and_digest_extents() {
     for (image, admitted) in [
-        (serde_json::json!({"retention": "inline", "data": ""}), true),
+        (serde_json::json!({"kind": "inline", "data": ""}), true),
+        (serde_json::json!({"kind": "inline", "data": "AQ=="}), false),
         (
-            serde_json::json!({"retention": "inline", "data": "AQ=="}),
-            false,
-        ),
-        (
-            serde_json::json!({"retention": "digest", "byte_len": 0, "sha256": Sha256Digest::digest(b"")}),
+            serde_json::json!({"kind": "digest", "byte_len": 0, "sha256": Sha256Digest::digest(b"")}),
             true,
         ),
         (
-            serde_json::json!({"retention": "digest", "byte_len": 1, "sha256": Sha256Digest::digest(b"a")}),
+            serde_json::json!({"kind": "digest", "byte_len": 1, "sha256": Sha256Digest::digest(b"a")}),
             false,
         ),
     ] {

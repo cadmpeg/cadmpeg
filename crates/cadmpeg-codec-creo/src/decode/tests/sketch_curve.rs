@@ -718,7 +718,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         "creo:feature:revolution#40:body",
         "creo:feature:revolution#41:body",
     ] {
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id: BodyId::mint(id.to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: Vec::new(),
@@ -728,7 +728,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
             visible: None,
         });
     }
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#43:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Sheet,
         regions: Vec::new(),

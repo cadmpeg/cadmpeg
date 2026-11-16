@@ -2,9 +2,9 @@
 use std::collections::BTreeSet;
 
 use super::{fidelity, id, record, report};
-use crate::document::ArenaClass;
 use crate::hash::digest::Sha256Digest;
 use crate::source_fidelity::{DecodeSidecar, SourceFidelity};
+use cadmpeg_core::decode::ArenaClass;
 
 #[test]
 fn unrepresented_is_the_union_of_the_retained_records_untyped_classes() {

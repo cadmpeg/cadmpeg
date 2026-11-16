@@ -99,7 +99,7 @@ enum Recovery {
 pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit> {
     let residual_limit = Approximator::new(ir).residual_limit();
     if !ir
-        .model
+        .geometry
         .edges
         .iter()
         .any(|edge| edge.curve().is_none() && edge.start != edge.end)
@@ -118,11 +118,11 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
         refusal: Cell::new(None),
     };
     let mut uses: HashMap<&str, Vec<&Coedge>> = HashMap::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         uses.entry(coedge.edge.as_str()).or_default().push(coedge);
     }
     let mut recovered = Vec::new();
-    for (ordinal, edge) in ir.model.edges.iter().enumerate() {
+    for (ordinal, edge) in ir.geometry.edges.iter().enumerate() {
         if edge.curve().is_some() || edge.start == edge.end {
             continue;
         }
@@ -231,15 +231,18 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
                 ) else {
                     continue;
                 };
-                document.model.procedural_curves.push(ProceduralCurve::new(
-                    construction_id.clone(),
-                    ProceduralCurveDefinition::SurfaceCurve {
-                        family: SurfaceCurveFamily::Parametric {
-                            context,
-                            tail: None,
+                document
+                    .geometry
+                    .procedural_curves
+                    .push(ProceduralCurve::new(
+                        construction_id.clone(),
+                        ProceduralCurveDefinition::SurfaceCurve {
+                            family: SurfaceCurveFamily::Parametric {
+                                context,
+                                tail: None,
+                            },
                         },
-                    },
-                ));
+                    ));
                 fit_construction = Some(construction_id.clone());
                 (
                     curve_id,
@@ -252,8 +255,8 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
             }
         };
         if let Some(geometry) = geometry {
-            let curve_index = document.model.curves.len();
-            document.model.curves.push(Curve {
+            let curve_index = document.geometry.curves.len();
+            document.geometry.curves.push(Curve {
                 id: curve.clone(),
                 geometry,
                 parameter_range: None,
@@ -264,9 +267,9 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
             }
         }
         if let Ok(carrier) = EdgeCarrier::new(Some(curve), Some(range)) {
-            document.model.edges[ordinal].carrier = carrier;
+            document.geometry.edges[ordinal].carrier = carrier;
             if sampled {
-                sampled_agreements.push(document.model.edges[ordinal].id.clone());
+                sampled_agreements.push(document.geometry.edges[ordinal].id.clone());
             }
         }
     }
@@ -295,34 +298,35 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
         fitted_candidates.into_iter().zip(fits)
     {
         constructions.insert(construction_id);
-        if let (Some(geometry), Some(curve)) = (fit, document.model.curves.get_mut(curve_index)) {
+        if let (Some(geometry), Some(curve)) = (fit, document.geometry.curves.get_mut(curve_index))
+        {
             curve.geometry = CurveGeometry::Solved(geometry);
-            sampled_fits.push(document.model.edges[ordinal].id.clone());
+            sampled_fits.push(document.geometry.edges[ordinal].id.clone());
         } else {
-            document.model.edges[ordinal].carrier = ir.model.edges[ordinal].carrier.clone();
+            document.geometry.edges[ordinal].carrier = ir.geometry.edges[ordinal].carrier.clone();
             failed_curves.insert(curve_id);
-            failed_edges.insert(document.model.edges[ordinal].id.clone());
+            failed_edges.insert(document.geometry.edges[ordinal].id.clone());
         }
     }
     document
-        .model
+        .geometry
         .curves
         .retain(|curve| !failed_curves.contains(&curve.id));
     document
-        .model
+        .geometry
         .procedural_curves
         .retain(|curve| !constructions.contains(&curve.id));
     sampled_agreements.retain(|edge| !failed_edges.contains(edge));
     let recovered_edges = document
-        .model
+        .geometry
         .edges
         .iter()
-        .zip(&ir.model.edges)
+        .zip(&ir.geometry.edges)
         .filter_map(|(edge, original)| {
             (original.curve().is_none() && edge.curve().is_some()).then_some(edge.id.clone())
         })
         .collect::<HashSet<_>>();
-    for coedge in &mut document.model.coedges {
+    for coedge in &mut document.geometry.coedges {
         if !recovered_edges.contains(&coedge.edge) {
             continue;
         }

@@ -16,7 +16,7 @@ use crate::query_support::write;
 use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "command": "check",
   "status": "ok",
   "refusal": null,
@@ -29,11 +29,8 @@ const CHECK_REPORT: &str = r#"{
     ],
     "losses": [
       {
-        "code": {
-          "namespace": "shared",
-          "code": "topology_not_transferred",
-          "kind": "topology_not_transferred"
-        },
+        "code": {"kind": "namespaced", "value": {"namespace": "shared",
+                 "code": "topology_not_transferred", "kind": "topology_not_transferred"}},
         "severity": "warning",
         "message": "wire dropped"
       }
@@ -42,20 +39,21 @@ const CHECK_REPORT: &str = r#"{
 }"#;
 
 const CADIR_DOC: &str = r#"{
-  "ir_version": "10",
-  "model": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
+  "ir_version": "11",
+  "geometry": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
+  "model": {"features": []},
   "native": {"fcstd": {"objects": [1, 2, 3]}}
 }"#;
 
 const SIDECAR: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "ir_sha256": "abc123",
   "report": {
     "format": "f3d",
-    "transfer": {"transfer": "full", "geometry_transferred": true},
+    "transfer": {"kind": "full", "geometry_transferred": true},
     "coverage": {"streams": 7, "segments": 3},
-    "losses": [{"code": {"namespace": "shared", "code": "metadata_not_transferred",
-                         "kind": "metadata_not_transferred"},
+    "losses": [{"code": {"kind": "namespaced", "value": {"namespace": "shared",
+                         "code": "metadata_not_transferred", "kind": "metadata_not_transferred"}},
                 "severity": "info", "message": "thumbnail"}]
   }
 }"#;
@@ -109,7 +107,7 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
             Some(serde_json::json!(0)),
             Some(serde_json::json!(false)),
             Some(serde_json::json!("unsupported")),
-            Some(serde_json::json!("11")),
+            Some(serde_json::json!("10")),
             Some(serde_json::json!("13")),
             Some(serde_json::json!("14")),
             Some(serde_json::json!("18")),
@@ -150,15 +148,15 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         dir.path(),
         "classified.cadir.json",
         r#"{
-          "ir_version": "10",
+          "ir_version": "11",
           "source": {
             "identity": {
-              "classification": "classified",
+              "kind": "classified",
               "dialects": {
                 "primary": {
                   "dialect": "rhino:archive-80",
                   "declared": {"archive_version": "80"},
-                  "admission": "admitted"
+                  "admission": {"kind": "admitted"}
                 },
                 "extra": []
               }
@@ -189,22 +187,23 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         dir.path(),
         "classified.fidelity.json",
         r#"{
-          "ir_version": "10",
+          "ir_version": "11",
           "ir_sha256": "abc123",
           "report": {
             "format": "f3d",
-            "transfer": {"transfer": "full", "geometry_transferred": true},
+            "transfer": {"kind": "full", "geometry_transferred": true},
             "coverage": {},
             "losses": [],
             "dialects": {
               "primary": {
                 "dialect": "f3d:archive-2",
                 "declared": {"manifest_version": "2"},
-                "admission": "admitted"
+                "admission": {"kind": "admitted"}
               },
               "extra": [{
                 "dialect": "acis:sab-22300",
-                "admission": {"unverified": {"using": "sab-22200"}},
+                "declared": {},
+                "admission": {"kind": "unverified", "using": "sab-22200"},
                 "instance": "member:model.sab"
               }]
             }
@@ -235,7 +234,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
         dir.path(),
         "identity.report.json",
         r#"{
-          "ir_version": "10",
+          "ir_version": "11",
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -246,7 +245,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
               "primary": {
                 "dialect": "rhino:unknown",
                 "declared": {"archive_version": "100"},
-                "admission": "refused"
+                "admission": {"kind": "refused"}
               },
               "extra": []
             }
@@ -254,7 +253,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
           "summary": {
             "format": "rhino",
             "losses": [{
-              "code": {"namespace": "rhino", "code": "source.dialect-unverified"},
+              "code": {"kind": "namespaced", "value": {"namespace": "rhino", "code": "source.dialect-unverified"}},
               "severity": "warning",
               "message": "archive word is residual"
             }],
@@ -262,14 +261,14 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
               "primary": {
                 "dialect": "rhino:archive-80",
                 "declared": {"archive_version": "80"},
-                "admission": "admitted"
+                "admission": {"kind": "admitted"}
               },
               "extra": []
             }
           },
           "decode_report": null,
           "check_report": null,
-          "export": {"identity": {"payload": "native", "target": "step:ap242-e3"}}
+          "export": {"identity": {"kind": "native", "target": "step:ap242-e3"}}
         }"#,
     );
 
@@ -329,7 +328,7 @@ fn summary_projects_structured_target_refusals() {
         dir.path(),
         "target-refusal.json",
         r#"{
-          "ir_version": "10",
+          "ir_version": "11",
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -456,8 +455,9 @@ fn counts_works_on_all_three_kinds_with_teaching_on_the_sidecar() {
         .success()
         .stdout(
             "namespace\tarena\tentries\n\
-             model\tedges\t0\n\
-             model\tfaces\t2\n\
+             geometry\tedges\t0\n\
+             geometry\tfaces\t2\n\
+             model\tfeatures\t0\n\
              native.fcstd\tobjects\t3\n",
         );
 
@@ -468,8 +468,8 @@ fn counts_works_on_all_three_kinds_with_teaching_on_the_sidecar() {
         .success()
         .stdout(
             "namespace\tarena\tentries\n\
-             model\tedges\t12\n\
-             model\tfaces\t2\n",
+             geometry\tedges\t12\n\
+             geometry\tfaces\t2\n",
         );
 
     let sidecar = write(dir.path(), "model.fidelity.json", SIDECAR);
@@ -614,7 +614,7 @@ fn query_projects_a_real_check_report_end_to_end() {
 fn summary_names_a_measure_report_and_counts_its_rows_and_unavailable_values() {
     let dir = tempdir().unwrap();
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.faces[0].sense = match ir.model.faces[0].sense {
+    ir.geometry.faces[0].sense = match ir.geometry.faces[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
     };
@@ -725,7 +725,7 @@ fn a_measure_report_states_its_work_or_leaves_it_out() {
     let dir = tempdir().unwrap();
     let report = |work: &str| {
         format!(
-            r#"{{"ir_version": "10", "command": "measure", "status": "ok", "refusal": null,
+            r#"{{"ir_version": "11", "command": "measure", "status": "ok", "refusal": null,
                "decode_report": null, "measure": {{"bodies": [{{}}], "faces": [],
                "edges": [], "surfaces": [], "document": {{"unavailable": {{}}{work}}}}}}}"#
         )
@@ -755,7 +755,7 @@ fn a_measure_report_states_its_work_or_leaves_it_out() {
 // --- query item -------------------------------------------------------------
 
 const ITEM_DOC: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "model": {
     "sketch_entities": [
       {
@@ -1021,7 +1021,7 @@ fn item_rejects_report_and_sidecar() {
             "query",
             "item",
             report.to_str().unwrap(),
-            "model.faces",
+            "geometry.faces",
             "f1",
         ])
         .assert()
@@ -1038,7 +1038,7 @@ fn item_rejects_report_and_sidecar() {
             "query",
             "item",
             sidecar.to_str().unwrap(),
-            "model.faces",
+            "geometry.faces",
             "f1",
         ])
         .assert()
@@ -1234,16 +1234,16 @@ fn item_round_trips_counts_dotted_name_on_unit_cube() {
     assert!(counts.status.success());
     let value: serde_json::Value = serde_json::from_slice(&counts.stdout).unwrap();
     let counts_map = value["payload"].as_object().unwrap();
-    assert!(counts_map.contains_key("model.faces"));
-    assert!(counts_map["model.faces"].as_u64().unwrap() > 0);
+    assert!(counts_map.contains_key("geometry.faces"));
+    assert!(counts_map["geometry.faces"].as_u64().unwrap() > 0);
 
-    let face_id = ir.model.faces[0].id.to_string();
+    let face_id = ir.geometry.faces[0].id.to_string();
     cadmpeg()
         .args([
             "query",
             "item",
             model.to_str().unwrap(),
-            "model.faces",
+            "geometry.faces",
             &face_id,
         ])
         .assert()
@@ -1257,9 +1257,9 @@ fn schema_lists_model_arenas_with_element_types() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.starts_with("arena\telement\trequired\n"), "{stdout}");
-    assert!(stdout.contains("model.faces\tFace\tyes"), "{stdout}");
+    assert!(stdout.contains("geometry.faces\tFace\tyes"), "{stdout}");
     assert!(
-        stdout.contains("model.assembly_joints\tAssemblyJoint\tno"),
+        stdout.contains("model.assembly_joints\tAssemblyJoint\tyes"),
         "{stdout}"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1279,15 +1279,15 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
         "{stdout}"
     );
     // The measured trap: the discriminator of a feature's definition is
-    // `.definition.definition`, and the schema view names the tag key.
+    // `.definition.kind`, and the schema view names the tag key.
     assert!(
-        stdout.contains("definition\tFeatureDefinition (tagged by definition,"),
+        stdout.contains("definition\tFeatureDefinition (tagged by kind,"),
         "{stdout}"
     );
-    assert!(stdout.contains("extrude"), "{stdout}");
-    // Optionality is the other measured trap: these fields are absent-as-null.
+    assert!(stdout.contains("operation"), "{stdout}");
+    // The other measured trap: an optional field is absent and a list is always written.
     assert!(stdout.contains("suppressed\tboolean?\tno"), "{stdout}");
-    assert!(stdout.contains("outputs\tarray<BodyId>\tno"), "{stdout}");
+    assert!(stdout.contains("outputs\tarray<BodyId>\tyes"), "{stdout}");
     assert!(stdout.contains("id\tFeatureId\tyes"), "{stdout}");
 
     // Bare shorthand is byte-identical to the dotted name.
@@ -1466,7 +1466,7 @@ fn schema_sidecar_and_json_envelope() {
     assert!(stdout.contains("ir_sha256\tSha256Digest\tyes"), "{stdout}");
 
     let json = cadmpeg()
-        .args(["query", "schema", "--json", "types", "model.faces"])
+        .args(["query", "schema", "--json", "types", "geometry.faces"])
         .output()
         .unwrap();
     assert!(json.status.success());
@@ -1675,7 +1675,7 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
     use cadmpeg_ir::{CodecFormat, SourceGeometryRole, SourceObjectAssociation};
     let dir = tempdir().unwrap();
     let mut ir = unit_cube().unwrap();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "synthetic:cube:point#orphan".try_into().unwrap(),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(20.0, 30.0, 40.0))
             .unwrap(),
@@ -1725,7 +1725,7 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
     );
     assert_eq!(
         summary["payload"]["export_payload"],
-        wire["export"]["identity"]["payload"]
+        wire["export"]["identity"]["kind"]
     );
     assert_eq!(
         summary["payload"]["export_losses"]
@@ -1772,7 +1772,7 @@ fn summary_projects_cadir_export_without_a_native_target() {
             "ir_version": cadmpeg_ir::IR_VERSION,
             "command": "convert",
             "status": "ok",
-            "export": {"identity": {"payload": "cadir"}, "losses": []}
+            "export": {"identity": {"kind": "cadir"}, "losses": []}
         })
         .to_string(),
     );

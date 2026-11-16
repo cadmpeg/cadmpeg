@@ -42,7 +42,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
             .len(),
         1
     );
-    assert_eq!(decoded.ir().model.entity_count(), 2);
+    assert_eq!(decoded.ir().entity_count(), 2);
 
     let mut options = DecodeOptions::default();
     options.policy.limits.max_entities = 2;
@@ -151,7 +151,7 @@ fn sketch_constraint_refuses_before_model_insertion() {
 
     let mut exact = DecodeOptions::default();
     exact.policy.limits.max_entities =
-        u64::try_from(1 + decoded.ir().model.entity_count()).expect("fixture count fits u64");
+        u64::try_from(1 + decoded.ir().entity_count()).expect("fixture count fits u64");
     CreoCodec
         .decode(&mut Cursor::new(sketch_admission_prt()), &exact)
         .expect("section and each model identity are charged once");
@@ -287,7 +287,7 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
     );
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -415,7 +415,7 @@ fn decode_annotations_cover_every_emitted_entity() {
 
     let unknowns = result.ir().native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 3);
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     for unknown in &unknowns {
         let section_name = unknown
             .id
@@ -437,7 +437,7 @@ fn decode_annotations_cover_every_emitted_entity() {
             Exactness::Unknown,
         );
     }
-    for surface in &result.ir().model.surfaces {
+    for surface in &result.ir().geometry.surfaces {
         assert_annotation(
             &result.source_fidelity().annotations,
             surface.id.as_str(),
@@ -448,7 +448,7 @@ fn decode_annotations_cover_every_emitted_entity() {
         );
     }
     let emitted_entity_count =
-        unknowns.len() + result.ir().model.surfaces.len() + result.ir().model.features.len();
+        unknowns.len() + result.ir().geometry.surfaces.len() + result.ir().model.features.len();
     assert_eq!(
         result.source_fidelity().annotations.provenance.len(),
         emitted_entity_count
@@ -673,9 +673,9 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
     assert!(unknowns.iter().any(|u| u.id.as_str().contains("VisibGeom")));
     assert!(unknowns.iter().any(|u| u.id.as_str().contains("NovisGeom")));
     // No geometry arenas populated.
-    assert!(result.ir().model.surfaces.is_empty());
-    assert!(result.ir().model.points.is_empty());
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.surfaces.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     let source = result.ir().source.as_ref().expect("source");
     assert!(!source.attributes.contains_key("srf_array_count"));
     assert!(!source.attributes.contains_key("crv_array_count"));
@@ -737,7 +737,7 @@ fn container_only_preserves_sections_without_transferring_entities() {
 
     assert!(result.report().container_only());
     assert!(!result.report().geometry_transferred());
-    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result.ir().geometry.surfaces.is_empty());
     assert!(result.ir().model.features.is_empty());
     assert_eq!(result.ir().native_unknowns("creo").unwrap().len(), 1);
     assert!(result

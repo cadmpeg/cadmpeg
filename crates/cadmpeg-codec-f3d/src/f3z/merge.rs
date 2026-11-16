@@ -313,7 +313,7 @@ impl MergeSession<'_, '_> {
             .retain(|loss| loss.code != F3dLossCode::SavedFreeEdgeBodyUnowned.kind());
         parent_report
             .losses
-            .extend(crate::decode::saved_free_edge_bodies_loss(&parent_ir.model));
+            .extend(crate::decode::saved_free_edge_bodies_loss(parent_ir));
         Ok(merged)
     }
 
@@ -437,7 +437,7 @@ impl MergeSession<'_, '_> {
                     source_fidelity: component_fidelity,
                 } = component;
                 scope_document_parameters(self.ctx, &mut component_ir.model)?;
-                let definition = define_member(self.ctx, &mut component_ir.model, label)?;
+                let definition = define_member(self.ctx, &mut component_ir, label)?;
                 append_feature_history(&parent_ir.model, &mut component_ir.model)?;
                 let targets = native_record_targets(&component_ir.native, &occurrence);
                 rescope_partial_pattern_sources(&mut component_ir.model, &occurrence);
@@ -449,6 +449,9 @@ impl MergeSession<'_, '_> {
                 };
                 let occurrence_start = parent_ir.model.occurrences.len();
                 let joint_start = parent_ir.model.assembly_joints.len();
+                parent_ir
+                    .geometry
+                    .extend_rewritten(component_ir.geometry, &mut scope)?;
                 parent_ir
                     .model
                     .extend_rewritten(component_ir.model, &mut scope)?;
@@ -1830,7 +1833,7 @@ const STORED_FRAME_GROUP_SUFFIX: &str = ":product-definition#stored-frame";
 
 fn define_member(
     ctx: &DecodeContext<'_>,
-    model: &mut Model,
+    ir: &mut cadmpeg_ir::CadIr,
     label: &str,
 ) -> Result<cadmpeg_ir::ids::ProductDefinitionId, CodecError> {
     use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
@@ -1838,35 +1841,40 @@ fn define_member(
     // A member without occurrences has no placement for a Design stream's
     // stored-frame group, so its bodies belong to the member definition that
     // the inserting occurrence instances.
-    if model.occurrences.is_empty() {
-        model
+    if ir.model.occurrences.is_empty() {
+        ir.model
             .product_definitions
             .retain(|definition| !definition.id.as_str().ends_with(STORED_FRAME_GROUP_SUFFIX));
     }
-    let owned = model
+    let owned = ir
+        .model
         .product_definitions
         .iter()
         .flat_map(|definition| &definition.bodies)
         .collect::<std::collections::BTreeSet<_>>();
-    let bodies = model
+    let bodies = ir
+        .geometry
         .bodies
         .iter()
         .filter(|body| !owned.contains(&body.id))
         .map(|body| body.id.clone())
         .collect();
-    let owned_sketches = model
+    let owned_sketches = ir
+        .model
         .product_definitions
         .iter()
         .flat_map(|definition| &definition.sketches)
         .collect::<std::collections::BTreeSet<_>>();
-    let sketches = model
+    let sketches = ir
+        .model
         .sketches
         .iter()
         .filter(|sketch| !owned_sketches.contains(&sketch.id))
         .map(|sketch| sketch.id.clone())
         .collect();
     let id = crate::ids::archive_product_definition_id();
-    if let Some(definition) = model
+    if let Some(definition) = ir
+        .model
         .product_definitions
         .iter_mut()
         .find(|row| row.id == id)
@@ -1877,7 +1885,7 @@ fn define_member(
         return Ok(id);
     }
     ctx.charge_entities(1, "F3Z member product definition")?;
-    model.product_definitions.push(ProductDefinition {
+    ir.model.product_definitions.push(ProductDefinition {
         id: id.clone(),
         kind: ProductDefinitionKind::Part,
         source_name: None,
@@ -2448,24 +2456,24 @@ mod tests {
             [0.0, 0.0, 1.0, 0.0],
         ])
         .unwrap();
-        let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-        model.product_definitions.clear();
-        model.bodies[0].transform = Some(transform);
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        ir.model.product_definitions.clear();
+        ir.geometry.bodies[0].transform = Some(transform);
         let ctx = cadmpeg_test_support::service_decode_context();
-        define_member(&ctx, &mut model, "member").unwrap();
-        assert_eq!(model.bodies[0].transform, Some(transform));
+        define_member(&ctx, &mut ir, "member").unwrap();
+        assert_eq!(ir.geometry.bodies[0].transform, Some(transform));
         assert_eq!(
-            model.product_definitions[0].bodies,
-            [model.bodies[0].id.clone()]
+            ir.model.product_definitions[0].bodies,
+            [ir.geometry.bodies[0].id.clone()]
         );
     }
 
     #[test]
     fn member_without_occurrences_moves_stored_frame_bodies_into_its_definition() {
-        let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-        let body = model.bodies[0].id.clone();
-        model.product_definitions.clear();
-        model
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let body = ir.geometry.bodies[0].id.clone();
+        ir.model.product_definitions.clear();
+        ir.model
             .product_definitions
             .push(cadmpeg_ir::products::ProductDefinition {
                 id: cadmpeg_ir::ids::ProductDefinitionId::mint(
@@ -2483,10 +2491,10 @@ mod tests {
                 native_ref: None,
             });
         let ctx = cadmpeg_test_support::service_decode_context();
-        let id = define_member(&ctx, &mut model, "member").unwrap();
-        assert_eq!(model.product_definitions.len(), 1);
-        assert_eq!(model.product_definitions[0].id, id);
-        assert_eq!(model.product_definitions[0].bodies, [body]);
+        let id = define_member(&ctx, &mut ir, "member").unwrap();
+        assert_eq!(ir.model.product_definitions.len(), 1);
+        assert_eq!(ir.model.product_definitions[0].id, id);
+        assert_eq!(ir.model.product_definitions[0].bodies, [body]);
     }
 
     #[test]
@@ -2497,9 +2505,9 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_entities = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut model = cadmpeg_ir::document::Model::default();
-        let error = define_member(&ctx, &mut model, "member").unwrap_err();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let error = define_member(&ctx, &mut ir, "member").unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-        assert!(model.product_definitions.is_empty());
+        assert!(ir.model.product_definitions.is_empty());
     }
 }

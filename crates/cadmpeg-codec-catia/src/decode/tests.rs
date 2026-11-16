@@ -217,7 +217,7 @@ fn container_only_stops_before_geometry() {
     assert!(retained.data().is_some());
     assert_eq!(
         retained.untyped().iter().copied().collect::<Vec<_>>(),
-        [cadmpeg_ir::ArenaClass::Model]
+        [cadmpeg_core::decode::ArenaClass::Model]
     );
 }
 

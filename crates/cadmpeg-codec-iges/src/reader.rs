@@ -528,7 +528,10 @@ fn decode_with_occurrence_limits(
                 && !projection.consumed.contains(&entry.sequence)))
     });
     if untyped_geometry {
-        source_fidelity.mark_untyped(crate::SOURCE_IMAGE_ID, [cadmpeg_ir::ArenaClass::Model])?;
+        source_fidelity.mark_untyped(
+            crate::SOURCE_IMAGE_ID,
+            [cadmpeg_core::decode::ArenaClass::Model],
+        )?;
     }
     let mut losses = parse.admission_losses();
     if invalid_resolution

@@ -179,29 +179,29 @@ impl SelectionArgs {
         let mut errors = Vec::new();
         let bodies = resolve_all(
             &self.bodies,
-            "model.bodies",
-            &ir.model.bodies.iter().map(|body| &body.id),
+            "geometry.bodies",
+            &ir.geometry.bodies.iter().map(|body| &body.id),
             cadmpeg_ir::ids::BodyId::as_str,
             &mut errors,
         );
         let faces = resolve_all(
             &self.faces,
-            "model.faces",
-            &ir.model.faces.iter().map(|face| &face.id),
+            "geometry.faces",
+            &ir.geometry.faces.iter().map(|face| &face.id),
             cadmpeg_ir::ids::FaceId::as_str,
             &mut errors,
         );
         let edges = resolve_all(
             &self.edges,
-            "model.edges",
-            &ir.model.edges.iter().map(|edge| &edge.id),
+            "geometry.edges",
+            &ir.geometry.edges.iter().map(|edge| &edge.id),
             cadmpeg_ir::ids::EdgeId::as_str,
             &mut errors,
         );
         let surfaces = resolve_all(
             &self.surfaces,
-            "model.surfaces",
-            &ir.model.surfaces.iter().map(|surface| &surface.id),
+            "geometry.surfaces",
+            &ir.geometry.surfaces.iter().map(|surface| &surface.id),
             cadmpeg_ir::ids::SurfaceId::as_str,
             &mut errors,
         );

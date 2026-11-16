@@ -31,7 +31,7 @@ const EPS_COUNTERBORE_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 fn unique_model_surface_geometries(ir: &CadIr) -> Option<BTreeMap<u32, SurfaceGeometry>> {
     let mut geometries = BTreeMap::new();
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         let Some(surface_id) = surface
             .id
             .as_str()
@@ -875,7 +875,7 @@ fn counterbore_source_boundary_circle(
                 };
                 let plane = crate::surface::unique_surface_row(&scan.surfaces.rows, other)?;
                 (plane.kind == crate::surface::SurfaceKind::Plane).then_some(())?;
-                let curve = exactly_one(ir.model.curves.iter().filter(|curve| {
+                let curve = exactly_one(ir.geometry.curves.iter().filter(|curve| {
                     crate::identity::matches_numbered_identity(
                         curve.id.as_str(),
                         "creo:visibgeom:curve#",

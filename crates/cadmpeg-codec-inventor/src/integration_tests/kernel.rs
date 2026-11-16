@@ -16,8 +16,8 @@ fn empty_solved_partition_retains_the_carrier_and_reports_the_blocking_loss() {
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("empty solved partition decodes")
         .into_parts();
-    assert!(ir.model.bodies.is_empty());
-    assert!(ir.model.faces.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
+    assert!(ir.geometry.faces.is_empty());
     assert!(ir.model.features.is_empty());
     assert!(!report.geometry_transferred());
     let losses: Vec<_> = report

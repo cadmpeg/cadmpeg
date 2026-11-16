@@ -9,6 +9,7 @@
 //! decoded; callers must use the report to account for unresolved active-face
 //! selection and other loss.
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
@@ -19,7 +20,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{AnnotationBuilder, ArenaClass, Exactness};
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
@@ -194,7 +195,7 @@ fn decoded(
     admitted_entities: &mut u64,
 ) -> Result<Decoded, CodecError> {
     ctx.admit_entities(
-        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+        cadmpeg_core::decode::u64_from_index(ir.entity_count()),
         admitted_entities,
         "admit NX entities",
     )?;

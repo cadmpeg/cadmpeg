@@ -133,7 +133,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             continue;
         };
         let body_id: BodyId = circular_identity(feature_id, "body")?;
-        if ir.model.bodies.iter().any(|body| body.id == body_id) {
+        if ir.geometry.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
         let region_id: RegionId = circular_identity(feature_id, "region")?;
@@ -299,7 +299,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 },
             )?;
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ir.model.loops.push(IrLoop {
+            ir.geometry.loops.push(IrLoop {
                 id: cap_loop.clone(),
                 face: cap_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -371,7 +371,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         {
             let loop_id: LoopId = circular_identity(feature_id, format_args!("loop:side:{side}"))?;
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ir.model.loops.push(IrLoop {
+            ir.geometry.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face: side_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -419,7 +419,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         )?;
         face_ids.push(side_face);
         ctx.charge_entities(1, "admit Creo model shells")?;
-        ir.model.shells.push(
+        ir.geometry.shells.push(
             match Shell::new(
                 shell_id.clone(),
                 region_id.clone(),
@@ -434,7 +434,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             },
         );
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.model.regions.push(Region {
+        ir.geometry.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: circular_item(shell_id),

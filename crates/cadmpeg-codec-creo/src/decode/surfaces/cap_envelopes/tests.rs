@@ -291,6 +291,6 @@ fn cap_envelope_withholding_blocks_feature_membership_circle_fallback() {
         )
         .expect("bounded source identities");
         assert_eq!(result.transferred, 0);
-        assert!(ir.model.surfaces.is_empty());
+        assert!(ir.geometry.surfaces.is_empty());
     });
 }

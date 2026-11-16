@@ -35,7 +35,7 @@ fn definition<'a>(ir: &'a serde_json::Value, name: &str) -> &'a serde_json::Valu
 /// The hole count of each region that the Extrude named `name` selects.
 fn region_holes(bytes: &[u8], name: &str) -> Vec<usize> {
     let ir = decoded(bytes);
-    let profile = &definition(&ir, name)["profile"];
+    let profile = &definition(&ir, name)["value"]["value"]["profile"]["value"];
     assert_eq!(profile["kind"], "sketch_regions", "{name}: {profile}");
     profile["value"]["regions"]
         .as_array()

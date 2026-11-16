@@ -477,7 +477,7 @@ mod tests {
         let occurrences = table.references.iter().map(|reference| {
             serde_json::from_value::<Occurrence>(serde_json::json!({
                 "id": crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
-                "prototype": {"scope":"unresolved"}, "parent": {"kind":"root"},
+                "prototype": {"kind":"unresolved"}, "parent": {"kind":"root"},
                 "ordinal": reference.ordinal, "transform": cadmpeg_ir::transform::Transform::identity(),
                 "scale": [1.0, 1.0, 1.0], "native_ref": reference.id
             })).unwrap()

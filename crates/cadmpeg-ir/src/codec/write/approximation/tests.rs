@@ -27,7 +27,7 @@ fn fitting_retains_an_evaluation_resource_refusal() {
     let context = IntcurveSupportContext::try_new(
         [
             IntcurveSupportSide {
-                surface: Some(ir.model.faces[0].surface.clone()),
+                surface: Some(ir.geometry.faces[0].surface.clone()),
                 pcurve: Some(SupportPcurve::new(pcurve, None)),
             },
             IntcurveSupportSide {
@@ -39,7 +39,7 @@ fn fitting_retains_an_evaluation_resource_refusal() {
         [Vec::new(), Vec::new(), Vec::new()],
     )
     .unwrap();
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction.clone(),
         ProceduralCurveDefinition::SurfaceCurve {
             family: SurfaceCurveFamily::Parametric {
@@ -48,7 +48,7 @@ fn fitting_retains_an_evaluation_resource_refusal() {
             },
         },
     ));
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction,

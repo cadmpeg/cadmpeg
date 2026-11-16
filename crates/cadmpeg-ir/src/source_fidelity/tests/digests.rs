@@ -88,7 +88,7 @@ fn a_component_file_is_keyed_once() {
         r#"{{"decode_digest":"{root}","file_digests":{{
             "synthetic:document:definition#pin":"{digest}",
             "synthetic:document:definition#pin":"{digest}"}},
-            "unrepresented":[],"annotations":{{}},"retained_records":{{}}}}"#,
+            "unrepresented":[],"annotations":{{"provenance":{{}},"exactness":{{}}}},"retained_records":{{}}}}"#,
         root = root_digest(),
     );
     let error = serde_json::from_str::<SourceFidelity>(&text)

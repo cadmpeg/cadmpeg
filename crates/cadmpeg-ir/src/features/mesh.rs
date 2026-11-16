@@ -11,7 +11,12 @@ use serde::{Deserialize, Serialize};
 #[doc = "Resolved tessellations or retained mesh source selections."]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum MeshSelection {
     #[doc = "Nonempty distinct local tessellation identities in source order."]
     Tessellations(SelectionMembers<TessellationId>),
