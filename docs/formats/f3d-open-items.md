@@ -3268,18 +3268,6 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** A generated tool identifies its generating feature and body-map pair only.
 
-### DR-563. Derived Base Feature creators of Combine tools
-
-**Question.** Which timeline feature regenerates a `Combine` tool body whose creating scope is a `Derived Base Feature` scope?
-
-**Known.** The `Derived Base Feature` scope is not a timeline item. Its record references the tool body entity. The `DerivedInstance` scope of the derived component references a class-407 record, and that record references a component-instance record listed under `ComponentInstancesRoot` and the `DerivedInstance` scope. No record found references both the `Derived Base Feature` scope and the `DerivedInstance` scope or its class-407 record.
-
-**Need.** A stored reference that joins the `Derived Base Feature` scope or its body to a timeline feature.
-
-**Conflict.** None.
-
-**Note.** The tool stays native and reports `feature.combine-tool-body-unbound`. Proven tools of the same `Combine` still add their generating features as dependencies.
-
 ### DR-564. Reference-framed EdgeFlange width and boundary programs
 
 **Question.** How do wrapper members and boundary programs select the flange width law across reference-framed operation variants?

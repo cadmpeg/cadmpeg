@@ -4,6 +4,68 @@
 use crate::records::identity::Located;
 use serde::{Deserialize, Serialize};
 
+cadmpeg_core::named_optional_field!(deserialize_snapshot, DesignDerivedBaseSnapshot, "snapshot");
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignDerivedBaseSource {
+    pub(crate) parameter_body: Located<u64>,
+    pub(crate) result_body: Located<u64>,
+    pub(crate) owner_record: Located<u64>,
+    pub(crate) source_body: Located<u64>,
+    pub(crate) result_repeat_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_snapshot"
+    )]
+    pub(crate) snapshot: Option<DesignDerivedBaseSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignDerivedBaseSnapshot {
+    pub(crate) history_body: cadmpeg_ir::ids::HistoryBodyId,
+    pub(crate) body_slot: i64,
+}
+
+impl DesignDerivedBaseSource {
+    pub(crate) fn frame_holds(&self, start: u64, end: u64) -> bool {
+        use crate::layout::derived_base_source_pair_prefix as prefix;
+        use cadmpeg_core::decode::u64_from_index;
+        [
+            (self.parameter_body.offset, prefix::PARAMETER_BODY_RECORD),
+            (self.result_body.offset, prefix::RESULT_BODY_RECORD),
+            (self.owner_record.offset, prefix::OWNER_RECORD),
+            (self.source_body.offset, prefix::SOURCE_RECORD),
+            (self.result_repeat_offset, prefix::REPEAT_RECORD),
+        ]
+        .into_iter()
+        .all(|(actual, relative)| start.checked_add(u64_from_index(relative)) == Some(actual))
+            && start
+                .checked_add(u64_from_index(prefix::LEN))
+                .is_some_and(|prefix_end| prefix_end <= end)
+            && self
+                .snapshot
+                .as_ref()
+                .is_none_or(|snapshot| snapshot.body_slot >= 0)
+    }
+}
+
+rewrite_native_record!(DesignDerivedBaseSource, []; {parameter_body, result_body, owner_record, source_body, result_repeat_offset, snapshot});
+rewrite_native_record!(DesignDerivedBaseSnapshot, []; {history_body, body_slot});
+
+fn owner_record(scope: &super::scope::DesignParameterScope) -> Option<u32> {
+    scope
+        .derived_base_owner
+        .map(|owner| owner.record_index.value)
+        .or_else(|| {
+            let source = scope.derived_base_source.as_ref()?;
+            source.snapshot.as_ref()?;
+            u32::try_from(source.owner_record.value).ok()
+        })
+}
+
 /// The owner record that a derived base frame names at its owner-reference
 /// offset and again twelve bytes before its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,14 +115,11 @@ pub(crate) fn derived_base_groups<'a>(
     let mut ownerless = Vec::new();
     for scope in scopes.into_iter().filter(|scope| is_derived_base(scope)) {
         let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        let Some(owner) = scope.derived_base_owner else {
+        let Some(owner) = owner_record(scope) else {
             ownerless.push((stream, scope));
             continue;
         };
-        groups
-            .entry((stream, owner.record_index.value))
-            .or_default()
-            .push(scope);
+        groups.entry((stream, owner)).or_default().push(scope);
     }
     groups.retain(|&(stream, _), group| {
         group.sort_by_key(|scope| scope.record_index);
@@ -88,7 +147,7 @@ pub(crate) fn derived_base_group<'a>(
     scope: &super::scope::DesignParameterScope,
     scopes: &'a [super::scope::DesignParameterScope],
 ) -> Option<Vec<&'a super::scope::DesignParameterScope>> {
-    let owner = scope.derived_base_owner?.record_index.value;
+    let owner = owner_record(scope)?;
     let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
     derived_base_groups(scopes).remove(&(stream, owner))
 }
@@ -145,6 +204,10 @@ pub(crate) fn take_owner_positions<'a>(
             continue;
         };
         if scopes.iter().any(|scope| scope.record_index == owner)
+            || (group.len() != 1
+                && group
+                    .iter()
+                    .any(|scope| scope.derived_base_source.is_some()))
             || claimed.contains(&ordinal)
             || group
                 .iter()
@@ -170,7 +233,7 @@ fn projected_derived_base_group<'a>(
     let group = derived_base_group(scope, scopes)?;
     let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
     let (first, rest) = group.split_first()?;
-    let owner = scope.derived_base_owner?.record_index.value;
+    let owner = owner_record(scope)?;
     (first.record_index == scope.record_index
         && timeline_items.contains(&(stream, u64::from(owner)))
         && ordinals.contains_key(&(stream, scope.record_index))

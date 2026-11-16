@@ -47,6 +47,7 @@ use std::hash::Hash;
 
 mod axis_bindings;
 mod boundary_fill;
+mod derived_base;
 pub(crate) mod form_cages;
 use axis_bindings::{AxisBinding, AxisBindings};
 
@@ -1785,6 +1786,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         timelines,
         &source_ordinals,
     );
+    derived_base::project(&mut features, scopes, body_bindings)?;
     let scope_history = ScopeHistoryGraph::new(
         scopes,
         body_bindings,

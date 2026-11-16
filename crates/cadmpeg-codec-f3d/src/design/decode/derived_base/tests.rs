@@ -2,6 +2,62 @@
 
 use super::derived_base_owner;
 
+fn source_frame() -> Vec<u8> {
+    let mut bytes = vec![0; 562];
+    for at in [19, 24, 39, 54, 59, 74, 85] {
+        bytes[at] = 1;
+    }
+    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+    bytes[70..74].copy_from_slice(&1u32.to_le_bytes());
+    for (at, value) in [(25, 31u64), (40, 41), (60, 51), (75, 61), (86, 41)] {
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn source_pair_names_the_source_result_and_timeline_owner() {
+    let source = super::derived_base_source(&source_frame(), 1000).unwrap();
+    assert_eq!(source.parameter_body.value, 31);
+    assert_eq!(source.result_body.value, 41);
+    assert_eq!(source.owner_record.value, 51);
+    assert_eq!(source.source_body.value, 61);
+    assert_eq!(source.source_body.offset, 1075);
+    assert_eq!(source.result_repeat_offset, 1086);
+    assert!(source.frame_holds(1000, 1444));
+    assert!(source.snapshot.is_none());
+    assert!(super::derived_base_owner(&source_frame(), 1000).is_none());
+}
+
+#[test]
+fn source_pair_requires_its_counts_local_references_and_repeated_result() {
+    for at in [
+        19, 20, 24, 33, 39, 48, 54, 55, 59, 68, 70, 74, 83, 85, 86, 94, 96,
+    ] {
+        let mut bytes = source_frame();
+        bytes[at] ^= 3;
+        assert!(super::derived_base_source(&bytes, 0).is_none(), "byte {at}");
+    }
+    assert!(super::derived_base_source(&source_frame()[..96], 0).is_none());
+}
+
+#[test]
+fn source_pair_preserves_wide_body_references_and_checks_location_arithmetic() {
+    let mut bytes = source_frame();
+    bytes[75..83].copy_from_slice(&u64::MAX.to_le_bytes());
+    assert_eq!(
+        super::derived_base_source(&bytes, 0)
+            .unwrap()
+            .source_body
+            .value,
+        u64::MAX
+    );
+    assert!(super::derived_base_source(&bytes, usize::MAX).is_none());
+    let mut source = super::derived_base_source(&bytes, 1000).unwrap();
+    source.source_body.offset += 1;
+    assert!(!source.frame_holds(1000, 1444));
+}
+
 /// A derived base frame of `len` bytes that names `owner` at offset 59 and
 /// again twelve bytes before its end, with a zero last byte.
 fn frame(len: usize, owner: u64) -> Vec<u8> {
