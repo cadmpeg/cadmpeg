@@ -1687,11 +1687,11 @@ def generic_parameters(item):
 def generic_arguments(declaration, position, items, resolve, values=(), names=None):
     """Return every argument a workspace declaration states at ``position``.
 
-    Declarations are read, and each ``(value, impl)`` of ``values``: the type
-    an impl states for an associated type, read in that impl. A function
-    signature forwards its caller's parameter and instantiates no reader, so
-    it is not a source of arguments here; a use that supplies fewer arguments
-    than ``position`` leaves the parameter on its default and contributes
+    Declarations are read, and each ``(value, context)`` of ``values``: a
+    type an impl states for an associated type, read in that impl, and every
+    type written outside a declaration, read where it is written (see
+    [`written_type_uses`]). A use that supplies fewer arguments than
+    ``position`` leaves the parameter on its default and contributes
     nothing. A use is spelled ``Name<..>`` or ``Name::<..>``, where ``Name``
     is the declaration's name or one of ``names``, the names a ``use``
     renames it to.
@@ -1699,14 +1699,14 @@ def generic_arguments(declaration, position, items, resolve, values=(), names=No
     A use is an argument for ``declaration`` only when ``resolve`` reads its
     spelled path, from the declaration that states it, as ``declaration``
     itself: a same-named type in another module is another parameter. The
-    second list holds every use whose path resolves to no one declaration,
-    which leaves its argument unread.
+    second list holds why each use whose path resolves to no one
+    declaration, or whose arguments do not close, leaves its argument unread.
     """
     names = {declaration.name} | set(names or ())
     alternatives = "|".join(re.escape(name) for name in sorted(names))
     use = re.compile(rf"\b(?P<name>{alternatives})\s*(?:::\s*)?<")
     arguments = []
-    unresolved = []
+    unread = []
     sources = [(item.body, item, True) for item in items]
     sources += [(value, item, False) for value, item in values]
     for text, item, declared in sources:
@@ -1718,20 +1718,168 @@ def generic_arguments(declaration, position, items, resolve, values=(), names=No
                 # The declaration's own header states parameters, not
                 # arguments; its default is read by the caller.
                 continue
+            spelled = spelled_path(code, match.start(), match.group("name"))
             end = generic_end(code, match.end() - 1)
             if end is None:
+                unread.append(
+                    f"the use of {spelled} in {item.name} states arguments the census cannot read"
+                )
                 continue
-            spelled = spelled_path(code, match.start(), match.group("name"))
             target = resolve(spelled, item)
             if target is None:
-                unresolved.append((spelled, item))
+                unread.append(f"the use of {spelled} in {item.name} resolves to no one declaration")
                 continue
             if target is not declaration:
                 continue
             parts = split_tuple_types(text[match.end():end - 1])
             if position < len(parts):
                 arguments.append((parts[position], item))
-    return arguments, unresolved
+    return arguments, unread
+
+
+FN_HEADER = re.compile(r"(?<![\w$])fn\s+([A-Za-z_]\w*)\s*")
+TRAIT_HEADER = re.compile(r"(?<![\w$])trait\s+([A-Za-z_]\w*)\s*")
+
+
+def signature_end(code, start):
+    """The ``{`` or ``;`` that ends a signature from ``start``, outside its
+    parentheses and brackets, or ``None``."""
+    depth = 0
+    for index in range(start, len(code)):
+        char = code[index]
+        if char in "([":
+            depth += 1
+        elif char in ")]" and depth:
+            depth -= 1
+        elif char in "{;" and not depth:
+            return index
+    return None
+
+
+def header_parameters(code, cursor):
+    """The parameter names of a ``<..>`` list at ``cursor``, lifetimes left
+    out, or ``[]`` when none opens there."""
+    if code[cursor:cursor + 1] != "<":
+        return []
+    end = generic_end(code, cursor)
+    if end is None:
+        return []
+    names = []
+    for part in split_tuple_types(code[cursor + 1:end - 1]):
+        if part.startswith("'"):
+            continue
+        names.append(re.split(r"[:=]", re.sub(r"^const\s+", "", part), maxsplit=1)[0].strip())
+    return names
+
+
+def path_start(code, start):
+    """Where the path whose last segment starts at ``start`` begins."""
+    cursor = start
+    while True:
+        stripped = code[:cursor].rstrip()
+        if not stripped.endswith("::"):
+            return cursor
+        before = stripped[:-2].rstrip()
+        segment = re.search(r"[A-Za-z_$]\w*$", before[-256:])
+        if segment is None:
+            return len(stripped) - 2
+        cursor = len(before) - len(segment.group())
+
+
+@SOURCE_POLICY.cached_analysis
+def type_contexts(path):
+    """One file's production code with every function body and every
+    declaration the item walk reads blanked, the span of each function
+    signature, trait and impl as ``(start, end, label, parameters)``, and the
+    span of each function body.
+
+    ``parameters`` is ``None`` for an impl whose header the parser does not
+    read, so what it can name is unread.
+    """
+    source = read_source(path)
+    code, _ = SOURCE_POLICY.production_source(source)
+    blanked = list(code)
+
+    def clear(start, end):
+        for index in range(start, end):
+            if blanked[index] != "\n":
+                blanked[index] = " "
+
+    spans = []
+    bodies = []
+    for item in collect_items(path):
+        clear(item.start, item.end)
+    for header in FN_HEADER.finditer(code):
+        stop = signature_end(code, header.end())
+        if stop is None:
+            continue
+        spans.append((header.start(), stop, f"fn {header.group(1)}",
+                      header_parameters(code, header.end())))
+        if code[stop] == "{":
+            end = delimited_end(code, stop)
+            bodies.append((stop, len(code) if end is None else end))
+            clear(*bodies[-1])
+    for header in TRAIT_HEADER.finditer(code):
+        opening = body_open(code, header.end())
+        end = None if opening is None else delimited_end(code, opening)
+        spans.append((header.start(), len(code) if end is None else end,
+                      f"trait {header.group(1)}", header_parameters(code, header.end())))
+    for keyword in IMPL_KEYWORD.finditer(code):
+        start = keyword.start()
+        if type_position(code, start):
+            continue
+        header = impl_header(code, start)
+        if header[0] == "rejected":
+            spans.append((start, header[1], "an impl the census does not parse", None))
+            continue
+        brace = header[1] if header[0] == "inherent" else header[3]
+        end = delimited_end(code, brace)
+        parameters = generic_parameters(Item(path, 0, "impl", "impl", "", code[start:brace]))
+        spans.append((start, len(code) if end is None else end, "impl",
+                      [name for name, _ in parameters]))
+    return "".join(blanked), spans, bodies
+
+
+@SOURCE_POLICY.cached_analysis
+def written_type_uses(path, names):
+    """Each use of one of ``names`` with arguments that one file writes
+    outside a declaration the item walk reads and outside a function body,
+    as ``(text, context)``.
+
+    A function signature (its parameters, its return and its bounds), a
+    const, a static, a const block, an impl header and what an impl or trait
+    body writes outside its functions each instantiate what they spell: serde
+    monomorphizes ``Name<Arg>`` for that item. ``text`` is the use from its
+    path's first segment. ``context`` resolves its paths where it is written
+    and carries ``unread_parameters``: the parameters of each enclosing
+    function, trait and impl, which no source the census reads fills, or
+    ``None`` inside an impl header the parser does not read. Its
+    ``in_call`` states that the use is an argument of a macro call, whose
+    expansion can bind a parameter the call names.
+    """
+    source = read_source(path)
+    code, spans, _ = type_contexts(path)
+    offsets, scopes = lexical_scopes(SOURCE_POLICY.production_source(source)[0])
+    calls = [(tree.start, tree.end) for tree in macro_token_trees(path) if tree.kind == "call"]
+    use = re.compile(rf"\b(?:{'|'.join(re.escape(name) for name in names)})\s*(?:::\s*)?<")
+    found = []
+    for match in use.finditer(code):
+        start = path_start(code, match.start())
+        end = generic_end(code, match.end() - 1)
+        enclosing = [span for span in spans if span[0] <= match.start() < span[1]]
+        label = enclosing[-1][2] if enclosing else "an item"
+        line = source.count("\n", 0, match.start()) + 1
+        context = Item(
+            path, line, "signature", f"{label} at {path.as_posix()}:{line}", "", "",
+            scopes[bisect_right(offsets, match.start()) - 1], match.start(), match.start(),
+        )
+        context.unread_parameters = (
+            None if any(span[3] is None for span in enclosing)
+            else {name for span in enclosing for name in span[3]}
+        )
+        context.in_call = any(start < match.start() < end for start, end in calls)
+        found.append((code[start:match.end() if end is None else end], context))
+    return found
 
 
 def spelled_path(code, start, name):
@@ -2277,29 +2425,30 @@ EXPRESSION_MACROS = {
     "stringify", "todo", "unimplemented", "unreachable", "vec", "write",
     "writeln",
 }
-DECLARING_KEYWORD = re.compile(r"(?<![\w$])(?:struct|enum|union|type)\b")
+# The keywords with which an expansion binds a name a type argument can spell.
+BINDING_KEYWORD = re.compile(r"(?<![\w$])(?:struct|enum|union|type|use|mod|extern|trait)\b")
 
 
-def declaring_macro(name, definitions, seen=frozenset()):
-    """Whether a call to the macro ``name`` can write a type declaration.
+def binding_macro(name, definitions, seen=frozenset()):
+    """Whether a call to the macro ``name`` can bind a name a type can spell.
 
     ``definitions`` maps a macro name to every ``macro_rules!`` tree of that
     name. A macro the census has no definition of, other than a standard
-    expression macro, can write anything; one whose body spells a type
-    declaration, or calls a macro that can, writes one.
+    expression macro, can write anything; one whose body spells a binding
+    keyword, or calls a macro that can bind, binds.
     """
     if name not in definitions:
         return name not in EXPRESSION_MACROS
     for tree in definitions[name]:
         code, _ = SOURCE_POLICY.production_source(read_source(tree.path))
-        if DECLARING_KEYWORD.search(code, tree.start, tree.end):
+        if BINDING_KEYWORD.search(code, tree.start, tree.end):
             return True
         for nested in macro_token_trees(tree.path):
             if nested.kind != "call" or not tree.start < nested.start < tree.end:
                 continue
             if nested.name.startswith("$"):
                 return True
-            if nested.name not in seen | {name} and declaring_macro(
+            if nested.name not in seen | {name} and binding_macro(
                 nested.name, definitions, seen | {name}
             ):
                 return True
@@ -2525,6 +2674,12 @@ QUALIFIED_KEYLESS_ADAPTERS = {
 }
 OPTIONAL_TYPES = {"Option"}
 DELEGATING_TYPES = {"Box", "Rc", "Arc", "Pin", "RefCell", "Cell", "Mutex", "RwLock"}
+# Every bare type name the standard prelude and this census's readers give a
+# meaning without a declaration in scope.
+PRELUDE_NAMES = (
+    SCALAR_TYPES | SEQUENCE_TYPES | MAP_TYPES | OPTIONAL_TYPES | DELEGATING_TYPES
+    | {"Self", "Result", "Cow", "PhantomData"}
+)
 ABSENT_KEY_HELPERS = {
     "crate::absent_key::nullable",
     "cadmpeg_core::absent_key::nullable",
@@ -3820,16 +3975,20 @@ def main():
     macro_definitions = {}
 
     def macro_instantiation(names):
-        """The first wire macro token tree that can declare a use of ``Name``.
+        """The first wire macro token tree naming ``Name`` whose uses of it
+        the census cannot read in place.
 
-        Returns ``(tree, name)`` for one of ``names``, or ``None``. The census
-        reads arguments from declarations, and a macro writes declarations it
-        does not read. A tree naming ``Name`` is one such source when its own
-        tokens spell a type declaration or a call there reaches a macro that
-        can write one: its arguments can be spelled beside the name, as in
-        ``host!(Name, Arg)``, and joined only by the expansion. A macro that
-        writes only functions and impls of other traits states no argument a
-        reader reaches.
+        Returns ``(tree, name)`` for one of ``names``, or ``None``. A
+        ``macro_rules!`` body is read where it is written, as every other
+        type outside a function body is, so a use whose argument is a
+        fragment such as ``$t`` is unread there. An attribute is read by a
+        derive or attribute macro the census does not expand. A call to a
+        macro that can bind a name, a struct or a ``use`` rename, can join
+        its arguments into a type the census does not see, as in
+        ``host!(Name, Arg)``, wherever it is written. Any other call writes
+        functions and impls whose parameters are the names it binds; outside
+        a function body it is read in place, and inside one it is a type
+        written in a function body.
         """
         if not macro_definitions:
             for path in paths:
@@ -3844,16 +4003,28 @@ def main():
             code, _ = SOURCE_POLICY.production_source(source)
             for tree in macro_token_trees(path):
                 spelled = named.search(code, tree.start, tree.end)
-                if spelled is None:
+                if spelled is None or tree.kind == "definition":
                     continue
-                declares = (
-                    tree.kind == "attribute"
-                    or DECLARING_KEYWORD.search(code, tree.start, tree.end)
-                    or declaring_macro(tree.name, macro_definitions)
-                )
-                if declares:
+                if tree.kind == "attribute" or binding_macro(tree.name, macro_definitions):
                     return tree, spelled.group()
         return None
+
+    def bound_by_expansion(candidate, source):
+        """Whether ``candidate``, an argument a macro call writes, is a bare
+        name nothing in scope declares, which only the call's expansion can
+        bind, as a parameter of what it writes."""
+        name = candidate.strip()
+        return (
+            re.fullmatch(r"[A-Za-z_]\w*", name) is not None
+            and name not in index
+            and name not in PRELUDE_NAMES
+            and imported_path(name, source) is import_missing
+        )
+
+    def written_uses(names):
+        """Every use of ``names`` the wire sources write outside a declaration."""
+        names = tuple(sorted(names))
+        return [use for path in paths for use in written_type_uses(path, names)]
 
     def unparsed_impl(path, names):
         """Why an impl of ``path`` that names one of ``names`` and whose
@@ -4045,18 +4216,6 @@ def main():
             # Arguments are read from wire declarations, which name a wire
             # crate's renames only.
             names = names_of(current.name, wire_only=True)
-            arguments, unresolved = generic_arguments(
-                current, at, order,
-                lambda spelled, source: declaration_for(spelled, source, index),
-                impl_values,
-                names,
-            )
-            if unresolved:
-                spelled, source = unresolved[0]
-                return False, (
-                    f"{route}the use of {spelled} in {source.name} resolves to "
-                    f"no one declaration, so its argument for {name} is unread"
-                )
             spelled = macro_instantiation(names)
             if spelled is not None:
                 tree, written = spelled
@@ -4064,6 +4223,14 @@ def main():
                     f"{route}{tree.describe()} names {written}, and the "
                     f"census does not expand it, so its argument for {name} is unread"
                 )
+            arguments, unread = generic_arguments(
+                current, at, order,
+                lambda spelled, source: declaration_for(spelled, source, index),
+                impl_values + written_uses(names),
+                names,
+            )
+            if unread:
+                return False, f"{route}{unread[0]}, so its argument for {name} is unread"
             candidates.extend(arguments)
             if not candidates:
                 return False, (
@@ -4071,6 +4238,28 @@ def main():
                     "workspace instantiation"
                 )
             for candidate, source in candidates:
+                # A bare parameter of an enclosing function, trait or impl,
+                # or one only a macro call's expansion binds, forwards what
+                # fills it where that item is used; one inside a larger
+                # argument makes a type the census does not read.
+                foreign = getattr(source, "unread_parameters", set())
+                if foreign is not None and candidate.strip() in foreign:
+                    continue
+                if getattr(source, "in_call", False) and bound_by_expansion(candidate, source):
+                    continue
+                mentioned = (
+                    None if foreign is None
+                    else next((word for word in re.findall(r"[A-Za-z_]\w*", candidate)
+                               if word in foreign), False)
+                )
+                if mentioned is not False:
+                    return False, (
+                        f"{route}{source.name} fills {name} with {candidate.strip()}, "
+                        + ("in an impl whose header the census does not parse"
+                           if mentioned is None else
+                           f"which names the parameter {mentioned} there")
+                        + ", and the census does not read what fills it"
+                    )
                 argument, _ = type_parts(candidate)
                 forwarded = None
                 # An impl's own parameter has no instantiation to follow; the

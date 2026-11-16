@@ -2615,6 +2615,62 @@ class GenericParameterProofTests(unittest.TestCase):
         '''})
         self.assertEqual(status, 0, output)
 
+    SAFE_USE = '''
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct Host { value: Wrapper<u8> }
+    '''
+
+    def test_an_instantiation_outside_a_declaration_is_read_beside_a_safe_one(self) -> None:
+        """A signature, a const, a static, a const block, an impl header and a
+        macro body each instantiate what they spell."""
+        for case, written in {
+            "a function's return": "pub fn read() -> Wrapper<Open> { todo!() }",
+            "a function's argument": "pub fn take(value: Wrapper<Open>) {}",
+            "a function's bound": "pub fn read<F: Fn() -> Wrapper<Open>>(f: F) {}",
+            "an inherent method": "pub struct Doc; impl Doc { pub fn read() -> Wrapper<Open> { todo!() } }",
+            "a trait method": "pub trait Read { fn read() -> Wrapper<Open>; }",
+            "a static": "pub static CELL: std::sync::OnceLock<Wrapper<Open>> = std::sync::OnceLock::new();",
+            "a const": "pub const NEXT: fn() -> Wrapper<Open> = next;",
+            "a const block": "const _: () = { let _ = Wrapper::<Open>::A; };",
+            "an impl header": "pub struct Doc; impl From<Wrapper<Open>> for Doc { fn from(_: Wrapper<Open>) -> Self { Doc } }",
+            "a macro body": '''macro_rules! reader {
+                () => { pub fn read(t: &str) -> Wrapper<Open> { serde_json::from_str(t).unwrap() } };
+            }
+            reader!();''',
+        }.items():
+            with self.subTest(case=case):
+                status, output = self.run_census(
+                    {"lib.rs": self.WRAPPER + self.OPEN + self.SAFE_USE + written}
+                )
+                self.assertEqual(status, 1, output)
+                self.assertIn(
+                    "Wrapper::A: payload T: generic parameter T instantiated as Open", output
+                )
+
+    def test_a_forwarded_signature_parameter_states_nothing_and_a_wrapped_one_is_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + self.SAFE_USE + '''
+            pub fn read<U>() -> Wrapper<U> { todo!() }
+            pub struct Doc<V>(V);
+            impl<V> Doc<V> { pub fn get(&self) -> Wrapper<V> { todo!() } }
+        '''})
+        self.assertEqual(status, 0, output)
+        status, output = self.run_census({"lib.rs": self.WRAPPER + self.SAFE_USE + '''
+            pub fn read<U>() -> Wrapper<Option<U>> { todo!() }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn(
+            "fills T with Option<U>, which names the parameter U there", output
+        )
+
+    def test_a_macro_body_spelling_a_fragment_leaves_the_parameter_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + self.SAFE_USE + '''
+            macro_rules! reader {
+                ($t:ty) => { pub fn read() -> Wrapper<$t> { todo!() } };
+            }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("instantiated as $t", output)
+
     def test_generic_parameters_reads_names_bounds_and_defaults(self) -> None:
         item = census.Item(
             Path("crates/ir/src/lib.rs"), 1, "enum", "Reader",
