@@ -287,6 +287,9 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             None => {
                 if depth.get() >= INDEPENDENT_EVALUATION_DEPTH {
                     return Err(ResourceLimit {
+                        scope: cadmpeg_core::decode::LimitScope::for_dimension(
+                            ResourceDimension::RecursionDepth,
+                        ),
                         dimension: ResourceDimension::RecursionDepth,
                         reason: ResourceFailure::BudgetExceeded,
                         limit: u64_from_index(INDEPENDENT_EVALUATION_DEPTH),

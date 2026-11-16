@@ -27,6 +27,7 @@ fn malformed() -> CodecError {
 
 fn resource_limit() -> CodecError {
     CodecError::ResourceLimit(ResourceLimit {
+        scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::Entities),
         dimension: ResourceDimension::Entities,
         reason: ResourceFailure::BudgetExceeded,
         limit: 1,
