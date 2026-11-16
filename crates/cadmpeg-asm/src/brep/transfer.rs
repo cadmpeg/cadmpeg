@@ -206,6 +206,7 @@ mod tests {
             id: RegionId::mint("sat:brep:region#1").unwrap(),
             body: BodyId::mint("sat:brep:body#1").unwrap(),
             shells: Vec::new(),
+            native_ref: None,
         });
         let mut ir = CadIr::empty();
         let error = transfer_into_ir(&ctx, &mut ir, "test", brep)

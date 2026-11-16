@@ -33,6 +33,7 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
             .expect("valid CircleCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
@@ -85,6 +86,7 @@ fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_en
             .expect("valid HyperbolaCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),

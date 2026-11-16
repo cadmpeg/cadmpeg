@@ -187,10 +187,11 @@ fn point_edge_ring_is_written_as_vertex_loop() {
                 .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let edge = &mut ir.geometry.edges[0];
     edge.carrier = cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(point_curve));
-    edge.end = edge.start.clone();
+    edge.ends.as_mut().unwrap().end = edge.ends.as_ref().unwrap().start.clone();
 
     let mut output = Vec::new();
     let report = write_step(

@@ -38,6 +38,7 @@ fn surface_draft(id: &str) -> ModelDraft {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         })
         .expect("insert surface into draft");
     draft
@@ -69,6 +70,7 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
                 .try_into()
                 .expect("valid identity"),
             tolerance: None,
+            native_ref: None,
         })
         .expect("insert invalid root reference");
     assert!(session.commit_model(rejected_root).unwrap().is_err());
@@ -95,6 +97,7 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         id: surface_id.clone(),
         geometry: surface_geometry.clone(),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = PcurveGeometry::Trimmed(
         cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
@@ -151,6 +154,7 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
         id: surface_id.clone(),
         geometry: surface_geometry.clone(),
         source_object: None,
+        native_ref: None,
     });
 
     // The polar harmonic has a stationary chart tangent at seed 0. Its
@@ -720,6 +724,7 @@ fn shared_surface_carrier_is_staged_once() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
@@ -736,15 +741,16 @@ fn shared_surface_carrier_is_staged_once() {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: Vec::new(),
+            native_ref: None,
         },
         body: Body {
             id: body_id,
             kind: BodyKind::Sheet,
-            regions: vec![region_id],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         },
     })
     .expect("duplicate references to one source surface must stage");

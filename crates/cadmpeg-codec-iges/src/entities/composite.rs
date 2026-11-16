@@ -243,10 +243,10 @@ impl CompositeIndex {
         }
         let mut edges = BTreeMap::<CurveId, Vec<CompositeEdge>>::new();
         for edge in &ir.geometry.edges {
-            if let Some(curve) = edge.curve() {
+            if let (Some(curve), Some(ends)) = (edge.curve(), &edge.ends) {
                 edges.entry(curve.clone()).or_default().push(CompositeEdge {
-                    start: edge.start.clone(),
-                    end: edge.end.clone(),
+                    start: ends.start.clone(),
+                    end: ends.end.clone(),
                     param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
                 });
             }
@@ -1255,9 +1255,12 @@ fn bounded_edge_for_curve(
                 .filter(|edge| edge.curve() == Some(curve_id));
             let mut candidates = Vec::new();
             for edge in edges {
+                let Some(ends) = &edge.ends else {
+                    continue;
+                };
                 candidates.push(CompositeEdge {
-                    start: edge.start.clone(),
-                    end: edge.end.clone(),
+                    start: ends.start.clone(),
+                    end: ends.end.clone(),
                     param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
                 });
             }
@@ -1659,11 +1662,13 @@ fn project_native_composite(
             id: start_vertex.clone(),
             point: start_point,
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: end_vertex.clone(),
             point: end_point,
             tolerance: None,
+            native_ref: None,
         },
     ]);
     sequences.record_curve(&curve_id, entry.sequence);
@@ -1688,15 +1693,19 @@ fn project_native_composite(
             self_intersect: None,
         }),
         source_object: Some(source),
+        native_ref: None,
     });
 
     ctx.charge_entities(1, "iges_geometry_composites")?;
     ir.geometry.edges.push(Edge {
         id: edge_id.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
-        start: start_vertex.clone(),
-        end: end_vertex.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex.clone(),
+            end_vertex.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     index.add_model_entity(
         &curve_id,
@@ -2199,11 +2208,13 @@ fn project_with_type_130_policy(
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
+                native_ref: None,
             },
         ]);
         sequences.record_curve(&curve_id, entry.sequence);
@@ -2214,6 +2225,7 @@ fn project_with_type_130_policy(
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry)?),
+            native_ref: None,
         });
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
@@ -2224,9 +2236,12 @@ fn project_with_type_130_policy(
                 Some([0.0, cursor]),
             )
             .map_err(CodecError::malformed)?,
-            start: start_vertex.clone(),
-            end: end_vertex.clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                start_vertex.clone(),
+                end_vertex.clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         index.add_model_entity(
             &curve_id,

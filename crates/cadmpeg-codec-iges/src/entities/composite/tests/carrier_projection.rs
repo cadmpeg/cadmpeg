@@ -419,6 +419,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                     None,
                 ))),
                 source_object: None,
+                native_ref: None,
             },
             Curve {
                 parameter_range: None,
@@ -430,6 +431,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                     None,
                 ))),
                 source_object: None,
+                native_ref: None,
             },
             Curve {
                 parameter_range: None,
@@ -451,6 +453,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                     self_intersect: None,
                 }),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         for (index, curve) in [first_id, second_id].into_iter().enumerate() {
@@ -459,11 +462,14 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                     .expect("identity grammar"),
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0]))
                     .unwrap(),
-                start: VertexId::mint(format!("test:model:vertex#start-{index}"))
-                    .expect("identity grammar"),
-                end: VertexId::mint(format!("test:model:vertex#end-{index}"))
-                    .expect("identity grammar"),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::mint(format!("test:model:vertex#start-{index}"))
+                        .expect("identity grammar"),
+                    VertexId::mint(format!("test:model:vertex#end-{index}"))
+                        .expect("identity grammar"),
+                )),
                 tolerance: None,
+                native_ref: None,
             });
         }
         assert!(

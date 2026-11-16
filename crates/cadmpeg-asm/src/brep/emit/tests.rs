@@ -883,12 +883,14 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
             id: SurfaceId::mint("f3d:brep:entity#existing-surface").unwrap(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         out.curves.push(Curve {
             parameter_range: None,
             id: CurveId::mint("f3d:brep:entity#existing-curve").unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let mut carriers = Carriers::default();
         carriers.curve_geo.insert(
@@ -1515,9 +1517,12 @@ fn a_reversed_subset_record_localizes_its_cache_and_edge_ranges() {
             let mut edges = vec![Edge {
                 id: EdgeId::mint("test:asm:edge#0").unwrap(),
                 carrier: EdgeCarrier::new(Some(owner.clone()), Some(native)).unwrap(),
-                start: VertexId::mint("test:asm:vertex#0").unwrap(),
-                end: VertexId::mint("test:asm:vertex#1").unwrap(),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::mint("test:asm:vertex#0").unwrap(),
+                    VertexId::mint("test:asm:vertex#1").unwrap(),
+                )),
                 tolerance: None,
+                native_ref: None,
             }];
             let owner = owner.clone();
             let procedurals = out.procedural_curves.clone();

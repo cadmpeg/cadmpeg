@@ -221,6 +221,7 @@ fn topology_vertex(
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
+        native_ref: None,
     });
     Ok(Some(
         vertex_ids.entry((list, index)).or_insert(vertex_id).clone(),
@@ -329,6 +330,7 @@ fn project_pcurve_uses(
             id: id.clone(),
             geometry,
             metadata: PcurveMetadata::general(None, Some(parameter_range), checked_tolerance),
+            native_ref: None,
         });
         projected.push(PcurveUse {
             pcurve: id,
@@ -1169,7 +1171,6 @@ pub(super) fn project(
                 std::borrow::Cow::Owned(stem.child(shell_sequence))
             };
             let shell_id = crate::ids::shell(&shell_stem);
-            let mut shell_faces = Vec::new();
             for &(face_sequence, native_face_sense) in &shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = &faces[&face_sequence];
@@ -1472,13 +1473,18 @@ pub(super) fn project(
                             candidate.geometry_mut().edges.push(Edge {
                                 id: id.clone(),
                                 carrier,
-                                start: vertex_ids
-                                    [&(edge_definition.start_list, edge_definition.start_index)]
-                                    .clone(),
-                                end: vertex_ids
-                                    [&(edge_definition.end_list, edge_definition.end_index)]
-                                    .clone(),
+                                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                                    vertex_ids[&(
+                                        edge_definition.start_list,
+                                        edge_definition.start_index,
+                                    )]
+                                        .clone(),
+                                    vertex_ids
+                                        [&(edge_definition.end_list, edge_definition.end_index)]
+                                        .clone(),
+                                )),
                                 tolerance: None,
+                                native_ref: None,
                             });
                             edge_ids.insert(edge_key, id.clone());
                             id
@@ -1527,6 +1533,7 @@ pub(super) fn project(
                             sense: compose_sense(*sense, face_sense),
                             pcurves: projected,
                             use_curve: None,
+                            native_ref: None,
                         });
                     }
                     if !valid {
@@ -1588,6 +1595,7 @@ pub(super) fn project(
                         id: loop_id.clone(),
                         face: face_id.clone(),
                         boundary,
+                        native_ref: None,
                     });
                     consumed.insert(loop_sequence);
                 }
@@ -1621,8 +1629,8 @@ pub(super) fn project(
                     name: None,
                     color: None,
                     tolerance: None,
+                    native_ref: None,
                 });
-                shell_faces.push(face_id);
                 consumed.insert(face_sequence);
             }
             if !valid {
@@ -1630,21 +1638,10 @@ pub(super) fn project(
             }
 
             ctx.charge_entities(1, "iges_geometry_brep")?;
-            candidate.geometry_mut().shells.push(
-                match Shell::new(
-                    shell_id.clone(),
-                    region_id.clone(),
-                    shell_faces,
-                    Vec::new(),
-                    Vec::new(),
-                ) {
-                    Ok(shell) => shell,
-                    Err(_) => {
-                        valid = false;
-                        break;
-                    }
-                },
-            );
+            candidate
+                .geometry_mut()
+                .shells
+                .push(Shell::new(shell_id.clone(), region_id.clone()));
             region_shells.push(shell_id);
             consumed.insert(shell_sequence);
         }
@@ -1684,18 +1681,18 @@ pub(super) fn project(
             id: region_id.clone(),
             body: body_id.clone(),
             shells: region_shells,
+            native_ref: None,
         });
-        let body_regions = vec![region_id];
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.geometry_mut().bodies.push(Body {
             id: body_id,
             kind: definition.kind,
-            regions: body_regions,
             transform: definition.transform,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         candidate.model_mut().finalize();
         drop(pcurve_indexes);

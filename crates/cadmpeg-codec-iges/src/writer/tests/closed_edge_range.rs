@@ -30,6 +30,7 @@ fn vertices_at(positions: &[Point3]) -> CadIr {
             id: VertexId::mint(format!("test:model:vertex#v{index}")).expect("identity grammar"),
             point,
             tolerance: None,
+            native_ref: None,
         });
     }
     ir
@@ -154,7 +155,8 @@ fn closed_edge_on_a_line_without_range_is_refused() {
 fn open_circle_edge_without_range_is_refused() {
     let ir = vertices_at(&[Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)]);
     let mut edge = closed_edge("arc", "circle", "v0");
-    edge.end = VertexId::mint("test:model:vertex#v1").expect("identity grammar");
+    edge.ends.as_mut().unwrap().end =
+        VertexId::mint("test:model:vertex#v1").expect("identity grammar");
     assert!(refusal(&ir, &edge, &circle()).starts_with(MISSING_RANGE));
 }
 

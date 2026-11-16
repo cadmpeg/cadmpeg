@@ -486,7 +486,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             .edges
             .iter()
             .filter(|edge| used_edges.contains(&edge.id))
-            .flat_map(|edge| [&edge.start, &edge.end])
+            .flat_map(|edge| edge.vertices())
             .chain(
                 ir.geometry
                     .loops
@@ -611,8 +611,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 },
             )?;
             mark_curve_descendants(ir, curve_id, &mut consumed_curves, &mut BTreeSet::new())?;
-            consumed_points.insert(vertex_point_id(ir, &edge.start)?);
-            consumed_points.insert(vertex_point_id(ir, &edge.end)?);
+            for vertex in edge.vertices() {
+                consumed_points.insert(vertex_point_id(ir, vertex)?);
+            }
         }
 
         append_unowned_curves(
@@ -675,7 +676,8 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         .iter()
         .filter(|body| body.kind == BodyKind::Wire)
     {
-        if body.regions.is_empty() {
+        let regions = ir.geometry.body_regions(&body.id).collect::<Vec<_>>();
+        if regions.is_empty() {
             return Err(CodecError::malformed(format_args!(
                 "IGES wire body {} has no region",
                 body.id
@@ -684,24 +686,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         let free_geometry = is_decoder_free_geometry_body(body);
         let mut edge_ids = BTreeSet::new();
         let mut vertex_owners = BTreeMap::new();
-        for region_id in &body.regions {
-            let region = ir
-                .geometry
-                .regions
-                .iter()
-                .find(|region| region.id == *region_id)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "IGES wire body {} references missing region {}",
-                        body.id, region_id
-                    ))
-                })?;
-            if region.body != body.id {
-                return Err(CodecError::malformed(format_args!(
-                    "IGES wire region {} is not owned by body {}",
-                    region.id, body.id
-                )));
-            }
+        for region in regions {
             if region.shells.is_empty() {
                 return Err(CodecError::malformed(format_args!(
                     "IGES wire region {} has no shell",
@@ -744,7 +729,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
                                 shell.id, edge_id
                             ))
                         })?;
-                    for vertex_id in [&edge.start, &edge.end] {
+                    for vertex_id in edge.vertices() {
                         if !ir
                             .geometry
                             .vertices
@@ -779,7 +764,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         .geometry
         .edges
         .iter()
-        .flat_map(|edge| [&edge.start, &edge.end])
+        .flat_map(|edge| edge.vertices())
         .collect::<BTreeSet<_>>();
     let loop_vertices = ir
         .geometry
@@ -986,22 +971,29 @@ fn has_brep_topology(ir: &CadIr) -> bool {
         if is_decoder_free_geometry_body(body) || body.kind != BodyKind::Sheet {
             return false;
         }
-        body.regions.iter().any(|region_id| {
-            ir.geometry
-                .regions
-                .iter()
-                .find(|region| region.id == *region_id)
-                .is_some_and(|region| region.shells.len() != 1)
-        })
+        ir.geometry
+            .body_regions(&body.id)
+            .any(|region| region.shells.len() != 1)
     }) {
         return true;
     }
-    ir.geometry.faces.iter().any(|face| {
-        ir.geometry
-            .shells
-            .iter()
-            .find(|shell| shell.faces().iter().any(|face_id| face_id == &face.id))
-            .is_some_and(|shell| shell.faces().len() > 1)
+    let mut shell_face_counts = BTreeMap::new();
+    for face in &ir.geometry.faces {
+        *shell_face_counts.entry(&face.shell).or_insert(0_usize) += 1;
+    }
+    shell_face_counts.values().any(|count| *count > 1)
+}
+
+/// The two vertices that bound an edge. IGES bounds every edge it writes by
+/// two vertices.
+fn edge_ends(
+    edge: &cadmpeg_ir::topology::Edge,
+) -> Result<&cadmpeg_ir::topology::EdgeEnds, CodecError> {
+    edge.ends.as_ref().ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "IGES writer does not encode edge {} with no vertex",
+            edge.id
+        ))
     })
 }
 
@@ -1244,25 +1236,14 @@ fn validate_brep_topology<'a>(
                 body.kind, body.id
             )));
         }
-        if body.regions.len() != 1 {
+        let regions = ir.geometry.body_regions(&body.id).collect::<Vec<_>>();
+        let [region] = regions[..] else {
             return Err(CodecError::NotImplemented(format!(
                 "IGES B-rep writer requires one region per body ({})",
                 body.id
             )));
-        }
-        let region_id = &body.regions[0];
-        let region = ir
-            .geometry
-            .regions
-            .iter()
-            .find(|region| region.id == *region_id)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "IGES body {} references missing region {}",
-                    body.id, region_id
-                ))
-            })?;
-        if region.body != body.id || region.shells.is_empty() {
+        };
+        if region.shells.is_empty() {
             return Err(CodecError::malformed(format_args!(
                 "IGES region {} is not a nonempty region of body {}",
                 region.id, body.id
@@ -1296,13 +1277,14 @@ fn validate_brep_topology<'a>(
                         region.id, shell_id
                     ))
                 })?;
-            if shell.region != region.id || shell.faces().is_empty() {
+            let shell_faces = ir.geometry.shell_faces(&shell.id).collect::<Vec<_>>();
+            if shell.region != region.id || shell_faces.is_empty() {
                 return Err(CodecError::malformed(format_args!(
                     "IGES shell {} is not a nonempty shell of region {}",
                     shell.id, region.id
                 )));
             }
-            if !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty() {
+            if !shell.members.is_empty() {
                 return Err(CodecError::NotImplemented(format!(
                     "IGES B-rep writer does not encode wire edges or free vertices in shell {}",
                     shell.id
@@ -1314,19 +1296,8 @@ fn validate_brep_topology<'a>(
                     shell.id
                 )));
             }
-            for face_id in shell.faces() {
-                let face = ir
-                    .geometry
-                    .faces
-                    .iter()
-                    .find(|face| face.id == *face_id)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "IGES shell {} references missing face {}",
-                            shell.id, face_id
-                        ))
-                    })?;
-                if face.shell != shell.id || face.loops.is_empty() {
+            for face in shell_faces {
+                if face.loops.is_empty() {
                     return Err(CodecError::malformed(format_args!(
                         "IGES face {} is not a nonempty face of shell {}",
                         face.id, shell.id
@@ -1487,7 +1458,7 @@ fn validate_brep_topology<'a>(
                                 )
                             })?)?;
                         let span = edge_span(ir, edge, &geometry)?;
-                        for vertex_id in [&edge.start, &edge.end] {
+                        for vertex_id in edge.vertices() {
                             let vertex = ir
                                 .geometry
                                 .vertices
@@ -1712,7 +1683,7 @@ fn brep_entities(
         let Some(edge) = ir.geometry.edges.iter().find(|edge| edge.id == coedge.edge) else {
             continue;
         };
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             if let Some(vertex) = ir
                 .geometry
                 .vertices
@@ -1949,18 +1920,7 @@ fn brep_entities(
         let mut body_loop_ids = Vec::new();
         let mut body_face_ids = Vec::new();
         for shell in &shells {
-            for face_id in shell.faces() {
-                let face = ir
-                    .geometry
-                    .faces
-                    .iter()
-                    .find(|face| face.id == *face_id)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "IGES shell {} references missing face {}",
-                            shell.id, face_id
-                        ))
-                    })?;
+            for face in ir.geometry.shell_faces(&shell.id) {
                 body_face_ids.push(face.id.clone());
                 for loop_id in &face.loops {
                     let loop_ = topology
@@ -1997,8 +1957,8 @@ fn brep_entities(
                                     coedge.id, coedge.edge
                                 ))
                             })?;
-                        body_vertex_ids.insert(edge.start.as_str().to_owned());
-                        body_vertex_ids.insert(edge.end.as_str().to_owned());
+                        body_vertex_ids
+                            .extend(edge.vertices().map(|vertex| vertex.as_str().to_owned()));
                     }
                     for vertex in loop_.vertices() {
                         body_vertex_ids.insert(vertex.as_str().to_owned());
@@ -2061,8 +2021,9 @@ fn brep_entities(
                         CodecError::malformed(format_args!("IGES B-rep edge {edge_id} is missing"))
                     })?;
                 let curve_index = edge_curve_indices[edge_id];
-                let start_index = vertex_indices[edge.start.as_str()];
-                let end_index = vertex_indices[edge.end.as_str()];
+                let ends = edge_ends(edge)?;
+                let start_index = vertex_indices[ends.start.as_str()];
+                let end_index = vertex_indices[ends.end.as_str()];
                 write!(
                     parameters,
                     ",{},{},{},{},{}",
@@ -2272,19 +2233,9 @@ fn brep_entities(
 
         let mut shell_indices = BTreeMap::new();
         for shell in &shells {
-            let mut parameters = shell.faces().len().to_string();
-            for face_id in shell.faces() {
-                let face = ir
-                    .geometry
-                    .faces
-                    .iter()
-                    .find(|face| face.id == *face_id)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "IGES shell {} references missing face {}",
-                            shell.id, face_id
-                        ))
-                    })?;
+            let shell_faces = ir.geometry.shell_faces(&shell.id).collect::<Vec<_>>();
+            let mut parameters = shell_faces.len().to_string();
+            for face in shell_faces {
                 write!(
                     parameters,
                     ",{},{}",
@@ -2460,15 +2411,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
         if !is_decoder_free_geometry_body(body) {
             continue;
         }
-        for region_id in &body.regions {
-            let Some(region) = ir
-                .geometry
-                .regions
-                .iter()
-                .find(|region| region.id == *region_id)
-            else {
-                continue;
-            };
+        for region in ir.geometry.body_regions(&body.id) {
             for shell_id in &region.shells {
                 let Some(shell) = ir
                     .geometry
@@ -2481,7 +2424,6 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
                 ignored.vertices.extend(
                     shell
                         .free_vertices()
-                        .iter()
                         .map(|vertex| vertex.as_str().to_owned()),
                 );
             }
@@ -2523,8 +2465,10 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
                     .is_some_and(|(topology_range, edge_range)| {
                         same_range(topology_range.get(), edge_range.get())
                     })
-                && vertex_position(ir, &topology_edge.start)
-                    .zip(vertex_position(ir, &edge.start))
+                && topology_edge
+                    .start()
+                    .and_then(|vertex| vertex_position(ir, vertex))
+                    .zip(edge.start().and_then(|vertex| vertex_position(ir, vertex)))
                     .is_some_and(|(topology_start, edge_start)| {
                         same_point_with_tolerance(
                             topology_start.get(),
@@ -2532,8 +2476,10 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
                             topology_edge_explicit_tolerance(ir, topology_edge),
                         )
                     })
-                && vertex_position(ir, &topology_edge.end)
-                    .zip(vertex_position(ir, &edge.end))
+                && topology_edge
+                    .end()
+                    .and_then(|vertex| vertex_position(ir, vertex))
+                    .zip(edge.end().and_then(|vertex| vertex_position(ir, vertex)))
                     .is_some_and(|(topology_end, edge_end)| {
                         same_point_with_tolerance(
                             topology_end.get(),
@@ -2559,9 +2505,10 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
                 &curve.geometry,
                 range[0],
             ))?;
-            let (Some(start), Some(evaluated_start)) =
-                (vertex_position(ir, &edge.start), evaluated_start)
-            else {
+            let (Some(start), Some(evaluated_start)) = (
+                edge.start().and_then(|vertex| vertex_position(ir, vertex)),
+                evaluated_start,
+            ) else {
                 continue;
             };
             if !same_point_with_tolerance(
@@ -2576,8 +2523,10 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
                 &curve.geometry,
                 range[1],
             ))?;
-            let (Some(end), Some(evaluated_end)) = (vertex_position(ir, &edge.end), evaluated_end)
-            else {
+            let (Some(end), Some(evaluated_end)) = (
+                edge.end().and_then(|vertex| vertex_position(ir, vertex)),
+                evaluated_end,
+            ) else {
                 continue;
             };
             if same_point_with_tolerance(
@@ -2592,8 +2541,9 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
         if is_model_carrier || is_pcurve_carrier {
             ignored.edges.insert(edge.id.as_str().to_owned());
             ignored.curves.insert(curve_id.as_str().to_owned());
-            ignored.vertices.insert(edge.start.as_str().to_owned());
-            ignored.vertices.insert(edge.end.as_str().to_owned());
+            ignored
+                .vertices
+                .extend(edge.vertices().map(|vertex| vertex.as_str().to_owned()));
         }
     }
     for vertex in &ir.geometry.vertices {
@@ -2747,8 +2697,9 @@ fn topology_entities(
             CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
         })?)?;
         mark_curve_descendants(ir, curve_id, &mut consumed_curves, &mut BTreeSet::new())?;
-        consumed_points.insert(vertex_point_id(ir, &edge.start)?.as_str().to_owned());
-        consumed_points.insert(vertex_point_id(ir, &edge.end)?.as_str().to_owned());
+        for vertex in edge.vertices() {
+            consumed_points.insert(vertex_point_id(ir, vertex)?.as_str().to_owned());
+        }
         let Some(form) = stored_edges.get(edge.id.as_str()) else {
             continue;
         };
@@ -3027,30 +2978,19 @@ fn validate_trimmed_sheet_topology<'a>(
         if is_decoder_free_geometry_body(body) {
             continue;
         }
-        if body.kind != BodyKind::Sheet
-            || body.regions.len() != 1
-            || body
-                .transform
-                .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity())
-        {
+        let regions = ir.geometry.body_regions(&body.id).collect::<Vec<_>>();
+        let ([region], BodyKind::Sheet, false) = (
+            &regions[..],
+            body.kind,
+            body.transform
+                .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity()),
+        ) else {
             return Err(CodecError::NotImplemented(format!(
                 "IGES semantic writer only encodes identity single-face sheet body {}",
                 body.id
             )));
-        }
-        let region_id = &body.regions[0];
-        let region = ir
-            .geometry
-            .regions
-            .iter()
-            .find(|candidate| candidate.id == *region_id)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "IGES body {} references missing region {}",
-                    body.id, region_id
-                ))
-            })?;
-        if region.body != body.id || region.shells.len() != 1 {
+        };
+        if region.shells.len() != 1 {
             return Err(CodecError::malformed(format_args!(
                 "IGES region {} is not owned by body {} with one shell",
                 region.id, body.id
@@ -3068,34 +3008,16 @@ fn validate_trimmed_sheet_topology<'a>(
                     region.id, shell_id
                 ))
             })?;
-        if shell.region != region.id
-            || shell.faces().len() != 1
-            || !shell.wire_edges().is_empty()
-            || !shell.free_vertices().is_empty()
-        {
+        let shell_faces = ir.geometry.shell_faces(&shell.id).collect::<Vec<_>>();
+        let ([face], true) = (
+            &shell_faces[..],
+            shell.region == region.id && shell.members.is_empty(),
+        ) else {
             return Err(CodecError::NotImplemented(format!(
                 "IGES semantic writer only encodes a single face in shell {}",
                 shell.id
             )));
-        }
-        let face = ir
-            .geometry
-            .faces
-            .iter()
-            .find(|candidate| candidate.id == shell.faces()[0])
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "IGES shell {} references missing face {}",
-                    shell.id,
-                    shell.faces()[0]
-                ))
-            })?;
-        if face.shell != shell.id {
-            return Err(CodecError::malformed(format_args!(
-                "IGES face {} is not owned by shell {}",
-                face.id, shell.id
-            )));
-        }
+        };
         if !owned_faces.insert(face.id.as_str().to_owned()) {
             return Err(CodecError::malformed(format_args!(
                 "IGES face {} is owned by more than one sheet shell",
@@ -3265,26 +3187,27 @@ fn validate_trimmed_sheet_topology<'a>(
                         )
                     })?)?,
                 )?;
+                let ends = edge_ends(edge)?;
                 let start_vertex = ir
                     .geometry
                     .vertices
                     .iter()
-                    .find(|vertex| vertex.id == edge.start)
+                    .find(|vertex| vertex.id == ends.start)
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "IGES edge {} references missing start vertex {}",
-                            edge.id, edge.start
+                            edge.id, ends.start
                         ))
                     })?;
                 let end_vertex = ir
                     .geometry
                     .vertices
                     .iter()
-                    .find(|vertex| vertex.id == edge.end)
+                    .find(|vertex| vertex.id == ends.end)
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "IGES edge {} references missing end vertex {}",
-                            edge.id, edge.end
+                            edge.id, ends.end
                         ))
                     })?;
                 if !ir
@@ -3303,8 +3226,8 @@ fn validate_trimmed_sheet_topology<'a>(
                         edge.id
                     )));
                 }
-                used_vertices.insert(edge.start.as_str().to_owned());
-                used_vertices.insert(edge.end.as_str().to_owned());
+                used_vertices.insert(ends.start.as_str().to_owned());
+                used_vertices.insert(ends.end.as_str().to_owned());
                 for pcurve_use in &coedge.pcurves {
                     if pcurve_use.isoparametric == Some(true) {
                         return Err(CodecError::NotImplemented(format!(
@@ -4861,7 +4784,7 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
     let mut tolerance = edge
         .tolerance
         .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
-    for vertex_id in [&edge.start, &edge.end] {
+    for vertex_id in edge.vertices() {
         if let Some(vertex) = ir
             .geometry
             .vertices
@@ -4924,7 +4847,7 @@ fn effective_topology_tolerance(explicit_tolerance: f64) -> f64 {
 fn generated_endpoint_coordinate_scale(ir: &CadIr) -> Result<f64, CodecError> {
     let mut scale = 1.0_f64;
     for edge in &ir.geometry.edges {
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             if let Some(point) = vertex_position(ir, vertex_id) {
                 scale = scale.max(point_coordinate_scale(point));
             }
@@ -6775,8 +6698,9 @@ fn curve_reference_span_inner(
                                 )));
                             }
                         }
-                        let start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?.get();
-                        let end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?.get();
+                        let ends = edge_ends(edge)?;
+                        let start = point_position(ir, &vertex_point_id(ir, &ends.start)?)?.get();
+                        let end = point_position(ir, &vertex_point_id(ir, &ends.end)?)?.get();
                         let edge_tolerance = edge_topology_tolerance(ir, edge)?;
                         if !close_point_with_tolerance(start, derived_start, edge_tolerance)
                             || !close_point_with_tolerance(end, derived_end, edge_tolerance)
@@ -7169,8 +7093,9 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             edge.id
         )));
     }
-    let start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?.get();
-    let end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?.get();
+    let ends = edge_ends(edge)?;
+    let start = point_position(ir, &vertex_point_id(ir, &ends.start)?)?.get();
+    let end = point_position(ir, &vertex_point_id(ir, &ends.end)?)?.get();
     if matches!(
         geometry,
         CurveGeometry::Solved(
@@ -7233,7 +7158,11 @@ fn closed_edge_full_period(
     edge: &Edge,
     geometry: &CurveGeometry,
 ) -> Result<Option<FiniteVector<2>>, CodecError> {
-    if edge.start != edge.end {
+    if edge
+        .ends
+        .as_ref()
+        .is_some_and(|ends| ends.start != ends.end)
+    {
         return Ok(None);
     }
     geometry
@@ -7251,7 +7180,7 @@ fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
     let mut tolerance = edge
         .tolerance
         .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
-    for vertex_id in [&edge.start, &edge.end] {
+    for vertex_id in edge.vertices() {
         let vertex = ir
             .geometry
             .vertices

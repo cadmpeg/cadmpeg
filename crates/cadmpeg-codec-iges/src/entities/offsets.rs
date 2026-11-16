@@ -241,8 +241,8 @@ fn source_parameter_range(
     {
         let (Some(range), Some(start), Some(end)) = (
             edge.param_range(),
-            point_position(&edge.start),
-            point_position(&edge.end),
+            edge.start().and_then(|vertex| point_position(vertex)),
+            edge.end().and_then(|vertex| point_position(vertex)),
         ) else {
             continue;
         };
@@ -1145,6 +1145,7 @@ pub(super) fn project(
                         continue;
                     }
                 }),
+                native_ref: None,
             });
         }
 
@@ -1160,11 +1161,13 @@ pub(super) fn project(
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
+                native_ref: None,
             },
         ]);
         sequences.record_curve(&curve_id, entry.sequence);
@@ -1185,6 +1188,7 @@ pub(super) fn project(
                     continue;
                 }
             }),
+            native_ref: None,
         });
         let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
             Some(curve_id.clone()),
@@ -1201,9 +1205,12 @@ pub(super) fn project(
         ir.geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
-            start: start_vertex,
-            end: end_vertex,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                start_vertex,
+                end_vertex,
+            )),
             tolerance: None,
+            native_ref: None,
         });
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;

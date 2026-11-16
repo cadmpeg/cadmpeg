@@ -53,18 +53,23 @@ pub(super) fn edgeless_doc() -> CadIr {
         id: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
         point: PointId::mint("test:model:point#p0").expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.vertices.push(Vertex {
         id: VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
         point: PointId::mint("test:model:point#p1").expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#e0").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-        start: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
-        end: VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
+            VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
@@ -77,6 +82,7 @@ pub(super) fn edgeless_doc() -> CadIr {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.coedges.push(Coedge {
         id: CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar"),
@@ -86,6 +92,7 @@ pub(super) fn edgeless_doc() -> CadIr {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
+        native_ref: None,
     });
     ir.geometry.loops.push(Loop {
         id: LoopId::mint("test:model:loop#lp0").expect("identity grammar"),
@@ -97,6 +104,7 @@ pub(super) fn edgeless_doc() -> CadIr {
             )
             .expect("valid loop ring"),
         ),
+        native_ref: None,
     });
     ir.geometry.faces.push(Face {
         id: FaceId::mint("test:model:face#f0").expect("identity grammar"),
@@ -110,25 +118,26 @@ pub(super) fn edgeless_doc() -> CadIr {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
-    ir.geometry.shells.push(Shell::with_face(
+    ir.geometry.shells.push(Shell::new(
         ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
         RegionId::mint("test:model:region#l0").expect("identity grammar"),
-        FaceId::mint("test:model:face#f0").expect("identity grammar"),
     ));
     ir.geometry.regions.push(Region {
         id: RegionId::mint("test:model:region#l0").expect("identity grammar"),
         body: BodyId::mint("test:model:body#b0").expect("identity grammar"),
         shells: vec![ShellId::mint("test:model:shell#sh0").expect("identity grammar")],
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("test:model:body#b0").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: vec![RegionId::mint("test:model:region#l0").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir
 }
@@ -347,6 +356,9 @@ fn writer_reports_edge_loop_without_a_continuous_ordering() {
         .iter_mut()
         .find(|edge| edge.id == edge_id)
         .expect("loop edge exists")
+        .ends
+        .as_mut()
+        .unwrap()
         .start = cadmpeg_ir::ids::VertexId::mint("test:model:vertex#missing-loop-vertex")
         .expect("identity grammar");
 
@@ -527,11 +539,11 @@ fn writer_names_only_the_region_without_shells_beside_a_bounded_region() {
     let body = ir.geometry.bodies[0].id.clone();
     let shells = Vec::new();
     let bounded = ir.geometry.regions[0].id.clone();
-    ir.geometry.bodies[0].regions.push(lost.clone());
     ir.geometry.regions.push(Region {
         id: lost.clone(),
         body,
         shells,
+        native_ref: None,
     });
 
     let report = write_step(
@@ -555,7 +567,6 @@ fn writer_names_only_the_region_without_shells_beside_a_bounded_region() {
 fn writer_reports_topology_without_an_emitted_region() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.regions.clear();
-    ir.geometry.bodies[0].regions.clear();
 
     let report = write_step(
         &ir,
@@ -578,15 +589,11 @@ fn writer_reports_topology_without_an_emitted_region() {
 fn writer_reports_wire_region_without_connected_edges() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
-    ir.geometry.shells[0]
-        .edit_topology(|faces, wire_edges, _| {
-            faces.clear();
-            *wire_edges = vec![
-                cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge")
-                    .expect("identity grammar"),
-            ];
-        })
-        .unwrap();
+    ir.geometry.faces.clear();
+    ir.geometry.shells[0].members = vec![cadmpeg_ir::topology::ShellMember::WireEdge {
+        id: cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge")
+            .expect("identity grammar"),
+    }];
 
     let report = write_step(
         &ir,
@@ -1084,6 +1091,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
 
     let report = write_step(
@@ -1346,6 +1354,7 @@ fn edge_without_curve_is_reported_and_omitted() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let _ = curve; // silence unused import path
     assert!(report
@@ -1379,6 +1388,7 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         source_object: Some(source_object.clone()),
         cage: cadmpeg_ir::subd::SubdCage::default(),
+        native_ref: None,
     });
     ir.model.tessellations.push(
         Tessellation::new(
@@ -1542,6 +1552,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .procedural_surfaces
@@ -1585,6 +1596,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .procedural_curves
