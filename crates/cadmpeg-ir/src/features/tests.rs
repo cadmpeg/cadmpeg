@@ -10,6 +10,7 @@ mod curve_definitions;
 mod distinct_members;
 mod draft_second_side;
 mod revolve;
+mod tag_only_arms;
 mod thicken;
 mod unit_directions;
 
@@ -1332,6 +1333,7 @@ mod local_admission;
 mod configurations;
 mod finite_vectors;
 mod unit_scaling;
+mod unresolved_spellings;
 mod wire_forms;
 
 #[test]

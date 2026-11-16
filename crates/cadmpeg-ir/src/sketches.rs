@@ -126,10 +126,13 @@ impl JsonSchema for SketchFontWeight {
 #[serde(deny_unknown_fields)]
 pub enum SketchTextHorizontalAlignment {
     /// Align the text's left edge with its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Left,
     /// Center the text about its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Center,
     /// Align the text's right edge with its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Right,
     /// Source alignment ordinal without an assigned neutral meaning.
     Native(u32),
@@ -142,10 +145,13 @@ pub enum SketchTextHorizontalAlignment {
 #[serde(deny_unknown_fields)]
 pub enum SketchTextVerticalAlignment {
     /// Align the text's top with its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Top,
     /// Center the text about its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Middle,
     /// Align the text's bottom with its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Bottom,
     /// Source alignment ordinal without an assigned neutral meaning.
     Native(u32),

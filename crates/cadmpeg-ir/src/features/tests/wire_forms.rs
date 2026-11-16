@@ -919,7 +919,7 @@ fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
         reverse_normal: None,
     });
     let wire = serde_json::to_value(&definition).unwrap();
-    assert!(wire.get("continuity").is_none());
+    assert!(wire["value"]["value"].get("continuity").is_none(), "{wire}");
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
         definition
@@ -936,9 +936,9 @@ fn empty_filled_surface_continuity_list_is_refused() {
         .expect_err("an empty continuity list is refused");
     assert!(error.to_string().contains("empty"), "{error}");
 
-    let unresolved: FilledSurfaceContinuityState =
-        serde_json::from_value(serde_json::Value::Null).unwrap();
-    assert!(unresolved.is_unresolved());
+    let error = serde_json::from_value::<FilledSurfaceContinuityState>(serde_json::Value::Null)
+        .expect_err("null is refused");
+    assert!(error.to_string().contains("does not state null"), "{error}");
 
     let resolved: FilledSurfaceContinuityState =
         serde_json::from_value(serde_json::json!([{ "kind": "tangent" }])).unwrap();
