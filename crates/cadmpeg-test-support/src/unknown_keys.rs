@@ -21,7 +21,7 @@ pub const UNKNOWN_KEY: &str = "zz_bogus";
 /// accepts one spelling and refuses the others, and one probe value alone
 /// cannot see that. A map whose values are arrays, for one, is visible only to
 /// the `[]` probe.
-fn probe_values() -> [Value; 7] {
+pub(crate) fn probe_values() -> [Value; 7] {
     [
         Value::Null,
         Value::from(1),
@@ -34,7 +34,7 @@ fn probe_values() -> [Value; 7] {
 }
 
 /// One step of a concrete JSON path.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Step {
     /// Object member.
     Key(String),
@@ -123,7 +123,7 @@ fn sweep(
 /// Source maps may legally contain the default sentinel as an ordinary key.
 /// Choosing a stable suffix in that case keeps the existing member intact and
 /// still inserts a key the surrounding typed object does not declare.
-fn probe_key(fields: &Map<String, Value>) -> String {
+pub(crate) fn probe_key(fields: &Map<String, Value>) -> String {
     let mut candidate = UNKNOWN_KEY.to_owned();
     while fields.contains_key(&candidate) {
         candidate.push('_');

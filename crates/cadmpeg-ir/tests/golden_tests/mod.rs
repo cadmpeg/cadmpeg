@@ -32,6 +32,9 @@ use cadmpeg_test_support::spelling::SpellingSweep;
 use cadmpeg_test_support::unknown_keys::accepting_shapes;
 use serde_json::Value;
 
+#[cfg(feature = "schema")]
+mod schema_sweep;
+
 #[test]
 fn every_golden_shape_refuses_an_unknown_key() {
     let goldens = golden_files();

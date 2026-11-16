@@ -578,6 +578,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "regex",
  "serde",
  "serde_json",
  "thiserror",
