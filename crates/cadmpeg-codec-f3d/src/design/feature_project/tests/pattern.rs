@@ -918,6 +918,10 @@ fn coincident_direction_scope(symmetric: bool, total_extent: bool) -> DesignPara
                                 value: total_extent,
                                 offset: 158,
                             },
+                            compute_option: crate::records::identity::Located {
+                                value: 2,
+                                offset: 146,
+                            },
                         },
                     ),
                 },

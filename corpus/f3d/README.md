@@ -69,3 +69,16 @@ x = −5, 0, +5 and +10 mm.
 - `symmetric_pattern_body.f3d`: a body seed (a 1 × 6 × 1 mm block), Compute
   Adjust. Extrude2 2406 mm³ in 2 bodies, 12 faces; the pattern 2424 mm³ in 5
   bodies, 30 faces.
+
+Compute option and target bodies. Written in Autodesk Fusion 2706.1.17. A
+40 × 40 × 5 mm plate with a 4 mm hole cut at (10, 20) mm, patterned along X
+with Compute Optimized unless stated.
+
+- `optimized_extent_pattern.f3d`: quantity 3, Extent 20 mm. The copies are at
+  0, 10 and 20 mm. 7811.50 mm³, 9 faces.
+- `optimized_symmetric_pattern.f3d`: quantity 3 at 10 mm, Symmetric. The copies
+  are at −10, 0 and +10 mm; the −10 mm copy cuts the plate edge. 7842.92 mm³,
+  10 faces.
+- `two_target_pattern.f3d`: two plates at x 0–40 and 41–81 mm and one 21 × 4 mm
+  slot cut through both, patterned along Y with quantity 3 at 10 mm, Compute
+  Adjust. 2 bodies, 14800 mm³, 36 faces.

@@ -508,6 +508,8 @@ pub(crate) struct DesignRectangularPatternDistribution {
     pub(crate) symmetric: Located<bool>,
     /// Each distance owner stores the seed-to-final-instance extent; adjacent spacing otherwise.
     pub(crate) total_extent: Located<bool>,
+    /// Compute option: `0` Optimized, `1` Identical, `2` Adjust.
+    pub(crate) compute_option: Located<u32>,
 }
 
 /// Direction record of one active rectangular-pattern direction.
@@ -1349,6 +1351,10 @@ mod tests {
             total_extent: Located {
                 value: false,
                 offset: 158,
+            },
+            compute_option: Located {
+                value: 2,
+                offset: 146,
             },
         });
         let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();

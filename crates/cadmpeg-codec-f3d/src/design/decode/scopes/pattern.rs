@@ -410,15 +410,15 @@ fn exact_rectangular_pattern_distribution(
     construction: &DesignRectangularPatternConstruction,
     directions: &[patterns::DesignRectangularPatternDirection],
 ) -> Option<patterns::DesignRectangularPatternDistribution> {
-    use crate::layout::rectangular_pattern_payload_counted_head as counted_head;
     use crate::layout::rectangular_pattern_payload_distribution as block;
     use crate::layout::rectangular_pattern_payload_prefix as prefix;
-    use crate::layout::rectangular_pattern_payload_referenced_counted_head as referenced_head;
     use crate::layout::rectangular_pattern_payload_suffix as suffix;
     const ENTRY_LEN: usize = 16;
     const MARKED_REFERENCE_LEN: usize = 11;
-    /// The u32 that can follow a counted head in place of `2`.
-    const COUNTED_FIXED_VALUE: u32 = 1;
+    /// Largest Compute option: `0` Optimized, `1` Identical, `2` Adjust.
+    const LAST_COMPUTE_OPTION: u32 = 2;
+    /// Bytes a four-byte zero run after one body reference moves the fixed fields back.
+    const FOUR_ZERO_SHIFT: usize = 4;
 
     let u_direction = directions.first()?.record_index;
     let frames =
@@ -427,8 +427,6 @@ fn exact_rectangular_pattern_distribution(
         return None;
     };
     let after_prefix = start + prefix::LEN;
-    // `at` is the block offset that places `FIXED_TWO` on the u32 after the
-    // head.
     let head = match bytes.get(after_prefix)? {
         0 => after_prefix + 1,
         1 => {
@@ -437,45 +435,36 @@ fn exact_rectangular_pattern_distribution(
         }
         _ => return None,
     };
-    // The counted form replaces the twelve zero bytes with a count, a marked
-    // record reference, and four zero bytes, or eight zero bytes after a
-    // V-direction reference.
-    let (count, count_value, reference, run, len) = if head == after_prefix + 1 {
-        (
-            counted_head::COUNT,
-            counted_head::COUNT_VALUE,
-            counted_head::REFERENCE,
-            counted_head::ZERO_RUN,
-            counted_head::LEN,
-        )
-    } else {
-        (
-            referenced_head::COUNT,
-            referenced_head::COUNT_VALUE,
-            referenced_head::REFERENCE,
-            referenced_head::ZERO_RUN,
-            referenced_head::LEN,
-        )
-    };
-    let counted = View::u32_le_at(bytes, head + count) == Some(count_value);
-    let (at, zero_run) = if counted {
-        marked_record_reference(bytes, head + reference)?;
-        (
-            (head + len).checked_sub(block::FIXED_TWO)?,
-            head + run..head + len,
-        )
-    } else {
-        (head, head + block::ZERO_RUN..head + block::FIXED_TWO)
-    };
-    // After a counted head the u32 is `1` or `2`; after twelve zero bytes it
-    // is `2`.
-    let fixed = View::u32_le_at(bytes, at + block::FIXED_TWO);
-    if bytes.get(zero_run.clone())?.iter().any(|byte| *byte != 0)
-        || !(fixed == Some(block::FIXED_TWO_VALUE) || counted && fixed == Some(COUNTED_FIXED_VALUE))
-        || View::u32_le_at(bytes, at + block::SENTINEL) != Some(u32::MAX)
-    {
+    // A u32 body count and that many marked body references precede the
+    // fixed fields; `at` places the fixed fields after the references.
+    let bodies = usize::try_from(View::u32_le_at(bytes, head + block::BODY_COUNT)?).ok()?;
+    // The references start where the zero run starts in a block without them.
+    let references_at = head + block::ZERO_RUN;
+    let eight_zero_at = head.checked_add(bodies.checked_mul(MARKED_REFERENCE_LEN)?)?;
+    if eight_zero_at.checked_add(block::LEN)? > *end {
         return None;
     }
+    for body in 0..bodies {
+        marked_record_reference(bytes, references_at + body * MARKED_REFERENCE_LEN)?;
+    }
+    // After a leading byte `0`, one body reference can be followed by four
+    // zero bytes in place of the eight.
+    let zero_runs: &[usize] = if head == after_prefix + 1 && bodies == 1 {
+        &[0, FOUR_ZERO_SHIFT]
+    } else {
+        &[0]
+    };
+    let (at, compute_option) = zero_runs.iter().find_map(|&shift| {
+        let at = eight_zero_at.checked_sub(shift)?;
+        let compute_option = View::u32_le_at(bytes, at + block::COMPUTE_OPTION)?;
+        (bytes
+            .get(at + block::ZERO_RUN + shift..at + block::COMPUTE_OPTION)?
+            .iter()
+            .all(|byte| *byte == 0)
+            && compute_option <= LAST_COMPUTE_OPTION
+            && View::u32_le_at(bytes, at + block::SENTINEL) == Some(u32::MAX))
+        .then_some((at, compute_option))
+    })?;
     let total_extent = match bytes.get(at + block::DISTANCE_TYPE)? {
         0 => false,
         1 => true,
@@ -507,6 +496,10 @@ fn exact_rectangular_pattern_distribution(
         total_extent: crate::records::identity::Located {
             value: total_extent,
             offset: u64::try_from(at + block::DISTANCE_TYPE).ok()?,
+        },
+        compute_option: crate::records::identity::Located {
+            value: compute_option,
+            offset: u64::try_from(at + block::COMPUTE_OPTION).ok()?,
         },
     })
 }

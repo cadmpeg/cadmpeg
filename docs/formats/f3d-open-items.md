@@ -552,16 +552,6 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Note.** In `Parametric_extrusion_generator.f3d`, R-Pattern 3 scope `4709` has kind-`16` direction record `4736` at Design byte `135573`. Its displacement is `(0, 0, 1)`, its U distance is `-1.5` cm, and payload record `4716` supplies V displacement `(1, 0, 0)` at byte `133177`. Both counts are two and the V distance is `1.5` cm. The decoder transfers the two directions and their 15 mm spacings. The auxiliary reference names record `7609`.
 
 
-### DR-641. Record named by the counted head of a rectangular-pattern distribution block
-
-**Question.** What record does the marked reference in the counted head of a rectangular-pattern distribution block name, and what selects the counted head over the twelve-zero-byte head?
-
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the counted head layout. The distance type, entry count, entries, instance count, generated-instance references and suffix follow at the same relative offsets in both forms.
-
-**Need.** A writer must emit the counted head and its reference for a pattern that uses it, and a reader must know whether the reference changes the pattern's seed, direction or distribution.
-
-**Note.** The u32 after the counted head is `2` in the saves that set up this item, and `1` in a save whose 196-byte direction record stores distance type `10`. After a V-direction reference, one save stores the counted head with eight zero bytes and u32 `1` after it.
-
 ### DR-654. Stored profile loop curves off the selected material boundary
 
 **Question.** Which sketch curves does a typed profile loop list when the selected region has a curve that ends inside it, or two coincident curves along one boundary interval?
@@ -2441,13 +2431,13 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-### DR-642. Pattern compute option
+### DR-642. Circular-pattern compute option
 
-**Question.** Which bytes store the Compute option of a rectangular or circular pattern of features, and what does each value change?
+**Question.** Which bytes store the Compute option of a circular pattern of features, and does it share the rectangular distribution block's fields?
 
-**Known.** Fusion offers the options Optimized, Identical, and Adjust. Three saves differ only in this option and pattern one cut whose profile ends on a slanted body edge. Adjust gives copies that are pure translations of the seed, so the copies stop short of the edge. Optimized gives copies that extend to the edge, and removes 0.1414 mm³ more. Identical fails the pattern feature. When every copy cuts through the body, the three options give the same volume. The decoder projects every pattern as pure translations.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the rectangular Compute option: `0` Optimized, `1` Identical, `2` Adjust, in the u32 before the seed kind. The circular decoder requires u32 `2` in the matching position of its distribution block. Three circular saves that differ only in this option store the same instances; the decoder reads the circular symmetric byte only from the Adjust save.
 
-**Need.** The byte that differs between the three saves, and a save of a circular pattern with each option.
+**Need.** The circular payload bytes of saves with each option, symmetric and not.
 
 ### DR-643. Persistent tags of omitted bodies
 
