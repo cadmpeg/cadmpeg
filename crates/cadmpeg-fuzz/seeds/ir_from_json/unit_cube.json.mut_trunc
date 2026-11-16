@@ -474,4 +474,10 @@
       {
         "id": "synthetic:cube:edge#3",
         "carrier": {
-          "
+          "curve": "synthetic:cube:curve#3",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+   

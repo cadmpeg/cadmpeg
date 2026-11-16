@@ -1089,7 +1089,19 @@
     "point_clouds": [],
     "history_bodies": []
   },
-  "design": {},
+  "design": {
+    "scopes": [],
+    "containers": [],
+    "features": [],
+    "parameters": [],
+    "spreadsheets": [],
+    "programs": [],
+    "configurations": [],
+    "arrangements": [],
+    "publications": [],
+    "evaluations": [],
+    "names": []
+  },
   "process": {},
   "native": {}
 } {
@@ -1165,7 +1177,19 @@
     "point_clouds": [],
     "history_bodies": []
   },
-  "design": {},
+  "design": {
+    "scopes": [],
+    "containers": [],
+    "features": [],
+    "parameters": [],
+    "spreadsheets": [],
+    "programs": [],
+    "configurations": [],
+    "arrangements": [],
+    "publications": [],
+    "evaluations": [],
+    "names": []
+  },
   "process": {},
   "native": {}
 }

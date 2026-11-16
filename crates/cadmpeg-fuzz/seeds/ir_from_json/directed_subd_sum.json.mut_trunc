@@ -143,4 +143,9 @@
               "vertices": [
                 1,
                 2
-        
+              ],
+              "sharpness": [
+                0.0,
+                0.5
+              ],
+              "tag": "smo

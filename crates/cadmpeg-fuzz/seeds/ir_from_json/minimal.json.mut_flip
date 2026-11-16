@@ -41,11 +41,11 @@
     "configurations": [],
     "parameters": [],
     "sketches": [],
-    "sketch_en‹ities": [],
+    "sketch_entities": [],
     "sketch_constraints": [],
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
-    "spatial_sketch_constraints": [],
+    "spatial_skštch_constraints": [],
     "spreadsheets": [],
     "product_definitions": [],
     "occurrences": [],
@@ -71,7 +71,19 @@
     "point_clouds": [],
     "history_bodies": []
   },
-  "design": {},
+  "design": {
+    "scopes": [],
+    "containers": [],
+    "features": [],
+    "parameters": [],
+    "spreadsheets": [],
+    "programs": [],
+    "configurations": [],
+    "arrangements": [],
+    "publications": [],
+    "evaluations": [],
+    "names": []
+  },
   "process": {},
   "native": {}
 }
