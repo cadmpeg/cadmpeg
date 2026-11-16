@@ -1080,6 +1080,10 @@ fn a_producer_of_equal_records_joins_the_nest_of_the_consumer() {
     assert_eq!(bodies[0].state.identifier, 1);
 }
 
+fn leak<T>(value: T) -> &'static T {
+    Box::leak(Box::new(value))
+}
+
 fn identity_split_fixture() -> (Feature, Inputs<'static>) {
     use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
     use crate::records::feature::scope::DesignFeatureKind;
@@ -1256,9 +1260,6 @@ fn identity_split_fixture() -> (Feature, Inputs<'static>) {
             state(1, 0, None, vec![7], 1),
         ],
     );
-    fn leak<T>(value: T) -> &'static T {
-        Box::leak(Box::new(value))
-    }
     (
         feature,
         Inputs {

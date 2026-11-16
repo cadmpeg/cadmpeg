@@ -588,11 +588,10 @@ fn fill_history(
                     (&header.metadata, subtypes),
                     want,
                     (produced, consumed),
-                    (ordinal, bodies.len()),
-                    by_identity || join.is_some(),
+                    (ordinal, bodies.len(), by_identity || join.is_some()),
                 ) {
                     Ok(Some(built)) => {
-                        place(bodies, &mut joinable, built, want.slot, (by_identity, join))
+                        place(bodies, &mut joinable, built, want.slot, (by_identity, join));
                     }
                     Ok(None) => {
                         losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
@@ -636,10 +635,9 @@ fn build(
     ),
     want: &Want<'_>,
     owners: (Option<&Feature>, Option<&Feature>),
-    position: (usize, usize),
-    keep_records: bool,
+    position: (usize, usize, bool),
 ) -> Result<Option<Built>, CodecError> {
-    let (ordinal, nest_index) = position;
+    let (ordinal, nest_index, keep_records) = position;
     let Some(table) =
         cadmpeg_asm::history::materialize_record_table(versions, |revision| archive.get(&revision))
     else {
