@@ -9573,7 +9573,6 @@ mod tests {
     }
 
     use super::sphere_latitude;
-    use crate::brep::entity;
     use crate::brep::topology::{Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Tables};
     use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
     use cadmpeg_ir::topology::Sense;

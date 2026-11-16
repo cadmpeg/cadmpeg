@@ -26,10 +26,10 @@ use crate::eval::IsolineDirection;
 use crate::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     sampled::{PolylineCurve, PolylineSamples, PolylineVertex},
-    Curve, CurveGeometry, LawExpression, LegacyExtensionFlags, OffsetExtension, ProceduralSurface,
+    CurveGeometry, LawExpression, LegacyExtensionFlags, OffsetExtension, ProceduralSurface,
     ProceduralSurfaceDefinition, RecordBounds, RevisionCacheForm, RevisionSurfaceForm,
     RevisionSurfaceParameterization, RollingBallJetDerivative, RollingBallJetSite,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
 use crate::math::{Point2, Point3, Vector3};
