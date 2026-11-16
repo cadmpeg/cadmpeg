@@ -4,6 +4,7 @@
 pub mod datum;
 pub mod shared;
 pub mod sketch;
+pub mod swept;
 
 #[cfg(test)]
 mod tests;

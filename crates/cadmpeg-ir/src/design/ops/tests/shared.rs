@@ -63,7 +63,7 @@ pub(super) fn links() -> Vec<Link> {
 
 fn locus() -> Vec<Locus> {
     vec![
-        Locus::Centroid {},
+        Locus::Centroid,
         Locus::Point(Box::new(construction::<kinds::Point>(Some(point3(
             1.0, 2.0, 3.0,
         ))))),
@@ -97,7 +97,7 @@ pub(super) fn length_spacings() -> Vec<Spacing<Length>> {
             reference: Box::new(selection(5)),
             fill: UpToFill::Pitch(lit(length(3.0))),
             offset: Some(lit(length(1.0))),
-            from: Some(Locus::Centroid {}),
+            from: Some(Locus::Centroid),
         },
         Spacing::UpTo {
             reference: Box::new(unread()),
@@ -195,11 +195,11 @@ fn the_examples_of_section_2_5() {
     );
 }
 
-/// A struct arm of an internally tagged enum writes only its tag and refuses
+/// A unit arm of an internally tagged enum writes only its tag and refuses
 /// another key.
 #[test]
 fn a_centroid_locus_is_its_tag_alone() {
-    assert_eq!(to_value(&Locus::Centroid {}), json!({"kind": "centroid"}));
+    assert_eq!(to_value(&Locus::Centroid), json!({"kind": "centroid"}));
     refuses::<Locus>(r#"{"kind": "centroid", "extra": 1}"#);
 }
 

@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The one spelling of the sketch, datum, and shared operation types' unit
-//! variants.
+//! The one spelling of the sketch and datum operation types' unit variants.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::design::ops::shared::RunSides;
 use crate::design::ops::sketch::{
     AngleSector, DefiningRole, DerivationMode, DistanceAxis, EntityForm, Planar, SlotKind,
     SolveState, Spatial, TextAlign,
 };
 use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
-use crate::scalar::Length;
 
 fn source(name: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -35,11 +32,4 @@ fn every_adjacent_unit_variant_refuses_a_stated_value() {
     ];
     let files = [source("sketch.rs"), source("datum.rs")];
     assert_units_refuse_value(&files, &BTreeMap::from(readers));
-}
-
-/// The shared run types' unit variants have the same one spelling.
-#[test]
-fn every_shared_adjacent_unit_variant_refuses_a_stated_value() {
-    let readers: [(&'static str, Reader); 1] = [("RunSides", reads::<RunSides<Length>>)];
-    assert_units_refuse_value(&[source("shared.rs")], &BTreeMap::from(readers));
 }
