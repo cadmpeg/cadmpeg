@@ -509,15 +509,10 @@ impl<'ir> Measurer<'ir> {
             return Vec::new();
         }
         self.owners
-            .shell(face.shell.as_str())
-            .map(|shell| {
-                shell
-                    .faces()
-                    .iter()
-                    .map(cadmpeg_ir::ids::FaceId::as_str)
-                    .collect()
-            })
-            .unwrap_or_default()
+            .shell_faces(&face.shell)
+            .iter()
+            .map(|face| face.id.as_str())
+            .collect()
     }
 
     /// The reference point of a body's fluxes: the centre of the box of its

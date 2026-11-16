@@ -109,6 +109,7 @@ fn independent_curve_preserves_its_active_parameter_interval() {
         )),
         parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new([2.0, 3.0]),
         source_object: None,
+        native_ref: None,
     });
     let mut bytes = Vec::new();
     write_step(
@@ -166,6 +167,7 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
         id: id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_surface(
@@ -259,6 +261,7 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
             ir.geometry.procedural_surfaces.push(construction);
             let mut bytes = Vec::new();
@@ -337,6 +340,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             ),
         )),
+        native_ref: None,
     });
     ir.geometry.curves.push(Curve {
         id: "test:model:curve#subset".try_into().unwrap(),
@@ -346,6 +350,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
             construction: construction.id.clone(),
             cache: None,
         },
+        native_ref: None,
     });
     ir.geometry.procedural_curves.push(construction);
     let mut bytes = Vec::new();
@@ -397,6 +402,7 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
                         .unwrap(),
                 ),
             )),
+            native_ref: None,
         });
         let mut segments = vec![CompositeCurveSegment {
             curve: child,
@@ -418,6 +424,7 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
                 segments: CompositeCurveSegments::try_from(segments).unwrap(),
                 self_intersect: Some(false),
             }),
+            native_ref: None,
         });
         let mut bytes = Vec::new();
         let report = write_step(

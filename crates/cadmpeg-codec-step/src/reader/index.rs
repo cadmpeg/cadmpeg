@@ -102,6 +102,7 @@ mod tests {
                     .expect("finite line"),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.points.push(Point::new(
             PointId::from(crate::ids::data(crate::ids::kind!("point"), 2)),
@@ -119,6 +120,7 @@ mod tests {
                 .expect("finite plane"),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir
     }

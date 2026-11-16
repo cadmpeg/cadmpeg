@@ -316,8 +316,8 @@ pub(super) fn validate_vertex_ownership_edits(
                 ))
             })?;
         let valid = match after.endpoint_index {
-            EndpointSlot::Start => edge.start == after.vertex,
-            EndpointSlot::End => edge.end == after.vertex,
+            EndpointSlot::Start => edge.start() == Some(&after.vertex),
+            EndpointSlot::End => edge.end() == Some(&after.vertex),
         };
         if !valid {
             return Err(CodecError::malformed(format_args!(
@@ -3852,6 +3852,7 @@ mod tests {
             id: CurveId::mint(id).expect("identity grammar"),
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         }]
     }
 
@@ -3860,6 +3861,7 @@ mod tests {
             id: SurfaceId::mint(id).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         }]
     }
 

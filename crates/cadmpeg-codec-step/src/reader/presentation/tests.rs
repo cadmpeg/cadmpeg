@@ -632,7 +632,7 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
 
 #[test]
 fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
-    const EPS_ALPHA: f32 = 0.000_001;
+    const EPS_ALPHA: f64 = 0.000_001;
 
     let source = String::from_utf8(
         include_bytes!("tests/data/ap05_independent_styles_first.p21").to_vec(),
@@ -919,7 +919,7 @@ fn styled_item_invisibility_is_binding_scoped() {
 
 #[test]
 fn surface_style_transparency_transfers_to_appearance_alpha() {
-    const EPS_ALPHA: f32 = 0.000_001;
+    const EPS_ALPHA: f64 = 0.000_001;
 
     let result = decode_inline(
         "#1=CARTESIAN_POINT('surface origin',(0.,0.,0.));
@@ -1348,7 +1348,6 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     region.id = "zzzz:test:region#second"
         .try_into()
         .expect("valid identity");
-    ir.geometry.bodies[0].regions.push(region.id.clone());
     ir.geometry.regions.push(region);
     ir.geometry.bodies[0].visible = Some(false);
     ir.model.presentation_layers.push(PresentationLayer {

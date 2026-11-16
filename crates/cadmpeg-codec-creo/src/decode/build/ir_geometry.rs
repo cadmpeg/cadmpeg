@@ -955,6 +955,7 @@ mod tests {
                 .expect("valid CircleCurve fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
@@ -968,6 +969,7 @@ mod tests {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
 
         let arena = DecodeArena::new();

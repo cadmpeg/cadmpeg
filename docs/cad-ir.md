@@ -77,7 +77,7 @@ body → region → shell → face → loop → coedge → edge → vertex → p
                            └── surface
 ```
 
-`Body.kind` is `solid`, `sheet`, `wire`, or `general`. A body optionally records a display name, color, and `visible`. `visible` states whether the source document displays the body. Exporters omit bodies with `visible: false` from display-oriented formats. A body owns regions. A region is a connected component of a body and owns shells. A shell owns at least one of faces, wire edges, or free vertices. A face is an oriented bounded portion of one surface and owns loops. A loop's boundary role is `outer`, `inner`, or `unspecified`; a face has at most one explicit outer loop and may have only inner loops when the surface parameter domain supplies the exterior. An edge loop lists coedges in traversal order and may contain ordered pole-vertex uses anchored after a coedge. A vertex loop contains one unanchored vertex use and no coedges. A coedge and a pole-vertex use each own an ordered list of parameter-space curve uses. The uses of a coedge are in its traversal order, with its sense applied, and form one chain from its start to its end; the uses of a pole-vertex use follow the loop traversal. A use's optional parameter range states its interval in the traversal direction, so a decreasing range traverses the pcurve backward. Each pcurve use may record whether the source declared it isoparametric. An edge joins two vertices and optionally references a curve and canonical parameter range. A vertex references a point carrier. Point remains a separate carrier because it has independent identity and provenance.
+`Body.kind` is `solid`, `sheet`, `wire`, or `general`. A body optionally records a display name, color, and `visible`. `visible` states whether the source document displays the body. Exporters omit bodies with `visible: false` from display-oriented formats. Each record names its parent: `Region.body`, `Shell.region`, `Face.shell`, `Loop.face`, and `Coedge.owner_loop`. A body's regions and a shell's faces are the records whose parent pointer names them, and no list of them is stored. A region is a connected component of a body and lists its shells, the exterior first. A shell's `members` list its wire edges and free vertices, which name no parent. A face is an oriented bounded portion of one surface and owns loops. A loop's boundary role is `outer`, `inner`, or `unspecified`; a face has at most one explicit outer loop and may have only inner loops when the surface parameter domain supplies the exterior. An edge loop lists coedges in traversal order and may contain ordered pole-vertex uses anchored after a coedge. A vertex loop contains one unanchored vertex use and no coedges. A coedge and a pole-vertex use each own an ordered list of parameter-space curve uses. The uses of a coedge are in its traversal order, with its sense applied, and form one chain from its start to its end; the uses of a pole-vertex use follow the loop traversal. A use's optional parameter range states its interval in the traversal direction, so a decreasing range traverses the pcurve backward. Each pcurve use may record whether the source declared it isoparametric. An edge's `ends` names its start and end vertices; an edge with no `ends` is a closed edge with no vertex on a closed carrier curve. An edge optionally references a curve and canonical parameter range. A vertex references a point carrier. Point remains a separate carrier because it has independent identity and provenance.
 
 | cadmpeg IR | ACIS/ASM | Parasolid        | STEP AP242                                                            |
 | ---------- | -------- | ---------------- | --------------------------------------------------------------------- |
@@ -448,7 +448,6 @@ The generated document begins with this complete hierarchy and representative ra
       {
         "id": "body0",
         "kind": "solid",
-        "regions": ["region0"],
         "name": "unit cube"
       }
     ],
@@ -457,7 +456,7 @@ The generated document begins with this complete hierarchy and representative ra
       {
         "id": "shell0",
         "region": "region0",
-        "faces": ["f_bottom", "f_top", "f_front", "f_right", "f_back", "f_left"]
+        "members": []
       }
     ],
     "faces": [
@@ -500,10 +499,8 @@ The generated document begins with this complete hierarchy and representative ra
     "edges": [
       {
         "id": "e0",
-        "curve": "crv_e0",
-        "start": "v0",
-        "end": "v1",
-        "param_range": [0.0, 10.0]
+        "carrier": { "curve": "crv_e0", "param_range": [0.0, 10.0] },
+        "ends": { "start": "v0", "end": "v1" }
       }
     ],
     "vertices": [

@@ -55,13 +55,14 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
         id: vertex.clone(),
         point: PointId::mint("fcstd:test:point#0").expect("point id"),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.edges.push(Edge {
         id: EdgeId::mint("fcstd:test:edge#shape:0").expect("edge id"),
         carrier: EdgeCarrier::unbounded(None),
-        start: vertex.clone(),
-        end: vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
         tolerance: None,
+        native_ref: None,
     });
     let mut plan = super::AppearancePlan::default();
     let mut losses = Vec::new();
@@ -146,6 +147,7 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
             cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("p1")),
         ),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.edges.push(Edge {
         id: EdgeId::compose(
@@ -153,9 +155,12 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
             cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("e1")),
         ),
         carrier: EdgeCarrier::unbounded(None),
-        start: vertex_id.clone(),
-        end: vertex_id,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            vertex_id.clone(),
+            vertex_id,
+        )),
         tolerance: None,
+        native_ref: None,
     });
     let mut plan = super::AppearancePlan::default();
     let mut losses = Vec::new();

@@ -7,9 +7,6 @@
         {
           "id": "iges:model:body#D9",
           "kind": "sheet",
-          "regions": [
-            "iges:model:region#D9"
-          ],
           "visible": true
         }
       ],
@@ -164,9 +161,11 @@
               4.0
             ]
           },
-          "end": "iges:model:vertex#D9:0:0",
+          "ends": {
+            "end": "iges:model:vertex#D9:0:0",
+            "start": "iges:model:vertex#D9:0:0"
+          },
           "id": "iges:model:edge#D9:0:0",
-          "start": "iges:model:vertex#D9:0:0",
           "tolerance": 0.001
         }
       ],
@@ -274,12 +273,7 @@
       "shells": [
         {
           "id": "iges:model:shell#D9",
-          "members": [
-            {
-              "id": "iges:model:face#D9",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D9"
         }
       ],

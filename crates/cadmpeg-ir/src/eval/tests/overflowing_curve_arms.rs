@@ -59,11 +59,13 @@ fn curve_surface_model(
             id: id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         }));
     ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: geometry.clone(),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction,
@@ -216,6 +218,7 @@ fn procedural_curve_model(
             id: id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         }));
     ir.geometry.curves.push(Curve {
         parameter_range: None,
@@ -225,6 +228,7 @@ fn procedural_curve_model(
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_curve(&owner, ProceduralCurve::new(construction, definition(&ids)))
@@ -389,6 +393,7 @@ fn an_extrusion_over_a_helix_whose_tangent_overflows_has_its_finite_point() {
         id: surface.clone(),
         geometry: geometry.clone(),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction,
@@ -953,6 +958,7 @@ fn an_extrusion_over_a_helix_whose_acceleration_overflows_keeps_its_first_partia
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction,

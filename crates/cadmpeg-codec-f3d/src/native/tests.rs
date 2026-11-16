@@ -254,7 +254,14 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
 
     assert_eq!(decoded.ir().geometry.coedges.len(), 3);
     assert_eq!(decoded.ir().geometry.edges.len(), 3);
-    assert_eq!(decoded.ir().geometry.shells[0].faces().len(), 1);
+    assert_eq!(
+        decoded
+            .ir()
+            .geometry
+            .shell_faces(&decoded.ir().geometry.shells[0].id)
+            .count(),
+        1
+    );
     assert_eq!(
         f3d_native(decoded.ir())
             .tolerant_coedge_parameters
@@ -546,6 +553,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
                 expected.clone(),
             )),
             source_object: None,
+            native_ref: None,
         });
     let tolerant_coedge = source_less.geometry.coedges[0].id.clone();
     source_less.geometry.coedges[0].use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {

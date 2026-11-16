@@ -7,9 +7,6 @@
         {
           "id": "iges:model:body#D3",
           "kind": "sheet",
-          "regions": [
-            "iges:model:region#D3"
-          ],
           "visible": true
         }
       ],
@@ -73,12 +70,7 @@
       "shells": [
         {
           "id": "iges:model:shell#D3",
-          "members": [
-            {
-              "id": "iges:model:face#D3",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D3"
         }
       ],

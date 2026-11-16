@@ -624,6 +624,7 @@ pub(super) fn transfer_fc05_cap_circles(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
         }
@@ -679,6 +680,7 @@ pub(super) fn transfer_fc05_cap_circles(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }

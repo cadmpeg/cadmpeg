@@ -129,26 +129,19 @@ fn shared_by_two_placements() -> (CadIr, SurfaceId) {
     let body = BodyId::mint("test:model:body#second").expect("identity");
     face.id = cadmpeg_ir::ids::FaceId::mint("test:model:face#second").expect("identity");
     face.shell = shell.clone();
-    ir.geometry.shells.push(
-        Shell::new(
-            shell.clone(),
-            region.clone(),
-            vec![face.id.clone()],
-            Vec::new(),
-            Vec::new(),
-        )
-        .expect("shell"),
-    );
+    ir.geometry
+        .shells
+        .push(Shell::new(shell.clone(), region.clone()));
     ir.geometry.faces.push(face);
     ir.geometry.regions.push(Region {
         id: region.clone(),
         body: body.clone(),
         shells: vec![shell],
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::Sheet,
-        regions: vec![region],
         transform: Transform::affine([
             [1.0, 0.0, 0.0, 40.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -157,6 +150,7 @@ fn shared_by_two_placements() -> (CadIr, SurfaceId) {
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.finalize();
     (ir, surface)

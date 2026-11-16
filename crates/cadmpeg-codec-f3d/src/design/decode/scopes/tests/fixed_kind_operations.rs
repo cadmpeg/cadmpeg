@@ -1650,6 +1650,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             }],
             &[cadmpeg_ir::geometry::Surface {
                 id: surface_id.clone(),
@@ -1664,6 +1665,7 @@ fn fixed_kind_edge_and_revolve_operations(
                     ),
                 ),
                 source_object: None,
+                native_ref: None,
             }],
         ),
         &[],
@@ -1692,6 +1694,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             }],
             &[cadmpeg_ir::geometry::Surface {
                 id: surface_id.clone(),
@@ -1706,6 +1709,7 @@ fn fixed_kind_edge_and_revolve_operations(
                     ),
                 ),
                 source_object: None,
+                native_ref: None,
             }],
         ),
         &crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 500),
@@ -1800,6 +1804,7 @@ fn fixed_kind_edge_and_revolve_operations(
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         },
         cadmpeg_ir::topology::Face {
             id: cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-b").expect("identity grammar"),
@@ -1812,6 +1817,7 @@ fn fixed_kind_edge_and_revolve_operations(
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         },
     ];
     let mut axis_surfaces = [
@@ -1830,6 +1836,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 ),
             ),
             source_object: None,
+            native_ref: None,
         },
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
@@ -1846,6 +1853,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 ),
             ),
             source_object: None,
+            native_ref: None,
         },
     ];
     crate::design::feature_project::bind_revolve_face_axes(

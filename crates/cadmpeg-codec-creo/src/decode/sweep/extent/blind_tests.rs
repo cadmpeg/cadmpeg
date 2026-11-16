@@ -150,6 +150,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(table.clone());
@@ -236,6 +237,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         ir.geometry.surfaces.extend([
@@ -244,6 +246,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             },
             plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
             plane(32, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),

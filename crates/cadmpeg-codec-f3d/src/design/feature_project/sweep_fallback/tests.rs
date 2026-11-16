@@ -437,11 +437,11 @@ fn complete_output_facts_reject_partial_mixed_and_duplicate_bodies() {
     let body = Body {
         id: BodyId::mint("test:model:body#one").unwrap(),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     feature
         .evaluation

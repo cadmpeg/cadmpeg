@@ -981,6 +981,7 @@ pub(super) fn emit_pcurves(
                     Some(cadmpeg_ir::units::FiniteVector::from(parameter_range)),
                     None,
                 ),
+                native_ref: None,
             });
         }
     }

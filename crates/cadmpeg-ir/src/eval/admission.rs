@@ -499,6 +499,7 @@ mod tests {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
@@ -511,6 +512,7 @@ mod tests {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let index = crate::index::ModelIndex::build(&ir);
         for route in 0..4 {
@@ -573,6 +575,7 @@ mod tests {
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry
             .add_procedural_curve(
@@ -626,6 +629,7 @@ mod tests {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         };
         let pcurve = PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
@@ -648,6 +652,7 @@ mod tests {
                         .unwrap(),
                     )),
                     source_object: None,
+                    native_ref: None,
                 });
                 ir.geometry
                     .add_procedural_surface(

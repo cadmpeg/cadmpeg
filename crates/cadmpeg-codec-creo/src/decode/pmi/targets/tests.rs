@@ -54,6 +54,7 @@ fn edge_ir(edges: &[(u32, &[u32])]) -> cadmpeg_ir::document::CadIr {
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,
+                native_ref: None,
             });
             rings.entry(*face).or_default().push(coedge);
         }
@@ -63,6 +64,7 @@ fn edge_ir(edges: &[(u32, &[u32])]) -> cadmpeg_ir::document::CadIr {
             id: LoopId::try_from(format!("creo:visibgeom:loop#{face}")).expect("loop id"),
             face: FaceId::try_from(format!("creo:visibgeom:face#{face}")).expect("face id"),
             boundary: LoopBoundary::Ring(LoopRing::new(coedges, Vec::new()).expect("loop ring")),
+            native_ref: None,
         });
     }
     ir
@@ -124,6 +126,7 @@ fn cylinder_surface(id: &str, center_x: f64) -> cadmpeg_ir::geometry::Surface {
             .expect("cylinder"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -140,6 +143,7 @@ fn visible_face(ir: &mut cadmpeg_ir::document::CadIr, face_id: &str, surface: &s
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
 }
 

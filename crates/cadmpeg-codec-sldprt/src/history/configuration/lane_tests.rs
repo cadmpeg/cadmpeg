@@ -81,6 +81,7 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
         bodies: None,
@@ -105,6 +106,7 @@ fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.model
         .configurations
@@ -1665,6 +1667,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     ir.model.configurations.push(with_configuration_id(
         design_configuration("config", 0, Some(0), None),
@@ -1767,6 +1770,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.faces.push(Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
@@ -1780,6 +1784,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     let mut configuration = design_configuration("config", 0, None, None);
     configuration.bodies = None;
