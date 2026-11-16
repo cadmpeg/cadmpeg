@@ -135,4 +135,12 @@
               ],
               "tag": "crease",
               "sector_coefficients": [
-            
+                0.125,
+                0.875
+              ]
+            },
+            {
+              "vertices": [
+                1,
+                2
+        

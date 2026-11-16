@@ -21,9 +21,6 @@
       {
         "id": "synthetic:cube:body#0",
         "kind": "solid",
-        "regions": [
-          "synthetic:cube:region#0"
-        ],
         "name": "unit cube"
       }
     ],
@@ -40,32 +37,7 @@
       {
         "id": "synthetic:cube:shell#0",
         "region": "synthetic:cube:region#0",
-        "members": [
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#bottom"
-          },
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#top"
-          },
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#front"
-          },
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#right"
-          },
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#back"
-          },
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#left"
-          }
-        ]
+        "members": []
       }
     ],
     "faces": [
@@ -438,8 +410,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#0",
-        "end": "synthetic:cube:vertex#1"
+        "ends": {
+          "start": "synthetic:cube:vertex#0",
+          "end": "synthetic:cube:vertex#1"
+        }
       },
       {
         "id": "synthetic:cube:edge#1",
@@ -450,8 +424,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#1",
-        "end": "synthetic:cube:vertex#2"
+        "ends": {
+          "start": "synthetic:cube:vertex#1",
+          "end": "synthetic:cube:vertex#2"
+        }
       },
       {
         "id": "synthetic:cube:edge#10",
@@ -462,8 +438,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#2",
-        "end": "synthetic:cube:vertex#6"
+        "ends": {
+          "start": "synthetic:cube:vertex#2",
+          "end": "synthetic:cube:vertex#6"
+        }
       },
       {
         "id": "synthetic:cube:edge#11",
@@ -474,8 +452,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#3",
-        "end": "synthetic:cube:vertex#7"
+        "ends": {
+          "start": "synthetic:cube:vertex#3",
+          "end": "synthetic:cube:vertex#7"
+        }
       },
       {
         "id": "synthetic:cube:edge#2",
@@ -486,8 +466,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#2",
-        "end": "synthetic:cube:vertex#3"
+        "ends": {
+          "start": "synthetic:cube:vertex#2",
+          "end": "synthetic:cube:vertex#3"
+        }
       },
       {
         "id": "synthetic:cube:edge#3",
@@ -498,8 +480,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#3",
-        "end": "synthetic:cube:vertex#0"
+        "ends": {
+          "start": "synthetic:cube:vertex#3",
+          "end": "synthetic:cube:vertex#0"
+        }
       },
       {
         "id": "synthetic:cube:edge#4",
@@ -510,8 +494,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#4",
-        "end": "synthetic:cube:vertex#5"
+        "ends": {
+          "start": "synthetic:cube:vertex#4",
+          "end": "synthetic:cube:vertex#5"
+        }
       },
       {
         "id": "synthetic:cube:edge#5",
@@ -522,8 +508,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#5",
-        "end": "synthetic:cube:vertex#6"
+        "ends": {
+          "start": "synthetic:cube:vertex#5",
+          "end": "synthetic:cube:vertex#6"
+        }
       },
       {
         "id": "synthetic:cube:edge#6",
@@ -534,8 +522,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#6",
-        "end": "synthetic:cube:vertex#7"
+        "ends": {
+          "start": "synthetic:cube:vertex#6",
+          "end": "synthetic:cube:vertex#7"
+        }
       },
       {
         "id": "synthetic:cube:edge#7",
@@ -546,8 +536,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#7",
-        "end": "synthetic:cube:vertex#4"
+        "ends": {
+          "start": "synthetic:cube:vertex#7",
+          "end": "synthetic:cube:vertex#4"
+        }
       },
       {
         "id": "synthetic:cube:edge#8",
@@ -558,8 +550,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#0",
-        "end": "synthetic:cube:vertex#4"
+        "ends": {
+          "start": "synthetic:cube:vertex#0",
+          "end": "synthetic:cube:vertex#4"
+        }
       },
       {
         "id": "synthetic:cube:edge#9",
@@ -570,8 +564,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#1",
-        "end": "synthetic:cube:vertex#5"
+        "ends": {
+          "start": "synthetic:cube:vertex#1",
+          "end": "synthetic:cube:vertex#5"
+        }
       }
     ],
     "vertices": [

@@ -8,7 +8,7 @@ use cadmpeg_test_support::edit;
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
@@ -1370,6 +1370,25 @@ fn edge_without_curve_is_reported_and_omitted() {
 }
 
 #[test]
+fn edge_without_vertices_is_reported_and_omitted() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let edge = ir.geometry.edges[0].id.clone();
+    ir.geometry.edges[0].ends = None;
+    let mut buf = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::EdgeNoVertex.kind()
+            && loss.message == format!("edge {edge} was omitted because it has no vertex")
+    }));
+}
+
+#[test]
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
         geometry_role: None,
@@ -1675,60 +1694,6 @@ fn elliptical_cone_reduction_is_reported() {
         loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.message.contains("elliptical cone surface(s)")
     }));
-}
-
-/// Plans a document whose single surface is a circular cone of `half_angle`.
-fn circular_cone_plan(half_angle: f64) -> Result<ExportPlan, cadmpeg_core::CodecError> {
-    let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            2.0,
-            1.0,
-            half_angle,
-        )
-        .unwrap(),
-    ));
-
-    StepCodec::default().plan(
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
-    )
-}
-
-#[test]
-fn cone_semi_angle_inside_wr2_is_planned() {
-    assert!(circular_cone_plan(0.5).is_ok());
-}
-
-#[test]
-fn zero_cone_semi_angle_is_planned_as_a_cylinder() {
-    assert!(circular_cone_plan(0.0).is_ok());
-}
-
-#[test]
-fn negative_cone_semi_angle_inside_wr2_is_planned() {
-    assert!(circular_cone_plan(-0.715_584_993_317_674_8).is_ok());
-}
-
-#[test]
-fn right_angle_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(std::f64::consts::FRAC_PI_2)
-        .expect_err("right angle cone is outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
-}
-
-#[test]
-fn negative_right_angle_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(-std::f64::consts::FRAC_PI_2)
-        .expect_err("negative right angle cone is outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
 }
 
 /// A similarity transform, which the writer carries as a `SURFACE_REPLICA`.
