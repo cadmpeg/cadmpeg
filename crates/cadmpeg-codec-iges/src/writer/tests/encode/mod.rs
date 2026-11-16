@@ -237,6 +237,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let plan =
             plan_at(version, &ir, None).unwrap_or_else(|error| panic!("{version:?}: {error}"));
@@ -586,6 +587,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("test:model:surface#nurbs").expect("identity grammar"),
@@ -613,6 +615,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
                 .expect("valid test NURBS surface"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
 
@@ -746,6 +749,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("test:model:surface#cone").expect("identity grammar"),
@@ -761,6 +765,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
@@ -774,6 +779,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("test:model:surface#torus").expect("identity grammar"),
@@ -788,6 +794,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
 
@@ -822,6 +829,7 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
@@ -909,6 +917,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     for (index, position) in positions.into_iter().enumerate() {
         ir.geometry.points.push(Point::new(
@@ -921,6 +930,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
             tolerance: None,
+            native_ref: None,
         });
     }
     for index in 0..4 {
@@ -936,6 +946,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.edges.push(Edge {
             id: edge_ids[index].clone(),
@@ -944,9 +955,12 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                 Some([0.0, 1.0]),
             )
             .unwrap(),
-            start: vertex_ids[index].clone(),
-            end: vertex_ids[end].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertex_ids[index].clone(),
+                vertex_ids[end].clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         let start = positions[index];
         let end_position = positions[end];
@@ -977,6 +991,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                 ),
                 None,
             ),
+            native_ref: None,
         });
         let mut pcurve_uses = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: pcurve_ids[index].clone(),
@@ -1007,6 +1022,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                     ),
                     None,
                 ),
+                native_ref: None,
             });
             pcurve_uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: split_pcurve_id,
@@ -1022,6 +1038,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             sense: Sense::Forward,
             pcurves: pcurve_uses,
             use_curve: None,
+            native_ref: None,
         });
     }
     ir.geometry.loops.push(Loop {
@@ -1031,6 +1048,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
                 .expect("valid loop ring"),
         ),
+        native_ref: None,
     });
     ir.geometry.faces.push(Face {
         id: face_id.clone(),
@@ -1041,25 +1059,25 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
-    ir.geometry.shells.push(Shell::with_face(
-        shell_id.clone(),
-        region_id.clone(),
-        face_id,
-    ));
+    ir.geometry
+        .shells
+        .push(Shell::new(shell_id.clone(), region_id.clone()));
     ir.geometry.regions.push(Region {
         id: region_id,
         body: body_id.clone(),
         shells: vec![shell_id],
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
-        regions: vec![RegionId::mint("test:model:region#sheet").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
 
     let reversed_order = [
@@ -1502,7 +1520,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
         .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == edge.start)
+        .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
         .and_then(|vertex| {
             decoded
                 .ir()
@@ -1519,7 +1537,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
         .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == edge.end)
+        .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().end)
         .and_then(|vertex| {
             decoded
                 .ir()
@@ -1575,6 +1593,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
             Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite fixture range")),
             None,
         ),
+        native_ref: None,
     });
     decoded.ir_mut().geometry.coedges[coedge_index]
         .pcurves
@@ -1744,7 +1763,7 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
         .geometry
         .regions
         .iter()
-        .find(|region| region.id == body.regions[0])
+        .find(|region| region.body == body.id)
         .unwrap();
     let shell = round_trip
         .ir()
@@ -1753,7 +1772,7 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
         .iter()
         .find(|shell| shell.id == region.shells[0])
         .unwrap();
-    assert_eq!(shell.faces().len(), 3);
+    assert_eq!(round_trip.ir().geometry.shell_faces(&shell.id).count(), 3);
     let shared_edge = round_trip
         .ir()
         .geometry
@@ -1822,13 +1841,12 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .iter()
         .find(|body| body.kind == BodyKind::Sheet)
         .unwrap();
-    let region_id = body.regions[0].clone();
     let region = decoded
         .ir()
         .geometry
         .regions
         .iter()
-        .find(|region| region.id == region_id)
+        .find(|region| region.body == body.id)
         .unwrap();
     let shell_id = region.shells[0].clone();
     let shell = decoded
@@ -1838,8 +1856,14 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .iter()
         .find(|shell| shell.id == shell_id)
         .unwrap();
-    let target_face_id = shell.faces()[0].clone();
-    let moved_face_id = shell.faces()[2].clone();
+    let shell_faces = decoded
+        .ir()
+        .geometry
+        .shell_faces(&shell.id)
+        .map(|face| face.id.clone())
+        .collect::<Vec<_>>();
+    let target_face_id = shell_faces[0].clone();
+    let moved_face_id = shell_faces[2].clone();
     let outer_loop_id = decoded
         .ir()
         .geometry
@@ -1881,15 +1905,6 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .geometry
         .faces
         .retain(|face| face.id != moved_face_id);
-    decoded
-        .ir_mut()
-        .geometry
-        .shells
-        .iter_mut()
-        .find(|shell| shell.id == shell_id)
-        .unwrap()
-        .edit_topology(|faces, _, _| faces.retain(|face_id| *face_id != moved_face_id))
-        .unwrap();
     {
         let mut ir = decoded.ir_mut();
         let moved_loop = ir

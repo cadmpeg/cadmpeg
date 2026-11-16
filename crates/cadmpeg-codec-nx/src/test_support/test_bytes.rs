@@ -47,33 +47,25 @@ pub(crate) fn attach_test_body_surface(
         ir.geometry.bodies.push(Body {
             id: body_id.clone(),
             kind: BodyKind::Solid,
-            regions: vec![region_id.clone()],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         ir.geometry.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id.clone()],
+            native_ref: None,
         });
     }
     let face_id = FaceId::mint(format!("{body_id}:face:{}", ir.geometry.faces.len()))
         .expect("identity grammar");
-    if let Some(shell) = ir
-        .geometry
-        .shells
-        .iter_mut()
-        .find(|shell| shell.id == shell_id)
-    {
-        shell.add_face(face_id.clone());
-    } else {
-        ir.geometry.shells.push(Shell::with_face(
-            shell_id.clone(),
-            region_id,
-            face_id.clone(),
-        ));
+    if !ir.geometry.shells.iter().any(|shell| shell.id == shell_id) {
+        ir.geometry
+            .shells
+            .push(Shell::new(shell_id.clone(), region_id));
     }
     ir.geometry.faces.push(Face {
         id: face_id,
@@ -84,6 +76,7 @@ pub(crate) fn attach_test_body_surface(
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
 }
 

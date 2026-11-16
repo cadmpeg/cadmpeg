@@ -156,9 +156,9 @@ fn semantic_writer_emits_face_records_deterministically() {
     for (index, face) in ir.geometry.faces.iter_mut().enumerate() {
         face.color = Some(
             Color::new(
-                f32::from(u16::try_from(index).expect("index fits u16")) / 10.0,
-                f32::from(u16::try_from(index + 1).expect("index fits u16")) / 10.0,
-                f32::from(u16::try_from(index + 2).expect("index fits u16")) / 10.0,
+                f64::from(u16::try_from(index).expect("index fits u16")) / 10.0,
+                f64::from(u16::try_from(index + 1).expect("index fits u16")) / 10.0,
+                f64::from(u16::try_from(index + 2).expect("index fits u16")) / 10.0,
                 1.0,
             )
             .expect("valid color"),

@@ -6,10 +6,7 @@
       "bodies": [
         {
           "id": "sldprt:brep:body#900",
-          "kind": "solid",
-          "regions": [
-            "sldprt:brep:region#902"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -162,33 +159,41 @@
           "carrier": {
             "curve": "sldprt:brep:curve#70"
           },
-          "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
+          "ends": {
+            "end": "sldprt:brep:vertex#51",
+            "start": "sldprt:brep:vertex#50"
+          },
+          "id": "sldprt:brep:edge#40"
         },
         {
           "carrier": {
             "curve": "sldprt:brep:curve#71"
           },
-          "end": "sldprt:brep:vertex#52",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
+          "ends": {
+            "end": "sldprt:brep:vertex#52",
+            "start": "sldprt:brep:vertex#51"
+          },
+          "id": "sldprt:brep:edge#41"
         },
         {
           "carrier": {
             "curve": "sldprt:brep:curve#72"
           },
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#52"
+          "ends": {
+            "end": "sldprt:brep:vertex#50",
+            "start": "sldprt:brep:vertex#52"
+          },
+          "id": "sldprt:brep:edge#42"
         },
         {
           "carrier": {
             "curve": "sldprt:brep:curve#sphere-seam-face:0"
           },
-          "end": "sldprt:brep:vertex#52",
-          "id": "sldprt:brep:edge#sphere-seam-face:0",
-          "start": "sldprt:brep:vertex#52"
+          "ends": {
+            "end": "sldprt:brep:vertex#52",
+            "start": "sldprt:brep:vertex#52"
+          },
+          "id": "sldprt:brep:edge#sphere-seam-face:0"
         }
       ],
       "faces": [
@@ -340,12 +345,7 @@
       "shells": [
         {
           "id": "sldprt:brep:shell#901",
-          "members": [
-            {
-              "id": "sldprt:brep:face#10",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "sldprt:brep:region#902"
         }
       ],

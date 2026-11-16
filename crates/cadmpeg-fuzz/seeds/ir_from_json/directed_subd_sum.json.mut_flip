@@ -135,7 +135,7 @@
               ],
               "tag": "crease",
               "sector_coefficients": [
-            ß   0.125,
+                0.125,
                 0.875
               ]
             },
@@ -143,7 +143,7 @@
               "vertices": [
                 1,
                 2
-              ],
+        ß     ],
               "sharpness": [
                 0.0,
                 0.5
@@ -172,18 +172,30 @@
           ],
           "faces": [
             {
-              "edges": [
+              "sides": [
                 {
-                  "edge": 0,
-                  "reversed": false
+                  "edges": [
+                    {
+                      "edge": 0,
+                      "reversed": false
+                    }
+                  ]
                 },
                 {
-                  "edge": 1,
-                  "reversed": false
+                  "edges": [
+                    {
+                      "edge": 1,
+                      "reversed": false
+                    }
+                  ]
                 },
                 {
-                  "edge": 2,
-                  "reversed": false
+                  "edges": [
+                    {
+                      "edge": 2,
+                      "reversed": false
+                    }
+                  ]
                 }
               ]
             }

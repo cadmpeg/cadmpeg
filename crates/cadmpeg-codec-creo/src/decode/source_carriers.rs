@@ -661,6 +661,7 @@ mod tests {
             id: CurveId::mint("creo:test:replacement-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         };
         let geometry = curve.geometry.clone();
         let mut carriers = SourceUnitCarriers::default();
@@ -686,6 +687,7 @@ mod tests {
             id,
             geometry: geometry.clone(),
             source_object: None,
+            native_ref: None,
         };
         let mut carriers = SourceUnitCarriers::default();
         crate::decode::with_service_context(|ctx| {
@@ -701,6 +703,7 @@ mod tests {
             id: SurfaceId::mint("creo:test:replacement-surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         };
         let geometry = surface.geometry.clone();
         let mut carriers = SourceUnitCarriers::default();
@@ -725,6 +728,7 @@ mod tests {
             id,
             geometry: geometry.clone(),
             source_object: None,
+            native_ref: None,
         };
         let mut carriers = SourceUnitCarriers::default();
         crate::decode::with_service_context(|ctx| {
@@ -741,6 +745,7 @@ mod tests {
             id: CurveId::mint("creo:test:source-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::default();
@@ -770,6 +775,7 @@ mod tests {
             id,
             geometry: geometry.clone(),
             source_object: None,
+            native_ref: None,
         };
         let mut carriers = SourceUnitCarriers::default();
         let mut ir = CadIr::empty();
@@ -786,6 +792,7 @@ mod tests {
             id: SurfaceId::mint("creo:test:source-surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::default();
@@ -814,6 +821,7 @@ mod tests {
             id,
             geometry: geometry.clone(),
             source_object: None,
+            native_ref: None,
         };
         let mut carriers = SourceUnitCarriers::default();
         let mut ir = CadIr::empty();
@@ -838,6 +846,7 @@ mod tests {
                 .expect("source pcurve"),
             ),
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(None, None, None),
+            native_ref: None,
         }
     }
 
@@ -1142,11 +1151,11 @@ mod tests {
                     id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
                         .expect("identity grammar"),
                     kind: BodyKind::Solid,
-                    regions: Vec::new(),
                     transform: Some(translated_product_transform(1.0)),
                     name: None,
                     color: None,
                     visible: None,
+                    native_ref: None,
                 },
             )
         }
@@ -1210,6 +1219,7 @@ mod tests {
             id: SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
@@ -1233,6 +1243,7 @@ mod tests {
             id: CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(geometry)),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
@@ -1258,6 +1269,7 @@ mod tests {
                 .expect("valid plane fixture"),
             )),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         let scale = PositiveReal::new(25.4).expect("inch scale");
@@ -1342,6 +1354,7 @@ mod tests {
             id: owner.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         SourceUnitCarriers::default()
             .admit_procedural_surface(&mut ir, &owner, procedural)
@@ -1364,6 +1377,7 @@ mod tests {
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         SourceUnitCarriers::default()
             .admit_procedural_curve(&mut ir, &owner, procedural)
@@ -1385,6 +1399,7 @@ mod tests {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1460,6 +1475,7 @@ mod tests {
                         .expect("source line"),
                     )),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1469,9 +1485,9 @@ mod tests {
         let edge = Edge {
             id: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1").expect("identity grammar"),
             carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, 2.0])).expect("bounded line"),
-            start: vertex.clone(),
-            end: vertex,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
             tolerance: PositiveReal::new(0.1),
+            native_ref: None,
         };
         crate::decode::with_service_context(|ctx| source_carriers.admit_edge(ctx, &mut ir, edge))
             .expect("edge admission");
@@ -1510,6 +1526,7 @@ mod tests {
                         .expect("source line"),
                     )),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1531,9 +1548,9 @@ mod tests {
                         .expect("identity grammar"),
                     carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, f64::MAX]))
                         .expect("finite source range"),
-                    start: vertex.clone(),
-                    end: vertex,
+                    ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
                     tolerance: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1566,6 +1583,7 @@ mod tests {
                             parameter_range: ParameterInterval::try_from([0.0, f64::MAX])
                                 .expect("finite source interval"),
                         }),
+                        native_ref: None,
                     },
                 )
                 .expect_err("millimeter use range overflows");
@@ -1595,6 +1613,7 @@ mod tests {
                             .expect("source line"),
                         )),
                         source_object: None,
+                        native_ref: None,
                     },
                 )
             })
@@ -1608,6 +1627,7 @@ mod tests {
                         point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
                             .expect("identity grammar"),
                         tolerance: PositiveReal::new(0.5),
+                        native_ref: None,
                     },
                 )
                 .expect("vertex admission");
@@ -1626,6 +1646,7 @@ mod tests {
                         name: None,
                         color: None,
                         tolerance: PositiveReal::new(0.25),
+                        native_ref: None,
                     },
                 )
                 .expect("face admission");
@@ -1649,6 +1670,7 @@ mod tests {
                             parameter_range: ParameterInterval::try_from([1.0, 2.0])
                                 .expect("bounded source interval"),
                         }),
+                        native_ref: None,
                     },
                 )
                 .expect("coedge admission");
@@ -1684,6 +1706,7 @@ mod tests {
                         point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
                             .expect("identity grammar"),
                         tolerance: PositiveReal::new(f64::MAX),
+                        native_ref: None,
                     },
                 )
                 .expect_err("millimeter tolerance cannot be represented");
@@ -1713,6 +1736,7 @@ mod tests {
                             .expect("source plane"),
                         )),
                         source_object: None,
+                        native_ref: None,
                     },
                 )
             })
@@ -1734,6 +1758,7 @@ mod tests {
                         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None, None, None,
                         ),
+                        native_ref: None,
                     },
                     &surface_id,
                 )
@@ -1772,6 +1797,7 @@ mod tests {
                         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None, None, None,
                         ),
+                        native_ref: None,
                     },
                     &SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
                 )
@@ -1802,6 +1828,7 @@ mod tests {
                             .expect("source plane"),
                         )),
                         source_object: None,
+                        native_ref: None,
                     },
                 )
             })
@@ -1823,6 +1850,7 @@ mod tests {
                         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None, None, None,
                         ),
+                        native_ref: None,
                     },
                     &surface_id,
                 )

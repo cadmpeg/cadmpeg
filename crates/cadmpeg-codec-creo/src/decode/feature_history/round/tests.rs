@@ -53,6 +53,7 @@ fn round_sample_ir() -> cadmpeg_ir::document::CadIr {
             .expect("cylinder fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir
 }
@@ -294,6 +295,7 @@ fn chamfer_uses_transferred_model_plane_carrier() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     assert_eq!(
@@ -479,6 +481,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
                 .expect("valid ConeSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
@@ -492,6 +495,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
 
@@ -586,6 +590,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     assert_eq!(
@@ -802,6 +807,7 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
                 ),
             ),
             source_object: None,
+            native_ref: None,
         },
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
@@ -818,6 +824,7 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
                 ),
             ),
             source_object: None,
+            native_ref: None,
         },
     ]);
 
@@ -889,6 +896,7 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
                 ),
             ),
             source_object: None,
+            native_ref: None,
         });
     }
 
@@ -958,6 +966,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
                 ),
             ),
             source_object: None,
+            native_ref: None,
         });
     }
 

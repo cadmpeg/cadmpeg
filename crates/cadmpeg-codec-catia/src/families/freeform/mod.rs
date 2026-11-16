@@ -127,6 +127,7 @@ pub(super) fn append_consolidated_revolutions(
             id: directrix.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
             source_object: Some(cgm_source("profile-circle", profile.record_id)?),
+            native_ref: None,
         });
         let surface = crate::resource::compose_index_id(
             &cadmpeg_ir::identity_namespace!("catia", "consolidated", "surface-revolution-surface"),
@@ -209,6 +210,7 @@ pub(super) fn append_consolidated_revolutions(
                 cache: Some(cache),
             },
             source_object: None,
+            native_ref: None,
         });
         admission.charge()?;
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
@@ -668,6 +670,7 @@ pub(super) fn try_decode_freeform_surfaces(
                     id,
                     geometry: surface.geometry,
                     source_object: Some(surface.source_object),
+                    native_ref: None,
                 });
             }
         }
@@ -763,6 +766,7 @@ pub(super) fn try_decode_freeform_surfaces(
                     "b2-nurbs-curve-frame",
                     format_args!("{:010}", curve.pos)
                 ))),
+                native_ref: None,
             });
             standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
         }
@@ -790,6 +794,7 @@ pub(super) fn try_decode_freeform_surfaces(
                     "a5-nurbs-curve-frame",
                     format_args!("{:010}", curve.pos)
                 ))),
+                native_ref: None,
             });
             standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
         }
@@ -831,6 +836,7 @@ pub(super) fn try_decode_freeform_surfaces(
                     "b2-spatial-circle-frame",
                     format_args!("{:010}", circle.pos)
                 ))),
+                native_ref: None,
             });
             standalone_wires.push((id, parameter_range, circle.pos));
         }
@@ -1173,9 +1179,10 @@ fn attach_standalone_wires(
     }
     let shell_owner_id = shell_id.clone();
     let shell_region_id = region_id.clone();
-    let Ok(shell) = Shell::new(shell_id, shell_region_id, Vec::new(), edge_ids, Vec::new()) else {
+    if edge_ids.is_empty() {
         return Ok(false);
-    };
+    }
+    let shell = Shell::with_members(shell_id, shell_region_id, edge_ids, Vec::new());
     for id in [
         body_id.as_str(),
         region_id.as_str(),
@@ -1242,11 +1249,13 @@ fn attach_standalone_wires(
                 id: end_vertex_id,
                 point: end_vertex_point_id,
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: start_vertex_id,
                 point: start_vertex_point_id,
                 tolerance: None,
+                native_ref: None,
             },
         ]);
         let [start_edge_vertex_id, end_edge_vertex_id] = edge_vertex_ids;
@@ -1254,23 +1263,24 @@ fn attach_standalone_wires(
         ir.geometry.edges.push(Edge {
             id: edge_id,
             carrier,
-            start: start_edge_vertex_id,
-            end: end_edge_vertex_id,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                start_edge_vertex_id,
+                end_edge_vertex_id,
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     admission.charge()?;
     let region_body_id = body_id.clone();
-    let body_region_id = region_id.clone();
-    let body_regions = vec![body_region_id];
     ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Wire,
-        regions: body_regions,
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     admission.charge()?;
     let region_shells = vec![shell_owner_id];
@@ -1278,6 +1288,7 @@ fn attach_standalone_wires(
         id: region_id,
         body: region_body_id,
         shells: region_shells,
+        native_ref: None,
     });
     admission.charge()?;
     ir.geometry.shells.push(shell);
@@ -1470,6 +1481,7 @@ fn consolidated_line_profiles(
                     "b2-03-0e-frame",
                     format_args!("{:010}", line.pos),
                 )?),
+                native_ref: None,
             },
             range: line.range.endpoints(),
             pos: line.pos,
@@ -1672,6 +1684,7 @@ fn append_a5_rolling_ball_pools(
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             });
         }
         let definition = jet.definition().ok_or_else(|| {
@@ -1704,6 +1717,7 @@ fn append_a5_rolling_ball_pools(
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
 
         annotate(
@@ -1957,6 +1971,7 @@ fn attach_closed_two_edge_face(
         id: surface_id.clone(),
         geometry,
         source_object: None,
+        native_ref: None,
     });
     for ((id, curve), edge) in curve_ids
         .into_iter()
@@ -1977,6 +1992,7 @@ fn attach_closed_two_edge_face(
             parameter_range: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             source_object: None,
+            native_ref: None,
         });
     }
     for id in [
@@ -2016,6 +2032,7 @@ fn attach_closed_two_edge_face(
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
             tolerance: None,
+            native_ref: None,
         });
     }
     for (index, carrier) in [first_carrier, second_carrier].into_iter().enumerate() {
@@ -2042,15 +2059,19 @@ fn attach_closed_two_edge_face(
         ir.geometry.edges.push(Edge {
             id: edge_ids[index].clone(),
             carrier,
-            start: end_vertices[0].clone(),
-            end: end_vertices[1].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                end_vertices[0].clone(),
+                end_vertices[1].clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         admission.charge()?;
         ir.geometry.pcurves.push(Pcurve {
             id: pcurve_ids[index].clone(),
             geometry: closed.edges[index].geometry.clone(),
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            native_ref: None,
         });
         admission.charge()?;
         ir.geometry.coedges.push(Coedge {
@@ -2069,6 +2090,7 @@ fn attach_closed_two_edge_face(
                 parameter_range: None,
             }],
             use_curve: None,
+            native_ref: None,
         });
     }
     admission.charge()?;
@@ -2076,6 +2098,7 @@ fn attach_closed_two_edge_face(
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: LoopBoundary::Ring(ring),
+        native_ref: None,
     });
     admission.charge()?;
     ir.geometry.faces.push(Face {
@@ -2091,28 +2114,28 @@ fn attach_closed_two_edge_face(
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     admission.charge()?;
-    ir.geometry.shells.push(Shell::with_face(
-        shell_id.clone(),
-        region_id.clone(),
-        face_id,
-    ));
+    ir.geometry
+        .shells
+        .push(Shell::new(shell_id.clone(), region_id.clone()));
     admission.charge()?;
     ir.geometry.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id],
+        native_ref: None,
     });
     admission.charge()?;
     ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
-        regions: vec![region_id],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     refusal.push_two_edge_binding_inferred(owner_pos, desired_forward.is_some());
     if fitted_surface {
@@ -2163,6 +2186,7 @@ pub(super) fn append_freeform_surface_pools(
                 surface.geometry.clone(),
             )),
             source_object: Some(source_object),
+            native_ref: None,
         });
     }
 
@@ -2192,6 +2216,7 @@ pub(super) fn append_freeform_surface_pools(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
 
         let procedural_id = crate::resource::compose_index_id(
@@ -2290,6 +2315,7 @@ pub(super) fn append_freeform_surface_pools(
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
             source_object: None,
+            native_ref: None,
         });
     }
 
@@ -2576,8 +2602,10 @@ fn append_resolved_consolidated_surface_curves(
                 curve_id,
                 standard_surfaces,
                 [
-                    *vertex_positions.get(&edge.start)?,
-                    *vertex_positions.get(&edge.end)?,
+                    *edge
+                        .start()
+                        .and_then(|vertex| vertex_positions.get(vertex))?,
+                    *edge.end().and_then(|vertex| vertex_positions.get(vertex))?,
                 ],
             ))
         })();
@@ -2705,6 +2733,7 @@ fn append_resolved_consolidated_surface_curves(
                                 record: None,
                             }),
                             source_object: None,
+                            native_ref: None,
                         });
                         let procedural_id = crate::resource::compose_index_id(
                             &cadmpeg_ir::identity_namespace!(
@@ -2858,6 +2887,7 @@ fn append_resolved_consolidated_surface_curves(
                     id: surface_owner_id,
                     geometry: carrier,
                     source_object,
+                    native_ref: None,
                 });
                 let stored_id = id.clone();
                 surface_ids.insert(key, stored_id);
@@ -3133,16 +3163,26 @@ fn append_resolved_consolidated_surface_curves(
                         let edge = &ir.geometry.edges[identity.0];
                         let edge_id = &edge.id;
                         let edge_endpoints = [
-                            *option_or_none!(vertex_positions.get(&edge.start)),
-                            *option_or_none!(vertex_positions.get(&edge.end)),
+                            *option_or_none!(edge
+                                .start()
+                                .and_then(|vertex| vertex_positions.get(vertex))),
+                            *option_or_none!(edge
+                                .end()
+                                .and_then(|vertex| vertex_positions.get(vertex))),
                         ];
                         // The shared coincidence bound, widened by whatever the
                         // topology itself declares. A binding accepted here is one
                         // the endpoint-incidence contract also accepts.
                         let edge_allowance = [
                             edge.tolerance,
-                            vertex_tolerances.get(&edge.start).copied().flatten(),
-                            vertex_tolerances.get(&edge.end).copied().flatten(),
+                            edge.start()
+                                .and_then(|vertex| vertex_tolerances.get(vertex))
+                                .copied()
+                                .flatten(),
+                            edge.end()
+                                .and_then(|vertex| vertex_tolerances.get(vertex))
+                                .copied()
+                                .flatten(),
                         ]
                         .into_iter()
                         .flatten()
@@ -3327,6 +3367,7 @@ fn append_resolved_consolidated_surface_curves(
                             )),
                             None,
                         ),
+                        native_ref: None,
                     });
                     ir.geometry.coedges[coedge_index].pcurves.push(
                         cadmpeg_ir::topology::PcurveUse {
@@ -3374,6 +3415,7 @@ fn append_resolved_consolidated_surface_curves(
                 id: curve_owner_id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             });
             let procedural_id = crate::resource::compose_index_id(
                 &cadmpeg_ir::identity_namespace!("catia", "consolidated", "construction"),
@@ -3894,6 +3936,7 @@ fn append_a8_rolling_ball_pools(
                 cache: None,
             },
             source_object: Some(cgm_source("surface", jet.object_id)?),
+            native_ref: None,
         });
 
         annotate(
@@ -4010,6 +4053,7 @@ mod tests {
                 .expect("valid linear wire curve"),
             )),
             source_object: None,
+            native_ref: None,
         });
         crate::test_support::with_entity_limit(0, |ctx| {
             let mut admission = super::FamilyEntityAdmission::new(ctx);
@@ -4185,6 +4229,7 @@ mod tests {
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
+            native_ref: None,
         });
         assert!(with_admission(|admission| attach_standalone_wires(
             &mut ir,
@@ -4198,7 +4243,10 @@ mod tests {
             cadmpeg_ir::topology::BodyKind::Wire
         );
         assert_eq!(
-            ir.geometry.shells[0].wire_edges(),
+            ir.geometry.shells[0]
+                .wire_edges()
+                .cloned()
+                .collect::<Vec<_>>(),
             [ir.geometry.edges[0].id.clone()]
         );
         assert_eq!(
@@ -4233,6 +4281,7 @@ mod tests {
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
+            native_ref: None,
         });
         let before = ir.clone();
         assert!(!with_admission(|admission| attach_standalone_wires(
@@ -4656,6 +4705,7 @@ mod tests {
                 point: PointId::mint(format!("catia:test:point#point%23{index}"))
                     .expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             });
         }
         let curve_id =
@@ -4665,6 +4715,7 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.edges.push(Edge {
             id: EdgeId::mint("catia:test:edge#standard-edge".to_string())
@@ -4674,11 +4725,14 @@ mod tests {
                 Some([0.0, 1.0]),
             )
             .expect("valid edge carrier"),
-            start: VertexId::mint("catia:test:vertex#vertex%231".to_string())
-                .expect("identity grammar"),
-            end: VertexId::mint("catia:test:vertex#vertex%230".to_string())
-                .expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("catia:test:vertex#vertex%231".to_string())
+                    .expect("identity grammar"),
+                VertexId::mint("catia:test:vertex#vertex%230".to_string())
+                    .expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         let support_ids = [
             SurfaceId::mint("catia:test:surface#support%230".to_string())
@@ -4690,11 +4744,13 @@ mod tests {
             id: support_ids[0].clone(),
             geometry: cylinder,
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.surfaces.push(Surface {
             id: support_ids[1].clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         for (side, support_id) in support_ids.iter().enumerate() {
             let face_id =
@@ -4713,6 +4769,7 @@ mod tests {
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             });
             ir.geometry.loops.push(Loop {
                 id: loop_id.clone(),
@@ -4721,6 +4778,7 @@ mod tests {
                     cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
                         .expect("valid loop ring"),
                 ),
+                native_ref: None,
             });
             ir.geometry.coedges.push(Coedge {
                 id: coedge_id.clone(),
@@ -4736,6 +4794,7 @@ mod tests {
                 },
                 pcurves: Vec::new(),
                 use_curve: None,
+                native_ref: None,
             });
         }
         let _attached = ir.geometry.add_procedural_curve(
@@ -4839,6 +4898,7 @@ mod tests {
                 crate::assemble::cgm_source("carrier", 0x1234)
                     .expect("build the CGM source object"),
             ),
+            native_ref: None,
         });
 
         let counts = with_admission(|admission| {
@@ -4906,6 +4966,7 @@ mod tests {
                 crate::assemble::cgm_source("carrier", 0x1234)
                     .expect("build the CGM source object"),
             ),
+            native_ref: None,
         });
 
         let counts = with_admission(|admission| {
@@ -4978,6 +5039,7 @@ mod tests {
                     crate::assemble::cgm_source("carrier", 0x1234)
                         .expect("build the CGM source object"),
                 ),
+                native_ref: None,
             });
         }
 
@@ -5018,6 +5080,7 @@ mod tests {
                 point: PointId::mint(format!("catia:test:point#point%23{index}"))
                     .expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             });
         }
         let curve_id = CurveId::mint("catia:test:curve#standard-plane-curve".to_string())
@@ -5027,16 +5090,20 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.edges.push(Edge {
             id: EdgeId::mint("catia:test:edge#standard-plane-edge".to_string())
                 .expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
-            start: VertexId::mint("catia:test:vertex#vertex%230".to_string())
-                .expect("identity grammar"),
-            end: VertexId::mint("catia:test:vertex#vertex%231".to_string())
-                .expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("catia:test:vertex#vertex%230".to_string())
+                    .expect("identity grammar"),
+                VertexId::mint("catia:test:vertex#vertex%231".to_string())
+                    .expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -5057,6 +5124,7 @@ mod tests {
                 id: support_id.clone(),
                 geometry: plane.clone(),
                 source_object: None,
+                native_ref: None,
             });
         }
         let _attached = ir.geometry.add_procedural_curve(
@@ -5287,6 +5355,7 @@ mod tests {
                 crate::assemble::cgm_source("carrier", 0x1234)
                     .expect("build the CGM source object"),
             ),
+            native_ref: None,
         });
         let indexed = standard_carrier_surface_ids(&ir);
         assert_eq!(indexed.get(&0x1234), Some(&None));

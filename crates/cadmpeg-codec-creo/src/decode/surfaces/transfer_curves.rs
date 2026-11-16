@@ -576,6 +576,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred.insert(id);
@@ -791,6 +792,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         result
@@ -964,6 +966,7 @@ mod tests {
                     .expect("valid CylinderSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             }
         }));
         let paths = crate::decode::with_service_context(|ctx| {
@@ -1107,6 +1110,7 @@ mod tests {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
@@ -1120,12 +1124,14 @@ mod tests {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#3".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             },
         ]);
 
@@ -1225,6 +1231,7 @@ mod tests {
                 .expect("valid test surface"),
             )),
             source_object: None,
+            native_ref: None,
         };
         let plane = Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
@@ -1237,6 +1244,7 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         };
         let mut ir = CadIr::empty();
         ir.geometry.surfaces.push(extrusion.clone());

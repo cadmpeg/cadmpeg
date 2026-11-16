@@ -533,7 +533,6 @@ fn omitted_solid_geometry_does_not_create_an_empty_advanced_representation() {
     ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         ir.geometry.regions.clear();
-        ir.geometry.bodies[0].regions.clear();
         let mut bytes = Vec::new();
         write_step(&ir, &mut bytes, schema, &StepWriteOptions::default()).unwrap();
         let (exchange, _) =

@@ -35,6 +35,7 @@ fn cap_ruling_case() -> (crate::container::ContainerScan<'static>, CadIr) {
             .expect("cylinder"),
         )),
         source_object: None,
+        native_ref: None,
     });
     (scan, ir)
 }
@@ -169,6 +170,7 @@ fn cap_envelope_withholding_blocks_single_chart_pcurve_promotion() {
             .expect("plane chart"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = crate::curve::TwoChartPcurveSamples {
         curve_id: 9,
@@ -230,6 +232,7 @@ fn compact_cone_origin_withholding_blocks_single_chart_pcurve_promotion() {
             .expect("plane chart"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = crate::curve::TwoChartPcurveSamples {
         curve_id: 9,

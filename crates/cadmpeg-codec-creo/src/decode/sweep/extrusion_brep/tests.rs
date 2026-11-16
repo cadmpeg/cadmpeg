@@ -134,6 +134,7 @@ fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, Ca
             .expect("plane"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut ir = CadIr::empty();
     ir.geometry

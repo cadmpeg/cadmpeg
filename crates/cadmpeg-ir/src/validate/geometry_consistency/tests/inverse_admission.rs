@@ -20,6 +20,7 @@ fn fixture() -> (crate::CadIr, crate::ids::SurfaceId, PcurveGeometry) {
             )
             .unwrap(),
         )),
+        native_ref: None,
     });
     (
         ir,

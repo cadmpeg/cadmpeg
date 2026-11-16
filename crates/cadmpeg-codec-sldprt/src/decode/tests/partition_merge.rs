@@ -437,7 +437,14 @@ fn typed_ownership_can_close_across_partition_and_deltas() {
 
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(result.ir().geometry.faces.len(), 1);
-    assert_eq!(result.ir().geometry.shells[0].faces().len(), 1);
+    assert_eq!(
+        result
+            .ir()
+            .geometry
+            .shell_faces(&result.ir().geometry.shells[0].id)
+            .count(),
+        1
+    );
     assert!(!result
         .report()
         .losses

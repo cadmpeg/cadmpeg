@@ -7,14 +7,12 @@
         {
           "id": "usd:stage:body#/Root/Cover",
           "kind": "general",
-          "name": "Cover",
-          "regions": []
+          "name": "Cover"
         },
         {
           "id": "usd:stage:body#/Root/Plate",
           "kind": "general",
-          "name": "Plate",
-          "regions": []
+          "name": "Plate"
         }
       ],
       "coedges": [],

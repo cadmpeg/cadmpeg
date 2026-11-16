@@ -73,6 +73,7 @@ fn ruled(top_v: f64) -> CadIr {
             id: vertices[i].clone(),
             point,
             tolerance: None,
+            native_ref: None,
         });
     }
     let seam_length = bottom.distance(top);
@@ -93,6 +94,7 @@ fn ruled(top_v: f64) -> CadIr {
                 .then(|| IncreasingParameterInterval::new([0.0, TAU]))
                 .flatten(),
             source_object: None,
+            native_ref: None,
         });
     }
     let edges: [EdgeId; 3] = std::array::from_fn(|i| EdgeId::mint(id("edge", i)).unwrap());
@@ -107,9 +109,12 @@ fn ruled(top_v: f64) -> CadIr {
         ir.geometry.edges.push(Edge {
             id: edges[i].clone(),
             carrier: EdgeCarrier::new(Some(curves[i].clone()), Some(range)).unwrap(),
-            start: vertices[start].clone(),
-            end: vertices[end].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertices[start].clone(),
+                vertices[end].clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     let loop_id = ir.geometry.loops[0].id.clone();
@@ -145,6 +150,7 @@ fn ruled(top_v: f64) -> CadIr {
                 .unwrap(),
             ),
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            native_ref: None,
         });
         let radial_next = match i {
             1 => 3,
@@ -163,6 +169,7 @@ fn ruled(top_v: f64) -> CadIr {
                 parameter_range: Some(DirectedParameterRange::new(range).unwrap()),
             }],
             use_curve: None,
+            native_ref: None,
         });
     }
     ir.geometry.loops[0].boundary =

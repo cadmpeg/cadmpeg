@@ -214,13 +214,17 @@ mod tests {
                 geometry: CurveGeometry::Solved(peaked_curve()),
                 parameter_range: None,
                 source_object: None,
+                native_ref: None,
             }],
             edges: vec![Edge {
                 id: EdgeId::mint("f3d:test:edge#1").unwrap(),
                 carrier: EdgeCarrier::new(Some(curve), Some([-0.25, 1.25])).unwrap(),
-                start: VertexId::mint("f3d:test:vertex#1").unwrap(),
-                end: VertexId::mint("f3d:test:vertex#2").unwrap(),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::mint("f3d:test:vertex#1").unwrap(),
+                    VertexId::mint("f3d:test:vertex#2").unwrap(),
+                )),
                 tolerance: None,
+                native_ref: None,
             }],
             ..Default::default()
         };
@@ -264,6 +268,7 @@ mod tests {
                 },
                 parameter_range: None,
                 source_object: None,
+                native_ref: None,
             }],
             procedural_curves: vec![(
                 curve.clone(),
@@ -272,9 +277,12 @@ mod tests {
             edges: vec![Edge {
                 id: EdgeId::mint("f3d:test:edge#1").unwrap(),
                 carrier: EdgeCarrier::new(Some(curve), None).unwrap(),
-                start: VertexId::mint("f3d:test:vertex#1").unwrap(),
-                end: VertexId::mint("f3d:test:vertex#2").unwrap(),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::mint("f3d:test:vertex#1").unwrap(),
+                    VertexId::mint("f3d:test:vertex#2").unwrap(),
+                )),
                 tolerance: None,
+                native_ref: None,
             }],
             ..Default::default()
         };

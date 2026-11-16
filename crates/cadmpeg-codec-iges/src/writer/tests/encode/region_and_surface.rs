@@ -49,16 +49,11 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         .shells
         .iter()
         .find(|shell| Some(&shell.id) == source_region.shells.get(1))
-        .unwrap()
-        .faces()
-        .iter()
-        .all(|face_id| decoded
+        .is_some_and(|shell| decoded
             .ir()
             .geometry
-            .faces
-            .iter()
-            .find(|face| face.id == *face_id)
-            .is_some_and(|face| face.sense == Sense::Reversed)));
+            .shell_faces(&shell.id)
+            .all(|face| face.sense == Sense::Reversed)));
     let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
@@ -83,7 +78,7 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         .geometry
         .regions
         .iter()
-        .find(|region| region.id == body.regions[0])
+        .find(|region| region.body == body.id)
         .unwrap();
     assert_eq!(region.shells.len(), 2);
     let void_shell = round_trip
@@ -93,15 +88,11 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         .iter()
         .find(|shell| shell.id == region.shells[1])
         .unwrap();
-    assert!(void_shell.faces().iter().all(|face_id| {
-        round_trip
-            .ir()
-            .geometry
-            .faces
-            .iter()
-            .find(|face| face.id == *face_id)
-            .is_some_and(|face| face.sense == Sense::Reversed)
-    }));
+    assert!(round_trip
+        .ir()
+        .geometry
+        .shell_faces(&void_shell.id)
+        .all(|face| face.sense == Sense::Reversed));
     assert!(
         round_trip.report().losses.is_empty(),
         "{:#?}",
@@ -614,6 +605,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
             id: CurveId::mint(format!("test:model:curve#{name}")).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: None,
+            native_ref: None,
         });
         let plan = IgesCodec
             .plan(

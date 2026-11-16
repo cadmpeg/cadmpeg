@@ -82,8 +82,8 @@ fn discontinuous_rings(document: &Value) -> BTreeMap<String, String> {
         let coedge = coedges[coedge];
         let edge = edges[coedge["edge"].as_str().unwrap()];
         let (start, end) = (
-            edge["start"].as_str().unwrap(),
-            edge["end"].as_str().unwrap(),
+            edge["ends"]["start"].as_str().unwrap(),
+            edge["ends"]["end"].as_str().unwrap(),
         );
         if coedge["sense"] == "reversed" {
             (end, start)

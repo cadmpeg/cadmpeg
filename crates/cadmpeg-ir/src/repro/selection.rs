@@ -52,6 +52,13 @@ impl<'a> Graph<'a> {
         Ok(())
     }
 
+    /// Add the edge from a parent to a child that names it.
+    pub(crate) fn child(&mut self, parent: &str, child: &str) {
+        if let (Some(&parent), Some(&child)) = (self.ids.get(parent), self.ids.get(child)) {
+            self.edges[parent].push(child);
+        }
+    }
+
     fn owner(&self, index: usize) -> Option<usize> {
         let parent = match self.nodes[index].0 {
             "bodies" => return Some(index),
@@ -264,13 +271,9 @@ pub fn select(
                     if let Some(object) = row.as_object_mut() {
                         object.remove("source_object");
                         object.remove("product_definition");
-                        let child = match arena.as_str() {
-                            "bodies" => Some("regions"),
-                            "regions" => Some("shells"),
-                            _ => None,
-                        };
-                        if let Some(children) = child
-                            .and_then(|field| object.get_mut(field))
+                        if let Some(children) = (arena == "regions")
+                            .then(|| object.get_mut("shells"))
+                            .flatten()
                             .and_then(Value::as_array_mut)
                         {
                             children.retain(|id| id.as_str().is_some_and(|id| ids.contains(id)));

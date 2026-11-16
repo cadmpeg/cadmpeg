@@ -31,8 +31,14 @@ fn discontinuous_rings(ir: &CadIr) -> Vec<String> {
                 let coedge = coedges[id];
                 let edge = edges[&coedge.edge];
                 match coedge.sense {
-                    Sense::Forward => (&edge.start, &edge.end),
-                    Sense::Reversed => (&edge.end, &edge.start),
+                    Sense::Forward => (
+                        &edge.ends.as_ref().unwrap().start,
+                        &edge.ends.as_ref().unwrap().end,
+                    ),
+                    Sense::Reversed => (
+                        &edge.ends.as_ref().unwrap().end,
+                        &edge.ends.as_ref().unwrap().start,
+                    ),
                 }
             })
             .collect();

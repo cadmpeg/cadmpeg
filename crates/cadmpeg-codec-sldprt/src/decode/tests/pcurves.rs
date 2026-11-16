@@ -145,7 +145,10 @@ fn a_closed_circle_with_conflicting_markers_has_no_range() {
         .unwrap();
 
     let edge = &decoded.ir().geometry.edges[0];
-    assert_eq!(edge.start, edge.end);
+    assert_eq!(
+        edge.ends.as_ref().unwrap().start,
+        edge.ends.as_ref().unwrap().end
+    );
     assert!(edge.param_range().is_none());
     assert!(decoded
         .report()
@@ -186,13 +189,16 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
     assert_eq!(decoded.ir().geometry.faces.len(), 1);
     assert_eq!(decoded.ir().geometry.loops[0].coedges().len(), 1);
     let edge = &decoded.ir().geometry.edges[0];
-    assert_eq!(edge.start, edge.end);
+    assert_eq!(
+        edge.ends.as_ref().unwrap().start,
+        edge.ends.as_ref().unwrap().end
+    );
     let vertex = decoded
         .ir()
         .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == edge.start)
+        .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
         .unwrap();
     let point = decoded
         .ir()
@@ -435,13 +441,17 @@ fn a_great_circle_pcurve_keeps_its_latitude_within_the_poles() {
         // Without a range an edge runs forward along its circle.
         let [first, last] = edge.param_range().map_or_else(
             || {
-                let start = angle(&edge.start);
-                let sweep = (angle(&edge.end) - start).rem_euclid(std::f64::consts::TAU);
+                let start = angle(&edge.ends.as_ref().unwrap().start);
+                let sweep = (angle(&edge.ends.as_ref().unwrap().end) - start)
+                    .rem_euclid(std::f64::consts::TAU);
                 [start, start + sweep]
             },
             cadmpeg_ir::units::FiniteVector::get,
         );
-        for (parameter, vertex) in [(first, &edge.start), (last, &edge.end)] {
+        for (parameter, vertex) in [
+            (first, &edge.ends.as_ref().unwrap().start),
+            (last, &edge.ends.as_ref().unwrap().end),
+        ] {
             let (u, v) = (
                 origin.u + parameter * direction.u,
                 origin.v + parameter * direction.v,
@@ -481,8 +491,14 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
             .find(|edge| edge.id == coedge.edge)
             .unwrap();
         match coedge.sense {
-            cadmpeg_ir::topology::Sense::Forward => (edge.start.clone(), edge.end.clone()),
-            cadmpeg_ir::topology::Sense::Reversed => (edge.end.clone(), edge.start.clone()),
+            cadmpeg_ir::topology::Sense::Forward => (
+                edge.ends.as_ref().unwrap().start.clone(),
+                edge.ends.as_ref().unwrap().end.clone(),
+            ),
+            cadmpeg_ir::topology::Sense::Reversed => (
+                edge.ends.as_ref().unwrap().end.clone(),
+                edge.ends.as_ref().unwrap().start.clone(),
+            ),
         }
     };
     let ring = geometry.loops[0].coedges();
@@ -526,7 +542,10 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
                 == Some("derived_sphere_seam")
         })
         .expect("sphere seam");
-    assert_eq!(seam.start, seam.end);
+    assert_eq!(
+        seam.ends.as_ref().unwrap().start,
+        seam.ends.as_ref().unwrap().end
+    );
     let curve = result
         .ir()
         .geometry
@@ -546,7 +565,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == seam.start)
+        .find(|vertex| vertex.id == seam.ends.as_ref().unwrap().start)
         .unwrap();
     let point = result
         .ir()
@@ -602,7 +621,7 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
         .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == seam.start)
+        .find(|vertex| vertex.id == seam.ends.as_ref().unwrap().start)
         .expect("sphere seam pole vertex");
     let point = result
         .ir()

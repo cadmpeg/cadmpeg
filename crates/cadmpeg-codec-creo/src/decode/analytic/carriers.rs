@@ -203,6 +203,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -295,6 +296,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
         }
@@ -336,6 +338,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }

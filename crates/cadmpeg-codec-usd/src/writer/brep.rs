@@ -60,14 +60,11 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
             high[axis] = high[axis].max(value);
         }
     };
-    let faces = body
-        .regions
-        .iter()
-        .filter_map(|region| index.regions(region.as_str(), query))
+    let geometry = &index.ir().geometry;
+    let faces = geometry
+        .body_regions(&body.id)
         .flat_map(|region| region.shells.iter())
-        .filter_map(|shell| index.shells(shell.as_str(), query))
-        .flat_map(|shell| shell.faces().iter())
-        .filter_map(|face| index.faces(face.as_str(), query));
+        .flat_map(|shell| geometry.shell_faces(shell));
     for face in faces {
         if let Some(geometry) = index
             .surfaces(face.surface.as_str(), query)
@@ -82,7 +79,7 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
             .flat_map(|loop_| loop_.coedges().iter())
             .filter_map(|coedge| index.coedges(coedge.as_str(), query))
             .filter_map(|coedge| index.edges(coedge.edge.as_str(), query));
-        for vertex in edges.flat_map(|edge| [&edge.start, &edge.end]) {
+        for vertex in edges.flat_map(cadmpeg_ir::topology::Edge::vertices) {
             if let Some(point) = index
                 .vertices(vertex.as_str(), query)
                 .and_then(|vertex| index.points(vertex.point.as_str(), query))

@@ -154,7 +154,8 @@ fn wire_and_free_topology_negative_cases_are_reported() {
         .expect("valid identity");
     ir.geometry.vertices.push(unowned_vertex);
 
-    ir.geometry.shells[0].add_free_vertex(ir.geometry.edges[0].start.clone());
+    ir.geometry.shells[0]
+        .add_free_vertex(ir.geometry.edges[0].ends.as_ref().unwrap().start.clone());
     ir.geometry.bodies[0].kind = crate::topology::BodyKind::Wire;
     ir.finalize();
 
@@ -189,13 +190,7 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
     second_shell.id = "synthetic:test:shell#second"
         .try_into()
         .expect("valid identity");
-    second_shell
-        .edit_topology(|faces, wire_edges, free_vertices| {
-            faces.clear();
-            wire_edges.clear();
-            *free_vertices = vec![vertex];
-        })
-        .unwrap();
+    second_shell.members = vec![crate::topology::ShellMember::FreeVertex { id: vertex }];
     ir.geometry.regions[0].shells.push(second_shell.id.clone());
     ir.geometry.shells.push(second_shell);
 
@@ -242,6 +237,7 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
             vertex: vertex_id,
             pcurves: Vec::new(),
         },
+        native_ref: None,
     });
     let face_loops = ir.geometry.faces[0]
         .loops

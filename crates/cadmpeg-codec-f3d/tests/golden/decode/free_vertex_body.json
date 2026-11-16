@@ -59,10 +59,7 @@
       "bodies": [
         {
           "id": "f3d:brep:entity#1",
-          "kind": "wire",
-          "regions": [
-            "f3d:brep:entity#2"
-          ]
+          "kind": "wire"
         }
       ],
       "regions": [

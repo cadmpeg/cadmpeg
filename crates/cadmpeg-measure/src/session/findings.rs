@@ -151,16 +151,16 @@ impl<'ir> Measurer<'ir> {
             .bodies
             .iter()
             .filter(|body| {
-                let shells: Vec<_> = body
-                    .regions
+                let shells: Vec<_> = self
+                    .owners
+                    .body_regions(&body.id)
                     .iter()
-                    .filter_map(|region| self.owners.region(region.as_str()))
                     .flat_map(|region| &region.shells)
                     .filter_map(|shell| self.owners.shell(shell.as_str()))
                     .collect();
                 !shells.is_empty()
                     && shells.iter().all(|shell| {
-                        !shell.faces().is_empty()
+                        !self.owners.shell_faces(&shell.id).is_empty()
                             && closure(&self.owners, &no_faces, &edges, shell).closed()
                     })
             })

@@ -83,13 +83,14 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
         id: vertex.clone(),
         point,
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.edges.push(Edge {
         id: edge.clone(),
         carrier: EdgeCarrier::Free,
-        start: vertex.clone(),
-        end: vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.coedges.push(Coedge {
         id: coedge.clone(),
@@ -99,11 +100,13 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
+        native_ref: None,
     });
     ir.geometry.loops.push(Loop {
         id: apex_loop,
         face: top,
         boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge], Vec::new()).unwrap()),
+        native_ref: None,
     });
     ir.finalize();
 
@@ -117,7 +120,7 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
     let collapsed = geometry
         .edges
         .iter()
-        .find(|edge| edge.start == edge.end)
+        .find(|edge| edge.ends.as_ref().unwrap().start == edge.ends.as_ref().unwrap().end)
         .unwrap();
     let carrier = collapsed.curve().unwrap();
     assert!(geometry.curves.iter().any(|curve| curve.id == *carrier

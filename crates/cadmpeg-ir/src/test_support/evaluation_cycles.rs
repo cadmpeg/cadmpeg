@@ -37,6 +37,7 @@ pub(crate) fn cyclic_model() -> (CadIr, CurveId, SurfaceId) {
                 .expect("plane fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     ir.geometry.curves.push(Curve {
@@ -50,6 +51,7 @@ pub(crate) fn cyclic_model() -> (CadIr, CurveId, SurfaceId) {
             .expect("line curve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_curve(

@@ -31,9 +31,10 @@ fn coloured_wire_bodies_ir(count: usize) -> CadIr {
         .vertices
         .iter()
         .filter(|vertex| {
-            edges
-                .iter()
-                .any(|edge| edge.start == vertex.id || edge.end == vertex.id)
+            edges.iter().any(|edge| {
+                edge.ends.as_ref().unwrap().start == vertex.id
+                    || edge.ends.as_ref().unwrap().end == vertex.id
+            })
         })
         .cloned()
         .collect();
@@ -55,17 +56,16 @@ fn coloured_wire_bodies_ir(count: usize) -> CadIr {
         let mut shell = template.geometry.shells[0].clone();
         shell.id = shell_id.clone();
         shell.region = region_id.clone();
-        shell
-            .edit_topology(|_, wire_edges, _| *wire_edges = vec![edge.id.clone()])
-            .expect("wire topology");
+        shell.members = vec![cadmpeg_ir::topology::ShellMember::WireEdge {
+            id: edge.id.clone(),
+        }];
         let mut region = template.geometry.regions[0].clone();
         region.id = region_id.clone();
         region.body = body_id.clone();
         region.shells = vec![shell_id];
         let mut body = template.geometry.bodies[0].clone();
         body.id = body_id;
-        body.regions = vec![region_id];
-        let red = f32::from(u8::try_from(index + 1).expect("small count")) / 10.0;
+        let red = f64::from(u8::try_from(index + 1).expect("small count")) / 10.0;
         body.color = Some(cadmpeg_ir::topology::Color::new(red, 0.0, 0.0, 1.0).expect("color"));
         ir.geometry.shells.push(shell);
         ir.geometry.regions.push(region);

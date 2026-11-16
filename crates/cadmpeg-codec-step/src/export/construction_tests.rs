@@ -31,6 +31,7 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
             )),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         let owner = ir.geometry.surfaces[0].id.clone();
         ir.geometry

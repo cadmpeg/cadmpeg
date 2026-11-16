@@ -415,11 +415,11 @@ mod tests {
         ir.geometry.bodies.push(Body {
             id: BodyId::mint("catia:test:body#body").expect("identity grammar"),
             kind: BodyKind::Solid,
-            regions: vec![],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         for index in 0..face_count {
             ir.geometry.faces.push(Face {
@@ -432,6 +432,7 @@ mod tests {
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             });
         }
         ir

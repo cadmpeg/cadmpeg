@@ -59,6 +59,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     let support = StandardCurveSupport {
@@ -184,6 +185,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
                 .expect("valid SphereSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: plane_id.clone(),
@@ -196,6 +198,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let support = StandardCurveSupport {
@@ -279,6 +282,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: plane_id.clone(),
@@ -291,6 +295,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let support = StandardCurveSupport {
@@ -386,6 +391,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: second_id.clone(),
@@ -399,6 +405,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let support = StandardCurveSupport {
@@ -676,6 +683,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
                 .expect("identity grammar"),
             geometry,
             source_object: None,
+            native_ref: None,
         });
         ir.geometry
             .points

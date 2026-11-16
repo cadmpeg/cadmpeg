@@ -90,6 +90,7 @@ fn law_sweep_maps_wide_profile_interval_into_finite_nurbs_domain() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let index = crate::index::ModelIndex::build(&ir);
     let range = [finite(-f64::MAX), finite(f64::MAX)];
@@ -251,6 +252,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
@@ -266,6 +268,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ];
     ir.geometry.surfaces.push(Surface {
@@ -275,6 +278,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
@@ -546,6 +550,7 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
@@ -558,6 +563,7 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ];
     ir.geometry.surfaces.push(Surface {
@@ -570,6 +576,7 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId::mint("test:model:entity#cacheless-sweep-construction").expect("valid identity"),

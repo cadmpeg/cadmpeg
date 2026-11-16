@@ -224,6 +224,7 @@ impl Builder {
             id: vertex.clone(),
             point,
             tolerance: None,
+            native_ref: None,
         });
         vertex
     }
@@ -254,6 +255,7 @@ impl Builder {
             geometry: CurveGeometry::Solved(geometry),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         curve
     }
@@ -264,9 +266,9 @@ impl Builder {
         self.ir.geometry.edges.push(Edge {
             id: edge.clone(),
             carrier,
-            start,
-            end,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
             tolerance: None,
+            native_ref: None,
         });
         edge
     }
@@ -509,6 +511,7 @@ impl Builder {
             id: pcurve.clone(),
             geometry,
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
         let loop_id = self
             .ir
@@ -591,6 +594,7 @@ impl Builder {
                     vertex: vertex.clone(),
                     pcurves: Vec::new(),
                 },
+                native_ref: None,
             });
             loops.push(loop_id);
         }
@@ -675,6 +679,7 @@ impl Builder {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         });
         surface
     }
@@ -706,6 +711,7 @@ impl Builder {
                     sense: *coedge_sense,
                     pcurves: Vec::new(),
                     use_curve: None,
+                    native_ref: None,
                 });
                 coedges.push(coedge);
             }
@@ -713,6 +719,7 @@ impl Builder {
                 id: loop_id.clone(),
                 face: face.clone(),
                 boundary: LoopBoundary::Ring(LoopRing::new(coedges, Vec::new()).expect("ring")),
+                native_ref: None,
             });
             loops.push(loop_id);
         }
@@ -732,6 +739,7 @@ impl Builder {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         self.faces.push(face.clone());
         face
@@ -775,29 +783,26 @@ impl Builder {
         } else {
             Vec::new()
         };
-        self.ir.geometry.shells.push(
-            Shell::new(
-                shell.clone(),
-                region.clone(),
-                self.faces.clone(),
-                wire_edges,
-                Vec::new(),
-            )
-            .expect("shell"),
-        );
+        self.ir.geometry.shells.push(Shell::with_members(
+            shell.clone(),
+            region.clone(),
+            wire_edges,
+            Vec::new(),
+        ));
         self.ir.geometry.regions.push(Region {
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
+            native_ref: None,
         });
         self.ir.geometry.bodies.push(Body {
             id: body,
             kind,
-            regions: vec![region],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         let coedges = self.ir.geometry.coedges.clone();
         for coedge in &mut self.ir.geometry.coedges {

@@ -52,6 +52,7 @@ fn model() -> CadIr {
                 .expect("surface identity"),
             geometry: plane(),
             source_object: None,
+            native_ref: None,
         });
     }
     ir

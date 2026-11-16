@@ -36,6 +36,22 @@ pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;
 pub(crate) mod verification;
 
+/// A face of `shell` with no loop, on a surface id the fixture need not hold.
+pub(crate) fn bare_face(id: &str, shell: &str) -> cadmpeg_ir::topology::Face {
+    cadmpeg_ir::topology::Face {
+        id: cadmpeg_ir::ids::FaceId::mint(id).expect("identity grammar"),
+        shell: cadmpeg_ir::ids::ShellId::mint(shell).expect("identity grammar"),
+        surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#bare")
+            .expect("identity grammar"),
+        sense: cadmpeg_ir::topology::Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+        native_ref: None,
+    }
+}
+
 pub(crate) fn with_decode_context<T>(
     f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
 ) -> T {

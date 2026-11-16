@@ -664,11 +664,11 @@ fn preserves_directed_reversed_face_edge_use() {
         panic!("expected surface");
     };
     assert!(
-        wire::field::<Vec<subd::SubdEdgeUse>>(
-            &(wire::field::<Vec<subd::SubdFace>>(&(surface.cage), "faces")[0]),
-            "edges"
-        )[1]
-        .reversed
+        surface.cage.faces()[0]
+            .edge_uses()
+            .nth(1)
+            .expect("second edge use")
+            .reversed
     );
     assert_eq!(
         wire::field::<[u32; 2]>(
