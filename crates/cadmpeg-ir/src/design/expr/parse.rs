@@ -4,7 +4,9 @@
 use std::num::NonZeroI8;
 
 use super::super::units::{Unit, UnitFactor, UnitSymbol};
-use super::{level, BendVariable, BinaryOp, Constant, ExprError, Function, Measure, Node, UnaryOp};
+use super::{
+    level, BendVariable, BinaryOp, Chain, Constant, ExprError, Function, Measure, Node, UnaryOp,
+};
 use crate::scalar::NonNegativeReal;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -157,8 +159,10 @@ impl<R: Clone> Parser<'_, R> {
     fn expr(&mut self) -> Result<Node<R>, ExprError> {
         let _level = level()?;
         let mut node = self.and()?;
+        let mut chain = Chain::new();
         while self.at_word("or") {
             self.i += 1;
+            chain.next()?;
             node = Self::binary(BinaryOp::Or, node, self.and()?);
         }
         Ok(node)
@@ -166,8 +170,10 @@ impl<R: Clone> Parser<'_, R> {
 
     fn and(&mut self) -> Result<Node<R>, ExprError> {
         let mut node = self.not()?;
+        let mut chain = Chain::new();
         while self.at_word("and") {
             self.i += 1;
+            chain.next()?;
             node = Self::binary(BinaryOp::And, node, self.not()?);
         }
         Ok(node)
@@ -202,6 +208,7 @@ impl<R: Clone> Parser<'_, R> {
 
     fn sum(&mut self) -> Result<Node<R>, ExprError> {
         let mut node = self.prod()?;
+        let mut chain = Chain::new();
         loop {
             let op = if self.at_mark("+") {
                 BinaryOp::Add
@@ -211,12 +218,14 @@ impl<R: Clone> Parser<'_, R> {
                 return Ok(node);
             };
             self.i += 1;
+            chain.next()?;
             node = Self::binary(op, node, self.prod()?);
         }
     }
 
     fn prod(&mut self) -> Result<Node<R>, ExprError> {
         let mut node = self.neg()?;
+        let mut chain = Chain::new();
         loop {
             let op = if self.at_mark("*") {
                 BinaryOp::Multiply
@@ -226,6 +235,7 @@ impl<R: Clone> Parser<'_, R> {
                 return Ok(node);
             };
             self.i += 1;
+            chain.next()?;
             node = Self::binary(op, node, self.neg()?);
         }
     }

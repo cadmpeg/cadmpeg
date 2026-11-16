@@ -515,4 +515,31 @@ fn level() -> Result<read::Depth, ExprError> {
     Ok(read::enter(Ceiling::Expression)?)
 }
 
+/// The levels a left-associative chain (`or`, `and`, `+ -`, `* /`) holds
+/// while it is read or printed. Its tree is one level deeper for each operand
+/// past its second, so each such operand enters a level, held to the chain's
+/// end.
+struct Chain {
+    operands: usize,
+    levels: Vec<read::Depth>,
+}
+
+impl Chain {
+    const fn new() -> Self {
+        Self {
+            operands: 1,
+            levels: Vec::new(),
+        }
+    }
+
+    /// Enters the chain's next operand.
+    fn next(&mut self) -> Result<(), ExprError> {
+        self.operands += 1;
+        if self.operands > 2 {
+            self.levels.push(level()?);
+        }
+        Ok(())
+    }
+}
+
 cadmpeg_core::named_optional_field!(deserialize_cached, FiniteReal, "cached");

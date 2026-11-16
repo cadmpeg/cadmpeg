@@ -243,6 +243,144 @@ fn every_node_variant_round_trips_as_neutral_text() {
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
+const BINARY_OPS: [BinaryOp; 13] = [
+    BinaryOp::Add,
+    BinaryOp::Subtract,
+    BinaryOp::Multiply,
+    BinaryOp::Divide,
+    BinaryOp::Power,
+    BinaryOp::Equal,
+    BinaryOp::NotEqual,
+    BinaryOp::Less,
+    BinaryOp::LessEqual,
+    BinaryOp::Greater,
+    BinaryOp::GreaterEqual,
+    BinaryOp::And,
+    BinaryOp::Or,
+];
+
+/// A fixed sequence of choices, so the trees are the same on every run.
+struct Choices(u64);
+
+impl Choices {
+    fn below(&mut self, count: usize) -> usize {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from(self.0 >> 33).unwrap() % count
+    }
+
+    fn pick<T: Clone>(&mut self, from: &[T]) -> T {
+        from[self.below(from.len())].clone()
+    }
+}
+
+/// A tree of every node variant, operator, and function, nested to `depth`,
+/// whose calls take from zero to three arguments.
+fn tree(choices: &mut Choices, leaves: &[Node<ParameterRef>], depth: u32) -> Node<ParameterRef> {
+    if depth == 0 || choices.below(4) == 0 {
+        return choices.pick(leaves);
+    }
+    let kind = choices.below(6);
+    let mut operand = || Box::new(tree(choices, leaves, depth - 1));
+    match kind {
+        0 => Node::Unary {
+            op: UnaryOp::Negate,
+            operand: operand(),
+        },
+        1 => Node::Unary {
+            op: UnaryOp::Not,
+            operand: operand(),
+        },
+        2 | 3 => {
+            let left = operand();
+            let right = operand();
+            Node::Binary {
+                op: choices.pick(&BINARY_OPS),
+                left,
+                right,
+            }
+        }
+        4 => {
+            let count = choices.below(4);
+            let args = (0..count)
+                .map(|_| tree(choices, leaves, depth - 1))
+                .collect();
+            Node::Call {
+                function: choices.pick(&Function::ALL),
+                args,
+            }
+        }
+        _ => Node::If(Box::new([*operand(), *operand(), *operand()])),
+    }
+}
+
+fn holds_a_call_with_no_argument(node: &Node<ParameterRef>) -> bool {
+    match node {
+        Node::Call { args, .. } => {
+            args.is_empty() || args.iter().any(holds_a_call_with_no_argument)
+        }
+        Node::Unary { operand, .. } => holds_a_call_with_no_argument(operand),
+        Node::Binary { left, right, .. } => {
+            holds_a_call_with_no_argument(left) || holds_a_call_with_no_argument(right)
+        }
+        Node::If(branches) => branches.iter().any(holds_a_call_with_no_argument),
+        Node::Number { .. }
+        | Node::Constant(_)
+        | Node::Boolean(_)
+        | Node::Text(_)
+        | Node::Reference(_)
+        | Node::Measure(_)
+        | Node::LawParameter
+        | Node::Bend(_) => false,
+    }
+}
+
+/// Every tree the printer writes reads back as the same tree, and the one it
+/// refuses holds a call with no argument, which the grammar cannot spell.
+#[test]
+fn every_printed_expression_reads_back() {
+    let leaves = fixtures::nodes();
+    let mut choices = Choices(0x00d1_f1c5);
+    let (mut printed, mut refused) = (0, 0);
+    for _ in 0..20_000 {
+        let node = tree(&mut choices, &leaves, 5);
+        match expr::print(&node) {
+            Ok(wire) => {
+                assert_eq!(expr::read(&wire).as_ref(), Ok(&node), "{}", wire.text);
+                round_trip(&Neutral(node)).unwrap();
+                printed += 1;
+            }
+            Err(expr::ExprError::Malformed(error)) => {
+                assert!(holds_a_call_with_no_argument(&node), "{node:?}: {error}");
+                refused += 1;
+            }
+            Err(error) => panic!("{node:?}: {error}"),
+        }
+    }
+    assert!(
+        printed > 10_000 && refused > 100,
+        "{printed} printed, {refused} refused"
+    );
+}
+
+/// The grammar calls a function with at least one argument, so the printer
+/// refuses a call with none rather than write `f()`, which does not read.
+#[test]
+fn a_call_with_no_argument_is_refused_by_the_printer() {
+    let call = Node::<ParameterRef>::Call {
+        function: Function::Sign,
+        args: Vec::new(),
+    };
+    assert!(matches!(
+        expr::print(&call),
+        Err(expr::ExprError::Malformed(error)) if error.contains("no argument")
+    ));
+    assert!(serde_json::to_string(&Neutral(call)).is_err());
+    assert!(read("sign()").is_err());
+}
+
 /// A number has no sign of its own, so `Number.value` is a
 /// `NonNegativeReal`, and a negative literal is `Unary { Negate }` over a
 /// `Number`, which prints back to itself.
