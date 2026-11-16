@@ -6,7 +6,7 @@
 //! `Feature.component` naming the component. It may name an occurrence owned
 //! by any definition its scope spans. The operations place, connect, repeat,
 //! mirror, and modify occurrences: [`Place`], [`PlaceSet`], [`Joint`],
-//! [`ComponentPattern`], [`MirrorComponents`], and the assembly feature, whose
+//! [`ComponentPattern`], [`MirrorComponents`], and [`AssemblyFeature`], whose
 //! [`ContextEffect`] states what it changes. A [`RigidGroup`] holds occurrences
 //! in their relative placement.
 
@@ -19,9 +19,10 @@ use serde::{Deserialize, Serialize};
 
 use super::shared::{Joint, PatternLayout};
 use crate::design::construction::{kinds, Construction};
+use crate::design::feature::FeatureOperation;
 use crate::design::names::InstanceIndex;
 use crate::design::options::NativeOptions;
-use crate::design::selection::{OccurrencePath, OrderedSelection};
+use crate::design::selection::{OccurrencePath, OrderedSelection, SetSelection};
 use crate::ids::OccurrenceId;
 
 #[cfg(test)]
@@ -257,6 +258,28 @@ pub enum MirrorPivot {
     Origin,
 }
 
+/// An operation (an extrude or revolve cut, a hole, a split, a fillet) run in
+/// the assembly over the occurrences, or bodies through occurrence contexts,
+/// that it modifies.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct AssemblyFeature {
+    /// What the feature modifies, its picks carrying occurrence contexts: the
+    /// only statement of it, since the operation states no body operand of
+    /// its own.
+    pub participants: SetSelection,
+    /// What the feature changes. `None`, not stated.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_effect"
+    )]
+    pub effect: Option<ContextEffect>,
+    /// The operation the feature runs.
+    pub operation: Box<FeatureOperation>,
+}
+
 /// What an assembly feature changes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -281,6 +304,7 @@ pub enum ContextEffect {
 
 cadmpeg_core::named_optional_field!(deserialize_about<T>, T, "about");
 cadmpeg_core::named_optional_field!(deserialize_base<T>, T, "base");
+cadmpeg_core::named_optional_field!(deserialize_effect<T>, T, "effect");
 cadmpeg_core::named_optional_field!(deserialize_orientation<T>, T, "orientation");
 cadmpeg_core::named_optional_field!(deserialize_packaged<T>, T, "packaged");
 cadmpeg_core::named_optional_field!(deserialize_placement<T>, T, "placement");

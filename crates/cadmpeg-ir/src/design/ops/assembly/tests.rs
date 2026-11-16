@@ -19,6 +19,7 @@ use crate::design::construction::{
     InputRole, PlaneValue, Relation, ScalarDimension, Subject,
 };
 use crate::design::dimension::Dimension;
+use crate::design::feature::OperationFamily;
 use crate::design::names::{NameKind, TopoName};
 use crate::design::ops::shared::{
     Alignment, AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, Coupling, DimensionRun,
@@ -1076,6 +1077,152 @@ fn context_effects() -> Vec<ContextEffect> {
     ]
 }
 
+fn assembly_features() -> Vec<AssemblyFeature> {
+    vec![
+        AssemblyFeature {
+            participants: selection(17),
+            effect: Some(ContextEffect::Instances),
+            operation: Box::new(FeatureOperation::Unresolved {
+                family: OperationFamily::Hole,
+            }),
+        },
+        AssemblyFeature {
+            participants: unread(),
+            effect: None,
+            operation: Box::new(FeatureOperation::Native {
+                kind: text("creo:assem_cut"),
+                native_options: options(),
+                source_settings: NativeOptions::new(),
+            }),
+        },
+    ]
+}
+
+/// One operation per §6.7 arm.
+fn assembly_operations() -> Vec<FeatureOperation> {
+    vec![
+        FeatureOperation::Place(Box::new(places().remove(0))),
+        FeatureOperation::PlaceSet(Box::new(place_sets().remove(0))),
+        FeatureOperation::Joint(Box::new(joints().remove(0))),
+        FeatureOperation::RigidGroup(Box::new(rigid_groups().remove(0))),
+        FeatureOperation::ComponentPattern(Box::new(component_patterns().remove(0))),
+        FeatureOperation::MirrorComponents(Box::new(mirror_components().remove(0))),
+        FeatureOperation::AssemblyFeature(Box::new(assembly_features().remove(0))),
+    ]
+}
+
+#[test]
+fn every_assembly_operation_round_trips() {
+    let mut report = Report::default();
+    report.check("AssemblyFeature", assembly_features());
+    report.check("FeatureOperation", assembly_operations());
+    report.variants("FeatureOperation", &assembly_operations(), 7);
+    assert!(report.failures.is_empty(), "{:#?}", report.failures);
+}
+
+#[test]
+fn an_assembly_operation_takes_the_adjacent_tag() {
+    let tags: Vec<_> = assembly_operations()
+        .iter()
+        .map(|operation| to_value(operation)["kind"].clone())
+        .collect();
+    assert_eq!(
+        tags,
+        [
+            "place",
+            "place_set",
+            "joint",
+            "rigid_group",
+            "component_pattern",
+            "mirror_components",
+            "assembly_feature"
+        ]
+    );
+    let place = places().remove(1);
+    assert_eq!(
+        to_value(&FeatureOperation::Place(Box::new(place.clone()))),
+        json!({"kind": "place", "value": to_value(&place)})
+    );
+    let feature = assembly_features().remove(0);
+    assert_eq!(
+        to_value(&feature),
+        json!({
+            "participants": to_value(&feature.participants),
+            "effect": {"kind": "instances"},
+            "operation": {"kind": "unresolved", "value": {"family": "hole"}},
+        })
+    );
+    let mut bare = to_value(&assembly_features().remove(1));
+    assert!(bare.get("effect").is_none());
+    bare["effect"] = json!(null);
+    assert!(refuses::<AssemblyFeature>(&bare.to_string()).contains("effect"));
+    bare.as_object_mut().unwrap().remove("effect");
+    bare.as_object_mut().unwrap().remove("operation");
+    refuses::<AssemblyFeature>(&bare.to_string());
+}
+
+/// Runs `work` on a thread whose stack is 2 MiB, the default for a spawned
+/// thread.
+fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(work)
+        .unwrap()
+        .join()
+        .unwrap()
+}
+
+/// An assembly feature's operation can itself be an assembly feature, and
+/// the spec gives that nesting no ceiling; the JSON depth limit bounds it.
+/// One level past the deepest nesting the reader admits is refused by that
+/// limit, and the deepest reads, prints the same bytes, clones, compares, and
+/// drops on a default thread.
+#[test]
+fn assembly_features_nest_to_the_json_depth_limit_on_a_default_thread() {
+    fn nested(depth: usize) -> String {
+        let leaf = FeatureOperation::Unresolved {
+            family: OperationFamily::Hole,
+        };
+        let operation = (0..depth).fold(leaf, |operation, _| {
+            FeatureOperation::AssemblyFeature(Box::new(AssemblyFeature {
+                participants: unread(),
+                effect: None,
+                operation: Box::new(operation),
+            }))
+        });
+        serde_json::to_string(&operation).unwrap()
+    }
+    let past = (1..128)
+        .find(|&depth| {
+            read::from_str::<FeatureOperation>(&nested(depth), &ResourceLimits::desktop()).is_err()
+        })
+        .expect("the reader refuses some depth below the JSON limit");
+    assert!(past > 1, "a single assembly feature is refused");
+    let refusal = on_a_default_thread({
+        let text = nested(past);
+        move || read::from_str::<FeatureOperation>(&text, &ResourceLimits::desktop()).err()
+    });
+    assert!(
+        matches!(&refusal, Some(cadmpeg_core::CodecError::Malformed(message)) if message.contains("recursion limit exceeded")),
+        "depth {past}: {refusal:?}"
+    );
+    let deepest = nested(past - 1);
+    let printed = on_a_default_thread({
+        let deepest = deepest.clone();
+        move || {
+            let read: FeatureOperation =
+                read::from_str(&deepest, &ResourceLimits::desktop()).unwrap();
+            let printed = serde_json::to_string(&read).unwrap();
+            let cloned = read.clone();
+            assert_eq!(cloned, read);
+            drop(cloned);
+            drop(read);
+            printed
+        }
+    });
+    assert_eq!(printed, deepest);
+}
+
 #[test]
 fn every_assembly_type_round_trips() {
     let mut report = Report::default();
@@ -1328,6 +1475,7 @@ fn every_assembly_and_shared_layout_type_has_a_schema() {
     generates::<MirrorOrientation>();
     generates::<MirrorReversal>();
     generates::<MirrorPivot>();
+    generates::<AssemblyFeature>();
     generates::<ContextEffect>();
     generates::<PairElement>();
     generates::<PatternLayout>();
