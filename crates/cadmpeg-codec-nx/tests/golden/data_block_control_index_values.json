@@ -171,21 +171,7 @@
         "process": true
       },
       "source": {
-        "attributes": {
-          "classified_offset_store_control_count": "1",
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "186",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "172",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "offset_store_control_count": "1",
-          "partition_streams": "0",
-          "plain_streams": "0",
-          "unclassified_offset_store_control_count": "0"
-        },
+        "attributes": {},
         "identity": {
           "dialects": {
             "extra": [],
@@ -300,6 +286,8 @@
           }
         }
       },
+      "decode_digest": "60f93e0e017d1eafc3736672eefb3f5da122665ece8678992788beb1e3458e7d",
+      "file_digests": {},
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {
@@ -307,7 +295,8 @@
             "kind": "inline"
           },
           "offset": 122,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -315,7 +304,8 @@
             "kind": "inline"
           },
           "offset": 148,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -323,9 +313,11 @@
             "kind": "inline"
           },
           "offset": 160,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

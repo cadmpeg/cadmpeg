@@ -225,23 +225,9 @@
       },
       "source": {
         "attributes": {
-          "deltas.0.bytes_decoded": "0",
           "deltas.0.grammar": "sequential_owned_records",
-          "deltas.0.instances": "0",
-          "deltas.0.schemas": "0",
           "deltas.0.selection": "unresolved",
-          "deltas.0.stop_offset": "0",
-          "deltas.0.stop_reason": "UnsupportedBase",
-          "deltas_streams": "1",
-          "directory_entries": "1",
-          "file_size": "500",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "486",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "partition_streams": "1",
-          "plain_streams": "0"
+          "deltas.0.stop_reason": "UnsupportedBase"
         },
         "identity": {
           "dialects": {
@@ -523,6 +509,8 @@
           }
         }
       },
+      "decode_digest": "c83ac9984fadad40b224b20bdeef28df4ff1afab37dd0dddcff5bc9ba5c34dcf",
+      "file_digests": {},
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -530,7 +518,10 @@
             "kind": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -538,9 +529,15 @@
             "kind": "inline"
           },
           "offset": 343,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {
