@@ -85,6 +85,7 @@ pub(in crate::decode) fn transfer_active_boundary_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -484,8 +485,6 @@ pub(in crate::decode) fn native_solid_contains_feature(
             };
             body.kind == cadmpeg_ir::topology::BodyKind::Solid
                 && body.id.as_str().starts_with("creo:visibgeom:body#")
-                && body.regions.contains(&region.id)
                 && region.shells.contains(&shell.id)
-                && shell.faces().contains(&face.id)
         })
 }

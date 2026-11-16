@@ -7,14 +7,12 @@
         {
           "id": "usd:stage:body#/Root/Cage",
           "kind": "general",
-          "name": "Cage",
-          "regions": []
+          "name": "Cage"
         },
         {
           "id": "usd:stage:body#/Root/Panel",
           "kind": "general",
-          "name": "Panel",
-          "regions": []
+          "name": "Panel"
         }
       ],
       "coedges": [],

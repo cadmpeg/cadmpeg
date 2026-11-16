@@ -78,9 +78,24 @@ pub(crate) fn f3d_with_breps_and_design(
     bulk: &[u8],
     meta: &[u8],
 ) -> Vec<u8> {
+    f3d_with_breps_design_and_assets(breps, bulk, meta, &[])
+}
+
+/// [`f3d_with_breps_and_design`] with `(name, payload)` asset entries ahead
+/// of the BREP blobs.
+pub(crate) fn f3d_with_breps_design_and_assets(
+    breps: &[(&str, &[u8])],
+    bulk: &[u8],
+    meta: &[u8],
+    assets: &[(&str, &[u8])],
+) -> Vec<u8> {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     write_synthetic_manifests(&mut zip, stored);
+    for (name, payload) in assets {
+        zip.start_file(*name, stored).unwrap();
+        zip.write_all(payload).unwrap();
+    }
     for (basename, smbh) in breps {
         zip.start_file(
             format!("FusionAssetName[Active]/Breps.BlobParts/{basename}"),

@@ -151,6 +151,7 @@ fn unresolved_boundary_excludes_its_faces_and_keeps_other_faces() {
             }),
             source_object: None,
             parameter_range: None,
+            native_ref: None,
         });
         ir.geometry.curves.push(Curve {
             id: cadmpeg_ir::ids::CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 11),
@@ -163,6 +164,7 @@ fn unresolved_boundary_excludes_its_faces_and_keeps_other_faces() {
             )),
             source_object: None,
             parameter_range: None,
+            native_ref: None,
         });
         let mut faces = BTreeMap::from([
             (5, vec![&loops[0]]),

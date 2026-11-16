@@ -56,11 +56,11 @@ fn segment_body_index_groups_bodies_by_object_and_binding() {
     ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     let binding = crate::native::segments::SegmentBodyBinding {
         id: "binding".into(),

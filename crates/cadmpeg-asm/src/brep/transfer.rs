@@ -90,6 +90,7 @@ pub fn transfer_into_ir<'ir>(
         unknowns,
         stats,
         annotation_records,
+        chain_order: _,
     } = brep;
     super::subsets::localize_subsets(&mut curves, &mut edges, &mut coedges, &procedural_curves)?;
 
@@ -206,6 +207,7 @@ mod tests {
             id: RegionId::mint("sat:brep:region#1").unwrap(),
             body: BodyId::mint("sat:brep:body#1").unwrap(),
             shells: Vec::new(),
+            native_ref: None,
         });
         let mut ir = CadIr::empty();
         let error = transfer_into_ir(&ctx, &mut ir, "test", brep)

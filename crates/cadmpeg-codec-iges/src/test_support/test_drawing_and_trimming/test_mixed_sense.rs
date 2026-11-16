@@ -163,6 +163,7 @@ pub(crate) fn composite_edge_outer_loop_model() -> CadIr {
             }),
             parameter_range: range.and_then(IncreasingParameterInterval::new),
             source_object: None,
+            native_ref: None,
         });
     }
     ir.geometry
@@ -273,7 +274,9 @@ fn reverse_edge(ir: &mut CadIr, edge_id: &cadmpeg_ir::ids::EdgeId) {
         .map(|range| IncreasingParameterInterval::new(reversed(range.into())).expect("a range"));
     let range = edge.param_range().map(|range| reversed(range.get()));
     edge.carrier = EdgeCarrier::new(Some(curve_id), range).expect("the reversed edge range");
-    std::mem::swap(&mut edge.start, &mut edge.end);
+    if let Some(ends) = edge.ends.as_mut() {
+        std::mem::swap(&mut ends.start, &mut ends.end);
+    }
     for coedge in &mut ir.geometry.coedges {
         if coedge.edge == *edge_id {
             coedge.sense = match coedge.sense {

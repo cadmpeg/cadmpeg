@@ -7,30 +7,22 @@
         {
           "id": "usd:stage:body#/Plant/Frame/Rail",
           "kind": "wire",
-          "name": "Rail",
-          "regions": [
-            "usd:stage:region#/Plant/Frame/Rail"
-          ]
+          "name": "Rail"
         },
         {
           "id": "usd:stage:body#/Plant/Frame/Tube",
           "kind": "general",
-          "name": "Tube",
-          "regions": []
+          "name": "Tube"
         },
         {
           "id": "usd:stage:body#/Plant/Roof",
           "kind": "sheet",
-          "name": "Roof",
-          "regions": [
-            "usd:stage:region#/Plant/Roof"
-          ]
+          "name": "Roof"
         },
         {
           "id": "usd:stage:body#prototype0",
           "kind": "general",
-          "name": "Leg0",
-          "regions": []
+          "name": "Leg0"
         }
       ],
       "coedges": [],
@@ -97,9 +89,11 @@
               5.0
             ]
           },
-          "end": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
-          "id": "usd:stage:edge#/Plant/Frame/Rail:0",
-          "start": "usd:stage:vertex#/Plant/Frame/Rail:0:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
+            "start": "usd:stage:vertex#/Plant/Frame/Rail:0:0"
+          },
+          "id": "usd:stage:edge#/Plant/Frame/Rail:0"
         }
       ],
       "faces": [
@@ -165,12 +159,7 @@
         },
         {
           "id": "usd:stage:shell#/Plant/Roof",
-          "members": [
-            {
-              "id": "usd:stage:face#/Plant/Roof",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/Plant/Roof"
         }
       ],

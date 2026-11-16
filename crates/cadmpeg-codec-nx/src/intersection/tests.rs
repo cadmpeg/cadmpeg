@@ -106,6 +106,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
             Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite fixture range")),
             None,
         ),
+        native_ref: None,
     });
     let second_face = ir
         .geometry

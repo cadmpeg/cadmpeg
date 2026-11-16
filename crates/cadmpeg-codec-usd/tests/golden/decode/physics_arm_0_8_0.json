@@ -7,20 +7,17 @@
         {
           "id": "usd:stage:body#/Arm/Base/Geom",
           "kind": "general",
-          "name": "Geom",
-          "regions": []
+          "name": "Geom"
         },
         {
           "id": "usd:stage:body#/Arm/Slider/Geom",
           "kind": "general",
-          "name": "Geom",
-          "regions": []
+          "name": "Geom"
         },
         {
           "id": "usd:stage:body#/Arm/Upper/Geom",
           "kind": "general",
-          "name": "Geom",
-          "regions": []
+          "name": "Geom"
         }
       ],
       "coedges": [],

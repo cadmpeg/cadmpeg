@@ -6,10 +6,7 @@
       "bodies": [
         {
           "id": "catia:standard:body#0",
-          "kind": "solid",
-          "regions": [
-            "catia:standard:region#0-0"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -265,9 +262,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#1",
-          "id": "catia:standard:edge#0",
-          "start": "catia:standard:v#0"
+          "ends": {
+            "end": "catia:standard:v#1",
+            "start": "catia:standard:v#0"
+          },
+          "id": "catia:standard:edge#0"
         },
         {
           "carrier": {
@@ -277,9 +276,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#2",
-          "id": "catia:standard:edge#1",
-          "start": "catia:standard:v#1"
+          "ends": {
+            "end": "catia:standard:v#2",
+            "start": "catia:standard:v#1"
+          },
+          "id": "catia:standard:edge#1"
         },
         {
           "carrier": {
@@ -289,9 +290,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#0",
-          "id": "catia:standard:edge#2",
-          "start": "catia:standard:v#2"
+          "ends": {
+            "end": "catia:standard:v#0",
+            "start": "catia:standard:v#2"
+          },
+          "id": "catia:standard:edge#2"
         },
         {
           "carrier": {
@@ -301,9 +304,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#3",
-          "id": "catia:standard:edge#3",
-          "start": "catia:standard:v#0"
+          "ends": {
+            "end": "catia:standard:v#3",
+            "start": "catia:standard:v#0"
+          },
+          "id": "catia:standard:edge#3"
         },
         {
           "carrier": {
@@ -313,9 +318,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#3",
-          "id": "catia:standard:edge#4",
-          "start": "catia:standard:v#1"
+          "ends": {
+            "end": "catia:standard:v#3",
+            "start": "catia:standard:v#1"
+          },
+          "id": "catia:standard:edge#4"
         },
         {
           "carrier": {
@@ -325,9 +332,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#3",
-          "id": "catia:standard:edge#5",
-          "start": "catia:standard:v#2"
+          "ends": {
+            "end": "catia:standard:v#3",
+            "start": "catia:standard:v#2"
+          },
+          "id": "catia:standard:edge#5"
         }
       ],
       "faces": [
@@ -543,24 +552,7 @@
       "shells": [
         {
           "id": "catia:standard:shell#0-0",
-          "members": [
-            {
-              "id": "catia:standard:face#0",
-              "kind": "face"
-            },
-            {
-              "id": "catia:standard:face#1",
-              "kind": "face"
-            },
-            {
-              "id": "catia:standard:face#2",
-              "kind": "face"
-            },
-            {
-              "id": "catia:standard:face#3",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "catia:standard:region#0-0"
         }
       ],
@@ -753,10 +745,10 @@
       "appearances": [
         {
           "base_color": {
-            "a": 0.8235294222831726,
-            "b": 0.8235294222831726,
-            "g": 0.8235294222831726,
-            "r": 0.8235294222831726
+            "a": 0.8235294117647058,
+            "b": 0.8235294117647058,
+            "g": 0.8235294117647058,
+            "r": 0.8235294117647058
           },
           "id": "catia:appearance:rgba#d2d2d2d2",
           "properties": {},
@@ -1354,8 +1346,7 @@
         "catia:standard:body#0": {
           "entity": "inferred",
           "fields": {
-            "kind": "derived",
-            "regions": "derived"
+            "kind": "derived"
           },
           "kind": "entity"
         },
@@ -1512,54 +1503,54 @@
         "catia:standard:edge#0": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#1": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#2": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#3": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#4": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#5": {
           "fields": {
             "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
@@ -1642,7 +1633,6 @@
         "catia:standard:shell#0-0": {
           "entity": "inferred",
           "fields": {
-            "faces": "derived",
             "region": "derived"
           },
           "kind": "entity"

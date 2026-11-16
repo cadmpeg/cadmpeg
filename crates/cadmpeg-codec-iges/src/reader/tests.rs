@@ -324,6 +324,7 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
         id: VertexId::mint("iges:model:vertex#invalid").expect("identity grammar"),
         point: PointId::mint("iges:model:point#missing").expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     });
 
     let error = crate::test_support::with_service_context(&[], |ctx| {

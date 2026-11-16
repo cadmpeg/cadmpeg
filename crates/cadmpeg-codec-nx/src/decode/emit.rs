@@ -206,11 +206,11 @@ pub(super) fn emit_topology(
         ir.geometry.bodies.push(Body {
             id,
             kind: cadmpeg_ir::topology::BodyKind::Solid,
-            regions: Vec::new(),
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
     }
 
@@ -261,15 +261,8 @@ pub(super) fn emit_topology(
                 id: region.clone(),
                 body: body.clone(),
                 shells: Vec::new(),
+                native_ref: None,
             });
-            if let Some(parent) = ir
-                .geometry
-                .bodies
-                .iter_mut()
-                .find(|candidate| candidate.id == body)
-            {
-                parent.regions.push(region.clone());
-            }
             regions.insert(region_xmt, (region.clone(), body.clone()));
             region
         };
@@ -300,16 +293,14 @@ pub(super) fn emit_topology(
             );
         }
 
-        ir.geometry.shells.push(
-            Shell::new(
-                shell_id.clone(),
-                region_id.clone(),
-                shell_faces,
-                Vec::new(),
-                Vec::new(),
-            )
-            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-        );
+        if shell_faces.is_empty() {
+            return Err(cadmpeg_core::CodecError::Malformed(
+                cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+            ));
+        }
+        ir.geometry
+            .shells
+            .push(Shell::new(shell_id.clone(), region_id.clone()));
         if let Some(parent) = ir
             .geometry
             .regions
@@ -358,6 +349,7 @@ pub(super) fn emit_topology(
             id: vertex.clone(),
             point: point_ref.clone(),
             tolerance,
+            native_ref: None,
         });
         vertices.insert(node.xmt(), vertex.clone());
         vertex_positions.insert(
@@ -466,6 +458,7 @@ pub(super) fn emit_topology(
                         cache: None,
                     },
                     source_object: None,
+                    native_ref: None,
                 });
 
                 let _attached = procedural_admission.add_curve(
@@ -634,9 +627,9 @@ pub(super) fn emit_topology(
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
                 .map_err(CodecError::malformed)?,
-            start,
-            end,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
             tolerance: decoded_tolerance(fields.tolerance()),
+            native_ref: None,
         });
         edges.insert(node.xmt(), id);
         if against_source {
@@ -1042,6 +1035,7 @@ pub(super) fn emit_topology(
                         ),
                         *fit_tolerance,
                     ),
+                    native_ref: None,
                 });
                 pcurve = Some(pcurve_id);
             }
@@ -1074,6 +1068,7 @@ pub(super) fn emit_topology(
             sense,
             pcurves: pcurve_uses,
             use_curve: None,
+            native_ref: None,
         });
     }
     let mut face_loops: BTreeMap<FaceId, Vec<LoopId>> = BTreeMap::new();
@@ -1108,6 +1103,7 @@ pub(super) fn emit_topology(
                 id: id.clone(),
                 face: face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                native_ref: None,
             });
             let key: FaceId = face.clone();
 
@@ -1137,6 +1133,7 @@ pub(super) fn emit_topology(
             name: None,
             color: None,
             tolerance: pending.tolerance,
+            native_ref: None,
         });
     }
     attach_tolerant_edge_intersections_with_budget(
@@ -1185,7 +1182,7 @@ pub(super) fn emit_topology(
         .retain(|edge| !candidate_edges.contains(&edge.id) || owned_edges.contains(&edge.id));
     let mut retained_vertices: BTreeSet<VertexId> = BTreeSet::new();
     for edge in &ir.geometry.edges {
-        for vertex in [&edge.start, &edge.end] {
+        for vertex in edge.vertices() {
             retained_vertices.insert(vertex.clone());
         }
     }
@@ -1250,6 +1247,7 @@ pub(super) fn retain_unresolved_topology_carriers(
                 record: Some(unknown.clone()),
             }),
             source_object: None,
+            native_ref: None,
         });
         surfaces.insert(surface_xmt, id);
     }
@@ -1283,6 +1281,7 @@ pub(super) fn retain_unresolved_topology_carriers(
                 record: Some(unknown.clone()),
             }),
             source_object: None,
+            native_ref: None,
         });
         curves.insert(curve_xmt, id);
     }
@@ -1417,6 +1416,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         id: vertex.clone(),
         point,
         tolerance,
+        native_ref: None,
     });
     Ok(Some(vertex))
 }

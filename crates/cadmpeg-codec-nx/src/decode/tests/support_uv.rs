@@ -387,6 +387,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     .expect("valid seeded offset support"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: offset.clone(),
@@ -395,6 +396,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: plane.clone(),
@@ -407,6 +409,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
@@ -432,6 +435,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let _attached = ir.geometry.add_procedural_curve(
             &curve,

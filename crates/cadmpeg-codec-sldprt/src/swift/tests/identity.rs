@@ -274,11 +274,11 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     let body = Body {
         id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
         kind: BodyKind::default(),
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     let face = Face {
         id: FaceId::mint("sldprt:brep:face#22").expect("identity grammar"),
@@ -289,18 +289,23 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let edge = Edge {
         id: EdgeId::mint("sldprt:brep:edge#33").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-        start: VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
-        end: VertexId::mint("sldprt:brep:vertex#2").expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
+            VertexId::mint("sldprt:brep:vertex#2").expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let vertex = Vertex {
         id: VertexId::mint("sldprt:brep:vertex#44").expect("identity grammar"),
         point: PointId::mint("sldprt:brep:point#44").expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     };
     let index = TopologyIdentityIndex::from_model(
         crate::swift::PrimaryTopology {

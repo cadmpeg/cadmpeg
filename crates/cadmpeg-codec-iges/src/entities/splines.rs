@@ -204,11 +204,13 @@ fn add_edge(
             id: start_vertex.clone(),
             point: start_point,
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: end_vertex.clone(),
             point: end_point,
             tolerance: None,
+            native_ref: None,
         },
     ]);
     sequences.record_curve(&curve, entry.sequence);
@@ -225,15 +227,19 @@ fn add_edge(
                 return Ok(None);
             }
         }),
+        native_ref: None,
     });
 
     ctx.charge_entities(1, "iges_geometry_splines")?;
     ir.geometry.edges.push(Edge {
         id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
-        start: start_vertex,
-        end: end_vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex,
+            end_vertex,
+        )),
         tolerance: None,
+        native_ref: None,
     });
     Ok(Some(edge))
 }
@@ -957,6 +963,7 @@ pub(super) fn project(
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry)?),
+            native_ref: None,
         });
         if placeholders_truncated {
             super::push_attributed_loss(&mut losses, entry, IgesLossCode::SplineClaimRecovered,

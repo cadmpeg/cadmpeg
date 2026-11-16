@@ -291,6 +291,7 @@ impl Writer<'_, '_, '_, '_> {
                 id: id.clone(),
                 geometry: IrSurfaceGeometry::Solved(geometry),
                 source_object: None,
+                native_ref: None,
             });
             self.sink.annotations.note(
                 id.to_string(),
@@ -607,6 +608,7 @@ impl Writer<'_, '_, '_, '_> {
                 geometry: IrCurveGeometry::Solved(chart.geometry.clone()),
                 parameter_range: None,
                 source_object: None,
+                native_ref: None,
             });
             self.located(&id, record.offset, "0x14");
             charts.insert(*edge, chart);
@@ -657,8 +659,10 @@ impl Writer<'_, '_, '_, '_> {
             self.sink.geometry.edges.push(Edge {
                 id: id.clone(),
                 carrier,
-                start: self.ids.vertex(start),
-                end: self.ids.vertex(end),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    self.ids.vertex(start),
+                    self.ids.vertex(end),
+                )),
                 tolerance: merged
                     .then(|| {
                         PositiveReal::new(
@@ -666,6 +670,7 @@ impl Writer<'_, '_, '_, '_> {
                         )
                     })
                     .flatten(),
+                native_ref: None,
             });
             self.located(&id, record.offset, "0x14");
             if merged {
@@ -685,9 +690,12 @@ impl Writer<'_, '_, '_, '_> {
             self.sink.geometry.edges.push(Edge {
                 id: id.clone(),
                 carrier: EdgeCarrier::Free,
-                start: self.ids.vertex(start),
-                end: self.ids.vertex(end),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    self.ids.vertex(start),
+                    self.ids.vertex(end),
+                )),
                 tolerance: None,
+                native_ref: None,
             });
             self.derived(&id);
             vertices.extend([start, end]);
@@ -713,6 +721,7 @@ impl Writer<'_, '_, '_, '_> {
                 id: id.clone(),
                 point: point_id,
                 tolerance: PositiveReal::new(tolerance),
+                native_ref: None,
             });
             self.derived(&id);
             self.sink
@@ -849,6 +858,7 @@ impl Writer<'_, '_, '_, '_> {
                             },
                             pcurves,
                             use_curve: None,
+                            native_ref: None,
                         });
                         self.located(&coedge_id, source.offset, "0x11");
                         radial.entry(edge_id).or_default().push(coedge_id.clone());
@@ -862,6 +872,7 @@ impl Writer<'_, '_, '_, '_> {
                         id: loop_id.clone(),
                         face: face_id.clone(),
                         boundary: LoopBoundary::Ring(boundary),
+                        native_ref: None,
                     });
                     let offset = self.exact.loops[loop_topology.index].offset;
                     self.located(&loop_id, offset, "0x01000010");
@@ -893,6 +904,7 @@ impl Writer<'_, '_, '_, '_> {
                     name: None,
                     color: None,
                     tolerance,
+                    native_ref: None,
                 });
                 self.located(&face_id, record.offset, "0x13");
                 if !face_topology.side_derived {
@@ -986,6 +998,7 @@ impl Writer<'_, '_, '_, '_> {
             id: id.clone(),
             geometry,
             metadata: PcurveMetadata::general(None, None, fit),
+            native_ref: None,
         });
         self.located(&id, offset, "0x15");
         if fit.is_some() {
@@ -1081,22 +1094,21 @@ impl Writer<'_, '_, '_, '_> {
             self.ids.body()
         };
         let mut regions: [Vec<RegionId>; 2] = [Vec::new(), Vec::new()];
-        for (shell, list) in members.iter().enumerate() {
+        for (shell, _) in members.iter().enumerate() {
             let body = if closed[shell] { &solid } else { &sheet };
             let shell_id = self.ids.shell(shell);
             let region_id = self.ids.region(shell);
-            let face_ids: Vec<FaceId> = list.iter().map(|face| flat[*face].clone()).collect();
             self.ctx.charge_entities(2, "pvz exact shell")?;
-            self.sink.geometry.shells.push(
-                Shell::with_faces(shell_id.clone(), region_id.clone(), face_ids).map_err(
-                    |error| CodecError::malformed(format_args!("pvz exact shell: {error}")),
-                )?,
-            );
+            self.sink
+                .geometry
+                .shells
+                .push(Shell::new(shell_id.clone(), region_id.clone()));
             self.derived(&shell_id);
             self.sink.geometry.regions.push(Region {
                 id: region_id.clone(),
                 body: body.clone(),
                 shells: vec![shell_id],
+                native_ref: None,
             });
             self.derived(&region_id);
             regions[usize::from(!closed[shell])].push(region_id);
@@ -1124,11 +1136,11 @@ impl Writer<'_, '_, '_, '_> {
             self.sink.geometry.bodies.push(Body {
                 id: id.clone(),
                 kind,
-                regions,
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             });
             self.derived(&id);
             bodies.push(id);

@@ -84,6 +84,7 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     assert_eq!(

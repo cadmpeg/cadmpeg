@@ -482,10 +482,34 @@ fn reach<'a>(
     let Some((&start, _)) = table.get_key_value(body) else {
         return Ok((HashSet::new(), 0));
     };
+    let mut children = HashMap::<&str, Vec<&str>>::new();
+    for region in &geometry.regions {
+        children
+            .entry(region.body.as_str())
+            .or_default()
+            .push(region.id.as_str());
+    }
+    for shell in &geometry.shells {
+        children
+            .entry(shell.region.as_str())
+            .or_default()
+            .push(shell.id.as_str());
+    }
+    for face in &geometry.faces {
+        children
+            .entry(face.shell.as_str())
+            .or_default()
+            .push(face.id.as_str());
+    }
     let mut seen = HashSet::from([start]);
     let mut queue = VecDeque::from([start]);
     let mut missing = 0;
     while let Some(id) = queue.pop_front() {
+        for &child in children.get(id).into_iter().flatten() {
+            if seen.insert(child) {
+                queue.push_back(child);
+            }
+        }
         let Some(record) = table.get(id).copied() else {
             continue;
         };

@@ -165,6 +165,25 @@ impl ContainerSummary {
         }
     }
 
+    /// Constructs a summary of a known format whose dialect inspection could
+    /// not classify, as when the part that declares the dialect was given up.
+    #[must_use]
+    pub fn unclassified(
+        format: impl Into<String>,
+        container_kind: ContainerKind,
+        entries: Vec<ContainerEntry>,
+        losses: Vec<LossNote>,
+        notes: Vec<String>,
+    ) -> Self {
+        Self {
+            identity: FormatIdentity::unclassified(format),
+            container_kind,
+            entries,
+            losses,
+            notes,
+        }
+    }
+
     /// Returns the source format id.
     #[must_use]
     pub fn format(&self) -> &str {
