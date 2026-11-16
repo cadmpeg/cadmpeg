@@ -259,20 +259,16 @@ jobs:
       - name: Require valid gate selection
         shell: bash
         run: test "${{ needs.changes.result }}" = success
-      - name: Free runner disk
-        shell: bash
-        run: |
-          df -h /
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h /
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
+      - name: Limit concurrent test links
+        # Link at most two test binaries at once, within the runner's memory.
+        shell: bash
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Hash the Cargo profiles
         id: profiles
@@ -295,8 +291,12 @@ jobs:
 
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
-        # A separate `cargo build` step would repeat that compilation.
-        run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+        # A separate `cargo build` step would repeat that compilation. The
+        # memory line every 30 seconds stays in the log if the runner stops.
+        shell: bash
+        run: |
+          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
+          python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
 
       - name: Inventor CLI evidence tests
         if: needs.changes.outputs.inventor_cli == 'true'
