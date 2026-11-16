@@ -4351,6 +4351,7 @@ mod tests {
                 "feature.form-reference-type-conflict",
                 "feature.form-foreign-reference-unresolved",
                 "feature.form-tracking-owner-conflict",
+                "feature.form-tracking-run-unresolved",
                 "feature.form-tracking-fixed-slots-assumed",
                 "feature.form-serializer-reference-unresolved",
                 "feature.form-membership-conflict",

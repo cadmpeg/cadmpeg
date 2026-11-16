@@ -213,3 +213,113 @@ fn repeated_serializer_aliases_select_one_distinct_cage() {
         );
     }
 }
+
+#[test]
+fn accumulated_source_order_is_independent_of_grouping() {
+    let full = FormConstruction::complete(vec![
+        cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#a").unwrap(),
+        cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#b").unwrap(),
+        cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#c").unwrap(),
+    ])
+    .unwrap();
+    let assumed = FormConstruction::try_new(
+        FormInputs::default(),
+        full.observations().to_vec(),
+        FormMembership::Complete {
+            members: vec![
+                FormObservationIndex(0),
+                FormObservationIndex(1),
+                FormObservationIndex(2),
+            ],
+            order: FormKnownOrder::Assumed,
+            certainty: FormKnownOrder::Assumed,
+        },
+    )
+    .unwrap();
+    let partial = |indices: &[usize]| {
+        FormConstruction::try_new(
+            FormInputs::default(),
+            full.observations().to_vec(),
+            FormMembership::Partial {
+                cardinality: None,
+                order: FormOrder::Source,
+                members: indices
+                    .iter()
+                    .map(|&index| FormMember {
+                        observation: FormObservationIndex(index),
+                        ordinal: None,
+                    })
+                    .collect(),
+            },
+        )
+        .unwrap()
+    };
+    let ab = partial(&[0, 1]);
+    let bc = partial(&[1, 2]);
+    let join = |left: &FormConstruction, right: &FormConstruction| {
+        form_cages::retain_knowledge(left, right).unwrap()
+    };
+    let grouped = join(&ab, &bc);
+    for result in [
+        join(&join(&assumed, &ab), &bc),
+        join(&join(&ab, &assumed), &bc),
+        join(&join(&assumed, &bc), &ab),
+        join(&assumed, &grouped),
+        join(&grouped, &assumed),
+    ] {
+        assert!(
+            matches!(
+                result.membership(),
+                FormMembership::Complete {
+                    order: FormKnownOrder::Source,
+                    certainty: FormKnownOrder::Assumed,
+                    ..
+                }
+            ),
+            "{:?}",
+            result.membership()
+        );
+        assert_eq!(
+            result
+                .committed_cages()
+                .map(cadmpeg_ir::ids::SubdId::as_str)
+                .collect::<Vec<_>>(),
+            ["f3d:model:subd#a", "f3d:model:subd#b", "f3d:model:subd#c"]
+        );
+        assert_eq!(join(&result, &bc), result);
+    }
+    let insufficient = join(&assumed, &ab);
+    assert!(matches!(
+        insufficient.membership(),
+        FormMembership::Complete {
+            order: FormKnownOrder::Assumed,
+            certainty: FormKnownOrder::Assumed,
+            ..
+        }
+    ));
+    let reversed = partial(&[1, 0]);
+    assert!(!join(&assumed, &reversed).membership_is_complete());
+    let mut evidence = FormInputs::default();
+    evidence.order_evidence.push(FormOrderEvidence {
+        order: FormKnownOrder::Source,
+        members: vec![
+            FormObservationIndex(0),
+            FormObservationIndex(1),
+            FormObservationIndex(2),
+        ],
+    });
+    let evidence_only = FormConstruction::try_new(
+        evidence,
+        full.observations().to_vec(),
+        FormConstruction::default().membership().clone(),
+    )
+    .unwrap();
+    assert!(matches!(
+        join(&assumed, &evidence_only).membership(),
+        FormMembership::Complete {
+            order: FormKnownOrder::Source,
+            certainty: FormKnownOrder::Assumed,
+            ..
+        }
+    ));
+}

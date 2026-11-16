@@ -1211,7 +1211,7 @@ fn form_reference_schema_retains_run_bounds_and_exact_guid_lengths() {
         inputs["reference_runs"] = value;
         let form = form_wire("complete", serde_json::json!([]), inputs);
         assert_eq!(
-            serde_json::from_value::<FormConstruction>(form).is_ok(),
+            serde_json::from_value::<FeatureOperation>(form).is_ok(),
             valid
         );
     }
