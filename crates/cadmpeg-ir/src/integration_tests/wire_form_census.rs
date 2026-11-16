@@ -17,6 +17,11 @@ use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use syn::spanned::Spanned;
 use syn::{Attribute, Fields, Item, Variant};
 
+use shim_forwards::forwarded_shim;
+
+#[path = "../../tests/source_census/shim_forwards.rs"]
+mod shim_forwards;
+
 const WIRE_CRATES: [&str; 2] = ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"];
 
 const COLLECTIONS: [&str; 8] = [
@@ -59,6 +64,9 @@ struct Index {
     imports: BTreeMap<String, Vec<(String, Vec<String>)>>,
     hand_serialize: BTreeMap<String, Vec<String>>,
     option_readers: BTreeSet<String>,
+    /// Functions that forward to another helper, by name, with each helper a
+    /// function of that name forwards to.
+    option_forwards: BTreeMap<String, BTreeSet<String>>,
     macro_serde_attrs: Vec<(String, Vec<TokenTree>)>,
 }
 
@@ -418,7 +426,16 @@ impl Walker<'_> {
                         }
                     }
                 }
-                Item::Fn(item) => self.block(&item.block, index),
+                Item::Fn(item) => {
+                    if let Some(callee) = forwarded_shim(item) {
+                        index
+                            .option_forwards
+                            .entry(item.sig.ident.to_string())
+                            .or_default()
+                            .insert(callee);
+                    }
+                    self.block(&item.block, index);
+                }
                 Item::Mod(item) => {
                     if let Some((_, nested)) = &item.content {
                         self.items(nested, index);
@@ -525,6 +542,19 @@ fn field_name(field: &syn::Field) -> String {
 }
 
 impl Index {
+    /// Whether `name` is a `named_optional_field!` reader, or a function
+    /// every definition of which forwards to one. A forward refuses whatever
+    /// its callee refuses, so it reads a set through the set reader and still
+    /// refuses `null` at its key.
+    fn is_option_reader(&self, name: &str) -> bool {
+        self.option_readers.contains(name)
+            || self.option_forwards.get(name).is_some_and(|callees| {
+                callees
+                    .iter()
+                    .all(|callee| self.option_readers.contains(callee))
+            })
+    }
+
     fn unique(&self, name: &str) -> Option<&Decl> {
         let decls = self.decls.get(name)?;
         let serialized: Vec<&Decl> = decls
@@ -545,6 +575,13 @@ impl Index {
         if let [file] = files {
             return Some(file);
         }
+        self.in_scope(files, name, from)
+    }
+
+    /// Of the files that declare a name, the one whose declaration `from`
+    /// brings into scope: `from` itself, else the one it imports. `None`
+    /// when neither picks exactly one.
+    fn in_scope<'a>(&self, files: &[&'a str], name: &str, from: &str) -> Option<&'a str> {
         if let Some(file) = files.iter().find(|file| **file == from) {
             return Some(file);
         }
@@ -596,9 +633,25 @@ impl Index {
     /// The type an alias named `name`, written in file `from`, stands for,
     /// with the file that declares the alias.
     fn alias(&self, name: &str, from: &str) -> Option<(&str, &syn::Type)> {
+        self.alias_in(name, from, Self::pick)
+    }
+
+    /// The alias named `name` that file `from` declares or imports, with the
+    /// file that declares it. Such an alias is what `from` means by the name,
+    /// whatever another module declares under it.
+    fn scoped_alias(&self, name: &str, from: &str) -> Option<(&str, &syn::Type)> {
+        self.alias_in(name, from, Self::in_scope)
+    }
+
+    fn alias_in<'a>(
+        &'a self,
+        name: &str,
+        from: &str,
+        choose: impl for<'f> Fn(&Self, &[&'f str], &str, &str) -> Option<&'f str>,
+    ) -> Option<(&'a str, &'a syn::Type)> {
         let aliases = self.aliases.get(name)?;
         let files: Vec<&str> = aliases.iter().map(|(file, _)| file.as_str()).collect();
-        let file = self.pick(&files, name, from)?;
+        let file = choose(self, &files, name, from)?;
         let mut in_file = aliases.iter().filter(|(alias_file, _)| alias_file == file);
         match (in_file.next(), in_file.next()) {
             (Some((file, ty)), None) => Some((file.as_str(), ty)),
@@ -678,6 +731,9 @@ impl Index {
         }
         if depth > 6 {
             return Payload::Unresolved(format!("{name} nests too deep"));
+        }
+        if let Some((file, aliased)) = self.scoped_alias(&name, from) {
+            return self.payload(aliased, None, file, depth + 1);
         }
         let Some(decl) = self.resolve(&name, from) else {
             if self.decls.contains_key(&name) {
@@ -902,7 +958,7 @@ fn check_fields(
         let named_reader = reader.is_some_and(|reader| {
             let name = reader.rsplit("::").next().unwrap_or(reader);
             let name = name.split('<').next().unwrap_or(name);
-            name == OPTION_READER || index.option_readers.contains(name)
+            name == OPTION_READER || index.is_option_reader(name)
         });
         if last_segment(&field.ty).is_some_and(|(ident, _)| ident == "Option") {
             if newtype {
@@ -1180,6 +1236,41 @@ fn the_census_reads_newtype_fields_and_adjacent_unit_variants() {
     assert_eq!(probe_problems(STATING_PROBE), Vec::<String>::new());
 }
 
+const FORWARDING_PROBE: &str = r#"#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Holder {
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_set")]
+    set: Option<BTreeSet<u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_loose")]
+    loose: Option<BTreeSet<u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_lenient")]
+    lenient: Option<BTreeSet<u32>>,
+}
+fn deserialize_set<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<u32>>, D::Error> {
+    deserialize_members(d).map(|set| set.map(|Members(set)| set))
+}
+fn deserialize_loose<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<u32>>, D::Error> {
+    read_members(d).map(|set| set.map(|Members(set)| set))
+}
+fn deserialize_lenient<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<u32>>, D::Error> {
+    deserialize_members(d).or_else(|_| Ok(None))
+}
+cadmpeg_core::named_optional_field!(deserialize_members, Members, "set");
+"#;
+
+/// A helper that only forwards to a `named_optional_field!` reader is one;
+/// a forward to another helper, or a call that rewrites the refusal, is not.
+#[test]
+fn a_forward_to_an_option_reader_reads_as_one() {
+    let unread = |line: usize, field: &str| {
+        format!("{PROBE}:3 Holder.{field}@{line}: Option field is not read by a default named_present reader")
+    };
+    assert_eq!(
+        probe_problems(FORWARDING_PROBE),
+        vec![unread(9, "lenient"), unread(7, "loose")]
+    );
+}
+
 #[test]
 fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
     let root =
@@ -1189,20 +1280,25 @@ fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
         (
             "crates/cadmpeg-ir/src/one.rs",
             "#[derive(Serialize)] pub struct Payload { pub a: u32 }\n\
-             pub type Alias = Payload;\n",
+             pub type Alias = Payload;\n\
+             pub type Shadowed = Payload;\n",
         ),
         (
             "crates/cadmpeg-ir/src/two.rs",
             "#[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
-             pub enum Payload { A(u32) }\n",
+             pub enum Payload { A(u32) }\n\
+             #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Shadowed { A(u32) }\n",
         ),
         (
             "crates/cadmpeg-ir/src/user.rs",
-            "use crate::one::{Alias, Payload};\n\
+            "use crate::one::{Alias, Payload, Shadowed};\n\
              #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
              pub enum Imported { Item(Payload) }\n\
              #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
              pub enum Aliased { Item(Alias) }\n\
+             #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum ImportedAlias { Item(Shadowed) }\n\
              #[derive(Serialize)] #[serde(tag = \"kind\")]\n\
              pub enum Generic<T> { Item(T) }\n",
         ),
@@ -1217,6 +1313,7 @@ fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
     for (name, form) in [
         ("Imported", "Internal"),
         ("Aliased", "Internal"),
+        ("ImportedAlias", "Internal"),
         ("Generic", "Adjacent"),
     ] {
         assert!(
@@ -1226,7 +1323,7 @@ fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
             "{name}: {problems:#?}"
         );
     }
-    assert_eq!(problems.len(), 3, "{problems:#?}");
+    assert_eq!(problems.len(), 4, "{problems:#?}");
 }
 
 #[test]
