@@ -11,6 +11,7 @@ use serde_json::json;
 
 use super::*;
 use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
+use crate::scalar::PositiveLength;
 use fixtures::*;
 
 pub(in crate::design::ops) fn text_content_samples() -> Vec<TextContent> {
@@ -62,122 +63,6 @@ pub(in crate::design::ops) fn text_horizontal_box_samples() -> Vec<TextHorizonta
 
 pub(in crate::design::ops) fn text_vertical_box_samples() -> Vec<TextVerticalBox> {
     vec![TextVerticalBox::Ink, TextVerticalBox::CapHeight]
-}
-
-pub(in crate::design::ops) fn corner_transition_samples() -> Vec<CornerTransition> {
-    vec![
-        CornerTransition::Mitre,
-        CornerTransition::Round,
-        CornerTransition::Open,
-        CornerTransition::Carried,
-        CornerTransition::Native(text("codec:native")),
-    ]
-}
-
-pub(in crate::design::ops) fn spine_limits_samples() -> Vec<SpineLimits> {
-    vec![
-        SpineLimits {
-            start: Some(selection(1)),
-            end: Some(selection(1)),
-        },
-        SpineLimits {
-            start: None,
-            end: None,
-        },
-    ]
-}
-
-pub(in crate::design::ops) fn helix_samples() -> Vec<Helix> {
-    vec![
-        Helix {
-            placement: frame(),
-            start: Some(helix_start_samples().remove(0)),
-            shape: helix_shape_samples().remove(0),
-            hand: Some(lit(Hand::Left)),
-        },
-        Helix {
-            placement: frame(),
-            start: None,
-            shape: helix_shape_samples().remove(0),
-            hand: None,
-        },
-    ]
-}
-
-pub(in crate::design::ops) fn helix_start_samples() -> Vec<HelixStart> {
-    vec![
-        HelixStart::Radius {
-            radius: RadialDimension::Diameter(lit(positive(3.0))),
-            angle: Some(bound(1)),
-        },
-        HelixStart::Radius {
-            radius: RadialDimension::Diameter(lit(positive(3.0))),
-            angle: None,
-        },
-        HelixStart::Point(point_construction()),
-        HelixStart::Circle(selection(2)),
-    ]
-}
-
-pub(in crate::design::ops) fn helix_shape_samples() -> Vec<HelixShape> {
-    vec![
-        HelixShape::Helix {
-            law: Some(helix_law_samples().remove(0)),
-            taper: Some(helix_taper_samples().remove(0)),
-        },
-        HelixShape::Helix {
-            law: None,
-            taper: None,
-        },
-        HelixShape::Spiral {
-            law: Some(spiral_law_samples().remove(0)),
-        },
-        HelixShape::Spiral { law: None },
-        HelixShape::Native(text("codec:native")),
-    ]
-}
-
-pub(in crate::design::ops) fn helix_law_samples() -> Vec<HelixLaw> {
-    vec![
-        HelixLaw::PitchHeight {
-            pitch: lit(positive(2.0)),
-            height: lit(positive(2.0)),
-        },
-        HelixLaw::PitchTurns {
-            pitch: lit(positive(2.0)),
-            turns: lit(positive_real(1.5)),
-        },
-        HelixLaw::HeightTurns {
-            height: lit(positive(2.0)),
-            turns: lit(positive_real(1.5)),
-        },
-        HelixLaw::Native(text("codec:native")),
-    ]
-}
-
-pub(in crate::design::ops) fn helix_taper_samples() -> Vec<HelixTaper> {
-    vec![
-        HelixTaper::Angle(bound(1)),
-        HelixTaper::Growth(lit(length(-1.5))),
-        HelixTaper::Radius(Law::Constant(lit(length(2.0)))),
-    ]
-}
-
-pub(in crate::design::ops) fn spiral_law_samples() -> Vec<SpiralLaw> {
-    vec![
-        SpiralLaw::PitchTurns {
-            pitch: lit(nonzero(-0.5)),
-            turns: lit(positive_real(1.5)),
-        },
-        SpiralLaw::EndRadiusTurns {
-            end: lit(positive(2.0)),
-            turns: lit(positive_real(1.5)),
-        },
-        SpiralLaw::EndRadiusPitch {
-            end: lit(positive(2.0)),
-            pitch: lit(nonzero(-0.5)),
-        },
-    ]
 }
 
 pub(in crate::design::ops) fn tool_disposition_samples() -> Vec<ToolDisposition> {
@@ -668,14 +553,6 @@ fn every_shared_type_round_trips() {
     report.check("TextAlign", text_align_samples());
     report.check("TextHorizontalBox", text_horizontal_box_samples());
     report.check("TextVerticalBox", text_vertical_box_samples());
-    report.check("CornerTransition", corner_transition_samples());
-    report.check("SpineLimits", spine_limits_samples());
-    report.check("Helix", helix_samples());
-    report.check("HelixStart", helix_start_samples());
-    report.check("HelixShape", helix_shape_samples());
-    report.check("HelixLaw", helix_law_samples());
-    report.check("HelixTaper", helix_taper_samples());
-    report.check("SpiralLaw", spiral_law_samples());
     report.check("ToolDisposition", tool_disposition_samples());
     report.check("PairElement", pair_element_samples());
     report.check("SheetCutNormal", sheet_cut_normal_samples());
@@ -768,9 +645,8 @@ fn each_shared_enum_has_its_tag_form() {
 /// tagged enum is its `kind` alone and refuses a stated `value`.
 #[test]
 fn every_adjacent_unit_variant_refuses_a_stated_value() {
-    let readers: [(&'static str, Reader); 10] = [
+    let readers: [(&'static str, Reader); 9] = [
         ("Alignment", reads::<Alignment>),
-        ("CornerTransition", reads::<CornerTransition>),
         ("Interpolation", reads::<Interpolation>),
         ("JointKind", reads::<JointKind>),
         ("JointMotion", reads::<JointMotion>),
@@ -800,6 +676,7 @@ mod schema {
     use schemars::{schema_for, JsonSchema};
 
     use super::super::*;
+    use crate::scalar::PositiveLength;
 
     fn generates<T: JsonSchema>() {
         let schema = serde_json::to_value(schema_for!(T)).unwrap();
@@ -812,14 +689,6 @@ mod schema {
         generates::<TextAlign>();
         generates::<TextHorizontalBox>();
         generates::<TextVerticalBox>();
-        generates::<CornerTransition>();
-        generates::<SpineLimits>();
-        generates::<Helix>();
-        generates::<HelixStart>();
-        generates::<HelixShape>();
-        generates::<HelixLaw>();
-        generates::<HelixTaper>();
-        generates::<SpiralLaw>();
         generates::<ToolDisposition>();
         generates::<PairElement>();
         generates::<SheetCutNormal>();

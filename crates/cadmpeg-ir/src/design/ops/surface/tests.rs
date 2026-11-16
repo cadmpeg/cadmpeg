@@ -10,11 +10,127 @@ use serde_json::json;
 
 use super::*;
 use crate::design::ops::shared::tests::fixtures::*;
-use crate::design::ops::shared::tests::{
-    corner_transition_samples, helix_samples, spine_limits_samples, text_content_samples,
-    tool_disposition_samples,
-};
+use crate::design::ops::shared::tests::{text_content_samples, tool_disposition_samples};
+use crate::design::ops::shared::RadialDimension;
+use crate::design::ops::swept::{HelixLaw, HelixShape, HelixStart, HelixTaper, SpiralLaw};
+use crate::design::options::Hand;
 use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
+
+fn corner_transition_samples() -> Vec<CornerTransition> {
+    vec![
+        CornerTransition::Mitre,
+        CornerTransition::Round,
+        CornerTransition::Open,
+        CornerTransition::Carried,
+        CornerTransition::Native(text("codec:native")),
+    ]
+}
+
+fn spine_limits_samples() -> Vec<SpineLimits> {
+    vec![
+        SpineLimits {
+            start: Some(selection(1)),
+            end: Some(selection(1)),
+        },
+        SpineLimits {
+            start: None,
+            end: None,
+        },
+    ]
+}
+
+fn helix_samples() -> Vec<Helix> {
+    vec![
+        Helix {
+            placement: frame(),
+            start: Some(helix_start_samples().remove(0)),
+            shape: helix_shape_samples().remove(0),
+            hand: Some(lit(Hand::Left)),
+        },
+        Helix {
+            placement: frame(),
+            start: None,
+            shape: helix_shape_samples().remove(0),
+            hand: None,
+        },
+    ]
+}
+
+fn helix_start_samples() -> Vec<HelixStart> {
+    vec![
+        HelixStart::Radius {
+            radius: RadialDimension::Diameter(lit(positive(3.0))),
+            angle: Some(bound(1)),
+        },
+        HelixStart::Radius {
+            radius: RadialDimension::Diameter(lit(positive(3.0))),
+            angle: None,
+        },
+        HelixStart::Point(point_construction()),
+        HelixStart::Circle(selection(2)),
+    ]
+}
+
+fn helix_shape_samples() -> Vec<HelixShape> {
+    vec![
+        HelixShape::Helix {
+            law: Some(helix_law_samples().remove(0)),
+            taper: Some(helix_taper_samples().remove(0)),
+        },
+        HelixShape::Helix {
+            law: None,
+            taper: None,
+        },
+        HelixShape::Spiral {
+            law: Some(spiral_law_samples().remove(0)),
+        },
+        HelixShape::Spiral { law: None },
+        HelixShape::Native(text("codec:native")),
+    ]
+}
+
+fn helix_law_samples() -> Vec<HelixLaw> {
+    vec![
+        HelixLaw::PitchHeight {
+            pitch: lit(positive(2.0)),
+            height: lit(positive(2.0)),
+        },
+        HelixLaw::PitchTurns {
+            pitch: lit(positive(2.0)),
+            turns: lit(positive_real(1.5)),
+        },
+        HelixLaw::HeightTurns {
+            height: lit(positive(2.0)),
+            turns: lit(positive_real(1.5)),
+        },
+        HelixLaw::Native(text("codec:native")),
+    ]
+}
+
+fn helix_taper_samples() -> Vec<HelixTaper> {
+    vec![
+        HelixTaper::Angle(bound(1)),
+        HelixTaper::Growth(lit(length(-1.5))),
+        HelixTaper::Radius(Law::Constant(lit(length(2.0)))),
+    ]
+}
+
+fn spiral_law_samples() -> Vec<SpiralLaw> {
+    vec![
+        SpiralLaw::PitchTurns {
+            pitch: lit(nonzero(-0.5)),
+            turns: lit(positive_real(1.5)),
+        },
+        SpiralLaw::EndRadiusTurns {
+            end: lit(positive(2.0)),
+            turns: lit(positive_real(1.5)),
+        },
+        SpiralLaw::EndRadiusPitch {
+            end: lit(positive(2.0)),
+            pitch: lit(nonzero(-0.5)),
+        },
+    ]
+}
 
 fn patch_samples() -> Vec<Patch> {
     vec![

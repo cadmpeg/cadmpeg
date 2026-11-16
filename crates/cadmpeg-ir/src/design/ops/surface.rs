@@ -11,7 +11,8 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::shared::{CornerTransition, Helix, Law, SpineLimits, TextContent, ToolDisposition};
+use super::shared::{Law, TextContent, ToolDisposition};
+use super::swept::{CornerTransition, Helix, SpineLimits};
 use crate::design::construction::{kinds, Construction};
 use crate::design::dimension::Dimension;
 use crate::design::options::{
