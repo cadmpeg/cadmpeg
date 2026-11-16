@@ -1,69 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "channels": {},
-          "id": "catia:appearance:binding#0:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "kind": "face",
-            "value": "catia:standard:face#0"
-          }
-        },
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "channels": {},
-          "id": "catia:appearance:binding#1:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "kind": "face",
-            "value": "catia:standard:face#1"
-          }
-        },
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "channels": {},
-          "id": "catia:appearance:binding#2:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "kind": "face",
-            "value": "catia:standard:face#2"
-          }
-        },
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "channels": {},
-          "id": "catia:appearance:binding#3:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "kind": "face",
-            "value": "catia:standard:face#3"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 0.8235294222831726,
-            "b": 0.8235294222831726,
-            "g": 0.8235294222831726,
-            "r": 0.8235294222831726
-          },
-          "id": "catia:appearance:rgba#d2d2d2d2",
-          "properties": {},
-          "schema": "CATIA V5 display color",
-          "textures": []
-        }
-      ],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "catia:standard:body#0",
@@ -171,8 +110,6 @@
           "sense": "reversed"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -319,8 +256,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -441,10 +376,6 @@
           "surface": "catia:standard:surf#3"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -563,14 +494,7 @@
           "id": "catia:standard:loop#3:0"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "catia:standard:pt#0",
@@ -605,11 +529,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "catia:standard:body#0",
@@ -619,8 +540,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "catia:standard:shell#0-0",
@@ -645,14 +564,6 @@
           "region": "catia:standard:region#0-0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -776,7 +687,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "catia:standard:v#0",
@@ -794,7 +704,99 @@
           "id": "catia:standard:v#3",
           "point": "catia:standard:pt#3"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#0:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "kind": "face",
+            "value": "catia:standard:face#0"
+          }
+        },
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#1:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "kind": "face",
+            "value": "catia:standard:face#1"
+          }
+        },
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#2:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "kind": "face",
+            "value": "catia:standard:face#2"
+          }
+        },
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#3:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "kind": "face",
+            "value": "catia:standard:face#3"
+          }
+        }
       ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 0.8235294222831726,
+            "b": 0.8235294222831726,
+            "g": 0.8235294222831726,
+            "r": 0.8235294222831726
+          },
+          "id": "catia:appearance:rgba#d2d2d2d2",
+          "properties": {},
+          "schema": "CATIA V5 display color",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -871,6 +873,12 @@
         "zero_entity_support_runs": [],
         "zero_entity_vertex_incidences": []
       }
+    },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {

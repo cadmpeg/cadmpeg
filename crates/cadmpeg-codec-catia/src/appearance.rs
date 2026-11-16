@@ -138,7 +138,7 @@ pub(crate) fn transfer(
         None => None,
     };
     let positional_bindings = positional_colors
-        .filter(|colors| colors.len() == ir.model.faces.len())
+        .filter(|colors| colors.len() == ir.geometry.faces.len())
         .and_then(|colors| Some((standard_faces_in_row_order(ir)?, colors)));
     if let Some((faces, colors)) = positional_bindings {
         let compatible = match all_faces.as_slice() {
@@ -167,7 +167,7 @@ pub(crate) fn transfer(
             result.unresolved_packets += packets.len();
         }
     } else {
-        if all_faces.len() == 1 && !ir.model.faces.is_empty() {
+        if all_faces.len() == 1 && !ir.geometry.faces.is_empty() {
             let appearance = insert_appearance(ctx, ir, all_faces[0])?;
             let faces = copy_face_ids(ir);
             for (index, face) in faces.into_iter().enumerate() {
@@ -182,9 +182,9 @@ pub(crate) fn transfer(
         }
 
         match body.as_slice() {
-            [rgba] if all_faces.is_empty() && ir.model.bodies.len() == 1 => {
+            [rgba] if all_faces.is_empty() && ir.geometry.bodies.len() == 1 => {
                 let appearance = insert_appearance(ctx, ir, *rgba)?;
-                let target = AppearanceTarget::Body(ir.model.bodies[0].id.clone());
+                let target = AppearanceTarget::Body(ir.geometry.bodies[0].id.clone());
                 insert_binding(ctx, ir, &appearance, target, 0)?;
                 result.transferred_packets += 1;
             }
@@ -203,7 +203,7 @@ pub(crate) fn transfer(
 
 fn standard_faces_in_row_order(ir: &CadIr) -> Option<Vec<FaceId>> {
     let mut faces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| {
@@ -221,7 +221,7 @@ fn standard_faces_in_row_order(ir: &CadIr) -> Option<Vec<FaceId>> {
 
 fn copy_face_ids(ir: &CadIr) -> Vec<FaceId> {
     let mut faces = Vec::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         let id = face.id.clone();
         faces.push(id);
     }
@@ -412,7 +412,7 @@ mod tests {
 
     fn model(face_count: usize) -> CadIr {
         let mut ir = CadIr::empty();
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id: BodyId::mint("catia:test:body#body").expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: vec![],
@@ -422,7 +422,7 @@ mod tests {
             visible: None,
         });
         for index in 0..face_count {
-            ir.model.faces.push(Face {
+            ir.geometry.faces.push(Face {
                 id: FaceId::mint(format!("catia:standard:face#{index}")).expect("identity grammar"),
                 shell: ShellId::mint("catia:test:shell#shell").expect("identity grammar"),
                 surface: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
@@ -517,8 +517,8 @@ mod tests {
                 for face_count in [0, 2] {
                     for body_count in 0..=2 {
                         let mut ir = model(face_count);
-                        let body = ir.model.bodies[0].clone();
-                        ir.model.bodies = (0..body_count)
+                        let body = ir.geometry.bodies[0].clone();
+                        ir.geometry.bodies = (0..body_count)
                             .map(|index| Body {
                                 id: BodyId::compose(
                                     &cadmpeg_ir::identity_namespace!("catia", "test", "body"),
@@ -840,7 +840,7 @@ mod tests {
     #[test]
     fn positional_colors_follow_fbb_rows_after_face_arena_sorting() {
         let mut ir = model(12);
-        ir.model.faces.sort_by(|a, b| a.id.cmp(&b.id));
+        ir.geometry.faces.sort_by(|a, b| a.id.cmp(&b.id));
         let brep = (0..12)
             .flat_map(|row| [0xb0, 4, 4, 0xff, 0xff, 0, 0, row])
             .collect::<Vec<_>>();

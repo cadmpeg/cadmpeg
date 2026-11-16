@@ -13,7 +13,7 @@ fn an_untrimmed_sphere_takes_its_chord_from_the_radius() {
         "#usda 1.0\n(\n    metersPerUnit = 0.01\n)\ndef Sphere \"Ball\"\n{\n    double radius = 2\n}\n",
     );
     let ir = decoded.ir();
-    let [body] = ir.model.bodies.as_slice() else {
+    let [body] = ir.geometry.bodies.as_slice() else {
         panic!("one body");
     };
     let options = mesh_options(&cadmpeg_ir::index::ModelIndex::new_model_only(ir), body);
@@ -33,7 +33,7 @@ fn a_box_keeps_the_chord_of_its_vertices() {
         "#usda 1.0\n(\n    metersPerUnit = 0.01\n)\ndef Cube \"Box\"\n{\n    double size = 3\n}\n",
     );
     let ir = decoded.ir();
-    let [body] = ir.model.bodies.as_slice() else {
+    let [body] = ir.geometry.bodies.as_slice() else {
         panic!("one body");
     };
     let options = mesh_options(&cadmpeg_ir::index::ModelIndex::new_model_only(ir), body);

@@ -1,15 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/Scene/Box",
@@ -214,8 +207,6 @@
           "sense": "forward"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -446,8 +437,6 @@
           "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:9"
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -662,10 +651,6 @@
           "surface": "usd:stage:surface#/Scene/Box:surface-analytic:5"
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -752,6 +737,314 @@
           "id": "usd:stage:loop#/Scene/Box:loop:5"
         }
       ],
+      "pcurves": [],
+      "points": [
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:0",
+          "position": {
+            "x": -20.0,
+            "y": -20.0,
+            "z": -20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:1",
+          "position": {
+            "x": 20.0,
+            "y": -20.0,
+            "z": -20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:2",
+          "position": {
+            "x": -20.0,
+            "y": 20.0,
+            "z": -20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:3",
+          "position": {
+            "x": 20.0,
+            "y": 20.0,
+            "z": -20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:4",
+          "position": {
+            "x": -20.0,
+            "y": -20.0,
+            "z": 20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:5",
+          "position": {
+            "x": 20.0,
+            "y": -20.0,
+            "z": 20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:6",
+          "position": {
+            "x": -20.0,
+            "y": 20.0,
+            "z": 20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:7",
+          "position": {
+            "x": 20.0,
+            "y": 20.0,
+            "z": 20.0
+          }
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [
+        {
+          "body": "usd:stage:body#/Scene/Box",
+          "id": "usd:stage:region#/Scene/Box:region:0",
+          "shells": [
+            "usd:stage:shell#/Scene/Box:shell:0"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "usd:stage:shell#/Scene/Box:shell:0",
+          "members": [
+            {
+              "id": "usd:stage:face#/Scene/Box:face:0",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Scene/Box:face:1",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Scene/Box:face:2",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Scene/Box:face:3",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Scene/Box:face:4",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Scene/Box:face:5",
+              "kind": "face"
+            }
+          ],
+          "region": "usd:stage:region#/Scene/Box:region:0"
+        }
+      ],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": -20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:0"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:1"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": -20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:2"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:3"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -20.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:4"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 20.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:5"
+        }
+      ],
+      "vertices": [
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:0",
+          "point": "usd:stage:point#/Scene/Box:vertex:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:1",
+          "point": "usd:stage:point#/Scene/Box:vertex:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:2",
+          "point": "usd:stage:point#/Scene/Box:vertex:2"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:3",
+          "point": "usd:stage:point#/Scene/Box:vertex:3"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:4",
+          "point": "usd:stage:point#/Scene/Box:vertex:4"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:5",
+          "point": "usd:stage:point#/Scene/Box:vertex:5"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:6",
+          "point": "usd:stage:point#/Scene/Box:vertex:6"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:7",
+          "point": "usd:stage:point#/Scene/Box:vertex:7"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -996,81 +1289,12 @@
         }
       ],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [
-        {
-          "id": "usd:stage:point#/Scene/Box:vertex:0",
-          "position": {
-            "x": -20.0,
-            "y": -20.0,
-            "z": -20.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Scene/Box:vertex:1",
-          "position": {
-            "x": 20.0,
-            "y": -20.0,
-            "z": -20.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Scene/Box:vertex:2",
-          "position": {
-            "x": -20.0,
-            "y": 20.0,
-            "z": -20.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Scene/Box:vertex:3",
-          "position": {
-            "x": 20.0,
-            "y": 20.0,
-            "z": -20.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Scene/Box:vertex:4",
-          "position": {
-            "x": -20.0,
-            "y": -20.0,
-            "z": 20.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Scene/Box:vertex:5",
-          "position": {
-            "x": 20.0,
-            "y": -20.0,
-            "z": 20.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Scene/Box:vertex:6",
-          "position": {
-            "x": -20.0,
-            "y": 20.0,
-            "z": 20.0
-          }
-        },
-        {
-          "id": "usd:stage:point#/Scene/Box:vertex:7",
-          "position": {
-            "x": 20.0,
-            "y": 20.0,
-            "z": 20.0
-          }
-        }
-      ],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
           "bodies": [],
@@ -1111,49 +1335,8 @@
           "source_name": "Shelf"
         }
       ],
-      "regions": [
-        {
-          "body": "usd:stage:body#/Scene/Box",
-          "id": "usd:stage:region#/Scene/Box:region:0",
-          "shells": [
-            "usd:stage:shell#/Scene/Box:shell:0"
-          ]
-        }
-      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "usd:stage:shell#/Scene/Box:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/Scene/Box:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Scene/Box:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Scene/Box:face:2",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Scene/Box:face:3",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Scene/Box:face:4",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Scene/Box:face:5",
-              "kind": "face"
-            }
-          ],
-          "region": "usd:stage:region#/Scene/Box:region:0"
-        }
-      ],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -1162,191 +1345,16 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "plane",
-              "normal": {
-                "x": -1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "origin": {
-                "x": -20.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              }
-            }
-          },
-          "id": "usd:stage:surface#/Scene/Box:surface-analytic:0"
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "plane",
-              "normal": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "origin": {
-                "x": 20.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              }
-            }
-          },
-          "id": "usd:stage:surface#/Scene/Box:surface-analytic:1"
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": -1.0,
-                "z": 0.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": -20.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            }
-          },
-          "id": "usd:stage:surface#/Scene/Box:surface-analytic:2"
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 20.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              }
-            }
-          },
-          "id": "usd:stage:surface#/Scene/Box:surface-analytic:3"
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": -1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": -20.0
-              },
-              "u_axis": {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              }
-            }
-          },
-          "id": "usd:stage:surface#/Scene/Box:surface-analytic:4"
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 20.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            }
-          },
-          "id": "usd:stage:surface#/Scene/Box:surface-analytic:5"
-        }
-      ],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "usd:stage:vertex#/Scene/Box:vertex:0",
-          "point": "usd:stage:point#/Scene/Box:vertex:0"
-        },
-        {
-          "id": "usd:stage:vertex#/Scene/Box:vertex:1",
-          "point": "usd:stage:point#/Scene/Box:vertex:1"
-        },
-        {
-          "id": "usd:stage:vertex#/Scene/Box:vertex:2",
-          "point": "usd:stage:point#/Scene/Box:vertex:2"
-        },
-        {
-          "id": "usd:stage:vertex#/Scene/Box:vertex:3",
-          "point": "usd:stage:point#/Scene/Box:vertex:3"
-        },
-        {
-          "id": "usd:stage:vertex#/Scene/Box:vertex:4",
-          "point": "usd:stage:point#/Scene/Box:vertex:4"
-        },
-        {
-          "id": "usd:stage:vertex#/Scene/Box:vertex:5",
-          "point": "usd:stage:point#/Scene/Box:vertex:5"
-        },
-        {
-          "id": "usd:stage:vertex#/Scene/Box:vertex:6",
-          "point": "usd:stage:point#/Scene/Box:vertex:6"
-        },
-        {
-          "id": "usd:stage:vertex#/Scene/Box:vertex:7",
-          "point": "usd:stage:point#/Scene/Box:vertex:7"
-        }
-      ],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Scene",

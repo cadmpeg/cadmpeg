@@ -109,13 +109,13 @@ pub(crate) fn write_semantic(
     };
     let baseline_point_ids = baseline
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .map(|point| point.id.as_str())
         .collect::<std::collections::BTreeSet<_>>();
     let target_point_ids = target
-        .model
+        .geometry
         .points
         .iter()
         .map(|point| point.id.as_str())
@@ -126,9 +126,10 @@ pub(crate) fn write_semantic(
                 .into(),
         ));
     }
-    let edited_curves = validate_curve_edits(&baseline.ir().model.curves, &target.model.curves)?;
+    let edited_curves =
+        validate_curve_edits(&baseline.ir().geometry.curves, &target.geometry.curves)?;
     let nurbs_curve_edits = target
-        .model
+        .geometry
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry.solved() {
@@ -137,7 +138,7 @@ pub(crate) fn write_semantic(
             {
                 let before = baseline
                     .ir()
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|before| before.id == curve.id)?;
@@ -162,11 +163,11 @@ pub(crate) fn write_semantic(
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
-    let pcurve_edits = validate_pcurve_edits(&baseline.ir().model, &target.model)?;
+    let pcurve_edits = validate_pcurve_edits(&baseline.ir().geometry, &target.geometry)?;
     let edited_surfaces =
-        validate_surface_edits(&baseline.ir().model.surfaces, &target.model.surfaces)?;
+        validate_surface_edits(&baseline.ir().geometry.surfaces, &target.geometry.surfaces)?;
     let nurbs_surface_edits = target
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry.solved() {
@@ -175,7 +176,7 @@ pub(crate) fn write_semantic(
             {
                 let before = baseline
                     .ir()
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .find(|before| before.id == surface.id)?;
@@ -199,8 +200,8 @@ pub(crate) fn write_semantic(
     let procedural_surface_fit_edits =
         validate_procedural_surface_fit_edits(baseline.ir(), target)?;
     let procedural_curve_edits = validate_procedural_curve_edits(
-        &baseline.ir().model.procedural_curves,
-        &target.model.procedural_curves,
+        &baseline.ir().geometry.procedural_curves,
+        &target.geometry.procedural_curves,
     )?;
     let sketch_point_edits = validate_sketch_point_edits(natives)?;
     let sketch_curve_edits = validate_sketch_curve_edits(natives)?;
@@ -236,29 +237,29 @@ pub(crate) fn write_semantic(
     let configuration_edits = validate_configuration_edits(natives)?;
     validate_act_appearance_bindings(natives, baseline.ir(), target)?;
     let body_transform_edits =
-        validate_body_transform_edits(&baseline.ir().model.bodies, &target.model.bodies)?;
+        validate_body_transform_edits(&baseline.ir().geometry.bodies, &target.geometry.bodies)?;
     let body_visibility_edits = validate_body_visibility_edits(natives, baseline.ir(), target)?;
     let body_native_key_edits = validate_body_native_key_edits(natives)?;
     let transform_hint_edits = validate_transform_hint_edits(natives)?;
     let mut entity_color_edits =
-        validate_body_color_edits(&baseline.ir().model.bodies, &target.model.bodies)?;
+        validate_body_color_edits(&baseline.ir().geometry.bodies, &target.geometry.bodies)?;
     entity_color_edits.extend(validate_face_color_edits(
-        &baseline.ir().model.faces,
-        &target.model.faces,
+        &baseline.ir().geometry.faces,
+        &target.geometry.faces,
     )?);
     let mut edge_range_edits =
-        validate_edge_range_edits(&baseline.ir().model.edges, &target.model.edges)?;
+        validate_edge_range_edits(&baseline.ir().geometry.edges, &target.geometry.edges)?;
     // IR line-edge parameters are millimeter arc lengths; the native stream
     // stores centimeters. Conic parameters are angles in both.
     for (edge_id, range) in &mut edge_range_edits {
         let is_line = target
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id.as_str() == edge_id)
             .and_then(|edge| edge.curve())
             .is_some_and(|curve_id| {
-                target.model.curves.iter().any(|curve| {
+                target.geometry.curves.iter().any(|curve| {
                     curve.id == *curve_id
                         && matches!(
                             curve.geometry,
@@ -271,7 +272,7 @@ pub(crate) fn write_semantic(
             range[1] /= LEN_TO_MM;
         }
         if let Some(shift) = target
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id.as_str() == edge_id)
@@ -284,7 +285,7 @@ pub(crate) fn write_semantic(
     }
     let face_sense_edits = validate_face_sense_edits(natives, baseline.ir(), target)?;
     let coedge_sense_edits =
-        validate_coedge_sense_edits(&baseline.ir().model.coedges, &target.model.coedges)?;
+        validate_coedge_sense_edits(&baseline.ir().geometry.coedges, &target.geometry.coedges)?;
     let history_state_edits = validate_history_state_edits(natives)?;
     let creation_timestamp_edits = validate_creation_timestamp_edits(natives)?;
     let edge_continuity_edits = validate_edge_continuity_edits(natives)?;
@@ -297,26 +298,29 @@ pub(crate) fn write_semantic(
     let wire_topology_edits = validate_wire_topology_edits(natives)?;
     let mut user_knot_edits = user_knots::edits(baseline.ir(), target)?;
     let mut supported_target = baseline.ir().clone();
-    supported_target.model.subds.clone_from(&target.model.subds);
     supported_target
-        .model
+        .geometry
+        .subds
+        .clone_from(&target.geometry.subds);
+    supported_target
+        .geometry
         .points
-        .clone_from(&target.model.points);
+        .clone_from(&target.geometry.points);
     supported_target
-        .model
+        .geometry
         .curves
-        .clone_from(&target.model.curves);
+        .clone_from(&target.geometry.curves);
     supported_target
-        .model
+        .geometry
         .surfaces
-        .clone_from(&target.model.surfaces);
+        .clone_from(&target.geometry.surfaces);
     supported_target
-        .model
+        .geometry
         .pcurves
-        .clone_from(&target.model.pcurves);
-    for body in &mut supported_target.model.bodies {
+        .clone_from(&target.geometry.pcurves);
+    for body in &mut supported_target.geometry.bodies {
         if let Some(candidate) = target
-            .model
+            .geometry
             .bodies
             .iter()
             .find(|candidate| candidate.id == body.id)
@@ -326,16 +330,22 @@ pub(crate) fn write_semantic(
             body.visible = candidate.visible;
         }
     }
-    supported_target.model.edges.clone_from(&target.model.edges);
     supported_target
-        .model
+        .geometry
+        .edges
+        .clone_from(&target.geometry.edges);
+    supported_target
+        .geometry
         .vertices
-        .clone_from(&target.model.vertices);
-    supported_target.model.faces.clone_from(&target.model.faces);
+        .clone_from(&target.geometry.vertices);
     supported_target
-        .model
+        .geometry
+        .faces
+        .clone_from(&target.geometry.faces);
+    supported_target
+        .geometry
         .coedges
-        .clone_from(&target.model.coedges);
+        .clone_from(&target.geometry.coedges);
     supported_target
         .model
         .appearance_bindings
@@ -345,13 +355,13 @@ pub(crate) fn write_semantic(
         .appearances
         .clone_from(&target.model.appearances);
     supported_target
-        .model
+        .geometry
         .procedural_surfaces
-        .clone_from(&target.model.procedural_surfaces);
+        .clone_from(&target.geometry.procedural_surfaces);
     supported_target
-        .model
+        .geometry
         .procedural_curves
-        .clone_from(&target.model.procedural_curves);
+        .clone_from(&target.geometry.procedural_curves);
     supported_target
         .model
         .configurations
@@ -454,13 +464,13 @@ pub(crate) fn write_semantic(
         .and_then(|source| source.attributes.get("active_brep"))
         .ok_or_else(|| CodecError::Malformed("F3D baseline has no active BREP".into()))?;
     let positions = target
-        .model
+        .geometry
         .points
         .iter()
         .map(|point| (point.id.as_str().to_owned(), point.position().get()))
         .collect::<BTreeMap<_, _>>();
     let lines = target
-        .model
+        .geometry
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
@@ -475,7 +485,7 @@ pub(crate) fn write_semantic(
         })
         .collect::<BTreeMap<_, _>>();
     let conics = target
-        .model
+        .geometry
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
@@ -508,7 +518,7 @@ pub(crate) fn write_semantic(
         })
         .collect::<BTreeMap<_, _>>();
     let degenerate_curves = target
-        .model
+        .geometry
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
@@ -522,7 +532,7 @@ pub(crate) fn write_semantic(
         })
         .collect::<BTreeMap<_, _>>();
     let planes = target
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
@@ -538,7 +548,7 @@ pub(crate) fn write_semantic(
         })
         .collect::<BTreeMap<_, _>>();
     let spheres = target
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
@@ -558,7 +568,7 @@ pub(crate) fn write_semantic(
         })
         .collect::<BTreeMap<_, _>>();
     let tori = target
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
@@ -579,7 +589,7 @@ pub(crate) fn write_semantic(
         })
         .collect::<BTreeMap<_, _>>();
     let cones = target
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
@@ -815,13 +825,13 @@ pub(crate) fn write_semantic(
 /// The shift from a subset curve's local parameter onto its ACIS parameter,
 /// which is the parameter of the curve it trims, negated on a reversed carrier.
 fn native_subset_shift(ir: &CadIr, curve: &cadmpeg_ir::ids::CurveId) -> Option<f64> {
-    ir.model.procedural_curves.iter().find_map(|procedural| {
+    ir.geometry.procedural_curves.iter().find_map(|procedural| {
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) =
             procedural.definition()
         else {
             return None;
         };
-        (ir.model.procedural_curve_owner(&procedural.id) == Some(curve)).then(|| {
+        (ir.geometry.procedural_curve_owner(&procedural.id) == Some(curve)).then(|| {
             let [first, last] = subset.parameter_range().endpoints();
             if *subset.sense() {
                 first

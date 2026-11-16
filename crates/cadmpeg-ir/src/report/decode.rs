@@ -47,6 +47,12 @@ pub enum DecodeTransfer {
         /// Whether B-rep geometry was transferred into the IR.
         geometry_transferred: bool,
     },
+    /// The decoder transferred the model and its design and left every
+    /// process arena empty, with the recorded B-rep geometry outcome.
+    Design {
+        /// Whether B-rep geometry was transferred into the IR.
+        geometry_transferred: bool,
+    },
     /// The decoder transferred the model and its design, with the recorded
     /// B-rep geometry outcome.
     Full {
@@ -73,6 +79,9 @@ impl DecodeTransfer {
             DecodeDepth::Geometry => Self::Geometry {
                 geometry_transferred,
             },
+            DecodeDepth::Design => Self::Design {
+                geometry_transferred,
+            },
             DecodeDepth::Full => Self::full(geometry_transferred),
         }
     }
@@ -83,6 +92,7 @@ impl DecodeTransfer {
         match self {
             Self::ContainerOnly {} => DecodeDepth::Container,
             Self::Geometry { .. } => DecodeDepth::Geometry,
+            Self::Design { .. } => DecodeDepth::Design,
             Self::Full { .. } => DecodeDepth::Full,
         }
     }
@@ -99,6 +109,8 @@ impl DecodeTransfer {
         matches!(
             self,
             Self::Geometry {
+                geometry_transferred: true
+            } | Self::Design {
                 geometry_transferred: true
             } | Self::Full {
                 geometry_transferred: true

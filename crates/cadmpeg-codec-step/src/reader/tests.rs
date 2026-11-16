@@ -25,13 +25,14 @@ fn malformed_face_names_preserve_geometry_and_report_source_only_metadata() {
     let expected = StepCodec::default()
         .decode(&mut Cursor::new(original), &DecodeOptions::default())
         .unwrap();
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     for name in ["7", "1.E999", "\"0ZZ\"", "<uri>"] {
         let changed = original.replace("ADVANCED_FACE('',", &format!("ADVANCED_FACE({name},"));
         assert_ne!(changed, original);
         let result = StepCodec::default()
             .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
             .unwrap();
+        assert_eq!(result.ir().geometry, expected.ir().geometry);
         assert_eq!(result.ir().model, expected.ir().model);
         assert!(result
             .report()
@@ -54,7 +55,7 @@ fn byte_census_keeps_metadata_admission_after_an_omitted_record() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("bounded defect and unreadable metadata remain recoverable");
-    assert_eq!(decoded.ir().model.points.len(), 2);
+    assert_eq!(decoded.ir().geometry.points.len(), 2);
     assert_eq!(
         decoded.ir().source.as_ref().expect("source").attributes["bytes_unclassified"],
         "0"
@@ -69,7 +70,7 @@ fn orphan_point_keeps_its_exact_record_when_no_carrier_owns_it() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("bounded standalone coordinate"),
     );
-    assert!(decoded.ir().model.points.is_empty());
+    assert!(decoded.ir().geometry.points.is_empty());
     let unknowns = decoded
         .ir()
         .native_unknowns("step")
@@ -101,7 +102,7 @@ fn opaque_reference_does_not_transfer_a_coordinate() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("bounded opaque reference"),
     );
-    assert!(decoded.ir().model.points.is_empty());
+    assert!(decoded.ir().geometry.points.is_empty());
     let unknowns = decoded
         .ir()
         .native_unknowns("step")
@@ -300,7 +301,7 @@ fn decode_user_defined_entities_as_named_opaque_records() {
             .expect("decode user-defined entity witness"),
     );
 
-    assert_eq!(result.ir().model.entity_count(), 0);
+    assert_eq!(result.ir().entity_count(), 0);
     let unknowns = result.ir().native_unknowns("step").unwrap();
     assert_eq!(unknowns.len(), 2);
 
@@ -381,7 +382,7 @@ fn opaque_links_retain_fallback_carrier_targets() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve.id.as_str() == "step:data:curve#1"));
@@ -554,7 +555,7 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
         .is_some_and(|data| data.starts_with(b"#71=LINE")));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .all(|pcurve| pcurve.id.as_str() != "step:data:pcurve#69"));
@@ -577,7 +578,7 @@ fn a_protected_unowned_pcurve_stays_opaque() {
         .expect("decode protected unowned pcurve");
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .all(|pcurve| { pcurve.id.as_str() != "step:data:pcurve#69" }));
@@ -607,7 +608,7 @@ fn failed_mandatory_point_root_remains_opaque_and_unbound() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode source with unsupported mandatory vertex point");
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     let unknowns = decoded
         .ir()
         .native_unknowns("step")
@@ -666,25 +667,25 @@ fn retention_reports_every_deleted_carrier_category() {
     }
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .all(|pcurve| pcurve.id.as_str() != "step:data:pcurve#69"));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .all(|curve| curve.id.as_str() != "step:data:curve#83"));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "step:data:surface#78"));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .all(|point| point.id.as_str() != "step:data:point#74"));
@@ -918,10 +919,10 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode omitted-name intersection curve");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     let edge = decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id.as_str() == "step:data:edge#19")
@@ -930,7 +931,7 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
         edge.curve().map(CurveId::as_str),
         Some("step:data:curve#16")
     );
-    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+    assert!(decoded.ir().geometry.coedges.iter().any(|coedge| {
         coedge
             .pcurves
             .iter()

@@ -50,12 +50,12 @@ fn top_level_objects_do_not_count_toward_the_instance_entity_limit() {
                 .any(|message| message
                     .contains("document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)")));
             assert_eq!(context.expansion_budget.entities, 0);
-            context.session.document().model.clone()
+            context.session.document().clone()
         })
     };
-    let model = decode([16, 16, 0]);
-    assert_eq!(model.bodies.len(), 2);
-    assert_eq!(model, decode([1 << 20; 3]));
+    let ir = decode([16, 16, 0]);
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    assert_eq!(ir, decode([1 << 20; 3]));
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn point_commit_skips_the_instance_member_at_the_local_entity_limit() {
         context
             .decode_geometry()
             .expect("five point entities exceeding four skip the point");
-        assert!(context.session.document().model.points.is_empty());
+        assert!(context.session.document().geometry.points.is_empty());
         assert!(context
             .report
             .phase_warnings
@@ -95,7 +95,7 @@ fn instance_member_candidate_is_rejected_at_the_local_entity_limit() {
         select_instance_member(&mut context);
         let error = context
             .validate_candidate(|ir, _| {
-                ir.model.points.push(Point::new(
+                ir.geometry.points.push(Point::new(
                     "rhino:test:point#one".try_into().expect("id"),
                     cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .expect("point"),
@@ -115,7 +115,7 @@ fn instance_member_candidate_is_rejected_at_the_local_entity_limit() {
             .expect_err("candidate exceeds zero entities");
         assert!(matches!(&error, CandidateError::Admission(message)
             if message == "document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)"));
-        assert!(context.session.document().model.points.is_empty());
+        assert!(context.session.document().geometry.points.is_empty());
         assert_eq!(expand.ctx().resource_refusal(), None);
     });
 }
@@ -137,7 +137,7 @@ fn brep_commit_skips_the_instance_member_at_the_local_entity_limit() {
         context
             .decode_geometry()
             .expect("a Brep exceeding zero entities is skipped");
-        assert!(context.session.document().model.bodies.is_empty());
+        assert!(context.session.document().geometry.bodies.is_empty());
         assert!(context
             .report
             .phase_warnings
@@ -201,8 +201,8 @@ fn point_cloud_commit_skips_the_instance_member_at_the_local_entity_limit() {
             )
             .expect("seven cloud entities exceeding six skip the cloud");
         assert!(!committed);
-        assert!(context.session.document().model.bodies.is_empty());
-        assert!(context.session.document().model.vertices.is_empty());
+        assert!(context.session.document().geometry.bodies.is_empty());
+        assert!(context.session.document().geometry.vertices.is_empty());
         assert!(context
             .report
             .phase_warnings

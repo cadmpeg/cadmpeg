@@ -279,7 +279,7 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("decode triangle body");
-    let model_entities = decoded.ir().model.entity_count();
+    let model_entities = decoded.ir().entity_count();
     assert!(container_entities > 0);
     assert!(stream_entities > 0);
     assert!(model_entities > 0);
@@ -449,7 +449,7 @@ fn decoded_curve_carrier_is_copied() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.ir().model.curves.is_empty());
+    assert!(!decoded.ir().geometry.curves.is_empty());
 }
 
 mod surface_solver;

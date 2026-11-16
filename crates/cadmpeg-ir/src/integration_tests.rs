@@ -55,7 +55,7 @@ fn free_carrier(object_id: &str) -> SourceObjectAssociation {
 #[test]
 fn source_association_is_a_free_carrier_root() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: CurveId::mint("synthetic:source:curve#0").expect("valid identity"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -97,7 +97,7 @@ fn ir_strategy() -> impl Strategy<Value = CadIr> {
     proptest::collection::btree_set(id_strategy(), 1..=8).prop_map(|ids| {
         let mut ir = CadIr::empty();
         for id in ids {
-            ir.model.points.push(point(&id));
+            ir.geometry.points.push(point(&id));
         }
         ir.finalize();
         ir
@@ -180,7 +180,7 @@ proptest! {
     #[test]
     fn census_matches_arena_lengths(ir in ir_strategy()) {
         let census = ir.census();
-        prop_assert_eq!(census["points"], ir.model.points.len());
+        prop_assert_eq!(census["points"], ir.geometry.points.len());
         let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         prop_assert_eq!(&census, &report.entity_counts);
     }
@@ -188,7 +188,7 @@ proptest! {
     #[test]
     fn single_invariant_breaks_are_caught(ir in ir_strategy()) {
         {
-            let malformed = strip_one_namespace_component(ir.model.points[0].id.as_str());
+            let malformed = strip_one_namespace_component(ir.geometry.points[0].id.as_str());
             prop_assert!(PointId::mint(malformed.clone()).is_err());
             let wire = serde_json::to_string(&malformed).unwrap();
             prop_assert!(serde_json::from_str::<PointId>(&wire).is_err());
@@ -196,7 +196,7 @@ proptest! {
 
         {
             let mut broken = ir.clone();
-            broken.model.points.push(broken.model.points[0].clone());
+            broken.geometry.points.push(broken.geometry.points[0].clone());
             let report = validate_neutral(&broken, Vec::new()).expect("validate the neutral model");
             prop_assert!(
                 has_error(&report, Check::Identity),
@@ -205,9 +205,9 @@ proptest! {
             );
         }
 
-        if ir.model.points.len() >= 2 {
+        if ir.geometry.points.len() >= 2 {
             let mut broken = ir.clone();
-            broken.model.points.swap(0, 1);
+            broken.geometry.points.swap(0, 1);
             let report = validate_neutral(&broken, Vec::new()).expect("validate the neutral model");
             prop_assert!(
                 has_error(&report, Check::ArenaOrder),
@@ -218,7 +218,7 @@ proptest! {
 
         {
             let mut broken = ir.clone();
-            broken.model.vertices.push(Vertex {
+            broken.geometry.vertices.push(Vertex {
                 id: "prop:test:vertex#dangling".try_into().expect("valid identity"),
                 point: PointId::mint("x:y:z#missing").expect("valid identity"),
                 tolerance: None,

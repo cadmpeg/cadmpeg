@@ -677,7 +677,7 @@ fn transfer_placed_planes(
             &crate::identity::VISIBGEOM_SURFACE,
             surface_id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         let positional = scan

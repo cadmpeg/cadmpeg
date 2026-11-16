@@ -98,14 +98,14 @@ fn limit_curve_binding_keeps_a_finite_midpoint_on_large_same_sign_domains() {
     for domain in [[1e308, 1.5e308], [-1.5e308, -1e308]] {
         let mut ir = CadIr::empty();
         for (index, y) in [0.0, 1.0].into_iter().enumerate() {
-            ir.model.points.push(Point::new(
+            ir.geometry.points.push(Point::new(
                 PointId::mint(format!("catia:test:point#wide-binding-{index}")).expect("id"),
                 FinitePoint3::new(Point3::new(0.0, y, 0.0)).expect("point"),
                 None,
             ));
         }
         let surface_id = SurfaceId::mint("catia:test:surface#wide-binding").expect("id");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -163,7 +163,7 @@ fn circle_endpoint_search_keeps_antipodal_seams_at_a_large_origin() {
 
     let mut ir = CadIr::empty();
     for (index, y) in [-1.0, 1.0].into_iter().enumerate() {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#wide-circle-{index}")).expect("id"),
             FinitePoint3::new(Point3::new(1e308, y, 0.0)).expect("point"),
             None,

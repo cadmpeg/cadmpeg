@@ -56,13 +56,13 @@ fn cylinder_geometry(
                 );
             };
             let face = ir
-                .model
+                .geometry
                 .faces
                 .iter()
                 .find(|candidate| &candidate.id == face)
                 .expect("target face");
             let surface = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|candidate| candidate.id == face.surface)
@@ -147,13 +147,13 @@ fn ftc_06_emits_base_datums_with_face_targets() {
 
         for face_id in faces {
             let face = ir
-                .model
+                .geometry
                 .faces
                 .iter()
                 .find(|face| &face.id == face_id)
                 .expect("datum target face");
             let surface = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == face.surface)
@@ -305,11 +305,11 @@ fn ftc_06_diameter8_targets_both_counted_spheres() {
                 let PmiTarget::Face { face: face_id } = target else {
                     return false;
                 };
-                let Some(face) = ir.model.faces.iter().find(|face| &face.id == face_id) else {
+                let Some(face) = ir.geometry.faces.iter().find(|face| &face.id == face_id) else {
                     return false;
                 };
                 let Some(surface) = ir
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == face.surface)
@@ -357,11 +357,11 @@ fn ftc_06_diameter7_maps_to_its_spherical_radius_owner() {
             let PmiTarget::Face { face: face_id } = target else {
                 return false;
             };
-            let Some(face) = ir.model.faces.iter().find(|face| &face.id == face_id) else {
+            let Some(face) = ir.geometry.faces.iter().find(|face| &face.id == face_id) else {
                 return false;
             };
             let Some(surface) = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == face.surface)

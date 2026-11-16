@@ -26,7 +26,7 @@ fn binary_units_cgs_lengths_scale_exactly_once() {
         ));
         assert_valid(&decoded);
         let value = serde_json::to_value(decoded.ir()).expect("CADIR serializes");
-        let surface = value["model"]["surfaces"]
+        let surface = value["geometry"]["surfaces"]
             .as_array()
             .expect("surfaces")
             .iter()

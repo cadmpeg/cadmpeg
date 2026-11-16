@@ -22,7 +22,7 @@ fn placed_point_product() -> CadIr {
     let shell: cadmpeg_ir::ids::ShellId = "cadir:model:shell#pin".try_into().expect("identity");
     let vertex = cadmpeg_ir::ids::VertexId::mint("cadir:model:vertex#pin").expect("identity");
     let point = cadmpeg_ir::ids::PointId::mint("cadir:model:point#pin").expect("identity");
-    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+    ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::General,
         regions: vec![region.clone()],
@@ -31,12 +31,12 @@ fn placed_point_product() -> CadIr {
         color: None,
         visible: None,
     });
-    ir.model.regions.push(cadmpeg_ir::topology::Region {
+    ir.geometry.regions.push(cadmpeg_ir::topology::Region {
         id: region.clone(),
         body: body.clone(),
         shells: vec![shell.clone()],
     });
-    ir.model.shells.push(
+    ir.geometry.shells.push(
         cadmpeg_ir::topology::Shell::new(
             shell,
             region,
@@ -46,12 +46,12 @@ fn placed_point_product() -> CadIr {
         )
         .expect("free-vertex shell"),
     );
-    ir.model.vertices.push(cadmpeg_ir::topology::Vertex {
+    ir.geometry.vertices.push(cadmpeg_ir::topology::Vertex {
         id: vertex,
         point: point.clone(),
         tolerance: None,
     });
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         point,
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("finite position"),

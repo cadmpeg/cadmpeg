@@ -1685,7 +1685,7 @@ fn extended_geometry_json(
 /// Accounting for geometry decoded out of a history record's values.
 ///
 /// History curves/surfaces are stringified into native properties; putting them
-/// in `model.curves`/`surfaces` fails `Check::CarrierReachability`.
+/// in `geometry.curves`/`surfaces` fails `Check::CarrierReachability`.
 struct GeometrySink<'a> {
     warnings: &'a mut Diagnostics,
     untyped: usize,

@@ -259,8 +259,8 @@ fn legacy_cfb_text_wrapped_partition_transfers_its_geometry() {
     );
     let result = decode(part);
     assert!(result.report().geometry_transferred());
-    assert!(!result.ir().model.faces.is_empty());
-    assert!(!result.ir().model.surfaces.is_empty());
+    assert!(!result.ir().geometry.faces.is_empty());
+    assert!(!result.ir().geometry.surfaces.is_empty());
     assert_valid(&result);
 }
 
@@ -320,8 +320,8 @@ fn analytic_topology_pipeline_covers_every_supported_quadric_and_conic_family() 
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
         assert!(result.report().geometry_transferred());
-        assert!(!result.ir().model.faces.is_empty());
-        assert!(!result.ir().model.surfaces.is_empty());
+        assert!(!result.ir().geometry.faces.is_empty());
+        assert!(!result.ir().geometry.surfaces.is_empty());
         assert_valid(&result);
     }
 }
@@ -341,20 +341,20 @@ fn freeform_pipeline_binds_nurbs_pcurves_offsets_blends_and_intersections() {
     let mut saw_procedural_curve = false;
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
-        saw_nurbs |= result.ir().model.curves.iter().any(|curve| {
+        saw_nurbs |= result.ir().geometry.curves.iter().any(|curve| {
             matches!(
                 curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
             )
-        }) || result.ir().model.surfaces.iter().any(|surface| {
+        }) || result.ir().geometry.surfaces.iter().any(|surface| {
             matches!(
                 surface.geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
             )
         });
-        saw_pcurve |= !result.ir().model.pcurves.is_empty();
-        saw_procedural_surface |= !result.ir().model.procedural_surfaces.is_empty();
-        saw_procedural_curve |= !result.ir().model.procedural_curves.is_empty();
+        saw_pcurve |= !result.ir().geometry.pcurves.is_empty();
+        saw_procedural_surface |= !result.ir().geometry.procedural_surfaces.is_empty();
+        saw_procedural_curve |= !result.ir().geometry.procedural_curves.is_empty();
         assert_valid(&result);
     }
     assert!(saw_nurbs);
@@ -380,12 +380,12 @@ fn unselected_deltas_preserve_primary_geometry_and_topology() {
     for deltas in delta_fixtures {
         let result = decode(prt_with_streams(&[&partition, &deltas]));
         assert_eq!(
-            serde_json::to_value(&result.ir().model).unwrap(),
-            serde_json::to_value(&baseline.ir().model).unwrap()
+            serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+            serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
         );
         assert!(result.report().geometry_transferred());
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
         assert_valid(&result);
     }
 }

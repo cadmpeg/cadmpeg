@@ -72,7 +72,7 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
     ));
     let surface_id = SurfaceId::mint("test:model:surface#large-domain").unwrap();
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,
@@ -166,7 +166,7 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
     let curve = CurveId::mint("test:model:curve#curve".to_string()).expect("valid identity");
     let surface =
         SurfaceId::mint("test:model:surface#surface".to_string()).expect("valid identity");
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -178,7 +178,7 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
         )),
         source_object: None,
     });
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             crate::geometry::analytic::PlaneSurface::try_new(
@@ -212,14 +212,16 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
        },
        cache_fit_tolerance: None,
     };
-    ir.model.add_procedural_curve(&curve, construction).unwrap();
+    ir.geometry
+        .add_procedural_curve(&curve, construction)
+        .unwrap();
     ir
 }
 
 fn mapped_surface_offset() -> CadIr {
     let mut ir = mapped_surface_curve([2.0, 3.0]);
     let base = CurveId::mint("test:model:entity#base".to_string()).expect("valid identity");
-    *ir.model.curves[0]
+    *ir.geometry.curves[0]
         .geometry
         .solved_cache_mut()
         .expect("mapped curve has a solved cache") = SolvedCurveGeometry::Line(
@@ -229,7 +231,7 @@ fn mapped_surface_offset() -> CadIr {
         )
         .unwrap(),
     );
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: base.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -242,12 +244,12 @@ fn mapped_surface_offset() -> CadIr {
         source_object: None,
     });
     let ProceduralCurveDefinition::SurfaceCurve { family } =
-        ir.model.procedural_curves[0].definition()
+        ir.geometry.procedural_curves[0].definition()
     else {
         unreachable!();
     };
     let context = family.context().clone();
-    ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::SurfaceOffset(
+    ir.geometry.procedural_curves[0].replace_definition(ProceduralCurveDefinition::SurfaceOffset(
         crate::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
             context,
             false,
@@ -264,7 +266,7 @@ fn mapped_surface_offset() -> CadIr {
 
 fn untrimmed_surface_curve() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.points.extend([
+    ir.geometry.points.extend([
         crate::topology::Point::new(
             "test:model:point#point-start"
                 .try_into()
@@ -282,7 +284,7 @@ fn untrimmed_surface_curve() -> CadIr {
             None,
         ),
     ]);
-    ir.model.vertices.extend([
+    ir.geometry.vertices.extend([
         Vertex {
             id: "test:model:vertex#vertex-start"
                 .try_into()
@@ -302,7 +304,7 @@ fn untrimmed_surface_curve() -> CadIr {
             tolerance: None,
         },
     ]);
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: "test:model:curve#curve".try_into().expect("valid identity"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -316,7 +318,7 @@ fn untrimmed_surface_curve() -> CadIr {
         )),
         source_object: None,
     });
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: "test:model:edge#edge".try_into().expect("valid identity"),
         carrier: crate::topology::EdgeCarrier::unbounded(Some(
             "test:model:curve#curve".try_into().expect("valid identity"),
@@ -329,7 +331,7 @@ fn untrimmed_surface_curve() -> CadIr {
             .expect("valid identity"),
         tolerance: None,
     });
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: "test:model:surface#surface"
             .try_into()
             .expect("valid identity"),
@@ -343,7 +345,7 @@ fn untrimmed_surface_curve() -> CadIr {
         )),
         source_object: None,
     });
-    ir.model.pcurves.push(Pcurve {
+    ir.geometry.pcurves.push(Pcurve {
         id: "test:model:pcurve#pcurve"
             .try_into()
             .expect("valid identity"),
@@ -358,7 +360,7 @@ fn untrimmed_surface_curve() -> CadIr {
         ),
         metadata: PcurveMetadata::default(),
     });
-    ir.model.coedges.push(Coedge {
+    ir.geometry.coedges.push(Coedge {
         id: "test:model:coedge#coedge"
             .try_into()
             .expect("valid identity"),
@@ -377,7 +379,7 @@ fn untrimmed_surface_curve() -> CadIr {
         }],
         use_curve: None,
     });
-    ir.model.loops.push(Loop {
+    ir.geometry.loops.push(Loop {
         id: "test:model:loop#loop".try_into().expect("valid identity"),
         face: "test:model:face#face".try_into().expect("valid identity"),
         boundary: crate::topology::LoopBoundary::Ring(
@@ -390,7 +392,7 @@ fn untrimmed_surface_curve() -> CadIr {
             .expect("valid loop ring"),
         ),
     });
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: "test:model:face#face".try_into().expect("valid identity"),
         shell: "test:model:shell#shell".try_into().expect("valid identity"),
         surface: "test:model:surface#surface"
@@ -443,7 +445,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     assert!(findings.is_empty());
 
     let mut context_first = mapped_surface_offset();
-    context_first.model.procedural_curves[0].edit_definition(|definition| {
+    context_first.geometry.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::SurfaceOffset(definition_payload) = definition else {
             unreachable!();
         };
@@ -491,7 +493,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
 
     let mut ir = mapped_surface_offset();
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) =
-        &mut ir.model.curves[1].geometry
+        &mut ir.geometry.curves[1].geometry
     else {
         unreachable!();
     };
@@ -530,7 +532,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     assert!(findings.is_empty(), "{findings:#?}");
 
     let mut mismatched = ir;
-    let PcurveGeometry::Circle(circle_pcurve) = &mut mismatched.model.pcurves[0].geometry else {
+    let PcurveGeometry::Circle(circle_pcurve) = &mut mismatched.geometry.pcurves[0].geometry else {
         unreachable!();
     };
     let center = circle_pcurve.center();
@@ -558,9 +560,9 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
 fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     let mut ir = untrimmed_surface_curve();
     let base_id = SurfaceId::mint("test:model:entity#base-surface").expect("valid identity");
-    let base_geometry = ir.model.surfaces[0].geometry.clone();
-    ir.model.surfaces[0].id = base_id.clone();
-    ir.model.surfaces.push(Surface {
+    let base_geometry = ir.geometry.surfaces[0].geometry.clone();
+    ir.geometry.surfaces[0].id = base_id.clone();
+    ir.geometry.surfaces.push(Surface {
         id: "test:model:surface#surface"
             .try_into()
             .expect("valid identity"),
@@ -573,21 +575,21 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         cache_fit_tolerance: None,
         record_bounds: None,
     };
-    ir.model
+    ir.geometry
         .add_procedural_surface(
             &SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
             construction,
         )
         .unwrap();
-    ir.model.points[0].set_position(
+    ir.geometry.points[0].set_position(
         crate::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
             .expect("a finite position is a point"),
     );
-    ir.model.points[1].set_position(
+    ir.geometry.points[1].set_position(
         crate::features::FinitePoint3::new(Point3::new(2.0, 1.0, 0.0))
             .expect("a finite position is a point"),
     );
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         crate::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -596,7 +598,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         )
         .unwrap(),
     ));
-    ir.model.pcurves[0].geometry = PcurveGeometry::Circle(
+    ir.geometry.pcurves[0].geometry = PcurveGeometry::Circle(
         crate::geometry::pcurve::CirclePcurve::try_new(
             Point2::new(1.0, 1.0),
             Point2::new(1.0, 0.0),
@@ -605,7 +607,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         )
         .unwrap(),
     );
-    let PcurveMetadata::General { form: metadata } = &mut ir.model.pcurves[0].metadata else {
+    let PcurveMetadata::General { form: metadata } = &mut ir.geometry.pcurves[0].metadata else {
         panic!("fixture uses general pcurve metadata")
     };
     {
@@ -636,7 +638,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
 #[test]
 fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
     let mut ir = untrimmed_surface_curve();
-    ir.model.pcurves[0].geometry = PcurveGeometry::Nurbs {
+    ir.geometry.pcurves[0].geometry = PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -664,15 +666,15 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
 #[test]
 fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
     let mut ir = untrimmed_surface_curve();
-    ir.model.points[0].set_position(
+    ir.geometry.points[0].set_position(
         crate::features::FinitePoint3::new(Point3::new(0.25, 0.0, 0.0))
             .expect("a finite position is a point"),
     );
-    ir.model.points[1].set_position(
+    ir.geometry.points[1].set_position(
         crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("a finite position is a point"),
     );
-    ir.model.pcurves[0].geometry = PcurveGeometry::Trimmed(
+    ir.geometry.pcurves[0].geometry = PcurveGeometry::Trimmed(
         crate::geometry::pcurve::TrimmedPcurve::try_new(
             [0.0, 1.0],
             true,
@@ -778,7 +780,7 @@ fn untrimmed_cylindrical_pcurve_recovers_an_antipodal_vertex() {
     ));
     let surface_id = SurfaceId::mint("test:model:surface#cylinder".to_owned()).unwrap();
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,
@@ -855,7 +857,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     let surface_id =
         SurfaceId::mint("test:model:surface#surface".to_string()).expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,
@@ -910,11 +912,11 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let construction =
         ProceduralSurfaceId::mint("synthetic:cube:procedural-surface#0").expect("valid identity");
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Procedural {
         construction: construction.clone(),
         cache: None,
     };
-    ir.model.procedural_surfaces.push(procedural_surface! {
+    ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: construction.clone(),
         definition: ProceduralSurfaceDefinition::Exact(crate::geometry::surface_payloads::ExactSurfacePayload::try_new(crate::geometry::ExactSpline::Legacy {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
@@ -927,7 +929,7 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Procedural {
         construction: ProceduralSurfaceId::mint("test:model:entity#synthetic:missing")
             .expect("valid identity"),
         cache: None,
@@ -948,11 +950,11 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let construction =
         ProceduralCurveId::mint("synthetic:cube:procedural-curve#0").expect("valid identity");
-    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+    ir.geometry.curves[0].geometry = CurveGeometry::Procedural {
         construction: construction.clone(),
         cache: None,
     };
-    ir.model.procedural_curves.push(procedural_curve! {
+    ir.geometry.procedural_curves.push(procedural_curve! {
         id: construction.clone(),
         definition: ProceduralCurveDefinition::Helix(crate::geometry::HelixCurveConstruction::try_new([0.0, std::f64::consts::TAU], crate::geometry::HelixFrame { center: Point3::new(0.0, 0.0, 0.0), major: Vector3::new(1.0, 0.0, 0.0), minor: Vector3::new(0.0, 1.0, 0.0), pitch: Vector3::new(0.0, 0.0, 1.0), axis: Vector3::new(0.0, 0.0, 1.0) }, 0.0, None).unwrap()),
         cache_fit_tolerance: None,
@@ -960,7 +962,7 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
 
-    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+    ir.geometry.curves[0].geometry = CurveGeometry::Procedural {
         construction: ProceduralCurveId::mint("test:model:entity#synthetic:missing")
             .expect("valid identity"),
         cache: None,
@@ -982,7 +984,7 @@ fn self_referential_composite_curve_is_invalid() {
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let id = CurveId::mint("synthetic:test:curve#recursive").expect("valid identity");
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
@@ -1020,8 +1022,8 @@ fn edge_endpoint_mismatch_is_flagged() {
     );
 
     let mut source_tolerant = unit_cube().expect("valid unit cube fixture");
-    let moved = source_tolerant.model.points[0].position().get();
-    source_tolerant.model.points[0].set_position(
+    let moved = source_tolerant.geometry.points[0].position().get();
+    source_tolerant.geometry.points[0].set_position(
         crate::features::FinitePoint3::new(crate::math::Point3::new(
             moved.x,
             moved.y,
@@ -1044,8 +1046,8 @@ fn edge_endpoint_mismatch_is_flagged() {
 
     // Displace one corner: the point no longer lies on its edges' curves at
     // the stored parameter values.
-    let moved = ir.model.points[0].position().get();
-    ir.model.points[0].set_position(
+    let moved = ir.geometry.points[0].position().get();
+    ir.geometry.points[0].set_position(
         crate::features::FinitePoint3::new(crate::math::Point3::new(
             moved.x,
             moved.y,
@@ -1065,20 +1067,25 @@ fn edge_endpoint_mismatch_is_flagged() {
         report.findings
     );
 
-    let curve = ir.model.edges[0].curve().cloned().expect("cube edge curve");
+    let curve = ir.geometry.edges[0]
+        .curve()
+        .cloned()
+        .expect("cube edge curve");
     let procedural = procedural_curve! {
         id: ProceduralCurveId::mint("synthetic:cube:curve-cache#0").expect("valid identity"),
         definition: ProceduralCurveDefinition::Intersection {
             context: crate::geometry::IntcurveSupportContext::try_new(std::array::from_fn(|_| crate::geometry::IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
-                }), ir.model.edges[0].param_range().expect("cube edge range").get(), std::array::from_fn(|_| Vec::new())).unwrap(),
+                }), ir.geometry.edges[0].param_range().expect("cube edge range").get(), std::array::from_fn(|_| Vec::new())).unwrap(),
             discontinuity_flag: false,
             cache: None,
         },
         cache_fit_tolerance: Some(0.99),
     };
-    ir.model.add_procedural_curve(&curve, procedural).unwrap();
+    ir.geometry
+        .add_procedural_curve(&curve, procedural)
+        .unwrap();
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report
@@ -1089,7 +1096,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         "cache tolerance below the endpoint mismatch must still fail"
     );
 
-    ir.model.procedural_curves[0]
+    ir.geometry.procedural_curves[0]
         .set_cache_fit_tolerance(Some(1.0))
         .unwrap();
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
@@ -1112,7 +1119,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     // `(0,0) -> (10,0)`.
     let checked = |u_end: f64, v_end: f64, fit_tolerance: Option<f64>| {
         let mut ir = unit_cube().expect("valid unit cube fixture");
-        ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+        ir.geometry.pcurves.push(crate::geometry::pcurve::Pcurve {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#0").expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
                 nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -1134,7 +1141,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             ),
         });
         let coedge = ir
-            .model
+            .geometry
             .coedges
             .iter_mut()
             .find(|coedge| {
@@ -1182,7 +1189,7 @@ fn pcurve_surface_mismatch_is_flagged() {
 
     let mut procedural = unit_cube().expect("valid unit cube fixture");
     procedural
-        .model
+        .geometry
         .pcurves
         .push(crate::geometry::pcurve::Pcurve {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#procedural")
@@ -1203,7 +1210,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             metadata: PcurveMetadata::default(),
         });
     let coedge = procedural
-        .model
+        .geometry
         .coedges
         .iter_mut()
         .find(|coedge| {
@@ -1218,13 +1225,13 @@ fn pcurve_surface_mismatch_is_flagged() {
     }];
     let owner_loop = coedge.owner_loop.clone();
     let surface = procedural
-        .model
+        .geometry
         .loops
         .iter()
         .find(|lp| lp.id == owner_loop)
         .and_then(|lp| {
             procedural
-                .model
+                .geometry
                 .faces
                 .iter()
                 .find(|face| face.id == lp.face)
@@ -1233,12 +1240,12 @@ fn pcurve_surface_mismatch_is_flagged() {
         .expect("coedge owner face");
     let construction = procedural_surface! {
     id: ProceduralSurfaceId::mint("synthetic:cube:procedural-surface#0").expect("valid identity"),
-    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.model.curves[0].id.clone(), (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
+    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.geometry.curves[0].id.clone(), (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
         cache_fit_tolerance: Some(0.01),
         record_bounds: None,
     };
     procedural
-        .model
+        .geometry
         .add_procedural_surface(&surface, construction)
         .unwrap();
     let procedural_report =
@@ -1251,7 +1258,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         "procedural UVs must not be evaluated on the solved cache, got: {:?}",
         procedural_report.findings
     );
-    procedural.model.procedural_surfaces[0].edit_definition(|definition| {
+    procedural.geometry.procedural_surfaces[0].edit_definition(|definition| {
         *definition = ProceduralSurfaceDefinition::Exact(
             crate::geometry::surface_payloads::ExactSurfacePayload::try_new(
                 crate::geometry::ExactSpline::Legacy {
@@ -1276,7 +1283,7 @@ fn pcurve_surface_mismatch_is_flagged() {
 
     let mut negative_parameterization = unit_cube().expect("valid unit cube fixture");
     negative_parameterization
-        .model
+        .geometry
         .pcurves
         .push(crate::geometry::pcurve::Pcurve {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#negative")
@@ -1297,7 +1304,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             metadata: PcurveMetadata::default(),
         });
     let coedge = negative_parameterization
-        .model
+        .geometry
         .coedges
         .iter_mut()
         .find(|coedge| {
@@ -1323,7 +1330,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     );
 
     let pcurve_use = &mut negative_parameterization
-        .model
+        .geometry
         .coedges
         .iter_mut()
         .find(|coedge| coedge.id == ranged_coedge_id)
@@ -1414,7 +1421,7 @@ fn overflowing_plane() -> SurfaceGeometry {
 #[test]
 fn a_support_side_whose_points_overflow_misses_its_contract_by_nan() {
     let mut ir = mapped_surface_curve([1.0e300, 2.0e300]);
-    ir.model.surfaces[0].geometry = overflowing_plane();
+    ir.geometry.surfaces[0].geometry = overflowing_plane();
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
@@ -1436,7 +1443,7 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
     // finite distance reaches u = +inf, and the face plane maps it to a point
     // with no finite coordinate.
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.model.pcurves.push(Pcurve {
+    ir.geometry.pcurves.push(Pcurve {
         id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#overflow").expect("valid identity"),
         geometry: PcurveGeometry::Offset(
             crate::geometry::pcurve::OffsetPcurve::try_new(
@@ -1454,7 +1461,7 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
         metadata: PcurveMetadata::default(),
     });
     let coedge = ir
-        .model
+        .geometry
         .coedges
         .iter_mut()
         .find(|coedge| {
@@ -1504,7 +1511,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
     let surface_id =
         SurfaceId::mint("test:model:surface#overflow".to_string()).expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,
@@ -1568,7 +1575,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
     let surface_id =
         SurfaceId::mint("test:model:surface#far-line".to_string()).expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,
@@ -1630,7 +1637,7 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
     let surface_id =
         SurfaceId::mint("test:model:surface#plane".to_string()).expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,
@@ -1702,10 +1709,10 @@ fn solved_surface_parameter_domains_preserves_session_depth_refusals() {
 fn a_verified_pcurve_interval_over_dense_knots_has_no_findings() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = untrimmed_surface_curve();
-    for (point, x) in ir.model.points.iter_mut().zip([0.0, 1.0]) {
+    for (point, x) in ir.geometry.points.iter_mut().zip([0.0, 1.0]) {
         point.set_position(crate::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap());
     }
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         crate::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1715,7 +1722,7 @@ fn a_verified_pcurve_interval_over_dense_knots_has_no_findings() {
     let mut knots = vec![0.0, 0.0];
     knots.extend((1..1_000).map(|i| f64::from(i) / 1_000.0));
     knots.extend([1.0, 1.0]);
-    ir.model.pcurves[0].geometry = PcurveGeometry::Nurbs {
+    ir.geometry.pcurves[0].geometry = PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
             1,
             knots,
@@ -1727,7 +1734,7 @@ fn a_verified_pcurve_interval_over_dense_knots_has_no_findings() {
         )
         .unwrap(),
     };
-    ir.model.coedges[0].pcurves[0].parameter_range =
+    ir.geometry.coedges[0].pcurves[0].parameter_range =
         Some(DirectedParameterRange::new([0.0, 1.0]).unwrap());
     let index = crate::index::ModelIndex::new_model_only(&ir);
     let arena = DecodeArena::new();

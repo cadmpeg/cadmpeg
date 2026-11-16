@@ -51,7 +51,7 @@ impl Builder<'_> {
         let shell = self.shells.get(face.shell.as_str())?;
         let region = self
             .ir
-            .model
+            .geometry
             .regions
             .iter()
             .find(|region| region.id == shell.region)?;

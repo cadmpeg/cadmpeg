@@ -1,7 +1,40 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "unknown",
+              "record": "creo:VisibGeom:section#76"
+            }
+          },
+          "id": "creo:visibgeom:surface#7",
+          "source_object": {
+            "format": "creo",
+            "instance_path": [],
+            "object_id": "VisibGeom:7"
+          }
+        }
+      ],
+      "vertices": []
+    },
     "ir_version": "11",
     "model": {
       "appearance_bindings": [],
@@ -10,15 +43,10 @@
       "assembly_joints": [],
       "assets": [],
       "attributes": [],
-      "bodies": [],
-      "coedges": [],
       "colliders": [],
       "configurations": [],
-      "curves": [],
       "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
       "features": [
@@ -55,25 +83,18 @@
         }
       ],
       "history_bodies": [],
-      "loops": [],
       "mass_properties": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
-      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -82,26 +103,7 @@
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "unknown",
-              "record": "creo:VisibGeom:section#76"
-            }
-          },
-          "id": "creo:visibgeom:surface#7",
-          "source_object": {
-            "format": "creo",
-            "instance_path": [],
-            "object_id": "VisibGeom:7"
-          }
-        }
-      ],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -193,6 +195,12 @@
           }
         ]
       }
+    },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {

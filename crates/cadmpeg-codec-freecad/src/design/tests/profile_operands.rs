@@ -126,7 +126,7 @@ fn profile_features_require_emitted_wire_outputs_and_preceding_dependencies() {
         &objects,
         &properties_by_owner,
         &payloads,
-        &ir.model.bodies,
+        &ir.geometry.bodies,
         ProfileFeatureOrder {
             feature_ids: &feature_ids,
             ordinals: &ordinals,
@@ -164,7 +164,7 @@ fn profile_features_require_emitted_wire_outputs_and_preceding_dependencies() {
         &objects,
         &properties_by_owner,
         &payloads,
-        &ir.model.bodies,
+        &ir.geometry.bodies,
         ProfileFeatureOrder {
             feature_ids: &feature_ids,
             ordinals: &forward_ordinals,
@@ -180,7 +180,7 @@ fn profile_features_require_emitted_wire_outputs_and_preceding_dependencies() {
             &objects,
             &properties_by_owner,
             &payloads,
-            &ir.model.bodies,
+            &ir.geometry.bodies,
             ProfileFeatureOrder {
                 feature_ids: &feature_ids,
                 ordinals: &ordinals,
@@ -206,7 +206,7 @@ fn profile_features_require_emitted_wire_outputs_and_preceding_dependencies() {
         &with_noncurve_dependency,
         &properties_by_owner,
         &payloads,
-        &ir.model.bodies,
+        &ir.geometry.bodies,
         ProfileFeatureOrder {
             feature_ids: &feature_ids,
             ordinals: &noncurve_ordinals,
@@ -223,7 +223,7 @@ fn profile_features_require_emitted_wire_outputs_and_preceding_dependencies() {
         &objects,
         &properties_by_owner,
         &payloads,
-        &ir.model.bodies,
+        &ir.geometry.bodies,
         ProfileFeatureOrder {
             feature_ids: &omitted_features,
             ordinals: &ordinals,

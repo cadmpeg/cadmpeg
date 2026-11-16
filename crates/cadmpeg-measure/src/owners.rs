@@ -41,41 +41,41 @@ fn by_id<'ir, T>(items: &'ir [T], id: impl Fn(&'ir T) -> &'ir str) -> HashMap<&'
 
 impl<'ir> Owners<'ir> {
     pub(crate) fn new(ir: &'ir CadIr) -> Self {
-        let model = &ir.model;
+        let geometry = &ir.geometry;
         let mut owners = Self {
             ir,
-            bodies: by_id(&model.bodies, |item| item.id.as_str()),
-            regions: by_id(&model.regions, |item| item.id.as_str()),
-            shells: by_id(&model.shells, |item| item.id.as_str()),
-            faces: by_id(&model.faces, |item| item.id.as_str()),
-            loops: by_id(&model.loops, |item| item.id.as_str()),
-            coedges: by_id(&model.coedges, |item| item.id.as_str()),
-            edges: by_id(&model.edges, |item| item.id.as_str()),
-            vertices: by_id(&model.vertices, |item| item.id.as_str()),
-            points: by_id(&model.points, |item| item.id.as_str()),
-            surfaces: by_id(&model.surfaces, |item| item.id.as_str()),
-            curves: by_id(&model.curves, |item| item.id.as_str()),
-            pcurves: by_id(&model.pcurves, |item| item.id.as_str()),
-            procedural_surfaces: by_id(&model.procedural_surfaces, |item| item.id.as_str()),
+            bodies: by_id(&geometry.bodies, |item| item.id.as_str()),
+            regions: by_id(&geometry.regions, |item| item.id.as_str()),
+            shells: by_id(&geometry.shells, |item| item.id.as_str()),
+            faces: by_id(&geometry.faces, |item| item.id.as_str()),
+            loops: by_id(&geometry.loops, |item| item.id.as_str()),
+            coedges: by_id(&geometry.coedges, |item| item.id.as_str()),
+            edges: by_id(&geometry.edges, |item| item.id.as_str()),
+            vertices: by_id(&geometry.vertices, |item| item.id.as_str()),
+            points: by_id(&geometry.points, |item| item.id.as_str()),
+            surfaces: by_id(&geometry.surfaces, |item| item.id.as_str()),
+            curves: by_id(&geometry.curves, |item| item.id.as_str()),
+            pcurves: by_id(&geometry.pcurves, |item| item.id.as_str()),
+            procedural_surfaces: by_id(&geometry.procedural_surfaces, |item| item.id.as_str()),
             edge_coedges: HashMap::new(),
             body_edges: BTreeMap::new(),
             body_vertices: BTreeMap::new(),
             body_faces: BTreeMap::new(),
         };
-        for coedge in &model.coedges {
+        for coedge in &geometry.coedges {
             owners
                 .edge_coedges
                 .entry(coedge.edge.as_str())
                 .or_default()
                 .push(coedge);
         }
-        for body in &model.bodies {
+        for body in &geometry.bodies {
             let id = body.id.as_str();
             owners.body_edges.insert(id, BTreeSet::new());
             owners.body_vertices.insert(id, BTreeSet::new());
             owners.body_faces.insert(id, BTreeSet::new());
         }
-        for shell in &model.shells {
+        for shell in &geometry.shells {
             let Some(body) = owners.shell_body(shell.id.as_str()) else {
                 continue;
             };
