@@ -17,7 +17,8 @@ const FRAME_END_LABELS: [&[u8]; 4] = [
     b"qlt_array\0",
 ];
 
-/// Row-close byte after which a packed `geom_id` can start.
+/// Row-close byte: a packed `geom_id` can start after it, and a packed
+/// field's value bytes do not hold it.
 const ROW_CLOSE: u8 = 0xe3;
 
 /// Named-record header byte.
@@ -45,11 +46,17 @@ pub(super) enum RowReading {
     Packed,
 }
 
-/// A canonical packed `c0..df XX YY` field that ends at or before `limit`.
+/// A canonical packed `c0..df XX YY` field that ends at or before `limit`
+/// and before the next frame label, and whose two value bytes hold no `e3`
+/// and start no named-record header.
 fn packed_field(payload: &[u8], offset: usize, limit: usize) -> Option<(u32, usize)> {
     matches!(payload.get(offset), Some(0xc0..=0xdf)).then_some(())?;
-    psb::packed_compact_int(payload.get(..limit)?, offset)
-        .filter(|(value, _)| *value >= PACKED_ROW_FIELD_MIN)
+    let limit = limit.min(label_limit(payload, offset, PACKED_FIELD_LEN));
+    let (value, end) = psb::packed_compact_int(payload.get(..limit)?, offset)?;
+    (value >= PACKED_ROW_FIELD_MIN).then_some(())?;
+    (offset + 1..end)
+        .all(|at| payload.get(at) != Some(&ROW_CLOSE) && !named_record_header_at(payload, at))
+        .then_some((value, end))
 }
 
 /// The readings of a row field in priority order.
@@ -88,37 +95,25 @@ fn named_record_header_at(payload: &[u8], offset: usize) -> bool {
 }
 
 /// The value of a named row field at `offset`. A packed value ends before the
-/// namespace end, the next frame label, and the next named-record header.
+/// namespace end.
 pub(super) fn named_row_field(
     payload: &[u8],
     offset: usize,
     end: usize,
     reading: RowReading,
 ) -> Option<u32> {
-    let limit = end
-        .min(label_limit(payload, offset, PACKED_FIELD_LEN))
-        .min(named_header_limit(payload, offset));
-    row_field(payload, offset, limit, reading).map(|(value, _)| value)
+    row_field(payload, offset, end, reading).map(|(value, _)| value)
 }
 
-/// The start of the first named-record header inside a packed field at
-/// `offset`, or the payload end.
-fn named_header_limit(payload: &[u8], offset: usize) -> usize {
-    (offset + 1..offset + PACKED_FIELD_LEN)
-        .find(|at| named_record_header_at(payload, *at))
-        .unwrap_or(payload.len())
-}
-
-/// A named-record row identifier: with `packed`, the packed tier ending
-/// before the next named-record header; otherwise, or when that fails, a
-/// reference identifier.
+/// A named-record row identifier: with `packed`, the packed tier; otherwise,
+/// or when that fails, a reference identifier.
 pub(crate) fn named_row_identifier(
     payload: &[u8],
     offset: usize,
     packed: bool,
 ) -> Option<(u32, usize)> {
     packed
-        .then(|| packed_field(payload, offset, named_header_limit(payload, offset)))
+        .then(|| packed_field(payload, offset, payload.len()))
         .flatten()
         .or_else(|| psb::reference_id(payload, offset).ok())
 }

@@ -1795,3 +1795,31 @@ fn packed_id_outside_every_frame_is_no_row() {
     let payload = b"\xe3\xc0\x4e\x85\x22\x04\x01\x00\x00";
     assert!(rows(payload).is_empty());
 }
+
+#[test]
+fn packed_next_pointer_does_not_cross_a_row_close() {
+    // c5 e3 07 would join row A's next pointer to row B's id.
+    let payload = b"srf_array\0\xf8\x02\
+        \x05\x22\x04\x01\x00\xc5\xe3\
+        \x07\x22\x04\x01\x00\x00\xe4\xe3";
+    let decoded = rows(payload);
+    assert_eq!(
+        decoded
+            .iter()
+            .map(|row| (row.id, row.next_surface))
+            .collect::<Vec<_>>(),
+        vec![(5, 0xc5), (7, 0)]
+    );
+    assert_eq!(
+        positional_body_start(payload, &decoded[0]),
+        Some(b"srf_array\0\xf8\x02".len() + 6)
+    );
+}
+
+#[test]
+fn packed_next_pointer_does_not_cross_a_named_record_header() {
+    let payload = b"srf_array\0\xf8\x01\x05\x22\x04\x01\x00\xc5\xe0\x01envlp\0";
+    let decoded = rows(payload);
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].next_surface, 0xc5);
+}

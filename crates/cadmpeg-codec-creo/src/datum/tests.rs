@@ -831,3 +831,12 @@ fn named_plane_keeps_reference_identifiers_when_the_payload_keeps_the_compact_re
     assert!(!crate::surface::packed_reading_chosen(&data));
     assert!(named_plane(&data).is_none());
 }
+
+#[test]
+fn named_plane_packed_id_stops_at_a_frame_label() {
+    let data = b"srf_array\0\xf8\x01\xe0\x01geom_id\0\xc5srf_array\0\xf8\x01\
+        \xe0\x01feat_id\0\x04\xe0\x01outline\0\xf9\x02\x03\
+        \x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\
+        \x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    assert!(named_plane(data).is_none());
+}
