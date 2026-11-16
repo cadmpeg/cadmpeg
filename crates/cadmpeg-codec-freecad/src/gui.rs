@@ -3,7 +3,7 @@
 
 mod schema;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -721,6 +721,26 @@ fn transfer_neutral_presentation(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut state_losses = Vec::new();
+    let expanded_names = graph
+        .documents
+        .iter()
+        .flat_map(|document| &document.states)
+        .filter(|state| state.kind == "Expand")
+        .flat_map(|state| &state.values)
+        .filter(|value| value.tag == "Expand")
+        .filter_map(|value| value.attributes.get("name"))
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    for name in expanded_names.iter().filter(|name| {
+        !graph
+            .providers
+            .iter()
+            .any(|provider| provider.name == **name)
+    }) {
+        state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
+            "GUI Expand names {name}, which no view provider has; the name stays in the native Expand state"
+        )));
+    }
     for document in &graph.documents {
         let mut presentation = PresentationDocument::new(PresentationId::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "presentation", "document"),
@@ -735,6 +755,9 @@ fn transfer_neutral_presentation(
             .filter(|state| state.kind == "Camera")
             .count();
         for (order, state) in document.states.iter().enumerate() {
+            if state.kind == "Expand" {
+                continue;
+            }
             let (attributes, refused) = gui_named_entries(
                 || format!("the gui {} state", state.kind),
                 state
@@ -842,7 +865,11 @@ fn transfer_neutral_presentation(
                     provider.order
                 ))
             })?,
-            expanded: provider.expanded,
+            expanded: if expanded_names.contains(provider.name.as_str()) {
+                Some(true)
+            } else {
+                provider.expanded
+            },
             visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
             display_mode: property_value("DisplayMode", "App::PropertyEnumeration")
                 .map(ToOwned::to_owned),
