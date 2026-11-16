@@ -26,23 +26,23 @@ fn binary_units_cgs_lengths_scale_exactly_once() {
         ));
         assert_valid(&decoded);
         let value = serde_json::to_value(decoded.ir()).expect("CADIR serializes");
-        let surface = value["model"]["surfaces"]
+        let surface = value["geometry"]["surfaces"]
             .as_array()
             .expect("surfaces")
             .iter()
             .find(|row| row["id"] == "creo:visibgeom:surface#7")
             .expect("plane");
-        assert_eq!(surface["geometry"]["kind"], "plane");
+        assert_eq!(surface["geometry"]["value"]["kind"], "plane");
         assert_eq!(
-            surface["geometry"]["origin"],
+            surface["geometry"]["value"]["origin"],
             serde_json::json!({"x":expected[0], "y":expected[1], "z":expected[2]})
         );
         assert_eq!(
-            surface["geometry"]["normal"],
+            surface["geometry"]["value"]["normal"],
             serde_json::json!({"x":0.0,"y":0.0,"z":1.0})
         );
         assert_eq!(
-            surface["geometry"]["u_axis"],
+            surface["geometry"]["value"]["u_axis"],
             serde_json::json!({"x":1.0,"y":0.0,"z":0.0})
         );
         let attributes = &decoded.ir().source.as_ref().expect("Source").attributes;

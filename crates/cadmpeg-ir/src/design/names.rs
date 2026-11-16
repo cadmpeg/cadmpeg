@@ -83,7 +83,7 @@ impl JsonSchema for Base64Bytes {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct NameTable(
-    #[serde(with = "super::wire::pairs")]
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<(EntityRef, NameEntry)>"))]
     BTreeMap<EntityRef, NameEntry>,
 );
@@ -315,11 +315,11 @@ enum TopoNameWire {
     /// An edge, by the faces beside it and the faces at its ends.
     Bounded {
         /// The faces beside the edge.
-        #[serde(with = "super::wire::set")]
+        #[serde(with = "cadmpeg_core::distinct_keys::set")]
         #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
         faces: BTreeSet<TopoName>,
         /// The faces at the edge's ends, where the source records them.
-        #[serde(with = "super::wire::set")]
+        #[serde(with = "cadmpeg_core::distinct_keys::set")]
         #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
         ends: BTreeSet<TopoName>,
         /// The source's own discriminator among entities of equal meaning.
@@ -333,7 +333,7 @@ enum TopoNameWire {
     /// A vertex, by the faces that meet at it.
     Meeting {
         /// The faces that meet at the vertex.
-        #[serde(with = "super::wire::set")]
+        #[serde(with = "cadmpeg_core::distinct_keys::set")]
         #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
         faces: BTreeSet<TopoName>,
         /// The source's own discriminator among entities of equal meaning.
@@ -398,7 +398,7 @@ struct MergedName {
     )]
     feature: Option<FeatureId>,
     /// The names of the merged entities.
-    #[serde(with = "super::wire::set")]
+    #[serde(with = "cadmpeg_core::distinct_keys::set")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
     from: BTreeSet<TopoName>,
 }
@@ -585,14 +585,19 @@ pub enum Generator {
 pub enum GenerationRole {
     /// The cap of a swept solid at the end of the span against the sweep's
     /// direction.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Start,
     /// The cap of a swept solid along the sweep's direction.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     End,
     /// A face swept from a profile entity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Side,
     /// An edge or face that a closed entity closes on.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Seam,
     /// The body.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Body,
     /// A face of a hole, by its place in the hole's shape.
     Hole(HoleFaceRole),

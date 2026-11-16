@@ -516,7 +516,7 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
         )
     })
     .expect("millimeter admission");
-    let Some(SolvedSurfaceGeometry::Cylinder(admitted)) = ir.model.surfaces[0].geometry.solved()
+    let Some(SolvedSurfaceGeometry::Cylinder(admitted)) = ir.geometry.surfaces[0].geometry.solved()
     else {
         panic!("admitted cylinder changed family");
     };
@@ -552,7 +552,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         });
     }
     let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -679,7 +679,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     )
     .is_none());
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
-        &mut ir.model.surfaces[1].geometry
+        &mut ir.geometry.surfaces[1].geometry
     {
         let origin = cone_surface.origin();
         let axis = cone_surface.frame().axis().as_raw();
@@ -708,7 +708,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     )
     .is_none());
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
-        &mut ir.model.surfaces[1].geometry
+        &mut ir.geometry.surfaces[1].geometry
     {
         let origin = cone_surface.origin();
         let axis = cone_surface.frame().axis().as_raw();
@@ -729,7 +729,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         .expect("valid ConeSurface fixture");
     }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) =
-        &mut ir.model.surfaces[2].geometry
+        &mut ir.geometry.surfaces[2].geometry
     else {
         unreachable!();
     };
@@ -849,7 +849,7 @@ fn named_revolve_transfers_profile_axis() {
             offset: 1,
         });
     let mut ir = CadIr::empty();
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:revolution#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -888,7 +888,7 @@ fn named_revolve_transfers_profile_axis() {
 fn named_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -922,7 +922,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
 fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -1447,7 +1447,7 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
     let mut ir = CadIr::empty();
     assert!(!has_transferred_geometry(&ir));
 
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         PointId::mint("test:model:entity#point".to_string()).expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),

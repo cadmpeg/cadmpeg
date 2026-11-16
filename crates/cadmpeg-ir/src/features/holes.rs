@@ -469,7 +469,12 @@ pub enum HoleKind {
 /// Mutually exclusive ordinary and source-native threaded hole constructions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "construction", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum HoleConstruction {
     /// Entry treatment with optional named standard sizing or thread metadata.
     Form {

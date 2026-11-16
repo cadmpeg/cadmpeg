@@ -8,11 +8,11 @@
         "extent_count": "1",
         "extent_words": "0x00000000"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "MainDataStream",
       "role": "stream",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 279
       }
     },
@@ -23,25 +23,29 @@
         "extent_count": "1",
         "extent_words": "0x00000000"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "SurfacicReps",
       "role": "stream",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 1
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {},
         "dialect": "catia:e5-stream"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "outer V5_CFV2 container: directory offset 543 + length 0 = 543 (file size 543); variant: E5 0D 03 record stream: direct analytic carrier decode supported",
     "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",

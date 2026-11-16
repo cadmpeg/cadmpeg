@@ -66,7 +66,6 @@ pub struct SubdCage {
     vertices: Vec<SubdVertex>,
     edges: Vec<SubdEdge>,
     faces: Vec<SubdFace>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     symmetries: Vec<SubdSymmetry>,
 }
 
@@ -81,7 +80,6 @@ struct SubdCageWire {
     /// Control faces in cage order.
     faces: Vec<SubdFace>,
     /// Editor symmetry blocks in cage order.
-    #[serde(default)]
     symmetries: Vec<SubdSymmetry>,
 }
 
@@ -378,7 +376,6 @@ pub enum SubdSymmetryKind {
 pub struct SubdRadialSymmetry {
     segments: std::num::NonZeroU32,
     sweep: crate::scalar::FiniteReal,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     radial_maps: Vec<SubdRadialSymmetryMap>,
 }
 
@@ -391,7 +388,6 @@ struct SubdRadialSymmetryWire {
     /// Finite native radial sweep.
     sweep: f64,
     /// Native maps with distinct selectors and distinct sources within each map.
-    #[serde(default)]
     radial_maps: Vec<SubdRadialSymmetryMap>,
 }
 
@@ -524,13 +520,10 @@ struct SubdSymmetryWire {
     /// Geometric symmetry-plane frame.
     plane: SubdPlaneFrame,
     /// Forward face correspondences for a topology-addressed symmetry block.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     face_pairs: Vec<[u32; 2]>,
     /// Forward edge correspondences for a topology-addressed symmetry block.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     edge_pairs: Vec<[u32; 2]>,
     /// Forward vertex correspondences for a topology-addressed symmetry block.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     vertex_pairs: Vec<[u32; 2]>,
 }
 
@@ -752,10 +745,18 @@ pub enum SubdGripWedge {
     /// One topology and grip slot in the vertex fan.
     Slot {
         /// IR edge for this fan slot.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_edge"
+        )]
         edge: Option<u32>,
         /// Face in the sector following this slot, or `None` for a boundary gap.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_sector_face"
+        )]
         sector_face: Option<u32>,
         /// Spoke grips ordered nearest-first from the owning vertex.
         spokes: Vec<Option<SubdSecondaryGrip>>,
@@ -1025,6 +1026,7 @@ impl SubdEdge {
 )]
 pub enum SubdUserKnot {
     /// Use the edge's base knot interval.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Inherit,
     /// Use this finite nonnegative interval, including explicit zero.
     Override(NonNegativeReal),
@@ -1111,3 +1113,6 @@ cadmpeg_core::named_optional_field!(deserialize_user_knot, SubdUserKnot, "user_k
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_sector_face, u32, "sector_face");
+cadmpeg_core::named_optional_field!(deserialize_edge, u32, "edge");

@@ -17,8 +17,8 @@ pub(super) fn check_typed_references(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     macro_rules! check_arenas {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-            $(for entity in &ir.model.$field {
+        ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+            $(for entity in &ir.$home.$field {
                 let owner = entity.identity();
                 let walk = entity.visit_references(ctx, &mut |target| {
                     if index.contains(target) { return Ok(()); }
@@ -100,7 +100,7 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let mut ir = crate::CadIr::empty();
-        ir.model.vertices.push(crate::topology::Vertex {
+        ir.geometry.vertices.push(crate::topology::Vertex {
             id: "test:model:vertex#owner".try_into().unwrap(),
             point: "test:model:point#missing".try_into().unwrap(),
             tolerance: None,

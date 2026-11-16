@@ -113,7 +113,7 @@ impl GeneratedDesignRegistry {
         let mut suffixes = BTreeSet::new();
         let mut pending = Vec::new();
 
-        for (ordinal, body) in target.model.bodies.iter().enumerate() {
+        for (ordinal, body) in target.geometry.bodies.iter().enumerate() {
             let Some(visible) = body.visible else {
                 continue;
             };
@@ -459,7 +459,7 @@ mod tests {
 
     fn node_guids_for_order(reverse: bool) -> std::collections::BTreeMap<u64, String> {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        let mut first = target.model.bodies[0].clone();
+        let mut first = target.geometry.bodies[0].clone();
         first.id = cadmpeg_ir::ids::BodyId::mint("test:model:body#synthetic:stable-body:a")
             .expect("identity grammar");
         first.visible = Some(false);
@@ -467,7 +467,7 @@ mod tests {
         second.id = cadmpeg_ir::ids::BodyId::mint("test:model:body#synthetic:stable-body:b")
             .expect("identity grammar");
         second.visible = Some(true);
-        target.model.bodies = if reverse {
+        target.geometry.bodies = if reverse {
             vec![second.clone(), first.clone()]
         } else {
             vec![first.clone(), second.clone()]
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn generated_presentation_records_do_not_alias_their_body_entity() {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        target.model.bodies[0].visible = Some(true);
+        target.geometry.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative::default();
         let attributes = super::AttributeIndex::new(&target, &native);
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
@@ -587,7 +587,7 @@ mod tests {
     #[test]
     fn generated_body_map_replaces_stale_type_membership() {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        target.model.bodies[0].visible = Some(true);
+        target.geometry.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative {
             design_types: vec![body_map_type(vec![17])],
             ..Default::default()
@@ -618,7 +618,7 @@ mod tests {
     #[test]
     fn generated_browser_nodes_replace_stale_type_membership() {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        target.model.bodies[0].visible = Some(true);
+        target.geometry.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative {
             design_types: vec![browser_node_type(vec![17])],
             ..Default::default()

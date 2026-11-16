@@ -5,16 +5,16 @@ use crate::report::{check::Check, Severity};
 #[test]
 fn radial_ring_crossing_keeps_error_order_and_owner() {
     let mut ir = crate::examples::unit_cube().unwrap();
-    let owner = ir.model.coedges[0].id.clone();
+    let owner = ir.geometry.coedges[0].id.clone();
     let other = ir
-        .model
+        .geometry
         .coedges
         .iter()
-        .find(|coedge| coedge.edge != ir.model.coedges[0].edge)
+        .find(|coedge| coedge.edge != ir.geometry.coedges[0].edge)
         .unwrap()
         .id
         .clone();
-    ir.model.coedges[0].radial_next = other;
+    ir.geometry.coedges[0].radial_next = other;
     let mut findings = Vec::new();
     super::check_coedge_pairing(&ir, &mut findings).unwrap();
     assert!(findings.len() >= 2);
@@ -40,7 +40,7 @@ fn vertex_loop_model(faces: &[(&str, &[&str])], shells: &[&[&str]]) -> crate::Ca
             .iter()
             .map(|vertex| LoopId::mint(format!("test:model:loop#{face}-{vertex}")).unwrap())
             .collect();
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: face_id.clone(),
             shell: shell_id(0),
             surface: SurfaceId::mint("test:model:surface#plane").unwrap(),
@@ -51,7 +51,7 @@ fn vertex_loop_model(faces: &[(&str, &[&str])], shells: &[&[&str]]) -> crate::Ca
             tolerance: None,
         });
         for (loop_id, vertex) in loop_ids.into_iter().zip(*vertices) {
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: loop_id,
                 face: face_id.clone(),
                 boundary: LoopBoundary::Vertex {
@@ -66,7 +66,7 @@ fn vertex_loop_model(faces: &[(&str, &[&str])], shells: &[&[&str]]) -> crate::Ca
             .iter()
             .map(|face| FaceId::mint(format!("test:model:face#{face}")).unwrap())
             .collect();
-        ir.model.shells.push(
+        ir.geometry.shells.push(
             Shell::new(
                 shell_id(index),
                 RegionId::mint("test:model:region#0").unwrap(),

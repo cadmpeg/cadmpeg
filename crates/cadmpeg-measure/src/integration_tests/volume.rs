@@ -68,8 +68,8 @@ fn the_cube_encloses_its_volume_about_its_centre() {
 #[test]
 fn a_flipped_cube_face_leaves_the_volume_to_its_readings() {
     let mut cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
-    let flipped = cube.model.faces[0].id.as_str().to_owned();
-    cube.model.faces[0].sense = match cube.model.faces[0].sense {
+    let flipped = cube.geometry.faces[0].id.as_str().to_owned();
+    cube.geometry.faces[0].sense = match cube.geometry.faces[0].sense {
         Sense::Forward => Sense::Reversed,
         Sense::Reversed => Sense::Forward,
     };
@@ -162,7 +162,7 @@ fn a_face_on_natural_domain_edges_opens_its_shell() {
 fn cuboid_volume_model(side: Option<f64>, edge: Option<f64>, corner: f64) -> f64 {
     let mut ir = crate::test_support::builders::cuboid([0.0; 3], [10.0, 10.0, 1.0]);
     if let Some(point) = ir
-        .model
+        .geometry
         .points
         .iter_mut()
         .find(|point| point.position().get() == cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
@@ -196,7 +196,7 @@ fn cuboid_volume_model(side: Option<f64>, edge: Option<f64>, corner: f64) -> f64
         .face()
         .clone();
     let face = ir
-        .model
+        .geometry
         .faces
         .iter_mut()
         .find(|face| face.id.as_str() == found)
@@ -219,7 +219,7 @@ fn cuboid_volume_model(side: Option<f64>, edge: Option<f64>, corner: f64) -> f64
         .edge()
         .clone();
     let model_edge = ir
-        .model
+        .geometry
         .edges
         .iter_mut()
         .find(|candidate| candidate.id.as_str() == found)

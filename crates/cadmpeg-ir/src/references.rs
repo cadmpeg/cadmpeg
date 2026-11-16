@@ -43,7 +43,6 @@ pub struct ReferenceSelection {
     /// Local, external, or explicit-null target identity.
     pub target: ReferenceTarget,
     /// Ordered model subelement selectors.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subelements: Vec<String>,
 }
 
@@ -105,11 +104,11 @@ mod tests {
         let cases = [
             (
                 ReferenceTarget::Null,
-                serde_json::json!({ "target": { "kind": "null" } }),
+                serde_json::json!({ "target": { "kind": "null" }, "subelements": [] }),
             ),
             (
                 ReferenceTarget::Local("local-id".into()),
-                serde_json::json!({ "target": { "kind": "local", "target": "local-id" } }),
+                serde_json::json!({ "target": { "kind": "local", "target": "local-id" }, "subelements": [] }),
             ),
             (
                 ReferenceTarget::External {
@@ -121,7 +120,8 @@ mod tests {
                         "kind": "external",
                         "document": "document",
                         "object": "object"
-                    }
+                    },
+                    "subelements": []
                 }),
             ),
         ];
@@ -162,6 +162,8 @@ mod tests {
             serde_json::json!({ "is_null": true }),
             serde_json::json!({ "target": "local-id" }),
         ] {
+            let mut wire = wire;
+            wire["subelements"] = serde_json::json!([]);
             assert!(
                 serde_json::from_value::<ReferenceSelection>(wire.clone()).is_err(),
                 "{wire}"
@@ -170,6 +172,7 @@ mod tests {
 
         let bogus = serde_json::json!({
             "target": { "kind": "local", "target": "local-id" },
+            "subelements": [],
             "zz_bogus": 1
         });
         let error = serde_json::from_value::<ReferenceSelection>(bogus)

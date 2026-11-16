@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 /// How much of the source document a decode transfers.
 ///
 /// Depths are ordered: each one transfers everything a shallower depth
-/// transfers. A caller requests a depth through the decode context, and the
-/// codec records the depth it delivered on the decoded document.
+/// transfers. A caller requests a depth through the decode context; each
+/// depth requests one [`ContentScope`](super::ContentScope), and the decoded
+/// document records the scope it holds.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
 )]
@@ -21,12 +22,13 @@ pub enum DecodeDepth {
     /// The container layer only: framing, identity, and native container
     /// records, without entity transfer.
     Container,
-    /// Everything an exchange output consumes: B-rep, tessellation, product
-    /// structure, placements, appearance, PMI, and attributes. Every design
-    /// arena (features, sketches, parameters, configurations, spreadsheets,
-    /// and their topology bindings) is empty.
+    /// The model: everything an exchange output consumes (B-rep,
+    /// tessellation, product structure, placements, appearance, PMI, and
+    /// attributes). Every design and process arena is empty.
     Geometry,
-    /// Everything the codec transfers, including design intent.
+    /// The model and the design that built it. Every process arena is empty.
+    Design,
+    /// The model, its design, and its manufacturing process.
     #[default]
     Full,
 }
@@ -38,6 +40,7 @@ impl DecodeDepth {
         match self {
             Self::Container => "container",
             Self::Geometry => "geometry",
+            Self::Design => "design",
             Self::Full => "full",
         }
     }
@@ -56,7 +59,8 @@ mod tests {
     #[test]
     fn depths_order_by_what_they_transfer() {
         assert!(DecodeDepth::Container < DecodeDepth::Geometry);
-        assert!(DecodeDepth::Geometry < DecodeDepth::Full);
+        assert!(DecodeDepth::Geometry < DecodeDepth::Design);
+        assert!(DecodeDepth::Design < DecodeDepth::Full);
         assert_eq!(DecodeDepth::default(), DecodeDepth::Full);
     }
 
@@ -65,6 +69,7 @@ mod tests {
         for depth in [
             DecodeDepth::Container,
             DecodeDepth::Geometry,
+            DecodeDepth::Design,
             DecodeDepth::Full,
         ] {
             assert_eq!(

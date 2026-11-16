@@ -38,7 +38,7 @@ fn f30_insertions_follow_the_captured_owner_subtree_move() {
     for (bytes, movement) in fixtures {
         let result = decode(bytes.to_vec());
         let ir = result.ir();
-        assert_eq!(ir.model.bodies.len(), 1);
+        assert_eq!(ir.geometry.bodies.len(), 1);
         assert_eq!(ir.model.occurrences.len(), 5);
         for code in [
             F3dLossCode::XrefPlacementUndecoded,
@@ -71,9 +71,9 @@ fn f30_insertions_follow_the_captured_owner_subtree_move() {
             assert!((local[0][3] - 10.0).abs() < EPS_F30_POSE);
             let placement = world(ir, occurrence);
             poses.push(placement.rows());
-            for vertex in &ir.model.vertices {
+            for vertex in &ir.geometry.vertices {
                 let point = ir
-                    .model
+                    .geometry
                     .points
                     .iter()
                     .find(|p| p.id == vertex.point)

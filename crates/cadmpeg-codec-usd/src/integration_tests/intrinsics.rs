@@ -95,7 +95,7 @@ fn intrinsic_primitives_are_exact_bodies() {
 #[test]
 fn a_capsule_with_unequal_radii_is_reported() {
     let result = decode("#usda 1.0\ndef Capsule_1 \"C\"\n{\n    double radiusTop = 1\n    double radiusBottom = 2\n}\n");
-    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
     assert!(result
         .report()
         .losses

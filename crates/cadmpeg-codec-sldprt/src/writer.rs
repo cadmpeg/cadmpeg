@@ -47,12 +47,12 @@ pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 
 /// Opaque solved carriers require a retained native partition.
 pub(crate) fn requires_native_partition(ir: &CadIr) -> bool {
-    ir.model.curves.iter().any(|curve| {
+    ir.geometry.curves.iter().any(|curve| {
         matches!(
             curve.geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         )
-    }) || ir.model.surfaces.iter().any(|surface| {
+    }) || ir.geometry.surfaces.iter().any(|surface| {
         matches!(
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
@@ -185,7 +185,7 @@ pub(crate) fn write_semantic_with_records(
         return Err(CodecError::Malformed(detail.into()));
     }
     check_semantic_support(ir, annotations)?;
-    if ir.model.faces.is_empty() {
+    if ir.geometry.faces.is_empty() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writing requires a B-rep".into(),
         ));
@@ -212,7 +212,7 @@ pub(crate) fn write_semantic_with_records(
         configuration_partitions(ir, length_scale)?
     } else {
         let schema_32001 = ir
-            .model
+            .geometry
             .bodies
             .iter()
             .any(|body| body.kind == BodyKind::Sheet);
@@ -606,21 +606,25 @@ pub(crate) fn configurations_without_synthesized_snapshot(
 }
 
 fn sort_arenas(ir: &mut CadIr) {
-    ir.model.bodies.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.regions.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.shells.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.faces.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.loops.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.coedges.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.edges.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.vertices.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.points.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.curves.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.subds.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.procedural_surfaces.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.model.procedural_curves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.bodies.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.regions.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.shells.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.faces.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.loops.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.coedges.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.edges.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.vertices.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.points.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.curves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.subds.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry
+        .procedural_surfaces
+        .sort_by(|a, b| a.id.cmp(&b.id));
+    ir.geometry
+        .procedural_curves
+        .sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.tessellations.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.appearances.sort_by(|a, b| a.id.cmp(&b.id));
@@ -770,12 +774,12 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             "SLDPRT writing requires exactly one active configuration".into(),
         ));
     }
-    if !ir.model.subds.is_empty() {
+    if !ir.geometry.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not support SubD surfaces".into(),
         ));
     }
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let ratio = cone_surface.ratio().get();
@@ -822,19 +826,19 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             _ => {}
         }
     }
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         if body.name.is_some() && body.color.is_none() {
             return Err(CodecError::NotImplemented(
                 "SLDPRT semantic writer cannot encode a body name without a material".into(),
             ));
         }
     }
-    if ir.model.faces.iter().any(|face| face.name.is_some()) {
+    if ir.geometry.faces.iter().any(|face| face.name.is_some()) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode face names".into(),
         ));
     }
-    if ir.model.edges.iter().any(|edge| {
+    if ir.geometry.edges.iter().any(|edge| {
         edge.param_range().is_some()
             && annotations
                 .exactness()
@@ -888,7 +892,7 @@ fn configuration_partitions(
         })
         .collect::<HashSet<_>>();
     if let Some(body) = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| !configured.contains(&body.id))
@@ -926,7 +930,7 @@ fn configuration_partitions(
             }
             let subset = body_subset(ir, bodies)?;
             let schema_32001 = subset
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .any(|body| body.kind == BodyKind::Sheet);
@@ -968,7 +972,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     let selected = selected.iter().cloned().collect::<HashSet<_>>();
     if let Some(id) = selected
         .iter()
-        .find(|id| !ir.model.bodies.iter().any(|body| &body.id == *id))
+        .find(|id| !ir.geometry.bodies.iter().any(|body| &body.id == *id))
     {
         return Err(CodecError::malformed(format_args!(
             "configuration references missing body {}",
@@ -977,117 +981,126 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     }
     let mut subset = ir.clone();
     subset
-        .model
+        .geometry
         .bodies
         .retain(|body| selected.contains(&body.id));
     let regions = subset
-        .model
+        .geometry
         .bodies
         .iter()
         .flat_map(|body| body.regions.iter().cloned())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .regions
         .retain(|region| regions.contains(&region.id));
     let shells = subset
-        .model
+        .geometry
         .regions
         .iter()
         .flat_map(|region| region.shells.iter().cloned())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .shells
         .retain(|shell| shells.contains(&shell.id));
     let faces = subset
-        .model
+        .geometry
         .shells
         .iter()
         .flat_map(|shell| shell.faces().iter().cloned())
         .collect::<HashSet<_>>();
-    subset.model.faces.retain(|face| faces.contains(&face.id));
+    subset
+        .geometry
+        .faces
+        .retain(|face| faces.contains(&face.id));
     let loops = subset
-        .model
+        .geometry
         .faces
         .iter()
         .flat_map(|face| face.loops.iter().cloned())
         .collect::<HashSet<_>>();
-    subset.model.loops.retain(|loop_| loops.contains(&loop_.id));
+    subset
+        .geometry
+        .loops
+        .retain(|loop_| loops.contains(&loop_.id));
     let coedges = subset
-        .model
+        .geometry
         .loops
         .iter()
         .flat_map(|loop_| loop_.coedges().iter().cloned())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .coedges
         .retain(|coedge| coedges.contains(&coedge.id));
     let mut edges = subset
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| coedge.edge.clone())
         .collect::<HashSet<_>>();
-    for shell in &subset.model.shells {
+    for shell in &subset.geometry.shells {
         edges.extend(shell.wire_edges().iter().cloned());
     }
-    subset.model.edges.retain(|edge| edges.contains(&edge.id));
+    subset
+        .geometry
+        .edges
+        .retain(|edge| edges.contains(&edge.id));
     let mut vertices = subset
-        .model
+        .geometry
         .edges
         .iter()
         .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
         .collect::<HashSet<_>>();
-    for shell in &subset.model.shells {
+    for shell in &subset.geometry.shells {
         vertices.extend(shell.free_vertices().iter().cloned());
     }
     subset
-        .model
+        .geometry
         .vertices
         .retain(|vertex| vertices.contains(&vertex.id));
     let points = subset
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| vertex.point.clone())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .points
         .retain(|point| points.contains(&point.id));
     let surfaces = subset
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| face.surface.clone())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .surfaces
         .retain(|surface| surfaces.contains(&surface.id));
     let curves = subset
-        .model
+        .geometry
         .edges
         .iter()
         .filter_map(|edge| edge.curve().cloned())
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .curves
         .retain(|curve| curves.contains(&curve.id));
     let pcurves = subset
-        .model
+        .geometry
         .coedges
         .iter()
         .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.clone()))
         .collect::<HashSet<_>>();
     subset
-        .model
+        .geometry
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
-    subset.model.finalize();
+    subset.finalize();
     Ok(subset)
 }
 
@@ -2884,7 +2897,7 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
         selected = Some(material);
     }
     if selected.is_none() {
-        for body in &ir.model.bodies {
+        for body in &ir.geometry.bodies {
             let Some(color) = body.color else {
                 continue;
             };
@@ -2972,7 +2985,7 @@ pub(crate) fn brep_body(
     schema_32001: bool,
 ) -> Result<Vec<u8>, CodecError> {
     if let Some(body) = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| matches!(body.kind, BodyKind::Wire | BodyKind::General))
@@ -2984,7 +2997,7 @@ pub(crate) fn brep_body(
     }
     let mut next = 2u16;
     let derived_sphere_seam_curves = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -2999,56 +3012,56 @@ pub(crate) fn brep_body(
         .map(|curve| curve.id.clone())
         .collect::<HashSet<_>>();
     let surfaces = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let curves = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|item| !derived_sphere_seam_curves.contains(&item.id))
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let points = ir
-        .model
+        .geometry
         .points
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let vertices = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let edges = ir
-        .model
+        .geometry
         .edges
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let coedges = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let loops = ir
-        .model
+        .geometry
         .loops
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let faces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let body_attrs = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| Ok((body.id.clone(), take_attr(&mut next)?)))
@@ -3056,7 +3069,7 @@ pub(crate) fn brep_body(
     let vertex_owners = ownership::vertex_body_owners(ir, &body_attrs)?;
     let reversed_edges = edge_direction::reversed_compact_edges(ir)?;
     let mut out = Vec::new();
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = &surface.geometry {
             write_nurbs_surface(
                 &mut out,
@@ -3080,7 +3093,7 @@ pub(crate) fn brep_body(
             &values,
         );
     }
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         if derived_sphere_seam_curves.contains(&curve.id) {
             continue;
         }
@@ -3109,7 +3122,7 @@ pub(crate) fn brep_body(
         );
     }
     let face_owners = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| Ok((face.id.clone(), take_attr(&mut next)?)))
@@ -3128,7 +3141,7 @@ pub(crate) fn brep_body(
         let definition_node = take_attr(&mut next)?;
         Some((key_node, definition_node))
     };
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         tag(&mut out, 0x1d);
         be16(&mut out, points[&point.id]);
         be32(&mut out, 0);
@@ -3141,7 +3154,7 @@ pub(crate) fn brep_body(
             bef64(&mut out, value * length_scale);
         }
     }
-    for vertex in &ir.model.vertices {
+    for vertex in &ir.geometry.vertices {
         tag(&mut out, 0x12);
         be16(&mut out, vertices[&vertex.id]);
         be32(&mut out, 0);
@@ -3161,7 +3174,7 @@ pub(crate) fn brep_body(
         }
         be16(&mut out, vertex_owners[&vertex.id]);
     }
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         let owner = vertex_owners
             .get(&edge.start)
             .ok_or_else(|| CodecError::Malformed("SLDPRT EDGE start has no BODY owner".into()))?;
@@ -3190,11 +3203,11 @@ pub(crate) fn brep_body(
         }
         be16(&mut out, *owner);
     }
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         tag(&mut out, 0x11);
         be16(&mut out, coedges[&coedge.id]);
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
@@ -3204,13 +3217,15 @@ pub(crate) fn brep_body(
         } else {
             &edge.start
         };
-        let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.model.loops, coedge)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "coedge {} is absent from its owning loop ring",
-                    coedge.id
-                ))
-            })?;
+        let (next, previous) =
+            cadmpeg_ir::topology::coedge_ring_neighbors(&ir.geometry.loops, coedge).ok_or_else(
+                || {
+                    CodecError::malformed(format_args!(
+                        "coedge {} is absent from its owning loop ring",
+                        coedge.id
+                    ))
+                },
+            )?;
         for value in [
             0,
             loops[&coedge.owner_loop],
@@ -3232,9 +3247,9 @@ pub(crate) fn brep_body(
             },
         );
     }
-    for lp in &ir.model.loops {
+    for lp in &ir.geometry.loops {
         let face = ir
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == lp.face)
@@ -3264,7 +3279,7 @@ pub(crate) fn brep_body(
             be16(&mut out, value);
         }
     }
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         tag(&mut out, 0x0e);
         be16(&mut out, faces[&face.id]);
         be32(&mut out, 0);
@@ -3336,19 +3351,19 @@ fn write_body_hierarchy(
         schema_32001,
     } = *identities;
     let shells = ir
-        .model
+        .geometry
         .shells
         .iter()
         .map(|shell| (shell.id.clone(), shell))
         .collect::<HashMap<_, _>>();
     let regions = ir
-        .model
+        .geometry
         .regions
         .iter()
         .map(|region| (region.id.clone(), region))
         .collect::<HashMap<_, _>>();
     let mut assigned = HashSet::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         let root = take_attr(next)?;
         let mut native_regions = Vec::new();
         for region_id in &body.regions {
@@ -3421,7 +3436,7 @@ fn write_body_hierarchy(
         root_refs[1..=native_regions.len()].copy_from_slice(&native_regions);
         entity51(out, 2, root, 0x0017, &root_refs)?;
     }
-    if assigned.len() != ir.model.faces.len() {
+    if assigned.len() != ir.geometry.faces.len() {
         return Err(CodecError::Malformed(
             "face is not assigned to a body".into(),
         ));
@@ -3467,19 +3482,19 @@ fn write_typed_body_hierarchy(
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let region_attrs = ir
-        .model
+        .geometry
         .regions
         .iter()
         .map(|region| Ok((region.id.clone(), take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let shell_attrs = ir
-        .model
+        .geometry
         .shells
         .iter()
         .map(|shell| Ok((shell.id.clone(), take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut face_shells = HashMap::new();
-    for shell in &ir.model.shells {
+    for shell in &ir.geometry.shells {
         let shell_attr = shell_attrs[&shell.id];
         for face in shell.faces() {
             if face_shells.insert(face.clone(), shell_attr).is_some() {
@@ -3490,7 +3505,7 @@ fn write_typed_body_hierarchy(
         }
     }
 
-    for (index, body) in ir.model.bodies.iter().enumerate() {
+    for (index, body) in ir.geometry.bodies.iter().enumerate() {
         let body_attr = body_attrs[&body.id];
         let first_region = body
             .regions
@@ -3498,7 +3513,7 @@ fn write_typed_body_hierarchy(
             .ok_or_else(|| CodecError::Malformed("body has no typed region".into()))?;
         let first_region = region_attrs[first_region];
         let first_shell = ir
-            .model
+            .geometry
             .regions
             .iter()
             .find(|region| region.id.as_str() == body.regions[0].as_str())
@@ -3543,16 +3558,16 @@ fn write_typed_body_hierarchy(
         }
     }
 
-    for (index, shell) in ir.model.shells.iter().enumerate() {
+    for (index, shell) in ir.geometry.shells.iter().enumerate() {
         let body = ir
-            .model
+            .geometry
             .regions
             .iter()
             .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
             .map(|region| &region.body)
             .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
         let region = ir
-            .model
+            .geometry
             .regions
             .iter()
             .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
@@ -3575,10 +3590,10 @@ fn write_typed_body_hierarchy(
         }
     }
 
-    for (index, region) in ir.model.regions.iter().enumerate() {
+    for (index, region) in ir.geometry.regions.iter().enumerate() {
         let body = body_attrs[&region.body];
         let body_regions = ir
-            .model
+            .geometry
             .bodies
             .iter()
             .find(|candidate| candidate.id == region.body)
@@ -3620,7 +3635,7 @@ fn write_typed_body_hierarchy(
         out.push(b'S');
     }
 
-    for (index, face) in ir.model.faces.iter().enumerate() {
+    for (index, face) in ir.geometry.faces.iter().enumerate() {
         let shell = face_shells
             .get(&face.id)
             .copied()
@@ -3684,7 +3699,7 @@ pub(crate) fn face_colors(
         .map(|appearance| (&appearance.id, appearance))
         .collect::<HashMap<_, _>>();
     let mut colors = ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter_map(|face| face.color.map(|color| (face.id.clone(), color)))

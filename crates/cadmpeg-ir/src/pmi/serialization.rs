@@ -19,7 +19,6 @@ impl Serialize for PmiDimension {
             nominal: Option<PmiValue>,
             #[serde(skip_serializing_if = "Option::is_none")]
             tolerance: Option<&'a DimensionTolerance>,
-            #[serde(skip_serializing_if = "<[String]>::is_empty")]
             modifiers: &'a [String],
         }
         Wire {

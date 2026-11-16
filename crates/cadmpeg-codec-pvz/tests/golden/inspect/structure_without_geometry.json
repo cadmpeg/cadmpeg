@@ -9,28 +9,31 @@
         "header_offset": "0",
         "signature": "PV-PVS0304"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "model.pvs",
       "role": "document",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 439
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "pvs_signature": "PV-PVS0304"
         },
         "dialect": "pvz:pvs-0304"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "structure member model.pvs; 0 geometry members"
   ]

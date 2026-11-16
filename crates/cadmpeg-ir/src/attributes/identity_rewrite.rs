@@ -17,7 +17,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("body") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Body(id) => Some(id),
@@ -27,7 +27,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("face") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Face(id) => Some(id),
@@ -37,7 +37,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("shell") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Shell(id) => Some(id),
@@ -47,7 +47,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("loop") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Loop(id) => Some(id),
@@ -57,7 +57,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("coedge") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Coedge(id) => Some(id),
@@ -67,7 +67,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("edge") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Edge(id) => Some(id),
@@ -77,7 +77,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("vertex") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Vertex(id) => Some(id),

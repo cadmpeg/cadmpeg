@@ -45,7 +45,7 @@ fn all_around_scope_round_trips_components_without_sibling_leakage() {
         ir.model.pmi = vec![
             profile(
                 "around",
-                ir.model.faces[..2]
+                ir.geometry.faces[..2]
                     .iter()
                     .map(|face| PmiTarget::Face {
                         face: face.id.clone(),
@@ -56,7 +56,7 @@ fn all_around_scope_round_trips_components_without_sibling_leakage() {
             profile(
                 "ordinary",
                 vec![PmiTarget::Face {
-                    face: ir.model.faces[2].id.clone(),
+                    face: ir.geometry.faces[2].id.clone(),
                 }],
                 Vec::new(),
             ),
@@ -145,7 +145,7 @@ fn all_around_scope_reports_an_insufficient_component_graph() {
     ir.model.pmi = vec![profile(
         "around",
         vec![PmiTarget::Face {
-            face: ir.model.faces[0].id.clone(),
+            face: ir.geometry.faces[0].id.clone(),
         }],
         vec!["all_around".into()],
     )];
@@ -179,7 +179,7 @@ fn independent_size_dimensions_keep_disjoint_geometric_targets() {
             name: Some(name.into()),
             visible: None,
             targets: vec![PmiTarget::Face {
-                face: ir.model.faces[index].id.clone(),
+                face: ir.geometry.faces[index].id.clone(),
             }],
             definition: PmiDefinition::Dimension(
                 PmiDimension::new(
@@ -230,11 +230,11 @@ fn independent_size_dimensions_keep_disjoint_geometric_targets() {
     for (index, targets) in [first, second].into_iter().enumerate() {
         let face = decoded
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| targets.contains(&face.id))
             .unwrap();
-        assert_eq!(face.name, ir.model.faces[index].name);
+        assert_eq!(face.name, ir.geometry.faces[index].name);
     }
 }

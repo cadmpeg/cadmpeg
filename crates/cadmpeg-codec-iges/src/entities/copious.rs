@@ -416,12 +416,12 @@ pub(super) fn project(
                 );
 
                 ctx.charge_entities(1, "iges_geometry_copious")?;
-                ir.model
+                ir.geometry
                     .points
                     .push(Point::new(point.clone(), position, None));
 
                 ctx.charge_entities(1, "iges_geometry_copious")?;
-                ir.model.vertices.push(Vertex {
+                ir.geometry.vertices.push(Vertex {
                     id: vertex.clone(),
                     point,
                     tolerance: None,
@@ -515,24 +515,24 @@ pub(super) fn project(
         let edge = crate::ids::edge(&stem);
 
         ctx.charge_entities(1, "iges_geometry_copious")?;
-        ir.model
+        ir.geometry
             .points
             .push(Point::new(start_point.clone(), start, None));
 
         ctx.charge_entities(1, "iges_geometry_copious")?;
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: start_vertex.clone(),
             point: start_point,
             tolerance: topology_tolerance,
         });
         if entry.form != 63 {
             ctx.charge_entities(1, "iges_geometry_copious")?;
-            ir.model
+            ir.geometry
                 .points
                 .push(Point::new(end_point.clone(), end, None));
 
             ctx.charge_entities(1, "iges_geometry_copious")?;
-            ir.model.vertices.push(Vertex {
+            ir.geometry.vertices.push(Vertex {
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: topology_tolerance,
@@ -550,7 +550,7 @@ pub(super) fn project(
             .and_then(|knots| NurbsCurve::from_checked_lanes(1, knots, positions, None, false));
 
         ctx.charge_entities(1, "iges_geometry_copious")?;
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.map_err(
@@ -560,7 +560,7 @@ pub(super) fn project(
         });
 
         ctx.charge_entities(1, "iges_geometry_copious")?;
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve),
