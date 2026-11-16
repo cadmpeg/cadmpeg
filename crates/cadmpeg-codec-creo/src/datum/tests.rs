@@ -814,3 +814,20 @@ fn named_plane_packed_id_stops_at_a_named_record_header() {
     let data = b"\xe0\x01geom_id\0\xc0\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
     assert!(named_plane(data).is_none());
 }
+
+#[test]
+fn named_plane_keeps_reference_identifiers_when_the_payload_keeps_the_compact_reading() {
+    // The packed feat_id c5 10 20 overfills the two-slot frame, so the payload
+    // keeps the one- and two-byte reading.
+    let mut data =
+        b"srf_array\0\xf8\x02\x07\x22\x04\x01\x00\x00\x05\x22\xc5\x10\x20\x01\x00\x00".to_vec();
+    data.extend_from_slice(
+        b"\xe0\x01geom_id\0\xc0\x4e\x20\xe0\x01geom_type\0\x22\
+        \xe0\x01feat_id\0\xc0\x42\x68\xe0\x01orient\0\x01\
+        \xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00\
+        \xe0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\
+        \x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0",
+    );
+    assert!(!crate::surface::packed_reading_chosen(&data));
+    assert!(named_plane(&data).is_none());
+}

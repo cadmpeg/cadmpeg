@@ -3360,64 +3360,106 @@ fn framed_rows(candidates: Vec<SurfaceRow>, frames: &[SurfaceArrayFrame]) -> Vec
     }
 }
 
+/// Boundary filters whose kept rows decide the reading.
+const READING_CHOICE_BOUNDARY_FILTERS: [&[BoundaryType]; 2] = [
+    BOUNDARY_TYPES,
+    &[BoundaryType::Code00, BoundaryType::Code06],
+];
+
+/// The two readings of one payload.
+struct RowReadings {
+    packed: Vec<SurfaceRow>,
+    compact: Vec<SurfaceRow>,
+    frames: Vec<SurfaceArrayFrame>,
+}
+
+impl RowReadings {
+    fn new(payload: &[u8]) -> Self {
+        Self {
+            packed: row_candidates(payload, row_prefix::RowReading::Packed),
+            compact: row_candidates(payload, row_prefix::RowReading::Compact),
+            frames: surface_array_frames(payload).collect(),
+        }
+    }
+
+    /// The start of the counted frame that holds `row`.
+    fn frame_of(&self, row: &SurfaceRow) -> Option<usize> {
+        self.frames
+            .iter()
+            .find(|frame| row.offset >= frame.start && row.offset < frame.end)
+            .map(|frame| frame.start)
+    }
+
+    /// The rows a reading keeps with `boundary_types`.
+    fn kept(&self, candidates: &[SurfaceRow], boundary_types: &[BoundaryType]) -> Vec<SurfaceRow> {
+        framed_rows(
+            candidates
+                .iter()
+                .filter(|row| boundary_types.contains(&row.boundary_type))
+                .cloned()
+                .collect(),
+            &self.frames,
+        )
+    }
+
+    /// Whether the packed reading keeps, under every choice filter, at least
+    /// as many rows as the one- and two-byte reading in every counted frame
+    /// and outside the frames.
+    fn packed_chosen(&self) -> bool {
+        READING_CHOICE_BOUNDARY_FILTERS
+            .iter()
+            .all(|boundary_types| {
+                let packed = self.kept(&self.packed, boundary_types);
+                let compact = self.kept(&self.compact, boundary_types);
+                self.frames
+                    .iter()
+                    .map(|frame| Some(frame.start))
+                    .chain(std::iter::once(None))
+                    .all(|region| {
+                        let count = |rows: &[SurfaceRow]| {
+                            rows.iter()
+                                .filter(|row| self.frame_of(row) == region)
+                                .count()
+                        };
+                        count(&packed) >= count(&compact)
+                    })
+            })
+    }
+}
+
+/// Whether the payload keeps the packed `c0..df XX YY` reading of its rows.
+pub(crate) fn packed_reading_chosen(payload: &[u8]) -> bool {
+    RowReadings::new(payload).packed_chosen()
+}
+
 /// Rows with `boundary_types`, and the rows the packed reading replaces.
 ///
-/// The choice reads candidates of every boundary type. The payload keeps its
-/// packed reading when, in every counted frame and outside them, the packed
-/// candidates are at least as many as the one- and two-byte candidates, a
-/// frame that keeps its one- and two-byte candidates also keeps its packed
-/// ones, and one- and two-byte candidates outside the frames stay kept.
+/// The payload keeps its packed reading when, for every boundary filter in
+/// [`READING_CHOICE_BOUNDARY_FILTERS`], it keeps at least as many rows as the
+/// one- and two-byte reading in every counted frame and outside the frames.
 /// Otherwise it keeps the one- and two-byte reading.
 fn rows_and_packed_readings(
     payload: &[u8],
     boundary_types: &[BoundaryType],
 ) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
-    let packed = row_candidates(payload, row_prefix::RowReading::Packed);
-    let compact = row_candidates(payload, row_prefix::RowReading::Compact);
-    let frames: Vec<SurfaceArrayFrame> = surface_array_frames(payload).collect();
-    let frame_of = |row: &SurfaceRow| {
-        frames
-            .iter()
-            .find(|frame| row.offset >= frame.start && row.offset < frame.end)
-            .map(|frame| frame.start)
-    };
-    let count_in = |rows: &[SurfaceRow], start: Option<usize>| {
-        rows.iter().filter(|row| frame_of(row) == start).count()
-    };
-    let packed_admissible = frames
-        .iter()
-        .map(|frame| (Some(frame.start), Some(frame.count)))
-        .chain(std::iter::once((None, None)))
-        .all(|(start, count)| {
-            let packed_count = count_in(&packed, start);
-            let compact_count = count_in(&compact, start);
-            packed_count >= compact_count
-                && count.is_none_or(|count| packed_count <= count || compact_count > count)
-        });
-    let framed = |rows: &[SurfaceRow]| rows.iter().any(|row| frame_of(row).is_some());
-    let keeps_unframed_rows = framed(&packed) == framed(&compact) || count_in(&compact, None) == 0;
-    let with_boundaries = |rows: Vec<SurfaceRow>| -> Vec<SurfaceRow> {
-        rows.into_iter()
-            .filter(|row| boundary_types.contains(&row.boundary_type))
-            .collect()
-    };
-    let compact_rows = framed_rows(with_boundaries(compact), &frames);
-    if !(packed_admissible && keeps_unframed_rows) {
+    let readings = RowReadings::new(payload);
+    let compact_rows = readings.kept(&readings.compact, boundary_types);
+    if !readings.packed_chosen() {
         return (compact_rows, Vec::new());
     }
-    let packed_rows = framed_rows(with_boundaries(packed), &frames);
+    let packed_rows = readings.kept(&readings.packed, boundary_types);
     let mut replaced = BTreeMap::<Option<usize>, usize>::new();
     for row in compact_rows.iter().filter(|row| !packed_rows.contains(row)) {
-        *replaced.entry(frame_of(row)).or_default() += 1;
+        *replaced.entry(readings.frame_of(row)).or_default() += 1;
     }
-    let readings = replaced
+    let replaced = replaced
         .into_iter()
         .map(|(frame_start, replaced)| PackedRowReading {
             frame_start,
             replaced,
         })
         .collect();
-    (packed_rows, readings)
+    (packed_rows, replaced)
 }
 
 /// Rows of every `srf_array` frame, and the rows the packed reading replaces.

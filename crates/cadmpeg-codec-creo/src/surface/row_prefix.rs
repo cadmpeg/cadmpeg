@@ -109,10 +109,17 @@ fn named_header_limit(payload: &[u8], offset: usize) -> usize {
         .unwrap_or(payload.len())
 }
 
-/// A named-record row identifier: the packed tier, ending before the next
-/// named-record header, or a reference identifier.
-pub(crate) fn named_row_identifier(payload: &[u8], offset: usize) -> Option<(u32, usize)> {
-    packed_field(payload, offset, named_header_limit(payload, offset))
+/// A named-record row identifier: with `packed`, the packed tier ending
+/// before the next named-record header; otherwise, or when that fails, a
+/// reference identifier.
+pub(crate) fn named_row_identifier(
+    payload: &[u8],
+    offset: usize,
+    packed: bool,
+) -> Option<(u32, usize)> {
+    packed
+        .then(|| packed_field(payload, offset, named_header_limit(payload, offset)))
+        .flatten()
         .or_else(|| psb::reference_id(payload, offset).ok())
 }
 

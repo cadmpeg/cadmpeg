@@ -379,6 +379,7 @@ fn positional_plane(
 /// Decode a named datum from its matching outline coordinates.
 pub(crate) fn named_plane(payload: &[u8]) -> Option<DatumPlaneRecord> {
     let marker = b"outline\0\xf9\x02\x03";
+    let packed = crate::surface::packed_reading_chosen(payload);
     let (outline, id, feature_id) = (|| {
         let outline = find(payload, marker, 0)?;
         let id_marker = b"\xe0\x01geom_id\0";
@@ -397,10 +398,10 @@ pub(crate) fn named_plane(payload: &[u8]) -> Option<DatumPlaneRecord> {
             .checked_sub(2)
             .filter(|start| payload.get(*start) == Some(&crate::psb::token::NAMED_RECORD))
             .unwrap_or(outline);
-        let (id, id_end) = named_row_identifier(payload, id_start)?;
+        let (id, id_end) = named_row_identifier(payload, id_start, packed)?;
         (id_end <= feature_field_start).then_some(())?;
         let feature_start = feature_at + feature_marker.len();
-        let (feature_id, feature_end) = named_row_identifier(payload, feature_start)?;
+        let (feature_id, feature_end) = named_row_identifier(payload, feature_start, packed)?;
         (feature_end <= outline_field_start).then_some(())?;
         Some((outline, id, feature_id))
     })()?;
