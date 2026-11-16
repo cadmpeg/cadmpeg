@@ -3,6 +3,9 @@
 //! written again; the two texts are equal. Their stated wire forms, and
 //! their schemas.
 
+use std::collections::BTreeMap;
+use std::path::Path;
+
 use serde_json::json;
 
 use super::*;
@@ -11,6 +14,7 @@ use crate::design::ops::shared::tests::{
     corner_transition_samples, helix_samples, spine_limits_samples, text_content_samples,
     tool_disposition_samples,
 };
+use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
 
 fn patch_samples() -> Vec<Patch> {
     vec![
@@ -412,7 +416,7 @@ fn boundary_fill_samples() -> Vec<BoundaryFill> {
             cap_planar: Some(lit(true)),
             merge: Some(lit(true)),
             tools_after: Some(tool_disposition_samples().remove(0)),
-            boolean: Some(Boolean::NewBody {}),
+            boolean: Some(Boolean::NewBody),
             native_options: native_options(),
             source_settings: native_options(),
         },
@@ -748,7 +752,7 @@ fn mesh_cut_samples() -> Vec<MeshCut> {
     vec![
         MeshCut::Trim { flip: Some(true) },
         MeshCut::Trim { flip: None },
-        MeshCut::SplitBodies {},
+        MeshCut::SplitBodies,
     ]
 }
 
@@ -863,7 +867,7 @@ fn each_surface_enum_has_its_tag_form() {
         json!({"kind": "adjacent"})
     );
     assert_eq!(
-        to_value(&MeshCut::SplitBodies {}),
+        to_value(&MeshCut::SplitBodies),
         json!({"kind": "split_bodies"})
     );
     assert_eq!(to_value(&MeshKind::Repair), json!({"kind": "repair"}));
@@ -874,6 +878,21 @@ fn each_surface_enum_has_its_tag_form() {
     refuses::<FaceReference>(r#"{"kind": "adjacent", "alternate": null}"#);
     refuses::<MeshCut>(r#"{"kind": "split_bodies", "extra": 1}"#);
     refuses::<MeshKind>(r#"{"kind": "remesh", "value": {"shape": null}}"#);
+    refuses::<MeshCut>(r#"{"kind": "split_bodies", "value": null}"#);
+}
+
+/// §2.5: each value has one spelling, so a unit variant of an adjacently
+/// tagged enum is its `kind` alone and refuses a stated `value`.
+#[test]
+fn every_adjacent_unit_variant_refuses_a_stated_value() {
+    let readers: [(&'static str, Reader); 4] = [
+        ("ExtendLimit", reads::<ExtendLimit>),
+        ("ExtendMethod", reads::<ExtendMethod>),
+        ("MeshConversion", reads::<MeshConversion>),
+        ("MeshKind", reads::<MeshKind>),
+    ];
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/design/ops/surface.rs");
+    assert_units_refuse_value(&[file], &BTreeMap::from(readers));
 }
 
 /// A line section's two extents are a fixed pair whose members may be

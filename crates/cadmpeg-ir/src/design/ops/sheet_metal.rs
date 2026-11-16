@@ -193,9 +193,11 @@ pub enum BendTableValue {
     /// The length of the bend's neutral arc, in the document's length unit,
     /// which the flat pattern adds to the flanges measured to the bend's
     /// tangent lines.
-    Allowance {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Allowance,
     /// The K-factor the bend takes.
-    KFactor {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    KFactor,
 }
 
 /// Where the two flange lengths of a bend deduction or compensation run to.
@@ -324,8 +326,10 @@ pub enum BendQuantity {
         flanges: Option<FlangeMeasure>,
     },
     /// As a bend table's allowance cell.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Allowance,
     /// As a bend table's K-factor cell.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     KFactor,
     /// A source quantity whose meaning is not established.
     Native(NonBlankString),
@@ -784,7 +788,8 @@ pub enum SketchedRipDepth {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RipWidth {
     /// Nothing: the two lips coincide.
-    Tear {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Tear,
     /// The lips `gap` apart.
     Gap {
         /// The gap.
@@ -866,7 +871,8 @@ pub enum ConvertFrom {
     },
     /// A solid that is already walls `thickness` thick, its walls recognised as
     /// the sheet and its cylindrical walls as the bends.
-    ThinSolid {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    ThinSolid,
 }
 
 /// A rip of a conversion, centred on its path.
@@ -903,9 +909,11 @@ pub enum ConvertSide {
 pub enum CornerBreak {
     /// Each corner rounded, tangent to both edges that meet there, its axis
     /// normal to the sheet.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Round,
     /// Each corner cut at 45 degrees, both legs equal, the cut face normal to
     /// the sheet.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Chamfer,
     /// A source shape whose meaning is not established.
     Native(NonBlankString),
@@ -1119,7 +1127,8 @@ pub enum StampForm {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BendSet {
     /// Every bend.
-    All {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    All,
     /// The selected bends.
     Selected(SetSelection),
 }
@@ -1210,8 +1219,10 @@ pub struct Relief {
 )]
 pub enum ReliefShape {
     /// The governing rule's relief, chosen explicitly.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Rule,
     /// A slot with half-round ends.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Obround,
     /// A source shape whose meaning is not established.
     Native(NonBlankString),
@@ -1319,6 +1330,7 @@ pub enum FlangeHeight {
 )]
 pub enum FlangeWidth {
     /// The edge's length.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Full,
     /// A width centred on the edge's midpoint.
     Centered {
@@ -1444,7 +1456,8 @@ pub enum LineSide {
 pub enum DoubleBend {
     /// The two edges joined where they lie by two equal bends, tangent to each
     /// other or with a flat between, trimming or extending neither face.
-    EqualBends {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    EqualBends,
     /// The edge `fixed` names kept, the other face trimmed or extended, and the
     /// two joined by two bends of 45°, with a flat between where they are not
     /// tangent.

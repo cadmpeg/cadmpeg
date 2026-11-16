@@ -4,10 +4,13 @@
 //! their schemas.
 
 pub(in crate::design::ops) mod fixtures;
+use std::collections::BTreeMap;
+use std::path::Path;
 
 use serde_json::json;
 
 use super::*;
+use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
 use fixtures::*;
 
 pub(in crate::design::ops) fn text_content_samples() -> Vec<TextContent> {
@@ -493,7 +496,7 @@ pub(in crate::design::ops) fn slot_position_samples() -> Vec<SlotPosition> {
 
 pub(in crate::design::ops) fn path_position_samples() -> Vec<PathPosition> {
     vec![
-        PathPosition::Free {},
+        PathPosition::Free,
         PathPosition::Distance {
             distance: lit(nonnegative(0.5)),
             from_end: Some(lit(true)),
@@ -515,7 +518,7 @@ pub(in crate::design::ops) fn path_position_samples() -> Vec<PathPosition> {
 
 pub(in crate::design::ops) fn path_axis_control_samples() -> Vec<PathAxisControl> {
     vec![
-        PathAxisControl::Free {},
+        PathAxisControl::Free,
         PathAxisControl::FollowPath {
             axis: FrameAxis::Z,
             flip: Some(lit(true)),
@@ -529,7 +532,7 @@ pub(in crate::design::ops) fn path_axis_control_samples() -> Vec<PathAxisControl
 
 pub(in crate::design::ops) fn path_roll_control_samples() -> Vec<PathRollControl> {
     vec![
-        PathRollControl::Free {},
+        PathRollControl::Free,
         PathRollControl::UpVector {
             vector: Box::new(direction()),
             axis: FrameAxis::Z,
@@ -759,6 +762,35 @@ fn each_shared_enum_has_its_tag_form() {
     refuses::<JointKind>(r#"{"kind": "coincident", "value": {"offset": null}}"#);
     refuses::<TextContent>(r#"{"content": "A", "font": null}"#);
     refuses::<TextContent>(r#"{"content": "A", "size": 1.0}"#);
+}
+
+/// §2.5: each value has one spelling, so a unit variant of an adjacently
+/// tagged enum is its `kind` alone and refuses a stated `value`.
+#[test]
+fn every_adjacent_unit_variant_refuses_a_stated_value() {
+    let readers: [(&'static str, Reader); 8] = [
+        ("Alignment", reads::<Alignment>),
+        ("CornerTransition", reads::<CornerTransition>),
+        ("JointKind", reads::<JointKind>),
+        ("JointMotion", reads::<JointMotion>),
+        ("Limit", reads::<Limit<Length>>),
+        ("SlotPosition", reads::<SlotPosition>),
+        ("TextAlign", reads::<TextAlign>),
+        ("WidthMode", reads::<WidthMode>),
+    ];
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/design/ops/shared.rs");
+    assert_units_refuse_value(&[file], &BTreeMap::from(readers));
+}
+
+/// An internally tagged unit variant is its `kind` alone; a key beside it
+/// refuses.
+#[test]
+fn internal_unit_variants_are_their_kind_alone() {
+    for extra in [r#""value": null"#, r#""value": {}"#, r#""x": 1"#] {
+        refuses::<PathPosition>(&format!(r#"{{"kind": "free", {extra}}}"#));
+        refuses::<PathAxisControl>(&format!(r#"{{"kind": "free", {extra}}}"#));
+        refuses::<PathRollControl>(&format!(r#"{{"kind": "free", {extra}}}"#));
+    }
 }
 
 #[cfg(feature = "schema")]

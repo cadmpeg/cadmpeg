@@ -19,7 +19,7 @@ use crate::design::options::{
     SheetOutput, SolidOutput,
 };
 use crate::design::selection::{Continuity, OrderedSelection, SetSelection};
-use crate::design::topology::Topology;
+use crate::document::Topology;
 use crate::scalar::{Angle, Fraction, Length, NonNegativeLength, PositiveLength, PositiveReal};
 use crate::sketches::SketchId;
 
@@ -274,6 +274,7 @@ pub enum ExtendLimit {
     /// To the carrier's natural boundary: the face covers its surface's
     /// untrimmed domain, its holes and outer trims removed, or the loops
     /// `edges` picks only, and a wire's edge covers its curve.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Natural,
     /// A source limit whose meaning is not established.
     Native(NonBlankString),
@@ -290,12 +291,16 @@ pub enum ExtendLimit {
 )]
 pub enum ExtendMethod {
     /// It continues the underlying surface.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Natural,
     /// It extends linearly.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Tangent,
     /// It extrapolates with curvature continuity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Curvature,
     /// It extends normal to the boundary.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Perpendicular,
     /// A source method whose meaning is not established.
     Native(NonBlankString),
@@ -907,7 +912,7 @@ pub enum CurveDefinition {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_continuity"
+            deserialize_with = "deserialize_continuity_field"
         )]
         continuity: Option<Continuity>,
     },
@@ -1024,7 +1029,7 @@ pub struct BridgeEnd {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_continuity"
+        deserialize_with = "deserialize_continuity_field"
     )]
     pub continuity: Option<Continuity>,
     /// The tangent magnitude.
@@ -1205,6 +1210,7 @@ pub enum MeshKind {
         target: Option<ReduceTarget>,
     },
     /// Each mesh body repaired.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Repair,
     /// A new triangulation of each mesh body.
     Remesh {
@@ -1247,9 +1253,11 @@ pub enum MeshKind {
         op: Option<BooleanOp>,
     },
     /// The mesh bodies removed from the state.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Remove,
     /// The orientation of each mesh body reversed: every triangle's winding and
     /// every normal, so that its outward side becomes its inward side.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ReverseNormals,
     /// A B-rep body made of each mesh body.
     Convert {
@@ -1282,7 +1290,8 @@ pub enum MeshCut {
         flip: Option<bool>,
     },
     /// Both pieces, each a mesh body of its own.
-    SplitBodies {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    SplitBodies,
 }
 
 /// How a kept piece of a mesh plane cut is closed at the cut.
@@ -1326,6 +1335,7 @@ pub enum ReduceTarget {
 )]
 pub enum MeshConversion {
     /// Each facet of the mesh becomes a planar face of the body.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Faceted,
     /// A source method whose meaning is not established.
     Native(NonBlankString),
@@ -1338,7 +1348,9 @@ cadmpeg_core::named_optional_field!(deserialize_boolean<T>, T, "boolean");
 cadmpeg_core::named_optional_field!(deserialize_cap_planar<T>, T, "cap_planar");
 cadmpeg_core::named_optional_field!(deserialize_closed<T>, T, "closed");
 cadmpeg_core::named_optional_field!(deserialize_condition<T>, T, "condition");
-cadmpeg_core::named_optional_field!(deserialize_continuity<T>, T, "continuity");
+// The deny census resolves this reader by bare name, so it is named apart from
+// `features::deserialize_continuity`.
+cadmpeg_core::named_optional_field!(deserialize_continuity_field<T>, T, "continuity");
 cadmpeg_core::named_optional_field!(deserialize_corner<T>, T, "corner");
 cadmpeg_core::named_optional_field!(deserialize_curvature_ratio<T>, T, "curvature_ratio");
 cadmpeg_core::named_optional_field!(deserialize_cut<T>, T, "cut");

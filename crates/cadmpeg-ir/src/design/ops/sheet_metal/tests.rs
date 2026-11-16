@@ -3,12 +3,16 @@
 //! written again; the two texts are equal. Their stated wire forms, and
 //! their schemas.
 
+use std::collections::BTreeMap;
+use std::path::Path;
+
 use serde_json::json;
 
 use super::*;
 use crate::design::ops::shared::tests::fixtures::*;
 use crate::design::ops::shared::tests::{joint_samples, pair_element_samples};
 use crate::design::options::SymmetricMeasure;
+use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
 
 fn sheet_metal_samples() -> Vec<SheetMetal> {
     vec![
@@ -118,8 +122,8 @@ fn bend_table_value_samples() -> Vec<BendTableValue> {
             flanges: Some(flange_measure_samples().remove(0)),
         },
         BendTableValue::Deduction { flanges: None },
-        BendTableValue::Allowance {},
-        BendTableValue::KFactor {},
+        BendTableValue::Allowance,
+        BendTableValue::KFactor,
     ]
 }
 
@@ -408,7 +412,7 @@ fn sketched_rip_depth_samples() -> Vec<SketchedRipDepth> {
 
 fn rip_width_samples() -> Vec<RipWidth> {
     vec![
-        RipWidth::Tear {},
+        RipWidth::Tear,
         RipWidth::Gap {
             gap: lit(positive(2.0)),
             side: Some(kerf_side_samples().remove(0)),
@@ -459,7 +463,7 @@ fn convert_from_samples() -> Vec<ConvertFrom> {
             side: None,
             bends: Vec::new(),
         },
-        ConvertFrom::ThinSolid {},
+        ConvertFrom::ThinSolid,
     ]
 }
 
@@ -599,7 +603,7 @@ fn stamp_form_samples() -> Vec<StampForm> {
 }
 
 fn bend_set_samples() -> Vec<BendSet> {
-    vec![BendSet::All {}, BendSet::Selected(selection(1))]
+    vec![BendSet::All, BendSet::Selected(selection(1))]
 }
 
 fn bend_spec_samples() -> Vec<BendSpec> {
@@ -750,7 +754,7 @@ fn line_side_samples() -> Vec<LineSide> {
 
 fn double_bend_samples() -> Vec<DoubleBend> {
     vec![
-        DoubleBend::EqualBends {},
+        DoubleBend::EqualBends,
         DoubleBend::Deg45 {
             fixed: Some(pair_element_samples().remove(0)),
         },
@@ -883,9 +887,9 @@ fn each_sheet_metal_enum_has_its_tag_form() {
         to_value(&SheetMetalKind::FlatPattern { fixed: None }),
         json!({"kind": "flat_pattern", "value": {}})
     );
-    assert_eq!(to_value(&BendSet::All {}), json!({"kind": "all"}));
+    assert_eq!(to_value(&BendSet::All), json!({"kind": "all"}));
     assert_eq!(
-        to_value(&ConvertFrom::ThinSolid {}),
+        to_value(&ConvertFrom::ThinSolid),
         json!({"kind": "thin_solid"})
     );
     assert_eq!(to_value(&FlangeWidth::Full), json!({"kind": "full"}));
@@ -911,6 +915,28 @@ fn each_sheet_metal_enum_has_its_tag_form() {
     refuses::<ConvertFrom>(r#"{"kind": "thin_solid", "side": "inside"}"#);
     refuses::<OutsideGrid>(r#"{"kind": "backup_k_factor", "k_factor": null}"#);
     refuses::<BendSpec>(r#"{"radius_side": null}"#);
+    for extra in [r#""value": null"#, r#""value": {}"#, r#""x": 1"#] {
+        refuses::<BendTableValue>(&format!(r#"{{"kind": "allowance", {extra}}}"#));
+        refuses::<BendTableValue>(&format!(r#"{{"kind": "k_factor", {extra}}}"#));
+        refuses::<RipWidth>(&format!(r#"{{"kind": "tear", {extra}}}"#));
+        refuses::<ConvertFrom>(&format!(r#"{{"kind": "thin_solid", {extra}}}"#));
+        refuses::<BendSet>(&format!(r#"{{"kind": "all", {extra}}}"#));
+        refuses::<DoubleBend>(&format!(r#"{{"kind": "equal_bends", {extra}}}"#));
+    }
+}
+
+/// §2.5: each value has one spelling, so a unit variant of an adjacently
+/// tagged enum is its `kind` alone and refuses a stated `value`.
+#[test]
+fn every_adjacent_unit_variant_refuses_a_stated_value() {
+    let readers: [(&'static str, Reader); 4] = [
+        ("BendQuantity", reads::<BendQuantity>),
+        ("CornerBreak", reads::<CornerBreak>),
+        ("FlangeWidth", reads::<FlangeWidth>),
+        ("ReliefShape", reads::<ReliefShape>),
+    ];
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/design/ops/sheet_metal.rs");
+    assert_units_refuse_value(&[file], &BTreeMap::from(readers));
 }
 
 /// A bend table block's grid is one row per angle, one column per radius.
