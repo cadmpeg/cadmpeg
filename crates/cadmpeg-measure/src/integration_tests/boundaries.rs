@@ -39,7 +39,7 @@ fn edges_missing_a_vertex_within_their_summed_tolerances_close_the_loop() {
     let mut ir = builder.finish(BodyKind::Sheet);
     for (side, shift) in [(0, [0.0, -miss]), (1, [miss, 0.0])] {
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter_mut()
             .find(|edge| edge.id == sides[side].0)
@@ -47,7 +47,7 @@ fn edges_missing_a_vertex_within_their_summed_tolerances_close_the_loop() {
         edge.tolerance = PositiveReal::new(tolerance);
         let curve_id = edge.carrier.curve().cloned().expect("curve");
         let curve = ir
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == curve_id)

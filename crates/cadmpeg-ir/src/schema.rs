@@ -267,29 +267,24 @@ macro_rules! impl_entity_schema {
     };
 }
 
-impl_entity_schema!(crate::topology::Body, Body, id; id, kind, regions, transform, name, color, visible);
-impl_entity_schema!(crate::topology::Region, Region, id; id, body, shells);
-impl EntitySchema for crate::topology::Shell {
-    const KIND: EntityKind = EntityKind::Shell;
-    fn identity(&self) -> &str {
-        self.id.as_str()
-    }
-}
-impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance);
-impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary);
-impl_entity_schema!(crate::topology::Coedge, Coedge, id; id, owner_loop, edge, radial_next, sense, pcurves, use_curve);
-impl_entity_schema!(crate::topology::Edge, Edge, id; id, carrier, start, end, tolerance);
-impl_entity_schema!(crate::topology::Vertex, Vertex, id; id, point, tolerance);
+impl_entity_schema!(crate::topology::Body, Body, id; id, kind, transform, name, color, visible, native_ref);
+impl_entity_schema!(crate::topology::Region, Region, id; id, body, shells, native_ref);
+impl_entity_schema!(crate::topology::Shell, Shell, id; id, region, members, native_ref);
+impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance, native_ref);
+impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary, native_ref);
+impl_entity_schema!(crate::topology::Coedge, Coedge, id; id, owner_loop, edge, radial_next, sense, pcurves, use_curve, native_ref);
+impl_entity_schema!(crate::topology::Edge, Edge, id; id, carrier, ends, tolerance, native_ref);
+impl_entity_schema!(crate::topology::Vertex, Vertex, id; id, point, tolerance, native_ref);
 impl EntitySchema for crate::topology::Point {
     const KIND: EntityKind = EntityKind::Point;
     fn identity(&self) -> &str {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object);
-impl_entity_schema!(crate::geometry::Curve, Curve, id; id, geometry, parameter_range, source_object);
-impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, cage, source_object);
-impl_entity_schema!(crate::geometry::pcurve::Pcurve, Pcurve, id; id, geometry, metadata);
+impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object, native_ref);
+impl_entity_schema!(crate::geometry::Curve, Curve, id; id, geometry, parameter_range, source_object, native_ref);
+impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, cage, source_object, native_ref);
+impl_entity_schema!(crate::geometry::pcurve::Pcurve, Pcurve, id; id, geometry, metadata, native_ref);
 impl EntitySchema for crate::geometry::ProceduralSurface {
     const KIND: EntityKind = EntityKind::ProceduralSurface;
 

@@ -17,20 +17,20 @@ pub(crate) fn assert_every_entity_has_v1_annotation(ir: &CadIr, annotations: &An
         };
     }
 
-    check!(&ir.model.bodies);
-    check!(&ir.model.regions);
-    check!(&ir.model.shells);
-    check!(&ir.model.faces);
-    check!(&ir.model.loops);
-    check!(&ir.model.coedges);
-    check!(&ir.model.edges);
-    check!(&ir.model.vertices);
-    check!(&ir.model.points);
-    check!(&ir.model.surfaces);
-    check!(&ir.model.curves);
-    check!(&ir.model.pcurves);
-    check!(&ir.model.procedural_curves);
-    check!(&ir.model.procedural_surfaces);
+    check!(&ir.geometry.bodies);
+    check!(&ir.geometry.regions);
+    check!(&ir.geometry.shells);
+    check!(&ir.geometry.faces);
+    check!(&ir.geometry.loops);
+    check!(&ir.geometry.coedges);
+    check!(&ir.geometry.edges);
+    check!(&ir.geometry.vertices);
+    check!(&ir.geometry.points);
+    check!(&ir.geometry.surfaces);
+    check!(&ir.geometry.curves);
+    check!(&ir.geometry.pcurves);
+    check!(&ir.geometry.procedural_curves);
+    check!(&ir.geometry.procedural_surfaces);
     let unknowns = ir.native_unknowns("catia").unwrap();
     check!(&unknowns);
     assert_eq!(annotations.provenance.len(), entity_count);

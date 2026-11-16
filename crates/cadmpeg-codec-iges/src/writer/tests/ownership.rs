@@ -33,10 +33,11 @@ fn rectangle() -> CadIr {
     .unwrap();
     let mut ir = CadIr::empty();
     let id = "test:model:surface#rectangle".try_into().unwrap();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(basis)),
         source_object: None,
+        native_ref: None,
     });
     ir
 }
@@ -58,8 +59,8 @@ fn round_trip(ir: &CadIr) -> cadmpeg_ir::codec::DecodeResult {
 #[test]
 fn exact_surface_export_keeps_its_active_rectangle() {
     let mut ir = rectangle();
-    let owner = ir.model.surfaces[0].id.clone();
-    ir.model
+    let owner = ir.geometry.surfaces[0].id.clone();
+    ir.geometry
         .add_procedural_surface(
             &owner,
             ProceduralSurface::new(
@@ -76,7 +77,7 @@ fn exact_surface_export_keeps_its_active_rectangle() {
         .unwrap();
     let result = round_trip(&ir);
     let Some(SolvedSurfaceGeometry::Nurbs(basis)) =
-        result.ir().model.surfaces[0].geometry.solved_cache()
+        result.ir().geometry.surfaces[0].geometry.solved_cache()
     else {
         panic!("exact NURBS basis")
     };
@@ -84,7 +85,7 @@ fn exact_surface_export_keeps_its_active_rectangle() {
     assert_eq!(basis.v_knots().as_slice(), &[1.0, 1.0, 4.0, 4.0]);
     assert_eq!(basis.pole(0, 0).unwrap(), Point3::new(0.0, 2.0, 0.0));
     assert_eq!(basis.pole(1, 1).unwrap(), Point3::new(6.0, 8.0, 0.0));
-    let definition = &result.ir().model.procedural_surfaces[0];
+    let definition = &result.ir().geometry.procedural_surfaces[0];
     let ProceduralSurfaceDefinition::Exact(payload) = definition.definition() else {
         panic!("exact domain")
     };
@@ -113,11 +114,11 @@ fn support_association() -> SourceObjectAssociation {
 #[test]
 fn unowned_support_surface_and_point_are_withheld_with_loss() {
     let mut ir = rectangle();
-    let mut support = ir.model.surfaces[0].clone();
+    let mut support = ir.geometry.surfaces[0].clone();
     support.id = "test:model:surface#support".try_into().unwrap();
     support.source_object = Some(support_association());
-    ir.model.surfaces.push(support);
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.surfaces.push(support);
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
@@ -142,24 +143,24 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
     let result = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    assert!(result.ir().model.faces.is_empty());
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
+    assert!(result.ir().geometry.faces.is_empty());
     assert_eq!(
-        result.ir().model.surfaces[0]
+        result.ir().geometry.surfaces[0]
             .source_object
             .as_ref()
             .unwrap()
             .geometry_role,
         Some(SourceGeometryRole::Independent)
     );
-    assert!(result.ir().model.points.is_empty());
-    assert!(result.ir().model.vertices.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
+    assert!(result.ir().geometry.vertices.is_empty());
 }
 
 #[test]
 fn support_only_surface_export_refuses_an_empty_transfer() {
     let mut ir = rectangle();
-    ir.model.surfaces[0].source_object = Some(support_association());
+    ir.geometry.surfaces[0].source_object = Some(support_association());
     assert!(matches!(
         super::super::synthesize(&ir, IgesVersion::V5_3),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
@@ -169,7 +170,7 @@ fn support_only_surface_export_refuses_an_empty_transfer() {
 #[test]
 fn support_only_point_export_refuses_an_empty_transfer() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
@@ -189,10 +190,10 @@ fn face_owned_support_surface_remains_available_to_its_owner() {
         )
         .unwrap();
     let mut ir = decoded.ir().clone();
-    assert_eq!(ir.model.surfaces.len(), 1);
-    ir.model.surfaces[0].source_object = Some(support_association());
+    assert_eq!(ir.geometry.surfaces.len(), 1);
+    ir.geometry.surfaces[0].source_object = Some(support_association());
     ir.native = cadmpeg_ir::native::Native::default();
-    let support = ir.model.surfaces[0].id.to_string();
+    let support = ir.geometry.surfaces[0].id.to_string();
     let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
     assert!(!generated.losses.iter().any(|loss| loss.code
         == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
@@ -200,10 +201,10 @@ fn face_owned_support_surface_remains_available_to_its_owner() {
     let result = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert_eq!(
-        result.ir().model.surfaces[0]
+        result.ir().geometry.surfaces[0]
             .source_object
             .as_ref()
             .unwrap()
@@ -226,18 +227,18 @@ fn support_curve_without_topology_is_withheld_with_loss() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut curve = fixture.ir().model.curves[0].clone();
+    let mut curve = fixture.ir().geometry.curves[0].clone();
     assert!(curve.parameter_range.is_some());
     curve.source_object = Some(support_association());
-    ir.model.curves.push(curve);
+    ir.geometry.curves.push(curve);
     let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
     assert!(generated.losses.iter().any(|loss| loss.code
         == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
         && loss.message.starts_with("1 support geometry record")));
     let result = round_trip(&ir);
-    assert!(result.ir().model.curves.is_empty());
-    assert!(result.ir().model.edges.is_empty());
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert!(result.ir().geometry.curves.is_empty());
+    assert!(result.ir().geometry.edges.is_empty());
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
 }
 
 #[test]
@@ -251,8 +252,8 @@ fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir().model.curves.len(), 1);
-    assert!(decoded.ir().model.edges.is_empty());
+    assert_eq!(decoded.ir().geometry.curves.len(), 1);
+    assert!(decoded.ir().geometry.edges.is_empty());
     assert!(matches!(
         super::super::synthesize(decoded.ir(), IgesVersion::V5_3),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
@@ -268,8 +269,8 @@ fn standalone_edge_with_support_curve_is_withheld_with_counted_export_loss() {
         )
         .unwrap();
     let mut ir = decoded.ir().clone();
-    assert_eq!(ir.model.edges.len(), 1);
-    ir.model.curves[0]
+    assert_eq!(ir.geometry.edges.len(), 1);
+    ir.geometry.curves[0]
         .source_object
         .as_mut()
         .unwrap()
@@ -288,8 +289,8 @@ fn standalone_edge_with_support_curve_is_withheld_with_counted_export_loss() {
     let result = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.curves.is_empty());
-    assert!(result.ir().model.edges.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
+    assert!(result.ir().geometry.edges.is_empty());
 }
 
 #[test]
@@ -305,7 +306,7 @@ fn topology_owned_curve_preserves_support_and_independent_roles() {
     for role in [SourceGeometryRole::Support, SourceGeometryRole::Independent] {
         let mut ir = decoded.ir().clone();
         ir.native = cadmpeg_ir::native::Native::default();
-        for curve in &mut ir.model.curves {
+        for curve in &mut ir.geometry.curves {
             let mut source = support_association();
             source.geometry_role = Some(role);
             curve.source_object = Some(source);
@@ -320,15 +321,15 @@ fn topology_owned_curve_preserves_support_and_independent_roles() {
             .chunks_exact(81)
             .filter(|card| card[72] == b'D' && card[..8].trim_ascii() == b"110")
             .collect();
-        assert_eq!(curve_entries.len(), ir.model.curves.len() * 2);
+        assert_eq!(curve_entries.len(), ir.geometry.curves.len() * 2);
         assert!(curve_entries
             .chunks_exact(2)
             .all(|entry| &entry[0][64..72] == expected_status));
         let result = IgesCodec
             .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(result.ir().model.curves.len(), ir.model.curves.len());
-        assert!(result.ir().model.curves.iter().all(|curve| curve
+        assert_eq!(result.ir().geometry.curves.len(), ir.geometry.curves.len());
+        assert!(result.ir().geometry.curves.iter().all(|curve| curve
             .source_object
             .as_ref()
             .unwrap()
@@ -349,7 +350,7 @@ fn topology_owned_curve_without_a_role_is_support_of_its_edge() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     ir.native = cadmpeg_ir::native::Native::default();
-    for curve in &mut ir.model.curves {
+    for curve in &mut ir.geometry.curves {
         curve.source_object = None;
     }
     let ownership = super::super::ownership::SourceOwnership::build(&ir);
@@ -361,15 +362,15 @@ fn topology_owned_curve_without_a_role_is_support_of_its_edge() {
         .chunks_exact(81)
         .filter(|card| card[72] == b'D' && card[..8].trim_ascii() == b"110")
         .collect();
-    assert_eq!(curve_entries.len(), ir.model.curves.len() * 2);
+    assert_eq!(curve_entries.len(), ir.geometry.curves.len() * 2);
     assert!(curve_entries
         .chunks_exact(2)
         .all(|entry| &entry[0][64..72] == b"00010000"));
     let result = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), ir.model.bodies.len());
-    assert_eq!(result.ir().model.curves.len(), ir.model.curves.len());
+    assert_eq!(result.ir().geometry.bodies.len(), ir.geometry.bodies.len());
+    assert_eq!(result.ir().geometry.curves.len(), ir.geometry.curves.len());
 }
 
 #[test]
@@ -389,55 +390,53 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let mut point = free.ir().model.points[0].clone();
+        let mut point = free.ir().geometry.points[0].clone();
         point.id = "test:model:point#free".try_into().unwrap();
-        let mut vertex = free.ir().model.vertices[0].clone();
+        let mut vertex = free.ir().geometry.vertices[0].clone();
         vertex.id = "test:model:vertex#free".try_into().unwrap();
         vertex.point = point.id.clone();
-        ir.model.points.push(point);
-        ir.model.vertices.push(vertex.clone());
+        ir.geometry.points.push(point);
+        ir.geometry.vertices.push(vertex.clone());
         if let Some(body) = ir
-            .model
+            .geometry
             .bodies
             .iter()
             .find(|body| super::super::is_decoder_free_geometry_body(body))
         {
             let region = ir
-                .model
+                .geometry
                 .regions
                 .iter()
-                .find(|region| region.id == body.regions[0])
+                .find(|region| region.body == body.id)
                 .unwrap();
             let shell = ir
-                .model
+                .geometry
                 .shells
                 .iter_mut()
                 .find(|shell| shell.id == region.shells[0])
                 .unwrap();
-            let mut vertices = shell.free_vertices().to_vec();
+            let mut vertices = shell.free_vertices().cloned().collect::<Vec<_>>();
             vertices.push(vertex.id);
-            *shell = cadmpeg_ir::topology::Shell::new(
+            *shell = cadmpeg_ir::topology::Shell::with_members(
                 shell.id.clone(),
                 shell.region.clone(),
-                shell.faces().to_vec(),
-                shell.wire_edges().to_vec(),
+                shell.wire_edges().cloned().collect::<Vec<_>>(),
                 vertices,
-            )
-            .unwrap();
+            );
         } else {
-            ir.model.bodies.extend(free.ir().model.bodies.clone());
-            ir.model.regions.extend(free.ir().model.regions.clone());
-            let shell = &free.ir().model.shells[0];
-            ir.model.shells.push(
-                cadmpeg_ir::topology::Shell::new(
+            ir.geometry.bodies.extend(free.ir().geometry.bodies.clone());
+            ir.geometry
+                .regions
+                .extend(free.ir().geometry.regions.clone());
+            let shell = &free.ir().geometry.shells[0];
+            ir.geometry
+                .shells
+                .push(cadmpeg_ir::topology::Shell::with_members(
                     shell.id.clone(),
                     shell.region.clone(),
                     Vec::new(),
-                    Vec::new(),
                     vec![vertex.id],
-                )
-                .unwrap(),
-            );
+                ));
         }
         let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
         assert!(generated.losses.iter().any(|loss| loss.code
@@ -468,16 +467,16 @@ fn duplicate_carriers_on_brep_and_trimmed_sheet_paths_have_export_losses() {
             .unwrap();
         let mut ir = decoded.ir().clone();
         ir.native = cadmpeg_ir::native::Native::default();
-        let topology_edge = ir.model.coedges[0].edge.clone();
+        let topology_edge = ir.geometry.coedges[0].edge.clone();
         let mut duplicate = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id == topology_edge)
             .unwrap()
             .clone();
         duplicate.id = "test:model:edge#duplicate".try_into().unwrap();
-        ir.model.edges.push(duplicate);
+        ir.geometry.edges.push(duplicate);
         let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
         assert!(ignored.edges.contains("test:model:edge#duplicate"));
 
@@ -511,7 +510,7 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     ir.native = cadmpeg_ir::native::Native::default();
-    let pcurve = &ir.model.pcurves[0];
+    let pcurve = &ir.geometry.pcurves[0];
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
         panic!("the boundary pcurve is NURBS");
     };
@@ -531,17 +530,18 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
     )
     .unwrap();
     let curve_id: cadmpeg_ir::ids::CurveId = "test:model:curve#duplicate".try_into().unwrap();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+    ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         id: curve_id.clone(),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
             cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(carrier),
         ),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
-    let topology_edge = ir.model.coedges[0].edge.clone();
+    let topology_edge = ir.geometry.coedges[0].edge.clone();
     let mut duplicate = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id == topology_edge)
@@ -550,7 +550,7 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
     duplicate.id = "test:model:edge#duplicate".try_into().unwrap();
     duplicate.carrier =
         cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(range)).unwrap();
-    ir.model.edges.push(duplicate);
+    ir.geometry.edges.push(duplicate);
     let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
     assert!(ignored.curves.contains("test:model:curve#duplicate"));
 
@@ -605,9 +605,9 @@ fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
         let result = IgesCodec
             .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(result.ir().model.faces.len(), 1);
-        assert_eq!(result.ir().model.pcurves.len(), expected_pcurves);
-        assert_eq!(result.ir().model.edges.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
+        assert_eq!(result.ir().geometry.pcurves.len(), expected_pcurves);
+        assert_eq!(result.ir().geometry.edges.len(), 1);
     }
 }
 
@@ -640,6 +640,6 @@ fn unowned_parameter_curve_is_withheld_on_the_free_geometry_path() {
     let result = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.curves.is_empty());
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(result.ir().geometry.curves.is_empty());
+    assert_eq!(result.ir().geometry.points.len(), 1);
 }

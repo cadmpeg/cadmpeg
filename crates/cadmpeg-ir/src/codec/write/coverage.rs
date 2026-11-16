@@ -6,7 +6,7 @@
 //! the payload omits, so a drop is reported even when the backend has no code
 //! path that knows about the arena.
 
-use crate::document::Model;
+use crate::document::CadIr;
 use crate::report::loss::LossNote;
 use crate::schema::{EntityKind, EntitySchema};
 
@@ -61,10 +61,10 @@ impl ArenaCoverage {
     }
 
     /// One loss per non-empty arena this coverage omits.
-    pub(super) fn omission_losses(&self, model: &Model, format: &str) -> Vec<LossNote> {
+    pub(super) fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
         match self {
             Self::Complete => Vec::new(),
-            Self::Declared(dispositions) => dispositions.omission_losses(model, format),
+            Self::Declared(dispositions) => dispositions.omission_losses(ir, format),
         }
     }
 }
@@ -74,7 +74,7 @@ fn arena_kind<T: EntitySchema>(_: &[T]) -> EntityKind {
 }
 
 macro_rules! declare_arena_dispositions {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// One disposition for every model arena.
         ///
         /// Every field is required and the type has no default, so a new arena
@@ -95,17 +95,17 @@ macro_rules! declare_arena_dispositions {
                     .is_none_or(|disposition| disposition.carries())
             }
 
-            fn omission_losses(&self, model: &Model, format: &str) -> Vec<LossNote> {
+            fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
                 let mut losses = Vec::new();
                 $(
-                    if self.$field == ArenaDisposition::Omitted && !model.$field.is_empty() {
+                    if self.$field == ArenaDisposition::Omitted && !ir.$home.$field.is_empty() {
                         losses.push(
-                            ExportLossCode::ArenaOmitted(arena_kind(&model.$field))
+                            ExportLossCode::ArenaOmitted(arena_kind(&ir.$home.$field))
                             .note(format!(
                                 "the {format} write does not represent model arena `{}`: \
                                  {} record(s) omitted",
                                 stringify!($field),
-                                model.$field.len(),
+                                ir.$home.$field.len(),
                             )),
                         );
                     }

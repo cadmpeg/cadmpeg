@@ -194,7 +194,7 @@ fn global_numeric_fields_reject_embedded_and_trailing_blanks() {
             )
             .unwrap();
 
-        assert_eq!(result.ir().model.points.len(), 1, "{value:?}");
+        assert_eq!(result.ir().geometry.points.len(), 1, "{value:?}");
         assert_eq!(
             report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
             1,
@@ -229,7 +229,7 @@ fn global_hollerith_values_reject_non_printable_ascii() {
             .unwrap()
             .attributes
             .contains_key("sender_product"));
-        assert_eq!(result.ir().model.points.len(), 1, "{byte:#04x}");
+        assert_eq!(result.ir().geometry.points.len(), 1, "{byte:#04x}");
         assert_eq!(
             report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
             1,
@@ -269,7 +269,7 @@ fn a_twenty_seventh_global_field_decodes_with_the_noncanonical_framing_loss() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::GlobalNoncanonicalFraming),
@@ -372,7 +372,9 @@ fn unreadable_global_metadata_suffix_keeps_geometry_and_exact_source() {
         let expected = IgesCodec
             .decode(&mut Cursor::new(&original), &DecodeOptions::default())
             .unwrap();
-        assert!(!expected.ir().model.points.is_empty() || !expected.ir().model.faces.is_empty());
+        assert!(
+            !expected.ir().geometry.points.is_empty() || !expected.ir().geometry.faces.is_empty()
+        );
         for field in 23..=26 {
             for value in ["999999999999999999999999999999999999H", "70Hx"] {
                 let mut fields = valid_global_fields();

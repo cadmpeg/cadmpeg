@@ -30,7 +30,7 @@ fn procedural_surface_points_read_the_callers_index() {
     // point, which has no value for it.
     let unknown_id = SurfaceId::mint("test:model:entity#indexed-unknown").unwrap();
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -41,19 +41,21 @@ fn procedural_surface_points_read_the_callers_index() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let mut cacheless =
         |surface: &SurfaceId, construction: &str, definition: ProceduralSurfaceDefinition| {
             let construction = ProceduralSurfaceId::mint(construction).unwrap();
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: construction.clone(),
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
-            ir.model
+            ir.geometry
                 .add_procedural_surface(
                     surface,
                     procedural_surface! {
@@ -86,13 +88,13 @@ fn procedural_surface_points_read_the_callers_index() {
         },
     );
     for index in 0..POINTS {
-        ir.model.points.push(crate::topology::Point::new(
+        ir.geometry.points.push(crate::topology::Point::new(
             crate::ids::PointId::mint(format!("test:model:point#{index}")).unwrap(),
             crate::features::FinitePoint3::ZERO,
             None,
         ));
     }
-    let revolution = &ir.model.surfaces[0].geometry;
+    let revolution = &ir.geometry.surfaces[0].geometry;
     let expected = model_surface_point(
         EvaluationAdmission::Standard,
         &ir,

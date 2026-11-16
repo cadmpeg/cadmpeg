@@ -109,15 +109,14 @@ fn feature_scope_keeps_distinct_four_word_owners_and_requires_unique_history_obj
             values: vec![36, 47, 0x6523_4178, 0],
         })
         .collect();
-    let mut model = cadmpeg_ir::document::Model::default();
-    model.features.push(serde_json::from_value(serde_json::json!({
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features.push(serde_json::from_value(serde_json::json!({
         "id":"sldprt:model:feature#47", "ordinal":0, "name":"Corner", "suppressed":false,
-        "definition":{"definition":"stored_geometry"}, "outputs":[], "native_ref":"history:corner"
-    })).unwrap());
+        "definition":{"kind": "operation", "value": {"kind": "stored_geometry", "value": {}}}, "outputs":[], "native_ref":"history:corner", "dependencies": [], "source_properties": {}, "source_content": []})).unwrap());
     let run = |histories: &[FeatureHistory], lanes: &[FeatureInputLane], timestamp| {
         super::feature_faces(
             &super::Inputs {
-                model: &model,
+                ir: &ir,
                 histories,
                 lanes,
                 faces: &faces,
@@ -141,7 +140,8 @@ fn feature_scope_keeps_distinct_four_word_owners_and_requires_unique_history_obj
 fn configuration(id: u32, name: &str, active: bool) -> cadmpeg_ir::features::DesignConfiguration {
     serde_json::from_value(
         serde_json::json!({"id":format!("sldprt:model:configuration#{id}"),
-        "ordinal":id,"active":active,"name":name,"bodies":[format!("sldprt:brep:body#{id}")]}),
+        "ordinal":id,"active":active,"name":name,"bodies":[format!("sldprt:brep:body#{id}")],
+        "feature_states":{},"parameter_overrides":{},"parameter_values":{},"properties":{}}),
     )
     .unwrap()
 }

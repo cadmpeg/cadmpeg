@@ -1573,7 +1573,9 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Result<Decoded, CodecErr
             notes,
             transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
-        source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+        source_fidelity: cadmpeg_ir::SourceFidelity::new(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(scan.data),
+        ),
     })
 }
 

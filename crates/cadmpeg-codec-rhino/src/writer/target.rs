@@ -74,21 +74,21 @@ pub(crate) fn plan(
     }
     let owned_points = input
         .ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| &vertex.point)
         .collect::<std::collections::BTreeSet<_>>();
     let owned_curves = input
         .ir
-        .model
+        .geometry
         .edges
         .iter()
         .filter_map(cadmpeg_ir::topology::Edge::curve)
         .collect::<std::collections::BTreeSet<_>>();
     let points = input
         .ir
-        .model
+        .geometry
         .points
         .iter()
         .filter(|point| {
@@ -97,7 +97,7 @@ pub(crate) fn plan(
         .count();
     let curves = input
         .ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {

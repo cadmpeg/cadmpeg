@@ -107,7 +107,7 @@
       }
     },
     "identity": {
-      "payload": "native",
+      "kind": "native",
       "target": "fcstd:schema-4"
     },
     "losses": [],
@@ -117,9 +117,9 @@
     ],
     "write_path": {
       "fidelity": {
-        "status": "not_consumed"
+        "kind": "not_consumed"
       },
-      "path": "patched"
+      "kind": "patched"
     }
   }
 }

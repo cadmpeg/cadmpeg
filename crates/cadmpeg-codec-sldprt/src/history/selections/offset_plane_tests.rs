@@ -578,6 +578,7 @@ fn planar_face_reference_requires_one_coincident_face() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let face = Face {
         id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
@@ -588,6 +589,7 @@ fn planar_face_reference_requires_one_coincident_face() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let surfaces = HashMap::from([(&surface.id, &surface)]);
     let mut selection = FaceSelection::Unresolved;
@@ -660,6 +662,7 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let face = Face {
         id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
@@ -670,6 +673,7 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let surfaces = HashMap::from([(&surface.id, &surface)]);
     let mut selection = FaceSelection::Native("component-path".into());

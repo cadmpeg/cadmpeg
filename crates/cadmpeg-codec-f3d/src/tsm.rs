@@ -1630,7 +1630,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 return Err(malformed(name, "face ring does not close"));
             }
         }
-        faces.push(SubdFace::new(ring).map_err(|error| malformed(name, error))?);
+        faces.push(SubdFace::from_edge_uses(ring).map_err(|error| malformed(name, error))?);
     }
 
     let mut crease_incidence =
@@ -1713,7 +1713,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     Ok(ParsedCage {
         surface: SubdSurface {
             id: subd_id(name, source_key)?,
-            scheme: SubdScheme::CatmullClark,
+            scheme: SubdScheme::TSpline,
             source_object: Some(SourceObjectAssociation {
                 geometry_role: None,
                 format: cadmpeg_ir::CodecFormat::F3d,
@@ -1727,6 +1727,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             }),
             cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries)
                 .map_err(|error| malformed(name, error))?,
+            native_ref: None,
         },
         unknown_record_kinds,
         unresolved_radial_pairs,
@@ -2436,11 +2437,6 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
                 .x,
             10.0
         );
-        assert!(wire::field::<Vec<subd::SubdEdgeUse>>(
-            &(wire::field::<Vec<subd::SubdFace>>(&(cage.cage), "faces")[0]),
-            "edges"
-        )
-        .iter()
-        .all(|use_| !use_.reversed));
+        assert!(cage.cage.faces()[0].edge_uses().all(|use_| !use_.reversed));
     }
 }

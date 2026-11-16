@@ -157,7 +157,7 @@ pub(crate) fn inventory(
     frames: &[crate::native::RseRecordRecord],
 ) -> Result<Inventory, CodecError> {
     let mut inventory = Inventory::default();
-    if ctx.depth() != DecodeDepth::Full
+    if ctx.depth() < DecodeDepth::Design
         || !container
             .rse
             .segments

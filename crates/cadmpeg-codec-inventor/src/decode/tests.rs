@@ -3,7 +3,7 @@
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+use cadmpeg_core::decode::{ArenaClass, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 mod assembly_losses;
@@ -181,7 +181,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
 }
 
 #[test]
-fn design_records_project_only_at_full_depth() {
+fn design_records_project_from_design_depth() {
     let source = primary_envelope_fixture_with_design(
         &acis_sphere_kernel_stream(21_800),
         &crate::design::ratio_parameter_records(),
@@ -198,6 +198,7 @@ fn design_records_project_only_at_full_depth() {
             .expect("synthetic design envelope decodes")
     };
     let full = decode(DecodeDepth::Full);
+    let design = decode(DecodeDepth::Design);
     let geometry = decode(DecodeDepth::Geometry);
     let container = decode(DecodeDepth::Container);
 
@@ -206,19 +207,23 @@ fn design_records_project_only_at_full_depth() {
         panic!("one projected parameter: {:#?}", full.ir().model.parameters)
     };
     assert_eq!(parameter.name, "ratio");
-    assert_eq!(full.ir().model.faces.len(), 1);
+    assert_eq!(full.ir().geometry.faces.len(), 1);
+
+    assert_eq!(design.report().depth(), DecodeDepth::Design);
+    assert_eq!(design.ir().scope(), DecodeDepth::Design.scope());
+    assert_eq!(design.ir().model.parameters, full.ir().model.parameters);
 
     // A geometry request stops before design projection: the same geometry,
     // no design records.
     assert_eq!(geometry.report().depth(), DecodeDepth::Geometry);
-    assert_eq!(geometry.ir().decode_depth(), DecodeDepth::Geometry);
-    assert_eq!(geometry.ir().model.populated_design_arena(), None);
+    assert_eq!(geometry.ir().scope(), DecodeDepth::Geometry.scope());
+    assert_eq!(geometry.ir().populated_arena(ArenaClass::Design), None);
     assert!(geometry.ir().model.parameters.is_empty());
-    assert_eq!(geometry.ir().model.faces, full.ir().model.faces);
+    assert_eq!(geometry.ir().geometry.faces, full.ir().geometry.faces);
 
     assert_eq!(container.report().depth(), DecodeDepth::Container);
-    assert_eq!(container.ir().decode_depth(), DecodeDepth::Container);
-    assert_eq!(container.ir().model.populated_design_arena(), None);
+    assert_eq!(container.ir().scope(), DecodeDepth::Container.scope());
+    assert_eq!(container.ir().populated_arena(ArenaClass::Design), None);
     let native = container
         .ir()
         .native
@@ -233,9 +238,14 @@ fn design_records_project_only_at_full_depth() {
         "the native record survives the container decode"
     );
     assert_eq!(
-        outside_design(container.ir()),
-        outside_design(full.ir()),
-        "the container decode keeps every non-design arena"
+        container.ir().geometry,
+        cadmpeg_ir::document::Topology::default(),
+        "a container decode holds no geometry record"
+    );
+    assert_eq!(
+        container.ir().model,
+        cadmpeg_ir::document::Model::default(),
+        "a container decode holds no model record"
     );
 
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
@@ -243,20 +253,6 @@ fn design_records_project_only_at_full_depth() {
         &[("design", source.clone())],
     );
     assert_eq!(summary.cut, 1, "{summary:?}");
-}
-
-/// The model as JSON without its design arenas.
-fn outside_design(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
-    let mut model = serde_json::to_value(&ir.model).expect("serialize model");
-    let serde_json::Value::Object(arenas) = &mut model else {
-        panic!("a model serializes as a JSON object");
-    };
-    for arena in cadmpeg_ir::ArenaName::ALL {
-        if arena.class() == cadmpeg_ir::ArenaClass::Design {
-            arenas.remove(arena.as_str());
-        }
-    }
-    model
 }
 
 #[test]
@@ -448,7 +444,7 @@ fn binary_kernel_metadata_recovery_preserves_geometry_and_valid_tolerance_peers(
             .expect("independent kernel geometry survives unreadable metadata")
     };
     let expected = decode(&original);
-    assert_eq!(expected.ir().model.faces.len(), 1);
+    assert_eq!(expected.ir().geometry.faces.len(), 1);
     let mut cursor = 31; // ACIS BinaryFile fixed words; docs/layouts/asm.toml.
     let mut positions = Vec::new();
     for _ in 0..3 {
@@ -459,6 +455,7 @@ fn binary_kernel_metadata_recovery_preserves_geometry_and_valid_tolerance_peers(
         let mut bytes = original.clone();
         bytes[position] = 0xff;
         let recovered = decode(&bytes);
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_eq!(recovered.ir().tolerances, expected.ir().tolerances);
         assert!(recovered
@@ -479,6 +476,7 @@ fn binary_kernel_metadata_recovery_preserves_geometry_and_valid_tolerance_peers(
             let mut bytes = original.clone();
             bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
             let recovered = decode(&bytes);
+            assert_eq!(recovered.ir().geometry, expected.ir().geometry);
             assert_eq!(recovered.ir().model, expected.ir().model);
             if offset == cursor + 10 {
                 assert_eq!(
@@ -550,13 +548,13 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
 
     for (label, decoded) in [("verified", &verified), ("unverified", &unverified)] {
         assert!(decoded.report().geometry_transferred(), "{label}");
-        assert_eq!(decoded.ir().model.bodies.len(), 1, "{label}");
-        assert_eq!(decoded.ir().model.faces.len(), 1, "{label}");
-        assert_eq!(decoded.ir().model.surfaces.len(), 1, "{label}");
+        assert_eq!(decoded.ir().geometry.bodies.len(), 1, "{label}");
+        assert_eq!(decoded.ir().geometry.faces.len(), 1, "{label}");
+        assert_eq!(decoded.ir().geometry.surfaces.len(), 1, "{label}");
     }
     assert_eq!(
-        unverified.ir().model.surfaces,
-        verified.ir().model.surfaces,
+        unverified.ir().geometry.surfaces,
+        verified.ir().geometry.surfaces,
         "the substituted grammar read the same carriers"
     );
 
@@ -571,4 +569,34 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
     };
     assert!(charged(&unverified));
     assert!(!charged(&verified));
+}
+
+#[test]
+fn a_kernel_carrier_kept_without_decoding_is_untyped_model_content() {
+    let marks = |kernel: &[u8]| {
+        let bytes = primary_envelope_fixture_with_kernel(EnvelopeDeclarations::default(), kernel);
+        let (_, _, fidelity) = InventorCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("the part decodes")
+            .into_parts();
+        fidelity
+            .retained_records()
+            .iter()
+            .map(|(id, record)| {
+                (
+                    id.as_str().to_owned(),
+                    record.untyped().iter().copied().collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let sphere = acis_sphere_kernel_stream(21_800);
+    assert!(marks(&sphere).is_empty());
+    assert_eq!(
+        marks(&sphere[..sphere.len() / 2]),
+        [(
+            "inventor:kernel:carrier#seg-0".to_owned(),
+            vec![cadmpeg_core::decode::ArenaClass::Model]
+        )]
+    );
 }

@@ -8,11 +8,11 @@ fn body(id: &str) -> Body {
     Body {
         id: BodyId::mint(id).unwrap(),
         kind: BodyKind::Wire,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     }
 }
 

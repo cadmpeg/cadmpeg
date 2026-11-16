@@ -35,7 +35,7 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
             BTreeMap::new(),
         ),
         None => serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": format},
+            "identity": {"kind": "unclassified", "format": format},
             "attributes": {},
         }))
         .unwrap(),

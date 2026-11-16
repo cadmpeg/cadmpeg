@@ -115,7 +115,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {}
         }
     }
-    for point in &mut ir.model.points {
+    for point in &mut ir.geometry.points {
         let moved = point.position().get();
         point.set_position(
             cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
@@ -126,10 +126,10 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
             .expect("a finite position is a point"),
         );
     }
-    for curve in &mut ir.model.curves {
+    for curve in &mut ir.geometry.curves {
         translate_curve_x(&mut curve.geometry, dx);
     }
-    for surface in &mut ir.model.surfaces {
+    for surface in &mut ir.geometry.surfaces {
         match &mut surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let frame = plane_surface.frame();
@@ -246,13 +246,13 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
     };
     use cadmpeg_ir::math::Point3;
     let shift = |p: &Point3| Point3::new(p.x + t[0], p.y + t[1], p.z + t[2]);
-    for point in &mut ir.model.points {
+    for point in &mut ir.geometry.points {
         point.set_position(
             cadmpeg_ir::features::FinitePoint3::new(shift(&point.position().get()))
                 .expect("a finite translation keeps a finite position"),
         );
     }
-    for curve in &mut ir.model.curves {
+    for curve in &mut ir.geometry.curves {
         if let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = &mut curve.geometry {
             let direction = line_curve.direction();
             let origin = shift(&line_curve.origin().get());
@@ -260,7 +260,7 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
             *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         }
     }
-    for surface in &mut ir.model.surfaces {
+    for surface in &mut ir.geometry.surfaces {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
             &mut surface.geometry
         {
@@ -274,9 +274,12 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
 
 pub(crate) fn source_less_cube() -> cadmpeg_ir::CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -302,7 +305,7 @@ pub(crate) fn encode_decode(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::CadIr {
 
 pub(crate) fn sorted_point_positions(ir: &cadmpeg_ir::CadIr) -> Vec<[f64; 3]> {
     let mut positions: Vec<[f64; 3]> = ir
-        .model
+        .geometry
         .points
         .iter()
         .map(|point| {

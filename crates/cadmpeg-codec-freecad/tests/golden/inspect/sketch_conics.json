@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 18592,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 2698
@@ -21,8 +21,8 @@
         "data_offset": "2800",
         "header_offset": "2740"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "ConicWitness.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -34,8 +34,8 @@
         "data_offset": "2854",
         "header_offset": "2802"
       },
-      "compression": "deflate",
       "expanded": 3754,
+      "kind": "deflate",
       "name": "ConicWitness.Shape.brp",
       "role": "brep",
       "stored": 923
@@ -47,19 +47,20 @@
         "data_offset": "3833",
         "header_offset": "3777"
       },
-      "compression": "deflate",
       "expanded": 320,
+      "kind": "deflate",
       "name": "ConicWitness.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 155
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.1R20260414 (Git shallow)",
@@ -67,8 +68,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

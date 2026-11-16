@@ -270,33 +270,29 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
 #[test]
 fn segment_bound_bodies_form_the_exact_retained_history_input() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
-    use cadmpeg_ir::ids::{BodyId, RegionId};
+    use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
 
     let mut ir = CadIr::empty();
     let bound = BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar");
-    ir.model.bodies.extend([
+    ir.geometry.bodies.extend([
         Body {
             id: bound.clone(),
             kind: BodyKind::Solid,
-            regions: vec![
-                RegionId::mint("test:model:entity#region-2".to_string()).expect("identity grammar")
-            ],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         },
         Body {
             id: BodyId::mint("nx:s3:body#4".to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
-            regions: vec![
-                RegionId::mint("test:model:entity#region-3".to_string()).expect("identity grammar")
-            ],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         },
     ]);
     let binding = crate::native::segments::SegmentBodyBinding {
@@ -338,7 +334,11 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         crate::evaluation::saved_body_census_evidence(&ir),
         crate::evaluation::BodyCensusEvaluation::mismatch(
             vec![bound],
-            ir.model.bodies.iter().map(|body| body.id.clone()).collect()
+            ir.geometry
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect()
         )
         .unwrap()
     );
@@ -346,7 +346,6 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
 
 #[test]
 fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
-    use cadmpeg_ir::ids::RegionId;
     use cadmpeg_ir::topology::{Body, BodyKind};
 
     let body_ids = (0..2048)
@@ -354,16 +353,14 @@ fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
         .chain(["nx:s:body#0".into(), "nx:s12x:body#0".into()])
         .collect::<Vec<_>>();
     let mut ir = CadIr::empty();
-    ir.model.bodies.extend(body_ids.iter().map(|id| Body {
+    ir.geometry.bodies.extend(body_ids.iter().map(|id| Body {
         id: BodyId::mint(id.clone()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![
-            RegionId::mint("test:model:entity#region".to_string()).expect("identity grammar"),
-        ],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     }));
     let bindings = (0..256_u32)
         .map(|index| crate::native::segments::SegmentBodyBinding {
@@ -378,7 +375,7 @@ fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
         })
         .collect::<Vec<_>>();
 
-    let mut sorted = ir.model.bodies.clone();
+    let mut sorted = ir.geometry.bodies.clone();
     sorted.sort_by(|first, second| first.id.cmp(&second.id));
     let mut expected_outputs = Vec::new();
     let mut expected_properties = BTreeMap::new();
@@ -442,7 +439,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
             .expect("admitted retained-history input")
             .is_none()
     );
-    assert!(ir.model.bodies.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
     assert!(ir.model.features.is_empty());
 }
 
