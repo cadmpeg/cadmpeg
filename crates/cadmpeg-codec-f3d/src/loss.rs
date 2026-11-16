@@ -281,6 +281,8 @@ pub(crate) enum F3dLossCode {
     /// Decal timeline objects retain native image and mapping records.
     DecalNativeRetained,
     DecalMappingAssumed,
+    /// A Decal with a decoded placement record keeps its frame in the native record.
+    DecalPlacementNative,
     DecalTargetUnresolved,
     DecalImageUnresolved,
     DecalDefinitionUnresolved,
@@ -1178,6 +1180,7 @@ impl F3dLossCode {
         Self::ReferenceImageFlagAssumed,
         Self::DecalNativeRetained,
         Self::DecalMappingAssumed,
+        Self::DecalPlacementNative,
         Self::DecalTargetUnresolved,
         Self::DecalImageUnresolved,
         Self::DecalDefinitionUnresolved,
@@ -1865,6 +1868,7 @@ impl F3dLossCode {
             Self::ReferenceImageFlagAssumed => "appearance.reference-image-flag-assumed",
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::DecalMappingAssumed => "appearance.decal-mapping-assumed",
+            Self::DecalPlacementNative => "appearance.decal-placement-native",
             Self::DecalTargetUnresolved => "appearance.decal-target-unresolved",
             Self::DecalImageUnresolved => "appearance.decal-image-unresolved",
             Self::DecalDefinitionUnresolved => "appearance.decal-definition-unresolved",
@@ -2755,6 +2759,7 @@ impl F3dLossCode {
             | Self::HistoryOnlyBodyOmitted
             | Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
+            | Self::DecalPlacementNative
             | Self::DecalTargetUnresolved
             | Self::DecalImageUnresolved
             | Self::DecalDefinitionUnresolved
@@ -3776,6 +3781,7 @@ impl F3dLossCode {
             | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
             | Self::DecalMappingAssumed
+            | Self::DecalPlacementNative
             | Self::DecalTargetUnresolved
             | Self::DecalImageUnresolved
             | Self::DecalDefinitionUnresolved

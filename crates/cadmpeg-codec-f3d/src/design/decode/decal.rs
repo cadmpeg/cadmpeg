@@ -12,16 +12,17 @@ use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
 use crate::layout::design_decal_image_name_prefix as decal_name;
+use crate::layout::design_decal_placement_prefix as decal_placement;
 use crate::layout::design_decal_scope_extended_prefix as decal_extended_scope;
 use crate::loss::F3dLossCode;
 use crate::records::{
-    decal::{DesignDecalAsset, DesignDecalImage, DesignDecalMappingMode, DesignDecalScopeLayout},
+    decal::{DesignDecalAsset, DesignDecalImage, DesignDecalPlacement, DesignDecalScopeLayout},
     feature::scope::DesignParameterScope,
     topology::{
         body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
     },
 };
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
 use cadmpeg_ir::features::{
@@ -60,6 +61,7 @@ pub(crate) fn project_decal_images(
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
     let mut assumed_mappings = 0usize;
+    let mut native_placements = 0usize;
     let mut unresolved_targets = 0usize;
     let mut unresolved_images = 0usize;
     let mut unresolved_definitions = 0usize;
@@ -83,22 +85,21 @@ pub(crate) fn project_decal_images(
                     unresolved_image_asset(Some(image.asset.name()), &image.id)?
                 }
             };
+            if image.placement.is_some() {
+                native_placements += 1;
+                assets.push(asset);
+                continue;
+            }
             let faces = targets
                 .faces(scope, image.target_group_record_index)
                 .unwrap_or_else(|| {
                     unresolved_targets += 1;
                     FaceSelection::Native(scope.id.clone())
                 });
-            assumed_mappings +=
-                usize::from(image.mapping_mode != DesignDecalMappingMode::FitToFaces);
             (asset, faces)
         } else {
             unresolved_definitions += 1;
             let prefix = scope_prefix(scan, scope)?;
-            assumed_mappings += usize::from(prefix.as_ref().is_none_or(|prefix| {
-                DesignDecalMappingMode::from_code(prefix.mapping_mode)
-                    != DesignDecalMappingMode::FitToFaces
-            }));
             let faces = prefix
                 .as_ref()
                 .and_then(|prefix| targets.faces(scope, prefix.target_group_record_index))
@@ -112,7 +113,7 @@ pub(crate) fn project_decal_images(
                         "decal:asset-record-index",
                         prefix.asset_record_index.to_string(),
                     ),
-                    ("decal:mapping-mode", prefix.mapping_mode.to_string()),
+                    ("decal:scope-code", prefix.scope_code.to_string()),
                     (
                         "decal:target-group-record-index",
                         prefix.target_group_record_index.to_string(),
@@ -125,6 +126,7 @@ pub(crate) fn project_decal_images(
             }
             (unresolved_image_asset(None, &scope.id)?, faces)
         };
+        assumed_mappings += 1;
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {
@@ -139,7 +141,12 @@ pub(crate) fn project_decal_images(
     assets.dedup_by(|a, b| a.id == b.id);
     if assumed_mappings != 0 {
         losses.push(F3dLossCode::DecalMappingAssumed.note(format!(
-            "{assumed_mappings} Decal feature(s) have a missing mapping mode or a mode other than 0x60; the decoder assumes the fit-to-faces mapping (DR-484)."
+            "{assumed_mappings} Decal feature(s) have no decoded placement record; the decoder assumes the fit-to-faces mapping (DR-484)."
+        )));
+    }
+    if native_placements != 0 {
+        losses.push(F3dLossCode::DecalPlacementNative.note(format!(
+            "{native_placements} Decal feature(s) keep their placement frame, image and target group in the native Decal image record; the feature definition stays native."
         )));
     }
     if unresolved_targets != 0 {
@@ -252,7 +259,7 @@ fn decal_reference(bytes: &[u8], at: usize, typed: bool, type_guid: &str) -> Opt
 struct DecalScopePrefix {
     layout: DesignDecalScopeLayout,
     asset_record_index: u32,
-    mapping_mode: u8,
+    scope_code: u8,
     target_group_record_index: u32,
 }
 
@@ -312,7 +319,7 @@ fn parse_decal_scope_prefix(
             layout.typed(),
             TYPED_ASSET_REFERENCE_TYPE,
         )?,
-        mapping_mode: *bytes.get(scope_at + layout.mapping_mode())?,
+        scope_code: *bytes.get(scope_at + layout.scope_code())?,
         target_group_record_index: decal_reference(
             bytes,
             scope_at + layout.target_group_reference(),
@@ -333,10 +340,18 @@ fn parse_decal_image_frame(
 
         let mut position = 0;
         let mut asset_record = None;
+        let mut placements = Vec::new();
         while let Some(asset_at) = next_indexed_record_offset(bytes, position) {
             position = asset_at.checked_add(1)?;
             if View::u32_le_at(bytes, asset_at + 7) != Some(prefix.asset_record_index) {
                 continue;
+            }
+            if !prefix.layout.typed() {
+                placements.extend(parse_decal_placement_record(
+                    bytes,
+                    asset_at,
+                    prefix.asset_record_index,
+                ));
             }
             let candidate = match parse_decal_asset_record(
                 bytes,
@@ -352,21 +367,142 @@ fn parse_decal_image_frame(
                 return None;
             }
         }
-        DesignDecalImage::new(
+        let mut image = DesignDecalImage::new(
             ids::native_design_decal_image_id(stream, scope_at),
             crate::records::identity::Located {
                 value: scope_record_index,
                 offset: u64::try_from(scope_at).ok()?,
             },
             prefix.layout,
-            DesignDecalMappingMode::from_code(prefix.mapping_mode),
+            prefix.scope_code,
             prefix.target_group_record_index,
             asset_record?,
         )
-        .ok()
-        .map(Ok)
+        .ok()?;
+        let mut placements = placements.into_iter();
+        image.placement = placements.next().filter(|_| placements.next().is_none());
+        Some(Ok(image))
     })();
     parsed.transpose()
+}
+
+/// Zero-run lengths between the last reference and the normal of a Decal placement record.
+const PLACEMENT_NORMAL_GAPS: [usize; 2] = [4, 5];
+
+/// Largest deviation of the squared placement normal length from one.
+const PLACEMENT_UNIT_NORMAL_TOLERANCE: f64 = 1.0e-9;
+
+/// Byte length of a marked record reference: `01`, a u32 record index, and six zero bytes.
+const MARKED_REFERENCE_LEN: usize = 11;
+
+/// The placement frame of the record at `at` that carries the image-asset record index.
+fn parse_decal_placement_record(
+    bytes: &[u8],
+    at: usize,
+    asset_record_index: u32,
+) -> Option<DesignDecalPlacement> {
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
+    if after_tag.checked_add(4)? != at.checked_add(decal_placement::ZERO_RUN_10)?
+        || View::u32_le_at(bytes, after_tag)? != asset_record_index
+        || bytes.get(at + decal_placement::ZERO_RUN_10..at + decal_placement::MESH_REFERENCE)?
+            != [0; 10]
+    {
+        return None;
+    }
+    marked_record_reference(bytes, at + decal_placement::MESH_REFERENCE)?;
+    let byte_offset = u64::try_from(at).ok()?;
+    let vertex_count = View::u32_le_at(bytes, at + decal_placement::VERTEX_COUNT)?;
+    let pairs_at = at.checked_add(decal_placement::LEN)?;
+    let pairs = bounded_len(
+        u64::from(vertex_count),
+        8,
+        bytes.len().checked_sub(pairs_at)?,
+    )?;
+    let mut cursor = pairs_at.checked_add(pairs.checked_mul(8)?)?;
+    let ordinal = View::u32_le_at(bytes, cursor)?;
+    cursor += 4;
+    let axis = |at: usize| -> Option<[f64; 3]> {
+        let mut axis = [0.0; 3];
+        for (lane, value) in axis.iter_mut().enumerate() {
+            let component = View::f32_le_at(bytes, at.checked_add(lane * 4)?)?;
+            if !component.is_finite() {
+                return None;
+            }
+            *value = f64::from(component);
+        }
+        Some(axis)
+    };
+    let u_axis = axis(cursor)?;
+    let v_axis = axis(cursor + 12)?;
+    cursor += 24;
+    let mirrored = match bytes.get(cursor + 1)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    bytes.get(cursor + 2)?;
+    cursor += 3;
+    marked_record_reference(bytes, cursor)?;
+    cursor += MARKED_REFERENCE_LEN;
+    if !View::f64_le_at(bytes, cursor)?.is_finite()
+        || !View::f64_le_at(bytes, cursor + 8)?.is_finite()
+        || bytes.get(cursor + 16) != Some(&0)
+        || !View::f32_le_at(bytes, cursor + 17)?.is_finite()
+    {
+        return None;
+    }
+    cursor += 21;
+    marked_record_reference(bytes, cursor)?;
+    marked_record_reference(bytes, cursor + MARKED_REFERENCE_LEN)?;
+    cursor += 2 * MARKED_REFERENCE_LEN;
+    let vector = |at: usize| -> Option<[f64; 3]> {
+        let mut vector = [0.0; 3];
+        for (lane, value) in vector.iter_mut().enumerate() {
+            *value = View::f64_le_at(bytes, at.checked_add(lane * 8)?)?;
+            if !value.is_finite() {
+                return None;
+            }
+        }
+        Some(vector)
+    };
+    let mut frames = PLACEMENT_NORMAL_GAPS.into_iter().filter_map(|gap| {
+        let normal_at = cursor.checked_add(gap)?;
+        if bytes.get(cursor..normal_at)?.iter().any(|byte| *byte != 0) {
+            return None;
+        }
+        let normal = vector(normal_at)?;
+        let squared_length: f64 = normal.iter().map(|value| value * value).sum();
+        if (squared_length - 1.0).abs() > PLACEMENT_UNIT_NORMAL_TOLERANCE {
+            return None;
+        }
+        let origin = vector(normal_at + 24)?;
+        let (image_name, after_name) = lp_utf16_bounded(bytes, normal_at + 48, 1..=1024)?;
+        let triangle_index_count = View::u32_le_at(bytes, after_name)?;
+        let indices_at = after_name.checked_add(4)?;
+        let indices = bounded_len(
+            u64::from(triangle_index_count),
+            4,
+            bytes.len().checked_sub(indices_at)?,
+        )?;
+        let end = indices_at.checked_add(indices.checked_mul(4)?)?;
+        (next_indexed_record_offset(bytes, end) == Some(end)
+            && View::u32_le_at(bytes, end + 7) == Some(asset_record_index))
+        .then(|| DesignDecalPlacement {
+            byte_offset,
+            class_tag: class_tag.to_owned(),
+            vertex_count,
+            ordinal,
+            u_axis,
+            v_axis,
+            mirrored,
+            normal,
+            origin,
+            image_name,
+            triangle_index_count,
+        })
+    });
+    let frame = frames.next()?;
+    frames.next().is_none().then_some(frame)
 }
 
 fn parse_decal_asset_record(
@@ -434,7 +570,7 @@ fn parse_decal_asset_record(
 #[cfg(test)]
 mod tests {
     use super::parse_decal_image_frame;
-    use crate::records::decal::{DesignDecalImage, DesignDecalMappingMode, DesignDecalScopeLayout};
+    use crate::records::decal::{DesignDecalImage, DesignDecalScopeLayout};
     use crate::records::feature::scope::DesignParameterScope;
     use cadmpeg_ir::assets::{Asset, AssetContent};
     use cadmpeg_ir::features::{
@@ -468,7 +604,7 @@ mod tests {
         }
     }
 
-    fn fixture(layout: DesignDecalScopeLayout, mapping_mode: u8) -> (Vec<u8>, usize) {
+    fn fixture(layout: DesignDecalScopeLayout, scope_code: u8) -> (Vec<u8>, usize) {
         let mut bytes = Vec::new();
         header(&mut bytes, *b"258", 17);
         bytes.extend_from_slice(&[0; 8]);
@@ -497,7 +633,7 @@ mod tests {
             17,
             "9A9B75AF-D286-4548-9301-28910E24EA20",
         );
-        bytes.push(mapping_mode);
+        bytes.push(scope_code);
         reference(
             &mut bytes,
             layout.typed(),
@@ -512,8 +648,126 @@ mod tests {
         (bytes, scope_at)
     }
 
-    fn image(layout: DesignDecalScopeLayout, mapping_mode: u8) -> DesignDecalImage {
-        let (bytes, scope_at) = fixture(layout, mapping_mode);
+    /// A placement record with record index 17 for a 200 by 100 pixel image
+    /// centred at (1, 2, 0) with U = (0.5, 0, 0) and V = (0, -0.5, 0).
+    fn placement_record(mirror: u8, gap: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        header(&mut bytes, *b"267", 17);
+        bytes.extend_from_slice(&[0; 10]);
+        reference(&mut bytes, false, 15, "");
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        for pair in [[0.25f32, 0.75], [3.0e7, -6.0e7], [0.5, 0.5]] {
+            for value in pair {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        for value in [0.5f32, 0.0, 0.0, 0.0, -0.5, 0.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[1, mirror, 0]);
+        reference(&mut bytes, false, 19, "");
+        bytes.extend_from_slice(&0.0f64.to_le_bytes());
+        bytes.extend_from_slice(&0.0f64.to_le_bytes());
+        bytes.push(0);
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        reference(&mut bytes, false, 21, "");
+        reference(&mut bytes, false, 18, "");
+        bytes.extend(std::iter::repeat_n(0, gap));
+        for value in [0.0f64, 0.0, -1.0, 1.0, 2.0, 0.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        for unit in "mark".encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        for index in [0u32, 2, 1] {
+            bytes.extend_from_slice(&index.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn placed_image(scope_code: u8, placement: &[u8]) -> Option<DesignDecalImage> {
+        let (frame, scope_at) = fixture(DesignDecalScopeLayout::Compact, scope_code);
+        let mut bytes = placement.to_vec();
+        bytes.extend_from_slice(&frame);
+        parse_decal_image_frame(&bytes, STREAM, 23, placement.len() + scope_at).unwrap()
+    }
+
+    #[test]
+    fn decal_placement_record_states_the_frame_for_every_scope_code() {
+        for gap in [4, 5] {
+            for (mirror, mirrored) in [(0, false), (1, true)] {
+                for scope_code in [0x00, 0x01, 0x60, 0xE2] {
+                    let image = placed_image(scope_code, &placement_record(mirror, gap))
+                        .expect("Decal image with a placement record");
+                    assert_eq!(image.scope_code, scope_code);
+                    let placement = image.placement.expect("placement frame");
+                    assert_eq!(placement.byte_offset, 0);
+                    assert_eq!(placement.class_tag, "267");
+                    assert_eq!(placement.vertex_count, 3);
+                    assert_eq!(placement.ordinal, 1);
+                    assert_eq!(placement.u_axis, [0.5, 0.0, 0.0]);
+                    assert_eq!(placement.v_axis, [0.0, -0.5, 0.0]);
+                    assert_eq!(placement.mirrored, mirrored);
+                    assert_eq!(placement.normal, [0.0, 0.0, -1.0]);
+                    assert_eq!(placement.origin, [1.0, 2.0, 0.0]);
+                    assert_eq!(placement.image_name, "mark");
+                    assert_eq!(placement.triangle_index_count, 3);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn decal_placement_record_refuses_deviations_and_keeps_the_image() {
+        let base = placement_record(0, 5);
+        let flags_at = 36 + 3 * 8 + 4 + 24;
+        let normal_at = flags_at + 3 + 11 + 21 + 22 + 5;
+        let mut cases = Vec::new();
+        let mut mirror = base.clone();
+        mirror[flags_at + 1] = 2;
+        cases.push(("mirror flag 2", mirror));
+        let mut gap = base.clone();
+        gap[normal_at - 1] = 1;
+        cases.push(("nonzero gap", gap));
+        let mut normal = base.clone();
+        normal[normal_at + 16..normal_at + 24].copy_from_slice(&(-2.0f64).to_le_bytes());
+        cases.push(("normal of length 2", normal));
+        let mut count = base.clone();
+        count[32..36].copy_from_slice(&u32::MAX.to_le_bytes());
+        cases.push(("vertex count past the stream", count));
+        let mut indices = base.clone();
+        indices.extend_from_slice(&[0; 4]);
+        cases.push(("index run short of the image-asset record", indices));
+        cases.push(("gap of three bytes", placement_record(0, 3)));
+        cases.push(("gap of six bytes", placement_record(0, 6)));
+        let mut twice = base.clone();
+        twice.extend_from_slice(&base);
+        cases.push(("two placement records", twice));
+        for (name, placement) in cases {
+            let image = placed_image(0x01, &placement).expect(name);
+            assert_eq!(image.placement, None, "{name}");
+            assert_eq!(image.asset.name(), "mark.png", "{name}");
+        }
+    }
+
+    #[test]
+    fn decal_with_a_placement_record_keeps_its_definition_native() {
+        for scope_code in [0x01, 0x60] {
+            let image = placed_image(scope_code, &placement_record(0, 5)).unwrap();
+            let native = feature(&scope()).evaluation.definition().clone();
+            let (assets, definition, losses) = project(&archive(true), &image, &[], &[]);
+            assert_eq!(assets.len(), 1);
+            assert_eq!(assets[0].id, crate::ids::neutral_asset_id(ENTRY));
+            assert_eq!(definition, native);
+            assert_eq!(loss_codes(&losses), ["appearance.decal-placement-native"]);
+        }
+    }
+
+    fn image(layout: DesignDecalScopeLayout, scope_code: u8) -> DesignDecalImage {
+        let (bytes, scope_at) = fixture(layout, scope_code);
         parse_decal_image_frame(&bytes, STREAM, 23, scope_at)
             .unwrap()
             .expect("complete synthetic Decal frame")
@@ -589,12 +843,13 @@ mod tests {
     }
 
     #[test]
-    fn decal_frame_decodes_image_mode_and_target() {
+    fn decal_frame_decodes_image_scope_code_and_target() {
         let image = image(DesignDecalScopeLayout::Compact, 0x60);
         assert_eq!(image.asset.record_index(), 17);
         assert_eq!(image.asset.entity_suffix(), 50);
         assert_eq!(image.asset.name(), "mark.png");
-        assert_eq!(image.mapping_mode, DesignDecalMappingMode::FitToFaces);
+        assert_eq!(image.scope_code, 0x60);
+        assert_eq!(image.placement, None);
         assert_eq!(image.target_group_record_index, 24);
         assert_eq!(image.asset.primary_frame_length(), 30);
         assert_eq!(image.asset.name_frame_length(), 41);
@@ -602,7 +857,7 @@ mod tests {
 
     #[test]
     fn decal_frame_decodes_every_prefix_layout() {
-        for (layout, asset_frame_length, asset_reference, mapping_mode, target_reference) in [
+        for (layout, asset_frame_length, asset_reference, scope_code, target_reference) in [
             (DesignDecalScopeLayout::Compact, 30, 21, 32, 33),
             (DesignDecalScopeLayout::Extended, 30, 25, 36, 37),
             (DesignDecalScopeLayout::TypedCompact, 70, 21, 72, 73),
@@ -613,7 +868,7 @@ mod tests {
                 .unwrap()
                 .expect("complete synthetic Decal frame");
             assert_eq!(image.layout(), layout);
-            assert_eq!(image.mapping_mode.code(), 0x01);
+            assert_eq!(image.scope_code, 0x01);
             assert_eq!(image.asset.record_index(), 17);
             assert_eq!(image.asset.entity_suffix(), 50);
             assert_eq!(image.asset.name(), "mark.png");
@@ -622,7 +877,7 @@ mod tests {
             let wire = serde_json::to_value(&image).unwrap();
             let offset = |relative: usize| serde_json::json!(scope_at + relative);
             assert_eq!(wire["asset_reference_offset"], offset(asset_reference + 1));
-            assert_eq!(wire["mapping_mode_offset"], offset(mapping_mode));
+            assert_eq!(wire["scope_code_offset"], offset(scope_code));
             assert_eq!(
                 wire["target_group_reference_offset"],
                 offset(target_reference + 1)
@@ -764,7 +1019,7 @@ mod tests {
                 opacity: None,
             })
         );
-        assert!(losses.is_empty());
+        assert_eq!(loss_codes(&losses), ["appearance.decal-mapping-assumed"]);
     }
 
     #[test]
@@ -827,6 +1082,7 @@ mod tests {
         assert_eq!(
             loss_codes(&losses),
             [
+                "appearance.decal-mapping-assumed",
                 "appearance.decal-target-unresolved",
                 "appearance.decal-image-unresolved"
             ]
@@ -886,13 +1142,14 @@ mod tests {
             properties,
             [
                 ("decal:asset-record-index", "17"),
-                ("decal:mapping-mode", "96"),
+                ("decal:scope-code", "96"),
                 ("decal:target-group-record-index", "24"),
             ]
         );
         assert_eq!(
             loss_codes(&losses),
             [
+                "appearance.decal-mapping-assumed",
                 "appearance.decal-target-unresolved",
                 "appearance.decal-definition-unresolved",
             ]

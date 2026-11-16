@@ -623,11 +623,11 @@ source = "spec"
 anchor = "with six trailing zero bytes"
 
 [[record.field]]
-name = "mapping_mode"
+name = "scope_code"
 offset = 32
 type = "u8"
 source = "spec"
-anchor = "Mapping mode `0x60` at offset 32"
+anchor = "A u8 scope code occurs at offset 32"
 
 [[record.field]]
 name = "target_group_reference"
@@ -688,7 +688,7 @@ name = "asset_reference"
 offset = 25
 type = "bytes[5]"
 source = "spec"
-anchor = "image-asset reference, mapping mode, and target-group reference occur at offsets 25, 36, and 37"
+anchor = "image-asset reference, scope code, and target-group reference occur at offsets 25, 36, and 37"
 
 [[record.field]]
 name = "asset_reference_zero_run"
@@ -699,18 +699,18 @@ anchor = "Both references keep their six trailing zero bytes"
 value = [0, 0, 0, 0, 0, 0]
 
 [[record.field]]
-name = "mapping_mode"
+name = "scope_code"
 offset = 36
 type = "u8"
 source = "spec"
-anchor = "image-asset reference, mapping mode, and target-group reference occur at offsets 25, 36, and 37"
+anchor = "image-asset reference, scope code, and target-group reference occur at offsets 25, 36, and 37"
 
 [[record.field]]
 name = "target_group_reference"
 offset = 37
 type = "bytes[5]"
 source = "spec"
-anchor = "image-asset reference, mapping mode, and target-group reference occur at offsets 25, 36, and 37"
+anchor = "image-asset reference, scope code, and target-group reference occur at offsets 25, 36, and 37"
 
 [[record.field]]
 name = "target_reference_zero_run"
@@ -751,11 +751,11 @@ source = "spec"
 anchor = "the image-asset reference at offset 21 has target type GUID"
 
 [[record.field]]
-name = "mapping_mode"
+name = "scope_code"
 offset = 72
 type = "u8"
 source = "spec"
-anchor = "the mapping mode is at offset 72"
+anchor = "the scope code is at offset 72"
 
 [[record.field]]
 name = "target_group_reference"
@@ -809,21 +809,59 @@ name = "asset_reference"
 offset = 25
 type = "bytes[51]"
 source = "spec"
-anchor = "its image-asset reference, mapping mode, and target-group reference occur at offsets 25, 76, and 77"
+anchor = "its image-asset reference, scope code, and target-group reference occur at offsets 25, 76, and 77"
 
 [[record.field]]
-name = "mapping_mode"
+name = "scope_code"
 offset = 76
 type = "u8"
 source = "spec"
-anchor = "its image-asset reference, mapping mode, and target-group reference occur at offsets 25, 76, and 77"
+anchor = "its image-asset reference, scope code, and target-group reference occur at offsets 25, 76, and 77"
 
 [[record.field]]
 name = "target_group_reference"
 offset = 77
 type = "bytes[51]"
 source = "spec"
-anchor = "its image-asset reference, mapping mode, and target-group reference occur at offsets 25, 76, and 77"
+anchor = "its image-asset reference, scope code, and target-group reference occur at offsets 25, 76, and 77"
+
+
+[[record]]
+name = "design_decal_placement_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The image-asset record index also names a Decal placement record"
+size = 36
+note = "Fixed prefix through the vertex count. The counted f32 pairs start at byte 36."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The image-asset record index also names a Decal placement record"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Ten zero bytes occupy placement offsets 11 through 20"
+
+[[record.field]]
+name = "mesh_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked record reference occurs at offset 21"
+
+[[record.field]]
+name = "vertex_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "A u32 vertex count at offset 32"
 
 
 [[record]]

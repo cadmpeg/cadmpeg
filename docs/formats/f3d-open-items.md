@@ -1898,15 +1898,17 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder projects the Decal with its image and a native face selection. It records `appearance.decal-target-unresolved`.
 
-### DR-484. Decal mapping modes other than `0x60`
+### DR-484. Decal placement record fields and the scope code
 
-**Question.** Which image mapping does each Decal mapping-mode byte other than `0x60` select?
+**Question.** What do the Decal scope code, the mirror flag, and the unnamed placement-record fields select? Which direction of `V` is the top of the image? What is the placement-record layout of a typed Decal?
 
-**Known.** `f3d.md` §3.1 "A `Decal` scope is a presentation timeline object" places the u8 mapping mode between the image-asset reference and the target-group reference and defines mode `0x60`. Decal scopes also store the modes `0x00`, `0x01`, `0x7D`, and `0xE2`. A larger indexed record with the image-asset record index precedes the image-asset record. It stores f32 coordinate pairs and u32 index runs.
+**Known.** `f3d.md` §3.1 "The image-asset record index also names a Decal placement record" gives the placement record. The scope code between the image-asset reference and the target-group reference stays `0x01` while the decal moves, rotates, flips, changes scale, and changes from a planar face to a cylindrical face. Decal scopes also store the codes `0x00`, `0x60`, `0x7D`, and `0xE2`. Reversing the decal x axis negates `U` and leaves the mirror flag `0`. The first and third bytes beside the mirror flag are `01` and `00`. The two f64 values after the first trailing reference are the in-plane coordinates of `O` on a planar face and `(0.25, 0)` on a cylindrical face; the f32 value is `1.0` at opacity `1.0`. The zero run before `N` is five bytes. The decal y axis has the direction of `V`. The decoder keeps the frame of a decoded placement record in the native `placement` field, leaves the feature definition native, and records `appearance.decal-placement-native`. A Decal with no decoded placement record takes the fit-to-faces mapping with `appearance.decal-mapping-assumed`; every typed Decal is in that group.
 
-**Need.** Make controlled saves of one Decal that change one placement control at a time: scale, rotation, translation, each flip, and face chaining. Compare the mapping-mode byte and the larger same-index record across the saves.
+**Need.** Controlled saves of one Decal with the dialog flip controls, an opacity other than `1.0`, and face chaining, and one save from a file generation that writes typed references. Compare the scope code, the mirror flag, the unnamed fields, and the rendered image orientation across the saves.
 
-**Note.** The decoder projects the fit-to-faces mapping for every mode. It records `appearance.decal-mapping-assumed` for a mode other than `0x60` and keeps the byte in the native `mapping_mode` field.
+**Conflict.** None.
+
+**Note.** The neutral placement frame needs the pixel size of the image and a neutral Decal placement field.
 
 ### DR-256. Ordinal prefix of a leading-flag local component occurrence
 
