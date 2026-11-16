@@ -91,8 +91,7 @@ pub(crate) struct UnreadableEntry<'a> {
 }
 
 impl UnreadableEntry<'_> {
-    /// Gives the entry up, naming the records dropped and the entries lost
-    /// because they need it.
+    /// Gives the entry up, naming the records dropped because they need it.
     pub(crate) fn give_up(
         self,
         ctx: &DecodeContext<'_>,
@@ -105,7 +104,7 @@ impl UnreadableEntry<'_> {
                 .iter()
                 .map(|id| Identity::new(id.clone()).map_err(CodecError::malformed))
                 .collect::<Result<Vec<_>, _>>()?;
-            part = part.dropping(records).losing_entries(drops.lost.clone());
+            part = part.dropping(records);
         }
         ctx.give_up_part(part, self.error)
     }

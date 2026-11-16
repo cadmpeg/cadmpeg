@@ -58,13 +58,11 @@ pub(crate) struct Graph {
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
-/// The records one unreadable archive entry removes from the graph.
+/// The properties one unreadable archive entry removes from the graph.
 #[derive(Debug, Default)]
 pub(crate) struct UnreadableDrops {
-    /// Ids of the dropped objects, properties, and extensions.
+    /// Ids of the dropped properties.
     pub(crate) records: Vec<String>,
-    /// Entries removed from records the graph keeps.
-    pub(crate) lost: Vec<String>,
 }
 
 /// The side files a Geometry property needs to hold its value.
@@ -89,118 +87,33 @@ fn required_side_files(property: &PropertyRecord) -> Vec<&str> {
         .collect()
 }
 
-/// Drops every record that needs an unreadable archive entry.
-///
-/// An object needs the payload of its Geometry property, so the object, its
-/// properties, and its extensions are dropped. A single link to a dropped
-/// object drops the property that holds it; a link list and a dependency list
-/// lose only that entry.
+/// Drops every Geometry property whose payload is in an unreadable archive
+/// entry. The owning object keeps every other property it read.
 pub(crate) fn drop_unreadable(
     graph: &mut Graph,
     unreadable: &std::collections::BTreeSet<String>,
 ) -> std::collections::BTreeMap<String, UnreadableDrops> {
     let mut drops = std::collections::BTreeMap::<String, UnreadableDrops>::new();
-    let mut dropped_objects = HashMap::<String, String>::new();
-    let mut dropped_properties = HashMap::<String, String>::new();
+    let mut dropped = HashSet::new();
     for property in &graph.properties {
-        let Some(entry) = required_side_files(property)
+        for entry in required_side_files(property)
             .into_iter()
-            .find(|name| unreadable.contains(*name))
-        else {
-            continue;
-        };
-        if graph
-            .objects
-            .iter()
-            .any(|object| object.id() == &property.owner)
+            .filter(|name| unreadable.contains(*name))
         {
-            dropped_objects
-                .entry(property.owner.clone())
-                .or_insert_with(|| entry.to_owned());
-        } else {
-            dropped_properties.insert(property.id.clone(), entry.to_owned());
-        }
-    }
-    if dropped_objects.is_empty() && dropped_properties.is_empty() {
-        return drops;
-    }
-    for property in &mut graph.properties {
-        if let Some(entry) = dropped_objects.get(&property.owner) {
-            dropped_properties.insert(property.id.clone(), entry.clone());
-            continue;
-        }
-        let crate::native::PropertyBody::Persisted { links, .. } = &mut property.body else {
-            continue;
-        };
-        let list = property.type_name.contains("List") || links.len() > 1;
-        for (index, link) in links.iter_mut().enumerate() {
-            let Some(entry) = link
-                .as_ref()
-                .filter(|target| target.document().is_none())
-                .and_then(|target| target.object())
-                .and_then(|object| dropped_objects.get(object))
-            else {
-                continue;
-            };
-            if list {
-                drops
-                    .entry(entry.clone())
-                    .or_default()
-                    .lost
-                    .push(format!("{} link {index}", property.id));
-                *link = None;
-            } else {
-                dropped_properties.insert(property.id.clone(), entry.clone());
-            }
-        }
-    }
-    for object in &mut graph.objects {
-        if dropped_objects.contains_key(object.id()) {
-            continue;
-        }
-        let id = object.id().clone();
-        object
-            .dependencies
-            .retain(|dependency| match dropped_objects.get(dependency) {
-                Some(entry) => {
-                    drops
-                        .entry(entry.clone())
-                        .or_default()
-                        .lost
-                        .push(format!("{id} dependency {dependency}"));
-                    false
-                }
-                None => true,
-            });
-    }
-    for (id, entry) in dropped_objects.iter().chain(&dropped_properties) {
-        drops
-            .entry(entry.clone())
-            .or_default()
-            .records
-            .push(id.clone());
-    }
-    for extension in &graph.extensions {
-        if let Some(entry) = dropped_objects.get(&extension.owner) {
             drops
-                .entry(entry.clone())
+                .entry(entry.to_owned())
                 .or_default()
                 .records
-                .push(extension.id.clone());
+                .push(property.id.clone());
+            dropped.insert(property.id.clone());
         }
     }
     graph
-        .objects
-        .retain(|object| !dropped_objects.contains_key(object.id()));
-    graph
         .properties
-        .retain(|property| !dropped_properties.contains_key(&property.id));
-    graph
-        .extensions
-        .retain(|extension| !dropped_objects.contains_key(&extension.owner));
-    for dropped in drops.values_mut() {
-        dropped.records.sort_unstable();
-        dropped.lost.sort_unstable();
+        .retain(|property| !dropped.contains(&property.id));
+    for entry in drops.values_mut() {
+        entry.records.sort_unstable();
+        entry.records.dedup();
     }
     drops
 }

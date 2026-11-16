@@ -9,7 +9,8 @@ The primary write envelope is a ZIP archive containing `Document.xml` with docum
 The application graph may contain core App, Part, PartDesign, Sketcher,
 Spreadsheet, Assembly, TechDraw, and GUI persistence records. Exact shapes may use text or binary
 B-rep side entries. GUI state, thumbnails, persistent element maps, and string-hasher tables are
-independently optional.
+independently optional. Each archive entry is one part. A Geometry property needs the side entry
+that holds its payload.
 
 The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
 retained document write regenerates the ZIP container deterministically, writes `Document.xml`

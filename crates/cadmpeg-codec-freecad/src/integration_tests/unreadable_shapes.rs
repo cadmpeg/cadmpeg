@@ -71,8 +71,46 @@ fn properties(ir: &cadmpeg_ir::CadIr) -> Vec<PropertyRecord> {
         .unwrap()
 }
 
+/// The ids in the `dropped=[...]` field of a `record.unreadable` message.
+fn dropped_ids(message: &str) -> Vec<String> {
+    message
+        .split("; dropped=[")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .map(|list| {
+            list.split(", ")
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn unreadable_messages(result: &cadmpeg_ir::DecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+fn corrupt(original: &[u8], entries: &[&str]) -> Vec<u8> {
+    let payloads = shape_entries(original);
+    let mut changed = original.to_vec();
+    for entry in entries {
+        let (_, payload) = payloads
+            .iter()
+            .find(|(name, _)| name == entry)
+            .expect("the fixture holds the entry");
+        changed[*payload] ^= 0xff;
+    }
+    changed
+}
+
 #[test]
-fn an_unreadable_shape_entry_drops_only_the_objects_that_need_it() {
+fn an_unreadable_shape_entry_drops_only_the_properties_that_need_it() {
     let mut cases = 0;
     for (fixture, original) in fixtures() {
         let Ok(baseline) =
@@ -83,12 +121,11 @@ fn an_unreadable_shape_entry_drops_only_the_objects_that_need_it() {
         let baseline_objects = objects(baseline.ir());
         let baseline_properties = properties(baseline.ir());
         for (entry, payload) in shape_entries(&original) {
-            let owners = baseline_properties
+            let needing = baseline_properties
                 .iter()
                 .filter(|property| property.family == crate::native::PropertyFamily::Geometry)
                 .filter(|property| property.side_entries().contains(&entry))
-                .map(|property| property.owner.clone())
-                .filter(|owner| baseline_objects.iter().any(|object| object.id() == owner))
+                .map(|property| property.id.clone())
                 .collect::<BTreeSet<_>>();
             let mut changed = original.clone();
             changed[payload] ^= 0xff;
@@ -96,33 +133,31 @@ fn an_unreadable_shape_entry_drops_only_the_objects_that_need_it() {
             let decoded = FcstdCodec
                 .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
                 .unwrap_or_else(|error| panic!("{context}: {error}"));
-            let unreadable = decoded
-                .report()
-                .losses
-                .iter()
-                .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
-                .map(|loss| loss.message.clone())
-                .collect::<Vec<_>>();
-            let [message] = unreadable.as_slice() else {
-                panic!("{context}: one record.unreadable loss: {unreadable:?}");
+            let messages = unreadable_messages(&decoded);
+            let [message] = messages.as_slice() else {
+                panic!("{context}: one record.unreadable loss: {messages:?}");
             };
             assert!(
                 message.starts_with(&format!("part archive-entry \"{entry}\"")),
                 "{context}: {message}"
             );
-            let kept = objects(decoded.ir());
-            for owner in &owners {
-                assert!(
-                    !kept.iter().any(|object| object.id() == owner),
-                    "{context}: {owner} kept"
-                );
-                assert!(
-                    message.contains(owner.as_str()),
-                    "{context}: {owner} not named in {message}"
-                );
-            }
             assert_eq!(
-                kept.len() + owners.len(),
+                dropped_ids(message).into_iter().collect::<BTreeSet<_>>(),
+                needing,
+                "{context}"
+            );
+            let kept = properties(decoded.ir());
+            assert_eq!(
+                kept.len() + needing.len(),
+                baseline_properties.len(),
+                "{context}"
+            );
+            assert!(
+                kept.iter().all(|property| !needing.contains(&property.id)),
+                "{context}"
+            );
+            assert_eq!(
+                objects(decoded.ir()).len(),
                 baseline_objects.len(),
                 "{context}"
             );
@@ -135,48 +170,57 @@ fn an_unreadable_shape_entry_drops_only_the_objects_that_need_it() {
 }
 
 #[test]
-fn single_links_to_a_dropped_object_drop_and_list_links_lose_the_entry() {
+fn the_object_and_its_links_stay_when_its_shape_entry_is_unreadable() {
     let original = crate::test_support::test_archive::CORE_DESIGN_PRODUCT;
-    let (_, payload) = shape_entries(original)
-        .into_iter()
-        .find(|(name, _)| name == "Box.Shape.brp")
-        .expect("Box has a shape entry");
-    let mut changed = original.to_vec();
-    changed[payload] ^= 0xff;
     let decoded = FcstdCodec
-        .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(corrupt(original, &["Box.Shape.brp"])),
+            &DecodeOptions::default(),
+        )
         .expect("the rest of the document decodes");
-    let message = decoded
-        .report()
-        .losses
+    let messages = unreadable_messages(&decoded);
+    let [message] = messages.as_slice() else {
+        panic!("one record.unreadable loss: {messages:?}");
+    };
+    assert_eq!(dropped_ids(message), ["fcstd:native:property#Box:Shape"]);
+    assert!(objects(decoded.ir())
         .iter()
-        .find(|loss| loss.code.to_string() == "decode/record.unreadable")
-        .expect("one record.unreadable loss")
-        .message
-        .clone();
-    let dropped = message
-        .split("; dropped=[")
-        .nth(1)
-        .and_then(|rest| rest.split(']').next())
-        .expect("dropped list");
-    for id in [
-        "fcstd:native:object#Box",
-        "fcstd:native:property#Box:Shape",
-        "fcstd:native:property#Cut:Base",
-    ] {
-        assert!(dropped.contains(id), "{id} not dropped: {message}");
-    }
-    assert!(!dropped.contains("fcstd:native:object#Cut"), "{message}");
-    assert!(
-        message.contains("; lost=[")
-            && message.contains("fcstd:native:property#Product:Group link"),
-        "{message}"
-    );
+        .any(|object| object.id() == "fcstd:native:object#Box"));
     let kept = properties(decoded.ir());
-    assert!(kept
+    for id in [
+        "fcstd:native:property#Cut:Base",
+        "fcstd:native:property#Product:Group",
+    ] {
+        assert!(kept.iter().any(|property| property.id == id), "{id} kept");
+    }
+}
+
+#[test]
+fn each_unreadable_entry_names_the_property_that_needs_it() {
+    let original = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/freecad_fcstd/fixtures/design_history.FCStd"),
+    )
+    .unwrap();
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(corrupt(
+                &original,
+                &["Pad.Shape.brp", "Pad.AddSubShape.brp"],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("the rest of the document decodes");
+    let mut named = unreadable_messages(&decoded)
         .iter()
-        .any(|property| property.id == "fcstd:native:property#Product:Group"));
-    assert!(!kept
-        .iter()
-        .any(|property| property.id == "fcstd:native:property#Cut:Base"));
+        .map(|message| dropped_ids(message))
+        .collect::<Vec<_>>();
+    named.sort();
+    assert_eq!(
+        named,
+        [
+            vec!["fcstd:native:property#Pad:AddSubShape".to_owned()],
+            vec!["fcstd:native:property#Pad:Shape".to_owned()],
+        ]
+    );
 }
