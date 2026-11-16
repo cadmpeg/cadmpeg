@@ -2,6 +2,7 @@
 //! Wire forms, strict round trips, and schemas of the process module.
 
 mod fixtures;
+mod nesting;
 mod round_trip;
 #[cfg(feature = "schema")]
 mod schema;
