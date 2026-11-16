@@ -6,10 +6,10 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::design::construction::{kinds, Construction, FrameAxis};
+use crate::design::construction::{kinds, Construction, FrameAxis, ScalarDimension};
 use crate::design::dimension::Dimension;
 use crate::design::expr::Expression;
-use crate::design::options::{LimitOffset, NativeOptions, SymmetricMeasure};
+use crate::design::options::{LimitOffset, NativeOptions, PathRef, SymmetricMeasure};
 use crate::design::selection::{OrderedSelection, SetSelection};
 use crate::features::ParameterId;
 use crate::scalar::{
@@ -351,6 +351,459 @@ pub enum TextVerticalBox {
     Ink,
     /// The band from the baseline to the cap height.
     CapHeight,
+}
+
+/// Where a pattern's instances lie. Every direction, axis, and plane is a
+/// construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum PatternLayout {
+    /// One or two runs, each along its own direction.
+    Linear {
+        /// The first run.
+        first: LinearRun,
+        /// The second run.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_second"
+        )]
+        second: Option<LinearRun>,
+        /// Whether the second run repeats only the seed, not the first run's
+        /// instances: the instances that then exist are `[i, 0]` and
+        /// `[0, j]`. It occurs only with a `second` run.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_seed_only"
+        )]
+        seed_only: Option<Dimension<bool>>,
+    },
+    /// An angular run about `axis` and an optional radial run outward from
+    /// it.
+    Circular {
+        /// The axis of the angular run.
+        axis: Construction<kinds::Axis>,
+        /// The run about the axis.
+        angular: PatternRun<Angle>,
+        /// The run outward from the axis.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_radial"
+        )]
+        radial: Option<PatternRun<Length>>,
+        /// Whether an instance keeps the seed's orientation or turns with the
+        /// layout.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_orientation"
+        )]
+        orientation: Option<InstanceOrientation>,
+    },
+    /// Instances along a path, `run` stating their spacing by arc length.
+    Path {
+        /// The path.
+        path: PathRef,
+        /// The spacing of the instances by arc length.
+        run: PatternRun<Length>,
+        /// Whether an instance keeps the seed's orientation, turns with the
+        /// path, or follows its frame.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_orientation"
+        )]
+        orientation: Option<InstanceOrientation>,
+    },
+    /// One instance at each picked point, in pick order.
+    Points {
+        /// The points.
+        points: OrderedSelection,
+        /// The point of the seed that lands on each picked point.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_reference"
+        )]
+        reference: Option<Locus>,
+    },
+    /// Runs that each increment seed dimensions. The instance placement
+    /// follows from the incremented placement dimensions, so there is no
+    /// direction.
+    Dimensions(Vec<DimensionRun>),
+    /// One row per instance, with a value per table dimension.
+    Table(DimensionTable),
+    /// The seeds reflected across `plane`. Its one instance is the
+    /// reflection.
+    Mirror {
+        /// The mirror plane.
+        plane: Construction<kinds::Plane>,
+        /// The tolerance with which the mirror stitches the reflection to its
+        /// seed, whatever the seeds are.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_stitch_tolerance"
+        )]
+        stitch_tolerance: Option<Dimension<Length>>,
+    },
+    /// Stages applied in order, each to every instance the earlier stages
+    /// produced, except that a `Scale` stage after the first splits the
+    /// instances made so far into `count` consecutive slices of equal length
+    /// and scales every instance of slice j by slice j's factor about that
+    /// instance's own transformed centre. No stage is a `Composite`.
+    Composite(Vec<PatternLayout>),
+    /// `count` instances, the seed included: instance i, for i from 0 to
+    /// count − 1, is the seed scaled uniformly by 1 + i (factor − 1)/(count −
+    /// 1) about `center`, so the last is scaled by `factor`.
+    Scale {
+        /// The scale of the last instance.
+        factor: Dimension<PositiveReal>,
+        /// The number of instances, the seed included.
+        count: Dimension<u32>,
+        /// The point the instances are scaled about.
+        center: Locus,
+    },
+    /// The instance set and indices of another pattern, which its one pick
+    /// names: one instance per instance index of that pattern other than the
+    /// seed's, with that index, each the seeds rebuilt against that pattern's
+    /// instance.
+    Follow(OrderedSelection),
+    /// Components along a path that lies in one plane, each instance keeping
+    /// the seed's relation to that plane. It occurs only in a component
+    /// pattern.
+    Chain(ChainLayout),
+    /// A layout whose meaning is not established.
+    Native(NonBlankString),
+}
+
+/// Components placed along a planar path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ChainLayout {
+    /// The path, which lies in one plane.
+    pub path: PathRef,
+    /// How the seeds link along the path.
+    pub links: ChainLinks,
+}
+
+/// How the seeds of a chain link along its path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum ChainLinks {
+    /// One link per seed, in the order the seeds alternate. Each link's first
+    /// pin axis is the previous link's second, both pin axes of every link
+    /// lie on the path, and consecutive pin axes are therefore a chord of the
+    /// path as long as the link's own pin distance.
+    Connected(Vec<ChainLink>),
+    /// A linkage whose meaning is not established.
+    Native {
+        /// The source's form.
+        kind: NonBlankString,
+        /// The entities of the seeds it picks.
+        picks: OrderedSelection,
+    },
+}
+
+/// One link of a connected chain.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ChainLink {
+    /// Two axes of the seed's own geometry, both on the path.
+    pub pins: [Construction<kinds::Axis>; 2],
+}
+
+/// A run along a direction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct LinearRun {
+    /// The direction of the run.
+    pub direction: Construction<kinds::Direction>,
+    /// The instances along it.
+    pub run: PatternRun<Length>,
+}
+
+/// The instances along one run of a pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    deny_unknown_fields,
+    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+)]
+pub struct PatternRun<Q> {
+    /// How the run spaces its instances.
+    pub spacing: Spacing<Q>,
+    /// Where the run places its instances. `None` states nothing.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_sides"
+    )]
+    pub sides: Option<RunSides<Q>>,
+    /// The seed's step count from the run's first instance: the run's
+    /// instances then span coordinates −`seed` to count − 1 − `seed`. `None`
+    /// places the seed first.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_seed"
+    )]
+    pub seed: Option<Dimension<u32>>,
+    /// Parameters of the seed definition that change by `step` per
+    /// coordinate along the run.
+    pub increments: Vec<Increment>,
+}
+
+/// Where a run places its instances.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+)]
+pub enum RunSides<Q> {
+    /// Along the run's direction from the seed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    One,
+    /// Against the run's direction from the seed, so the instances'
+    /// coordinates are negative. It occurs only in a `Path` run.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Against,
+    /// The run mirrored onto the reverse side.
+    Symmetric {
+        /// How the stored count is read. `None` means not read.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_count"
+        )]
+        count: Option<SymmetricMeasure>,
+        /// How the stored distance of a `Span` or `PitchSpan` is read. `None`
+        /// means not read.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_extent"
+        )]
+        extent: Option<SymmetricMeasure>,
+    },
+    /// A second arm against the run's direction with its own spacing.
+    Reverse(Box<Spacing<Q>>),
+}
+
+/// The spacing of a run. Every count includes the seed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+)]
+pub enum Spacing<Q> {
+    /// Count and spacing between neighbours.
+    Pitch {
+        /// The number of instances.
+        count: Dimension<u32>,
+        /// The spacing between neighbours.
+        pitch: Dimension<Q>,
+    },
+    /// Count and the distance or angle from the first instance to the last.
+    Span {
+        /// The number of instances.
+        count: Dimension<u32>,
+        /// The distance or angle from the first instance to the last.
+        span: Dimension<Q>,
+    },
+    /// Spacing and total extent, with the count derived.
+    PitchSpan {
+        /// The spacing between neighbours.
+        pitch: Dimension<Q>,
+        /// The total extent.
+        span: Dimension<Q>,
+    },
+    /// `count` instances spread over the whole path or the whole turn.
+    Fit {
+        /// The number of instances.
+        count: Dimension<u32>,
+    },
+    /// A linear run filled up to a reference.
+    UpTo {
+        /// The reference the run fills up to.
+        reference: Box<OrderedSelection>,
+        /// The count or the spacing.
+        fill: UpToFill<Q>,
+        /// The distance short of the reference at which the run stops.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset"
+        )]
+        offset: Option<Dimension<Q>>,
+        /// The locus on the seed the run is measured from.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_from"
+        )]
+        from: Option<Locus>,
+    },
+    /// The spacing between each neighbour pair, in order, so the count is its
+    /// length plus one.
+    List(Vec<Dimension<Q>>),
+    /// A spacing whose meaning is not established.
+    Native(NonBlankString),
+}
+
+/// How an `UpTo` run fills its extent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+)]
+pub enum UpToFill<Q> {
+    /// A number of instances.
+    Count(Dimension<u32>),
+    /// A spacing between neighbours.
+    Pitch(Dimension<Q>),
+}
+
+/// A point on a seed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Locus {
+    /// The seed's centroid.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Centroid,
+    /// A constructed point.
+    Point(Box<Construction<kinds::Point>>),
+}
+
+/// Whether a circular or path instance keeps the seed's orientation or turns
+/// with the layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum InstanceOrientation {
+    /// Keeps the seed's orientation.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Fixed,
+    /// Turns with the layout: about the axis, or tangent to the path.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Follow,
+    /// Follows the path's Frenet frame.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Frenet,
+    /// Puts the instance's x axis on the path tangent and its
+    /// `reference_axis` on the `reference` direction made orthogonal to the
+    /// tangent, the third axis completing a right-handed frame, after turning
+    /// the seed so that its `seed_axis`, or its x axis where that is `None`,
+    /// lies on its x axis.
+    Rolled {
+        /// The direction the reference axis lies on.
+        reference: PathReference,
+        /// The axis of the instance, `Y` or `Z`, that lies on `reference`.
+        reference_axis: FrameAxis,
+        /// The axis of the seed turned onto the instance's x axis.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_seed_axis"
+        )]
+        seed_axis: Option<Box<Construction<kinds::Direction>>>,
+    },
+    /// An orientation whose meaning is not established.
+    Native(NonBlankString),
+}
+
+/// The direction a rolled instance's reference axis lies on.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PathReference {
+    /// The normal of the path's plane on the side of the z axis of the path's
+    /// placement, and the definition's +Z for a path that is not planar.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    PlaneNormal,
+    /// A constructed direction.
+    Direction(Box<Construction<kinds::Direction>>),
+}
+
+/// A change of a seed parameter per coordinate along a run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct Increment {
+    /// The parameter of the seed definition.
+    pub parameter: ParameterId,
+    /// The change per coordinate. It is a dimension, so a parameter can
+    /// drive it.
+    pub step: ScalarDimension,
+}
+
+/// One run of a dimension pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct DimensionRun {
+    /// The number of instances.
+    pub count: Dimension<u32>,
+    /// The seed dimensions it increments.
+    pub increments: Vec<Increment>,
+}
+
+/// A table pattern: one row per instance, with a value per table dimension.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct DimensionTable {
+    /// The table dimensions.
+    pub parameters: Vec<ParameterId>,
+    /// The rows, one per instance.
+    pub rows: Vec<TableRow>,
+}
+
+/// One instance of a table pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct TableRow {
+    /// The instance's coordinate.
+    pub instance: u32,
+    /// A value per table dimension, `None` where the row keeps the seed's
+    /// value.
+    pub values: Vec<Option<ScalarDimension>>,
 }
 
 /// What the source does with the tools of an operation. Which bodies the
@@ -1095,11 +1548,13 @@ cadmpeg_core::named_optional_field!(deserialize_alignment<T>, T, "alignment");
 cadmpeg_core::named_optional_field!(deserialize_angle<T>, T, "angle");
 cadmpeg_core::named_optional_field!(deserialize_axes<T>, T, "axes");
 cadmpeg_core::named_optional_field!(deserialize_contact<T>, T, "contact");
+cadmpeg_core::named_optional_field!(deserialize_count<T>, T, "count");
 cadmpeg_core::named_optional_field!(deserialize_damping<T>, T, "damping");
 cadmpeg_core::named_optional_field!(deserialize_distance<T>, T, "distance");
 cadmpeg_core::named_optional_field!(deserialize_end<T>, T, "end");
-cadmpeg_core::named_optional_field!(deserialize_extend<T>, T, "extend");
-cadmpeg_core::named_optional_field!(deserialize_far<T>, T, "far");
+cadmpeg_core::named_optional_field!(deserialize_extend, Dimension<bool>, "extend");
+cadmpeg_core::named_optional_field!(deserialize_extent<T>, T, "extent");
+cadmpeg_core::named_optional_field!(deserialize_far, Dimension<bool>, "far");
 cadmpeg_core::named_optional_field!(deserialize_filled<T>, T, "filled");
 cadmpeg_core::named_optional_field!(deserialize_flip<T>, T, "flip");
 cadmpeg_core::named_optional_field!(deserialize_font<T>, T, "font");
@@ -1115,20 +1570,29 @@ cadmpeg_core::named_optional_field!(deserialize_limits<T>, T, "limits");
 cadmpeg_core::named_optional_field!(deserialize_lock_rotation<T>, T, "lock_rotation");
 cadmpeg_core::named_optional_field!(deserialize_max<T>, T, "max");
 cadmpeg_core::named_optional_field!(deserialize_max_force<T>, T, "max_force");
-cadmpeg_core::named_optional_field!(deserialize_measure<T>, T, "measure");
+cadmpeg_core::named_optional_field!(deserialize_measure, SymmetricMeasure, "measure");
 cadmpeg_core::named_optional_field!(deserialize_min<T>, T, "min");
 cadmpeg_core::named_optional_field!(deserialize_mode<T>, T, "mode");
 cadmpeg_core::named_optional_field!(deserialize_oblique<T>, T, "oblique");
 cadmpeg_core::named_optional_field!(deserialize_offset<T>, T, "offset");
+cadmpeg_core::named_optional_field!(deserialize_orientation<T>, T, "orientation");
 cadmpeg_core::named_optional_field!(deserialize_pitch<T>, T, "pitch");
 cadmpeg_core::named_optional_field!(deserialize_pitch_radius<T>, T, "pitch_radius");
 cadmpeg_core::named_optional_field!(deserialize_pitch_yaw<T>, T, "pitch_yaw");
 cadmpeg_core::named_optional_field!(deserialize_position<T>, T, "position");
+cadmpeg_core::named_optional_field!(deserialize_radial<T>, T, "radial");
 cadmpeg_core::named_optional_field!(deserialize_ratio<T>, T, "ratio");
+cadmpeg_core::named_optional_field!(deserialize_reference<T>, T, "reference");
 cadmpeg_core::named_optional_field!(deserialize_rest<T>, T, "rest");
 cadmpeg_core::named_optional_field!(deserialize_roll<T>, T, "roll");
+cadmpeg_core::named_optional_field!(deserialize_second<T>, T, "second");
+cadmpeg_core::named_optional_field!(deserialize_seed<T>, T, "seed");
+cadmpeg_core::named_optional_field!(deserialize_seed_axis<T>, T, "seed_axis");
+cadmpeg_core::named_optional_field!(deserialize_seed_only<T>, T, "seed_only");
+cadmpeg_core::named_optional_field!(deserialize_sides<T>, T, "sides");
 cadmpeg_core::named_optional_field!(deserialize_start<T>, T, "start");
 cadmpeg_core::named_optional_field!(deserialize_stiffness<T>, T, "stiffness");
+cadmpeg_core::named_optional_field!(deserialize_stitch_tolerance<T>, T, "stitch_tolerance");
 cadmpeg_core::named_optional_field!(deserialize_taper<T>, T, "taper");
 cadmpeg_core::named_optional_field!(deserialize_target_position<T>, T, "target_position");
 cadmpeg_core::named_optional_field!(deserialize_target_velocity<T>, T, "target_velocity");
