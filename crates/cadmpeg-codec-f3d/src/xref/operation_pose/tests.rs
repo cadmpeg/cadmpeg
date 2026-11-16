@@ -30,9 +30,9 @@ fn frame(prefix: usize, explicit: bool) -> Vec<u8> {
     body
 }
 
-/// A version 4 table: a path of `path` placement references ending at record
-/// 10, the path-ordinal field with `ordinals` values after its count, and two
-/// entries, the last with an explicit matrix.
+/// A version 4 table: a path of placement references, the path-ordinal field
+/// with `ordinals` values after its count, and two entries, the last with an
+/// explicit matrix.
 fn path_ordinal_frame(path: &[u64], count: u32, ordinals: &[u32]) -> Vec<u8> {
     let mut body = 3_u32.to_le_bytes().to_vec();
     body.extend(b"318");
@@ -67,46 +67,63 @@ fn path_ordinal_frame(path: &[u64], count: u32, ordinals: &[u32]) -> Vec<u8> {
 }
 
 #[test]
-fn version_4_table_poses_the_last_occurrence_of_its_path() {
+fn version_4_table_poses_the_occurrence_of_its_one_reference_path() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let stream = "Design/BulkStream.dat";
-    for (path, ordinals) in [(&[10_u64][..], &[1_u32][..]), (&[12, 10], &[1, 2])] {
-        let count = u32::try_from(path.len()).unwrap();
-        let body = path_ordinal_frame(path, count, ordinals);
-        let pose = parse(&body).expect("version 4 table");
-        assert_eq!(pose.target_record_index, 10);
-        assert_eq!(pose.matrix[1][3], 2.5);
-        assert_eq!(pose.source_root_record_index, 3);
+    let body = path_ordinal_frame(&[10], 1, &[1]);
+    let pose = parse(&body).expect("version 4 table");
+    assert_eq!(pose.target_record_index, 10);
+    assert_eq!(pose.matrix[1][3], 2.5);
+    assert_eq!(pose.source_root_record_index, 3);
+    let mut table = OperationTables::default();
+    register(&ctx, &mut table, stream, &body, Some(4)).unwrap();
+    assert_eq!(table.native, 0);
+    assert!(table
+        .poses
+        .get(&(crate::ids::native_scope(stream), 10))
+        .is_some_and(Option::is_some));
+    let mut reference = reference();
+    reference.operation_pose = Some(XrefOperationPose {
+        carrier_record_index: 20,
+        frame_bytes: body.clone().into(),
+        transform: Some(pose.matrix.try_into().unwrap()),
+    });
+    assert!(reference_matches(&reference));
+    // The other versions read another grammar.
+    for version in [0, 1, 2, 3, 5] {
         let mut table = OperationTables::default();
-        register(&ctx, &mut table, stream, &body, Some(4)).unwrap();
-        assert_eq!(table.native, 0);
-        assert_eq!(
-            table.poses.values().filter(|pose| pose.is_some()).count(),
-            1
-        );
-        // The other versions read another grammar.
-        for version in [0, 1, 2, 3, 5] {
-            let mut table = OperationTables::default();
-            register(&ctx, &mut table, stream, &body, Some(version)).unwrap();
-            assert!(table.poses.is_empty(), "version {version}");
-            assert_eq!(table.native, 1);
-        }
-        for end in 0..body.len() {
-            assert!(parse(&body[..end]).is_none(), "truncated at {end}");
-        }
+        register(&ctx, &mut table, stream, &body, Some(version)).unwrap();
+        assert!(table.poses.is_empty(), "version {version}");
+        assert_eq!(table.native, 1);
     }
-    // The field count equals the path length, and its marker is 2.
+    for end in 0..body.len() {
+        assert!(parse(&body[..end]).is_none(), "truncated at {end}");
+    }
+    // The field marker is 2 and its count is 1.
     assert!(parse(&path_ordinal_frame(&[10], 2, &[1, 2])).is_none());
-    assert!(parse(&path_ordinal_frame(&[12, 10], 1, &[1])).is_none());
-    let mut marker = path_ordinal_frame(&[10], 1, &[1]);
+    assert!(parse(&path_ordinal_frame(&[10], 0, &[])).is_none());
+    let mut marker = body.clone();
     let marker_at = 15 + 4 + 6 + 4 + 4 + local_reference(10).len();
     assert_eq!(marker[marker_at], 2);
     marker[marker_at] = 3;
     assert!(parse(&marker).is_none());
-    // A path holds one or two references.
-    assert!(parse(&path_ordinal_frame(&[], 0, &[])).is_none());
-    assert!(parse(&path_ordinal_frame(&[14, 12, 10], 3, &[1, 2, 3])).is_none());
-    assert!(parse(&path_ordinal_frame(&[0], 1, &[1])).is_none());
+    // The ordinal value does not select the grammar.
+    assert_eq!(
+        parse(&path_ordinal_frame(&[10], 1, &[7])).map(|pose| pose.target_record_index),
+        Some(10)
+    );
+    // An empty path, a two-reference path, and a null placement stay native.
+    for refused in [
+        path_ordinal_frame(&[], 0, &[]),
+        path_ordinal_frame(&[12, 10], 2, &[1, 2]),
+        path_ordinal_frame(&[0], 1, &[1]),
+    ] {
+        assert!(parse(&refused).is_none());
+        let mut table = OperationTables::default();
+        register(&ctx, &mut table, stream, &refused, Some(4)).unwrap();
+        assert!(table.poses.is_empty());
+        assert_eq!(table.native, 1);
+    }
 }
 
 fn reference() -> XrefReference {

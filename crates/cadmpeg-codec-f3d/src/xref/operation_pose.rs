@@ -42,7 +42,7 @@ enum TableForm {
     ShortRun,
     /// A six-byte zero run and a one-reference path.
     LongRun,
-    /// A six-byte zero run, a path of one or two references, and the path-ordinal field.
+    /// A six-byte zero run, a one-reference path, and the path-ordinal field.
     PathOrdinals,
 }
 
@@ -62,13 +62,6 @@ impl TableForm {
         match self {
             Self::ShortRun => 2,
             Self::LongRun | Self::PathOrdinals => 6,
-        }
-    }
-
-    fn path_lengths(self) -> std::ops::RangeInclusive<u32> {
-        match self {
-            Self::ShortRun | Self::LongRun => 1..=1,
-            Self::PathOrdinals => 1..=2,
         }
     }
 }
@@ -102,31 +95,23 @@ fn parse_form(body: &[u8], form: TableForm) -> Option<DirectPose> {
     for _ in 0..deps {
         take_owned_reference(body, &mut at)?;
     }
-    let path = View::u32_le_at(body, at)?;
-    if !form.path_lengths().contains(&path) {
+    if View::u32_le_at(body, at)? != 1 {
         return None;
     }
     at += 4;
-    let mut target = 0;
-    for _ in 0..path {
-        let (placement, inline) = take_owned_reference(body, &mut at)?.into_local()?;
-        if placement == 0
-            || inline.is_some_and(|guid| {
-                !guid.eq_ignore_ascii_case(super::OCCURRENCE_PLACEMENT_TYPE_GUID)
-            })
-        {
-            return None;
-        }
-        target = placement;
+    let (target, inline) = take_owned_reference(body, &mut at)?.into_local()?;
+    if target == 0
+        || inline
+            .is_some_and(|guid| !guid.eq_ignore_ascii_case(super::OCCURRENCE_PLACEMENT_TYPE_GUID))
+    {
+        return None;
     }
     if form == TableForm::PathOrdinals {
-        if body.get(at) != Some(&PATH_ORDINAL_FIELD) || View::u32_le_at(body, at + 1)? != path {
+        if body.get(at) != Some(&PATH_ORDINAL_FIELD) || View::u32_le_at(body, at + 1)? != 1 {
             return None;
         }
-        at += 5;
-        let ordinals = usize::try_from(path).ok()?.checked_mul(4)?;
-        body.get(at..at.checked_add(ordinals)?)?;
-        at += ordinals;
+        View::u32_le_at(body, at + 5)?;
+        at += 9;
     }
     let (source_root_record_index, root_type) =
         take_owned_reference(body, &mut at)?.into_local()?;
