@@ -22,5 +22,7 @@ pub mod refs;
 pub mod selection;
 pub mod units;
 
+mod identity_rewrite;
+
 #[cfg(test)]
 mod tests;

@@ -1,0 +1,116 @@
+use crate::design::construction::{
+    kinds, AnyConstruction, Construction, ConstructionInput, FrameAxis, InputReference, PostStep,
+    SourceMode,
+};
+use crate::design::dimension::Dimension;
+use crate::design::names::{CodecId, NativeNameValue};
+use crate::design::options::NativeOption;
+use crate::design::selection::OrderedSelection;
+use crate::features::{ConfigurationId, ParameterId};
+use crate::scalar::Length;
+use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
+
+#[test]
+fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() {
+    let literal = "test:model:parameter#one";
+    let selection: OrderedSelection = serde_json::from_value(serde_json::json!({
+        "at":{"kind":"input"},
+        "picks":{"kind":"named","value":[{
+            "target":{"kind":"datum","value":{"feature":"test:model:feature#datum"}},
+            "context":{"kind":"definition","value":{"definition":"test:model:definition#part","configuration":{"kind":"local","value":"test:model:configuration#one"}}},
+            "native":{"codec":"f3d","value":{"kind":"text","value":literal}},
+            "domain":{"kind":"limits","value":{"start":{"target":{"kind":"feature","value":"test:model:feature#limit"}}}}
+        }]},
+        "native":[literal]
+    })).unwrap();
+    let point = Construction::<kinds::Point> {
+        inputs: vec![ConstructionInput {
+            role: None,
+            reference: Some(InputReference::Picks(selection)),
+            value: None,
+            reversed: None,
+        }],
+        after: vec![PostStep::Translate {
+            axis: FrameAxis::X,
+            distance: Dimension::Parameter(ParameterId::mint(literal).unwrap()),
+        }],
+        mode: Some(SourceMode {
+            codec: CodecId::from(cadmpeg_core::nonblank_literal!("f3d")),
+            method: NativeNameValue::Text(
+                cadmpeg_core::text::NonBlankString::new(literal).unwrap(),
+            ),
+            native_options: std::collections::BTreeMap::from([(
+                cadmpeg_core::text::NonBlankString::new(literal).unwrap(),
+                NativeOption::Text(Dimension::Literal(
+                    cadmpeg_core::text::NonBlankString::new(literal).unwrap(),
+                )),
+            )]),
+            source_settings: Default::default(),
+        }),
+        resolved_in: std::collections::BTreeMap::from([(
+            ConfigurationId::mint("test:model:configuration#two").unwrap(),
+            crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 2.0, 3.0)).unwrap(),
+        )]),
+        ..Default::default()
+    };
+    let input = ConstructionInput {
+        role: None,
+        reference: Some(InputReference::Built(Box::new(AnyConstruction::Point(
+            point,
+        )))),
+        value: Some(crate::design::construction::ScalarDimension::Length(
+            Dimension::Literal(Length::new(4.0).unwrap()),
+        )),
+        reversed: None,
+    };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut seen = std::collections::BTreeSet::new();
+    input
+        .visit_identity_references(&ctx, &mut |id| {
+            seen.insert(id.to_owned());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        seen,
+        [
+            "test:model:feature#datum",
+            "test:model:definition#part",
+            "test:model:configuration#one",
+            "test:model:feature#limit",
+            literal,
+            "test:model:configuration#two"
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+    );
+    let replacements = std::collections::BTreeMap::from([(
+        literal.to_owned(),
+        "test:placed:parameter#one".to_owned(),
+    )]);
+    let replacements = TextReplacements::build(replacements.iter()).unwrap();
+    let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:model:", "test:placed:")))
+        .with_text_replacements(&replacements);
+    let rewritten = input.rewrite_identities(&ctx, &mut map).unwrap();
+    map.finish().unwrap();
+    let text = serde_json::to_string(&rewritten).unwrap();
+    assert!(text.contains("test:placed:feature#datum"));
+    assert!(text.contains("test:placed:configuration#two"));
+    let Some(InputReference::Built(built)) = rewritten.reference else {
+        panic!("built input");
+    };
+    let AnyConstruction::Point(point) = *built else {
+        panic!("point");
+    };
+    let mode = point.mode.unwrap();
+    assert_eq!(
+        mode.method,
+        NativeNameValue::Text(cadmpeg_core::text::NonBlankString::new(literal).unwrap())
+    );
+    assert!(mode.native_options.contains_key(literal));
+    let Some(InputReference::Picks(selection)) = &point.inputs[0].reference else {
+        panic!("picks");
+    };
+    assert_eq!(selection.native.as_ref().unwrap().as_slice(), [literal]);
+}
