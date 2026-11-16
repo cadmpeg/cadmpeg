@@ -1107,7 +1107,7 @@ fn point_sources(
     ir: &CadIr,
 ) -> std::collections::BTreeMap<u64, std::vec::Vec<cadmpeg_ir::ids::PointId>> {
     let mut points = BTreeMap::<u64, Vec<_>>::new();
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         let Some(source) = source_numeric_id(point.id.as_str(), "point") else {
             continue;
         };
@@ -1121,7 +1121,7 @@ fn curve_sources(
     ir: &CadIr,
 ) -> std::collections::BTreeMap<u64, std::vec::Vec<cadmpeg_ir::ids::CurveId>> {
     let mut curves = BTreeMap::<u64, Vec<_>>::new();
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         let Some(source) = source_numeric_id(curve.id.as_str(), "curve") else {
             continue;
         };

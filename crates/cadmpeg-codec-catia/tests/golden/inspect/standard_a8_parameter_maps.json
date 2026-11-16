@@ -8,25 +8,29 @@
         "extent_count": "1",
         "extent_words": "0x00000000"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "MainDataStream",
       "role": "stream",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 4862
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {},
         "dialect": "catia:inner-no-directory"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "outer V5_CFV2 container: directory offset 5125 + length 0 = 5125 (file size 5125); variant: nested V5_CFV2 with no BREP-body directory (contiguous inner body): freeform carrier decode supported",
     "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 1 stream(s)",

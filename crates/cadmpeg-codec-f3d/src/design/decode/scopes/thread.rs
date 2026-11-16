@@ -56,8 +56,7 @@ pub(super) fn exact_thread_construction(
     )?;
     if matches!(
         construction.form,
-        DesignThreadForm::StandardExtended
-            | DesignThreadForm::CompactExtended(_)
+        DesignThreadForm::CompactExtended(_)
             | DesignThreadForm::CompactOwnersLeading
             | DesignThreadForm::CompactOwnersTrailing
     ) {
@@ -68,10 +67,16 @@ pub(super) fn exact_thread_construction(
             .collect::<Vec<_>>();
         construction.face_group_record_indices = construction.form.face_groups(&references);
     }
-    if matches!(
+    if construction.form == DesignThreadForm::StandardExtended {
+        let entries = match &prefix_form {
+            ThreadPrefix::Extended(prefix) => prefix.entry_count,
+            _ => return None,
+        };
+        construction.face_group_record_indices =
+            extended_standard_face_groups(bytes, scope, owners, designation_at, entries)?;
+    } else if matches!(
         construction.form,
-        DesignThreadForm::StandardExtended
-            | DesignThreadForm::CompactExtended(_)
+        DesignThreadForm::CompactExtended(_)
             | DesignThreadForm::CompactOwnersLeading
             | DesignThreadForm::CompactOwnersTrailing
     ) {
@@ -80,7 +85,7 @@ pub(super) fn exact_thread_construction(
         let (_, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
         let trailer = after_profile.checked_add(thread_tail::STANDARD_TRAILER)?;
         let (length_at, offset_at, length_ordinal, offset_ordinal) = match construction.form {
-            DesignThreadForm::StandardExtended | DesignThreadForm::CompactOwnersTrailing => (
+            DesignThreadForm::CompactOwnersTrailing => (
                 extended_standard::LENGTH_REFERENCE,
                 extended_standard::OFFSET_REFERENCE,
                 reference_count.checked_sub(1)?,
@@ -132,6 +137,51 @@ pub(super) fn exact_thread_construction(
     Some(construction)
 }
 
+/// The face-selection groups of an extended standard scope.
+///
+/// The trailer's length and offset references each name one scope reference,
+/// the owner with local ordinal `1` and `0`. The other references are the
+/// ordered `(group, member)` pairs. A modeled prefix holds one entry for each
+/// pair.
+fn extended_standard_face_groups(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    owners: &[crate::records::parameters::DesignParameterOwner],
+    designation_at: usize,
+    entries: usize,
+) -> Option<Vec<u32>> {
+    let (_, after_designation) = lp_utf16_bounded(bytes, designation_at, 1..=128)?;
+    let (_, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
+    let (_, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
+    let trailer = after_profile.checked_add(thread_tail::STANDARD_TRAILER)?;
+    let references = scope
+        .reference_members()
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
+    let ordinal_of = |at: usize| {
+        let record =
+            super::shared_frames::marked_record_reference(bytes, trailer.checked_add(at)?)?;
+        let mut ordinals = references
+            .iter()
+            .enumerate()
+            .filter(|(_, reference)| **reference == record)
+            .map(|(ordinal, _)| ordinal);
+        let ordinal = ordinals.next()?;
+        ordinals.next().is_none().then_some(ordinal)
+    };
+    let length = ordinal_of(extended_standard::LENGTH_REFERENCE)?;
+    let offset = ordinal_of(extended_standard::OFFSET_REFERENCE)?;
+    if length == offset
+        || DesignThreadForm::StandardExtended.owner_ordinals(scope, owners)
+            != Some((offset, length))
+    {
+        return None;
+    }
+    let groups = DesignThreadForm::extended_standard_face_groups(&references, (offset, length));
+    (entries == 0 || entries == groups.len()).then_some(groups)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ThreadPrefix {
     Standard,
@@ -145,9 +195,14 @@ pub(super) enum ThreadPrefix {
 pub(super) struct ExtendedThreadPrefix {
     external: bool,
     modeled: bool,
+    /// Count of the 16-byte entries: one for each modeled face.
+    entry_count: usize,
     class: String,
     designation_copy: String,
 }
+
+/// Most 16-byte entries that an extended Thread prefix admits.
+const EXTENDED_PREFIX_ENTRY_LIMIT: usize = 4096;
 
 /// Byte length of each counted entry in an extended Thread prefix.
 const EXTENDED_PREFIX_ENTRY_LEN: usize = 16;
@@ -225,12 +280,12 @@ fn extended_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
         1 => true,
         _ => return None,
     };
-    let modeled = match View::u32_le_at(bytes, count_at)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
-    let class_at = entries_at + usize::from(modeled) * EXTENDED_PREFIX_ENTRY_LEN;
+    let entry_count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+    if entry_count > EXTENDED_PREFIX_ENTRY_LIMIT {
+        return None;
+    }
+    let modeled = entry_count != 0;
+    let class_at = entries_at.checked_add(entry_count.checked_mul(EXTENDED_PREFIX_ENTRY_LEN)?)?;
     let (class, copy_at) = lp_utf16_bounded(bytes, class_at, 1..=THREAD_CLASS_UNITS)?;
     let (designation_copy, designation_at) = lp_utf16_bounded(bytes, copy_at, 0..=128)?;
     if !designation_copy.is_empty()
@@ -242,6 +297,7 @@ fn extended_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
         ThreadPrefix::Extended(ExtendedThreadPrefix {
             external,
             modeled,
+            entry_count,
             class,
             designation_copy,
         }),
@@ -287,13 +343,24 @@ pub(super) fn parse_thread_payload(
         }) {
             return None;
         }
+        let zero_flag_trailer = bytes.get(after_profile + thread_tail::STANDARD_TRAILER)
+            == Some(&extended_standard::ZERO_FLAG_VALUE);
         let (pitch_marker, trailer_kind, full_length) =
             match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
-                (ThreadPrefix::Extended(prefix), [flag @ (0 | 1), 1, 0, 0, 0]) => (
-                    u8::from(prefix.modeled),
-                    ThreadTrailerKind::ExtendedStandard,
-                    Some(*flag == 1),
-                ),
+                (ThreadPrefix::Extended(prefix), [flag @ (0 | 1), 1 | 2, 0, 0, 0])
+                    if zero_flag_trailer =>
+                {
+                    // The modeled marker of a modeled thread is 0 while the scope has no result.
+                    let stated = *bytes.get(after_profile + thread_tail::PITCH_MARKER)?;
+                    if stated > u8::from(prefix.modeled) {
+                        return None;
+                    }
+                    (
+                        stated,
+                        ThreadTrailerKind::ExtendedStandard,
+                        Some(*flag == 1),
+                    )
+                }
                 (ThreadPrefix::CompactOwned, [0, 1, 0, 0, 0]) => {
                     (0, ThreadTrailerKind::CompactOwnersLeading, None)
                 }
@@ -333,14 +400,27 @@ pub(super) fn parse_thread_payload(
             | ThreadTrailerKind::CompactOwnersTrailing => thread_tail::STANDARD_TRAILER,
         };
         let trailer_offset = after_profile.checked_add(trailer_at)?;
+        let right_handed = match trailer_kind {
+            ThreadTrailerKind::ExtendedStandard => {
+                match bytes.get(trailer_offset + extended_standard::RIGHT_HANDED)? {
+                    0 => Some(false),
+                    1 => Some(true),
+                    _ => return None,
+                }
+            }
+            _ => None,
+        };
         let form = match trailer_kind {
             ThreadTrailerKind::ExtendedStandard
-            | ThreadTrailerKind::CompactOwnersLeading
-            | ThreadTrailerKind::CompactOwnersTrailing
+                if bytes.get(trailer_offset + extended_standard::ZERO_FLAG)
+                    == Some(&extended_standard::ZERO_FLAG_VALUE) =>
+            {
+                DesignThreadForm::StandardExtended
+            }
+            ThreadTrailerKind::CompactOwnersLeading | ThreadTrailerKind::CompactOwnersTrailing
                 if bytes.get(trailer_offset + extended_standard::ZERO_FLAG)
                     == Some(&extended_standard::ZERO_FLAG_VALUE)
-                    && bytes.get(trailer_offset + extended_standard::END_FLAG)
-                        == Some(&extended_standard::END_FLAG_VALUE) =>
+                    && bytes.get(trailer_offset + extended_standard::RIGHT_HANDED) == Some(&1) =>
             {
                 match trailer_kind {
                     ThreadTrailerKind::CompactOwnersLeading => {
@@ -429,6 +509,7 @@ pub(super) fn parse_thread_payload(
                 external: prefix.external,
                 modeled: prefix.modeled,
                 full_length,
+                right_handed,
             }),
         })
     })()

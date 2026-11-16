@@ -568,7 +568,7 @@ fn decode_uses_type116_boundary_without_assigning_malformed_groups() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(!result
         .report()
         .losses
@@ -926,7 +926,7 @@ fn decode_uses_type126_entity_boundary_for_form7_association() {
             .unwrap();
 
         assert!(result.report().losses.is_empty(), "Form {form}");
-        assert_eq!(result.ir().model.curves.len(), 1, "Form {form}");
+        assert_eq!(result.ir().geometry.curves.len(), 1, "Form {form}");
         let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
             .find(|record| record.id() == "iges:entity:directory#3")
@@ -972,7 +972,7 @@ fn decode_uses_type112_entity_boundary_for_form7_association() {
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#3")

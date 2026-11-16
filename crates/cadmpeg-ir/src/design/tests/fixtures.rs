@@ -32,9 +32,11 @@ use crate::design::selection::{
     PrincipalEntity, Propagation, RuleTerm, Selection, SelectionRule, SketchRegion, StepRef,
     Witness,
 };
-use crate::design::topology::Topology;
 use crate::design::units::{Unit, UnitFactor, UnitSymbol};
+use crate::document::Topology;
+use crate::examples::unit_cube;
 use crate::features::{ConfigurationId, FeatureId, FinitePoint3, NativeSelections, ParameterId};
+use crate::geometry::{ProceduralCurve, ProceduralCurveDefinition};
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, OccurrenceId, PcurveId, PointId,
     ProceduralCurveId, ProceduralSurfaceId, ProductDefinitionId, RegionId, ShellId, SubdId,
@@ -323,6 +325,22 @@ pub(super) fn frame_value() -> FrameValue {
     }
 }
 
+/// A body that a witness backs up: the unit cube's geometry, with a
+/// procedural carrier attached to its first curve.
+pub(super) fn witness_body() -> Topology {
+    let mut body = unit_cube().unwrap().geometry;
+    let owner = body.curves[0].id.clone();
+    body.add_procedural_curve(
+        &owner,
+        ProceduralCurve::new(
+            ProceduralCurveId::mint("test:design:construction#witness").unwrap(),
+            ProceduralCurveDefinition::Exact { cache: None },
+        ),
+    )
+    .unwrap();
+    body
+}
+
 pub(super) fn witnesses() -> Vec<Witness> {
     vec![
         Witness {
@@ -332,7 +350,7 @@ pub(super) fn witnesses() -> Vec<Witness> {
             frame: Some(frame_value()),
             curves: Vec::new(),
             surface: None,
-            body: Some(Box::new(Topology::default())),
+            body: Some(Box::new(witness_body())),
         },
         Witness {
             point: None,

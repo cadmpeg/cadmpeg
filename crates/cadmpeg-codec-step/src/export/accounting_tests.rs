@@ -94,7 +94,7 @@ fn bodies_outside_products_have_a_counted_root_assignment_note() {
     );
     ir.model.product_definitions[0]
         .bodies
-        .push(ir.model.bodies[0].id.clone());
+        .push(ir.geometry.bodies[0].id.clone());
     let report = write_step(
         &ir,
         &mut Vec::new(),
@@ -115,14 +115,14 @@ fn solid_and_sheet_shell_wire_members_have_counted_export_losses() {
         cadmpeg_ir::topology::BodyKind::Sheet,
     ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        ir.model.bodies[0].kind = kind;
-        let shell = &ir.model.shells[0];
-        ir.model.shells[0] = cadmpeg_ir::topology::Shell::new(
+        ir.geometry.bodies[0].kind = kind;
+        let shell = &ir.geometry.shells[0];
+        ir.geometry.shells[0] = cadmpeg_ir::topology::Shell::new(
             shell.id.clone(),
             shell.region.clone(),
             shell.faces().to_vec(),
-            vec![ir.model.edges[0].id.clone()],
-            vec![ir.model.vertices[0].id.clone()],
+            vec![ir.geometry.edges[0].id.clone()],
+            vec![ir.geometry.vertices[0].id.clone()],
         )
         .unwrap();
         let report = write_step(

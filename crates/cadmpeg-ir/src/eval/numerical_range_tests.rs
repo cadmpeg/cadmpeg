@@ -34,7 +34,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
     let construction_id = ProceduralSurfaceId::mint("test:model:entity#profile-frame-construction")
         .expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.curves = vec![
+    ir.geometry.curves = vec![
         Curve {
             parameter_range: None,
             id: profile_id.clone(),
@@ -66,7 +66,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
             source_object: None,
         },
     ];
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
@@ -74,7 +74,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction_id,
         ProceduralSurfaceDefinition::Sweep(
             crate::geometry::surface_payloads::SweepSurfacePayload::try_new(

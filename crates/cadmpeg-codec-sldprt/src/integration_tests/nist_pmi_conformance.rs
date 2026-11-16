@@ -176,12 +176,12 @@ fn assert_counterbore_targets(ir: &CadIr) {
                 return None;
             };
             let face = ir
-                .model
+                .geometry
                 .faces
                 .iter()
                 .find(|candidate| &candidate.id == face)?;
             let surface = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|candidate| candidate.id == face.surface)?;
@@ -229,7 +229,7 @@ fn assert_cylinder_axes(ir: &CadIr, annotation: &PmiAnnotation, diameter: f64, c
             continue;
         };
         let Some(face) = ir
-            .model
+            .geometry
             .faces
             .iter()
             .find(|candidate| &candidate.id == face)
@@ -237,7 +237,7 @@ fn assert_cylinder_axes(ir: &CadIr, annotation: &PmiAnnotation, diameter: f64, c
             continue;
         };
         let Some(surface) = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|candidate| candidate.id == face.surface)

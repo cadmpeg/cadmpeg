@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Printing a tree as canonical expression text.
 
+use super::super::read;
 use super::super::units::Unit;
-use super::{BendVariable, BinaryOp, Constant, ExprError, Measure, NeutralWire, Node, UnaryOp};
+use super::{
+    level, BendVariable, BinaryOp, Chain, Constant, ExprError, Measure, NeutralWire, Node, UnaryOp,
+};
 
 fn malformed<T>(message: impl Into<String>) -> Result<T, ExprError> {
     Err(ExprError::Malformed(message.into()))
@@ -85,9 +88,9 @@ fn format_unit(unit: &Unit) -> String {
     out
 }
 
-const fn level<R>(node: &Node<R>) -> u8 {
+const fn precedence<R>(node: &Node<R>) -> u8 {
     match node {
-        Node::Binary { op, .. } => binary_level(*op),
+        Node::Binary { op, .. } => binary_precedence(*op),
         Node::Unary {
             op: UnaryOp::Not, ..
         } => 3,
@@ -99,7 +102,7 @@ const fn level<R>(node: &Node<R>) -> u8 {
     }
 }
 
-const fn binary_level(op: BinaryOp) -> u8 {
+const fn binary_precedence(op: BinaryOp) -> u8 {
     match op {
         BinaryOp::Or => 1,
         BinaryOp::And => 2,
@@ -133,35 +136,131 @@ const fn binary_mark(op: BinaryOp) -> &'static str {
     }
 }
 
+/// What is left to print, taken from the end of the printer's work stack.
+/// A step that holds a level of the ceiling sits below the steps that print
+/// inside it, so the level is held until they are printed.
+enum Step<'a, N> {
+    /// Prints a node where its context binds at the precedence, in
+    /// parentheses if it binds looser. Parentheses nest a level.
+    Show(&'a N, u8),
+    /// Prints an operand that the parser reads one level deeper, where its
+    /// context binds at the precedence.
+    Nested(&'a N, u8),
+    /// Prints a node.
+    Raw(&'a N),
+    /// Writes fixed text.
+    Text(&'static str),
+    /// Writes a binary operator between spaces.
+    Mark(BinaryOp),
+    /// Writes a closing parenthesis and leaves its level.
+    Close(read::Depth),
+    /// Leaves a level.
+    Leave(read::Depth),
+    /// Prints the remaining operations of a left-associative chain whose
+    /// operators bind at `at`, the next one last, holding the chain's levels.
+    Chain {
+        at: u8,
+        chain: Chain,
+        operations: Vec<(BinaryOp, &'a N)>,
+    },
+}
+
 struct Printer<R> {
+    text: String,
     refs: Vec<R>,
     measures: Vec<Measure>,
 }
 
+/// The printer enters a level of the expression ceiling wherever the parser
+/// enters one reading the text it prints, so it refuses exactly the trees
+/// whose text the parser refuses. It walks the tree on a work stack, so the
+/// depth of the tree does not reach the thread's stack.
 impl<R: PartialEq + Clone> Printer<R> {
-    fn show(&mut self, node: &Node<R>, need: u8) -> Result<String, ExprError> {
-        let text = self.raw(node)?;
-        Ok(if level(node) < need {
-            format!("({text})")
-        } else {
-            text
-        })
+    fn run(&mut self, root: &Node<R>) -> Result<(), ExprError> {
+        let mut work = vec![Step::Raw(root)];
+        while let Some(step) = work.pop() {
+            self.step(step, &mut work)?;
+        }
+        Ok(())
     }
 
-    fn raw(&mut self, node: &Node<R>) -> Result<String, ExprError> {
-        Ok(match node {
-            Node::Number { value, unit } => {
-                let number = format_number(value.get())?;
-                if unit.0.is_empty() {
-                    number
-                } else {
-                    format!("{number}[{}]", format_unit(unit))
+    fn step<'a>(
+        &mut self,
+        step: Step<'a, Node<R>>,
+        work: &mut Vec<Step<'a, Node<R>>>,
+    ) -> Result<(), ExprError> {
+        match step {
+            Step::Show(node, need) => {
+                if precedence(node) < need {
+                    let depth = level()?;
+                    self.text.push('(');
+                    work.push(Step::Close(depth));
+                }
+                work.push(Step::Raw(node));
+            }
+            Step::Nested(node, need) => {
+                work.push(Step::Leave(level()?));
+                work.push(Step::Show(node, need));
+            }
+            Step::Raw(node) => self.raw(node, work)?,
+            Step::Text(text) => self.text.push_str(text),
+            Step::Mark(op) => self.mark(op),
+            Step::Close(depth) => {
+                self.text.push(')');
+                drop(depth);
+            }
+            Step::Leave(depth) => drop(depth),
+            Step::Chain {
+                at,
+                mut chain,
+                mut operations,
+            } => {
+                if let Some((op, operand)) = operations.pop() {
+                    chain.next()?;
+                    self.mark(op);
+                    work.push(Step::Chain {
+                        at,
+                        chain,
+                        operations,
+                    });
+                    work.push(Step::Show(operand, at + 1));
                 }
             }
-            Node::Constant(Constant::Pi) => "pi".into(),
-            Node::Constant(Constant::E) => "e".into(),
-            Node::Boolean(value) => if *value { "true" } else { "false" }.into(),
-            Node::Text(text) => format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\"")),
+        }
+        Ok(())
+    }
+
+    fn mark(&mut self, op: BinaryOp) {
+        self.text.push(' ');
+        self.text.push_str(binary_mark(op));
+        self.text.push(' ');
+    }
+
+    /// Writes a leaf, or the text a node writes before its first operand and
+    /// the steps that print the rest.
+    fn raw<'a>(
+        &mut self,
+        node: &'a Node<R>,
+        work: &mut Vec<Step<'a, Node<R>>>,
+    ) -> Result<(), ExprError> {
+        match node {
+            Node::Number { value, unit } => {
+                self.text.push_str(&format_number(value.get())?);
+                if !unit.0.is_empty() {
+                    self.text.push('[');
+                    self.text.push_str(&format_unit(unit));
+                    self.text.push(']');
+                }
+            }
+            Node::Constant(Constant::Pi) => self.text.push_str("pi"),
+            Node::Constant(Constant::E) => self.text.push('e'),
+            Node::Boolean(value) => self.text.push_str(if *value { "true" } else { "false" }),
+            Node::Text(text) => {
+                self.text.push('"');
+                self.text
+                    .push_str(&text.replace('\\', "\\\\").replace('"', "\\\""));
+                self.text.push('"');
+            }
             Node::Reference(reference) => {
                 let index = if let Some(index) = self.refs.iter().position(|r| r == reference) {
                     index
@@ -169,7 +268,8 @@ impl<R: PartialEq + Clone> Printer<R> {
                     self.refs.push(reference.clone());
                     self.refs.len() - 1
                 };
-                format!("${index}")
+                self.text.push('$');
+                self.text.push_str(&index.to_string());
             }
             Node::Measure(measure) => {
                 let index =
@@ -179,53 +279,97 @@ impl<R: PartialEq + Clone> Printer<R> {
                         self.measures.push(measure.as_ref().clone());
                         self.measures.len() - 1
                     };
-                format!("@{index}")
+                self.text.push('@');
+                self.text.push_str(&index.to_string());
             }
-            Node::LawParameter => "t".into(),
-            Node::Bend(BendVariable::Angle) => "bendangle".into(),
-            Node::Bend(BendVariable::InsideRadius) => "bendradius".into(),
-            Node::Bend(BendVariable::Thickness) => "bendthickness".into(),
+            Node::LawParameter => self.text.push('t'),
+            Node::Bend(BendVariable::Angle) => self.text.push_str("bendangle"),
+            Node::Bend(BendVariable::InsideRadius) => self.text.push_str("bendradius"),
+            Node::Bend(BendVariable::Thickness) => self.text.push_str("bendthickness"),
             Node::Unary {
                 op: UnaryOp::Negate,
                 operand,
-            } => format!("-{}", self.show(operand, 7)?),
+            } => {
+                self.text.push('-');
+                work.push(Step::Nested(operand, 7));
+            }
             Node::Unary {
                 op: UnaryOp::Not,
                 operand,
-            } => format!("not {}", self.show(operand, 3)?),
-            Node::Binary { op, left, right } => {
-                let op = *op;
-                let at = binary_level(op);
-                let mark = binary_mark(op);
-                if op == BinaryOp::Power {
-                    format!("{}^{}", self.show(left, 9)?, self.show(right, 7)?)
-                } else if at == 4 {
-                    format!("{} {mark} {}", self.show(left, 5)?, self.show(right, 5)?)
-                } else {
-                    format!(
-                        "{} {mark} {}",
-                        self.show(left, at)?,
-                        self.show(right, at + 1)?
-                    )
-                }
+            } => {
+                self.text.push_str("not ");
+                work.push(Step::Nested(operand, 3));
             }
+            Node::Binary { op, left, right } => match *op {
+                BinaryOp::Power => {
+                    work.push(Step::Nested(right, 7));
+                    work.push(Step::Text("^"));
+                    work.push(Step::Show(left, 9));
+                }
+                op @ (BinaryOp::Equal
+                | BinaryOp::NotEqual
+                | BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual) => {
+                    work.push(Step::Show(right, 5));
+                    work.push(Step::Mark(op));
+                    work.push(Step::Show(left, 5));
+                }
+                op @ (BinaryOp::Or
+                | BinaryOp::And
+                | BinaryOp::Add
+                | BinaryOp::Subtract
+                | BinaryOp::Multiply
+                | BinaryOp::Divide) => {
+                    let at = binary_precedence(op);
+                    let mut operations = vec![(op, right.as_ref())];
+                    let mut first = left.as_ref();
+                    while let Node::Binary { op, left, right } = first {
+                        if binary_precedence(*op) != at {
+                            break;
+                        }
+                        operations.push((*op, right));
+                        first = left;
+                    }
+                    work.push(Step::Chain {
+                        at,
+                        chain: Chain::new(),
+                        operations,
+                    });
+                    work.push(Step::Show(first, at));
+                }
+            },
             Node::Call { function, args } => {
-                let parts = args
-                    .iter()
-                    .map(|arg| self.show(arg, 0))
-                    .collect::<Result<Vec<_>, _>>()?;
-                format!("{}({})", function.name(), parts.join(", "))
+                if args.is_empty() {
+                    return malformed(format!(
+                        "a call of {} states no argument; canonical text calls a function with \
+                         at least one",
+                        function.name()
+                    ));
+                }
+                self.text.push_str(function.name());
+                self.text.push('(');
+                arguments(args, work);
             }
             Node::If(branches) => {
-                let [condition, then, otherwise] = branches.as_ref();
-                format!(
-                    "if({}, {}, {})",
-                    self.show(condition, 0)?,
-                    self.show(then, 0)?,
-                    self.show(otherwise, 0)?
-                )
+                self.text.push_str("if(");
+                arguments(branches.as_ref(), work);
             }
-        })
+        }
+        Ok(())
+    }
+}
+
+/// Pushes the steps that print `args`, each one level deeper, separated by
+/// commas, and the closing parenthesis.
+fn arguments<'a, R>(args: &'a [Node<R>], work: &mut Vec<Step<'a, Node<R>>>) {
+    work.push(Step::Text(")"));
+    for (i, arg) in args.iter().enumerate().rev() {
+        work.push(Step::Nested(arg, 0));
+        if i > 0 {
+            work.push(Step::Text(", "));
+        }
     }
 }
 
@@ -234,15 +378,19 @@ impl<R: PartialEq + Clone> Printer<R> {
 ///
 /// # Errors
 ///
-/// Returns [`ExprError::Malformed`] for a number with no canonical text.
+/// Returns [`ExprError::Malformed`] for a number with no canonical text or a
+/// call with no argument, and [`ExprError::ResourceLimit`] for a tree whose
+/// text nests past the expression ceiling.
 pub fn print<R: PartialEq + Clone>(node: &Node<R>) -> Result<NeutralWire<R>, ExprError> {
     let mut printer = Printer {
+        text: String::new(),
         refs: Vec::new(),
         measures: Vec::new(),
     };
-    let text = printer.raw(node)?;
+    let _level = level()?;
+    printer.run(node)?;
     Ok(NeutralWire {
-        text,
+        text: printer.text,
         refs: printer.refs,
         measures: printer.measures,
     })

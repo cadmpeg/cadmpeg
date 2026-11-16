@@ -178,10 +178,13 @@ pub enum ValueKind {
     /// A quantity.
     Quantity(Quantity),
     /// An integer.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Integer,
     /// A Boolean.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Boolean,
     /// A text.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Text,
     /// A kind that the vocabulary does not type.
     Native(NonBlankString),

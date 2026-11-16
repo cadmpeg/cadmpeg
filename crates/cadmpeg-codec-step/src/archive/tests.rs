@@ -515,18 +515,18 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode ZIP root without importing target");
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["entity_instances"],
-        "6"
+        cadmpeg_test_support::wire::coverage_count(result.report(), "entity_instances"),
+        6
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#4"));
     assert!(!result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#12"));
@@ -538,7 +538,7 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         .expect("decode subsidiary independently");
     assert!(target_result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#12"));
@@ -582,7 +582,11 @@ fn forwarded_reference_retains_unparsed_subsidiary_as_a_resource() {
         .expect("decode root without parsing subsidiary");
     let source = result.ir().source.as_ref().expect("STEP source metadata");
     assert_eq!(source.attributes["archive_root"], ROOT_NAME);
-    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(result.report(), "entity_instances"),
+        1
+    );
+    assert!(!source.attributes.contains_key("entity_instances"));
     assert_eq!(
         result
             .ir()
@@ -635,7 +639,11 @@ fn codec_keeps_external_reference_graph_resource_local() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode root without composing subsidiary");
     let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(result.report(), "entity_instances"),
+        1
+    );
+    assert!(!source.attributes.contains_key("entity_instances"));
     assert_eq!(
         result
             .ir()
@@ -700,7 +708,11 @@ fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode valid root without composing subsidiary");
     let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(result.report(), "entity_instances"),
+        1
+    );
+    assert!(!source.attributes.contains_key("entity_instances"));
     assert_eq!(
         result
             .ir()
@@ -797,7 +809,11 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
             .expect("decode root without composing subsidiaries"),
     );
     let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(result.report(), "entity_instances"),
+        1
+    );
+    assert!(!source.attributes.contains_key("entity_instances"));
     let unknown = result
         .ir()
         .native_unknowns("step")
@@ -883,7 +899,11 @@ fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode root with valid forwarded target");
     let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(result.report(), "entity_instances"),
+        1
+    );
+    assert!(!source.attributes.contains_key("entity_instances"));
     assert_eq!(
         result
             .ir()
@@ -1150,6 +1170,7 @@ fn optional_archive_profile_defects_preserve_geometry_and_declarations() {
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap(),
         );
+        assert_eq!(result.ir().geometry, baseline.ir().geometry);
         assert_eq!(result.ir().model, baseline.ir().model);
         assert!(
             result
@@ -1205,6 +1226,7 @@ fn zstd_window_past_the_allowance_skips_an_ancillary_member_and_leaves_the_root_
             )
             .expect("an ancillary member past the window allowance does not refuse the root"),
     );
+    assert_eq!(result.ir().geometry, baseline.ir().geometry);
     assert_eq!(result.ir().model, baseline.ir().model);
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::StepLossCode::ContainerMemberNoncanonical.kind()
@@ -1243,6 +1265,7 @@ fn damaged_first_ancillary_local_frame_keeps_required_root_readable() {
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .unwrap(),
     );
+    assert_eq!(result.ir().geometry, baseline.ir().geometry);
     assert_eq!(result.ir().model, baseline.ir().model);
     assert!(result
         .report()

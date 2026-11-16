@@ -20,7 +20,7 @@ fn live_annotation_lookup_scales_with_tree_depth() {
             let id = cadmpeg_ir::ids::PointId::mint(format!("nx:model:point#{index}"))
                 .expect("identity");
             builder.exactness(&id, cadmpeg_ir::Exactness::Derived);
-            ir.model.points.push(cadmpeg_ir::topology::Point::new(
+            ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
                 id,
                 cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0., 0., 0.))
                     .expect("position"),

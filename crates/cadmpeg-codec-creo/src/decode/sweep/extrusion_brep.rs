@@ -229,7 +229,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             let records = profile_refusal.take_records();
             if !records.is_empty() {
                 let body_id = extrusion_id!(BodyId, "body");
-                if !ir.model.bodies.iter().any(|body| body.id == body_id) {
+                if !ir.geometry.bodies.iter().any(|body| body.id == body_id) {
                     push_rejected_extrusion(
                         diagnostics,
                         body_id,
@@ -243,7 +243,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         };
         let body_id = extrusion_id!(BodyId, "body");
-        if ir.model.bodies.iter().any(|body| body.id == body_id) {
+        if ir.geometry.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -656,7 +656,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 cap_coedge_ids(feature_id, profile_index, count, "bottom-cap", true)?;
             let top_coedges = cap_coedge_ids(feature_id, profile_index, count, "top-cap", false)?;
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ir.model.loops.push(IrLoop {
+            ir.geometry.loops.push(IrLoop {
                 id: copy_id!(bottom_loop),
                 face: copy_id!(bottom_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -668,7 +668,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 ),
             });
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ir.model.loops.push(IrLoop {
+            ir.geometry.loops.push(IrLoop {
                 id: copy_id!(top_loop),
                 face: copy_id!(top_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -819,7 +819,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ),
                 ];
                 ctx.charge_entities(1, "admit Creo model loops")?;
-                ir.model.loops.push(IrLoop {
+                ir.geometry.loops.push(IrLoop {
                     id: copy_id!(loop_id),
                     face: copy_id!(face_id),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -958,9 +958,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             },
         )?;
         ctx.charge_entities(1, "admit Creo model shells")?;
-        ir.model.shells.push(shell);
+        ir.geometry.shells.push(shell);
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.model.regions.push(Region {
+        ir.geometry.regions.push(Region {
             id: copy_id!(region_id),
             body: copy_id!(body_id),
             shells: vec![shell_id],

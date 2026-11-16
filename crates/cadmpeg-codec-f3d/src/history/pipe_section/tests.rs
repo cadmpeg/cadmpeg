@@ -52,10 +52,10 @@ fn projected_fixture(
             scopes: &native.design_parameter_scopes,
             groups: &native.design_construction_operand_groups,
             owners: &native.design_parameter_owners,
-            bodies: &ir.model.bodies,
-            regions: &ir.model.regions,
-            faces: &ir.model.faces,
-            surfaces: &ir.model.surfaces,
+            bodies: &ir.geometry.bodies,
+            regions: &ir.geometry.regions,
+            faces: &ir.geometry.faces,
+            surfaces: &ir.geometry.surfaces,
             linear_tolerance: LINEAR_TOLERANCE,
         };
         let mut features = vec![feature];
@@ -793,7 +793,7 @@ fn cone(radius: f64) -> SurfaceGeometry {
 /// The unit cube with its first face carriers replaced by `carriers`.
 fn result_model(carriers: &[SurfaceGeometry]) -> cadmpeg_ir::CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    for (surface, geometry) in ir.model.surfaces.iter_mut().zip(carriers) {
+    for (surface, geometry) in ir.geometry.surfaces.iter_mut().zip(carriers) {
         surface.geometry = geometry.clone();
     }
     ir
@@ -816,7 +816,7 @@ fn pipe_feature(scope: &DesignParameterScope, ir: &cadmpeg_ir::CadIr) -> Feature
                 kind: "Pipe".into(),
                 parameters: Default::default(),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.model.bodies[0].id.clone()])
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.geometry.bodies[0].id.clone()])
                 .unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
@@ -862,10 +862,10 @@ fn bound_with_losses(
             scopes: std::slice::from_ref(scope),
             groups,
             owners,
-            bodies: &ir.model.bodies,
-            regions: &ir.model.regions,
-            faces: &ir.model.faces,
-            surfaces: &ir.model.surfaces,
+            bodies: &ir.geometry.bodies,
+            regions: &ir.geometry.regions,
+            faces: &ir.geometry.faces,
+            surfaces: &ir.geometry.surfaces,
             linear_tolerance: LINEAR_TOLERANCE,
         },
     );
@@ -1076,7 +1076,7 @@ fn a_pipe_whose_results_a_later_feature_changes_assumes_a_circle_and_unchanged_r
             &owners(0.5, 0.1),
             &groups,
             &[cylinder(2.5)],
-            |ir, _| ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet
+            |ir, _| ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet
         ),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
     ));
@@ -1086,7 +1086,7 @@ fn a_pipe_whose_results_a_later_feature_changes_assumes_a_circle_and_unchanged_r
             &owners(0.5, 0.1),
             &groups,
             &[cylinder(2.5)],
-            |ir, _| ir.model.regions.clear()
+            |ir, _| ir.geometry.regions.clear()
         ),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
     ));
@@ -1097,9 +1097,9 @@ fn a_pipe_whose_results_a_later_feature_changes_assumes_a_circle_and_unchanged_r
             &groups,
             &[cylinder(2.5)],
             |ir, _| {
-                let mut twin = ir.model.surfaces[0].clone();
+                let mut twin = ir.geometry.surfaces[0].clone();
                 twin.geometry = cylinder(4.0);
-                ir.model.surfaces.push(twin);
+                ir.geometry.surfaces.push(twin);
             }
         ),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })

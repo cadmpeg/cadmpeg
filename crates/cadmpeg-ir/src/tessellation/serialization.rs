@@ -18,20 +18,15 @@ impl Serialize for Tessellation {
             id: &'a TessellationId,
             #[serde(skip_serializing_if = "Option::is_none")]
             body: Option<&'a BodyId>,
-            #[serde(skip_serializing_if = "Vec::is_empty")]
             faces: &'a Vec<FaceId>,
             #[serde(skip_serializing_if = "Option::is_none")]
             chordal_deflection: Option<f64>,
             #[serde(skip_serializing_if = "Option::is_none")]
             source_object: Option<&'a SourceObjectAssociation>,
             mesh: &'a TessellationMesh<FinitePoint3, FiniteVector3>,
-            #[serde(skip_serializing_if = "Vec::is_empty")]
             feature_edges: &'a Vec<[u32; 2]>,
-            #[serde(skip_serializing_if = "Vec::is_empty")]
             triangle_groups: &'a Vec<TessellationTriangleGroup>,
-            #[serde(skip_serializing_if = "Vec::is_empty")]
             texture_assignments: &'a Vec<TessellationTextureAssignment>,
-            #[serde(skip_serializing_if = "Vec::is_empty")]
             texture_coordinates: &'a Vec<TextureCoordinates>,
             channels: &'a [TessellationChannel],
         }

@@ -173,7 +173,7 @@ pub(in crate::families) fn try_decode_e5(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model
+            ir.geometry
                 .points
                 .push(Point::new(point_id.clone(), *point, None));
             let vertex_id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index, VertexId::mint));
@@ -182,7 +182,7 @@ pub(in crate::families) fn try_decode_e5(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model.vertices.push(Vertex {
+            ir.geometry.vertices.push(Vertex {
                 id: vertex_id,
                 point: point_id,
                 tolerance: None,
@@ -194,7 +194,7 @@ pub(in crate::families) fn try_decode_e5(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
 parameter_range: None,
                 id,
                 geometry: circle.geometry.clone(),
@@ -214,7 +214,7 @@ parameter_range: None,
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id,
                 geometry: surface.geometry.clone(),
                 source_object: None,
@@ -240,7 +240,7 @@ parameter_range: None,
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
@@ -255,7 +255,7 @@ parameter_range: None,
                 return Some(Err(error));
             }
             let definition = jet.definition()?;
-            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
                 procedural_id,
                 definition,
                 None,
@@ -266,7 +266,7 @@ parameter_range: None,
         let mut original_curves = Vec::new();
         let mut unused_surfaces = Vec::new();
         let topology_transferred = if let Some(topology) = topology.as_ref() {
-            original_curves = std::mem::take(&mut topology_ir.model.curves);
+            original_curves = std::mem::take(&mut topology_ir.geometry.curves);
             for curve in &original_curves {
                 topology_annotations.remove_entity(curve.id.as_str());
             }
@@ -296,23 +296,23 @@ refusal,
             annotations = topology_annotations.into_retained();
         } else {
             if topology.is_some() {
-                topology_ir.model.bodies.clear();
-                topology_ir.model.regions.clear();
-                topology_ir.model.shells.clear();
-                topology_ir.model.faces.clear();
-                topology_ir.model.loops.clear();
-                topology_ir.model.coedges.clear();
-                topology_ir.model.edges.clear();
-                topology_ir.model.pcurves.clear();
-                topology_ir.model.procedural_curves.clear();
-                topology_ir.model.curves = original_curves;
-                topology_ir.model.surfaces.append(&mut unused_surfaces);
-                topology_ir.model.surfaces.sort_unstable_by_key(|left| e5_source_ordinal(left.id.as_str()));
-                topology_ir.model.points.sort_unstable_by_key(|left| e5_source_ordinal(left.id.as_str()));
-                topology_ir.model.vertices.sort_unstable_by_key(|left| e5_source_ordinal(left.id.as_str()));
+                topology_ir.geometry.bodies.clear();
+                topology_ir.geometry.regions.clear();
+                topology_ir.geometry.shells.clear();
+                topology_ir.geometry.faces.clear();
+                topology_ir.geometry.loops.clear();
+                topology_ir.geometry.coedges.clear();
+                topology_ir.geometry.edges.clear();
+                topology_ir.geometry.pcurves.clear();
+                topology_ir.geometry.procedural_curves.clear();
+                topology_ir.geometry.curves = original_curves;
+                topology_ir.geometry.surfaces.append(&mut unused_surfaces);
+                topology_ir.geometry.surfaces.sort_unstable_by_key(|left| e5_source_ordinal(left.id.as_str()));
+                topology_ir.geometry.points.sort_unstable_by_key(|left| e5_source_ordinal(left.id.as_str()));
+                topology_ir.geometry.vertices.sort_unstable_by_key(|left| e5_source_ordinal(left.id.as_str()));
             }
             ir = topology_ir;
-            if !ir.model.vertices.is_empty() {
+            if !ir.geometry.vertices.is_empty() {
                 if let Err(error) = attach_e5_free_vertices(&mut ir, &mut annotations, &mut admission) {
                     return Some(Err(error));
                 }
@@ -1032,13 +1032,13 @@ fn attach_e5_free_vertices(
     let regions = vec![region_id.clone()];
     let shells = vec![shell_id.clone()];
     let free_vertices = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| vertex.id.clone())
         .collect::<Vec<_>>();
     admission.charge()?;
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Wire,
         regions,
@@ -1048,13 +1048,13 @@ fn attach_e5_free_vertices(
         visible: None,
     });
     admission.charge()?;
-    ir.model.regions.push(Region {
+    ir.geometry.regions.push(Region {
         id: region_id.clone(),
         body: body_id,
         shells,
     });
     admission.charge()?;
-    ir.model.shells.push(
+    ir.geometry.shells.push(
         match Shell::new(shell_id, region_id, Vec::new(), Vec::new(), free_vertices) {
             Ok(shell) => shell,
             Err(_) => {
@@ -1156,14 +1156,14 @@ fn transfer_e5_topology(
     admission: &mut FamilyEntityAdmission<'_, '_>,
     unused_surfaces: &mut Vec<Surface>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if topology.vertex_refs.len() != ir.model.vertices.len()
-        || topology.vertex_refs.len() != ir.model.points.len()
+    if topology.vertex_refs.len() != ir.geometry.vertices.len()
+        || topology.vertex_refs.len() != ir.geometry.points.len()
         || topology.vertex_refs.is_empty()
     {
         return Ok(false);
     }
 
-    for curve in ir.model.curves.drain(..) {
+    for curve in ir.geometry.curves.drain(..) {
         annotations.remove_entity(curve.id.as_str());
     }
 
@@ -1193,7 +1193,12 @@ fn transfer_e5_topology(
         );
     }
     let mut point_for_ref = HashMap::new();
-    for (reference, point) in topology.vertex_refs.iter().copied().zip(&ir.model.points) {
+    for (reference, point) in topology
+        .vertex_refs
+        .iter()
+        .copied()
+        .zip(&ir.geometry.points)
+    {
         point_for_ref.insert(reference, point.position().get());
     }
 
@@ -1805,7 +1810,7 @@ fn prune_e5_unused_surfaces(
         used_surfaces.insert(id);
     }
     for surface in ir
-        .model
+        .geometry
         .surfaces
         .extract_if(.., |surface| !used_surfaces.contains(surface.id.as_str()))
     {
@@ -1920,7 +1925,7 @@ fn emit_e5_curves_and_edges(
         )?;
         annotations.derived(&id, "geometry")?;
         admission.charge()?;
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id,
             geometry: (geometry).clone(),
@@ -1945,7 +1950,7 @@ fn emit_e5_curves_and_edges(
         annotations.derived(&id, "curve")?;
         annotations.derived(&id, "definition")?;
         admission.charge()?;
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.geometry.add_procedural_curve(
             &curve,
             ProceduralCurve::new(
                 id,
@@ -1978,7 +1983,7 @@ fn emit_e5_curves_and_edges(
         annotations.derived(&id, "curve")?;
         annotations.derived(&id, "definition")?;
         admission.charge()?;
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.geometry.add_procedural_curve(
             &curve,
             ProceduralCurve::new(
                 id,
@@ -2023,7 +2028,7 @@ fn emit_e5_curves_and_edges(
             annotations.derived(&id, "param_range")?;
         }
         admission.charge()?;
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 edge_curve_ids.get(&record_id).cloned(),
@@ -2061,7 +2066,7 @@ fn emit_e5_pcurves(
         )?;
         annotations.derived(&id, "geometry")?;
         admission.charge()?;
-        ir.model.pcurves.push(Pcurve {
+        ir.geometry.pcurves.push(Pcurve {
             id,
             geometry: geometry.clone(),
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -2109,7 +2114,7 @@ fn emit_e5_bodies(
         annotations.derived(&body_id, "kind")?;
         annotations.derived(&body_id, "regions")?;
         admission.charge()?;
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id: body_id.clone(),
             kind: plan.kind,
             regions: region_ids.clone(),
@@ -2134,7 +2139,7 @@ fn emit_e5_bodies(
             annotations.derived(&region_id, "shells")?;
             let shells = vec![shell_id.clone()];
             admission.charge()?;
-            ir.model.regions.push(Region {
+            ir.geometry.regions.push(Region {
                 id: region_id.clone(),
                 body: body_id.clone(),
                 shells,
@@ -2159,7 +2164,7 @@ fn emit_e5_bodies(
                     FaceId::mint,
                 )?);
             }
-            ir.model.shells.push(
+            ir.geometry.shells.push(
                 match Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()) {
                     Ok(shell) => shell,
                     Err(_) => {
@@ -2265,7 +2270,7 @@ fn emit_e5_faces_loops_coedges(
             annotations.derived(&face_id, field)?;
         }
         admission.charge()?;
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: face_id.clone(),
             shell: face_shell[&face.record_id].clone(),
             surface: surface_for_ref[&face.surface].0.clone(),
@@ -2328,7 +2333,7 @@ fn emit_e5_faces_loops_coedges(
                 return Ok(false);
             };
             admission.charge()?;
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -2359,7 +2364,7 @@ fn emit_e5_faces_loops_coedges(
                 for field in ["owner_loop", "edge", "sense", "pcurves"] {
                     annotations.derived(&id, field)?;
                 }
-                let arena_index = ir.model.coedges.len();
+                let arena_index = ir.geometry.coedges.len();
 
                 coedges_by_edge
                     .entry(edge_ref)
@@ -2382,7 +2387,7 @@ fn emit_e5_faces_loops_coedges(
                     parameter_range,
                 });
                 admission.charge()?;
-                ir.model.coedges.push(Coedge {
+                ir.geometry.coedges.push(Coedge {
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_ids[&edge_ref].clone(),
@@ -2401,8 +2406,8 @@ fn emit_e5_faces_loops_coedges(
     for occurrences in coedges_by_edge.values() {
         for (position, &arena_index) in occurrences.iter().enumerate() {
             let radial = occurrences[(position + 1) % occurrences.len()];
-            let next = ir.model.coedges[radial].id.clone();
-            ir.model.coedges[arena_index].radial_next = next;
+            let next = ir.geometry.coedges[radial].id.clone();
+            ir.geometry.coedges[arena_index].radial_next = next;
         }
     }
     Ok(true)
@@ -4281,7 +4286,7 @@ mod route_tests {
                 .collect(),
         );
         let mut ir = CadIr::empty();
-        ir.model.points.extend([
+        ir.geometry.points.extend([
             Point::new(
                 PointId::mint("catia:test:point#point-10".to_string()).expect("identity grammar"),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
@@ -4295,7 +4300,7 @@ mod route_tests {
                 None,
             ),
         ]);
-        ir.model.vertices.extend([
+        ir.geometry.vertices.extend([
             Vertex {
                 id: VertexId::mint("catia:test:vertex#vertex-10".to_string())
                     .expect("identity grammar"),
@@ -4311,12 +4316,12 @@ mod route_tests {
                 tolerance: None,
             },
         ]);
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint("catia:test:point#point-12".to_string()).expect("identity grammar"),
             point([0.0, 1.0, 0.0]),
             None,
         ));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: VertexId::mint("catia:test:vertex#vertex-12".to_string())
                 .expect("identity grammar"),
             point: PointId::mint("catia:test:point#point-12".to_string())
@@ -4351,12 +4356,12 @@ mod route_tests {
             .expect("transfer E5 topology"));
         });
         assert_eq!(
-            ir.model.coedges[0].pcurves[0]
+            ir.geometry.coedges[0].pcurves[0]
                 .parameter_range
                 .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
             Some([1.0, 0.0])
         );
-        let vertex_uses = ir.model.loops[0].anchored_vertex_uses();
+        let vertex_uses = ir.geometry.loops[0].anchored_vertex_uses();
         assert_eq!(vertex_uses.len(), 3);
         let vertex_use = &vertex_uses[0];
         assert_eq!(
@@ -4720,7 +4725,7 @@ mod route_tests {
         };
         let run = |_: &cadmpeg_core::decode::DecodeContext<'_>| {
             let mut ir = CadIr::empty();
-            ir.model.surfaces.push(super::Surface {
+            ir.geometry.surfaces.push(super::Surface {
                 id: SurfaceId::compose(
                     &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
                     0usize,
@@ -4744,7 +4749,7 @@ mod route_tests {
                 (&BTreeMap::new(), &BTreeMap::new()),
                 &mut unused,
             );
-            Ok::<_, cadmpeg_core::CodecError>((ir.model.surfaces, unused))
+            Ok::<_, cadmpeg_core::CodecError>((ir.geometry.surfaces, unused))
         };
         let (surfaces, unused) =
             crate::test_support::with_service_context(run).expect("prune the unused E5 surfaces");

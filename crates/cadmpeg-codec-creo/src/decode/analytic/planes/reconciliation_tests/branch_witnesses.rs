@@ -155,7 +155,7 @@ fn resolved_adjacent_plane_selects_the_bound_reference_circle() {
 
     let scan = fc05_witness_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#1").expect("surface identity"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

@@ -23,7 +23,6 @@ use crate::design::options::{
     Boolean, Hand, NativeOptions, PathRef, ProfileRef, SheetOutput, Targets, Thickness,
 };
 use crate::design::selection::{OrderedSelection, SetSelection};
-use crate::design::wire;
 use crate::features::FeatureId;
 use crate::scalar::{
     Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength, PositiveReal, SlopeAngle,
@@ -280,8 +279,10 @@ pub enum FilletSize {
     /// A radius by stations along the set's chain.
     Variable(Stations<NonNegativeLength>),
     /// The hold lines alone fix the width.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Held,
     /// The conic profile alone fixes the width.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ByProfile,
     /// A size form whose meaning is not established. The rest of the round
     /// stays typed.
@@ -299,6 +300,7 @@ pub enum FilletSize {
 )]
 pub enum FilletProfile {
     /// A circular section.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Circular,
     /// A conic section sized by its shape.
     Conic(ConicShape),
@@ -473,8 +475,10 @@ pub enum ChamferSize {
 )]
 pub enum ChamferMeasure {
     /// The distances run along the faces.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     AlongFaces,
     /// The distances offset the faces.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     OffsetFaces,
     /// A source measure whose meaning is not established.
     Native(NonBlankString),
@@ -541,8 +545,10 @@ pub struct BlendControls {
 )]
 pub enum CornerStyle {
     /// A rolling-ball corner.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     RollingBall,
     /// A setback corner.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Setback,
     /// A source corner style whose meaning is not established.
     Native(NonBlankString),
@@ -627,7 +633,7 @@ pub enum LimitAt {
 #[serde(deny_unknown_fields)]
 pub struct Transition {
     /// The indices of the sets that meet.
-    #[serde(with = "wire::set")]
+    #[serde(with = "cadmpeg_core::distinct_keys::set")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<u32>"))]
     pub between: BTreeSet<u32>,
     /// The vertices or edges at which they meet.
@@ -664,14 +670,17 @@ pub enum TransitionKind {
     /// no surface of another kind: where the two listed pieces' ends do not
     /// coincide, the round's own fillet face at the pieces' ball spans
     /// between them, tangent to both.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Continue,
     /// Extends overlapping pieces toward each other until they merge in a
     /// sharp boundary.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Intersect,
     /// Ends the round where its edge chain ends: the last piece is cut by
     /// the carriers of the faces that meet both rounded faces at the chain's
     /// end, a face whose carrier must be continued to close the end gains a
     /// face on that carrier, and no surface of another kind is added.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Stop,
     /// Ends the round at a datum point or plane.
     StopAt(LimitAt),
@@ -749,6 +758,7 @@ pub enum TransitionKind {
     /// the round's seam, rolling on the face both chains roll on and on the
     /// corner's faces between them; where they meet, the junction's fillets
     /// and each end piece open at the same angle within 0.1 rad.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Blend,
     /// A transition, under its source name, whose shape or sizes are not
     /// established.
@@ -766,10 +776,13 @@ pub enum TransitionKind {
 )]
 pub enum Overflow {
     /// The source's default.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Default,
     /// The blend keeps the neighbouring edge.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     KeepEdge,
     /// The blend keeps the neighbouring surface.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     KeepSurface,
     /// A source overflow whose meaning is not established.
     Native(NonBlankString),
@@ -1332,6 +1345,7 @@ pub struct Bore {
 )]
 pub enum HoleHead {
     /// No recess.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Plain,
     /// A cylindrical recess. The hole's extent and its thread depth are
     /// measured from the start face.
@@ -1439,6 +1453,7 @@ pub struct Cone {
 )]
 pub enum HoleBottom {
     /// A flat bottom.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Flat,
     /// A conical drill point.
     DrillPoint {
@@ -1459,6 +1474,7 @@ pub enum HoleBottom {
     },
     /// Ends the bore on the face that bounds its extent, which forms the
     /// bottom, with no cone or cap of its own inside the material.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Trimmed,
     /// A source bottom whose meaning is not established.
     Native(NonBlankString),
@@ -1608,6 +1624,7 @@ pub struct ThreadSpec {
 )]
 pub enum ThreadLength {
     /// Over the whole face or hole depth.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Full,
     /// A stated length.
     Blind(Dimension<PositiveLength>),
@@ -1624,6 +1641,7 @@ pub enum ThreadLength {
         offset: Option<Dimension<Length>>,
     },
     /// The length from the standard's tapped-hole rule.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Standard,
     /// A source length whose meaning is not established.
     Native(NonBlankString),
@@ -1706,6 +1724,7 @@ pub enum EmbossEffect {
         depth: Option<Dimension<PositiveLength>>,
     },
     /// Imprints the profile.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Scribe,
     /// A source effect whose meaning is not established.
     Native(NonBlankString),
@@ -1722,8 +1741,10 @@ pub enum EmbossEffect {
 )]
 pub enum EmbossMapping {
     /// Maps the profile onto the face by arc length.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Wrap,
     /// Projects the profile along the direction.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Project,
     /// A source mapping whose meaning is not established.
     Native(NonBlankString),
@@ -1871,7 +1892,7 @@ fn deserialize_centers<'de, D: Deserializer<'de>>(
 /// A set of center sources, read as a §2.5 set.
 #[derive(Deserialize)]
 #[serde(transparent)]
-struct CenterSet(#[serde(with = "wire::set")] BTreeSet<CenterSource>);
+struct CenterSet(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<CenterSource>);
 
 cadmpeg_core::named_optional_field!(deserialize_center_set, CenterSet, "centers");
 

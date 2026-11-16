@@ -577,7 +577,7 @@ pub(super) fn project(
         }
     }
 
-    for curve in &mut ir.model.curves {
+    for curve in &mut ir.geometry.curves {
         if let Some(source) = &mut curve.source_object {
             source.color = sequences
                 .curve(&curve.id)
@@ -585,7 +585,7 @@ pub(super) fn project(
                 .and_then(|entry| entry.color.and_then(resolve_color));
         }
     }
-    for surface in &mut ir.model.surfaces {
+    for surface in &mut ir.geometry.surfaces {
         if let Some(source) = &mut surface.source_object {
             source.color = sequences
                 .surface(&surface.id)
@@ -594,9 +594,9 @@ pub(super) fn project(
         }
     }
 
-    for index in 0..ir.model.bodies.len() {
+    for index in 0..ir.geometry.bodies.len() {
         let Some((sequence, color_number, visible)) = (|| {
-            let body = &ir.model.bodies[index];
+            let body = &ir.geometry.bodies[index];
             let sequence = sequences.body(&body.id)?;
             let entry = entries.get(&sequence)?;
             Some((sequence, entry.color?, entry.status.is_visible()))
@@ -606,7 +606,7 @@ pub(super) fn project(
         let Some((appearance_id, color)) = resolve(color_number)? else {
             continue;
         };
-        let body = &mut ir.model.bodies[index];
+        let body = &mut ir.geometry.bodies[index];
         let body_id = body.id.clone();
         body.color = Some(color);
         body.visible = Some(visible);
@@ -626,7 +626,7 @@ pub(super) fn project(
             channels: BTreeMap::new(),
         });
     }
-    for body in &mut ir.model.bodies {
+    for body in &mut ir.geometry.bodies {
         if body.visible.is_none() {
             body.visible = sequences
                 .body(&body.id)
@@ -673,9 +673,9 @@ pub(super) fn project(
         }
     }
 
-    for index in 0..ir.model.faces.len() {
+    for index in 0..ir.geometry.faces.len() {
         let Some((sequence, color_number)) = (|| {
-            let face = &ir.model.faces[index];
+            let face = &ir.geometry.faces[index];
             let sequence = sequences.face(&face.id)?;
             let entry = entries.get(&sequence)?;
             Some((sequence, entry.color?))
@@ -685,7 +685,7 @@ pub(super) fn project(
         let Some((appearance_id, color)) = resolve(color_number)? else {
             continue;
         };
-        let face = &mut ir.model.faces[index];
+        let face = &mut ir.geometry.faces[index];
         let face_id = face.id.clone();
         face.color = Some(color);
         appearance(ir, appearance_id.clone(), None, color, ctx)?;

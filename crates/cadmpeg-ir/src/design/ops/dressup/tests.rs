@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
+use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
 use cadmpeg_core::text::NonBlankString;
@@ -24,6 +25,7 @@ use crate::design::read;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection, Unordered,
 };
+use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
 use crate::features::{FinitePoint3, ParameterId};
 use crate::math::Point3;
 use crate::units::UnitVector3;
@@ -1356,6 +1358,27 @@ fn the_tag_forms_of_the_family() {
         hold: [None, None],
     };
     assert_eq!(to_value(&edges)["hold"], json!([null, null]));
+}
+
+/// §2.5: each value has one spelling, so a unit variant of an adjacently
+/// tagged enum is its `kind` alone and refuses a stated `value`.
+#[test]
+fn every_adjacent_unit_variant_refuses_a_stated_value() {
+    let readers: [(&'static str, Reader); 11] = [
+        ("ChamferMeasure", reads::<ChamferMeasure>),
+        ("CornerStyle", reads::<CornerStyle>),
+        ("EmbossEffect", reads::<EmbossEffect>),
+        ("EmbossMapping", reads::<EmbossMapping>),
+        ("FilletProfile", reads::<FilletProfile>),
+        ("FilletSize", reads::<FilletSize>),
+        ("HoleBottom", reads::<HoleBottom>),
+        ("HoleHead", reads::<HoleHead>),
+        ("Overflow", reads::<Overflow>),
+        ("ThreadLength", reads::<ThreadLength>),
+        ("TransitionKind", reads::<TransitionKind>),
+    ];
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/design/ops/dressup.rs");
+    assert_units_refuse_value(&[file], &BTreeMap::from(readers));
 }
 
 #[test]

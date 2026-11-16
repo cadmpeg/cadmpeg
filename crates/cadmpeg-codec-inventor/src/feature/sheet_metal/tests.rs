@@ -314,9 +314,8 @@ fn attachment_state_can_reference_the_shared_hem_control_family() {
 
 fn corner_loss_input() -> cadmpeg_ir::features::Feature {
     serde_json::from_value(serde_json::json!({
-        "id": "test:model:feature#corner", "ordinal": 1, "suppressed": null,
-        "definition": {"definition": "native", "kind": "SheetMetalCorner"}
-    }))
+        "id": "test:model:feature#corner", "ordinal": 1,
+        "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "SheetMetalCorner", "parameters": {}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
     .expect("synthetic corner feature")
 }
 

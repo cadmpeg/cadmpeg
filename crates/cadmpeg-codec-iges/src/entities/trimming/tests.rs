@@ -136,8 +136,8 @@ fn decode_skips_a_boundary_over_its_endpoint_cluster_limit() {
         )
         .unwrap();
 
-    assert!(decoded.ir().model.faces.is_empty());
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.faces.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss
@@ -186,7 +186,7 @@ fn decode_skips_a_trimmed_face_whose_linear_boundary_exceeds_the_pair_budget() {
         )
         .unwrap();
 
-    assert!(decoded.ir().model.faces.is_empty());
+    assert!(decoded.ir().geometry.faces.is_empty());
     assert!(
         decoded.report().losses.iter().any(|loss| {
             loss.code == IgesLossCode::GeometryNotProjected.kind()
@@ -222,7 +222,7 @@ fn decode_reports_a_pcurve_support_check_over_the_blend_limit() {
         assert_eq!(
             result
                 .ir()
-                .model
+                .geometry
                 .faces
                 .iter()
                 .any(|face| face.id.as_str() == "iges:model:face#D9"),
@@ -242,7 +242,7 @@ fn decode_reports_a_pcurve_support_check_over_the_blend_limit() {
         if face_kept {
             let coedge = result
                 .ir()
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D9:0:0")
@@ -296,7 +296,7 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
     assert!(
         single
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .any(|face| face.id.as_str() == "iges:model:face#D9"),
@@ -311,7 +311,7 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
         assert!(
             shared
                 .ir()
-                .model
+                .geometry
                 .faces
                 .iter()
                 .any(|candidate| candidate.id.as_str() == format!("iges:model:face#D{sequence}")),
@@ -468,7 +468,7 @@ fn decode_reports_an_out_of_domain_alternate_for_model_preferred_type_142() {
         .unwrap();
     assert!(result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .any(|face| face.id.as_str() == "iges:model:face#D9"));
@@ -479,7 +479,7 @@ fn decode_reports_an_out_of_domain_alternate_for_model_preferred_type_142() {
         .any(|loss| { loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind() }));
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D9:0:0")
@@ -497,7 +497,7 @@ fn decode_rejects_an_out_of_domain_parameter_preferred_type_142() {
         .unwrap();
     assert!(!result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .any(|face| face.id.as_str() == "iges:model:face#D9"));
@@ -520,7 +520,7 @@ fn decode_admits_pcurve_whose_source_intervals_reach_support_bounds() {
     assert!(
         result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .any(|face| face.id.as_str() == "iges:model:face#D9"),
@@ -534,7 +534,7 @@ fn decode_admits_pcurve_whose_source_intervals_reach_support_bounds() {
         .any(|loss| { loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind() }));
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D9:0:0")
@@ -661,7 +661,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let surface_id = SurfaceId::mint("test:model:surface#surface").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -673,7 +673,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         )),
         source_object: None,
     });
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -706,7 +706,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
             tolerance: None,
         },
     ];
-    ir.model.points.extend([
+    ir.geometry.points.extend([
         Point::new(
             PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
@@ -732,7 +732,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
             None,
         ),
     ]);
-    ir.model.vertices.extend([
+    ir.geometry.vertices.extend([
         Vertex {
             id: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
@@ -870,7 +870,7 @@ fn decode_commits_a_large_batch_of_trimmed_surfaces_without_quadratic_growth() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), trimmed_count);
+    assert_eq!(result.ir().geometry.faces.len(), trimmed_count);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -891,7 +891,7 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
         .unwrap();
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D15")
@@ -937,7 +937,7 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
             .unwrap();
         let face = result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id.as_str() == "iges:model:face#D3")
@@ -991,7 +991,7 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .unwrap();
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D15")
@@ -999,7 +999,7 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
     assert_eq!(face.loops.len(), 1);
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
@@ -1010,7 +1010,7 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
@@ -1028,11 +1028,11 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
     );
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| {
-            result.ir().model.procedural_surface_owner(&surface.id) == Some(&face.surface)
+            result.ir().geometry.procedural_surface_owner(&surface.id) == Some(&face.surface)
         })
         .unwrap();
     match procedural.definition() {
@@ -1120,7 +1120,7 @@ fn decode_rejects_a_linear_type_144_inner_boundary_outside_the_outer() {
 
     assert!(!result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .any(|face| face.id.as_str() == "iges:model:face#D15"));
@@ -1145,7 +1145,7 @@ fn decode_rejects_a_trimmed_surface_pointer_to_a_non_type_142_entity() {
         .unwrap();
     assert!(!result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .any(|face| face.id.as_str() == "iges:model:face#D15"));
@@ -1183,7 +1183,7 @@ fn decode_rejects_a_bounded_surface_pointer_to_a_non_type_141_entity() {
         .unwrap();
     assert!(!result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .any(|face| face.id.as_str() == "iges:model:face#D9"));
@@ -1248,7 +1248,7 @@ fn decode_brackets_curve_on_surface_carrier_agreement_at_the_global_resolution()
         assert_eq!(
             result
                 .ir()
-                .model
+                .geometry
                 .faces
                 .iter()
                 .any(|face| face.id.as_str() == "iges:model:face#D15"),
@@ -1284,21 +1284,21 @@ fn decode_uses_model_curve_when_type_142_prefers_it() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D15")
         .expect("model-preferred trimmed face");
     let outer_loop = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .expect("outer loop");
     assert!(outer_loop.coedges().iter().all(|id| result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id == *id)
@@ -1321,7 +1321,7 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
         .unwrap();
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D11:0:0")
@@ -1333,7 +1333,7 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
         .map(|pcurve_use| {
             let pcurve = result
                 .ir()
-                .model
+                .geometry
                 .pcurves
                 .iter()
                 .find(|pcurve| pcurve.id == pcurve_use.pcurve)
@@ -1388,7 +1388,7 @@ fn decode_retains_agreeing_pcurves_when_type_141_prefers_model_curves() {
 
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D11:0:0")
@@ -1417,7 +1417,7 @@ fn decode_brackets_type_141_pcurve_agreement_at_the_global_resolution() {
         assert_eq!(
             result
                 .ir()
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .any(|body| body.id.as_str() == "iges:model:body#D11"),
@@ -1447,7 +1447,7 @@ fn decode_preserves_two_uses_and_periodic_images_of_a_cylinder_seam() {
         .unwrap();
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| loop_.id.as_str() == "iges:model:loop#D21:D17")
@@ -1459,7 +1459,7 @@ fn decode_preserves_two_uses_and_periodic_images_of_a_cylinder_seam() {
         .map(|id| {
             result
                 .ir()
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *id)
@@ -1475,7 +1475,7 @@ fn decode_preserves_two_uses_and_periodic_images_of_a_cylinder_seam() {
         .map(|coedge| {
             let pcurve = result
                 .ir()
-                .model
+                .geometry
                 .pcurves
                 .iter()
                 .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
@@ -1511,7 +1511,7 @@ fn decode_preserves_ordered_loop_pcurve_collection_and_isoparametric_flags() {
         .unwrap();
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D27:D23:0")
@@ -1523,7 +1523,7 @@ fn decode_preserves_ordered_loop_pcurve_collection_and_isoparametric_flags() {
     assert!(coedge.pcurves[1].pcurve.as_str().ends_with(":0:1"));
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| loop_.id.as_str() == "iges:model:loop#D27:D23")
@@ -1556,7 +1556,7 @@ fn decode_brackets_explicit_loop_pcurve_agreement_at_the_global_resolution() {
         assert_eq!(
             result
                 .ir()
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .any(|body| body.id.as_str() == "iges:model:body#D27"),
@@ -1610,7 +1610,7 @@ fn source_control_interval_fallback_projects_the_trimmed_face() {
         .unwrap();
     assert!(result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .any(|face| face.id.as_str() == "iges:model:face#D9"));

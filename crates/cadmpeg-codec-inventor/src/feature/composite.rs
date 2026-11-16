@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::Model;
+
 use cadmpeg_ir::features::{
     FeatureDefinition, FeatureOperation, FeatureResultMembers, FeatureResultTopology,
 };
@@ -438,7 +438,7 @@ pub(crate) fn project(
     carrier: &ActiveCarrierRecord,
     scope: &Scope<'_>,
     keys: &[BodyNativeKey],
-    model: &mut Model,
+    ir: &mut cadmpeg_ir::CadIr,
 ) -> Result<Projection, CodecError> {
     let mut projection = Projection {
         transferred: 0,
@@ -478,13 +478,15 @@ pub(crate) fn project(
         scope,
     );
     let carrier_type = type_id_string(crate::kernel::KERNEL_RECORD_TYPE_ID);
-    let positions = model
+    let positions = ir
+        .model
         .features
         .iter()
         .enumerate()
         .filter_map(|(position, feature)| Some((feature.native_ref.clone()?, position)))
         .collect::<HashMap<_, _>>();
-    let model_bodies = model
+    let model_bodies = ir
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())
@@ -551,7 +553,7 @@ pub(crate) fn project(
         let Some(&position) = positions.get(&feature.id()) else {
             continue;
         };
-        let target = &mut model.features[position];
+        let target = &mut ir.model.features[position];
         if !matches!(
             target.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -589,7 +591,7 @@ pub(crate) fn project(
             .set_definition(FeatureDefinition::Operation(
                 FeatureOperation::StoredGeometry {},
             ));
-        model
+        ir.model
             .feature_result_topologies
             .push(FeatureResultTopology::new(
                 FeatureResultTopologyId::compose(
