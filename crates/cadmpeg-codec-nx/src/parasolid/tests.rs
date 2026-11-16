@@ -94,7 +94,7 @@ fn unresolved_chart_descriptions_preserve_bytes_without_admitting_hvecs() {
                 }
                 assert!(!decoded
                     .ir
-                    .model
+                    .geometry
                     .procedural_curves
                     .iter()
                     .any(|curve| matches!(

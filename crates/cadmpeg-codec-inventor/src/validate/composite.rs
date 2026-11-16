@@ -55,7 +55,7 @@ pub(super) fn evaluate<'a>(
             })
         },
         |body| {
-            ir.model
+            ir.geometry
                 .bodies
                 .iter()
                 .any(|candidate| &candidate.id == body)

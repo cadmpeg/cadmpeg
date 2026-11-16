@@ -296,11 +296,11 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     let body = cadmpeg_ir::topology::Body {
         id: BodyId::mint("nx:s4:body#8").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
 
     let writes = [write_a, write_b];
@@ -475,7 +475,7 @@ fn repeated_body_identity_builds_output_lineage() {
 #[test]
 fn duplicate_result_member_claims_do_not_discard_recovered_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let original = ir.model.clone();
+    let original = ir.clone();
     let mut losses = Vec::new();
     crate::native::attach::append_feature_result_topology(
         &mut ir.model.feature_result_topologies,
@@ -494,7 +494,7 @@ fn duplicate_result_member_claims_do_not_discard_recovered_geometry() {
         },
         &mut losses,
     );
-    assert_eq!(ir.model, original);
+    assert_eq!(ir, original);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,

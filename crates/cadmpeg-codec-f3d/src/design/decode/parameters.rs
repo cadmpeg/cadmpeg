@@ -503,7 +503,7 @@ fn parse_header_form(
         && payload.get(expression_end..expression_end + 10)
             == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
     let wide_flags = (shift == WIDE_DISCRIMINATED_SHIFT
-        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 6)))
+        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 5 | 6)))
     .then(|| wide_expression_trailer_flags(payload.get(expression_end..)?))
     .flatten()
     .filter(|wide| wide.document == owner_record_index.is_none());
@@ -1197,6 +1197,8 @@ pub(crate) struct DecodedParameterOwners {
     pub(crate) owners: Vec<DesignParameterOwner>,
     /// Native identities of parameters with an unsupported owner frame.
     pub(crate) unparsed: Vec<String>,
+    /// Per-stream counts of owners whose compact trailer sets its final flag byte.
+    pub(crate) trailer_flags: Vec<StreamParameterCount>,
 }
 
 /// Keep parameters with unsupported owner frames in native storage only.
@@ -1296,6 +1298,7 @@ pub(crate) fn decode_parameter_owners(
         }
     }
     let mut unparsed = Vec::new();
+    let mut trailer_flag_counts = HashMap::<String, usize>::new();
     for parameter in parameters {
         let Some(owner_index) = parameter.owner_record_index() else {
             continue;
@@ -1370,6 +1373,7 @@ pub(crate) fn decode_parameter_owners(
             unparsed.push(parameter.id.clone());
             continue;
         };
+        let trailer_flag = parsed.trailer_flag;
         let owner = parsed
             .into_record(&entry.name, header.byte_offset)
             .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
@@ -1379,12 +1383,21 @@ pub(crate) fn decode_parameter_owners(
             return Err(malformed("does not link back to its referencing parameter"));
         }
 
+        if trailer_flag {
+            *trailer_flag_counts.entry(entry.name.clone()).or_default() += 1;
+        }
         out.push(owner);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
+    let mut trailer_flags = trailer_flag_counts
+        .into_iter()
+        .map(|(stream, count)| StreamParameterCount { stream, count })
+        .collect::<Vec<_>>();
+    trailer_flags.sort_by(|a, b| a.stream.cmp(&b.stream));
     Ok(DecodedParameterOwners {
         owners: out,
         unparsed,
+        trailer_flags,
     })
 }
 
@@ -1500,6 +1513,9 @@ pub(in crate::design) struct ParsedParameterOwner {
     pub(super) companion_record_index: u32,
     /// Text of a text parameter's owner and the offset of its code units.
     text_value: Option<(String, FrameRelative)>,
+    /// Whether the compact trailer before the companion reference stores
+    /// `00 01` in place of `00 00`.
+    pub(super) trailer_flag: bool,
 }
 
 impl ParsedParameterOwner {
@@ -1671,16 +1687,27 @@ fn parse_parameter_owner_with(
         (repeated_scope(at) && frame.get(at + width) == Some(&1) && variant <= 1)
             .then_some((at, Some(variant)))
     });
-    if [without_variant, with_variant, with_compact_variant]
-        .into_iter()
-        .flatten()
-        .count()
+    let with_flagged_trailer = companion_marker.checked_sub(width + 2).and_then(|at| {
+        (repeated_scope(at) && frame.get(at + width..companion_marker) == Some(&[0, 1]))
+            .then_some((at, None))
+    });
+    if [
+        without_variant,
+        with_variant,
+        with_compact_variant,
+        with_flagged_trailer,
+    ]
+    .into_iter()
+    .flatten()
+    .count()
         != 1
     {
         return None;
     }
-    let (repeated_scope_marker, variant) =
-        without_variant.or(with_variant).or(with_compact_variant)?;
+    let (repeated_scope_marker, variant) = without_variant
+        .or(with_variant)
+        .or(with_compact_variant)
+        .or(with_flagged_trailer)?;
 
     let owned_ordinal_offset = repeated_scope_marker.checked_sub(8)?;
     let parameter_marker = owned_ordinal_offset.checked_sub(width)?;
@@ -1758,6 +1785,7 @@ fn parse_parameter_owner_with(
         variant,
         companion_record_index,
         text_value,
+        trailer_flag: with_flagged_trailer.is_some(),
     })
 }
 
@@ -1840,6 +1868,7 @@ fn parse_admitted_legacy_parameter_owner_68(
         variant: None,
         companion_record_index,
         text_value: None,
+        trailer_flag: false,
     })
 }
 
@@ -1914,6 +1943,7 @@ fn parse_admitted_legacy_parameter_owner_88(
         variant: None,
         companion_record_index,
         text_value: None,
+        trailer_flag: false,
     })
 }
 

@@ -123,6 +123,7 @@ impl Fixture {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         };
         Self {
             features: vec![feature],

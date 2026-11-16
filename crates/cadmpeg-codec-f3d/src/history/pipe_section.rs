@@ -295,15 +295,11 @@ fn result_faces_fit_circle(
         if body.kind != BodyKind::Solid {
             return false;
         }
-        for region_id in &body.regions {
-            let Some(region) = only(
-                inputs
-                    .regions
-                    .iter()
-                    .filter(|region| region.id == *region_id),
-            ) else {
-                return false;
-            };
+        for region in inputs
+            .regions
+            .iter()
+            .filter(|region| region.body == body.id)
+        {
             shells.extend(region.shells.iter());
         }
     }

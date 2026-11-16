@@ -152,7 +152,7 @@ fn an_allowance_that_skips_history_binding_keeps_the_placements() {
 #[test]
 fn attributed_local_children_repeat_under_each_containing_instance() {
     const TOLERANCE: f64 = 1e-12;
-    let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(&[300]);
+    let (bulk, meta) = crate::test_support::component_design::nested_local_component_design(&[300]);
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
@@ -163,7 +163,8 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
     );
     let result = super::decode(bytes);
     let model = &result.ir().model;
-    assert_eq!(model.bodies.len(), 1);
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1);
     assert_eq!(model.product_definitions.len(), 3);
     assert_eq!(model.occurrences.len(), 7);
     assert!(!result
@@ -209,7 +210,8 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
 #[test]
 fn unadmitted_membership_places_the_body_once_at_its_stored_frame() {
     for owners in [&[][..], &[200, 300][..], &[999][..]] {
-        let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
+        let (bulk, meta) =
+            crate::test_support::component_design::nested_local_component_design(owners);
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
@@ -219,7 +221,7 @@ fn unadmitted_membership_places_the_body_once_at_its_stored_frame() {
             &meta,
         );
         let result = super::decode(bytes);
-        assert_eq!(result.ir().model.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
         assert_eq!(
             result
                 .ir()
@@ -276,6 +278,34 @@ fn unadmitted_membership_places_the_body_once_at_its_stored_frame() {
 }
 
 #[test]
+fn design_without_occurrences_groups_its_unbound_body_at_its_stored_frame() {
+    for owners in [&[][..], &[999][..]] {
+        let (bulk, meta) = crate::test_support::component_design::flat_component_design(owners);
+        let bytes = f3d_with_breps_and_design(
+            &[(
+                "BREP.module.smbh",
+                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            )],
+            &bulk,
+            &meta,
+        );
+        let result = super::decode(bytes);
+        let model = &result.ir().model;
+        let geometry = &result.ir().geometry;
+        assert_eq!(geometry.bodies.len(), 1);
+        assert!(model.occurrences.is_empty());
+        assert_eq!(
+            model
+                .product_definitions
+                .iter()
+                .flat_map(|definition| &definition.bodies)
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
 fn history_only_body_map_pair_leaves_the_current_model_and_reports_its_loss() {
     use crate::test_support::component_body_test::{
         history_only_design, HistoryOnlyContainer as Container,
@@ -296,7 +326,7 @@ fn history_only_body_map_pair_leaves_the_current_model_and_reports_its_loss() {
             &meta,
         );
         let result = super::decode(bytes);
-        assert_eq!(result.ir().model.bodies.len(), bodies, "{hidden}");
+        assert_eq!(result.ir().geometry.bodies.len(), bodies, "{hidden}");
         assert_eq!(
             result
                 .report()
@@ -336,8 +366,8 @@ fn consumed_pair_beside_a_listed_survivor_keeps_exactly_the_survivor() {
             &meta,
         );
         let result = super::decode(bytes);
-        assert_eq!(result.ir().model.bodies.len(), 1, "{survivor_key}");
-        assert_eq!(result.ir().model.faces.len(), 1, "{survivor_key}");
+        assert_eq!(result.ir().geometry.bodies.len(), 1, "{survivor_key}");
+        assert_eq!(result.ir().geometry.faces.len(), 1, "{survivor_key}");
         let native = crate::test_support::native_test::f3d_native(result.ir());
         let native_keys = native
             .body_native_keys
@@ -404,7 +434,7 @@ fn no_physical_model_requires_every_body_map_pair_to_be_history_only() {
             &meta,
         );
         let result = super::decode(bytes);
-        assert!(result.ir().model.bodies.is_empty(), "{expected}");
+        assert!(result.ir().geometry.bodies.is_empty(), "{expected}");
         let has = |text: &str| {
             result
                 .report()
@@ -420,7 +450,8 @@ fn no_physical_model_requires_every_body_map_pair_to_be_history_only() {
 #[test]
 fn admitted_component_membership_wins_over_an_unregistered_owner() {
     for owners in [&[999, 300][..], &[300, 999][..]] {
-        let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
+        let (bulk, meta) =
+            crate::test_support::component_design::nested_local_component_design(owners);
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
@@ -560,7 +591,7 @@ fn history_only_hidden_uncontained_body_with_a_bound_cluster_stays_in_model() {
         &meta,
     );
     let result = super::decode(bytes);
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     let native = crate::test_support::native_test::f3d_native(result.ir());
     assert!(!native.design_body_bindings[0].history_only);
     assert!(native.design_body_bindings[0].body.is_some());
@@ -602,7 +633,7 @@ fn a_body_a_consuming_scope_names_leaves_the_model_with_a_bound_cluster() {
         &meta,
     );
     let result = super::decode(bytes);
-    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
     let native = crate::test_support::native_test::f3d_native(result.ir());
     assert!(native.design_body_bindings[0].history_only);
     assert!(native.design_body_bindings[0].body.is_none());
@@ -646,7 +677,7 @@ fn history_only_consumed_member_keeps_the_inserted_design_body() {
         ],
     );
     let result = super::decode(archive);
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert!(result
         .report()
         .losses

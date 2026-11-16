@@ -216,7 +216,9 @@ impl Serialize for DesignParameterScope {
             emit_opt!("surface_patch_selection", patch.selection.as_ref());
         }
         emit_opt!("edge_flange_operation", self.edge_flange_operation());
+        emit_opt!("edge_flange_construction", self.edge_flange_construction());
         emit_opt!("hem_operation", self.hem_operation());
+        emit_opt!("contour_flange_operation", self.contour_flange_operation());
         emit_opt!("unfold_operation", self.unfold_operation());
         emit_opt!("refold_operation", self.refold_operation());
         emit_opt!("fixed_fillet_parameters", self.fixed_fillet_parameters());

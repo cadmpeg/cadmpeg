@@ -908,7 +908,7 @@ fn arena_write_error_names_the_arena() {
 #[test]
 fn native_field_rewrite_does_not_require_serde_reconstruction() {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
-    use crate::topology::Body;
+    use crate::topology::Face;
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::CodecError;
 
@@ -919,7 +919,7 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
             value: &mut serde_json::Value,
             map: &mut IdentityMap<'_, F>,
         ) -> Result<(), CodecError> {
-            Body::rewrite_native_value(ctx, value, map)
+            Face::rewrite_native_value(ctx, value, map)
         }
         fn visit_identity_references(
             &self,
@@ -937,11 +937,11 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
         }
     }
     let record = NativeRecord::new(
-        crate::ids::Identity::new("test:model:body#one").unwrap(),
+        crate::ids::Identity::new("test:model:face#one").unwrap(),
         serde_json::from_value(serde_json::json!({
-            "kind": "solid",
-            "regions": ["test:model:region#one"],
-            "name": "test:model:region#one"
+            "sense": "forward",
+            "shell": "test:model:shell#one",
+            "name": "test:model:shell#one"
         }))
         .unwrap(),
     )
@@ -956,10 +956,10 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
         })
         .unwrap();
     assert_eq!(
-        fields["regions"],
-        serde_json::json!(["test:occurrence:region#one"])
+        fields["shell"],
+        serde_json::json!("test:occurrence:shell#one")
     );
-    assert_eq!(fields["name"], serde_json::json!("test:model:region#one"));
+    assert_eq!(fields["name"], serde_json::json!("test:model:shell#one"));
     assert!(!fields.contains_key("id"));
     ctx.finish_session().unwrap();
 }
@@ -974,7 +974,7 @@ fn native_attribute_target_rewrite_preserves_every_wire_kind() {
     ] {
         let mut value = serde_json::json!({"kind": kind});
         if kind != "document" {
-            value["id"] = serde_json::json!(format!("test:model:{kind}#one"));
+            value["value"] = serde_json::json!(format!("test:model:{kind}#one"));
         }
         let expected: AttributeTarget = serde_json::from_value(value.clone()).unwrap();
         let remap = |id: &str| {
@@ -1030,11 +1030,11 @@ fn native_field_copy_and_typed_rewrite_refuse_at_the_depth_limit() {
     let body = NativeRecord::from_typed(&Body {
         id: BodyId::mint("test:model:body#one").unwrap(),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: Some("test:model:body#one".into()),
         color: None,
         visible: None,
+        native_ref: None,
     })
     .unwrap();
     for rewrite in [false, true] {

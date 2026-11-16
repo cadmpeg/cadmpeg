@@ -159,27 +159,30 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
 
 fn recorded_at(depth: DecodeDepth) -> CadIr {
     let mut ir = CadIr::empty();
-    ir.set_decode_depth(depth);
+    ir.set_scope(depth.scope())
+        .expect("an empty document admits every scope");
     ir
 }
 
 #[test]
-fn a_full_need_encoder_refuses_a_geometry_document() {
-    let ir = recorded_at(DecodeDepth::Geometry);
-    let error = F3dCoverageEncoder(ArenaCoverage::Complete)
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            CodecError::InsufficientDepth {
-                format: "f3d",
-                needed: DecodeDepth::Full,
-                recorded: DecodeDepth::Geometry,
-            }
-        ),
-        "{error}"
-    );
+fn a_full_need_encoder_refuses_a_document_below_full_scope() {
+    for recorded in [DecodeDepth::Geometry, DecodeDepth::Design] {
+        let ir = recorded_at(recorded);
+        let error = F3dCoverageEncoder(ArenaCoverage::Complete)
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                CodecError::InsufficientDepth {
+                    format: "f3d",
+                    needed: DecodeDepth::Full,
+                    recorded: actual,
+                } if actual == recorded
+            ),
+            "{error}"
+        );
+    }
 }
 
 #[test]
@@ -218,6 +221,7 @@ fn the_cadir_encoder_writes_the_depth_a_document_records() {
     for depth in [
         DecodeDepth::Container,
         DecodeDepth::Geometry,
+        DecodeDepth::Design,
         DecodeDepth::Full,
     ] {
         let ir = recorded_at(depth);
@@ -227,7 +231,10 @@ fn the_cadir_encoder_writes_the_depth_a_document_records() {
         let mut encoded = Vec::new();
         plan.write_to(&mut encoded).unwrap();
         let written: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
-        assert_eq!(written["decode_depth"], depth.as_str());
+        assert_eq!(
+            written["scope"],
+            serde_json::to_value(depth.scope()).unwrap()
+        );
     }
 }
 
@@ -249,7 +256,7 @@ fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
 #[test]
 fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
     let ir = CadIr::empty();
-    let fidelity = SourceFidelity::default();
+    let fidelity = SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
     let plan = CatalogEncoder
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
@@ -307,7 +314,7 @@ fn write_path_structurally_authors_fidelity_resolution() {
 }
 
 macro_rules! uniform_dispositions {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         fn uniform_dispositions(disposition: ArenaDisposition) -> ArenaDispositions {
             ArenaDispositions { $($field: disposition,)* }
         }
@@ -341,8 +348,8 @@ fn coverage_losses(ir: &CadIr, coverage: ArenaCoverage) -> Vec<crate::report::lo
 #[test]
 fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    assert_eq!(ir.model.faces.len(), 6);
-    assert!(ir.model.subds.is_empty());
+    assert_eq!(ir.geometry.faces.len(), 6);
+    assert!(ir.geometry.subds.is_empty());
     let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
     dispositions.faces = ArenaDisposition::Omitted;
     dispositions.subds = ArenaDisposition::Omitted;
@@ -366,6 +373,22 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
         "{}",
         losses[0].message
     );
+}
+
+#[test]
+fn an_ignored_arena_charges_no_loss_when_it_holds_a_record() {
+    let ir = crate::examples::unit_cube_with_history_body().expect("valid fixture");
+    assert_eq!(ir.model.history_bodies.len(), 1);
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    dispositions.history_bodies = ArenaDisposition::Ignored;
+    assert!(
+        coverage_losses(&ir, ArenaCoverage::Declared(dispositions)).is_empty(),
+        "an ignored arena is not an omission"
+    );
+    assert!(!ArenaDisposition::Ignored.carries());
+    dispositions.history_bodies = ArenaDisposition::Omitted;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
 }
 
 #[test]
@@ -454,8 +477,8 @@ fn carried_errors_exclude_warnings_and_include_unlocated_errors() {
 #[test]
 fn carried_errors_follow_model_coverage_and_related_locations() {
     let ir = unit_cube().expect("valid cube");
-    let face = ir.model.faces[0].identity();
-    let edge = ir.model.edges[0].identity();
+    let face = ir.geometry.faces[0].identity();
+    let edge = ir.geometry.edges[0].identity();
     let report = validation_report(vec![
         finding(Some(face), "invalid face", Severity::Error),
         finding(
@@ -471,6 +494,7 @@ fn carried_errors_follow_model_coverage_and_related_locations() {
         (ArenaDisposition::Reported, true),
         (ArenaDisposition::Dropped, false),
         (ArenaDisposition::Omitted, false),
+        (ArenaDisposition::Ignored, false),
     ] {
         let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
         dispositions.faces = disposition;

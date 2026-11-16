@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::Model;
+
 use cadmpeg_ir::drawings::{DrawingKind, DrawingSheet};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveLength;
@@ -22,11 +22,11 @@ type Properties<'a> = BTreeMap<&'a str, Vec<&'a PropertyRecord>>;
 
 pub(super) fn transfer(
     ctx: &DecodeContext<'_>,
-    model: &mut Model,
+    ir: &mut cadmpeg_ir::CadIr,
     properties: &[PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<LossNote>, CodecError> {
-    if model.drawings.is_empty() {
+    if ir.model.drawings.is_empty() {
         return Ok(Vec::new());
     }
     let mut indexed = Properties::new();
@@ -38,7 +38,7 @@ pub(super) fn transfer(
     }
     let properties = &indexed;
     let mut losses = Vec::new();
-    for drawing in &mut model.drawings {
+    for drawing in &mut ir.model.drawings {
         let owner = drawing.object.as_str();
         if drawing.kind == DrawingKind::Template {
             let result = template(
@@ -121,8 +121,8 @@ pub(super) fn transfer(
             )));
         }
     }
-    dimension::transfer(model, properties, entries, &mut losses)?;
-    for annotation in &mut model.semantic_annotations {
+    dimension::transfer(ir, properties, entries, &mut losses)?;
+    for annotation in &mut ir.model.semantic_annotations {
         if !annotation.runtime_type.starts_with("TechDraw::") {
             continue;
         }
@@ -142,7 +142,8 @@ pub(super) fn transfer(
             }
         }
     }
-    if model
+    if ir
+        .model
         .drawings
         .iter()
         .any(|drawing| !drawing.physical_content_is_valid())

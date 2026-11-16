@@ -381,10 +381,11 @@ fn decode_sketch_visibilities_in_stream(
             None => parse_genesis_entity_header(&bytes[..frame.end], frame.start),
         })
         else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} has an invalid entity header",
+            losses.push(F3dLossCode::SketchContainerHeaderUnrecognized.note(format!(
+                "sketch container {} has an entity header of no recognised form; its visibility and name stay unread",
                 frame.entity_id
             )));
+            continue;
         };
         let entity_suffix = entity_id.suffix();
         if entity_suffix != frame.entity_id {
@@ -1254,10 +1255,14 @@ pub(super) struct NamedEntityHeader {
 
 /// Parse the `EntityGenesis` entity-header layout at `start`: the u32 record
 /// index doubles as the entity suffix and is followed by a zero run, a
-/// `0x01`-marked u32 1, the `EntityGenesis` and `IntrinsicMetaTypeuint64`
-/// key strings, the u64 origin bitfield, and the UTF-16LE entity id whose
-/// numeric suffix equals the record index.
+/// `0x01`-marked u32 key count, that many key entries, the UTF-16LE entity id
+/// whose numeric suffix equals the record index. A key entry is a counted
+/// ASCII key, a counted ASCII type string, and a value. The
+/// `IntrinsicMetaTypeuint64` value is a u64; the `IntrinsicMetaTypeHString`
+/// value is a zero u32 (empty string). Exactly one entry is the
+/// `EntityGenesis` key with the u64 type.
 pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
+    const GENESIS_KEY_ENTRY_LIMIT: u32 = 16;
     let entity_suffix = View::u32_le_at(bytes, start + 7).map(u64::from)?;
     if entity_suffix == 0 {
         return None;
@@ -1266,21 +1271,44 @@ pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<
     while bytes.get(cursor) == Some(&0) && cursor < start + 35 {
         cursor += 1;
     }
-    if cursor == start + 11
-        || bytes.get(cursor) != Some(&1)
-        || View::u32_le_at(bytes, cursor + 1) != Some(1)
-    {
+    if cursor == start + 11 || bytes.get(cursor) != Some(&1) {
         return None;
     }
-    let after_key = lp_ascii_matches(bytes, cursor + 5, b"EntityGenesis")?;
-    let after_type = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64")?;
-    let (entity_id, end) = lp_utf16_bounded(bytes, after_type + 8, 1..=256)?;
+    let key_count = View::u32_le_at(bytes, cursor + 1)?;
+    if !(1..=GENESIS_KEY_ENTRY_LIMIT).contains(&key_count) {
+        return None;
+    }
+    let mut at = cursor + 5;
+    let mut genesis_entries = 0usize;
+    for _ in 0..key_count {
+        let (key, after_key) =
+            lp_ascii_filtered_view(bytes, at, 1..=64, u8::is_ascii_alphanumeric)?;
+        if let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") {
+            if key == "EntityGenesis" {
+                genesis_entries += 1;
+            }
+            at = after_type + 8;
+        } else {
+            let after_type = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeHString")?;
+            if key == "EntityGenesis" || View::u32_le_at(bytes, after_type)? != 0 {
+                return None;
+            }
+            at = after_type + 4;
+        }
+        if at > bytes.len() {
+            return None;
+        }
+    }
+    if genesis_entries != 1 {
+        return None;
+    }
+    let (entity_id, end) = lp_utf16_bounded(bytes, at, 1..=256)?;
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
         return None;
     };
     (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
         entity_id,
-        entity_id_offset: after_type + 12,
+        entity_id_offset: at + 4,
         optional_slot_present: false,
         end,
     })
@@ -1312,6 +1340,9 @@ fn parse_sketch_member_run(
     };
     if View::u32_le_at(bytes, paired + 7).map(u64::from) != Some(entity_suffix) {
         return empty;
+    }
+    if let Some(members) = parse_typed_sketch_member_run(bytes, paired) {
+        return members;
     }
     let Some(count) =
         View::u32_le_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
@@ -1348,6 +1379,63 @@ fn parse_sketch_member_run(
         });
     }
     members
+}
+
+/// Offset of the u32 sketch ordinal in a typed member-run record: the
+/// 51-byte head-placement reference at offset 19 ends here.
+const TYPED_RUN_ORDINAL: usize = 19 + crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+/// Offset of the u32 character count of the sketch name in a typed
+/// member-run record.
+const TYPED_RUN_NAME_LENGTH: usize = TYPED_RUN_ORDINAL + 6;
+/// Offset of the first UTF-16LE code unit of the sketch name.
+const TYPED_RUN_NAME: usize = TYPED_RUN_NAME_LENGTH + 4;
+/// Largest sketch name, in UTF-16 code units, that a typed member-run record
+/// stores.
+const TYPED_RUN_NAME_LIMIT: usize = 1024;
+
+/// Parse the counted member-reference run of a typed-reference sketch
+/// container's paired record. The paired record stores eight zero bytes after
+/// its header and the head-placement typed reference at offset 19. A u32
+/// sketch ordinal, two state bytes, and a u32 count of name code units follow
+/// that reference. The UTF-16LE name, one zero byte, and the u32 member count
+/// follow them. Each counted member is a 51-byte typed local reference.
+/// `None` when the record is not in this form.
+fn parse_typed_sketch_member_run(
+    bytes: &[u8],
+    paired: usize,
+) -> Option<Vec<crate::records::identity::Located<u32>>> {
+    use crate::bytes::{typed_local_reference_target, TYPED_LOCAL_REFERENCE_LEN};
+    if bytes.get(paired + 11..paired + 19) != Some(&[0u8; 8][..])
+        || typed_local_reference_target(bytes, paired + 19).is_none()
+    {
+        return None;
+    }
+    let name_units =
+        usize::try_from(View::u32_le_at(bytes, paired + TYPED_RUN_NAME_LENGTH)?).ok()?;
+    if name_units > TYPED_RUN_NAME_LIMIT {
+        return None;
+    }
+    let terminator = paired
+        .checked_add(TYPED_RUN_NAME)?
+        .checked_add(name_units.checked_mul(2)?)?;
+    if bytes.get(terminator) != Some(&0) {
+        return None;
+    }
+    let count_at = terminator.checked_add(1)?;
+    let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+    let first = count_at.checked_add(4)?;
+    if bytes.len() < first.checked_add(count.checked_mul(TYPED_LOCAL_REFERENCE_LEN)?)? {
+        return None;
+    }
+    (0..count)
+        .map(|ordinal| {
+            let marker = first + ordinal * TYPED_LOCAL_REFERENCE_LEN;
+            Some(crate::records::identity::Located {
+                value: typed_local_reference_target(bytes, marker)?,
+                offset: u64_from_index(marker + 1),
+            })
+        })
+        .collect()
 }
 
 /// Parse the counted member-record run of a legacy sketch container's paired
@@ -1408,7 +1496,16 @@ fn parse_legacy_sketch_member_run_with(
         {
             return None;
         }
-        let count_at = paired_at + 19 + width + 11;
+        let count_at = if typed {
+            // The sketch name sits between the ordinal and the count.
+            let units = usize::try_from(View::u32_le_at(bytes, paired_at + TYPED_RUN_NAME_LENGTH)?)
+                .ok()
+                .filter(|units| *units <= TYPED_RUN_NAME_LIMIT)?;
+            let terminator = paired_at + TYPED_RUN_NAME + units * 2;
+            (bytes.get(terminator) == Some(&0)).then_some(terminator + 1)?
+        } else {
+            paired_at + 19 + width + 11
+        };
         let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
         if count == 0 {
             return None;
@@ -2508,7 +2605,7 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
         *component = value;
     }
     *cursor = view.position();
-    let [r, g, b, a] = components;
+    let [r, g, b, a] = components.map(f64::from);
     Color::new(r, g, b, a)
 }
 
@@ -4886,10 +4983,14 @@ fn decode_compact_planar_line(
     decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0), record_at)
 }
 
+/// Largest z noise of a planar vector, in units of `f64::EPSILON` times the
+/// vector's own largest planar coordinate (floored at 1 cm).
+const PLANAR_Z_NOISE_ULPS: f64 = 1024.0;
+
 /// Whether `z` is zero for a planar vector `(x, y, z)` stored in centimetres:
-/// exactly zero, or at most `f64::EPSILON * max(|x|, |y|, 1 cm)`.
+/// exactly zero, or at most `PLANAR_Z_NOISE_ULPS * f64::EPSILON * max(|x|, |y|, 1 cm)`.
 pub(in crate::design) fn planar_z_is_zero(x: f64, y: f64, z: f64) -> bool {
-    z == 0.0 || z.abs() <= f64::EPSILON * x.abs().max(y.abs()).max(1.0)
+    z == 0.0 || z.abs() <= PLANAR_Z_NOISE_ULPS * f64::EPSILON * x.abs().max(y.abs()).max(1.0)
 }
 
 /// Raw z components of a compact planar line at `payload` offset 133 when

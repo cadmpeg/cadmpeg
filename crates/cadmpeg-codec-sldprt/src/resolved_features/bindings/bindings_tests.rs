@@ -262,6 +262,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let transform = cadmpeg_ir::transform::Transform::affine([
         [1.0, 0.0, 0.0, 12.0],
@@ -286,6 +287,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             .expect("placed surface"),
         )),
         source_object: None,
+        native_ref: None,
     };
 
     bind_mirror_surface_planes(

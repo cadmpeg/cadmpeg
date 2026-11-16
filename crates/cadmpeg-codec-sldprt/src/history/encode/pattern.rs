@@ -220,7 +220,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     count,
                     second,
                     omitted_instances,
+                    symmetric,
                 } => {
+                    if *symmetric || second.as_ref().is_some_and(|second| second.symmetric) {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has a symmetric pattern distribution",
+                            feature.id
+                        )));
+                    }
                     if !omitted_instances.is_empty() {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has omitted pattern instances",

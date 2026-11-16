@@ -274,6 +274,7 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
         count,
         second,
         omitted_instances,
+        ..
     } = pattern.definition().clone()
     else {
         panic!("linear rectangular pattern");
@@ -392,6 +393,7 @@ fn rectangular_pattern_direction_records_supply_both_directions() {
         count,
         second,
         omitted_instances,
+        ..
     } = pattern.definition().clone()
     else {
         panic!("linear rectangular pattern");
@@ -691,6 +693,7 @@ fn rectangular_pattern_payload_projects_both_axes_and_feature_seed() {
             count,
             second,
             omitted_instances,
+            ..
         } = pattern.definition()
         else {
             panic!("linear pattern");
@@ -991,7 +994,7 @@ fn rectangular_pattern_payload_distance_type_selects_extent_or_spacing() {
 }
 
 #[test]
-fn rectangular_pattern_reports_a_symmetric_spacing_direction() {
+fn rectangular_pattern_carries_a_symmetric_spacing_direction() {
     let mut losses = Vec::new();
     let symmetric = project_rectangular_pattern_scalars(
         &coincident_direction_scope(true, false),
@@ -1002,15 +1005,23 @@ fn rectangular_pattern_reports_a_symmetric_spacing_direction() {
         &mut losses,
     )
     .expect("symmetric spacing direction");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &symmetric else {
+        panic!("rectangular pattern definition");
+    };
+    assert!(matches!(
+        pattern.definition(),
+        PatternTransform::Linear {
+            symmetric: true,
+            ..
+        }
+    ));
     let (spacing, count) = single_direction(symmetric);
     assert!((spacing - 60.0).abs() < EPS_SPACING);
     assert_eq!(count, 3);
     let [loss] = losses.as_slice() else {
         panic!("one placement loss");
     };
-    assert!(loss
-        .message
-        .contains("the symmetric distribution of direction one"));
+    assert!(!loss.message.contains("symmetric"));
 
     let mut losses = Vec::new();
     assert!(project_rectangular_pattern_scalars(

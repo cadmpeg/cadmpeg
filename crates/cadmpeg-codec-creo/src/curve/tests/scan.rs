@@ -78,7 +78,7 @@ fn scan_discovers_curve_halfedge_topology() {
     );
     let curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "creo:visibgeom:curve#7")

@@ -1117,6 +1117,11 @@ pub(crate) struct DesignProfileCurveSelection {
     pub(crate) sketch_scope_record_index: u32,
     /// Byte offset of the Sketch scope reference target.
     pub(crate) sketch_scope_offset: u64,
+    /// Sketch container record indices that the frame of the Sketch scope
+    /// record names through typed local references, in stored order without
+    /// repeats. Empty for compact references.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) scope_sketch_containers: Vec<u32>,
     /// Byte offset of the identity record at the selection index plus three.
     pub(crate) identity_record_offset: u64,
     pub(crate) identity_end_offset: u64,

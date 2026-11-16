@@ -36,7 +36,7 @@ fn with_line_pcurves(mut ir: CadIr, arc: usize, swept: [Line; 2], meridian: [Lin
     ];
     for (edge, (origin, direction)) in uses {
         let id = PcurveId::mint(format!("test:model:pcurve#{edge}")).unwrap();
-        ir.model.pcurves.push(Pcurve {
+        ir.geometry.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line(
                 LinePcurve::try_new(
@@ -46,9 +46,10 @@ fn with_line_pcurves(mut ir: CadIr, arc: usize, swept: [Line; 2], meridian: [Lin
                 .unwrap(),
             ),
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
         let coedge = format!("test:model:coedge#swept-{arc}-{edge}");
-        ir.model
+        ir.geometry
             .coedges
             .iter_mut()
             .find(|candidate| candidate.id.as_str() == coedge)
@@ -75,29 +76,40 @@ fn assert_pcurves_reach_their_vertices(source: &CadIr) {
         .expect("decode the written wedge")
         .into_parts()
         .0;
-    let model = &decoded.model;
+    let geometry = &decoded.geometry;
     let position = |vertex: &VertexId| {
-        let vertex = model.vertices.iter().find(|v| &v.id == vertex).unwrap();
-        let point = model.points.iter().find(|p| p.id == vertex.point).unwrap();
+        let vertex = geometry.vertices.iter().find(|v| &v.id == vertex).unwrap();
+        let point = geometry
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap();
         point.position().get()
     };
     let mut checked = 0;
-    for coedge in &model.coedges {
+    for coedge in &geometry.coedges {
         let Some(use_) = coedge.pcurves.first() else {
             continue;
         };
-        let pcurve = model.pcurves.iter().find(|p| p.id == use_.pcurve).unwrap();
-        let surface = model
+        let pcurve = geometry
+            .pcurves
+            .iter()
+            .find(|p| p.id == use_.pcurve)
+            .unwrap();
+        let surface = geometry
             .loops
             .iter()
             .find(|ring| ring.id == coedge.owner_loop)
-            .and_then(|ring| model.faces.iter().find(|face| face.id == ring.face))
-            .and_then(|face| model.surfaces.iter().find(|s| s.id == face.surface))
+            .and_then(|ring| geometry.faces.iter().find(|face| face.id == ring.face))
+            .and_then(|face| geometry.surfaces.iter().find(|s| s.id == face.surface))
             .and_then(|surface| surface.geometry.solved())
             .unwrap();
-        let edge = model.edges.iter().find(|e| e.id == coedge.edge).unwrap();
+        let edge = geometry.edges.iter().find(|e| e.id == coedge.edge).unwrap();
         let [first, last] = edge.param_range().unwrap().get();
-        for (parameter, vertex) in [(first, &edge.start), (last, &edge.end)] {
+        for (parameter, vertex) in [
+            (first, &edge.ends.as_ref().unwrap().start),
+            (last, &edge.ends.as_ref().unwrap().end),
+        ] {
             let uv = pcurve_uv(EvaluationAdmission::Standard, &pcurve.geometry, parameter)
                 .unwrap()
                 .get();

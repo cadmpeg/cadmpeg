@@ -15,7 +15,7 @@ fn appearance_asset_and_binding_round_trip() {
     let real = |value| FiniteReal::new(value).unwrap();
     let length = |value| Length::new(value).unwrap();
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("synthetic:test:appearance#prism-001").expect("valid identity"),
         name: Some("Prism-001".into()),
@@ -72,7 +72,7 @@ fn appearance_asset_and_binding_round_trip() {
         id: "synthetic:test:appearance-binding#edge"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Edge(ir.model.edges[0].id.clone()),
+        target: AppearanceTarget::Edge(ir.geometry.edges[0].id.clone()),
         appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
             .expect("valid identity"),
         source_entity_id: Some("0_1".into()),
@@ -84,7 +84,7 @@ fn appearance_asset_and_binding_round_trip() {
         id: "synthetic:test:appearance-binding#vertex"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Vertex(ir.model.vertices[0].id.clone()),
+        target: AppearanceTarget::Vertex(ir.geometry.vertices[0].id.clone()),
         appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
             .expect("valid identity"),
         source_entity_id: Some("0_1".into()),

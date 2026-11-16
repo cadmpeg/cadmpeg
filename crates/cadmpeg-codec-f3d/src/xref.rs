@@ -641,6 +641,9 @@ pub(crate) fn project_occurrences(
                 + cadmpeg_core::decode::u64_from_index(projection.occurrences.len());
             if used >= sources.limits.max_entities {
                 return Err(cadmpeg_core::decode::ResourceLimit {
+                    scope: cadmpeg_core::decode::LimitScope::for_dimension(
+                        cadmpeg_core::decode::ResourceDimension::Entities,
+                    ),
                     dimension: cadmpeg_core::decode::ResourceDimension::Entities,
                     reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
                     limit: sources.limits.max_entities,
