@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_asm::history::{
     historical_record_archive, materialize_record_table, walk_entity_versions,
 };
-use cadmpeg_core::decode::{work_units, WorkBudget};
+use cadmpeg_core::decode::{unique_index, work_units, DecodeContext, WorkBudget};
+use cadmpeg_core::CodecError;
 
-use super::*;
+use super::{attachment_edges, AttachmentEdges};
+use crate::feature::sheet_metal::flange::FlangeKind;
+use crate::feature::FeatureInventory;
 use crate::feature::{edge_selection::historical, history_states};
 use crate::kernel::ActiveCarrierState;
+use crate::pmdc::PmDcReference;
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
 
 const MAX_ATTACHMENT_WORK: usize = 1 << 21;
