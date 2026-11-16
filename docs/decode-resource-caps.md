@@ -333,6 +333,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_DOCUMENT_BUFFER_OUTPUT`              | `256 * 1024 * 1024`                                     | 4    | `MeshBudget`: stored plus inflated mesh-buffer bytes across the document. At the limit the mesh fails with `document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)`, the session is not fused, and later meshes still decode.                                     |
 | `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODIES` | `64` | 4 | History bodies per document, across all of its components. `MAX_HISTORY_BODY_WORK` bounds their total materialization. Excess reports `feature.history-body-bounded`. |
 | `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODY_WORK` | `1 << 21` | 4 | Archive records scanned for subtype definitions and records materialized for history bodies per document. Excess reports `feature.history-body-bounded`. |
+| `cadmpeg-codec-f3d` | `src/design/decode/scopes/hole.rs` | `MAX_SELECTION_CHAIN` | `16` | 4 | Records after a Hole's direct persistent selection scanned for the records that belong to it. A chain longer than the window leaves the Hole's plane reference unread. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_PATH_ELEMENTS` | `1024` | 2 | Exclusive bound on the even scene path element count, checked before allocation. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_STRING_UNITS` | `128` | 2 | Bound on scene UTF-16 name and pointer code-unit counts. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d`      | `src/paramesh.rs`                                  | `MAX_STREAM_BYTES`                        | `64 * 1024 * 1024`                                      | 2    | Declared byte count of one paramesh stream, checked before `begin_expand`. Excess returns `NotImplemented` without fusing; the container is recorded as failed and the decode continues. The expansion also charges the session.                                             |
@@ -555,16 +556,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 340.
+Production `MAX_*` constants: 341.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 76    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 170   |
+| 4    | Local work cap             | 171   |
 | N    | Not a decode bound         | 52    |
-|      | Total                      | 340   |
+|      | Total                      | 341   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -572,7 +573,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 7,
-`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 26,
+`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 27,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 37,
 `cadmpeg-codec-catia` 78, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
