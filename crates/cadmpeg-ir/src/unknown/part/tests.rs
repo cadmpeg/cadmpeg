@@ -56,7 +56,7 @@ fn a_failed_part_leaves_one_linked_stub_its_bytes_and_one_error_loss() {
     assert_eq!(given_up.id(), &id);
 
     let mut ir = CadIr::empty();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::for_root(root);
     let loss = given_up
         .commit(&ctx, &mut ir, &mut fidelity)
         .expect("commit");
@@ -134,7 +134,7 @@ fn a_digest_only_part_keeps_its_length_and_digest_without_a_copy() {
         .contained_in(identity("synthetic:native:document#0"));
     let id = given_up.id().clone();
     let mut ir = CadIr::empty();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::for_root(root);
     given_up
         .commit(&ctx, &mut ir, &mut fidelity)
         .expect("commit");
@@ -258,7 +258,7 @@ fn a_part_already_given_up_is_not_committed_twice() {
         .expect("given up")
     };
     let mut ir = CadIr::empty();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::for_root(root);
     give_up()
         .commit(&ctx, &mut ir, &mut fidelity)
         .expect("first commit");
@@ -273,7 +273,7 @@ fn a_given_up_part_survives_the_wire() {
     let (ctx, root) =
         DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).expect("root");
     let mut ir = CadIr::empty();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::for_root(root);
     ctx.give_up_part(
         Part::new("synthetic", "record", root.child(4, 18).expect("extent")),
         CodecError::malformed("damaged"),

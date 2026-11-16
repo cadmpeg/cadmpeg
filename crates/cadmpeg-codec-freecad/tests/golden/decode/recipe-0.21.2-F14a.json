@@ -5713,13 +5713,9 @@
     "source": {
       "attributes": {
         "application_domains": "App,PartDesign",
-        "archive_entry_count": "4",
         "document_kind": "part-design",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "9",
-        "physical_archive_bytes": "5166",
-        "physical_ledger_spans": "29",
         "program_version": "0.21R33771 (Git)"
       },
       "identity": {
@@ -5793,6 +5789,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "2f0e5e20da3e8f6d2073a7c8dd654b0c5035ed142c2e0392a14de832cd82eb5d",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

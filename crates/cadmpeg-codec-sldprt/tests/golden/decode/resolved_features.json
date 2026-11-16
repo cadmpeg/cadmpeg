@@ -271,7 +271,6 @@
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "2",
         "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
@@ -501,6 +500,8 @@
         }
       }
     },
+    "decode_digest": "9255b95b0d0dbc24c4128d9ce52fdacc609f494f3a38b63ae8dd93b928cdf983",
+    "file_digests": {},
     "retained_records": {
       "sldprt:file:block#8": {
         "bytes": {
@@ -508,7 +509,10 @@
           "kind": "inline"
         },
         "offset": 8,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": [
+          "model"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -516,8 +520,12 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

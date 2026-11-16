@@ -5142,18 +5142,7 @@
       "source": {
         "attributes": {
           "active_body_selector": "rmfastload_object_id_membership",
-          "deltas_streams": "0",
-          "directory_entries": "2",
-          "file_size": "3630",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "3616",
-          "header_entry_count": "2",
-          "jpeg_preview_count": "0",
-          "partition_streams": "2",
-          "plain_streams": "0",
           "rmfastload_active_body_count": "2",
-          "rmfastload_active_object_count": "100",
           "rmfastload_hits": "100"
         },
         "identity": {
@@ -7571,6 +7560,8 @@
           }
         }
       },
+      "decode_digest": "c1830243944317a442fde25f4852af1b6d609fd67846db4468ccdb4e12ac2ed4",
+      "file_digests": {},
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -7578,7 +7569,10 @@
             "kind": "inline"
           },
           "offset": 121,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -7586,9 +7580,15 @@
             "kind": "inline"
           },
           "offset": 1657,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

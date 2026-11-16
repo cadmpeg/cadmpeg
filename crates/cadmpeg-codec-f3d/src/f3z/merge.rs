@@ -5,6 +5,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::document::{EntityRewrite, Model};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, TextReplacements};
 use cadmpeg_ir::SourceFidelity;
@@ -483,7 +484,12 @@ impl MergeSession<'_, '_> {
                     component_ir.native,
                     &occurrence,
                 )?;
-                parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
+                let decode_digest = parent_fidelity.decode_digest.clone();
+                parent_fidelity.append(rescope_fidelity(
+                    component_fidelity,
+                    &occurrence,
+                    decode_digest,
+                )?)?;
                 if component_report.transfer.geometry_transferred() {
                     parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
                         parent_report.transfer.depth(),
@@ -2030,6 +2036,7 @@ fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), C
 fn rescope_fidelity(
     source: SourceFidelity,
     occurrence: &str,
+    decode_digest: Sha256Digest,
 ) -> Result<SourceFidelity, CodecError> {
     let (mut annotations, records) = source.into_parts();
     annotations
@@ -2054,7 +2061,7 @@ fn rescope_fidelity(
         let stream = StreamHandle::new(stream);
         builder.note(&id, &stream, provenance.offset, provenance.tag.as_deref());
     }
-    let mut rescoped = SourceFidelity::with_annotations(builder.build());
+    let mut rescoped = SourceFidelity::with_annotations(builder.build(), decode_digest);
     for (id, record) in records {
         let id_text = match rescope(id.as_str(), occurrence) {
             Some(id) => id,

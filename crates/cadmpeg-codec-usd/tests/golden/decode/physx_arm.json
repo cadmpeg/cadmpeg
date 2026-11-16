@@ -999,6 +999,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "2a82e58460d62a6ac2195c74425958c272d75af48b413420046099039d79a6e3",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

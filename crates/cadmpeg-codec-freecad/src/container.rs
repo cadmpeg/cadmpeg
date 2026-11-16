@@ -240,24 +240,13 @@ pub(crate) fn source_attributes(
     let mut attributes = BTreeMap::new();
     for (key, value) in [
         ("document_root", scan.document.root_name.clone()),
-        ("object_count", format!("{}", scan.document.object_count)),
         (
             "document_kind",
             scan.document.document_kind().as_str().to_owned(),
         ),
         ("application_domains", scan.document.domains.join(",")),
-        ("archive_entry_count", format!("{}", scan.entries.len())),
-        ("physical_ledger_spans", format!("{}", scan.ledger.len())),
     ]
     .into_iter()
-    .chain(
-        scan.ledger
-            .last()
-            .map(|last| {
-                Ok::<_, CodecError>(("physical_archive_bytes", format!("{}", last.span.end())))
-            })
-            .transpose()?,
-    )
     .chain(
         scan.document
             .program_version

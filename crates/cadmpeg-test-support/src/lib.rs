@@ -25,6 +25,7 @@ pub mod polyhedron;
 pub mod refusal;
 pub mod revolve;
 pub mod roundtrip;
+pub mod schema_sweep;
 pub mod solids;
 pub mod spelling;
 pub mod unknown_keys;

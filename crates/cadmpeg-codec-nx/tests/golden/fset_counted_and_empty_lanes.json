@@ -469,18 +469,7 @@
         "process": true
       },
       "source": {
-        "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "530",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "516",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "partition_streams": "0",
-          "plain_streams": "0"
-        },
+        "attributes": {},
         "identity": {
           "dialects": {
             "extra": [],
@@ -645,7 +634,10 @@
           }
         }
       },
-      "retained_records": {}
+      "decode_digest": "89c512b46db02e5b865dc0ec08c11c9a9483e45900e92693678aa5f98d43cf1a",
+      "file_digests": {},
+      "retained_records": {},
+      "unrepresented": []
     }
   },
   "inspect": {

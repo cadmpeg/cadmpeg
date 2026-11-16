@@ -4,12 +4,14 @@
 use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
@@ -140,14 +142,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             cadmpeg_core::nonblank_literal!("schema"),
             exchange.joined_schema_identifiers(),
         );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("data_sections"),
-            exchange.data().len().to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("entity_instances"),
-            exchange.records().len().to_string(),
-        );
         if let DecodeMode::Decode(packaging) = mode {
             packaging.add_source_attributes(&mut attributes);
         }
@@ -162,6 +156,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         } else {
             cadmpeg_ir::report::decode::DecodeTransfer::full(false)
         });
+        body.coverage
+            .record(crate::coverage::DATA_SECTIONS, exchange.data().len());
+        body.coverage
+            .record(crate::coverage::ENTITY_INSTANCES, exchange.records().len());
         for entry in exchange.references() {
             body.notes.push(format!(
                 "external reference {} -> {}",
@@ -296,7 +294,8 @@ pub(crate) fn decode(
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
     let (exchange, diagnostics) = parse::parse(input, ctx)?;
-    decode_exchange(input, exchange, &diagnostics, ctx, packaging)
+    let decode_digest = Sha256Digest::digest(input);
+    decode_exchange(input, exchange, &diagnostics, ctx, packaging, decode_digest)
 }
 
 pub(crate) fn decode_exchange(
@@ -305,6 +304,7 @@ pub(crate) fn decode_exchange(
     diagnostics: &[ParseDiagnostic],
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
+    decode_digest: Sha256Digest,
 ) -> Result<Decoded, CodecError> {
     decode_exchange_mode(
         input,
@@ -312,6 +312,7 @@ pub(crate) fn decode_exchange(
         diagnostics,
         DecodeMode::Decode(packaging),
         ctx,
+        decode_digest,
     )
     .map(|result| result.decoded)
 }
@@ -327,7 +328,15 @@ pub(crate) fn analyze_exchange(
     diagnostics: &[ParseDiagnostic],
     ctx: &DecodeContext<'_>,
 ) -> Result<AnalyzedExchange, CodecError> {
-    decode_exchange_mode(input, exchange, diagnostics, DecodeMode::Inspect, ctx)
+    let decode_digest = Sha256Digest::digest(input);
+    decode_exchange_mode(
+        input,
+        exchange,
+        diagnostics,
+        DecodeMode::Inspect,
+        ctx,
+        decode_digest,
+    )
 }
 
 fn decode_exchange_mode(
@@ -336,6 +345,7 @@ fn decode_exchange_mode(
     diagnostics: &[ParseDiagnostic],
     mode: DecodeMode,
     ctx: &DecodeContext<'_>,
+    decode_digest: Sha256Digest,
 ) -> Result<AnalyzedExchange, CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
     let given_up = give_up_statements(input, exchange, ctx)?;
@@ -344,7 +354,7 @@ fn decode_exchange_mode(
         .losses
         .extend(given_up.iter().map(GivenUpPart::loss));
     if ctx.container_only() {
-        return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
+        return Ok(session.into_result(SourceFidelity::new(decode_digest), BTreeSet::new()));
     }
 
     let mut header_spans = Vec::new();
@@ -527,7 +537,7 @@ fn decode_exchange_mode(
     let mut opaque_ids = BTreeMap::new();
     let mut source_targets = BTreeMap::new();
     let mut opaque_sources = Vec::new();
-    let mut source_fidelity = SourceFidelity::default();
+    let mut source_fidelity = SourceFidelity::new(decode_digest);
     if matches!(mode, DecodeMode::Decode(_)) {
         let metadata_offsets = diagnostics
             .iter()
@@ -609,6 +619,7 @@ fn decode_exchange_mode(
         let omitted_spans = exchange.omitted_spans().to_vec();
         let signature_spans = exchange.release_source_graph();
         let mut opaque = Vec::new();
+        let mut untyped_ids = Vec::new();
         for (span, omitted) in header_spans
             .iter()
             .map(|span| (span, false))
@@ -628,7 +639,9 @@ fn decode_exchange_mode(
             } else {
                 ids::header(span.start)
             };
-
+            if omitted {
+                untyped_ids.push(id.clone());
+            }
             opaque.push(UnknownRecord::retained(
                 id,
                 u64_from_index(span.start),
@@ -637,6 +650,7 @@ fn decode_exchange_mode(
             ));
         }
         for source in opaque_sources {
+            untyped_ids.push(source.unknown_id.clone());
             let bytes = retained_source_copy(
                 session.ctx,
                 &input[source.span.clone()],
@@ -686,23 +700,15 @@ fn decode_exchange_mode(
             // discarded-value: each part's loss is reported with the parse diagnostics.
             let _ = part.commit(session.ctx, &mut session.ir, &mut source_fidelity)?;
         }
+        for id in untyped_ids {
+            source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
+        }
     }
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_structural"),
-        accounting.structural.to_string(),
-    );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_typed"),
-        accounting.typed.to_string(),
-    );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_named_opaque"),
-        accounting.opaque.to_string(),
-    );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_unclassified"),
-        accounting.unclassified.to_string(),
-    );
+    let coverage = &mut session.body.coverage;
+    coverage.record(crate::coverage::BYTES_STRUCTURAL, accounting.structural);
+    coverage.record(crate::coverage::BYTES_TYPED, accounting.typed);
+    coverage.record(crate::coverage::BYTES_NAMED_OPAQUE, accounting.opaque);
+    coverage.record(crate::coverage::BYTES_UNCLASSIFIED, accounting.unclassified);
     if accounting.unclassified > 0 {
         session
             .body

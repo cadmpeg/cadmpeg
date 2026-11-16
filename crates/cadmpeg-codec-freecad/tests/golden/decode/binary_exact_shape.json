@@ -999,13 +999,9 @@
     "source": {
       "attributes": {
         "application_domains": "App,Part",
-        "archive_entry_count": "2",
         "document_kind": "part",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "2",
-        "physical_archive_bytes": "2400",
-        "physical_ledger_spans": "15",
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
@@ -1079,6 +1075,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

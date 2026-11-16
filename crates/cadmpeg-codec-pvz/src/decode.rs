@@ -16,6 +16,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, SourceMeta, Topology};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{BodyId, Identity};
 use cadmpeg_ir::products::ProductDefinition;
 use cadmpeg_ir::report::decode::DecodeTransfer;
@@ -30,8 +31,6 @@ use crate::pvs::Structure;
 
 /// Source attribute naming the structure member.
 const ATTRIBUTE_STRUCTURE_MEMBER: &str = "structure_member";
-/// Source attribute counting the geometry members.
-const ATTRIBUTE_GEOMETRY_MEMBERS: &str = "geometry_member_count";
 
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let package = Package::open(ctx, root)?;
@@ -42,17 +41,10 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         .into_iter()
         .chain(classification.loss())
         .collect();
-    let geometry_members = package.geometry_names().len();
-    let attributes = BTreeMap::from([
-        (
-            cadmpeg_core::nonblank_const!(ATTRIBUTE_STRUCTURE_MEMBER),
-            package.structure_name().to_owned(),
-        ),
-        (
-            cadmpeg_core::nonblank_const!(ATTRIBUTE_GEOMETRY_MEMBERS),
-            geometry_members.to_string(),
-        ),
-    ]);
+    let attributes = BTreeMap::from([(
+        cadmpeg_core::nonblank_const!(ATTRIBUTE_STRUCTURE_MEMBER),
+        package.structure_name().to_owned(),
+    )]);
     let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(classification.into_matched()),
         attributes,
@@ -81,14 +73,16 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 )
                 .named(package.structure_name())
                 .costing(format!(
-                    "the package carries no product structure, and none of its \
-                     {geometry_members} .ol geometry members was placed"
+                    "the package carries no product structure, and none of its {} .ol \
+                     geometry members was placed",
+                    package.geometry_names().len()
                 ));
                 given_up.push(ctx.give_up_part(part, error)?);
             }
         }
     }
-    let mut source_fidelity = SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity =
+        SourceFidelity::with_annotations(annotations, Sha256Digest::digest(root.window()));
     for part in given_up {
         losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }

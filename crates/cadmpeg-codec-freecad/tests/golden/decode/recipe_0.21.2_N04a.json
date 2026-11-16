@@ -3354,13 +3354,9 @@
     "source": {
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
-        "archive_entry_count": "5",
         "document_kind": "part-design",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "10",
-        "physical_archive_bytes": "5516",
-        "physical_ledger_spans": "36",
         "program_version": "0.21R33771 (Git)"
       },
       "identity": {
@@ -3434,6 +3430,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "ea81d20f6f99fa32d1a4d076a16165afd044452cd58b487196bc2b79213137a3",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

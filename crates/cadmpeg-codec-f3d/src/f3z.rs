@@ -9,6 +9,7 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::container::ContainerScan;
@@ -88,6 +89,7 @@ fn compose(
         .take()
         .ok_or_else(|| CodecError::malformed("F3Z root has no source metadata"))?;
     inline_given_up_parts(ctx, &mut fidelity, &model_root)?;
+    fidelity.decode_digest = Sha256Digest::digest(scan.source_image);
     fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
     crate::decode::commit_given_up_parts(ctx, scan, &mut ir, &mut fidelity)?;

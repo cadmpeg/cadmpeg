@@ -405,6 +405,16 @@ fn thumbnail_bytes_are_retained_with_digest() {
         1,
         "thumbnail has one product reference"
     );
+    let attributes = &result.ir().source.as_ref().expect("source").attributes;
+    for key in [
+        "thumbnail_bytes",
+        "archive_entry_count",
+        "physical_ledger_spans",
+        "physical_archive_bytes",
+        "object_count",
+    ] {
+        assert!(!attributes.keys().any(|name| name.as_str() == key), "{key}");
+    }
     let retained = result
         .source_fidelity()
         .retained_records()

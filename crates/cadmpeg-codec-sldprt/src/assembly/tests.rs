@@ -276,7 +276,9 @@ fn decoded_without_a_model() -> cadmpeg_ir::codec::Decoded {
     cadmpeg_ir::codec::Decoded {
         ir: cadmpeg_ir::document::CadIr::empty(),
         body,
-        source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+        source_fidelity: cadmpeg_ir::SourceFidelity::new(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b""),
+        ),
     }
 }
 
