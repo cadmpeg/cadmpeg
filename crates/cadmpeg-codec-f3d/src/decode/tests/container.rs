@@ -14,6 +14,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::io::{Cursor, Write};
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::loss::LossKind;
 use zip::CompressionMethod;
@@ -92,8 +93,19 @@ fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
         "FusionAssetName[Active]/Breps.BlobParts/BREP1.sat",
     ]);
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .decode(&mut Cursor::new(archive.clone()), &DecodeOptions::default())
         .unwrap();
+    assert_eq!(source_image_marks(&decoded), [ArenaClass::Model]);
+    let container_only = F3dCodec
+        .decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(source_image_marks(&container_only), [ArenaClass::Model]);
     let message = |code: LossKind| {
         let loss = decoded
             .report()
@@ -514,4 +526,21 @@ fn model_brep_reports_distinguish_failed_and_successful_empty_decodes() {
             .iter()
             .all(|loss| loss.code != F3dLossCode::MissingGeometryStream.kind()));
     }
+}
+
+fn source_image_marks(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<ArenaClass> {
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded.clone());
+    let fidelity = decoded.source_fidelity();
+    let marks = fidelity
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .expect("the source image is retained")
+        .untyped()
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fidelity.unrepresented().into_iter().collect::<Vec<_>>(),
+        marks
+    );
+    marks
 }

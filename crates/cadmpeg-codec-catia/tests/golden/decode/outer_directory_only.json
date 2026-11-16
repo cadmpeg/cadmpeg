@@ -129,13 +129,7 @@
       "process": true
     },
     "source": {
-      "attributes": {
-        "external_reference_count": "0",
-        "file_size": "163",
-        "finjpl_segment_count": "0",
-        "outer_dir_offset": "36",
-        "preview_count": "0"
-      },
+      "attributes": {},
       "identity": {
         "dialects": {
           "extra": [],
@@ -574,6 +568,8 @@
         }
       }
     },
+    "decode_digest": "11c9b2c4504fff1a20538fdfd61798e4063a21cbb4973d808f613acdc53fab0c",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#container": {
         "bytes": {
@@ -581,8 +577,16 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": [
+          "model",
+          "design"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

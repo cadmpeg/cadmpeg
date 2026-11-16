@@ -4920,13 +4920,9 @@
     "source": {
       "attributes": {
         "application_domains": "Part,TechDraw",
-        "archive_entry_count": "21",
         "document_kind": "drawing",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "21",
-        "physical_archive_bytes": "12263",
-        "physical_ledger_spans": "148",
         "program_version": "1.1R45039 (Git)"
       },
       "identity": {
@@ -5205,6 +5201,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "09f0953e5a30c05166725f9c430e0f14ba20b2af3c330ff7837b7134b77a5ed8",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

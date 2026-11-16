@@ -76,12 +76,6 @@
     },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "95",
-        "bytes_structural": "220",
-        "bytes_typed": "0",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "1",
         "schema": "AP214"
       },
       "identity": {
@@ -114,7 +108,14 @@
     }
   },
   "report": {
-    "coverage": {},
+    "coverage": {
+      "bytes_named_opaque": 95,
+      "bytes_structural": 220,
+      "bytes_typed": 0,
+      "bytes_unclassified": 0,
+      "data_sections": 1,
+      "entity_instances": 1
+    },
     "identity": {
       "dialects": {
         "extra": [],
@@ -201,6 +202,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "137b9231eadcb4abd4406ac72fe9ebad5e49b947619deba013f8aed570fad09e",
+    "file_digests": {},
     "retained_records": {
       "step:data:example_strings#1": {
         "bytes": {
@@ -208,8 +211,14 @@
           "kind": "inline"
         },
         "offset": 193,
-        "stream": ""
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

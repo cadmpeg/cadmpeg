@@ -76,15 +76,9 @@
     },
     "source": {
       "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "97",
-        "section.0.length": "21",
         "section.0.name": "THMB_IMG_MAIN",
-        "section.0.offset": "76",
         "section.0.raw_name": "THMB_IMG_MAIN",
         "section.0.role": "thumbnail",
-        "section_count": "1",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
@@ -588,6 +582,8 @@
         }
       }
     },
+    "decode_digest": "f5e19e4026f1f7f28ee203fe22f785a6a4b05c7dea69b1c999206079d72b65a6",
+    "file_digests": {},
     "retained_records": {
       "creo:THMB_IMG_MAIN:section#91": {
         "bytes": {
@@ -595,8 +591,14 @@
           "kind": "inline"
         },
         "offset": 91,
-        "stream": "creo:THMB_IMG_MAIN"
+        "stream": "creo:THMB_IMG_MAIN",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

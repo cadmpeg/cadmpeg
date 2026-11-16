@@ -229,12 +229,6 @@
     },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "283",
-        "bytes_typed": "695",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "13",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
       "identity": {
@@ -266,7 +260,14 @@
     }
   },
   "report": {
-    "coverage": {},
+    "coverage": {
+      "bytes_named_opaque": 0,
+      "bytes_structural": 283,
+      "bytes_typed": 695,
+      "bytes_unclassified": 0,
+      "data_sections": 1,
+      "entity_instances": 13
+    },
     "identity": {
       "dialects": {
         "extra": [],
@@ -314,6 +315,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "c8f472b387fc89c6fd081a5eed1f3a4ad9e8800a39f7668d2c1bfa988f997c7b",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

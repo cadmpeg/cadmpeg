@@ -12,6 +12,7 @@ const DIGEST: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f2
 // These objects are maps whose keys name records, fields, or declared measures.
 // Their values are still visited through the complete sidecar reader.
 const MAP_PATHS: &[&str] = &[
+    "/fidelity/file_digests",
     "/fidelity/retained_records",
     "/fidelity/annotations/provenance",
     "/fidelity/annotations/exactness",
@@ -51,6 +52,9 @@ fn fixture() -> Value {
             ]}
         },
         "fidelity": {
+            "decode_digest": DIGEST,
+            "file_digests": {"synthetic:document:definition#component": DIGEST},
+            "unrepresented": ["model"],
             "annotations": {
                 "provenance": {FIRST: {"stream": "source", "offset": 7, "tag": "record"}},
                 "exactness": {
@@ -59,8 +63,8 @@ fn fixture() -> Value {
                 }
             },
             "retained_records": {
-                FIRST: {"stream": "", "offset": 0, "bytes": {"kind": "inline", "data": "YWJj"}},
-                SECOND: {"stream": "source", "offset": 7, "bytes": {"kind": "digest", "byte_len": 3, "sha256": DIGEST}}
+                FIRST: {"stream": "", "offset": 0, "bytes": {"kind": "inline", "data": "YWJj"}, "untyped": []},
+                SECOND: {"stream": "source", "offset": 7, "bytes": {"kind": "digest", "byte_len": 3, "sha256": DIGEST}, "untyped": ["model"]}
             }
         }
     })

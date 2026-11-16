@@ -82,15 +82,9 @@
     },
     "source": {
       "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "146",
-        "section.0.length": "70",
         "section.0.name": "FeatDefs",
-        "section.0.offset": "76",
         "section.0.raw_name": "FeatDefs",
         "section.0.role": "model-data",
-        "section_count": "1",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
@@ -593,6 +587,9 @@
         }
       }
     },
-    "retained_records": {}
+    "decode_digest": "9dfc087d890ad51506638d4a77c3b88fc979c6c9afadf16ec68cbf566e0be931",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

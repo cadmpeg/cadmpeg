@@ -4183,7 +4183,6 @@
     },
     "source": {
       "attributes": {
-        "geometry_member_count": "3",
         "structure_member": "model.pvs"
       },
       "identity": {
@@ -6332,6 +6331,9 @@
         }
       }
     },
-    "retained_records": {}
+    "decode_digest": "1873214c7bc8bc79b4b39b60e614ad37a4c86f13c77cab4184f382afe07e87fd",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }
