@@ -14,9 +14,11 @@ use super::{
     positive_real, real, refuses, selection, text, to_value, unread, Report,
 };
 use crate::design::construction::{kinds, Construction, FrameValue, ScalarDimension};
+use crate::design::evaluation::EvaluationStatus;
+use crate::design::feature::LinkState;
 use crate::design::ids::SpatialSketchConstraintId;
 use crate::design::names::{CodecId, InstanceIndex, NativeName, NativeNameValue};
-use crate::design::ops::shared::{EvaluationStatus, LinkState, Spacing};
+use crate::design::ops::shared::Spacing;
 use crate::design::ops::sketch::{
     AngleOperands, AngleSector, BlockInstance, Contact, DefiningRole, Derivation, DerivationMode,
     DistanceAxis, EntityDefinition, EntityForm, EntityRole, InterpolatedSpline, Operand, Planar,

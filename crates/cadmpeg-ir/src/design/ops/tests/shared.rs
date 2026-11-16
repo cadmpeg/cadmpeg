@@ -1,65 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The shared operation types: evaluation status, links, and the spacing and
-//! sides of a run.
+//! The shared operation types: the spacing and sides of a run, and loci.
 
 use serde_json::json;
 
 use super::{
-    angle, bound, construction, id, length, lit, point3, real, refuses, selection, text, to_value,
-    unread, Report,
+    angle, bound, construction, length, lit, point3, refuses, selection, text, to_value, unread,
+    Report,
 };
 use crate::design::construction::kinds;
-use crate::design::ops::shared::{
-    EvaluationStatus, Link, LinkState, Locus, RunSides, Spacing, UpToFill,
-};
+use crate::design::ops::shared::{Locus, RunSides, Spacing, UpToFill};
 use crate::design::options::SymmetricMeasure;
-use crate::design::selection::DefinitionRef;
-use crate::ids::ProductDefinitionId;
 use crate::scalar::{Angle, Length};
-use crate::transform::Transform;
-
-fn evaluation_statuses() -> Vec<EvaluationStatus> {
-    vec![
-        EvaluationStatus::Current,
-        EvaluationStatus::Stale,
-        EvaluationStatus::Failed,
-    ]
-}
-
-fn link_states() -> Vec<LinkState> {
-    vec![
-        LinkState::Current,
-        LinkState::OutOfDate,
-        LinkState::Broken,
-        LinkState::Locked,
-    ]
-}
-
-pub(super) fn links() -> Vec<Link> {
-    vec![
-        Link {
-            source: Some(selection(4)),
-            document: Some(DefinitionRef {
-                definition: id::<ProductDefinitionId>("product-definition", 1),
-                configuration: None,
-            }),
-            transform: Some(Transform::identity()),
-            scale: Some(real(2.0)),
-            associative: Some(true),
-            state: Some(LinkState::OutOfDate),
-            native_ref: Some("nx:extract_parms#3".to_owned()),
-        },
-        Link {
-            source: Some(unread()),
-            document: None,
-            transform: None,
-            scale: None,
-            associative: None,
-            state: None,
-            native_ref: None,
-        },
-    ]
-}
 
 fn locus() -> Vec<Locus> {
     vec![
@@ -158,9 +109,6 @@ pub(super) fn angle_sides() -> Vec<RunSides<Angle>> {
 #[test]
 fn every_shared_type_round_trips() {
     let mut report = Report::default();
-    report.check("EvaluationStatus", evaluation_statuses());
-    report.check("Link", links());
-    report.check("LinkState", link_states());
     report.check("RunSides<Length>", length_sides());
     report.check("RunSides<Angle>", angle_sides());
     report.check("Spacing<Length>", length_spacings());
@@ -187,8 +135,6 @@ fn the_examples_of_section_2_5() {
         to_value(&Spacing::<Length>::Native(text("nx:x")))["kind"],
         json!("native")
     );
-    assert_eq!(to_value(&LinkState::OutOfDate), json!("out_of_date"));
-    assert_eq!(to_value(&EvaluationStatus::Stale), json!("stale"));
     assert_eq!(
         to_value(&RunSides::<Length>::Against),
         json!({"kind": "against"})
@@ -203,21 +149,9 @@ fn a_centroid_locus_is_its_tag_alone() {
     refuses::<Locus>(r#"{"kind": "centroid", "extra": 1}"#);
 }
 
-/// §2.5: an `Option` field is omitted for `None` and refuses `null`.
+/// §2.5: an `Option` field refuses `null`.
 #[test]
-fn an_unstated_link_field_is_omitted_and_refuses_null() {
-    let empty = Link {
-        source: None,
-        document: None,
-        transform: None,
-        scale: None,
-        associative: None,
-        state: None,
-        native_ref: None,
-    };
-    assert_eq!(serde_json::to_string(&empty).unwrap(), "{}");
-    refuses::<Link>(r#"{"state": null}"#);
-    refuses::<Link>(r#"{"health": "current"}"#);
+fn an_unstated_sides_count_refuses_null() {
     let message = refuses::<RunSides<Length>>(r#"{"kind": "symmetric", "value": {"count": null}}"#);
     assert!(message.contains("count"), "{message}");
 }

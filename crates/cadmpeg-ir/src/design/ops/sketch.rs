@@ -19,9 +19,11 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use super::shared::{EvaluationStatus, LinkState, RunSides, Spacing};
+use super::shared::{RunSides, Spacing};
 use crate::design::construction::{kinds, Construction, ScalarDimension};
 use crate::design::dimension::Dimension;
+use crate::design::evaluation::EvaluationStatus;
+use crate::design::feature::LinkState;
 use crate::design::ids::SpatialSketchConstraintId;
 use crate::design::names::{InstanceIndex, NativeName};
 use crate::design::options::{NativeOptions, ProjectionDirection};

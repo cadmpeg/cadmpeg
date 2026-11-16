@@ -9,8 +9,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::shared::Link;
 use crate::design::construction::{kinds, Construction};
+use crate::design::feature::Link;
 use crate::design::options::NativeOptions;
 
 /// A datum feature: reference geometry built by a construction.
