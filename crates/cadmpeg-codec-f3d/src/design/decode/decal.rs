@@ -386,8 +386,9 @@ fn parse_decal_image_frame(
     parsed.transpose()
 }
 
-/// Zero-run lengths between the last reference and the normal of a Decal placement record.
-const PLACEMENT_NORMAL_GAPS: [usize; 2] = [4, 5];
+/// Zero-run lengths between the two trailing references of a Decal placement
+/// record, each with the zero-run length between the second reference and the normal.
+const PLACEMENT_TRAILING_ZERO_RUNS: [(usize, usize); 3] = [(1, 4), (0, 4), (0, 5)];
 
 /// Largest deviation of the squared placement normal length from one.
 const PLACEMENT_UNIT_NORMAL_TOLERANCE: f64 = 1.0e-9;
@@ -453,8 +454,7 @@ fn parse_decal_placement_record(
     }
     cursor += 21;
     marked_record_reference(bytes, cursor)?;
-    marked_record_reference(bytes, cursor + MARKED_REFERENCE_LEN)?;
-    cursor += 2 * MARKED_REFERENCE_LEN;
+    cursor += MARKED_REFERENCE_LEN;
     let vector = |at: usize| -> Option<[f64; 3]> {
         let mut vector = [0.0; 3];
         for (lane, value) in vector.iter_mut().enumerate() {
@@ -465,42 +465,52 @@ fn parse_decal_placement_record(
         }
         Some(vector)
     };
-    let mut frames = PLACEMENT_NORMAL_GAPS.into_iter().filter_map(|gap| {
-        let normal_at = cursor.checked_add(gap)?;
-        if bytes.get(cursor..normal_at)?.iter().any(|byte| *byte != 0) {
-            return None;
-        }
-        let normal = vector(normal_at)?;
-        let squared_length: f64 = normal.iter().map(|value| value * value).sum();
-        if (squared_length - 1.0).abs() > PLACEMENT_UNIT_NORMAL_TOLERANCE {
-            return None;
-        }
-        let origin = vector(normal_at + 24)?;
-        let (image_name, after_name) = lp_utf16_bounded(bytes, normal_at + 48, 1..=1024)?;
-        let triangle_index_count = View::u32_le_at(bytes, after_name)?;
-        let indices_at = after_name.checked_add(4)?;
-        let indices = bounded_len(
-            u64::from(triangle_index_count),
-            4,
-            bytes.len().checked_sub(indices_at)?,
-        )?;
-        let end = indices_at.checked_add(indices.checked_mul(4)?)?;
-        (next_indexed_record_offset(bytes, end) == Some(end)
-            && View::u32_le_at(bytes, end + 7) == Some(asset_record_index))
-        .then(|| DesignDecalPlacement {
-            byte_offset,
-            class_tag: class_tag.to_owned(),
-            vertex_count,
-            ordinal,
-            u_axis,
-            v_axis,
-            mirrored,
-            normal,
-            origin,
-            image_name,
-            triangle_index_count,
-        })
-    });
+    let mut frames = PLACEMENT_TRAILING_ZERO_RUNS
+        .into_iter()
+        .filter_map(|(separator, gap)| {
+            let reference_at = cursor.checked_add(separator)?;
+            let gap_at = reference_at.checked_add(MARKED_REFERENCE_LEN)?;
+            let normal_at = gap_at.checked_add(gap)?;
+            marked_record_reference(bytes, reference_at)?;
+            if bytes
+                .get(cursor..reference_at)?
+                .iter()
+                .any(|byte| *byte != 0)
+                || bytes.get(gap_at..normal_at)?.iter().any(|byte| *byte != 0)
+            {
+                return None;
+            }
+            let normal = vector(normal_at)?;
+            let squared_length: f64 = normal.iter().map(|value| value * value).sum();
+            if (squared_length - 1.0).abs() > PLACEMENT_UNIT_NORMAL_TOLERANCE {
+                return None;
+            }
+            let origin = vector(normal_at + 24)?;
+            let (image_name, after_name) = lp_utf16_bounded(bytes, normal_at + 48, 1..=1024)?;
+            let triangle_index_count = View::u32_le_at(bytes, after_name)?;
+            let indices_at = after_name.checked_add(4)?;
+            let indices = bounded_len(
+                u64::from(triangle_index_count),
+                4,
+                bytes.len().checked_sub(indices_at)?,
+            )?;
+            let end = indices_at.checked_add(indices.checked_mul(4)?)?;
+            (next_indexed_record_offset(bytes, end) == Some(end)
+                && View::u32_le_at(bytes, end + 7) == Some(asset_record_index))
+            .then(|| DesignDecalPlacement {
+                byte_offset,
+                class_tag: class_tag.to_owned(),
+                vertex_count,
+                ordinal,
+                u_axis,
+                v_axis,
+                mirrored,
+                normal,
+                origin,
+                image_name,
+                triangle_index_count,
+            })
+        });
     let frame = frames.next()?;
     frames.next().is_none().then_some(frame)
 }
@@ -650,7 +660,7 @@ mod tests {
 
     /// A placement record with record index 17 for a 200 by 100 pixel image
     /// centred at (1, 2, 0) with U = (0.5, 0, 0) and V = (0, -0.5, 0).
-    fn placement_record(mirror: u8, gap: usize) -> Vec<u8> {
+    fn placement_record(mirror: u8, separator: usize, gap: usize) -> Vec<u8> {
         let mut bytes = Vec::new();
         header(&mut bytes, *b"267", 17);
         bytes.extend_from_slice(&[0; 10]);
@@ -672,6 +682,7 @@ mod tests {
         bytes.push(0);
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         reference(&mut bytes, false, 21, "");
+        bytes.extend(std::iter::repeat_n(0, separator));
         reference(&mut bytes, false, 18, "");
         bytes.extend(std::iter::repeat_n(0, gap));
         for value in [0.0f64, 0.0, -1.0, 1.0, 2.0, 0.0] {
@@ -697,10 +708,10 @@ mod tests {
 
     #[test]
     fn decal_placement_record_states_the_frame_for_every_scope_code() {
-        for gap in [4, 5] {
+        for (separator, gap) in [(1, 4), (0, 4), (0, 5)] {
             for (mirror, mirrored) in [(0, false), (1, true)] {
                 for scope_code in [0x00, 0x01, 0x60, 0xE2] {
-                    let image = placed_image(scope_code, &placement_record(mirror, gap))
+                    let image = placed_image(scope_code, &placement_record(mirror, separator, gap))
                         .expect("Decal image with a placement record");
                     assert_eq!(image.scope_code, scope_code);
                     let placement = image.placement.expect("placement frame");
@@ -722,9 +733,9 @@ mod tests {
 
     #[test]
     fn decal_placement_record_refuses_deviations_and_keeps_the_image() {
-        let base = placement_record(0, 5);
+        let base = placement_record(0, 1, 4);
         let flags_at = 36 + 3 * 8 + 4 + 24;
-        let normal_at = flags_at + 3 + 11 + 21 + 22 + 5;
+        let normal_at = flags_at + 3 + 11 + 21 + 11 + 1 + 11 + 4;
         let mut cases = Vec::new();
         let mut mirror = base.clone();
         mirror[flags_at + 1] = 2;
@@ -741,8 +752,9 @@ mod tests {
         let mut indices = base.clone();
         indices.extend_from_slice(&[0; 4]);
         cases.push(("index run short of the image-asset record", indices));
-        cases.push(("gap of three bytes", placement_record(0, 3)));
-        cases.push(("gap of six bytes", placement_record(0, 6)));
+        cases.push(("gap of three bytes", placement_record(0, 0, 3)));
+        cases.push(("gap of six bytes", placement_record(0, 0, 6)));
+        cases.push(("separator of two bytes", placement_record(0, 2, 4)));
         let mut twice = base.clone();
         twice.extend_from_slice(&base);
         cases.push(("two placement records", twice));
@@ -756,7 +768,7 @@ mod tests {
     #[test]
     fn decal_with_a_placement_record_keeps_its_definition_native() {
         for scope_code in [0x01, 0x60] {
-            let image = placed_image(scope_code, &placement_record(0, 5)).unwrap();
+            let image = placed_image(scope_code, &placement_record(0, 1, 4)).unwrap();
             let native = feature(&scope()).evaluation.definition().clone();
             let (assets, definition, losses) = project(&archive(true), &image, &[], &[]);
             assert_eq!(assets.len(), 1);
