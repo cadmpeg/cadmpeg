@@ -17,7 +17,7 @@ fn parameter_real_admission_preserves_finite_signed_wire_values() {
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(FiniteReal::new(value).is_none());
         let deserializer = serde::de::value::F64Deserializer::<serde::de::value::Error>::new(value);
-        let error = super::super::deserialize_parameter_real(deserializer).unwrap_err();
+        let error = super::deserialize_parameter_real(deserializer).unwrap_err();
         assert!(error.to_string().contains("value"));
     }
 }

@@ -398,15 +398,17 @@ fn per_edge_flange_widths_reject_empty_rosters_and_preserve_array_wire() {
         "kind": "two_sides_per_edge",
         "widths": [{"first": 3.0, "second": 1.5}, {"first": 2.0, "second": 4.0}]
     });
-    let width: super::SheetMetalFlangeWidth = serde_json::from_value(wire.clone()).unwrap();
+    let width: super::sheet_metal_forms::SheetMetalFlangeWidth =
+        serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(width).unwrap(), wire);
     let mut empty = wire;
     empty["widths"] = serde_json::json!([]);
-    let error = serde_json::from_value::<super::SheetMetalFlangeWidth>(empty).unwrap_err();
+    let error = serde_json::from_value::<super::sheet_metal_forms::SheetMetalFlangeWidth>(empty)
+        .unwrap_err();
     assert!(error
         .to_string()
         .contains("widths must contain at least one pair"));
-    assert!(super::SheetMetalFlangeEdgeWidths::new(Vec::new()).is_err());
+    assert!(super::sheet_metal_forms::SheetMetalFlangeEdgeWidths::new(Vec::new()).is_err());
 }
 
 #[test]
@@ -501,10 +503,12 @@ fn topology_membership_admission() {
     .is_err());
     // A blank member identity is refused by the member type, so the wire cannot
     // spell one and the constructor cannot be handed one.
-    assert!(serde_json::from_value::<super::SelectionMember>(
-        serde_json::json!({"kind": "body", "id": ""})
-    )
-    .is_err());
+    assert!(
+        serde_json::from_value::<super::evaluation::SelectionMember>(
+            serde_json::json!({"kind": "body", "id": ""})
+        )
+        .is_err()
+    );
     assert!(DistinctMembers::<String>::try_from(vec!["a".into(), "a".into()],).is_err());
     assert!(
         serde_json::from_value::<DistinctMembers<crate::ids::BodyId>>(serde_json::json!([
@@ -901,7 +905,11 @@ fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() 
     assert!(FeatureEllipticArc::new(
         center,
         normal,
-        Vector3::new(1.0, 0.0, super::EPS_FEATURE_ELLIPSE_AXES_ORTHO / 2.0),
+        Vector3::new(
+            1.0,
+            0.0,
+            super::geometry::EPS_FEATURE_ELLIPSE_AXES_ORTHO / 2.0
+        ),
         [major, minor],
         angles
     )
@@ -909,7 +917,7 @@ fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() 
     assert!(FeatureEllipticArc::new(
         center,
         normal,
-        Vector3::new(1.0, 0.0, super::EPS_FEATURE_ELLIPSE_AXES_ORTHO),
+        Vector3::new(1.0, 0.0, super::geometry::EPS_FEATURE_ELLIPSE_AXES_ORTHO),
         [major, minor],
         angles
     )
@@ -1016,7 +1024,8 @@ fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_trav
 #[test]
 fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
     use crate::features::{
-        FeatureCoordinateFrame, FeatureDefinition, FeatureOperation, EPS_FEATURE_UNIT_FRAME,
+        geometry::EPS_FEATURE_UNIT_FRAME, FeatureCoordinateFrame, FeatureDefinition,
+        FeatureOperation,
     };
     use crate::math::{Point3, Vector3};
     let origin = Point3::new(1.0, 2.0, 3.0);
@@ -1115,7 +1124,9 @@ fn checked_feature_frame_parts_preserve_wire_and_cross_field_refusal() {
 
 #[test]
 fn feature_unit_plane_and_image_bounds_reject_degenerate_geometry() {
-    use crate::features::{FeatureImageBounds, FeatureUnitPlaneFrame, EPS_FEATURE_UNIT_FRAME};
+    use crate::features::{
+        geometry::EPS_FEATURE_UNIT_FRAME, FeatureImageBounds, FeatureUnitPlaneFrame,
+    };
     use crate::math::{Point2, Point3, Vector3};
     let origin = Point3::new(0.0, 0.0, 0.0);
     let x = Vector3::new(1.0, 0.0, 0.0);
@@ -1276,7 +1287,7 @@ fn plane_frame_admission_rejects_nonfinite_degenerate_and_nonorthogonal_directio
 #[test]
 fn plane_frame_owners_preserve_their_distinct_floating_point_thresholds() {
     use crate::features::{
-        FeatureDatumPlaneFrame, FeatureSupportPlaneFrame, EPS_FEATURE_PLANE_ORTHOGONAL,
+        geometry::EPS_FEATURE_PLANE_ORTHOGONAL, FeatureDatumPlaneFrame, FeatureSupportPlaneFrame,
     };
     let origin = Point3::new(0.0, 0.0, 0.0);
     let normal = Vector3::new(0.0, 0.0, 0.1);
@@ -1315,8 +1326,6 @@ fn a_resolved_plane_reference_checks_the_geometry_it_carries() {
 }
 
 mod selections;
-
-mod parameters;
 
 mod configuration_states;
 
