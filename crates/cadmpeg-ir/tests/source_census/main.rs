@@ -889,8 +889,12 @@ const WRITING_DECLARATIONS: &[(&str, &str)] = &[
 ///
 /// `WireMembers` serializes a map by hand: it writes `free_vertex` only for
 /// the `Vertex` variant, so the key is left out for every other state.
-const HAND_WRITTEN_KEYS: &[(&str, &str, WriteSpelling)] =
-    &[("WireMembersWire", "free_vertex", WriteSpelling::Omitted)];
+/// `SweepSection` writes `value` beside `kind: "unresolved"` only for a named
+/// section.
+const HAND_WRITTEN_KEYS: &[(&str, &str, WriteSpelling)] = &[
+    ("WireMembersWire", "free_vertex", WriteSpelling::Omitted),
+    ("SweepSection", "<tuple field>", WriteSpelling::Omitted),
+];
 
 /// Every declaration of the three wire crates, indexed for writer resolution.
 #[derive(Default)]
@@ -1190,7 +1194,14 @@ fn collect_optional_fields(
                 }
                 *readable += 1;
                 let reader = declaration.ident.to_string();
-                record_unguarded_fields(&declaration.fields, relative, &reader, index, offenders);
+                record_unguarded_fields(
+                    &declaration.fields,
+                    NewtypeKey::Holder,
+                    relative,
+                    &reader,
+                    index,
+                    offenders,
+                );
             }
             syn::Item::Enum(declaration) => {
                 if !reads_its_own_keys(&declaration.attrs) {
@@ -1198,8 +1209,20 @@ fn collect_optional_fields(
                 }
                 *readable += 1;
                 let reader = declaration.ident.to_string();
+                let newtype_key = if container_conversion(&declaration.attrs, "content").is_some() {
+                    NewtypeKey::Content
+                } else {
+                    NewtypeKey::Own
+                };
                 for variant in &declaration.variants {
-                    record_unguarded_fields(&variant.fields, relative, &reader, index, offenders);
+                    record_unguarded_fields(
+                        &variant.fields,
+                        newtype_key,
+                        relative,
+                        &reader,
+                        index,
+                        offenders,
+                    );
                 }
             }
             syn::Item::Mod(module) => {
@@ -1319,11 +1342,18 @@ const NULL_STATING_HELPERS: &[&str] = &["cadmpeg_core::absent_key::nullable"];
 /// half decides what `null` becomes.
 fn record_unguarded_fields(
     fields: &syn::Fields,
+    newtype_key: NewtypeKey,
     relative: &str,
     reader: &str,
     index: &WireIndex,
     offenders: &mut Vec<String>,
 ) {
+    let newtype = matches!(fields, syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1);
+    let absence = if newtype {
+        newtype_key
+    } else {
+        NewtypeKey::Own
+    };
     for field in fields {
         if !is_option_type(&field.ty) {
             continue;
@@ -1350,7 +1380,10 @@ fn record_unguarded_fields(
                 continue;
             }
         };
-        let defaulted = states_default(field);
+        if read == ReadSpelling::Present && absence == NewtypeKey::Holder {
+            continue;
+        }
+        let defaulted = states_default(field) || absence == NewtypeKey::Content;
         match (read, defaulted) {
             (ReadSpelling::Present, false) => offenders.push(format!(
                 "{at} reads the absent key as its one spelling of None but states no default"
@@ -1413,6 +1446,20 @@ fn record_spelling_match(
         (ReadSpelling::Present, WriteSpelling::Omitted | WriteSpelling::Always)
         | (ReadSpelling::Nullable, WriteSpelling::Null) => {}
     }
+}
+
+/// Which key spells the absence of a newtype's `Option`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NewtypeKey {
+    /// The `Option` is a key of its own declaration.
+    Own,
+    /// A newtype struct writes its `Option` as itself, so the fields that hold
+    /// the struct state its key, and `integration_tests::wire_form_census`
+    /// checks them.
+    Holder,
+    /// An adjacently tagged newtype variant's payload is the `content` key,
+    /// which serde reads as `None` when it is absent.
+    Content,
 }
 
 /// Which spelling of `None` a reading declaration admits.

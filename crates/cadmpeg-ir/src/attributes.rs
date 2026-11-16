@@ -15,6 +15,7 @@ use crate::scalar::FiniteReal;
 #[serde(deny_unknown_fields)]
 pub enum AttributeTarget {
     /// Attribute is owned by the document as a whole, not a specific entity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Document,
     /// Attribute is owned by a body.
     Body(BodyId),
