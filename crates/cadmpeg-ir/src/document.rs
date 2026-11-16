@@ -2066,6 +2066,8 @@ impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = CadIrReadWire::deserialize(deserializer)?;
         check_ir_version(wire.ir_version.as_ref())?;
+        crate::design::evaluation::admit_state_chains(&wire.design.evaluations)
+            .map_err(serde::de::Error::custom)?;
         wire.try_into().map_err(serde::de::Error::custom)
     }
 }

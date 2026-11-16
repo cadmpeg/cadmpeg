@@ -5,7 +5,9 @@
 //! Canonical expression text, a `TopoName`, a `Picked`, and a construction's
 //! nested constructions nest below the JSON depth limit. Reading CADIR
 //! enforces a ceiling of `ResourceLimits` for each of them and refuses a
-//! document past one with [`CodecError::ResourceLimit`].
+//! document past one with [`CodecError::ResourceLimit`]. A chain of state
+//! bases is not nested JSON; reading a document walks each chain under its
+//! own ceiling and refuses it the same way.
 //!
 //! [`from_str`] states the ceilings for one read. A read outside it uses the
 //! ceilings of [`ResourceLimits::default`].
@@ -32,10 +34,19 @@ pub enum Ceiling {
     /// The nesting of a construction's nested constructions,
     /// [`ResourceLimits::max_construction_depth`].
     Construction,
+    /// The depth of a chain of state bases,
+    /// [`ResourceLimits::max_state_chain_depth`].
+    StateChain,
 }
 
 impl Ceiling {
-    const ALL: [Self; 4] = [Self::Expression, Self::Name, Self::Pick, Self::Construction];
+    const ALL: [Self; 5] = [
+        Self::Expression,
+        Self::Name,
+        Self::Pick,
+        Self::Construction,
+        Self::StateChain,
+    ];
 
     /// The ceiling's value in `limits`.
     #[must_use]
@@ -45,6 +56,7 @@ impl Ceiling {
             Self::Name => limits.max_name_depth,
             Self::Pick => limits.max_pick_depth,
             Self::Construction => limits.max_construction_depth,
+            Self::StateChain => limits.max_state_chain_depth,
         }
     }
 
@@ -54,6 +66,7 @@ impl Ceiling {
             Self::Name => "CADIR TopoName nesting",
             Self::Pick => "CADIR Picked nesting",
             Self::Construction => "CADIR construction nesting",
+            Self::StateChain => "CADIR state base chain depth",
         }
     }
 
@@ -63,6 +76,7 @@ impl Ceiling {
             Self::Name => 1,
             Self::Pick => 2,
             Self::Construction => 3,
+            Self::StateChain => 4,
         }
     }
 }

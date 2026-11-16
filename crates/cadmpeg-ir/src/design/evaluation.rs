@@ -8,12 +8,14 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::u64_from_index;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::ids::EvaluationId;
 use super::names::NameEntry;
+use super::read::{self, Ceiling};
 use super::refs::{EntityRef, Evaluated, Position, RecordRef};
 use super::selection::OccurrencePath;
 use crate::document::Topology;
@@ -175,6 +177,66 @@ pub struct CurrentState {
         deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
+}
+
+/// Walks every chain of state bases of `evaluations` and refuses one deeper
+/// than [`Ceiling::StateChain`] or one that is a cycle.
+///
+/// An evaluation with content has depth one more than the evaluation its
+/// `StateBase::Evaluation` base names, or one where its base is another arm or
+/// names no evaluation of `evaluations`. An evaluation without content has
+/// depth zero. The walk is iterative, and visits each evaluation once.
+pub(crate) fn admit_state_chains(evaluations: &[Evaluation]) -> Result<(), String> {
+    #[derive(Clone, Copy)]
+    enum Mark {
+        Unseen,
+        OnChain,
+        Depth(u64),
+    }
+
+    let mut index = BTreeMap::new();
+    for (at, evaluation) in evaluations.iter().enumerate() {
+        index.entry(evaluation.id.as_str()).or_insert(at);
+    }
+    let base_of = |at: usize| match &evaluations[at].content {
+        Some(StateContent {
+            base: StateBase::Evaluation(base),
+            ..
+        }) => index.get(base.as_str()).copied(),
+        _ => None,
+    };
+    let mut marks = vec![Mark::Unseen; evaluations.len()];
+    let mut chain = Vec::new();
+    for start in 0..evaluations.len() {
+        let mut next = Some(start);
+        let tail = loop {
+            let Some(at) = next else { break 0 };
+            match marks[at] {
+                Mark::Depth(depth) => break depth,
+                Mark::OnChain => {
+                    return Err(format!(
+                        "evaluation {} is its own ancestor through its state bases",
+                        evaluations[at].id.as_str()
+                    ));
+                }
+                Mark::Unseen if evaluations[at].content.is_none() => break 0,
+                Mark::Unseen => {}
+            }
+            marks[at] = Mark::OnChain;
+            chain.push(at);
+            read::within(Ceiling::StateChain, u64_from_index(chain.len()))?;
+            next = base_of(at);
+        };
+        let mut depth = tail;
+        for at in chain.drain(..).rev() {
+            depth = depth
+                .checked_add(1)
+                .ok_or("the depth of a chain of state bases overflows")?;
+            marks[at] = Mark::Depth(depth);
+        }
+        read::within(Ceiling::StateChain, depth)?;
+    }
+    Ok(())
 }
 
 cadmpeg_core::named_optional_field!(deserialize_configuration<T>, T, "configuration");
