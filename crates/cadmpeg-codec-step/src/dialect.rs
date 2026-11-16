@@ -208,7 +208,8 @@ impl StepDialect {
     ///   The object identifier is optional in Part 21; leaving it out is legal
     ///   and says the edition is unspecified, not that the file is unrecognized.
     /// - present and naming an edition — that edition's row, decided against
-    ///   this enum's own canonical identifiers.
+    ///   this enum's own canonical identifiers and the ISO/TS 10303-442:2018
+    ///   module identifier, which selects the Edition 2 row.
     /// - present and naming no edition — [`Self::Unknown`]. An edition claim
     ///   that matches nothing this codec declares is an unrecognized
     ///   declaration, unlike making no claim at all. Arcs that do not read as a
@@ -240,8 +241,9 @@ impl StepDialect {
         .map_or(Self::Unknown, Self::Part21)
     }
 
-    /// The AP242 edition row whose canonical object identifier the declaration
-    /// names. A future or malformed object identifier names no verified row.
+    /// The AP242 edition row whose canonical object identifier, or for Edition 2
+    /// the ISO/TS 10303-442:2018 module identifier, the declaration names. A
+    /// future or malformed object identifier names no verified row.
     fn ap242_edition(object_identifier: Option<&[u64]>) -> Option<Part21Dialect> {
         match object_identifier? {
             [1, 0, 10303, 442, 1, 1, 4] => Some(Part21Dialect::Schema(StepSchema::Ap242Edition1)),
@@ -346,7 +348,7 @@ pub(crate) fn schema_edition_loss(
         return None;
     }
     Some(StepLossCode::SourceSchemaEditionAssumed.note(format!(
-        "FILE_SCHEMA object identifier {{ 1 0 10303 442 2 1 4 }} names ISO/TS 10303-442:2018;          this decode reads it as {FORMAT}:{}",
+        "FILE_SCHEMA object identifier {{ 1 0 10303 442 2 1 4 }} names ISO/TS 10303-442:2018; this decode reads it as {}",
         STEP_AP242_E2.as_str()
     )))
 }

@@ -391,7 +391,7 @@ witness = "code:crates/cadmpeg-codec-step/src/options.rs:98"
 # file, not an edition-1 file.
 # The arcs `1 0 10303 442 2 1 4` are ISO/TS 10303-442:2018, the module edition
 # between the Edition 1 and Edition 2 modules. They select this row with the
-# `source.schema-edition-assumed` loss (step-open-items.md ER-04), and the
+# `source.schema-edition-assumed` loss (step-open-items.md ER-06), and the
 # writer declares only the canonical arcs.
 id = "step:ap242-e2"
 title = "STEP AP242 edition 2"

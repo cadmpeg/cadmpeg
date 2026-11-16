@@ -33,11 +33,22 @@ fn module_edition_2_source_converts_as_ap242_edition_2() {
             )
             .expect("module edition 2 decode"),
     );
-    assert!(result
+    let edition = result
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == StepLossCode::SourceSchemaEditionAssumed.kind()));
+        .filter(|loss| loss.code == StepLossCode::SourceSchemaEditionAssumed.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(edition.len(), 1);
+    assert_eq!(
+        edition[0].message,
+        "FILE_SCHEMA object identifier { 1 0 10303 442 2 1 4 } names ISO/TS 10303-442:2018; this decode reads it as step:ap242-e2"
+    );
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::SourceDialectUnverified.kind()));
 
     let plan = codec
         .plan(

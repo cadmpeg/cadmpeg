@@ -48,7 +48,8 @@ object identifier `{ 1 0 10303 442 2 1 4 }` declare?
 ISO/TS 10303-442:2018, the AP242 module edition between the Edition 1 module
 (`442 1`) and the Edition 2 module (`442 3`). The decoder reads it as
 `step:ap242-e2` and charges `source.schema-edition-assumed`. A same-format
-convert then declares the Edition 2 identifier `{ 1 0 10303 442 3 1 4 }`.
+convert then declares the Edition 2 identifier `{ 1 0 10303 442 3 1 4 }`; only
+the decode report carries the loss.
 
 **Need.** The decoder assumes that the 2018 module carries the Edition 2
 entity vocabulary. The answer either confirms the Edition 2 row or gives the
