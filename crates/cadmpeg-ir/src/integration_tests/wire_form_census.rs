@@ -706,6 +706,27 @@ impl Index {
         }
     }
 
+    /// The type a field of type `ty`, written in file `from`, holds: the
+    /// target of a nongeneric alias that no declaration shares a name with,
+    /// followed through further such aliases, or `ty` itself.
+    fn field_type<'a>(&'a self, ty: &'a syn::Type, from: &'a str) -> &'a syn::Type {
+        let (mut ty, mut from) = (ty, from);
+        for _ in 0..6 {
+            let Some((ident, syn::PathArguments::None)) = last_segment(ty) else {
+                break;
+            };
+            let name = ident.to_string();
+            if self.decls.contains_key(&name) {
+                break;
+            }
+            let Some((file, aliased)) = self.alias(&name, from) else {
+                break;
+            };
+            (ty, from) = (aliased, file);
+        }
+        ty
+    }
+
     fn is_collection(&self, ty: &syn::Type, depth: usize) -> bool {
         let Some((ident, arguments)) = last_segment(ty) else {
             return matches!(ty, syn::Type::Slice(_));
@@ -991,8 +1012,11 @@ fn check_fields(
     problems: &mut Vec<String>,
 ) {
     let newtype = matches!(fields, Fields::Unnamed(_));
+    // `at` is `file:line name`: the file declares the fields.
+    let from = at.split_once(':').map_or(at, |(file, _)| file);
     for (position, field) in fields.iter().enumerate() {
         let metas = serde_metas(&field.attrs);
+        let ty = index.field_type(&field.ty, from);
         if has(&metas, "skip") {
             continue;
         }
@@ -1010,7 +1034,7 @@ fn check_fields(
             let name = name.split('<').next().unwrap_or(name);
             name == OPTION_READER || index.is_option_reader(name)
         });
-        if last_segment(&field.ty).is_some_and(|(ident, _)| ident == "Option") {
+        if last_segment(ty).is_some_and(|(ident, _)| ident == "Option") {
             if newtype {
                 // A derived newtype variant writes `value` for every payload,
                 // so it writes `"value": null` for `None`. A newtype struct
@@ -1036,7 +1060,7 @@ fn check_fields(
                     "{at}: Option field is not read by a default named_present reader"
                 ));
             }
-        } else if index.is_optional_newtype(&field.ty) {
+        } else if index.is_optional_newtype(ty) {
             if writes && skip.is_none() {
                 problems.push(format!(
                     "{at}: field holding a newtype over an Option writes null for None"
@@ -1051,12 +1075,12 @@ fn check_fields(
             if let Some(skip) = skip {
                 problems.push(format!("{at}: field is left out by {skip}"));
             }
-            if reads && has(&metas, "default") && index.is_collection(&field.ty, 0) {
+            if reads && has(&metas, "default") && index.is_collection(ty, 0) {
                 problems.push(format!(
                     "{at}: collection field reads its omission as empty"
                 ));
             }
-            let is_map = last_segment(&field.ty)
+            let is_map = last_segment(ty)
                 .is_some_and(|(ident, _)| MAPS.contains(&ident.to_string().as_str()));
             if reads && is_map && !reader.is_some_and(|reader| reader.contains("distinct_keys")) {
                 problems.push(format!("{at}: map field reads a repeated key"));
@@ -1318,6 +1342,40 @@ fn a_forward_to_an_option_reader_reads_as_one() {
     assert_eq!(
         probe_problems(FORWARDING_PROBE),
         vec![unread(9, "lenient"), unread(7, "loose")]
+    );
+}
+
+#[test]
+fn a_field_is_read_through_a_nongeneric_alias_of_its_type() {
+    let source = |attrs: &str| {
+        format!(
+            "pub type Maybe = Option<u32>;\n\
+             pub type Again = Maybe;\n\
+             cadmpeg_core::named_optional_field!(deserialize_maybe, u32, \"maybe\");\n\
+             #[derive(Serialize, Deserialize)]\n\
+             #[serde(deny_unknown_fields)]\n\
+             struct Holder {{\n\
+                 #[serde({attrs})]\n\
+                 maybe: Again,\n\
+             }}\n"
+        )
+    };
+    let stated = source(
+        "default, skip_serializing_if = \"Option::is_none\", deserialize_with = \"deserialize_maybe\"",
+    );
+    assert_eq!(probe_problems(&stated), Vec::<String>::new());
+    assert_eq!(
+        probe_problems(&source("skip_serializing_if = \"Option::is_none\"")),
+        vec![format!(
+            "{PROBE}:6 Holder.maybe@8: Option field is not read by a default named_present reader"
+        )]
+    );
+    let shadowed = format!("{stated}#[derive(Serialize, Deserialize)] pub struct Again(u32);\n");
+    assert_eq!(
+        probe_problems(&shadowed),
+        vec![format!(
+            "{PROBE}:6 Holder.maybe@8: field is left out by Option::is_none"
+        )]
     );
 }
 
