@@ -86,11 +86,13 @@ fn add_bounded_curve(
             id: start_vertex.clone(),
             point: start_point,
             tolerance,
+            native_ref: None,
         },
         Vertex {
             id: end_vertex.clone(),
             point: end_point,
             tolerance,
+            native_ref: None,
         },
     ]);
     sequences.record_curve(&curve, entry.sequence);
@@ -101,6 +103,7 @@ fn add_bounded_curve(
         id: curve.clone(),
         geometry,
         source_object: Some(source_object(entry)?),
+        native_ref: None,
     });
 
     ctx.charge_entities(1, "iges_geometry_conics")?;
@@ -108,9 +111,12 @@ fn add_bounded_curve(
         id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
             .map_err(cadmpeg_core::CodecError::malformed)?,
-        start: start_vertex,
-        end: end_vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex,
+            end_vertex,
+        )),
         tolerance,
+        native_ref: None,
     });
     Ok(edge)
 }

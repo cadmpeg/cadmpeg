@@ -96,7 +96,7 @@ pub(super) fn decode(
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
     };
-    let mut appearance_ids = BTreeMap::<(u64, u32), AppearanceId>::new();
+    let mut appearance_ids = BTreeMap::<(u64, u64), AppearanceId>::new();
     let mut hidden_style_ids = BTreeSet::new();
     let mut hidden_layer_ids = BTreeSet::new();
     let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>, BTreeSet<u64>)>::new();
@@ -353,7 +353,9 @@ pub(super) fn decode(
             name,
             ..
         } = color;
-        let appearance_key = (color_id, color.a().to_bits());
+        let alpha_bits = cadmpeg_core::convert::f32_from_f64(color.a())
+            .map_or_else(|| color.a().to_bits(), |alpha| u64::from(alpha.to_bits()));
+        let appearance_key = (color_id, alpha_bits);
         let appearance_id = if let Some(appearance_id) = appearance_ids.get(&appearance_key) {
             appearance_id.clone()
         } else {
@@ -362,7 +364,7 @@ pub(super) fn decode(
             } else {
                 IdentityKey::from(color_id)
                     .dash(key_word!("alpha"))
-                    .dash(color.a().to_bits())
+                    .dash(alpha_bits)
             };
             let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
             ir.model.appearances.push(Appearance {
@@ -1394,13 +1396,6 @@ fn find_color(
                         .find(|partial| partial.name == "COLOUR_SPECIFICATION")
                         .and_then(|partial| partial.parameters.first())
                 };
-                let Some((r, g, b)) = cadmpeg_core::convert::f32_from_f64(r)
-                    .zip(cadmpeg_core::convert::f32_from_f64(g))
-                    .zip(cadmpeg_core::convert::f32_from_f64(b))
-                    .map(|((r, g), b)| (r, g, b))
-                else {
-                    return Ok(None);
-                };
                 let Some(color) = Color::new(r, g, b, 1.0) else {
                     return Ok(None);
                 };
@@ -1487,9 +1482,10 @@ fn find_color(
     if let Some(transparency) = transparency {
         match result.as_mut() {
             Some(ColorResolution::Candidate(candidate)) => {
-                if let Some(alpha) = cadmpeg_core::convert::f32_from_f64(1.0 - transparency.get()) {
-                    candidate.color = candidate.color.with_alpha(alpha).unwrap_or(candidate.color);
-                }
+                candidate.color = candidate
+                    .color
+                    .with_alpha(1.0 - transparency.get())
+                    .unwrap_or(candidate.color);
             }
             Some(ColorResolution::Ambiguous { .. }) => {}
             None => {}

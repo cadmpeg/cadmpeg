@@ -67,6 +67,7 @@ fn add_subset(
         geometry,
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_curve(&id(name), ProceduralCurve::new(construction, definition))
@@ -82,6 +83,7 @@ fn nested(inner_sense: bool, outer_sense: bool, inner_cached: bool) -> CadIr {
         geometry: CurveGeometry::Solved(line()),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     add_subset(
         &mut ir,
@@ -152,11 +154,23 @@ fn assert_lowered_edge(ir: &CadIr, lowered: &CadIr, forward: bool) {
     assert_close(cache_point(lowered, &id("outer"), b), at_b);
     let original = &ir.geometry.edges[0];
     let expected = if forward {
-        (&original.start, &original.end)
+        (
+            &original.ends.as_ref().unwrap().start,
+            &original.ends.as_ref().unwrap().end,
+        )
     } else {
-        (&original.end, &original.start)
+        (
+            &original.ends.as_ref().unwrap().end,
+            &original.ends.as_ref().unwrap().start,
+        )
     };
-    assert_eq!((&edge.start, &edge.end), expected);
+    assert_eq!(
+        (
+            &edge.ends.as_ref().unwrap().start,
+            &edge.ends.as_ref().unwrap().end
+        ),
+        expected
+    );
     assert!(ir
         .geometry
         .coedges
@@ -243,6 +257,7 @@ fn a_spline_cache_moves_back_onto_the_source_parameter() {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(root.clone())),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         add_subset(&mut ir, "outer", &id("root"), [1.25, 2.25], sense, true);
         let edge = &mut ir.geometry.edges[0];

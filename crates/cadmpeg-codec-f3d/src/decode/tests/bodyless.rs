@@ -158,11 +158,11 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
     .map(|(id, kind)| Body {
         id: BodyId::mint(id).unwrap(),
         kind,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     })
     .collect::<Vec<_>>();
     let path = super::super::FinalizePath::Geometry(super::super::GeometryIndex {

@@ -775,6 +775,7 @@ fn neutral_form_cage(id: &str, uuid: &str) -> cadmpeg_ir::SubdSurface {
             instance_path: Vec::new(),
         }),
         cage: cadmpeg_ir::subd::SubdCage::default(),
+        native_ref: None,
     }
 }
 

@@ -188,6 +188,7 @@ fn append_oriented_wire_curve(
         id: curve_id,
         geometry,
         source_object: None,
+        native_ref: None,
     });
     Ok(())
 }
@@ -351,6 +352,7 @@ fn transfer_closed_wire_loops(
                     id: vertex_id.clone(),
                     point: point_id,
                     tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
+                    native_ref: None,
                 });
                 vertex_ids.push(vertex_id);
                 counts.points += 1;
@@ -591,16 +593,19 @@ fn transfer_closed_wire_loops(
                     Exactness::Derived,
                 )?;
                 annotations.derived(&edge_id, "curve")?;
-                annotations.derived(&edge_id, "start")?;
-                annotations.derived(&edge_id, "end")?;
+                annotations.derived(&edge_id, "ends.start")?;
+                annotations.derived(&edge_id, "ends.end")?;
                 admission.charge()?;
                 ir.geometry.edges.push(Edge {
                     id: edge_id.clone(),
                     carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), param_range)
                         .map_err(cadmpeg_core::CodecError::malformed)?,
-                    start: vertex_ids[index].clone(),
-                    end: vertex_ids[(index + 1) % member_count].clone(),
+                    ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                        vertex_ids[index].clone(),
+                        vertex_ids[(index + 1) % member_count].clone(),
+                    )),
                     tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
+                    native_ref: None,
                 });
                 if param_range.is_some() {
                     annotations.derived(&edge_id, "param_range")?;
@@ -612,16 +617,15 @@ fn transfer_closed_wire_loops(
             if root_owns_support_runs {
                 owned_edge_ids.extend(edge_ids);
             } else {
-                let regions = vec![region_id.clone()];
                 admission.charge()?;
                 ir.geometry.bodies.push(Body {
                     id: body_id.clone(),
                     kind: BodyKind::Wire,
-                    regions,
                     transform: None,
                     name: None,
                     color: None,
                     visible: None,
+                    native_ref: None,
                 });
                 let shells = vec![shell_id.clone()];
                 admission.charge()?;
@@ -629,16 +633,18 @@ fn transfer_closed_wire_loops(
                     id: region_id.clone(),
                     body: body_id,
                     shells,
+                    native_ref: None,
                 });
                 admission.charge()?;
-                ir.geometry.shells.push(
-                    match Shell::new(shell_id, region_id, Vec::new(), edge_ids, Vec::new()) {
-                        Ok(shell) => shell,
-                        Err(_) => {
-                            return Ok(counts);
-                        }
-                    },
-                );
+                if edge_ids.is_empty() {
+                    return Ok(counts);
+                }
+                ir.geometry.shells.push(Shell::with_members(
+                    shell_id,
+                    region_id,
+                    edge_ids,
+                    Vec::new(),
+                ));
                 counts.bodies += 1;
             }
             counts.loops += 1;
@@ -689,16 +695,15 @@ fn transfer_closed_wire_loops(
             "owned_wire_shell",
             Exactness::Derived,
         )?;
-        let regions = vec![region_id.clone()];
         admission.charge()?;
         ir.geometry.bodies.push(Body {
             id: body_id.clone(),
             kind: BodyKind::Wire,
-            regions,
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         let shells = vec![shell_id.clone()];
         admission.charge()?;
@@ -706,16 +711,18 @@ fn transfer_closed_wire_loops(
             id: region_id.clone(),
             body: body_id,
             shells,
+            native_ref: None,
         });
         admission.charge()?;
-        ir.geometry.shells.push(
-            match Shell::new(shell_id, region_id, Vec::new(), owned_edge_ids, Vec::new()) {
-                Ok(shell) => shell,
-                Err(_) => {
-                    return Ok(counts);
-                }
-            },
-        );
+        if owned_edge_ids.is_empty() {
+            return Ok(counts);
+        }
+        ir.geometry.shells.push(Shell::with_members(
+            shell_id,
+            region_id,
+            owned_edge_ids,
+            Vec::new(),
+        ));
         counts.bodies += 1;
         counts.owned_bodies += 1;
     }
@@ -866,6 +873,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             id: id.clone(),
             geometry: surface.geometry,
             source_object: None,
+            native_ref: None,
         });
         surface_ids_by_position.insert(surface.pos, id);
     }
@@ -895,6 +903,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                     id: curve_id.clone(),
                     geometry,
                     source_object: None,
+                    native_ref: None,
                 });
                 support_curve_ids.insert(support.record_ordinal, curve_id);
                 transferred_support_curves += 1;
@@ -988,6 +997,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
@@ -1187,6 +1197,7 @@ mod tests {
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.curves.push(Curve {
             parameter_range: None,
@@ -1199,6 +1210,7 @@ mod tests {
                 .expect("valid LineCurve fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
         let support_runs = vec![
             crate::families::zero_entity::records::ZeroEntitySupportRun {
@@ -1299,6 +1311,7 @@ mod tests {
                         .expect("valid LineCurve fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
         }
         let support_runs = vec![
@@ -1420,7 +1433,7 @@ mod tests {
                 .expect("identity grammar")
         );
         assert!(matches!(ir.geometry.bodies[0].kind, BodyKind::Wire));
-        assert_eq!(ir.geometry.shells[0].wire_edges().len(), 4);
+        assert_eq!(ir.geometry.shells[0].wire_edges().count(), 4);
         assert_eq!(
             ir.geometry.edges[0]
                 .param_range()
@@ -1492,6 +1505,7 @@ mod tests {
                 .expect("valid CircleCurve fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.curves.push(Curve {
             parameter_range: None,
@@ -1504,6 +1518,7 @@ mod tests {
                 .expect("valid LineCurve fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
         let support_runs = vec![
             crate::families::zero_entity::records::ZeroEntitySupportRun {
@@ -1634,6 +1649,7 @@ mod tests {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         ir.geometry
             .add_procedural_curve(

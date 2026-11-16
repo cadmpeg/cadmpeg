@@ -7,10 +7,7 @@
         {
           "id": "iges:model:body#free-geometry",
           "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
+          "name": "IGES free geometry"
         }
       ],
       "coedges": [],

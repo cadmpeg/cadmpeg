@@ -75,6 +75,7 @@ fn parameter_inference_ir(with_edge: bool) -> CadIr {
             id: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), number)),
             point: PointId::from(crate::ids::data(crate::ids::kind!("point"), number)),
             tolerance: None,
+            native_ref: None,
         });
     }
     if with_edge {
@@ -87,13 +88,17 @@ fn parameter_inference_ir(with_edge: bool) -> CadIr {
                     .expect("finite line"),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.edges.push(Edge {
             id: EdgeId::from(crate::ids::data(crate::ids::kind!("edge"), 4)),
             carrier: EdgeCarrier::unbounded(Some(curve)),
-            start: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 1)),
-            end: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 2)),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 1)),
+                VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 2)),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     ir
@@ -499,6 +504,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let sweep = SurfaceId::mint("test:model:surface#sweep").expect("identity grammar");
     let revolution = SurfaceId::mint("test:model:surface#revolution").expect("identity grammar");
@@ -507,11 +513,13 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             id: sweep.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: revolution.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let _attached = ir.geometry.add_procedural_surface(
@@ -663,6 +671,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         id: child.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     let directrix = CurveId::mint("test:model:curve#composite").expect("identity grammar");
     ir.geometry.curves.push(Curve {
@@ -680,12 +689,14 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
             self_intersect: None,
         }),
         source_object: None,
+        native_ref: None,
     });
     let surface = SurfaceId::mint("test:model:surface#sweep").expect("identity grammar");
     ir.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     let _attached = ir.geometry.add_procedural_surface(
         &surface,
@@ -740,11 +751,13 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     let _attached = ir.geometry.add_procedural_surface(
         &surface_id,
@@ -1254,6 +1267,7 @@ fn off_carrier_edge_ir(axial: f64) -> CadIr {
             1.5,
         )),
         source_object: None,
+        native_ref: None,
     });
     for (id, position) in [
         ("p0", Point3::new(1.5, 0.0, 0.0)),
@@ -1270,6 +1284,7 @@ fn off_carrier_edge_ir(axial: f64) -> CadIr {
             id: VertexId::mint(format!("step:test:vertex#{v}")).expect("identity grammar"),
             point: PointId::mint(format!("step:test:point#{p}")).expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         });
     }
     ir.geometry.edges.push(Edge {
@@ -1277,9 +1292,12 @@ fn off_carrier_edge_ir(axial: f64) -> CadIr {
         carrier: EdgeCarrier::unbounded(Some(
             CurveId::mint("step:test:curve#c0").expect("identity grammar"),
         )),
-        start: VertexId::mint("step:test:vertex#v0").expect("identity grammar"),
-        end: VertexId::mint("step:test:vertex#v1").expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("step:test:vertex#v0").expect("identity grammar"),
+            VertexId::mint("step:test:vertex#v1").expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     ir
 }

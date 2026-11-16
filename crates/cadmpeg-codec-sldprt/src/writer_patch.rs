@@ -250,8 +250,8 @@ fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
             .geometry
             .bodies
             .iter()
-            .map(|v| (&v.id, v.kind, &v.regions))
-            .eq(native.bodies.iter().map(|v| (&v.id, v.kind, &v.regions)))
+            .map(|v| (&v.id, v.kind))
+            .eq(native.bodies.iter().map(|v| (&v.id, v.kind)))
         && ir
             .geometry
             .regions
@@ -262,24 +262,8 @@ fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
             .geometry
             .shells
             .iter()
-            .map(|v| {
-                (
-                    &v.id,
-                    &v.region,
-                    v.faces(),
-                    v.wire_edges(),
-                    v.free_vertices(),
-                )
-            })
-            .eq(native.shells.iter().map(|v| {
-                (
-                    &v.id,
-                    &v.region,
-                    v.faces(),
-                    v.wire_edges(),
-                    v.free_vertices(),
-                )
-            }))
+            .map(|v| (&v.id, &v.region, &v.members))
+            .eq(native.shells.iter().map(|v| (&v.id, &v.region, &v.members)))
         && ir
             .geometry
             .faces
@@ -323,11 +307,11 @@ fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
             .geometry
             .edges
             .iter()
-            .map(|v| (&v.id, v.curve(), &v.start, &v.end, v.param_range()))
+            .map(|v| (&v.id, v.curve(), &v.ends, v.param_range()))
             .eq(native
                 .edges
                 .iter()
-                .map(|v| (&v.id, v.curve(), &v.start, &v.end, v.param_range())))
+                .map(|v| (&v.id, v.curve(), &v.ends, v.param_range())))
         && ir
             .geometry
             .vertices

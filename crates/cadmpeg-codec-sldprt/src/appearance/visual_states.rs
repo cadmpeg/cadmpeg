@@ -146,16 +146,10 @@ fn selected_bodies(
 }
 
 fn faces_of_bodies(geometry: &Topology, bodies: &BTreeSet<BodyId>) -> BTreeSet<FaceId> {
-    let regions: BTreeSet<_> = geometry
-        .bodies
-        .iter()
-        .filter(|body| bodies.contains(&body.id))
-        .flat_map(|body| &body.regions)
-        .collect();
     let shells: BTreeSet<_> = geometry
         .regions
         .iter()
-        .filter(|region| regions.contains(&region.id))
+        .filter(|region| bodies.contains(&region.body))
         .flat_map(|region| &region.shells)
         .collect();
     geometry

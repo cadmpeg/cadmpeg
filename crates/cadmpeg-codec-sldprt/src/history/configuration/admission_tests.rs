@@ -45,6 +45,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             layer: Some("Layer".into()),
             instance_path: vec!["Outer".into(), "Inner".into()],
         }),
+        native_ref: None,
     });
     for rational in [false, true] {
         let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
@@ -65,6 +66,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
                 .unwrap(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
             source_object: None,
+            native_ref: None,
         });
     }
     ir.geometry.surfaces.push(Surface {
@@ -79,6 +81,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             }),
         },
         source_object: None,
+        native_ref: None,
     });
     let mut configuration = design_configuration("carriers", 0, Some(0), None);
     configuration.bodies = None;

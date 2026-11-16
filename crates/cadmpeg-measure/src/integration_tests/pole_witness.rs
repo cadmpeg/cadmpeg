@@ -341,6 +341,7 @@ fn a_degenerate_carrier_away_from_its_vertex_cannot_witness_the_pole() {
         )),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .edges

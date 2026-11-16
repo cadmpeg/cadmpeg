@@ -970,6 +970,7 @@ mod tests {
             id: carrier.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry
             .add_procedural_curve(

@@ -102,7 +102,7 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
         .geometry
         .edges
         .iter()
-        .any(|edge| edge.curve().is_none() && edge.start != edge.end)
+        .any(|edge| edge.curve().is_none() && has_distinct_ends(edge))
     {
         return Ok(EdgeRecovery {
             document: Cow::Borrowed(ir),
@@ -123,7 +123,7 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
     }
     let mut recovered = Vec::new();
     for (ordinal, edge) in ir.geometry.edges.iter().enumerate() {
-        if edge.curve().is_some() || edge.start == edge.end {
+        if edge.curve().is_some() || !has_distinct_ends(edge) {
             continue;
         }
         let Some(coedges) = uses.get(edge.id.as_str()) else {
@@ -261,6 +261,7 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
                 geometry,
                 parameter_range: None,
                 source_object: None,
+                native_ref: None,
             });
             if let Some(construction) = fit_construction {
                 fitted_candidates.push((ordinal, curve_index, curve.clone(), construction));
@@ -377,9 +378,16 @@ fn unique_id(
     }
 }
 
+fn has_distinct_ends(edge: &Edge) -> bool {
+    edge.ends
+        .as_ref()
+        .is_some_and(|ends| ends.start != ends.end)
+}
+
 fn endpoints(edge: &Edge, index: &ModelIndex<'_>, ir: &CadIr) -> Option<(Point3, Point3, f64)> {
-    let start = index.vertices(edge.start.as_str(), StandardIndex)?;
-    let end = index.vertices(edge.end.as_str(), StandardIndex)?;
+    let ends = edge.ends.as_ref()?;
+    let start = index.vertices(ends.start.as_str(), StandardIndex)?;
+    let end = index.vertices(ends.end.as_str(), StandardIndex)?;
     let first = index
         .points(start.point.as_str(), StandardIndex)?
         .position()

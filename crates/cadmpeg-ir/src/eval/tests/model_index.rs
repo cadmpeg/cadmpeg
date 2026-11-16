@@ -41,6 +41,7 @@ fn procedural_surface_points_read_the_callers_index() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let mut cacheless =
         |surface: &SurfaceId, construction: &str, definition: ProceduralSurfaceDefinition| {
@@ -52,6 +53,7 @@ fn procedural_surface_points_read_the_callers_index() {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
             ir.geometry
                 .add_procedural_surface(

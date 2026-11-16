@@ -907,6 +907,7 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         })
         .collect::<Vec<_>>();
     let candidates = dimensioned_circle_surface_transforms(&sketch, &surfaces, &circles, 1.0);
@@ -1055,6 +1056,7 @@ fn dimensioned_circle_matching_keeps_large_radius_identity() {
             )
             .unwrap(),
         )),
+        native_ref: None,
     };
     let circles = [((0, 0), GridCoordinate::new(1e20, 1.0))];
     assert!(dimensioned_circle_surface_transforms(&sketch, &[surface], &circles, 1.0).is_empty());

@@ -371,6 +371,8 @@ pub(crate) enum StepLossCode {
     EdgeStartVertexMissing,
     /// An edge was omitted because its end vertex is missing.
     EdgeEndVertexMissing,
+    /// An edge was omitted because it has no vertex.
+    EdgeNoVertex,
     /// An anchor or REFERENCE expansion passed its value-node limit; the
     /// binding or instance remains source-only.
     ParseExpansionBounded,
@@ -567,6 +569,7 @@ impl StepLossCode {
         Self::EdgeRecordMissing,
         Self::EdgeStartVertexMissing,
         Self::EdgeEndVertexMissing,
+        Self::EdgeNoVertex,
         Self::ParseExpansionBounded,
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
@@ -769,6 +772,7 @@ impl StepLossCode {
             Self::EdgeRecordMissing => "topology.edge-record-missing",
             Self::EdgeStartVertexMissing => "topology.edge-start-vertex-missing",
             Self::EdgeEndVertexMissing => "topology.edge-end-vertex-missing",
+            Self::EdgeNoVertex => "topology.edge-no-vertex",
             Self::ParseExpansionBounded => "parse.expansion-bounded",
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
@@ -955,6 +959,7 @@ impl StepLossCode {
             | Self::EdgeRecordMissing
             | Self::EdgeStartVertexMissing
             | Self::EdgeEndVertexMissing
+            | Self::EdgeNoVertex
             | Self::NonManifoldEdgeSplit => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
@@ -1224,6 +1229,7 @@ mod tests {
                 "topology.edge-record-missing",
                 "topology.edge-start-vertex-missing",
                 "topology.edge-end-vertex-missing",
+                "topology.edge-no-vertex",
                 "parse.expansion-bounded",
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",

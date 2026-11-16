@@ -148,12 +148,12 @@ fn typed_ownership_keeps_distinct_bodies_separate() {
         result.ir().geometry.bodies[1].id.as_str(),
         "sldprt:brep:body#501"
     );
-    assert!(result
+    assert!(result.ir().geometry.shells.iter().all(|shell| result
         .ir()
         .geometry
-        .shells
-        .iter()
-        .all(|shell| shell.faces().len() == 1));
+        .shell_faces(&shell.id)
+        .count()
+        == 1));
 }
 
 #[test]
@@ -240,12 +240,12 @@ fn distinct_faces_with_shared_metadata_head_retain_typed_body_membership() {
         std::collections::HashSet::from(["sldprt:brep:face#10", "sldprt:brep:face#210"])
     );
     assert_eq!(result.ir().geometry.bodies.len(), 2);
-    assert!(result
+    assert!(result.ir().geometry.shells.iter().all(|shell| result
         .ir()
         .geometry
-        .shells
-        .iter()
-        .all(|shell| shell.faces().len() == 1));
+        .shell_faces(&shell.id)
+        .count()
+        == 1));
 }
 
 #[test]
@@ -272,10 +272,11 @@ fn a_void_region_without_faces_transfers_no_region_and_a_faceless_solid_region_s
         regions,
         BTreeMap::from([("sldprt:brep:region#80", 1), ("sldprt:brep:region#601", 0)])
     );
-    let body_regions: BTreeSet<_> = result.ir().geometry.bodies[0]
-        .regions
-        .iter()
-        .map(cadmpeg_ir::ids::RegionId::as_str)
+    let body_regions: BTreeSet<_> = result
+        .ir()
+        .geometry
+        .body_regions(&result.ir().geometry.bodies[0].id)
+        .map(|region| region.id.as_str())
         .collect();
     assert_eq!(
         body_regions,

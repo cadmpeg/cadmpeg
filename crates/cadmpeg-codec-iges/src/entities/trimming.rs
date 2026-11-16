@@ -280,6 +280,7 @@ fn create_boundary_vertices(
             id: vertex_id.clone(),
             point: point_id,
             tolerance: Some(tolerance),
+            native_ref: None,
         });
         let mut derivation_endpoints = Vec::new();
         for member in &cluster.members {
@@ -1865,10 +1866,16 @@ fn select_boundary_edge(
     let mut candidates_with_endpoints = 0;
     let mut matched = Vec::new();
     for &edge in candidates {
-        let Some(start) = point_position(carrier_index, &edge.start) else {
+        let Some(start) = edge
+            .start()
+            .and_then(|vertex| point_position(carrier_index, vertex))
+        else {
             continue;
         };
-        let Some(end) = point_position(carrier_index, &edge.end) else {
+        let Some(end) = edge
+            .end()
+            .and_then(|vertex| point_position(carrier_index, vertex))
+        else {
             continue;
         };
         candidates_with_endpoints += 1;
@@ -1968,9 +1975,9 @@ pub(super) fn clone_boundary_edge(edge: &Edge) -> Edge {
     Edge {
         id: edge.id.clone(),
         carrier,
-        start: edge.start.clone(),
-        end: edge.end.clone(),
+        ends: edge.ends.clone(),
         tolerance: edge.tolerance,
+        native_ref: None,
     }
 }
 
@@ -2925,9 +2932,12 @@ pub(super) fn project(
                 candidate.geometry_mut().edges.push(Edge {
                     id: edge_id.clone(),
                     carrier,
-                    start: start_vertex,
-                    end: end_vertex,
+                    ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                        start_vertex,
+                        end_vertex,
+                    )),
                     tolerance: Some(checked_sewing_tolerance),
+                    native_ref: None,
                 });
                 if item
                     .pcurves
@@ -2968,6 +2978,7 @@ pub(super) fn project(
                             cadmpeg_ir::units::FiniteVector::new(parameter_range),
                             None,
                         ),
+                        native_ref: None,
                     });
                     pcurve_uses.push(PcurveUse {
                         pcurve: id,
@@ -2991,6 +3002,7 @@ pub(super) fn project(
                     },
                     pcurves: pcurve_uses,
                     use_curve: None,
+                    native_ref: None,
                 });
             }
             if runs_backward {
@@ -3010,6 +3022,7 @@ pub(super) fn project(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                native_ref: None,
             });
             if explicit_outer_sequence == Some(sequence) {
                 explicit_outer_loop = Some(loop_id.clone());
@@ -3086,6 +3099,7 @@ pub(super) fn project(
                         continue;
                     }
                 }),
+                native_ref: None,
             });
             let record_bounds = match support_parameter_bounds
                 .map(RecordBounds::try_new)
@@ -3149,17 +3163,10 @@ pub(super) fn project(
             name: None,
             color: None,
             tolerance: checked_face_tolerance,
+            native_ref: None,
         });
-        let shell_faces = vec![face_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
-        let shell = Shell::new(
-            shell_id.clone(),
-            region_id.clone(),
-            shell_faces,
-            Vec::new(),
-            Vec::new(),
-        )
-        .map_err(CodecError::malformed)?;
+        let shell = Shell::new(shell_id.clone(), region_id.clone());
         candidate.geometry_mut().shells.push(shell);
         let region_shells = vec![shell_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
@@ -3167,17 +3174,17 @@ pub(super) fn project(
             id: region_id.clone(),
             body: body_id.clone(),
             shells: region_shells,
+            native_ref: None,
         });
-        let body_regions = vec![region_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.geometry_mut().bodies.push(Body {
             id: body_id,
             kind: BodyKind::Sheet,
-            regions: body_regions,
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         candidate.model_mut().finalize();
 

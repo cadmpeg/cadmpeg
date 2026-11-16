@@ -35,8 +35,17 @@ fn cage_validation_keeps_a_gripped_cage_and_names_a_missing_face_edge() {
         expected
     );
     let mut cage = super::triangle_cage();
-    cage.faces[0].edges[1].edge = 2;
-    cage.faces[0].edges[2].edge = u32::MAX;
+    cage.faces[0] = crate::subd::SubdFace::from_edge_uses(
+        cage.faces[0]
+            .edge_uses()
+            .zip([None, Some(2), Some(u32::MAX)])
+            .map(|(use_, edge)| crate::subd::SubdEdgeUse {
+                edge: edge.unwrap_or(use_.edge),
+                reversed: use_.reversed,
+            })
+            .collect(),
+    )
+    .unwrap();
     let wire = serde_json::to_value(&cage).unwrap();
     let error = SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries).unwrap_err();
     assert_eq!(

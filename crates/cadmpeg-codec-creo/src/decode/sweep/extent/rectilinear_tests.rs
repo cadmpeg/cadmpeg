@@ -94,6 +94,7 @@ fn generated_fixture(
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
@@ -314,6 +315,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         };
         let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.extend([
@@ -332,6 +334,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             },
             plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
             plane(32, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),

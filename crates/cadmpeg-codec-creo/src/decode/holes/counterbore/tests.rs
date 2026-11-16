@@ -67,6 +67,7 @@ fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
             .expect("valid CircleCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -82,6 +83,7 @@ fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -476,6 +478,7 @@ fn counterbore_patch_rows_cover_each_source_row() {
             .expect("cylinder geometry"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.geometry
