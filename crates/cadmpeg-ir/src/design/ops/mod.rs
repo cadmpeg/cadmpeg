@@ -5,7 +5,9 @@ pub mod body;
 pub mod datum;
 pub mod dressup;
 pub mod shared;
+pub mod sheet_metal;
 pub mod sketch;
+pub mod surface;
 pub mod swept;
 
 #[cfg(test)]
