@@ -111,6 +111,8 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
             "metadata": {"form": {"fit_tolerance": 0.01}, "kind": "general"},
         })
     };
+    let parameter = |key: u32| json!({"target": {"kind": "parameter", "value": format!("test:sweep:parameter#{key}")}});
+    let measure = |kind: &str| json!({"kind": {"kind": kind}, "of": {"kind": "model"}});
     let direction = |direction: [f64; 2], distance: &str| {
         json!({
             "direction": direction,
@@ -355,7 +357,69 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                 }),
             ),
         ),
+        (
+            "neutral parameter expression",
+            design_document(
+                "parameters",
+                json!({
+                    "definition": {
+                        "kind": "expression",
+                        "value": {
+                            "kind": "neutral",
+                            "value": {
+                                "text": "@0 > $0",
+                                "refs": [parameter(0)],
+                                "measures": [measure("length")],
+                            },
+                        },
+                    },
+                    "id": "test:sweep:parameter#1",
+                    "kind": {"kind": "boolean"},
+                    "native_options": {},
+                    "scope": "test:sweep:product-definition#0",
+                    "source_settings": {},
+                }),
+            ),
+        ),
+        (
+            "neutral program",
+            design_document(
+                "programs",
+                json!({
+                    "body": {
+                        "kind": "neutral",
+                        "value": [
+                            {
+                                "kind": "assign",
+                                "target": parameter(0),
+                                "value": {"text": "$0", "refs": [parameter(1)], "measures": []},
+                            },
+                            {
+                                "kind": "if",
+                                "condition": {"text": "@0 > 1", "refs": [], "measures": [measure("area")]},
+                                "then": [],
+                                "otherwise": [],
+                            },
+                        ],
+                    },
+                    "id": "test:sweep:parameter-program#0",
+                    "scope": "test:sweep:product-definition#0",
+                }),
+            ),
+        ),
     ]
+}
+
+/// The empty document with `element` as the one element of the `design`
+/// arena `arena`.
+fn design_document(arena: &str, element: Value) -> Value {
+    let mut document = serde_json::to_value(CadIr::empty()).expect("a CadIr serializes");
+    assert!(
+        document["design"].get(arena).is_some(),
+        "no design arena {arena}"
+    );
+    document["design"][arena] = Value::Array(vec![element]);
+    document
 }
 
 /// The empty document with `element` as the one element of `arena`.
