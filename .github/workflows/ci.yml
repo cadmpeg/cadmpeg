@@ -259,6 +259,12 @@ jobs:
       - name: Require valid gate selection
         shell: bash
         run: test "${{ needs.changes.result }}" = success
+      - name: Free runner disk
+        shell: bash
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
