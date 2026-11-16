@@ -329,11 +329,11 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
     geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: key.body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::default(),
-        regions: vec![],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     let metadata = [metadata()];
     let roots = [root()];
@@ -738,11 +738,11 @@ fn model_with_bodies(names: &[(&str, Option<&str>)]) -> CadIr {
         ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
             id: body(id),
             kind: cadmpeg_ir::topology::BodyKind::default(),
-            regions: vec![],
             transform: None,
             name: name.map(str::to_owned),
             color: None,
             visible: None,
+            native_ref: None,
         });
     }
     ir

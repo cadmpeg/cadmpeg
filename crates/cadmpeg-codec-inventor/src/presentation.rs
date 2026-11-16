@@ -377,7 +377,7 @@ fn project_face_bindings(
         }
         let style = color_styles[0];
         let [r, g, b, a] = style.colors[1].map(cadmpeg_ir::scalar::FiniteBinary32::get);
-        let Some(color) = Color::new(r, g, b, a) else {
+        let Some(color) = Color::new(f64::from(r), f64::from(g), f64::from(b), f64::from(a)) else {
             count_unresolved(
                 &mut projection.unresolved_face_overrides,
                 UnresolvedCause::Color,
@@ -1735,7 +1735,15 @@ mod tests {
         };
         assert_eq!(
             appearance.base_color,
-            Some(Color::new(0.2, 0.4, 0.6, 0.8).expect("valid color"))
+            Some(
+                Color::new(
+                    f64::from(0.2_f32),
+                    f64::from(0.4_f32),
+                    f64::from(0.6_f32),
+                    f64::from(0.8_f32)
+                )
+                .expect("valid color")
+            )
         );
         let [binding] = projection.bindings.as_slice() else {
             panic!("one face binding must be projected");

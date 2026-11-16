@@ -796,6 +796,7 @@ mod tests {
                 .expect("test fixture invariant"),
             )),
             source_object: None,
+            native_ref: None,
         };
 
         let mut left = unit_cube().expect("valid unit cube fixture");

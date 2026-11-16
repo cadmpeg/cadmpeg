@@ -163,6 +163,7 @@ fn charted(with_supports: bool) -> CadIr {
                     )
                     .unwrap(),
                 )),
+                native_ref: None,
             });
         }
     }
@@ -178,6 +179,7 @@ fn charted(with_supports: bool) -> CadIr {
             )
             .unwrap(),
         )),
+        native_ref: None,
     });
     let pcurve = crate::geometry::pcurve::PcurveGeometry::Line(
         crate::geometry::pcurve::LinePcurve::try_new(

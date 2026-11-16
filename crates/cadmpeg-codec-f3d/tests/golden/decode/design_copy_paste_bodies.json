@@ -60,9 +60,6 @@
         {
           "id": "f3d:brep:entity#1",
           "kind": "sheet",
-          "regions": [
-            "f3d:brep:entity#2"
-          ],
           "visible": true
         }
       ],
@@ -79,12 +76,7 @@
         {
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
-          "members": [
-            {
-              "kind": "face",
-              "id": "f3d:brep:entity#4"
-            }
-          ]
+          "members": []
         }
       ],
       "faces": [
@@ -151,8 +143,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#13",
-          "end": "f3d:brep:entity#14"
+          "ends": {
+            "start": "f3d:brep:entity#13",
+            "end": "f3d:brep:entity#14"
+          }
         },
         {
           "id": "f3d:brep:entity#11",
@@ -162,8 +156,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#14",
-          "end": "f3d:brep:entity#15"
+          "ends": {
+            "start": "f3d:brep:entity#14",
+            "end": "f3d:brep:entity#15"
+          }
         },
         {
           "id": "f3d:brep:entity#12",
@@ -173,8 +169,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#15",
-          "end": "f3d:brep:entity#13"
+          "ends": {
+            "start": "f3d:brep:entity#15",
+            "end": "f3d:brep:entity#13"
+          }
         }
       ],
       "vertices": [

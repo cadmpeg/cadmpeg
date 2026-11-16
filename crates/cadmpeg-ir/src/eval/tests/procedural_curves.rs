@@ -35,6 +35,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
                 id: id.clone(),
                 geometry: line.clone(),
                 source_object: None,
+                native_ref: None,
             });
         }
         ir.geometry
@@ -124,6 +125,7 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     ir.geometry

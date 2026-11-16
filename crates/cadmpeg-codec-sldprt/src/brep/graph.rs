@@ -190,9 +190,6 @@ impl Brep {
             })?;
         for body in &mut self.bodies {
             body.id = qualified(&body.id, &tail)?;
-            for id in &mut body.regions {
-                *id = qualified(id, &tail)?;
-            }
         }
         for region in &mut self.regions {
             region.id = qualified(&region.id, &tail)?;
@@ -204,14 +201,12 @@ impl Brep {
         for shell in &mut self.shells {
             let id = qualified(&shell.id, &tail)?;
             let region = qualified(&shell.region, &tail)?;
-            let faces = qualified_ids(shell.faces(), &tail)?;
             let wire_edges = qualified_ids(shell.wire_edges(), &tail)?;
             let free_vertices = qualified_ids(shell.free_vertices(), &tail)?;
-            *shell = Shell::new(id, region, faces, wire_edges, free_vertices).map_err(|error| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "qualified shell topology is invalid: {error}"
-                ))
-            })?;
+            *shell = Shell {
+                native_ref: shell.native_ref.take(),
+                ..Shell::with_members(id, region, wire_edges, free_vertices)
+            };
         }
         for face in &mut self.faces {
             face.id = qualified(&face.id, &tail)?;
@@ -274,8 +269,10 @@ impl Brep {
                 let curve = qualified(curve, &tail)?;
                 edge.map_curve(|_| curve);
             }
-            edge.start = qualified(&edge.start, &tail)?;
-            edge.end = qualified(&edge.end, &tail)?;
+            if let Some(ends) = &mut edge.ends {
+                ends.start = qualified(&ends.start, &tail)?;
+                ends.end = qualified(&ends.end, &tail)?;
+            }
         }
         for vertex in &mut self.vertices {
             vertex.id = qualified(&vertex.id, &tail)?;
@@ -595,12 +592,12 @@ where
     Ok(T::from(identity))
 }
 
-fn qualified_ids<T>(
-    ids: &[T],
+fn qualified_ids<'a, T>(
+    ids: impl IntoIterator<Item = &'a T>,
     site: &cadmpeg_ir::ids::IdentityKeyTail,
 ) -> Result<Vec<T>, cadmpeg_core::CodecError>
 where
-    T: std::fmt::Display + From<cadmpeg_ir::ids::Identity>,
+    T: std::fmt::Display + From<cadmpeg_ir::ids::Identity> + 'a,
 {
     let mut qualified_ids = Vec::new();
     for id in ids {
@@ -989,6 +986,7 @@ fn emit_offset_surface(
         id: surface,
         source_object: None,
         geometry,
+        native_ref: None,
     });
     Ok(())
 }
@@ -1060,6 +1058,7 @@ fn emit_sweep_support(
             construction,
             cache: None,
         },
+        native_ref: None,
     });
     Ok(Some(surface))
 }
@@ -1136,6 +1135,7 @@ fn ensure_surface_support(
                     id: id.clone(),
                     source_object: None,
                     geometry,
+                    native_ref: None,
                 });
             }
             Ok(Some(id))
@@ -1211,6 +1211,7 @@ fn ensure_surface_support(
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: None,
                     }),
+                    native_ref: None,
                 });
             }
             Ok(Some(surface))
@@ -1999,6 +2000,7 @@ fn attach_surface_curve(
             id: curve_id,
             source_object: None,
             geometry,
+            native_ref: None,
         });
         return Ok(());
     }
@@ -2033,6 +2035,7 @@ fn attach_surface_curve(
             id: curve_id,
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            native_ref: None,
         });
         return Ok(());
     };
@@ -2089,6 +2092,7 @@ fn attach_surface_curve(
             construction,
             cache,
         },
+        native_ref: None,
     });
     Ok(())
 }
@@ -3786,6 +3790,7 @@ fn decode_graph_inner(
                     })
                 })
                 .transpose()?,
+            native_ref: None,
         });
     }
 
@@ -3853,6 +3858,7 @@ fn decode_graph_inner(
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
+                native_ref: None,
             });
             (vertex_id.clone(), vertex_id)
         } else {
@@ -4046,6 +4052,7 @@ fn decode_graph_inner(
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                                 record: None,
                             }),
+                            native_ref: None,
                         });
                     }
                     curve = Some(id_curve(curve_attr));
@@ -4080,8 +4087,7 @@ fn decode_graph_inner(
                     .map(|(_, range)| range)),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
-            start: start_id,
-            end: end_id,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start_id, end_id)),
             tolerance: match carriers.curve(curve_attr) {
                 Some(IndexedCurve::Derived(chart)) => chart
                     .support_data
@@ -4093,6 +4099,7 @@ fn decode_graph_inner(
             .chain(tolerant_edge_tolerance_mm.get(&e).copied())
             .reduce(f64::max)
             .and_then(cadmpeg_ir::scalar::PositiveReal::new),
+            native_ref: None,
         });
         edge_set.insert(e);
     }
@@ -4232,6 +4239,7 @@ fn decode_graph_inner(
                                 Some(finite_range),
                                 Some(fit_tolerance),
                             ),
+                            native_ref: None,
                         });
                         Ok(Some(
                             cadmpeg_ir::geometry::DirectedParameterRange::new(parameter_range).map(
@@ -4276,6 +4284,7 @@ fn decode_graph_inner(
                     sense,
                     use_curve: None,
                     pcurves,
+                    native_ref: None,
                 });
             }
         }
@@ -4304,6 +4313,7 @@ fn decode_graph_inner(
                 id: id_loop(*loop_attr),
                 face: id_face(f.bridge_attr),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                native_ref: None,
             });
         }
         for (loop_attr, vertex_use) in &f.vertex_loops {
@@ -4325,6 +4335,7 @@ fn decode_graph_inner(
                     vertex: id_vertex(*vertex_use),
                     pcurves: Vec::new(),
                 },
+                native_ref: None,
             });
             kept_loops.insert(*loop_attr);
         }
@@ -4461,6 +4472,7 @@ fn decode_graph_inner(
                     id: id_surf(f.bridge_attr),
                     source_object: None,
                     geometry,
+                    native_ref: None,
                 });
             }
             _ => {
@@ -4785,6 +4797,7 @@ fn decode_graph_inner(
                         id: id_surf(f.bridge_attr),
                         source_object: None,
                         geometry,
+                        native_ref: None,
                     });
                 } else if let Some(SweepSurfaceResolution {
                     geometry,
@@ -4824,6 +4837,7 @@ fn decode_graph_inner(
                         id: id_surf(f.bridge_attr),
                         source_object: None,
                         geometry: SurfaceGeometry::Solved(geometry),
+                        native_ref: None,
                     });
                 } else if !face_has_exact_boundary(f, t, &exact_boundary_edges)
                     || emit_sweep_support(
@@ -4851,6 +4865,7 @@ fn decode_graph_inner(
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                             record: None,
                         }),
+                        native_ref: None,
                     });
                 }
             }
@@ -4889,6 +4904,7 @@ fn decode_graph_inner(
                 })
                 .map(|entry| entry.value.color),
             tolerance: None,
+            native_ref: None,
         });
     }
     for attr in surface_curve_attrs {
@@ -5025,20 +5041,11 @@ fn decode_graph_inner(
                     }
                 }
                 admit_brep_entity(ctx)?;
-                out.shells.push(
-                    match Shell::new(
-                        shell_id.clone(),
-                        region_id.clone(),
-                        faces,
-                        Vec::new(),
-                        Vec::new(),
-                    ) {
-                        Ok(shell) => shell,
-                        Err(_) => {
-                            continue;
-                        }
-                    },
-                );
+                if faces.is_empty() {
+                    continue;
+                }
+                out.shells
+                    .push(Shell::new(shell_id.clone(), region_id.clone()));
                 region_shells.push(shell_id);
             }
             admit_brep_entity(ctx)?;
@@ -5046,6 +5053,7 @@ fn decode_graph_inner(
                 id: region_id.clone(),
                 body: body_id.clone(),
                 shells: region_shells,
+                native_ref: None,
             });
             body_regions.push(region_id);
         } else {
@@ -5076,20 +5084,11 @@ fn decode_graph_inner(
                             }
                         }
                         admit_brep_entity(ctx)?;
-                        out.shells.push(
-                            match Shell::new(
-                                shell_id.clone(),
-                                region_id.clone(),
-                                faces,
-                                Vec::new(),
-                                Vec::new(),
-                            ) {
-                                Ok(shell) => shell,
-                                Err(_) => {
-                                    continue;
-                                }
-                            },
-                        );
+                        if faces.is_empty() {
+                            continue;
+                        }
+                        out.shells
+                            .push(Shell::new(shell_id.clone(), region_id.clone()));
                         region_shells.push(shell_id);
                     }
                 }
@@ -5098,6 +5097,7 @@ fn decode_graph_inner(
                     id: region_id.clone(),
                     body: body_id.clone(),
                     shells: region_shells,
+                    native_ref: None,
                 });
                 body_regions.push(region_id);
             }
@@ -5106,11 +5106,11 @@ fn decode_graph_inner(
         out.bodies.push(Body {
             id: body_id,
             kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
-            regions: body_regions,
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
     }
 
@@ -5259,7 +5259,7 @@ fn phase_full_turn_edge_ranges(
         .map(|curve| (&curve.id, &curve.geometry))
         .collect::<HashMap<_, _>>();
     for edge in &mut out.edges {
-        if edge.start != edge.end {
+        if edge.ends.as_ref().is_none_or(|ends| ends.start != ends.end) {
             continue;
         }
         let Some([start, end]) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)
@@ -5272,9 +5272,10 @@ fn phase_full_turn_edge_ranges(
         let Some(curve_id) = edge.curve() else {
             continue;
         };
-        let (Some(geometry), Some(&(point, bound))) =
-            (curves.get(curve_id), vertex_points.get(&edge.start))
-        else {
+        let (Some(geometry), Some(&(point, bound))) = (
+            curves.get(curve_id),
+            edge.start().and_then(|start| vertex_points.get(start)),
+        ) else {
             continue;
         };
         let Some(phase) = points
@@ -5344,7 +5345,7 @@ fn prune_rejected_topology(out: &mut Brep) {
     let kept_vertices = out
         .edges
         .iter()
-        .flat_map(|edge| [&edge.start, &edge.end])
+        .flat_map(cadmpeg_ir::topology::Edge::vertices)
         .chain(
             out.loops
                 .iter()
@@ -5625,6 +5626,7 @@ fn derive_planar_pcurves(
             id: id.clone(),
             geometry,
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            native_ref: None,
         };
         derived.push((coedge.id.clone(), id, pcurve));
     }
@@ -5917,8 +5919,10 @@ fn derive_cylindrical_pcurves(
                 parameter_range = if let Some(range) = edge.param_range() {
                     Some(range.get())
                 } else {
-                    let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end))
-                    else {
+                    let (Some(start), Some(end)) = (
+                        edge.start().and_then(position),
+                        edge.end().and_then(position),
+                    ) else {
                         continue;
                     };
                     match (
@@ -6001,6 +6005,7 @@ fn derive_cylindrical_pcurves(
                     parameter_range,
                     None,
                 ),
+                native_ref: None,
             },
         ));
     }
@@ -6539,6 +6544,7 @@ fn derive_revolved_circle_pcurves(
                     },
                 ),
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+                native_ref: None,
             },
         ));
     }
@@ -6768,8 +6774,8 @@ fn derive_spherical_pcurves(
                 let angle = |vertex: &VertexId| {
                     carrier_angle(&circle, *vertex_points.get(vertex)?, f64::INFINITY)
                 };
-                let start = angle(&edge.start)?;
-                let sweep = (angle(&edge.end)? - start).rem_euclid(std::f64::consts::TAU);
+                let start = angle(edge.start()?)?;
+                let sweep = (angle(edge.end()?)? - start).rem_euclid(std::f64::consts::TAU);
                 Some(start + 0.5 * sweep)
             });
             let poles = range.map_or_else(Vec::new, |range| {
@@ -6890,6 +6896,7 @@ fn derive_spherical_pcurves(
                     id,
                     geometry,
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+                    native_ref: None,
                 },
                 range,
             ));
@@ -6993,12 +7000,14 @@ fn derive_nurbs_isoparametric_pcurves(
         else {
             continue;
         };
-        let endpoints = [&edge.start, &edge.end].map(|vertex_id| {
-            let vertex = vertices.get(&vertex_id)?;
-            Some(points.get(&vertex.point)?.position().get())
+        let endpoints = edge.ends.as_ref().map(|ends| {
+            [&ends.start, &ends.end].map(|vertex_id| {
+                let vertex = vertices.get(&vertex_id)?;
+                Some(points.get(&vertex.point)?.position().get())
+            })
         });
         let endpoints = match endpoints {
-            [Some(start), Some(end)] => Some([start, end]),
+            Some([Some(start), Some(end)]) => Some([start, end]),
             _ => None,
         };
         let (geometry, parameter_range, fit_tolerance, cache) = match curve {
@@ -7100,6 +7109,7 @@ fn derive_nurbs_isoparametric_pcurves(
                     parameter_range,
                     fit_tolerance,
                 ),
+                native_ref: None,
             },
             cache,
         ));
@@ -8874,7 +8884,7 @@ fn synthesize_cylinder_seams(
             continue;
         };
         let seam_point = |edge: &Edge| {
-            if edge.start != edge.end {
+            if edge.ends.as_ref().is_none_or(|ends| ends.start != ends.end) {
                 return None;
             }
             let curve = curves.get(edge.curve()?)?;
@@ -8889,15 +8899,17 @@ fn synthesize_cylinder_seams(
                 center.z - ref_direction.z * radius,
             ))
         };
-        if let (Some(pa), Some(pb)) = (seam_point(ea), seam_point(eb)) {
+        if let (Some(pa), Some(pb), Some(va), Some(vb)) =
+            (seam_point(ea), seam_point(eb), ea.start(), eb.start())
+        {
             candidates.push((
                 face.id.clone(),
                 a.id.clone(),
                 b.id.clone(),
                 ca.id.clone(),
                 cb.id.clone(),
-                ea.start.clone(),
-                eb.start.clone(),
+                va.clone(),
+                vb.clone(),
                 pa,
                 pb,
             ));
@@ -8970,15 +8982,16 @@ fn synthesize_cylinder_seams(
                     Err(_) => continue,
                 },
             )),
+            native_ref: None,
         });
         admit_brep_entity(ctx)?;
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, norm]))
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            start: vertex_a,
-            end: vertex_b,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex_a, vertex_b)),
             tolerance: None,
+            native_ref: None,
         });
         coedge_indices.insert(seam_a.clone(), out.coedges.len());
         admit_brep_entity(ctx)?;
@@ -8990,6 +9003,7 @@ fn synthesize_cylinder_seams(
             sense: Sense::Forward,
             use_curve: None,
             pcurves: Vec::new(),
+            native_ref: None,
         });
         coedge_indices.insert(seam_b.clone(), out.coedges.len());
         admit_brep_entity(ctx)?;
@@ -9001,6 +9015,7 @@ fn synthesize_cylinder_seams(
             sense: Sense::Reversed,
             use_curve: None,
             pcurves: Vec::new(),
+            native_ref: None,
         });
         let ring_ids = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
         let mut ring_members = Vec::new();
@@ -9145,8 +9160,7 @@ fn synthesize_sphere_seams(
             continue;
         };
 
-        let seam_vertices = [&out.edges[edge_index].start, &out.edges[edge_index].end];
-        for vertex_id in seam_vertices {
+        for vertex_id in out.edges[edge_index].vertices() {
             let Some(point_id) = out
                 .vertices
                 .iter()
@@ -9176,6 +9190,7 @@ fn synthesize_sphere_seams(
             id: curve_id.clone(),
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
+            native_ref: None,
         });
         out.edges[edge_index]
             .set_curve(Some(curve_id))
@@ -9255,7 +9270,7 @@ fn synthesize_sphere_seams(
                 .iter()
                 .filter_map(|id| coedges.get(id))
                 .filter_map(|coedge| edges.get(&coedge.edge))
-                .flat_map(|edge| [&edge.start, &edge.end])
+                .flat_map(|edge| edge.vertices())
                 .filter(|vertex| {
                     vertex_points.get(vertex).is_some_and(|point| {
                         let dx = point.x - seam_point.x;
@@ -9338,6 +9353,7 @@ fn synthesize_sphere_seams(
                     id: vertex_id.clone(),
                     point: point_id,
                     tolerance: None,
+                    native_ref: None,
                 });
                 vertex_id
             }
@@ -9352,8 +9368,8 @@ fn synthesize_sphere_seams(
                     .and_then(|coedge| {
                         let edge = out.edges.iter().find(|edge| edge.id == coedge.edge)?;
                         Some(match coedge.sense {
-                            Sense::Forward => edge.end == pole_vertex,
-                            Sense::Reversed => edge.start == pole_vertex,
+                            Sense::Forward => edge.end() == Some(&pole_vertex),
+                            Sense::Reversed => edge.start() == Some(&pole_vertex),
                         })
                     })
                     .unwrap_or(false)
@@ -9374,14 +9390,18 @@ fn synthesize_sphere_seams(
             id: curve_id.clone(),
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
+            native_ref: None,
         });
         admit_brep_entity(ctx)?;
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-            start: pole_vertex.clone(),
-            end: pole_vertex,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                pole_vertex.clone(),
+                pole_vertex,
+            )),
             tolerance: None,
+            native_ref: None,
         });
         let Some(full_turn) = cadmpeg_ir::units::FiniteVector::new([0.0, std::f64::consts::TAU])
         else {
@@ -9396,6 +9416,7 @@ fn synthesize_sphere_seams(
                 Some(full_turn),
                 None,
             ),
+            native_ref: None,
         });
         ring.insert(after_pole, coedge_id.clone());
         coedge_indices.insert(coedge_id.clone(), out.coedges.len());
@@ -9416,6 +9437,7 @@ fn synthesize_sphere_seams(
             sense: Sense::Forward,
             use_curve: None,
             pcurves: pcurve_uses,
+            native_ref: None,
         });
         let ring = cadmpeg_ir::topology::LoopRing::new(ring, Vec::new()).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!(
@@ -9440,6 +9462,7 @@ fn emit_curve(
         id: id_curve(carrier.attr),
         source_object: None,
         geometry: carrier.geometry.clone(),
+        native_ref: None,
     });
     Ok(())
 }
@@ -9550,11 +9573,8 @@ mod tests {
     }
 
     use super::sphere_latitude;
-    use super::unique_face_colors;
-    use crate::brep::entity;
     use crate::brep::topology::{Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Tables};
     use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
-    use cadmpeg_ir::topology::Color;
     use cadmpeg_ir::topology::Sense;
 
     fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
@@ -9806,96 +9826,6 @@ mod tests {
         let face = super::walk_face(&bridge, &tables);
 
         assert!(face.loops.is_empty());
-    }
-
-    fn face_color(
-        face_attr: u32,
-        color_attr: u32,
-        face_seq: u32,
-        rgb: [f32; 3],
-    ) -> entity::FaceColor {
-        entity::FaceColor {
-            face_attr,
-            color_attr,
-            face_seq,
-            stream_order: 0,
-            color: Color::new(rgb[0], rgb[1], rgb[2], 1.0).expect("valid color"),
-            offset: usize::try_from(face_attr).unwrap(),
-            target: None,
-        }
-    }
-
-    fn face_color_version(
-        face_attr: u32,
-        seq: u32,
-        stream_order: usize,
-    ) -> entity::FaceColorVersion {
-        entity::FaceColorVersion {
-            face_attr,
-            seq,
-            stream_order,
-        }
-    }
-
-    #[test]
-    fn current_uncolored_face_version_removes_an_older_color() {
-        let colors = vec![face_color(700, 900, 1, [0.25, 0.5, 0.75])];
-
-        let (resolved, unresolved) = unique_face_colors(
-            colors,
-            vec![face_color_version(700, 1, 0), face_color_version(700, 2, 0)],
-        );
-
-        assert!(resolved.is_empty());
-        assert_eq!(unresolved, 0);
-    }
-
-    #[test]
-    fn later_stream_replaces_an_equal_sequence_face_color() {
-        let old = face_color(700, 900, 2, [0.25, 0.5, 0.75]);
-        let mut current = face_color(700, 901, 2, [0.75, 0.5, 0.25]);
-        current.stream_order = 1;
-
-        let (resolved, unresolved) = unique_face_colors(
-            vec![old, current],
-            vec![face_color_version(700, 2, 0), face_color_version(700, 2, 1)],
-        );
-
-        assert_eq!(resolved.len(), 1);
-        assert_eq!(resolved[0].color_attr, 901);
-        assert_eq!(unresolved, 0);
-    }
-
-    #[test]
-    fn conflicting_current_face_colors_remain_unresolved() {
-        let colors = vec![
-            face_color(700, 900, 2, [0.25, 0.5, 0.75]),
-            face_color(700, 901, 2, [0.75, 0.5, 0.25]),
-        ];
-
-        let (resolved, unresolved) = unique_face_colors(
-            colors,
-            vec![face_color_version(700, 2, 0), face_color_version(700, 2, 0)],
-        );
-
-        assert!(resolved.is_empty());
-        assert_eq!(unresolved, 1);
-    }
-
-    #[test]
-    fn conflicting_reuse_of_one_color_identity_remains_unresolved() {
-        let colors = vec![
-            face_color(700, 900, 2, [0.25, 0.5, 0.75]),
-            face_color(701, 900, 2, [0.75, 0.5, 0.25]),
-        ];
-
-        let (resolved, unresolved) = unique_face_colors(
-            colors,
-            vec![face_color_version(700, 2, 0), face_color_version(701, 2, 0)],
-        );
-
-        assert!(resolved.is_empty());
-        assert_eq!(unresolved, 2);
     }
 
     #[test]
@@ -10421,8 +10351,8 @@ mod tests {
             };
             let mut area = 0.0;
             for edge in &decoded.edges {
-                let [x0, y0] = position(&edge.start);
-                let [x1, y1] = position(&edge.end);
+                let [x0, y0] = position(&edge.ends.as_ref().unwrap().start);
+                let [x1, y1] = position(&edge.ends.as_ref().unwrap().end);
                 area += x0 * y1 - x1 * y0;
             }
             assert!(area > 0.0, "forward ring runs counter-clockwise");
@@ -10431,8 +10361,8 @@ mod tests {
                 .iter()
                 .find(|edge| edge.id.as_str().ends_with("#40"))
                 .expect("first triangle edge");
-            assert!(edge.start.as_str().ends_with("#50"));
-            assert!(edge.end.as_str().ends_with("#51"));
+            assert!(edge.ends.as_ref().unwrap().start.as_str().ends_with("#50"));
+            assert!(edge.ends.as_ref().unwrap().end.as_str().ends_with("#51"));
         });
     }
 
@@ -10463,8 +10393,8 @@ mod tests {
                 .iter()
                 .find(|edge| edge.id.as_str().ends_with("#40"))
                 .expect("first triangle edge");
-            assert!(edge.start.as_str().ends_with("#50"));
-            assert!(edge.end.as_str().ends_with("#51"));
+            assert!(edge.ends.as_ref().unwrap().start.as_str().ends_with("#50"));
+            assert!(edge.ends.as_ref().unwrap().end.as_str().ends_with("#51"));
         });
     }
 
@@ -10500,8 +10430,8 @@ mod tests {
                 .iter()
                 .find(|edge| edge.id.as_str().ends_with("#40"))
                 .expect("first triangle edge");
-            assert!(edge.start.as_str().ends_with("#50"));
-            assert!(edge.end.as_str().ends_with("#51"));
+            assert!(edge.ends.as_ref().unwrap().start.as_str().ends_with("#50"));
+            assert!(edge.ends.as_ref().unwrap().end.as_str().ends_with("#51"));
         });
     }
 
@@ -10778,6 +10708,7 @@ mod tests {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             }],
             procedural_surfaces: vec![ProceduralSurface::new(
                 ProceduralSurfaceId::mint("test:model:entity#blend").expect("identity grammar"),
@@ -11346,6 +11277,7 @@ mod tests {
                     ),
                 ),
                 source_object: None,
+                native_ref: None,
             }],
             curves: vec![Curve {
                 parameter_range: None,
@@ -11363,6 +11295,7 @@ mod tests {
                     ),
                 )),
                 source_object: None,
+                native_ref: None,
             }],
             faces: vec![Face {
                 id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
@@ -11374,6 +11307,7 @@ mod tests {
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             }],
             loops: vec![Loop {
                 id: loop_id.clone(),
@@ -11382,6 +11316,7 @@ mod tests {
                     cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
                         .expect("valid loop ring"),
                 ),
+                native_ref: None,
             }],
             coedges: vec![Coedge {
                 id: coedge_id,
@@ -11392,24 +11327,30 @@ mod tests {
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,
+                native_ref: None,
             }],
             edges: vec![Edge {
                 id: edge_id,
                 carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-                start: start_vertex.clone(),
-                end: end_vertex.clone(),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    start_vertex.clone(),
+                    end_vertex.clone(),
+                )),
                 tolerance: None,
+                native_ref: None,
             }],
             vertices: vec![
                 Vertex {
                     id: start_vertex,
                     point: start_point.clone(),
                     tolerance: None,
+                    native_ref: None,
                 },
                 Vertex {
                     id: end_vertex,
                     point: end_point.clone(),
                     tolerance: None,
+                    native_ref: None,
                 },
             ],
             points: vec![
@@ -11474,6 +11415,9 @@ mod edge_free_tests;
 
 #[cfg(test)]
 mod offset_support_tests;
+
+#[cfg(test)]
+mod face_color_tests;
 
 #[cfg(test)]
 mod approximation_loss_tests;

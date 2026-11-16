@@ -590,7 +590,10 @@ fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
     ));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let edge = result.ir().geometry.edges.first().expect("edge");
-    assert_ne!(edge.start, edge.end);
+    assert_ne!(
+        edge.ends.as_ref().unwrap().start,
+        edge.ends.as_ref().unwrap().end
+    );
     assert_eq!(
         edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.25, 0.75])

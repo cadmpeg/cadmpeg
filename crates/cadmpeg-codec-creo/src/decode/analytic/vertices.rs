@@ -1129,6 +1129,7 @@ mod tests {
                     .expect("valid LineCurve fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Curve {
                 parameter_range: None,
@@ -1141,6 +1142,7 @@ mod tests {
                     .expect("valid LineCurve fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
 
@@ -1175,6 +1177,7 @@ mod tests {
                 id: CurveId::mint(id.to_owned()).expect("identity grammar"),
                 geometry: line.clone(),
                 source_object: None,
+                native_ref: None,
             });
         }
         let index = VisibleModelCurves::new(&ir.geometry.curves);

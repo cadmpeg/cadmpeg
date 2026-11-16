@@ -31,6 +31,7 @@ fn procedural_curve_attachment_moves_the_solved_carrier_into_the_cache() {
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let procedural = ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:construction#charged")
@@ -75,6 +76,7 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(carrier)),
         source_object: None,
+        native_ref: None,
     });
     geometry
         .add_procedural_surface(
@@ -116,6 +118,7 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(carrier)),
         source_object: None,
+        native_ref: None,
     });
     geometry
         .add_procedural_curve(
@@ -494,6 +497,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_surface(
@@ -520,6 +524,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_curve(
@@ -563,6 +568,7 @@ fn procedural_surface_attachment_moves_solved_cache() {
         id: owner.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     let procedural = ProceduralSurface::new(
         construction,
@@ -610,6 +616,7 @@ fn procedural_curve_attachment_moves_solved_cache() {
             record: None,
         }),
         source_object: None,
+        native_ref: None,
     });
     let procedural = ProceduralCurve::new(
         construction,
@@ -1225,6 +1232,7 @@ fn repeated_finalize_admits_thousands_of_sorted_long_identities() {
             id: CurveId::mint(format!("test:model:curve#{index:04}{suffix}")).unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
     }
     let before = geometry.clone();

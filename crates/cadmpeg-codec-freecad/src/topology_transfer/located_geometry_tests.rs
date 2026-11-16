@@ -59,6 +59,7 @@ fn located_surfaces_copy_only_their_own_construction_and_reuse_placements() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     ir.geometry

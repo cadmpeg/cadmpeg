@@ -865,7 +865,8 @@ mod subset_carriers {
                 .unwrap();
             point.position().get()
         };
-        let (start, end) = (position(&edge.start), position(&edge.end));
+        let ends = edge.ends.as_ref().unwrap();
+        let (start, end) = (position(&ends.start), position(&ends.end));
         let d = sub(end, start);
         let normal = if d.x.abs() < 0.5 {
             Vector3::new(1.0, 0.0, 0.0)
@@ -881,6 +882,7 @@ mod subset_carriers {
             geometry: CurveGeometry::Solved(source.1.clone().unwrap()),
             parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new(RANGE),
             source_object: None,
+            native_ref: None,
         });
         let edge_curve = edge.curve().unwrap().clone();
         let mut span = 0.0;
@@ -896,6 +898,7 @@ mod subset_carriers {
                     geometry: CurveGeometry::Solved(line_placeholder()),
                     parameter_range: None,
                     source_object: None,
+                    native_ref: None,
                 });
                 curve_id
             };

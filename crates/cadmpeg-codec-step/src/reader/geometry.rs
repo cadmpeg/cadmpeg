@@ -120,16 +120,16 @@ pub(super) fn infer_edge_parameter_ranges(
         if edge.param_range().is_some() {
             continue;
         }
-        let Some(curve) = edge.curve() else {
+        let (Some(curve), Some(ends)) = (edge.curve(), &edge.ends) else {
             continue;
         };
         let Some(start_vertex) =
-            model_index.vertices(edge.start.as_str(), cadmpeg_ir::index::StandardIndex)
+            model_index.vertices(ends.start.as_str(), cadmpeg_ir::index::StandardIndex)
         else {
             continue;
         };
         let Some(end_vertex) =
-            model_index.vertices(edge.end.as_str(), cadmpeg_ir::index::StandardIndex)
+            model_index.vertices(ends.end.as_str(), cadmpeg_ir::index::StandardIndex)
         else {
             continue;
         };
@@ -187,7 +187,7 @@ pub(super) fn infer_edge_parameter_ranges(
         else {
             continue;
         };
-        let closed = edge.start == edge.end;
+        let closed = ends.start == ends.end;
         let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter, closed)
         else {
             continue;
@@ -1082,6 +1082,7 @@ pub(super) fn decode(
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry,
                 source_object: None,
+                native_ref: None,
             });
             typed.insert(id);
         } else {
@@ -1104,6 +1105,7 @@ pub(super) fn decode(
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                 source_object: None,
+                native_ref: None,
             });
             typed.insert(id);
         } else {
@@ -1191,6 +1193,7 @@ pub(super) fn decode(
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(geometry),
                 source_object: None,
+                native_ref: None,
             });
             let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve, procedural)?;
             carrier_index.curves.insert(id, curve_index);
@@ -1311,6 +1314,7 @@ pub(super) fn decode(
                 id: curve.clone(),
                 geometry,
                 source_object: None,
+                native_ref: None,
             });
 
             let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve, procedural)?;
@@ -1364,6 +1368,7 @@ pub(super) fn decode(
                     self_intersect,
                 }),
                 source_object: None,
+                native_ref: None,
             });
             carrier_index.curves.insert(id, curve_index);
             typed.insert(id);
@@ -1438,6 +1443,7 @@ pub(super) fn decode(
             id: curve.clone(),
             geometry: CurveGeometry::Solved(copied_geometry),
             source_object: None,
+            native_ref: None,
         });
         let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve, procedural)?;
         carrier_index.curves.insert(id, curve_index);
@@ -1467,6 +1473,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
+                native_ref: None,
             });
             e.insert(curve_index);
         }
@@ -1522,6 +1529,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
+                native_ref: None,
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred curve #{id} as an unknown carrier"
@@ -1613,6 +1621,7 @@ pub(super) fn decode(
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let _attached = procedural_admission.add_surface(
             &mut ir.geometry,
@@ -1721,6 +1730,7 @@ pub(super) fn decode(
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry,
                 source_object: None,
+                native_ref: None,
             });
             typed.insert(id);
         } else {
@@ -1741,6 +1751,7 @@ pub(super) fn decode(
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 source_object: None,
+                native_ref: None,
             });
             typed.insert(id);
         } else {
@@ -1871,6 +1882,7 @@ pub(super) fn decode(
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(copied_geometry),
                 source_object: None,
+                native_ref: None,
             });
             let _attached = procedural_admission.add_surface(&mut ir.geometry, &surface, match (|| {
                     let ranges = parameter_ranges.map(|range| {
@@ -1976,6 +1988,7 @@ pub(super) fn decode(
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(copied_geometry),
                 source_object: None,
+                native_ref: None,
             });
             let _attached = procedural_admission.add_surface(
                 &mut ir.geometry,
@@ -2023,6 +2036,7 @@ pub(super) fn decode(
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             });
             let _attached = procedural_admission.add_surface(&mut ir.geometry, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
@@ -2080,6 +2094,7 @@ pub(super) fn decode(
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
+                native_ref: None,
             });
             let _attached = procedural_admission.add_surface(
                 &mut ir.geometry,
@@ -2120,6 +2135,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
+                native_ref: None,
             });
             e.insert(surface_index);
         }
@@ -2166,6 +2182,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
+                native_ref: None,
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded topology curve #{curve_step} as an unknown carrier"
@@ -2191,6 +2208,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
+                native_ref: None,
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred surface #{id} as an unknown carrier"
@@ -2223,6 +2241,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
+                native_ref: None,
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded face surface #{surface_step} from face #{face_id} as an unknown carrier"
@@ -2296,6 +2315,7 @@ pub(super) fn decode(
             id: PcurveId::from(ids::data(kind!("pcurve"), id)),
             geometry,
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            native_ref: None,
         });
         typed.insert(id);
         if let Some(representation) =
@@ -2476,6 +2496,7 @@ fn decode_tessellated_curve_sets(
                 id: CurveId::from(ids::data(kind!("curve"), curve_key)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
                 source_object: Some(super::step_source_association(id, source_name)),
+                native_ref: None,
             });
         }
         for source_id in [id, coordinates_id] {

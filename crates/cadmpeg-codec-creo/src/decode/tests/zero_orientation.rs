@@ -512,6 +512,7 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
                     .expect("source cylinder"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         )
     })
@@ -565,6 +566,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
@@ -580,6 +582,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                 .expect("valid ConeSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
@@ -593,6 +596,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                 .expect("valid SphereSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let full_turn = RevolveExtent::OneSided {
@@ -852,11 +856,11 @@ fn named_revolve_transfers_profile_axis() {
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:revolution#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -891,11 +895,11 @@ fn named_extrude_with_evaluated_body_is_new_body() {
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -925,11 +929,11 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
 
     let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, solid, .. }) =

@@ -61,6 +61,7 @@ fn plane_surface(id: u32, z: f64) -> Surface {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -87,6 +88,7 @@ fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
             .expect("valid CylinderSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -205,6 +207,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
         id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     };
     assert_eq!(
         service_feature_plane_equations(

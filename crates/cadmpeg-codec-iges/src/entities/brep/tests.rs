@@ -64,6 +64,7 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.edges.extend([
         Edge {
@@ -73,9 +74,12 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
                 Some([10.0, 11.0]),
             )
             .unwrap(),
-            start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+                VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
@@ -84,9 +88,12 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
                 Some([0.0, 2.0]),
             )
             .unwrap(),
-            start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+                VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         },
     ]);
 
@@ -125,6 +132,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.edges.extend([
         Edge {
@@ -134,9 +142,12 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
                 Some([0.0, std::f64::consts::TAU]),
             )
             .unwrap(),
-            start: VertexId::mint("test:model:vertex#first-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#first-end").expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("test:model:vertex#first-start").expect("identity grammar"),
+                VertexId::mint("test:model:vertex#first-end").expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#second-occurrence").expect("identity grammar"),
@@ -145,9 +156,12 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
                 Some([std::f64::consts::TAU, 2.0 * std::f64::consts::TAU]),
             )
             .unwrap(),
-            start: VertexId::mint("test:model:vertex#second-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#second-end").expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("test:model:vertex#second-start").expect("identity grammar"),
+                VertexId::mint("test:model:vertex#second-end").expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         },
     ]);
 
@@ -299,7 +313,7 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         .geometry
         .regions
         .iter()
-        .find(|region| region.id == body.regions[0])
+        .find(|region| region.body == body.id)
         .unwrap();
     assert_eq!(region.shells.len(), 2);
     assert_eq!(
@@ -317,14 +331,7 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         .iter()
         .find(|shell| shell.id == region.shells[1])
         .unwrap();
-    for face_id in void_shell.faces() {
-        let face = result
-            .ir()
-            .geometry
-            .faces
-            .iter()
-            .find(|face| face.id == *face_id)
-            .unwrap();
+    for face in result.ir().geometry.shell_faces(&void_shell.id) {
         assert_eq!(face.sense, cadmpeg_ir::topology::Sense::Reversed);
     }
     assert!(
@@ -426,7 +433,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
         .geometry
         .regions
         .iter()
-        .find(|region| region.id == body.regions[0])
+        .find(|region| region.body == body.id)
         .unwrap();
     assert_eq!(region.shells.len(), 1);
     let shell = result
@@ -436,7 +443,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
         .iter()
         .find(|shell| shell.id == region.shells[0])
         .unwrap();
-    assert_eq!(shell.faces().len(), 4);
+    assert_eq!(result.ir().geometry.shell_faces(&shell.id).count(), 4);
     let solid_edges = result
         .ir()
         .geometry
@@ -492,14 +499,13 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         .iter()
         .find(|shell| shell.id.as_str() == "iges:model:shell#D23")
         .unwrap();
-    assert_eq!(shell.faces().len(), 1);
-    let face = result
+    let shell_faces = result
         .ir()
         .geometry
-        .faces
-        .iter()
-        .find(|face| face.id == shell.faces()[0])
-        .unwrap();
+        .shell_faces(&shell.id)
+        .collect::<Vec<_>>();
+    assert_eq!(shell_faces.len(), 1);
+    let face = shell_faces[0];
     let loop_ = result
         .ir()
         .geometry
@@ -530,7 +536,10 @@ fn decode_builds_shared_explicit_open_shell_topology() {
     assert_eq!(
         explicit_edges
             .iter()
-            .flat_map(|edge| [&edge.start, &edge.end])
+            .flat_map(|edge| [
+                &edge.ends.as_ref().unwrap().start,
+                &edge.ends.as_ref().unwrap().end
+            ])
             .collect::<std::collections::BTreeSet<_>>()
             .len(),
         4
@@ -735,6 +744,7 @@ fn test_coedge(id: &str, sense: Sense) -> Coedge {
         sense,
         pcurves: Vec::new(),
         use_curve: None,
+        native_ref: None,
     }
 }
 
@@ -848,8 +858,8 @@ fn polygon_loop_area_about(ir: &CadIr, loop_id: &LoopId, normal: Vector3) -> f64
                 .find(|edge| edge.id == coedge.edge)
                 .unwrap();
             match coedge.sense {
-                Sense::Forward => position(&edge.start),
-                Sense::Reversed => position(&edge.end),
+                Sense::Forward => position(&edge.ends.as_ref().unwrap().start),
+                Sense::Reversed => position(&edge.ends.as_ref().unwrap().end),
             }
         })
         .collect::<Vec<Point3>>();
@@ -1011,7 +1021,7 @@ fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
             .position()
             .get()
     };
-    let mut previous = position(&edge.end);
+    let mut previous = position(&edge.ends.as_ref().unwrap().end);
     for pcurve_use in &coedge.pcurves {
         let pcurve = ir
             .geometry
@@ -1049,7 +1059,7 @@ fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
         previous = point(end);
     }
     assert!(
-        previous.distance(position(&edge.start)) <= EPS_EDGE_ENDPOINT_MATCH,
+        previous.distance(position(&edge.ends.as_ref().unwrap().start)) <= EPS_EDGE_ENDPOINT_MATCH,
         "the chain ends at the coedge's end"
     );
     let validation =

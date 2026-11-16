@@ -107,8 +107,14 @@ fn shell_wire_edge_applies_edge_and_occurrence_sense() {
         .iter()
         .find(|edge| edge.id.as_str().contains("19-wire-31-33-22-0"))
         .expect("first wire edge");
-    assert_eq!(first.start.as_str(), "step:data:vertex#7-wire-31-shell-33");
-    assert_eq!(first.end.as_str(), "step:data:vertex#6-wire-31-shell-33");
+    assert_eq!(
+        first.ends.as_ref().unwrap().start.as_str(),
+        "step:data:vertex#7-wire-31-shell-33"
+    );
+    assert_eq!(
+        first.ends.as_ref().unwrap().end.as_str(),
+        "step:data:vertex#6-wire-31-shell-33"
+    );
 }
 
 #[test]
@@ -374,7 +380,7 @@ fn shell_based_wireframe_model_retains_vertex_shells() {
 
     assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Wire);
-    assert_eq!(decoded.ir().geometry.shells[0].free_vertices().len(), 1);
+    assert_eq!(decoded.ir().geometry.shells[0].free_vertices().count(), 1);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -479,8 +485,20 @@ fn connected_edge_set_resolves_direct_oriented_and_seam_members() {
         .iter()
         .find(|edge| edge.id.as_str().starts_with("step:data:edge#71-"))
         .expect("oriented edge carrier");
-    assert!(reversed.start.as_str().contains("vertex#7"));
-    assert!(reversed.end.as_str().contains("vertex#6"));
+    assert!(reversed
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .as_str()
+        .contains("vertex#7"));
+    assert!(reversed
+        .ends
+        .as_ref()
+        .unwrap()
+        .end
+        .as_str()
+        .contains("vertex#6"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

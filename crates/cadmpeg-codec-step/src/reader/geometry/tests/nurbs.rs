@@ -289,6 +289,7 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
         id: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.curves.push(Curve {
         parameter_range: None,
@@ -305,6 +306,7 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
             self_intersect: Some(false),
         }),
         source_object: None,
+        native_ref: None,
     });
     let output = export(&ir);
     assert!(!output.contains("COMPOSITE_CURVE("));

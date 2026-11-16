@@ -143,6 +143,7 @@ fn source_ir() -> CadIr {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#3".to_string()).expect("identity grammar"),
@@ -155,6 +156,7 @@ fn source_ir() -> CadIr {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#4".to_string()).expect("identity grammar"),
@@ -167,6 +169,7 @@ fn source_ir() -> CadIr {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
@@ -180,6 +183,7 @@ fn source_ir() -> CadIr {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let y = 5.0_f64.sqrt();
@@ -197,6 +201,7 @@ fn source_ir() -> CadIr {
             .expect("valid intersection witness curve"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir
 }

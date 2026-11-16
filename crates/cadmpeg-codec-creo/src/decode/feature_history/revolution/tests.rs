@@ -150,6 +150,7 @@ fn saved_spline_curve() -> Curve {
             .expect("valid saved-spline curve"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 

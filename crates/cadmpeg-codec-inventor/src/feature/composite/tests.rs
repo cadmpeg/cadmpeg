@@ -239,11 +239,11 @@ impl Fixture {
             ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
                 id: id.clone(),
                 kind: cadmpeg_ir::topology::BodyKind::default(),
-                regions: vec![],
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             });
         }
         ir.model.features.push(

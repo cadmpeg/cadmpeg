@@ -111,6 +111,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                     translated_surface(2.0),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#32".to_string())
@@ -124,6 +125,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#33".to_string())
@@ -137,18 +139,21 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                     .expect("valid PlaneSurface fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#34".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#35".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         assert_eq!(

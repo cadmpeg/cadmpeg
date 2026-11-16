@@ -39,7 +39,7 @@ fn nurbs_display_model(placed: bool) -> CadIr {
         SurfaceGeometry::Solved(geometry),
         corners,
     );
-    super::set_shell_faces(&mut ir, vec![face]);
+    super::set_shell_faces(&mut ir, &[face]);
     ir.model.tessellations.push(super::mesh_from(
         "synthetic:test:tessellation#admitted-nurbs",
         vertices,

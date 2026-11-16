@@ -313,6 +313,13 @@ pub struct Surface {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<SourceObjectAssociation>,
+    /// The source record this surface projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// The analytic or free-form shape of a 3D curve carrier established without a
@@ -676,6 +683,13 @@ pub struct Curve {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<SourceObjectAssociation>,
+    /// The source record this curve projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// Four optional finite parameter bounds retained from one native surface
@@ -773,6 +787,13 @@ pub struct ProceduralSurface {
         deserialize_with = "deserialize_procedural_surface_record_bounds"
     )]
     record_bounds: Option<RecordBounds>,
+    /// The source record this construction projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// Parameter fields carried by exact and loft spline-surface constructions.
@@ -1953,6 +1974,7 @@ impl ProceduralSurface {
             id,
             definition,
             record_bounds,
+            native_ref: None,
         }
     }
 
@@ -6502,6 +6524,13 @@ pub struct ProceduralCurve {
     pub id: ProceduralCurveId,
     /// Neutral construction definition, which states its own cache contract.
     definition: ProceduralCurveDefinition,
+    /// The source record this construction projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// A parameter-space support curve and its optional affine parameter map.
@@ -7984,7 +8013,11 @@ impl ProceduralCurveDefinition {
 impl ProceduralCurve {
     /// Build a procedural curve from its construction definition.
     pub fn new(id: ProceduralCurveId, definition: ProceduralCurveDefinition) -> Self {
-        Self { id, definition }
+        Self {
+            id,
+            definition,
+            native_ref: None,
+        }
     }
 
     /// Borrow the neutral construction definition.
@@ -8071,6 +8104,13 @@ pub(crate) struct ProceduralSurfaceRow {
         deserialize_with = "deserialize_record_bounds"
     )]
     record_bounds: Option<RecordBounds>,
+    /// The source record this construction projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    native_ref: Option<String>,
 }
 
 /// One procedural-curve row: the construction and the carrier it produces.
@@ -8084,6 +8124,13 @@ pub(crate) struct ProceduralCurveRow {
     curve: CurveId,
     /// Neutral construction definition.
     definition: ProceduralCurveDefinition,
+    /// The source record this construction projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    native_ref: Option<String>,
 }
 
 impl ProceduralSurfaceRow {
@@ -8094,6 +8141,7 @@ impl ProceduralSurfaceRow {
             surface,
             definition: procedural.definition.clone(),
             record_bounds: procedural.record_bounds,
+            native_ref: procedural.native_ref.clone(),
         }
     }
 
@@ -8101,7 +8149,10 @@ impl ProceduralSurfaceRow {
     pub(crate) fn into_parts(self) -> (SurfaceId, ProceduralSurface) {
         (
             self.surface,
-            ProceduralSurface::new(self.id, self.definition, self.record_bounds),
+            ProceduralSurface {
+                native_ref: self.native_ref,
+                ..ProceduralSurface::new(self.id, self.definition, self.record_bounds)
+            },
         )
     }
 }
@@ -8113,6 +8164,7 @@ impl ProceduralCurveRow {
             id: procedural.id.clone(),
             curve,
             definition: procedural.definition.clone(),
+            native_ref: procedural.native_ref.clone(),
         }
     }
 
@@ -8123,6 +8175,7 @@ impl ProceduralCurveRow {
             ProceduralCurve {
                 id: self.id,
                 definition: self.definition,
+                native_ref: self.native_ref,
             },
         )
     }
@@ -8275,6 +8328,7 @@ cadmpeg_core::named_optional_field!(
     "parameter_range"
 );
 cadmpeg_core::named_optional_field!(deserialize_tertiary, bool, "tertiary");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_cache, LegacyCache, "cache");
 cadmpeg_core::named_optional_field!(deserialize_record, UnknownId, "record");
 cadmpeg_core::named_optional_field!(

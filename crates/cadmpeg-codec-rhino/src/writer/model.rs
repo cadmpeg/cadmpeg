@@ -304,7 +304,7 @@ impl<'a> WritableModel<'a> {
         {
             return Err(CodecError::NotImplemented("Brep writing requires one shell with distinct explicit carriers and polygonal loops".into()));
         }
-        if body.regions.len() != 1 || body.transform.is_some() {
+        if geometry.body_regions(&body.id).count() != 1 || body.transform.is_some() {
             return Err(CodecError::NotImplemented(
                 "Brep body placement is not writable".into(),
             ));
@@ -312,17 +312,11 @@ impl<'a> WritableModel<'a> {
         check_object_attributes(body.id.as_str(), body.name.as_deref())?;
         let region = &geometry.regions[0];
         let shell = &geometry.shells[0];
-        let mut shell_faces: Vec<_> = shell.faces().iter().collect();
-        shell_faces.sort_unstable();
-        let mut arena_faces: Vec<_> = geometry.faces.iter().map(|face| &face.id).collect();
-        arena_faces.sort_unstable();
-        if region.id != body.regions[0]
-            || region.body != body.id
+        if region.body != body.id
             || region.shells != std::slice::from_ref(&shell.id)
             || shell.region != region.id
-            || shell_faces != arena_faces
-            || !shell.wire_edges().is_empty()
-            || !shell.free_vertices().is_empty()
+            || geometry.faces.iter().any(|face| face.shell != shell.id)
+            || !shell.members.is_empty()
         {
             return Err(CodecError::Malformed(
                 "Brep ownership graph is inconsistent".into(),
@@ -357,10 +351,11 @@ impl<'a> WritableModel<'a> {
                                 "planar sheet cannot reuse an edge in one loop".into(),
                             ));
                         }
+                        let ends = super::edge_ends(edge)?;
                         let start = if coedge.sense == Sense::Forward {
-                            &edge.start
+                            &ends.start
                         } else {
-                            &edge.end
+                            &ends.end
                         };
                         let vertex =
                             &geometry.vertices[resolve(&original_vertices, start.as_str())?];
@@ -531,8 +526,9 @@ impl<'a> WritableModel<'a> {
                     )))
                 }
             };
-            let start = resolve(&vertex_positions, edge.start.as_str())?;
-            let end = resolve(&vertex_positions, edge.end.as_str())?;
+            let ends = super::edge_ends(edge)?;
+            let start = resolve(&vertex_positions, ends.start.as_str())?;
+            let end = resolve(&vertex_positions, ends.end.as_str())?;
             let tolerance = stated_write_tolerance(edge.tolerance, ir, edge.id.as_str())?;
             if !close_point(vertices[start].point, expected_start, tolerance)
                 || !close_point(vertices[end].point, expected_end, tolerance)

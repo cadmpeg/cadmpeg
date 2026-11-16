@@ -7,10 +7,7 @@
         "bodies": [
           {
             "id": "nx:derived:point-body#0",
-            "kind": "general",
-            "regions": [
-              "nx:derived:point-region#0"
-            ]
+            "kind": "general"
           }
         ],
         "coedges": [],

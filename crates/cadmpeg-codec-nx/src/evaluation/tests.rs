@@ -22,11 +22,11 @@ fn model_body(id: &str) -> Body {
     Body {
         id: BodyId::mint(id.to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     }
 }
 

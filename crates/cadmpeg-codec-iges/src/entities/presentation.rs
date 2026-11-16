@@ -471,10 +471,7 @@ pub(super) fn project(
             );
             continue;
         }
-        let color = cadmpeg_core::convert::f32_from_f64(red / 100.0)
-            .zip(cadmpeg_core::convert::f32_from_f64(green / 100.0))
-            .zip(cadmpeg_core::convert::f32_from_f64(blue / 100.0))
-            .and_then(|((red, green), blue)| Color::new(red, green, blue, 1.0));
+        let color = Color::new(red / 100.0, green / 100.0, blue / 100.0, 1.0);
         let Some(color) = color else {
             push_presentation_loss(
                 &mut losses,

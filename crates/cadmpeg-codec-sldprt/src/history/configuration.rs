@@ -1300,33 +1300,17 @@ fn configuration_surface_carriers(
     for id in body_ids {
         bodies.insert(id);
     }
-    let mut regions = HashSet::new();
-    for body in &ir.geometry.bodies {
-        if bodies.contains(&body.id) {
-            for id in &body.regions {
-                regions.insert(id);
-            }
-        }
-    }
     let mut shells = HashSet::new();
     for region in &ir.geometry.regions {
-        if regions.contains(&region.id) {
+        if bodies.contains(&region.body) {
             for id in &region.shells {
                 shells.insert(id);
             }
         }
     }
-    let mut faces = HashSet::new();
-    for shell in &ir.geometry.shells {
-        if shells.contains(&shell.id) {
-            for id in shell.faces() {
-                faces.insert(id);
-            }
-        }
-    }
     let mut surface_ids = HashSet::new();
     for face in &ir.geometry.faces {
-        if faces.contains(&face.id) {
+        if shells.contains(&face.shell) {
             surface_ids.insert(&face.surface);
         }
     }

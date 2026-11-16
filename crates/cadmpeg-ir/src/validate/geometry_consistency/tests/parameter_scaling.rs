@@ -19,6 +19,7 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let index = ModelIndex::new_model_only(&ir);
     let context = SurfacePcurveContext {
