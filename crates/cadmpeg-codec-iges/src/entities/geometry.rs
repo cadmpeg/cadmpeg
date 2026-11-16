@@ -2670,7 +2670,7 @@ pub(crate) fn project_geometry(
     )?;
     structure_projection.merge_into(&mut decoded, &mut losses);
     if let Some(shell) = free_geometry_shell {
-        free_geometry::retain_independent(ir, &shell, &entries, &mut sequences)?;
+        free_geometry::retain_independent(ir, &shell, &entries, &mut sequences);
     }
 
     super::presentation::project(

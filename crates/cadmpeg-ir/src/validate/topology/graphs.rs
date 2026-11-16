@@ -228,14 +228,14 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
     let shell_bodies = BorrowedIdentities::build(|add| {
         for shell in &ir.geometry.shells {
             if let Some(body) = region_bodies.get(shell.region.as_str()) {
-                add(shell.id.as_str(), *body);
+                add(shell.id.as_str(), body);
             }
         }
     });
     let bodies_with_faces = BorrowedIdentities::build(|add| {
         for face in &ir.geometry.faces {
             if let Some(body) = shell_bodies.get(face.shell.as_str()) {
-                add(*body, ());
+                add(body, ());
             }
         }
     });

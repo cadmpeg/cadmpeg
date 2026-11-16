@@ -5259,11 +5259,7 @@ fn phase_full_turn_edge_ranges(
         .map(|curve| (&curve.id, &curve.geometry))
         .collect::<HashMap<_, _>>();
     for edge in &mut out.edges {
-        if !edge
-            .ends
-            .as_ref()
-            .is_some_and(|ends| ends.start == ends.end)
-        {
+        if edge.ends.as_ref().is_none_or(|ends| ends.start != ends.end) {
             continue;
         }
         let Some([start, end]) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)
@@ -5349,7 +5345,7 @@ fn prune_rejected_topology(out: &mut Brep) {
     let kept_vertices = out
         .edges
         .iter()
-        .flat_map(|edge| edge.vertices())
+        .flat_map(cadmpeg_ir::topology::Edge::vertices)
         .chain(
             out.loops
                 .iter()
@@ -8888,11 +8884,7 @@ fn synthesize_cylinder_seams(
             continue;
         };
         let seam_point = |edge: &Edge| {
-            if !edge
-                .ends
-                .as_ref()
-                .is_some_and(|ends| ends.start == ends.end)
-            {
+            if edge.ends.as_ref().is_none_or(|ends| ends.start != ends.end) {
                 return None;
             }
             let curve = curves.get(edge.curve()?)?;

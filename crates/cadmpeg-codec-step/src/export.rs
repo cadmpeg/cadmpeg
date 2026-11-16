@@ -1139,9 +1139,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(f64::from(color.r())),
-            self.emitter.real(f64::from(color.g())),
-            self.emitter.real(f64::from(color.b()))
+            self.emitter.real(color.r()),
+            self.emitter.real(color.g()),
+            self.emitter.real(color.b())
         );
         let key = format!("surface:{name}:{rgb}:{}", color.a().to_bits());
         if let Some(style) = cache.get(&key) {
@@ -1163,7 +1163,7 @@ impl<'a> Builder<'a> {
         if color.a() < 1.0 {
             let transparency = self.emitter.emit(
                 "SURFACE_STYLE_TRANSPARENT",
-                &self.emitter.real(1.0 - f64::from(color.a())),
+                &self.emitter.real(1.0 - color.a()),
             );
             let rendering = self.emitter.emit(
                 "SURFACE_STYLE_RENDERING_WITH_PROPERTIES",
@@ -1192,9 +1192,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(f64::from(color.r())),
-            self.emitter.real(f64::from(color.g())),
-            self.emitter.real(f64::from(color.b()))
+            self.emitter.real(color.r()),
+            self.emitter.real(color.g()),
+            self.emitter.real(color.b())
         );
         let key = format!("curve:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -1225,9 +1225,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            self.emitter.real(f64::from(color.r())),
-            self.emitter.real(f64::from(color.g())),
-            self.emitter.real(f64::from(color.b()))
+            self.emitter.real(color.r()),
+            self.emitter.real(color.g()),
+            self.emitter.real(color.b())
         );
         let key = format!("point:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -2474,7 +2474,7 @@ impl<'a> Builder<'a> {
         }
         let mut connected_sets = Vec::new();
         for shell in shells {
-            if !shell.free_vertices().next().is_none() {
+            if shell.free_vertices().next().is_some() {
                 self.loss(
                     StepLossCode::WireShellFreeVertices,
                     format!(

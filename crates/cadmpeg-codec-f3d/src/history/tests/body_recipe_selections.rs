@@ -306,10 +306,12 @@ fn bind_single_native_design_record(
     selection: BodySelection,
     recipes: &[crate::records::recipes::ConstructionRecipe],
     links: &[crate::records::sketch_links::PersistentDesignLink],
-    bodies: &[cadmpeg_ir::topology::Body],
-    regions: &[cadmpeg_ir::topology::Region],
-    shells: &[cadmpeg_ir::topology::Shell],
-    faces: &[cadmpeg_ir::topology::Face],
+    (bodies, regions, shells, faces): (
+        &[cadmpeg_ir::topology::Body],
+        &[cadmpeg_ir::topology::Region],
+        &[cadmpeg_ir::topology::Shell],
+        &[cadmpeg_ir::topology::Face],
+    ),
 ) -> BodySelection {
     let (scope, groups, _, _) = selection_fixture();
     let mut selection = selection;
@@ -390,7 +392,11 @@ fn single_native_design_record_resolves_through_linked_recipe() {
     let recipes = [recipe];
     let links = [link];
     let resolved = bind_single_native_design_record(
-        &operands, selection, &recipes, &links, &bodies, &regions, &shells, &faces,
+        &operands,
+        selection,
+        &recipes,
+        &links,
+        (&bodies, &regions, &shells, &faces),
     );
     assert!(matches!(resolved, BodySelection::ResolvedSet { .. }));
 }
@@ -412,10 +418,7 @@ fn single_native_design_record_without_recipe_match_stays_native() {
         selection,
         &[],
         &[],
-        &bodies,
-        &regions,
-        &shells,
-        &faces,
+        (&bodies, &regions, &shells, &faces),
     );
     assert!(matches!(resolved, BodySelection::Native(_)));
 }

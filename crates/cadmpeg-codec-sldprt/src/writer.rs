@@ -3703,7 +3703,7 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     be32(out, 3);
     be16(out, attr);
     for value in [color.r(), color.g(), color.b()] {
-        bef64(out, f64::from(value));
+        bef64(out, value);
     }
 }
 
@@ -4709,7 +4709,7 @@ mod nurbs_write_tests {
     }
 }
 
-/// The two vertices that bound an edge. A SolidWorks edge record names both.
+/// The two vertices that bound an edge. A `SolidWorks` edge record names both.
 fn edge_ends(
     edge: &cadmpeg_ir::topology::Edge,
 ) -> Result<&cadmpeg_ir::topology::EdgeEnds, CodecError> {

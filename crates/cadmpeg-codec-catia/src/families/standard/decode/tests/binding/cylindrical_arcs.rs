@@ -206,11 +206,15 @@ fn cylindrical_arc_recovery_reverses_the_edge_and_its_occurrence() {
     let edge = &ir.geometry.edges[0];
     assert_eq!(edge.param_range().expect("recovered arc").get(), [PI, TAU]);
     assert_eq!(
-        edge.ends.as_ref().unwrap().start.as_str(),
+        edge.ends
+            .as_ref()
+            .expect("edge has vertices")
+            .start
+            .as_str(),
         "catia:standard:v#1"
     );
     assert_eq!(
-        edge.ends.as_ref().unwrap().end.as_str(),
+        edge.ends.as_ref().expect("edge has vertices").end.as_str(),
         "catia:standard:v#0"
     );
     assert_eq!(ir.geometry.coedges[0].sense, Sense::Reversed);

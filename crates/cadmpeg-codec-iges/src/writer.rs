@@ -359,7 +359,7 @@ fn append_color_definitions(
             continue;
         };
         let components = [color.r(), color.g(), color.b()]
-            .map(|component| finite(f64::from(component) * 100.0, "color percentage"))
+            .map(|component| finite(component * 100.0, "color percentage"))
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
         let entity_index = entities.len();
@@ -486,7 +486,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             .edges
             .iter()
             .filter(|edge| used_edges.contains(&edge.id))
-            .flat_map(|edge| edge.vertices())
+            .flat_map(cadmpeg_ir::topology::Edge::vertices)
             .chain(
                 ir.geometry
                     .loops
@@ -764,7 +764,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         .geometry
         .edges
         .iter()
-        .flat_map(|edge| edge.vertices())
+        .flat_map(cadmpeg_ir::topology::Edge::vertices)
         .collect::<BTreeSet<_>>();
     let loop_vertices = ir
         .geometry

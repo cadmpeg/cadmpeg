@@ -241,8 +241,8 @@ fn source_parameter_range(
     {
         let (Some(range), Some(start), Some(end)) = (
             edge.param_range(),
-            edge.start().and_then(|vertex| point_position(vertex)),
-            edge.end().and_then(|vertex| point_position(vertex)),
+            edge.start().and_then(&point_position),
+            edge.end().and_then(&point_position),
         ) else {
             continue;
         };

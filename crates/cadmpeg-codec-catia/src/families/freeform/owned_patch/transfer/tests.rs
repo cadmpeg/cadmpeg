@@ -355,12 +355,12 @@ fn assert_outer_winding(ir: &CadIr, face: &Face) {
                 .expect("emitted edge");
             let (start, end) = match coedge.sense {
                 Sense::Forward => (
-                    &edge.ends.as_ref().unwrap().start,
-                    &edge.ends.as_ref().unwrap().end,
+                    &edge.ends.as_ref().expect("edge has vertices").start,
+                    &edge.ends.as_ref().expect("edge has vertices").end,
                 ),
                 Sense::Reversed => (
-                    &edge.ends.as_ref().unwrap().end,
-                    &edge.ends.as_ref().unwrap().start,
+                    &edge.ends.as_ref().expect("edge has vertices").end,
+                    &edge.ends.as_ref().expect("edge has vertices").start,
                 ),
             };
             point(start)

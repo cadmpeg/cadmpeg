@@ -3,7 +3,6 @@
 
 use super::SourceSequences;
 use crate::directory::{DirectoryEntry, Subordinate};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::{ids::ShellId, topology::ShellMember, CadIr};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,14 +11,14 @@ pub(super) fn retain_independent(
     shell_id: &ShellId,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     sequences: &mut SourceSequences,
-) -> Result<(), CodecError> {
+) {
     let Some(shell_index) = ir
         .geometry
         .shells
         .iter()
         .position(|shell| shell.id == *shell_id)
     else {
-        return Ok(());
+        return;
     };
     let mut removed_edges = BTreeSet::new();
 
@@ -60,7 +59,7 @@ pub(super) fn retain_independent(
     }
     drop(edges);
     if removed_edges.is_empty() {
-        return Ok(());
+        return;
     }
     if ir.geometry.shells[shell_index]
         .wire_edges()
@@ -146,5 +145,4 @@ pub(super) fn retain_independent(
         live_points.insert(&point.id);
     }
     sequences.points.retain(|id, _| live_points.contains(id));
-    Ok(())
 }

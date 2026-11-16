@@ -50,7 +50,7 @@ pub(super) fn encode_smbh(
     let topology = NativeGenerationIndex::new(native);
     if target.geometry.faces.is_empty() {
         if !target.geometry.shells.iter().any(|shell| {
-            !shell.wire_edges().next().is_none() || !shell.free_vertices().next().is_none()
+            shell.wire_edges().next().is_some() || shell.free_vertices().next().is_some()
         }) {
             return Err(CodecError::NotImplemented(
                 "source-less F3D generation requires owned face topology or a nonempty wire shell"
@@ -187,7 +187,7 @@ impl<'a> NativeRecordPlan<'a> {
 }
 
 fn source_less_wire_count(shell: &cadmpeg_ir::topology::Shell) -> usize {
-    usize::from(!shell.wire_edges().next().is_none()) + shell.free_vertices().count()
+    usize::from(shell.wire_edges().next().is_some()) + shell.free_vertices().count()
 }
 
 fn source_less_wire_record_for_shell(
@@ -221,14 +221,14 @@ fn encode_source_less_wires(
     let edge_vertex_ids = geometry
         .edges
         .iter()
-        .flat_map(|edge| edge.vertices())
+        .flat_map(cadmpeg_ir::topology::Edge::vertices)
         .collect::<BTreeSet<_>>();
     let mut free_vertex_owners = BTreeMap::new();
     let mut edge_base = 0usize;
     let mut wire_ordinal = 0usize;
     for (shell_ordinal, shell) in geometry.shells.iter().enumerate() {
         let shell_wire_count = source_less_wire_count(shell);
-        if !shell.wire_edges().next().is_none() {
+        if shell.wire_edges().next().is_some() {
             native_ident(records, "wire")?;
             native_ref(records, -1);
             native_i64(records, -1);

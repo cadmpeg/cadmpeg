@@ -192,7 +192,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
             Some((
                 table_index,
                 [color.r(), color.g(), color.b()]
-                    .map(|value| truncate_f64_to_u8(f64::from((value * 255.0).round())).unwrap()),
+                    .map(|value| truncate_f64_to_u8((value * 255.0).round()).unwrap()),
             ))
         })
         .collect::<Vec<_>>();

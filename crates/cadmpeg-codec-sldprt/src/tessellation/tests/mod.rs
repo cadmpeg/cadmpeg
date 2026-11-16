@@ -615,7 +615,7 @@ fn model_with_body() -> CadIr {
     ir
 }
 
-fn set_shell_faces(ir: &mut CadIr, faces: Vec<FaceId>) {
+fn set_shell_faces(ir: &mut CadIr, faces: &[FaceId]) {
     let shell = ir.geometry.regions[0].shells[0].clone();
     ir.geometry.shells = vec![Shell::new(shell.clone(), ir.geometry.regions[0].id.clone())];
     for face in &mut ir.geometry.faces {
@@ -707,7 +707,7 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
 fn persistent_surface_identity_binds_one_face_and_body() {
     let mut ir = model_with_body();
     let face = add_square_face(&mut ir, "persistent", 0.0);
-    set_shell_faces(&mut ir, vec![face.clone()]);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
     ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
@@ -734,7 +734,7 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     let mut ir = model_with_body();
     let first = add_square_face(&mut ir, "first-persistent", 0.0);
     let second = add_square_face(&mut ir, "second-persistent", 3.0);
-    set_shell_faces(&mut ir, vec![first.clone(), second.clone()]);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
     ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
@@ -752,7 +752,7 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     let mut ir = model_with_body();
     let first = add_square_face(&mut ir, "first-mesh", 0.0);
     let second = add_square_face(&mut ir, "second-mesh", 3.0);
-    set_shell_faces(&mut ir, vec![first.clone(), second.clone()]);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
     ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
@@ -797,7 +797,7 @@ fn persistent_surface_identity_preserves_empty_zero_length_and_tail_order() {
         });
         faces.push(face);
     }
-    set_shell_faces(&mut ir, faces.clone());
+    set_shell_faces(&mut ir, &faces);
     assert_eq!(
         assign_persistent_owners(&mut ir, &identities, &bindings).len(),
         5
@@ -812,7 +812,7 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
     let mut ir = model_with_body();
     let first = add_square_face(&mut ir, "first-tail", 0.0);
     let second = add_square_face(&mut ir, "second-tail", 3.0);
-    set_shell_faces(&mut ir, vec![first.clone(), second.clone()]);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
     ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
@@ -844,7 +844,7 @@ fn face_key_binds_one_table_to_one_face_and_body() {
     let mut ir = model_with_body();
     let first = add_square_face(&mut ir, "first-key", 0.0);
     let second = add_square_face(&mut ir, "second-key", 0.0);
-    set_shell_faces(&mut ir, vec![first.clone(), second.clone()]);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
     ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
@@ -870,7 +870,7 @@ fn repeated_face_key_on_two_faces_or_two_tables_binds_nothing() {
     let mut ir = model_with_body();
     let first = add_square_face(&mut ir, "first-repeat", 0.0);
     let second = add_square_face(&mut ir, "second-repeat", 3.0);
-    set_shell_faces(&mut ir, vec![first.clone(), second.clone()]);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
     ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
@@ -968,7 +968,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
     let mut ir = model_with_body();
     let first = add_square_face(&mut ir, "first", -4.0);
     let second = add_square_face(&mut ir, "second", 2.0);
-    set_shell_faces(&mut ir, vec![first.clone(), second.clone()]);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
     ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#mesh")
@@ -1013,7 +1013,7 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
     let mut ir = model_with_body();
     let lower = add_cylindrical_patch_face(&mut ir, "lower", 0.0, 1.0);
     let upper = add_cylindrical_patch_face(&mut ir, "upper", 2.0, 3.0);
-    set_shell_faces(&mut ir, vec![lower.clone(), upper.clone()]);
+    set_shell_faces(&mut ir, &[lower.clone(), upper.clone()]);
     ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
@@ -1048,7 +1048,7 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
 fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     let mut ir = model_with_body();
     let face = add_cylindrical_patch_face(&mut ir, "chordal", 0.0, 1.0);
-    set_shell_faces(&mut ir, vec![face.clone()]);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
     let deflection = 0.1;
     ir.model.tessellations.push(
         Tessellation::new(
@@ -1089,7 +1089,7 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
 fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     let mut ir = model_with_body();
     let face = add_cylindrical_patch_face(&mut ir, "inconsistent-normals", 0.0, 1.0);
-    set_shell_faces(&mut ir, vec![face.clone()]);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
     let deflection = 0.1;
     ir.model.tessellations.push(
         Tessellation::new(
@@ -1130,7 +1130,7 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
 fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
     let mut ir = model_with_body();
     let face = add_square_face(&mut ir, "off-surface", 0.0);
-    set_shell_faces(&mut ir, vec![face]);
+    set_shell_faces(&mut ir, &[face]);
     ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
@@ -1217,7 +1217,7 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         test_nurbs_corners(&surface),
     );
-    set_shell_faces(&mut ir, vec![face.clone()]);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
     let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
         .map(|(u, v)| {
             cadmpeg_ir::eval::decode::nurbs_surface_point(
@@ -1258,7 +1258,7 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         test_nurbs_corners(&surface),
     );
-    set_shell_faces(&mut ir, vec![face]);
+    set_shell_faces(&mut ir, &[face]);
     let samples =
         [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)].map(|(u, v)| test_nurbs_point_normal(&surface, u, v));
     let deflection = 0.02;
@@ -1307,7 +1307,7 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
     );
     {
         for face in [first, second] {
-            set_shell_faces(&mut ir, vec![face]);
+            set_shell_faces(&mut ir, &[face]);
         }
     };
     ir.model.tessellations.push(
@@ -1367,7 +1367,7 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
     );
     {
         for face in [nurbs_face, plane_face] {
-            set_shell_faces(&mut ir, vec![face]);
+            set_shell_faces(&mut ir, &[face]);
         }
     };
     ir.model.tessellations.push(

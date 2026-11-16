@@ -163,11 +163,11 @@ fn reversed_use_preserves_native_line_and_endpoint_parameterization() {
             .get()
     };
     assert_eq!(
-        point(&edge.ends.as_ref().unwrap().start),
+        point(&edge.ends.as_ref().expect("edge has vertices").start),
         Point3::new(4.0, 0.0, 0.0)
     );
     assert_eq!(
-        point(&edge.ends.as_ref().unwrap().end),
+        point(&edge.ends.as_ref().expect("edge has vertices").end),
         Point3::new(0.0, 0.0, 0.0)
     );
     assert_eq!(ir.geometry.coedges[0].sense, Sense::Reversed);

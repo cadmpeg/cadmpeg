@@ -1612,7 +1612,7 @@ Co 1001000 +2 1 +2 3 *
         .geometry
         .edges
         .iter()
-        .flat_map(|edge| edge.vertices())
+        .flat_map(cadmpeg_ir::topology::Edge::vertices)
         .map(|vertex| {
             let vertex = result
                 .ir()

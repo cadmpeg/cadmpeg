@@ -87,7 +87,7 @@ pub(super) fn admit(
         let fit = construction
             .and_then(cadmpeg_ir::geometry::ProceduralCurve::cache_fit_tolerance)
             .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
-        for (side, id) in edge.vertices().into_iter().enumerate() {
+        for (side, id) in edge.vertices().enumerate() {
             if !candidates.contains(id.as_str()) {
                 continue;
             }

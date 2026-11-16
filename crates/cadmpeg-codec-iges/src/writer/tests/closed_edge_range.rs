@@ -155,7 +155,7 @@ fn closed_edge_on_a_line_without_range_is_refused() {
 fn open_circle_edge_without_range_is_refused() {
     let ir = vertices_at(&[Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)]);
     let mut edge = closed_edge("arc", "circle", "v0");
-    edge.ends.as_mut().unwrap().end =
+    edge.ends.as_mut().expect("edge has vertices").end =
         VertexId::mint("test:model:vertex#v1").expect("identity grammar");
     assert!(refusal(&ir, &edge, &circle()).starts_with(MISSING_RANGE));
 }

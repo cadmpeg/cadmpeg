@@ -1129,7 +1129,7 @@ pub(super) fn validate_source_less_body_kinds(
             .iter()
             .filter(|shell| shell_ids.contains(&shell.id))
             .any(|shell| {
-                !shell.wire_edges().next().is_none() || !shell.free_vertices().next().is_none()
+                shell.wire_edges().next().is_some() || shell.free_vertices().next().is_some()
             });
         let loop_ids = geometry
             .faces

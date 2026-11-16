@@ -404,11 +404,12 @@ fn patch_asm_geometry(
         if let Some((color, carrier)) = color_records.get(&record.index) {
             match carrier {
                 DirectColorCarrier::NormalizedRgb { fields } => {
-                    for (index, value) in fields.iter().copied().zip([
-                        f64::from(color.r()),
-                        f64::from(color.g()),
-                        f64::from(color.b()),
-                    ]) {
+                    for (index, value) in
+                        fields
+                            .iter()
+                            .copied()
+                            .zip([color.r(), color.g(), color.b()])
+                    {
                         let offset =
                             asm_edits.required_payload_field(bytes, record, index, 0x06)?;
                         AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;

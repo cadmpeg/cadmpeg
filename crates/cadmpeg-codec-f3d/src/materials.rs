@@ -208,7 +208,7 @@ fn write_color(out: &mut [u8], offset: usize, color: Option<Color>) -> Result<()
         .enumerate()
     {
         let at = offset + ordinal * 8;
-        out[at..at + 8].copy_from_slice(&f64::from(value).to_le_bytes());
+        out[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
 }
@@ -440,7 +440,7 @@ fn patch_instance_colors(
                 patch_logical_f64(
                     bytes,
                     frame.logical_offset() + relative + ordinal * 8,
-                    f64::from(value),
+                    value,
                 )?;
             }
         }
