@@ -35,15 +35,57 @@ pub(super) struct DirectPose {
     source_root_record_index: u64,
 }
 
+/// Grammar of an operation table between its name and its entry run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TableForm {
+    /// A two-byte zero run and a one-reference path.
+    ShortRun,
+    /// A six-byte zero run and a one-reference path.
+    LongRun,
+    /// A six-byte zero run, a path of one or two references, and the path-ordinal field.
+    PathOrdinals,
+}
+
+impl TableForm {
+    const ALL: [Self; 3] = [Self::ShortRun, Self::LongRun, Self::PathOrdinals];
+
+    fn of_version(version: u32) -> Option<Self> {
+        match version {
+            0 => Some(Self::ShortRun),
+            1..=3 => Some(Self::LongRun),
+            4 => Some(Self::PathOrdinals),
+            _ => None,
+        }
+    }
+
+    fn zero_run(self) -> usize {
+        match self {
+            Self::ShortRun => 2,
+            Self::LongRun | Self::PathOrdinals => 6,
+        }
+    }
+
+    fn path_lengths(self) -> std::ops::RangeInclusive<u32> {
+        match self {
+            Self::ShortRun | Self::LongRun => 1..=1,
+            Self::PathOrdinals => 1..=2,
+        }
+    }
+}
+
+/// Marker byte of the path-ordinal field that follows an explicit occurrence path.
+const PATH_ORDINAL_FIELD: u8 = 2;
+
 pub(super) fn parse(body: &[u8]) -> Option<DirectPose> {
-    let mut matches = [2, 6]
+    let mut matches = TableForm::ALL
         .into_iter()
-        .filter_map(|prefix| parse_prefix(body, prefix));
+        .filter_map(|form| parse_form(body, form));
     let result = matches.next()?;
     matches.next().is_none().then_some(result)
 }
 
-fn parse_prefix(body: &[u8], prefix: usize) -> Option<DirectPose> {
+fn parse_form(body: &[u8], form: TableForm) -> Option<DirectPose> {
+    let prefix = form.zero_run();
     class_tag(body)?;
     let (name, mut at) = lp_ascii_strict(body, header::LEN, 0..=body.len())?;
     if !name.is_ascii() {
@@ -60,16 +102,31 @@ fn parse_prefix(body: &[u8], prefix: usize) -> Option<DirectPose> {
     for _ in 0..deps {
         take_owned_reference(body, &mut at)?;
     }
-    if View::u32_le_at(body, at)? != 1 {
+    let path = View::u32_le_at(body, at)?;
+    if !form.path_lengths().contains(&path) {
         return None;
     }
     at += 4;
-    let (target, inline) = take_owned_reference(body, &mut at)?.into_local()?;
-    if target == 0
-        || inline
-            .is_some_and(|guid| !guid.eq_ignore_ascii_case(super::OCCURRENCE_PLACEMENT_TYPE_GUID))
-    {
-        return None;
+    let mut target = 0;
+    for _ in 0..path {
+        let (placement, inline) = take_owned_reference(body, &mut at)?.into_local()?;
+        if placement == 0
+            || inline.is_some_and(|guid| {
+                !guid.eq_ignore_ascii_case(super::OCCURRENCE_PLACEMENT_TYPE_GUID)
+            })
+        {
+            return None;
+        }
+        target = placement;
+    }
+    if form == TableForm::PathOrdinals {
+        if body.get(at) != Some(&PATH_ORDINAL_FIELD) || View::u32_le_at(body, at + 1)? != path {
+            return None;
+        }
+        at += 5;
+        let ordinals = usize::try_from(path).ok()?.checked_mul(4)?;
+        body.get(at..at.checked_add(ordinals)?)?;
+        at += ordinals;
     }
     let (source_root_record_index, root_type) =
         take_owned_reference(body, &mut at)?.into_local()?;
@@ -177,7 +234,7 @@ fn read(
                 table.native += 1;
                 continue;
             };
-            if *version > 1 {
+            if TableForm::of_version(*version).is_none() {
                 table.native += 1;
                 continue;
             }
@@ -206,14 +263,9 @@ fn register(
     body: &[u8],
     version: Option<u32>,
 ) -> Result<(), CodecError> {
-    let pose = version.and_then(|version| {
-        let prefix = match version {
-            0 => 2,
-            1 => 6,
-            _ => return None,
-        };
-        parse(body).filter(|_| parse_prefix(body, prefix).is_some())
-    });
+    let pose = version
+        .and_then(TableForm::of_version)
+        .and_then(|form| parse(body).filter(|_| parse_form(body, form).is_some()));
     let Some(pose) = pose else {
         table.native += 1;
         return Ok(());
