@@ -525,6 +525,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "ce9cac2678daa54716885214e3e7909ed3bb11cad1dd6587b6f82c0829992089",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

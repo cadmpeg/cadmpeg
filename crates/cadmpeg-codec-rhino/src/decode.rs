@@ -2761,10 +2761,21 @@ impl<'a> DecodeContext<'a> {
             )
         };
         let notes = vec![note];
-        let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+            self.annotations,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(self.scan.data),
+        );
         let (mut ir, unknowns) = self.session.into_parts();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
+        let untyped = self
+            .opaque_records
+            .iter()
+            .map(|record| record.id().clone())
+            .collect::<Vec<_>>();
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
+        for id in untyped {
+            source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
+        }
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.

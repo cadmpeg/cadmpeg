@@ -431,12 +431,6 @@
     },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "284",
-        "bytes_typed": "1459",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "37",
         "schema": "CONFIG_CONTROL_DESIGN"
       },
       "identity": {
@@ -468,7 +462,14 @@
     }
   },
   "report": {
-    "coverage": {},
+    "coverage": {
+      "bytes_named_opaque": 0,
+      "bytes_structural": 284,
+      "bytes_typed": 1459,
+      "bytes_unclassified": 0,
+      "data_sections": 1,
+      "entity_instances": 37
+    },
     "identity": {
       "dialects": {
         "extra": [],
@@ -516,6 +517,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "6b413e93728e96c93d6adde4d7a43a3dd5b181627bdbe28f20859891d5a78f62",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

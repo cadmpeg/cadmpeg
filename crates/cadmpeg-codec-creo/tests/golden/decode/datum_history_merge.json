@@ -156,20 +156,12 @@
     },
     "source": {
       "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "172",
-        "section.0.length": "57",
         "section.0.name": "ActDatums",
-        "section.0.offset": "76",
         "section.0.raw_name": "ActDatums",
         "section.0.role": "psb-geometry",
-        "section.1.length": "39",
         "section.1.name": "MdlStatus",
-        "section.1.offset": "133",
         "section.1.raw_name": "MdlStatus",
         "section.1.role": "metadata",
-        "section_count": "2",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
@@ -722,6 +714,8 @@
         }
       }
     },
+    "decode_digest": "c9fba683693f9d97b4474c4a67e95f209652e66c751df334e994f0fd9f96053b",
+    "file_digests": {},
     "retained_records": {
       "creo:ActDatums:section#76": {
         "bytes": {
@@ -729,8 +723,14 @@
           "kind": "inline"
         },
         "offset": 76,
-        "stream": "creo:ActDatums"
+        "stream": "creo:ActDatums",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

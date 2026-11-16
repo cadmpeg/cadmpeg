@@ -376,6 +376,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "cdcf90b5e739e3a4a0c5ffa417e06218c751dc9133da3502d6d98bdb38ea9132",
+    "file_digests": {},
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -383,8 +385,10 @@
           "kind": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

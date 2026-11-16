@@ -851,6 +851,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "e65515748a632b4805cdb668ccd7d59209a552814cfffb7d85dbd601fba6f646",
+    "file_digests": {},
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -858,8 +860,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

@@ -4612,21 +4612,7 @@
         "process": true
       },
       "source": {
-        "attributes": {
-          "classified_offset_store_control_count": "0",
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "2082",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "2068",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "offset_store_control_count": "1",
-          "partition_streams": "0",
-          "plain_streams": "0",
-          "unclassified_offset_store_control_count": "1"
-        },
+        "attributes": {},
         "identity": {
           "dialects": {
             "extra": [],
@@ -5317,6 +5303,8 @@
           }
         }
       },
+      "decode_digest": "af297f9d01a582b6a4a23835fb95346885065faa094a5524077554ed4905ebb5",
+      "file_digests": {},
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {
@@ -5324,7 +5312,11 @@
             "kind": "inline"
           },
           "offset": 1548,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model",
+            "design"
+          ]
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -5332,7 +5324,8 @@
             "kind": "inline"
           },
           "offset": 1564,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -5340,7 +5333,8 @@
             "kind": "inline"
           },
           "offset": 1586,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#3": {
           "bytes": {
@@ -5348,7 +5342,8 @@
             "kind": "inline"
           },
           "offset": 1599,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#4": {
           "bytes": {
@@ -5356,7 +5351,8 @@
             "kind": "inline"
           },
           "offset": 1813,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#5": {
           "bytes": {
@@ -5364,7 +5360,8 @@
             "kind": "inline"
           },
           "offset": 1814,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#6": {
           "bytes": {
@@ -5372,9 +5369,14 @@
             "kind": "inline"
           },
           "offset": 1854,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": [
+        "model",
+        "design"
+      ]
     }
   },
   "inspect": {

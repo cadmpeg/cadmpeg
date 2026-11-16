@@ -32,6 +32,7 @@
 
 mod archive;
 mod codec;
+mod coverage;
 mod dialect;
 mod export;
 mod geometry;

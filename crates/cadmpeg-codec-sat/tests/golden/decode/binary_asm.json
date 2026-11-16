@@ -169,7 +169,6 @@
     "source": {
       "attributes": {
         "acis_save_format_version": "23200",
-        "kernel_entity_count": "2",
         "kernel_family": "asm",
         "kernel_flags": "2",
         "product_family": "Autodesk Neutron",
@@ -296,6 +295,9 @@
         }
       }
     },
-    "retained_records": {}
+    "decode_digest": "d52eb8efa2520df0b1e2836c7cc1194767974be8cb32dd83a806f1e11dcb629a",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

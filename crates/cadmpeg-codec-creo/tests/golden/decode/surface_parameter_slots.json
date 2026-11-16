@@ -182,17 +182,9 @@
     },
     "source": {
       "attributes": {
-        "crv_array_count": "0",
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "130",
-        "section.0.length": "54",
         "section.0.name": "VisibGeom",
-        "section.0.offset": "76",
         "section.0.raw_name": "VisibGeom",
         "section.0.role": "psb-geometry",
-        "section_count": "1",
-        "srf_array_count": "1",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
@@ -739,6 +731,8 @@
         }
       }
     },
+    "decode_digest": "c62456af77af8b332a818f84e9e79681809ee71e818584f7c1bd94f5133314ca",
+    "file_digests": {},
     "retained_records": {
       "creo:VisibGeom:section#76": {
         "bytes": {
@@ -746,8 +740,14 @@
           "kind": "inline"
         },
         "offset": 76,
-        "stream": "creo:VisibGeom"
+        "stream": "creo:VisibGeom",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

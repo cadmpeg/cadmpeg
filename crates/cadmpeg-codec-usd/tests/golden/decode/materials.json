@@ -574,6 +574,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "3ec1b069b0036eaa0e84b2a4edb7c4ba01b3baae79cad391a99df09891c28b6d",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }
