@@ -21,7 +21,7 @@ fn review1368_compatible_partial_preserves_complete_membership() {
         },
     )
     .unwrap();
-    let result = form_cages::retain_knowledge(&complete, &partial).unwrap();
+    let result = retain_ungrouped(&complete, &partial).unwrap();
     assert!(result.membership_is_complete());
     assert_eq!(
         result
@@ -64,7 +64,7 @@ fn review1368_unknown_to_inactive_preserves_valid_partial_evidence() {
     };
     let old = make(FormResourceAvailability::Unknown, true);
     let new = make(FormResourceAvailability::Inactive, false);
-    let result = form_cages::retain_knowledge(&old, &new);
+    let result = retain_ungrouped(&old, &new);
     assert!(result.is_ok());
 }
 
@@ -76,7 +76,7 @@ fn form_enrichment_keeps_existing_complete_and_partial_knowledge() {
         ])
         .unwrap();
     assert_eq!(
-        form_cages::retain_knowledge(&complete, &FormConstruction::default()).unwrap(),
+        retain_ungrouped(&complete, &FormConstruction::default()).unwrap(),
         complete
     );
     let partial = FormConstruction::try_new(
@@ -93,7 +93,7 @@ fn form_enrichment_keeps_existing_complete_and_partial_knowledge() {
     )
     .unwrap();
     assert_eq!(
-        form_cages::retain_knowledge(&partial, &FormConstruction::default()).unwrap(),
+        retain_ungrouped(&partial, &FormConstruction::default()).unwrap(),
         partial
     );
 }
@@ -123,7 +123,7 @@ fn form_review_reproduces_independent_partial_members() {
         )
         .unwrap()
     };
-    let result = form_cages::retain_knowledge(&partial(old, 0), &partial(new, 1)).unwrap();
+    let result = retain_ungrouped(&partial(old, 0), &partial(new, 1)).unwrap();
     assert_eq!(
         result
             .committed_cages()
@@ -166,7 +166,7 @@ fn form_enrichment_retains_conflicting_positions_and_cardinalities() {
         )
         .unwrap()
     };
-    let result = form_cages::retain_knowledge(&make(2, 0), &make(3, 1)).unwrap();
+    let result = retain_ungrouped(&make(2, 0), &make(3, 1)).unwrap();
     assert!(
         matches!(result.membership(), FormMembership::Partial { cardinality: None, order: FormOrder::Unknown, members } if members[0].ordinal.is_none())
     );
@@ -181,10 +181,7 @@ fn form_enrichment_retains_conflicting_positions_and_cardinalities() {
             .collect::<Vec<_>>(),
         [0, 1]
     );
-    assert_eq!(
-        form_cages::retain_knowledge(&result, &make(3, 1)).unwrap(),
-        result
-    );
+    assert_eq!(retain_ungrouped(&result, &make(3, 1)).unwrap(), result);
 }
 
 #[test]
@@ -228,12 +225,9 @@ fn form_enrichment_upgrades_resource_evidence_in_both_directions() {
     };
     let a = make(false);
     let b = make(true);
-    let upgraded = form_cages::retain_knowledge(&a, &b).unwrap();
-    assert_eq!(form_cages::retain_knowledge(&b, &a).unwrap(), upgraded);
-    assert_eq!(
-        form_cages::retain_knowledge(&upgraded, &b).unwrap(),
-        upgraded
-    );
+    let upgraded = retain_ungrouped(&a, &b).unwrap();
+    assert_eq!(retain_ungrouped(&b, &a).unwrap(), upgraded);
+    assert_eq!(retain_ungrouped(&upgraded, &b).unwrap(), upgraded);
     assert_eq!(upgraded.observations().len(), 1);
     assert_eq!(upgraded.observations()[0].paths.len(), 2);
     assert_eq!(upgraded.inputs().resource_evidence.len(), 2);
@@ -271,7 +265,7 @@ fn form_enrichment_records_conflicting_cages_for_one_resource() {
         .unwrap()
     };
     let newer = make("f3d:model:subd#b");
-    let result = form_cages::retain_knowledge(&make("f3d:model:subd#a"), &newer).unwrap();
+    let result = retain_ungrouped(&make("f3d:model:subd#a"), &newer).unwrap();
     assert!(!result.membership_is_complete());
     assert_eq!(
         result
@@ -306,10 +300,7 @@ fn form_enrichment_records_conflicting_cages_for_one_resource() {
         2
     );
     assert_eq!(result.inputs().resource_evidence, [resource]);
-    assert_eq!(
-        form_cages::retain_knowledge(&result, &newer).unwrap(),
-        result
-    );
+    assert_eq!(retain_ungrouped(&result, &newer).unwrap(), result);
 }
 
 #[test]
@@ -523,7 +514,10 @@ fn form_partial_owned_list_and_complete_body_keep_both_members_and_conflicts() {
                 stream: "FusionAssetName[Active]/Design1/BulkStream.dat",
             };
             let types = FormRecordTypes::of(&meta);
-            let serializers = form_cages::form_serializers(ctx, &bytes, &records, Some(&types))?;
+            let mut serializers =
+                form_cages::form_serializers(ctx, &bytes, &records, Some(&types))?;
+            let mut groups = form_cages::ReferenceGroups::default();
+            form_cages::bind_serializers(ctx, source, &mut serializers, &mut groups)?;
             form_cages::retain_unbound_serializers(
                 ctx,
                 scan,
@@ -537,7 +531,7 @@ fn form_partial_owned_list_and_complete_body_keep_both_members_and_conflicts() {
                 scan,
                 source,
                 (&types, &serializers),
-                &mut facts,
+                (&mut facts, &mut groups),
                 Some(ordinary),
                 &mut Vec::new(),
             )?;
@@ -594,9 +588,8 @@ fn form_repeated_and_distinct_lists_keep_direct_inputs_and_each_source_slot() {
     let mut rows: Vec<cadmpeg_ir::features::Feature> = vec![serde_json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"native_ref":scope.id,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
-            form_cages::project_forms(
+            form_cages::FormProjection::new(scan).project(
                 ctx,
-                scan,
                 std::slice::from_ref(&scope),
                 &mut rows,
                 &[],
@@ -669,9 +662,8 @@ fn ordinary_form_list_keeps_valid_positions_around_a_malformed_slot_and_full_nat
         let mut rows: Vec<cadmpeg_ir::features::Feature> = vec![serde_json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"native_ref":scope.id,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
-                form_cages::project_forms(
+                form_cages::FormProjection::new(scan).project(
                     ctx,
-                    scan,
                     std::slice::from_ref(&scope),
                     &mut rows,
                     &[],
@@ -912,10 +904,13 @@ fn form_competing_body_runs_retain_each_real_owner_without_cross_owner_paths() {
             .filter(|evidence| evidence.source.as_str().ends_with("#300") && evidence.ordinal == 0)
             .collect::<Vec<_>>();
         assert_eq!(owner_targets.len(), 2);
-        assert_ne!(owner_targets[0].run, owner_targets[1].run);
+        assert!(owner_targets
+            .iter()
+            .all(|reference| reference.group.is_some()));
+        assert_ne!(owner_targets[0].group, owner_targets[1].group);
         for (owner_ref, surface_id) in [("#201", "#296"), ("#202", "#496")] {
-            let owner_run = owner_targets.iter().find(|reference| matches!(&reference.target, FormNativeReferenceTarget::Local { target } if target.as_str().ends_with(owner_ref))).unwrap().run;
-            assert!(result.inputs().reference_evidence.iter().any(|reference| reference.source.as_str().ends_with("#300") && reference.ordinal == 2 && reference.run == owner_run && matches!(&reference.target, FormNativeReferenceTarget::Local { target } if target.as_str().ends_with(surface_id))));
+            let owner_group = owner_targets.iter().find(|reference| matches!(&reference.target, FormNativeReferenceTarget::Local { target } if target.as_str().ends_with(owner_ref))).unwrap().group;
+            assert!(result.inputs().reference_evidence.iter().any(|reference| reference.source.as_str().ends_with("#300") && reference.ordinal == 2 && reference.group == owner_group && matches!(&reference.target, FormNativeReferenceTarget::Local { target } if target.as_str().ends_with(surface_id))));
         }
     }
 }
@@ -1157,6 +1152,7 @@ fn complete_owned_list_does_not_hide_conflicting_body_evidence() {
                 source,
                 std::slice::from_ref(&scope),
                 &mut facts,
+                &mut form_cages::ReferenceGroups::default(),
                 &mut Vec::new(),
             )?;
             let result = FormConstruction::try_new(facts.inputs, facts.observations, membership)

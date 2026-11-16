@@ -85,6 +85,7 @@ fn routed_tracking_construction(
                 },
                 std::slice::from_ref(&scope),
                 &mut facts,
+                &mut super::super::ReferenceGroups::default(),
                 &mut Vec::new(),
             )?;
             result = Some(

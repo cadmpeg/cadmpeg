@@ -308,6 +308,15 @@ fn form_schema_covers_legacy_arrays_and_retained_construction() {
         .iter()
         .any(|field| field == "cage_inputs"));
     let reference_conditions = &schema["$defs"]["FormNativeReference"]["allOf"];
+    let reference_schema = &schema["$defs"]["FormNativeReference"];
+    assert!(reference_schema["properties"].get("group").is_some());
+    assert!(reference_schema["properties"].get("run").is_none());
+    assert!(!reference_schema["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|field| field == "group"));
+    assert_eq!(reference_schema["additionalProperties"], false);
     assert_eq!(
         reference_conditions[0]["if"]["properties"]["target"]["properties"]["kind"]["const"],
         "document"
@@ -337,54 +346,51 @@ fn form_schema_covers_legacy_arrays_and_retained_construction() {
 fn foreign_form_reference_round_trips_and_rewrites_only_typed_local_identities() {
     let original = partial();
     let mut inputs = original.inputs().clone();
-    inputs.reference_evidence = vec![
-        FormNativeReference {
-            source: NativeId::mint("test:stream:record#10").unwrap(),
-            role: FormReferenceRole::Body,
-            ordinal: 1,
-            run: Some(12),
-            inline_type_guid: Some("11111111-1111-4111-8111-111111111111".into()),
-            target: FormNativeReferenceTarget::Local {
-                target: NativeId::mint("test:stream:record#999").unwrap(),
-            },
-            resource: None,
+    let source = NativeId::mint("test:stream:record#10").unwrap();
+    let label = FormReferenceGroup::from_label(12);
+    let mut local = FormNativeReference::new(
+        source.clone(),
+        FormReferenceRole::Body,
+        1,
+        FormNativeReferenceTarget::Local {
+            target: NativeId::mint("test:stream:record#999").unwrap(),
         },
-        FormNativeReference {
-            source: NativeId::mint("test:stream:record#10").unwrap(),
-            role: FormReferenceRole::Body,
-            ordinal: 2,
-            run: Some(12),
-            inline_type_guid: None,
-            target: FormNativeReferenceTarget::Segment {
-                target: 22,
-                segment: 7,
-                asset_guid: None,
-            },
-            resource: None,
+    )
+    .with_group(label);
+    local.inline_type_guid = Some("11111111-1111-4111-8111-111111111111".into());
+    let segment = FormNativeReference::new(
+        source.clone(),
+        FormReferenceRole::Body,
+        2,
+        FormNativeReferenceTarget::Segment {
+            target: 22,
+            segment: 7,
+            asset_guid: None,
         },
-        FormNativeReference {
-            source: NativeId::mint("test:stream:record#10").unwrap(),
-            role: FormReferenceRole::Body,
-            ordinal: 3,
-            run: Some(12),
-            inline_type_guid: None,
-            target: FormNativeReferenceTarget::Document {
-                target: 23,
-                segment: 8,
-                asset_guid: "literal asset".into(),
-                target_type_guid: Some("22222222-2222-4222-8222-222222222222".into()),
-                link_name: "test:stream:record#999".into(),
-                version: Some(FormExternalVersion {
-                    key: "literal-key".into(),
-                    urn: "literal:urn".into(),
-                }),
-            },
-            resource: Some(FormResource {
-                source: NativeId::mint("test:stream:record#77").unwrap(),
-                entry: cadmpeg_core::nonblank_literal!("literal/resource.tsm"),
+    )
+    .with_group(label);
+    let mut document = FormNativeReference::new(
+        source,
+        FormReferenceRole::Body,
+        3,
+        FormNativeReferenceTarget::Document {
+            target: 23,
+            segment: 8,
+            asset_guid: "literal asset".into(),
+            target_type_guid: Some("22222222-2222-4222-8222-222222222222".into()),
+            link_name: "test:stream:record#999".into(),
+            version: Some(FormExternalVersion {
+                key: "literal-key".into(),
+                urn: "literal:urn".into(),
             }),
         },
-    ];
+    )
+    .with_group(label);
+    document.resource = Some(FormResource {
+        source: NativeId::mint("test:stream:record#77").unwrap(),
+        entry: cadmpeg_core::nonblank_literal!("literal/resource.tsm"),
+    });
+    inputs.reference_evidence = vec![local, segment, document];
     inputs.position_evidence = vec![FormPositionEvidence {
         source: Some(inputs.lists[0].source.clone()),
         observation: FormObservationIndex(0),
@@ -416,6 +422,9 @@ fn foreign_form_reference_round_trips_and_rewrites_only_typed_local_identities()
     })
     .unwrap();
     let evidence = &rewritten.inputs().reference_evidence;
+    assert!(evidence
+        .iter()
+        .all(|fact| fact.group == Some(FormReferenceGroup::from_label(12))));
     assert_eq!(evidence[0].source.as_str(), "test:instance:record#10");
     assert!(
         matches!(&evidence[0].target, FormNativeReferenceTarget::Local { target } if target.as_str() == "test:instance:record#999")
@@ -679,6 +688,57 @@ fn form_wire_rejects_duplicate_evidence_and_invalid_type_claims() {
             serde_json::json!(true);
         assert!(serde_json::from_value::<FormConstruction>(unexpected).is_err());
     }
+}
+
+#[test]
+fn form_reference_group_wire_rejects_null_old_names_and_out_of_range_values() {
+    let plain = serde_json::json!({
+        "source": "test:stream:record#1", "role": "body", "ordinal": 0,
+        "target": {"kind": "unreadable"}
+    });
+    let absent: FormNativeReference = serde_json::from_value(plain.clone()).unwrap();
+    assert_eq!(absent.group, None);
+    assert_eq!(serde_json::to_value(absent.clone()).unwrap(), plain);
+    for value in [
+        serde_json::Value::Null,
+        serde_json::json!(-1),
+        serde_json::json!(1.5),
+    ] {
+        let mut bad = plain.clone();
+        bad["group"] = value;
+        assert!(serde_json::from_value::<FormNativeReference>(bad).is_err());
+    }
+    let too_large = r#"{"source":"test:stream:record#1","role":"body","ordinal":0,"group":18446744073709551616,"target":{"kind":"unreadable"}}"#;
+    assert!(serde_json::from_str::<FormNativeReference>(too_large).is_err());
+    let mut old = plain.clone();
+    old["run"] = serde_json::json!(12);
+    assert!(serde_json::from_value::<FormNativeReference>(old).is_err());
+    let mut maximum = plain;
+    maximum["group"] = serde_json::json!(u64::MAX);
+    let maximum: FormNativeReference = serde_json::from_value(maximum).unwrap();
+    assert_eq!(
+        maximum.group,
+        Some(FormReferenceGroup::from_label(u64::MAX))
+    );
+
+    let mut inputs = FormInputs {
+        reference_evidence: vec![absent.clone(), absent.clone()],
+        ..FormInputs::default()
+    };
+    assert!(FormConstruction::try_new(
+        inputs.clone(),
+        vec![],
+        FormConstruction::default().membership().clone()
+    )
+    .is_err());
+    inputs.reference_evidence[0] = absent.clone().with_group(FormReferenceGroup::from_label(1));
+    inputs.reference_evidence[1] = absent.with_group(FormReferenceGroup::from_label(2));
+    assert!(FormConstruction::try_new(
+        inputs,
+        vec![],
+        FormConstruction::default().membership().clone()
+    )
+    .is_ok());
 }
 #[test]
 fn complete_form_rejects_ambiguous_resource_state_evidence() {

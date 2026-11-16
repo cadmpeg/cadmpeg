@@ -24,7 +24,7 @@ fn review1368_compatible_membership_refines_positions_in_both_directions() {
         .unwrap()
     };
     for (left, right) in [(&full, &partial(Some(0))), (&partial(Some(0)), &full)] {
-        let result = form_cages::retain_knowledge(left, right).unwrap();
+        let result = retain_ungrouped(left, right).unwrap();
         assert!(result.membership_is_complete());
         assert_eq!(
             result
@@ -33,23 +33,17 @@ fn review1368_compatible_membership_refines_positions_in_both_directions() {
                 .collect::<Vec<_>>(),
             ["f3d:model:subd#a", "f3d:model:subd#b"]
         );
-        assert_eq!(
-            form_cages::retain_knowledge(&result, right).unwrap(),
-            result
-        );
+        assert_eq!(retain_ungrouped(&result, right).unwrap(), result);
     }
     let unknown = partial(None);
     let known = partial(Some(0));
     for (left, right) in [(&unknown, &known), (&known, &unknown)] {
-        let result = form_cages::retain_knowledge(left, right).unwrap();
+        let result = retain_ungrouped(left, right).unwrap();
         assert!(
             matches!(result.membership(), FormMembership::Partial { members, .. }
             if members.len() == 1 && members[0].ordinal == Some(0))
         );
-        assert_eq!(
-            form_cages::retain_knowledge(&result, right).unwrap(),
-            result
-        );
+        assert_eq!(retain_ungrouped(&result, right).unwrap(), result);
     }
 }
 
@@ -74,7 +68,7 @@ fn review1368_direct_reference_runs_keep_prefixes_repetitions_and_conflicts() {
     let short = make(&[210, 210]);
     let long = make(&[210, 210, 220]);
     for (left, right) in [(&short, &long), (&long, &short)] {
-        let result = form_cages::retain_knowledge(left, right).unwrap();
+        let result = retain_ungrouped(left, right).unwrap();
         assert_eq!(
             result
                 .inputs()
@@ -89,19 +83,13 @@ fn review1368_direct_reference_runs_keep_prefixes_repetitions_and_conflicts() {
             ]
         );
         assert!(result.inputs().reference_runs.is_empty());
-        assert_eq!(
-            form_cages::retain_knowledge(&result, right).unwrap(),
-            result
-        );
+        assert_eq!(retain_ungrouped(&result, right).unwrap(), result);
     }
     let other = make(&[210, 220, 210]);
-    let conflict = form_cages::retain_knowledge(&long, &other).unwrap();
+    let conflict = retain_ungrouped(&long, &other).unwrap();
     assert!(conflict.inputs().references.is_empty());
     assert_eq!(conflict.inputs().reference_runs.len(), 2);
-    assert_eq!(
-        form_cages::retain_knowledge(&conflict, &other).unwrap(),
-        conflict
-    );
+    assert_eq!(retain_ungrouped(&conflict, &other).unwrap(), conflict);
 }
 
 #[test]
@@ -367,7 +355,7 @@ fn review1368_resource_state_cross_product_remains_valid_and_idempotent() {
         for right in 0..4 {
             let old = make(left);
             let fresh = make(right);
-            let result = form_cages::retain_knowledge(&old, &fresh).unwrap();
+            let result = retain_ungrouped(&old, &fresh).unwrap();
             let FormMembership::Partial { members, .. } = result.membership() else {
                 panic!("partial");
             };
@@ -394,7 +382,7 @@ fn review1368_resource_state_cross_product_remains_valid_and_idempotent() {
                         && claim.availability == FormResourceAvailability::Inactive));
             }
             assert_eq!(
-                form_cages::retain_knowledge(&result, &fresh).unwrap(),
+                retain_ungrouped(&result, &fresh).unwrap(),
                 result,
                 "{left}, {right}"
             );
@@ -444,7 +432,7 @@ fn review1368_supplemental_inactive_state_reconciles_selected_resource() {
         )
         .unwrap();
         for (old, fresh) in [(&selected, &inactive), (&inactive, &selected)] {
-            let result = form_cages::retain_knowledge(old, fresh).unwrap();
+            let result = retain_ungrouped(old, fresh).unwrap();
             assert!(matches!(
                 result.observations()[0].binding,
                 FormCageBinding::Undecoded {
@@ -467,10 +455,7 @@ fn review1368_supplemental_inactive_state_reconciles_selected_resource() {
                     .iter()
                     .any(|claim| claim.availability == availability));
             }
-            assert_eq!(
-                form_cages::retain_knowledge(&result, fresh).unwrap(),
-                result
-            );
+            assert_eq!(retain_ungrouped(&result, fresh).unwrap(), result);
         }
     }
 }
@@ -627,6 +612,7 @@ fn review1368_serializer_primary_identity_is_global_across_routes() {
                     source,
                     std::slice::from_ref(&scope),
                     &mut facts,
+                    &mut form_cages::ReferenceGroups::default(),
                     &mut Vec::new(),
                 )?;
                 result = Some(
@@ -684,7 +670,7 @@ fn review1368_serializer_null_and_unreadable_slots_remain_distinct() {
             .any(
                 |reference| reference.role == FormReferenceRole::SerializerSurface
                     && reference.ordinal == 0
-                    && reference.run.is_some()
+                    && reference.group.is_some()
                     && reference.target == expected
             ));
         assert_eq!(result.inputs().resource_evidence.len(), 1);
@@ -709,7 +695,7 @@ fn review1368_source_certainty_refines_compatible_complete_claims() {
     )
     .unwrap();
     for (old, new) in [(&source, &assumed), (&assumed, &source)] {
-        let result = form_cages::retain_knowledge(old, new).unwrap();
+        let result = retain_ungrouped(old, new).unwrap();
         assert!(matches!(
             result.membership(),
             FormMembership::Complete {
@@ -718,7 +704,7 @@ fn review1368_source_certainty_refines_compatible_complete_claims() {
                 ..
             }
         ));
-        assert_eq!(form_cages::retain_knowledge(&result, new).unwrap(), result);
+        assert_eq!(retain_ungrouped(&result, new).unwrap(), result);
     }
     let partial = FormConstruction::try_new(
         FormInputs::default(),
@@ -734,7 +720,7 @@ fn review1368_source_certainty_refines_compatible_complete_claims() {
     )
     .unwrap();
     for (old, new) in [(&assumed, &partial), (&partial, &assumed)] {
-        let result = form_cages::retain_knowledge(old, new).unwrap();
+        let result = retain_ungrouped(old, new).unwrap();
         assert!(matches!(
             result.membership(),
             FormMembership::Complete {
@@ -945,8 +931,12 @@ fn review1368_qualified_asset_text_obeys_retained_byte_limit() {
         facts.reference(
             &ctx,
             &scope,
-            300,
-            (FormReferenceRole::Body, 1, Some(0)),
+            form_cages::BoundGroup {
+                source: 300,
+                role: FormReferenceRole::Body,
+                label: FormReferenceGroup::from_label(0),
+            }
+            .slot(1),
             &reference,
             None
         ),
@@ -1010,7 +1000,7 @@ fn review1368_partial_relative_orders_reconcile_without_inventing_order() {
         (&complete, &reversed),
         (&reversed, &complete),
     ] {
-        let result = form_cages::retain_knowledge(old, fresh).unwrap();
+        let result = retain_ungrouped(old, fresh).unwrap();
         assert!(
             matches!(result.membership(), FormMembership::Partial { order: FormOrder::Unknown, members, .. } if members.len() == 2)
         );
@@ -1024,13 +1014,10 @@ fn review1368_partial_relative_orders_reconcile_without_inventing_order() {
             .order_evidence
             .iter()
             .any(|claim| claim.members == [FormObservationIndex(1), FormObservationIndex(0)]));
-        assert_eq!(
-            form_cages::retain_knowledge(&result, fresh).unwrap(),
-            result
-        );
+        assert_eq!(retain_ungrouped(&result, fresh).unwrap(), result);
     }
     for (old, fresh) in [(&complete, &ordered), (&ordered, &complete)] {
-        let result = form_cages::retain_knowledge(old, fresh).unwrap();
+        let result = retain_ungrouped(old, fresh).unwrap();
         assert!(result.membership_is_complete());
         assert_eq!(
             result
@@ -1068,7 +1055,7 @@ fn review1368_single_member_orders_do_not_order_independent_members() {
         let first = partial(0);
         let second = partial(1);
         for (old, fresh) in [(&first, &second), (&second, &first)] {
-            let result = form_cages::retain_knowledge(old, fresh).unwrap();
+            let result = retain_ungrouped(old, fresh).unwrap();
             let FormMembership::Partial { order, members, .. } = result.membership() else {
                 panic!("partial membership")
             };
@@ -1081,10 +1068,7 @@ fn review1368_single_member_orders_do_not_order_independent_members() {
                 }
             );
             assert_eq!(members.len(), 2);
-            assert_eq!(
-                form_cages::retain_knowledge(&result, fresh).unwrap(),
-                result
-            );
+            assert_eq!(retain_ungrouped(&result, fresh).unwrap(), result);
         }
     }
 }
@@ -1127,7 +1111,7 @@ fn review1368_inactive_inventory_conflicts_with_complete_resource_membership() {
     )
     .unwrap();
     for (old, fresh) in [(&decoded, &inactive), (&inactive, &decoded)] {
-        let result = form_cages::retain_knowledge(old, fresh).unwrap();
+        let result = retain_ungrouped(old, fresh).unwrap();
         assert!(!result.membership_is_complete());
         assert_eq!(
             result
@@ -1145,10 +1129,7 @@ fn review1368_inactive_inventory_conflicts_with_complete_resource_membership() {
         assert!(result.inputs().closure_evidence.iter().any(|claim| {
             claim.members.len() == 1 && claim.certainty == FormKnownOrder::Source
         }));
-        assert_eq!(
-            form_cages::retain_knowledge(&result, fresh).unwrap(),
-            result
-        );
+        assert_eq!(retain_ungrouped(&result, fresh).unwrap(), result);
     }
 }
 
@@ -1173,7 +1154,7 @@ fn review1368_incompatible_membership_preserves_original_closure_claim() {
     )
     .unwrap();
     for (old, fresh) in [(&complete, &conflicting), (&conflicting, &complete)] {
-        let result = form_cages::retain_knowledge(old, fresh).unwrap();
+        let result = retain_ungrouped(old, fresh).unwrap();
         assert!(!result.membership_is_complete());
         assert!(result.inputs().closure_evidence.iter().any(|claim| {
             claim.members.len() == 2 && claim.certainty == FormKnownOrder::Source
@@ -1188,10 +1169,7 @@ fn review1368_incompatible_membership_preserves_original_closure_claim() {
             .position_evidence
             .iter()
             .any(|claim| { claim.observation == FormObservationIndex(1) && claim.ordinal == 1 }));
-        assert_eq!(
-            form_cages::retain_knowledge(&result, fresh).unwrap(),
-            result
-        );
+        assert_eq!(retain_ungrouped(&result, fresh).unwrap(), result);
     }
 }
 
@@ -1234,7 +1212,7 @@ fn review1368_retained_closure_is_matched_by_member_identity() {
         )
         .unwrap();
         for (old, fresh) in [(&prior, &incoming), (&incoming, &prior)] {
-            let result = form_cages::retain_knowledge(old, fresh).unwrap();
+            let result = retain_ungrouped(old, fresh).unwrap();
             assert_eq!(result.membership_is_complete(), compatible);
             if compatible {
                 assert!(matches!(
@@ -1263,10 +1241,7 @@ fn review1368_retained_closure_is_matched_by_member_identity() {
                     && claim.certainty == FormKnownOrder::Source
                     && matches!(&result.observations()[claim.members[0].0].binding,
                         FormCageBinding::Decoded { cage, .. } if cage.as_str() == "f3d:model:subd#a")));
-            assert_eq!(
-                form_cages::retain_knowledge(&result, fresh).unwrap(),
-                result
-            );
+            assert_eq!(retain_ungrouped(&result, fresh).unwrap(), result);
         }
     }
 }
@@ -1307,7 +1282,7 @@ fn review1368_empty_closure_refines_only_empty_membership() {
         .unwrap();
     for (fresh, compatible) in [(&empty, true), (&nonempty, false)] {
         for (old, new) in [(&prior, fresh), (fresh, &prior)] {
-            let result = form_cages::retain_knowledge(old, new).unwrap();
+            let result = retain_ungrouped(old, new).unwrap();
             assert_eq!(result.membership_is_complete(), compatible);
             assert!(
                 result
@@ -1326,7 +1301,7 @@ fn review1368_empty_closure_refines_only_empty_membership() {
                     matches!(result.membership(), FormMembership::Partial { cardinality: None, members, .. } if members.len() == 1)
                 );
             }
-            assert_eq!(form_cages::retain_knowledge(&result, new).unwrap(), result);
+            assert_eq!(retain_ungrouped(&result, new).unwrap(), result);
         }
     }
 }
@@ -1389,7 +1364,7 @@ fn review1368_converging_resource_identities_preserve_conflicting_slots() {
     )
     .unwrap();
     for (old, new) in [(&prior, &fresh), (&fresh, &prior)] {
-        let result = form_cages::retain_knowledge(old, new).unwrap();
+        let result = retain_ungrouped(old, new).unwrap();
         assert!(
             matches!(result.membership(), FormMembership::Partial { order: FormOrder::Unknown, members, .. } if members.len() == 1 && members[0].ordinal.is_none())
         );
@@ -1414,7 +1389,7 @@ fn review1368_converging_resource_identities_preserve_conflicting_slots() {
             .any(|claim| claim.observation == selected && claim.ordinal == 1));
         assert!(result.inputs().resource_evidence.contains(&first));
         assert!(result.inputs().resource_evidence.contains(&second));
-        assert_eq!(form_cages::retain_knowledge(&result, new).unwrap(), result);
+        assert_eq!(retain_ungrouped(&result, new).unwrap(), result);
     }
 }
 
@@ -1469,7 +1444,7 @@ fn review1368_absolute_positions_conflicting_with_relative_order_remain_evidence
     )
     .unwrap();
     for (old, new) in [(&positions, &order), (&order, &positions)] {
-        let result = form_cages::retain_knowledge(old, new).unwrap();
+        let result = retain_ungrouped(old, new).unwrap();
         assert!(
             matches!(result.membership(), FormMembership::Partial { order: FormOrder::Unknown, members, .. } if members.len() == 2)
         );
@@ -1479,7 +1454,7 @@ fn review1368_absolute_positions_conflicting_with_relative_order_remain_evidence
             .order_evidence
             .iter()
             .any(|claim| claim.members == [FormObservationIndex(1), FormObservationIndex(0)]));
-        assert_eq!(form_cages::retain_knowledge(&result, new).unwrap(), result);
+        assert_eq!(retain_ungrouped(&result, new).unwrap(), result);
     }
 }
 
@@ -1521,7 +1496,7 @@ fn review1368_repeated_historical_closure_stays_partial() {
     )
     .unwrap();
     for (old, fresh) in [(&prior, &selected), (&selected, &prior)] {
-        let result = form_cages::retain_knowledge(old, fresh).unwrap();
+        let result = retain_ungrouped(old, fresh).unwrap();
         assert!(
             matches!(result.membership(), FormMembership::Partial { order: FormOrder::Unknown, members, .. }
             if members.len() == 1 && members[0].ordinal.is_none())
@@ -1539,9 +1514,6 @@ fn review1368_repeated_historical_closure_stays_partial() {
                 .any(|claim| claim.observation == FormObservationIndex(0)
                     && claim.ordinal == ordinal));
         }
-        assert_eq!(
-            form_cages::retain_knowledge(&result, fresh).unwrap(),
-            result
-        );
+        assert_eq!(retain_ungrouped(&result, fresh).unwrap(), result);
     }
 }

@@ -129,7 +129,7 @@ fn complete_assumed_membership_accepts_full_relative_source_order() {
             )
             .unwrap();
             for (left, right) in [(&assumed, &ordered), (&ordered, &assumed)] {
-                let result = form_cages::retain_knowledge(left, right).unwrap();
+                let result = retain_ungrouped(left, right).unwrap();
                 assert!(matches!(
                     result.membership(),
                     FormMembership::Complete {
@@ -138,10 +138,7 @@ fn complete_assumed_membership_accepts_full_relative_source_order() {
                         ..
                     }
                 ));
-                assert_eq!(
-                    form_cages::retain_knowledge(&result, right).unwrap(),
-                    result
-                );
+                assert_eq!(retain_ungrouped(&result, right).unwrap(), result);
             }
         }
         let subset = FormConstruction::try_new(
@@ -157,7 +154,7 @@ fn complete_assumed_membership_accepts_full_relative_source_order() {
             },
         )
         .unwrap();
-        let result = form_cages::retain_knowledge(&assumed, &subset).unwrap();
+        let result = retain_ungrouped(&assumed, &subset).unwrap();
         assert!(matches!(
             result.membership(),
             FormMembership::Complete {
@@ -256,9 +253,8 @@ fn accumulated_source_order_is_independent_of_grouping() {
     };
     let ab = partial(&[0, 1]);
     let bc = partial(&[1, 2]);
-    let join = |left: &FormConstruction, right: &FormConstruction| {
-        form_cages::retain_knowledge(left, right).unwrap()
-    };
+    let join =
+        |left: &FormConstruction, right: &FormConstruction| retain_ungrouped(left, right).unwrap();
     let grouped = join(&ab, &bc);
     for result in [
         join(&join(&assumed, &ab), &bc),

@@ -15,10 +15,20 @@ use super::{
 use cadmpeg_ir::features::form::*;
 
 mod final_boundaries;
+mod reference_groups;
 mod resource_associations;
 mod review;
 mod review1368;
 mod tracking;
+
+fn retain_ungrouped(
+    old: &FormConstruction,
+    new: &FormConstruction,
+) -> Result<FormConstruction, cadmpeg_core::CodecError> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        super::retain_knowledge(ctx, old, new, &super::ReferenceGroups::default(), None)
+    })
+}
 
 fn form_cage_objects(
     bytes: &[u8],
@@ -716,6 +726,7 @@ fn legacy_catalog_keeps_siblings_and_all_ambiguous_surface_paths() {
                     source,
                     std::slice::from_ref(&scope),
                     &mut facts,
+                    &mut super::ReferenceGroups::default(),
                     &mut Vec::new(),
                 )?;
                 let result =
@@ -1116,7 +1127,9 @@ fn body_construction(
             };
             let types = FormRecordTypes::of(meta);
             facts.tracking(ctx, source, &types, &mut Vec::new())?;
-            let serializers = super::form_serializers(ctx, bytes, &records, Some(&types))?;
+            let mut serializers = super::form_serializers(ctx, bytes, &records, Some(&types))?;
+            let mut groups = super::ReferenceGroups::default();
+            super::bind_serializers(ctx, source, &mut serializers, &mut groups)?;
             super::retain_unbound_serializers(
                 ctx,
                 scan,
@@ -1130,7 +1143,7 @@ fn body_construction(
                 scan,
                 source,
                 (&types, &serializers),
-                &mut facts,
+                (&mut facts, &mut groups),
                 None,
                 &mut Vec::new(),
             )?;
@@ -1429,9 +1442,9 @@ fn form_missing_sources_preserve_native_parameters_metadata_and_repeated_binding
     let archive = archive.finish().unwrap().into_inner();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
-            super::project_forms(
+            let mut projection = super::FormProjection::new(scan);
+            projection.project(
                 ctx,
-                scan,
                 std::slice::from_ref(&scope),
                 &mut rows,
                 &[],
@@ -1439,9 +1452,8 @@ fn form_missing_sources_preserve_native_parameters_metadata_and_repeated_binding
             )?;
             let once = rows.clone();
             let notes = losses.clone();
-            super::project_forms(
+            projection.project(
                 ctx,
-                scan,
                 std::slice::from_ref(&scope),
                 &mut rows,
                 &[],
@@ -1516,7 +1528,13 @@ fn form_native_source_reference_takes_precedence_over_derived_feature_identity()
         let mut losses = Vec::new();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
-                super::project_forms(ctx, scan, &scopes, &mut features, &[], &mut losses)
+                super::FormProjection::new(scan).project(
+                    ctx,
+                    &scopes,
+                    &mut features,
+                    &[],
+                    &mut losses,
+                )
             })
         })
         .unwrap();
@@ -1633,7 +1651,7 @@ fn form_resource_activity_uses_the_exact_active_asset_without_a_parse_diagnosis(
     ]
     .concat();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let serializers = form_typed_serializers(
+    let mut serializers = form_typed_serializers(
         &ctx,
         &bytes,
         &records,
@@ -1658,6 +1676,13 @@ fn form_resource_activity_uses_the_exact_active_asset_without_a_parse_diagnosis(
         cages: &cages,
         stream: "FusionAssetName[Active]/Design1/BulkStream.dat",
     };
+    super::bind_serializers(
+        &ctx,
+        source,
+        &mut serializers,
+        &mut super::ReferenceGroups::default(),
+    )
+    .unwrap();
     facts
         .surface(
             &ctx,
@@ -1746,7 +1771,7 @@ fn form_source_recovery_propagates_a_resource_refusal() {
     let mut losses = Vec::new();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         assert!(matches!(
-            super::project_forms(&ctx, scan, &[], &mut rows, &[], &mut losses),
+            super::FormProjection::new(scan).project(&ctx, &[], &mut rows, &[], &mut losses),
             Err(cadmpeg_core::CodecError::ResourceLimit(_))
         ));
     });

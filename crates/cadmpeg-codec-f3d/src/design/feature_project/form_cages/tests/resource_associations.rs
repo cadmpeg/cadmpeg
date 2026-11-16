@@ -112,7 +112,7 @@ fn ambiguous_resource_keeps_cage_association_and_prior_closure_in_both_orders() 
     let known = complete(vec![decoded("f3d:model:subd#a", Some(r.clone()))], vec![0]);
     let ambiguous = unselected(vec![candidate(r, FormResourceAvailability::Ambiguous)]);
     for (old, new) in [(&known, &ambiguous), (&ambiguous, &known)] {
-        let result = form_cages::retain_knowledge(old, new).unwrap();
+        let result = retain_ungrouped(old, new).unwrap();
         assert_selected_a_with_closure(&result);
         assert_eq!(
             associations(&result),
@@ -122,7 +122,7 @@ fn ambiguous_resource_keeps_cage_association_and_prior_closure_in_both_orders() 
                 "asset/r.tsm".into(),
             )])
         );
-        assert_eq!(form_cages::retain_knowledge(&result, new).unwrap(), result);
+        assert_eq!(retain_ungrouped(&result, new).unwrap(), result);
     }
 }
 
@@ -138,7 +138,7 @@ fn aliases_survive_both_orders_and_later_inactive_or_ambiguous_evidence() {
         let first = complete(vec![decoded("f3d:model:subd#a", Some(r.clone()))], vec![0]);
         let second = complete(vec![decoded("f3d:model:subd#a", Some(t.clone()))], vec![0]);
         for (old, new) in [(&first, &second), (&second, &first)] {
-            let joined = form_cages::retain_knowledge(old, new).unwrap();
+            let joined = retain_ungrouped(old, new).unwrap();
             assert!(joined.membership_is_complete());
             assert_eq!(
                 associations(&joined),
@@ -156,13 +156,10 @@ fn aliases_survive_both_orders_and_later_inactive_or_ambiguous_evidence() {
                 FormResourceAvailability::Ambiguous,
             ] {
                 let contradicts = unselected(vec![candidate(t.clone(), availability)]);
-                let result = form_cages::retain_knowledge(&joined, &contradicts).unwrap();
+                let result = retain_ungrouped(&joined, &contradicts).unwrap();
                 assert_selected_a_with_closure(&result);
                 assert_eq!(associations(&result), associations(&joined));
-                assert_eq!(
-                    form_cages::retain_knowledge(&result, &contradicts).unwrap(),
-                    result
-                );
+                assert_eq!(retain_ungrouped(&result, &contradicts).unwrap(), result);
             }
         }
     }
@@ -184,7 +181,7 @@ fn only_selected_associations_control_closure() {
         FormResourceAvailability::Ambiguous,
     ] {
         let other = unselected(vec![candidate(t.clone(), availability)]);
-        let result = form_cages::retain_knowledge(&base, &other).unwrap();
+        let result = retain_ungrouped(&base, &other).unwrap();
         assert!(result.membership_is_complete());
         assert_eq!(
             result
@@ -193,27 +190,24 @@ fn only_selected_associations_control_closure() {
                 .collect::<Vec<_>>(),
             ["f3d:model:subd#a"]
         );
-        assert_eq!(
-            form_cages::retain_knowledge(&result, &other).unwrap(),
-            result
-        );
+        assert_eq!(retain_ungrouped(&result, &other).unwrap(), result);
     }
     for availability in [
         FormResourceAvailability::Unknown,
         FormResourceAvailability::ActiveUndecoded,
     ] {
         let compatible = unselected(vec![candidate(r.clone(), availability)]);
-        assert!(form_cages::retain_knowledge(&base, &compatible)
+        assert!(retain_ungrouped(&base, &compatible)
             .unwrap()
             .membership_is_complete());
     }
     let without_resource = complete(vec![decoded("f3d:model:subd#a", None)], vec![0]);
     let unrelated = unselected(vec![candidate(t, FormResourceAvailability::Ambiguous)]);
-    assert!(form_cages::retain_knowledge(&without_resource, &unrelated)
+    assert!(retain_ungrouped(&without_resource, &unrelated)
         .unwrap()
         .membership_is_complete());
     assert!(
-        form_cages::retain_knowledge(&complete(Vec::new(), Vec::new()), &unrelated)
+        retain_ungrouped(&complete(Vec::new(), Vec::new()), &unrelated)
             .unwrap()
             .membership_is_complete()
     );
@@ -226,7 +220,7 @@ fn shared_entry_remains_associated_with_each_cage_and_demotes_selected_cage() {
     let selected = complete(vec![decoded("f3d:model:subd#a", Some(r1))], vec![0]);
     let nonselected = unselected(vec![decoded("f3d:model:subd#b", Some(r2))]);
     for (old, new) in [(&selected, &nonselected), (&nonselected, &selected)] {
-        let result = form_cages::retain_knowledge(old, new).unwrap();
+        let result = retain_ungrouped(old, new).unwrap();
         assert_selected_a_with_closure(&result);
         assert_eq!(
             associations(&result),
@@ -243,7 +237,7 @@ fn shared_entry_remains_associated_with_each_cage_and_demotes_selected_cage() {
                 ),
             ])
         );
-        assert_eq!(form_cages::retain_knowledge(&result, new).unwrap(), result);
+        assert_eq!(retain_ungrouped(&result, new).unwrap(), result);
     }
 }
 
@@ -296,7 +290,7 @@ fn candidate_before_same_cage_remaps_positions_order_and_closure() {
         ],
         vec![0, 1],
     );
-    let result = form_cages::retain_knowledge(&old, &new).unwrap();
+    let result = retain_ungrouped(&old, &new).unwrap();
     assert!(result.membership_is_complete());
     assert_eq!(
         result
@@ -323,7 +317,7 @@ fn candidate_before_same_cage_remaps_positions_order_and_closure() {
         result.inputs().closure_evidence[0].members,
         [FormObservationIndex(0), FormObservationIndex(1)]
     );
-    assert_eq!(form_cages::retain_knowledge(&result, &new).unwrap(), result);
+    assert_eq!(retain_ungrouped(&result, &new).unwrap(), result);
 }
 
 #[test]
@@ -333,7 +327,7 @@ fn multiple_cages_from_each_serializer_route_keep_all_associations() {
     serializer[4..7].copy_from_slice(b"315");
     let bytes = [serializer, indexed_frame(b"258", 300, 15)].concat();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let serializers = parsed_serializers(&bytes, &records);
+    let mut serializers = parsed_serializers(&bytes, &records);
     let scope = form_scope(201, Vec::new());
     let cages = [
         neutral_form_cage("f3d:model:subd#a", uuid),
@@ -343,6 +337,7 @@ fn multiple_cages_from_each_serializer_route_keep_all_associations() {
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let source = form_cages::FormSource { bytes: &bytes, records: &records, scope: &scope, cages: &cages, stream: "FusionAssetName[Active]/Design1/BulkStream.dat" };
+            form_cages::bind_serializers(ctx, source, &mut serializers, &mut form_cages::ReferenceGroups::default())?;
             for surface_route in [false, true] {
                 let mut facts = form_cages::FormFacts { inputs: FormInputs::default(), observations: Vec::new() };
                 if surface_route {
@@ -371,8 +366,8 @@ fn sharing_an_alias_after_enrichment_invalidates_the_selected_cage() {
     let a_t = complete(vec![decoded("f3d:model:subd#a", Some(t.clone()))], vec![0]);
     let b_t = unselected(vec![decoded("f3d:model:subd#b", Some(t))]);
     for (old, new) in [(&a_r, &a_t), (&a_t, &a_r)] {
-        let aliases = form_cages::retain_knowledge(old, new).unwrap();
-        let result = form_cages::retain_knowledge(&aliases, &b_t).unwrap();
+        let aliases = retain_ungrouped(old, new).unwrap();
+        let result = retain_ungrouped(&aliases, &b_t).unwrap();
         assert_selected_a_with_closure(&result);
         assert_eq!(
             associations(&result),
@@ -394,7 +389,7 @@ fn sharing_an_alias_after_enrichment_invalidates_the_selected_cage() {
                 ),
             ])
         );
-        assert_eq!(form_cages::retain_knowledge(&result, &b_t).unwrap(), result);
+        assert_eq!(retain_ungrouped(&result, &b_t).unwrap(), result);
     }
 }
 #[test]
@@ -410,7 +405,7 @@ fn active_state_survives_coalescing_before_later_inactive_state() {
         FormResourceAvailability::Inactive,
     )]);
     for (old, new) in [(&known, &active), (&active, &known)] {
-        let joined = form_cages::retain_knowledge(old, new).unwrap();
+        let joined = retain_ungrouped(old, new).unwrap();
         assert!(joined.membership_is_complete());
         assert!(joined
             .inputs()
@@ -419,11 +414,8 @@ fn active_state_survives_coalescing_before_later_inactive_state() {
                 resource: r.clone(),
                 availability: FormResourceAvailability::ActiveUndecoded,
             }));
-        assert_eq!(
-            form_cages::retain_knowledge(&joined, &active).unwrap(),
-            joined
-        );
-        let result = form_cages::retain_knowledge(&joined, &inactive).unwrap();
+        assert_eq!(retain_ungrouped(&joined, &active).unwrap(), joined);
+        let result = retain_ungrouped(&joined, &inactive).unwrap();
         assert_selected_a_with_closure(&result);
         for availability in [
             FormResourceAvailability::ActiveUndecoded,
@@ -437,10 +429,7 @@ fn active_state_survives_coalescing_before_later_inactive_state() {
                     availability,
                 }));
         }
-        assert_eq!(
-            form_cages::retain_knowledge(&result, &inactive).unwrap(),
-            result
-        );
+        assert_eq!(retain_ungrouped(&result, &inactive).unwrap(), result);
     }
 }
 
@@ -458,9 +447,8 @@ fn shared_alias_does_not_attach_unrelated_cage_paths_to_candidate() {
     let mut bt = decoded("f3d:model:subd#b", Some(t));
     bt.paths.push(path("f3d:scope:record#path-b"));
     let aliases =
-        form_cages::retain_knowledge(&complete(vec![ar], vec![0]), &complete(vec![at], vec![0]))
-            .unwrap();
-    let result = form_cages::retain_knowledge(&aliases, &unselected(vec![bt])).unwrap();
+        retain_ungrouped(&complete(vec![ar], vec![0]), &complete(vec![at], vec![0])).unwrap();
+    let result = retain_ungrouped(&aliases, &unselected(vec![bt])).unwrap();
     let a = result.observations().iter().find(|observation| matches!(&observation.binding, FormCageBinding::Decoded { cage, .. } if cage.as_str() == "f3d:model:subd#a")).unwrap();
     assert!(a.paths.contains(&path("f3d:scope:record#path-r")));
     assert!(a.paths.contains(&path("f3d:scope:record#path-t")));
@@ -471,7 +459,7 @@ fn shared_alias_does_not_attach_unrelated_cage_paths_to_candidate() {
         FormResourceAvailability::Ambiguous,
     );
     observed.paths.push(path("f3d:scope:record#observed-t"));
-    let enriched = form_cages::retain_knowledge(&result, &unselected(vec![observed])).unwrap();
+    let enriched = retain_ungrouped(&result, &unselected(vec![observed])).unwrap();
     let candidate = enriched.observations().iter().find(|observation| matches!(&observation.binding, FormCageBinding::Undecoded { resource, availability: FormResourceAvailability::Ambiguous } if resource.entry.as_str() == "asset/t.tsm")).unwrap();
     assert_eq!(candidate.paths, [path("f3d:scope:record#observed-t")]);
 }

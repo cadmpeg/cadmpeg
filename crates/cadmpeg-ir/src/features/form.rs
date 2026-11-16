@@ -141,11 +141,11 @@ pub struct FormNativeReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_reference_run"
+        deserialize_with = "deserialize_reference_group"
     )]
-    #[cfg_attr(feature = "schema", schemars(with = "usize"))]
+    #[cfg_attr(feature = "schema", schemars(with = "FormReferenceGroup"))]
     #[doc = include_str!("form-api-item.md")]
-    pub run: Option<usize>,
+    pub group: Option<FormReferenceGroup>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -174,10 +174,50 @@ pub struct FormNativeReference {
     #[doc = include_str!("form-api-item.md")]
     pub resource: Option<FormResource>,
 }
-cadmpeg_core::named_optional_field!(deserialize_inline_type_guid, String, "inline_type_guid");
-cadmpeg_core::named_optional_field!(deserialize_reference_run, usize, "run");
+impl FormNativeReference {
+    #[doc = include_str!("form-api-item.md")]
+    pub fn new(
+        source: NativeId,
+        role: FormReferenceRole,
+        ordinal: u32,
+        target: FormNativeReferenceTarget,
+    ) -> Self {
+        Self {
+            source,
+            role,
+            ordinal,
+            group: None,
+            inline_type_guid: None,
+            target,
+            resource: None,
+        }
+    }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    #[doc = include_str!("form-api-item.md")]
+    #[must_use]
+    pub fn with_group(mut self, group: FormReferenceGroup) -> Self {
+        self.group = Some(group);
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+#[doc = include_str!("form-api-item.md")]
+pub struct FormReferenceGroup(u64);
+
+impl FormReferenceGroup {
+    #[doc = include_str!("form-api-item.md")]
+    pub const fn from_label(label: u64) -> Self {
+        Self(label)
+    }
+}
+
+cadmpeg_core::named_optional_field!(deserialize_inline_type_guid, String, "inline_type_guid");
+cadmpeg_core::named_optional_field!(deserialize_reference_group, FormReferenceGroup, "group");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = include_str!("form-api-item.md")]
@@ -1265,7 +1305,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormNativeReference {
             source: self.source.rewrite_identities(ctx, map)?,
             role: self.role,
             ordinal: self.ordinal,
-            run: self.run,
+            group: self.group,
             inline_type_guid: self.inline_type_guid,
             target: self.target.rewrite_identities(ctx, map)?,
             resource: self.resource.rewrite_identities(ctx, map)?,

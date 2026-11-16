@@ -21,8 +21,8 @@ use cadmpeg_ir::features::form::{
     FormExternalVersion, FormInputPath, FormInputs, FormKnownOrder, FormListRole, FormMember,
     FormMembership, FormNativeList, FormNativeMember, FormNativeReference,
     FormNativeReferenceTarget, FormObservationIndex, FormOrder, FormOrderEvidence,
-    FormPositionEvidence, FormReferenceRole, FormResource, FormResourceAssociation,
-    FormResourceAvailability, FormResourceStateEvidence,
+    FormPositionEvidence, FormReferenceGroup, FormReferenceRole, FormResource,
+    FormResourceAssociation, FormResourceAvailability, FormResourceStateEvidence,
 };
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, NonEmptyMembers};
 use cadmpeg_ir::ids::{NativeId, SubdId};
@@ -86,149 +86,481 @@ fn note(losses: &mut Vec<LossNote>, code: F3dLossCode, scope: &str, reason: &str
     }
 }
 
-pub(crate) fn project_forms(
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct ReferenceLane {
+    source: NativeId,
+    role: FormReferenceRole,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum PhysicalGroup {
+    Body {
+        stream: String,
+        frame: usize,
+        envelope: usize,
+    },
+    Serializer {
+        stream: String,
+        frame: usize,
+    },
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct GroupKey {
+    lane: ReferenceLane,
+    label: FormReferenceGroup,
+}
+
+#[derive(Clone, Copy)]
+struct BoundGroup {
+    source: u32,
+    role: FormReferenceRole,
+    label: FormReferenceGroup,
+}
+
+#[derive(Clone, Copy)]
+struct ReferenceSlot {
+    source: u32,
+    role: FormReferenceRole,
+    ordinal: u32,
+    group: Option<FormReferenceGroup>,
+}
+
+impl BoundGroup {
+    fn slot(self, ordinal: u32) -> ReferenceSlot {
+        ReferenceSlot {
+            source: self.source,
+            role: self.role,
+            ordinal,
+            group: Some(self.label),
+        }
+    }
+}
+
+impl ReferenceSlot {
+    fn ungrouped(source: u32, role: FormReferenceRole, ordinal: u32) -> Self {
+        Self {
+            source,
+            role,
+            ordinal,
+            group: None,
+        }
+    }
+}
+
+#[derive(Default)]
+struct ReferenceGroups {
+    origins: HashMap<ReferenceLane, HashMap<PhysicalGroup, FormReferenceGroup>>,
+    active: HashSet<GroupKey>,
+}
+
+fn group_allocation_error<T>(ctx: &DecodeContext<'_>, count: usize) -> CodecError {
+    let Some(bytes) = count.checked_mul(std::mem::size_of::<T>()) else {
+        return cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ctx.policy().limits.max_retained_bytes,
+            u64::MAX,
+            "F3D Form group allocation",
+        )
+        .into();
+    };
+    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        ctx.policy().limits.max_retained_bytes,
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "F3D Form group allocation",
+    )
+    .into()
+}
+
+fn group_string(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
+    let mut copy = String::new();
+    copy.try_reserve_exact(value.len())
+        .map_err(|_| group_allocation_error::<u8>(ctx, value.len()))?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
+fn group_record_id(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-    scopes: &[DesignParameterScope],
-    features: &mut [Feature],
-    cages: &[SubdSurface],
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
+    scope: &DesignParameterScope,
+    record: u64,
+) -> Result<NativeId, CodecError> {
+    use std::fmt::Write;
+    let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+    let capacity = stream
+        .len()
+        .checked_add(":design-record#".len() + 20)
+        .ok_or_else(|| group_allocation_error::<u8>(ctx, usize::MAX))?;
+    let mut text = String::new();
+    text.try_reserve_exact(capacity)
+        .map_err(|_| group_allocation_error::<u8>(ctx, capacity))?;
+    write!(&mut text, "{stream}:design-record#{record}").map_err(CodecError::malformed)?;
+    NativeId::mint(text).map_err(CodecError::malformed)
+}
+
+#[derive(Default)]
+struct GroupKeyWriter {
+    bytes: Vec<u8>,
+    refused: Option<usize>,
+}
+
+impl GroupKeyWriter {
+    fn reserve(&mut self, count: usize) {
+        if self.refused.is_none() && self.bytes.try_reserve(count).is_err() {
+            self.refused = Some(count);
+        }
     }
-    let mut indices = HashMap::new();
-    for feature in features {
-        let mut retained = match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Form(construction)) => {
-                construction.clone()
-            }
-            FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters })
-                if kind.as_str() == "Form" =>
-            {
-                FormConstruction::try_new(
-                    FormInputs {
-                        parameters: parameters.clone(),
-                        ..FormInputs::default()
-                    },
-                    Vec::new(),
-                    FormConstruction::default().membership().clone(),
-                )
-                .map_err(CodecError::malformed)?
-            }
-            _ => continue,
+
+    fn finish(self, ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
+        match self.refused {
+            Some(count) => Err(group_allocation_error::<u8>(ctx, count)),
+            None => Ok(self.bytes),
+        }
+    }
+}
+
+impl std::io::Write for GroupKeyWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.reserve(bytes.len());
+        if self.refused.is_none() {
+            self.bytes.extend_from_slice(bytes);
+        }
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn group_json_key<T: serde::Serialize>(
+    ctx: &DecodeContext<'_>,
+    value: &T,
+) -> Result<Vec<u8>, CodecError> {
+    let mut writer = GroupKeyWriter::default();
+    let result = serde_json::to_writer(&mut writer, value);
+    let bytes = writer.finish(ctx)?;
+    result.map_err(CodecError::malformed)?;
+    Ok(bytes)
+}
+
+impl ReferenceGroups {
+    fn bind(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        scope: &DesignParameterScope,
+        source: u32,
+        role: FormReferenceRole,
+        origin: PhysicalGroup,
+    ) -> Result<BoundGroup, CodecError> {
+        let lane = ReferenceLane {
+            source: group_record_id(ctx, scope, u64::from(source))?,
+            role,
         };
-        let scope = scopes.iter().find(|scope| {
-            NativeId::mint(scope.id.clone()).is_ok()
-                && scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form
-                && match feature.native_ref.as_deref() {
-                    Some(native_ref) => native_ref == scope.id.as_str(),
-                    None => feature.id == crate::ids::neutral_feature_id(scope),
-                }
-        });
-        if let Some(scope) = scope {
-            let mut inputs = retained.inputs().clone();
-            merge_reference_runs(&mut inputs, &form_inputs(scope)?.references, &[]);
-            retained = FormConstruction::try_new(
-                inputs,
-                retained.observations().to_vec(),
-                retained.membership().clone(),
-            )
-            .map_err(CodecError::malformed)?;
-        }
-        let entry = scope
-            .and_then(|scope| native_stream(&scope.id))
-            .and_then(|stream| {
-                scan.design_stream_entry_for_scope(
-                    cadmpeg_core::container::ContainerRole::Bulkstream,
-                    stream,
-                )
-            });
-        if let (Some(scope), Some(entry), Some(bytes)) = (
-            scope,
-            entry,
-            entry.and_then(|entry| scan.entry_view(&entry.name)),
-        ) {
-            let records = indices
-                .entry(entry.name.as_str())
-                .or_insert_with(|| IndexedRecordOffsets::build(bytes.window()));
-            let mut inputs = form_inputs(scope)?;
-            inputs.parameters = retained.inputs().parameters.clone();
-            let mut facts = FormFacts {
-                inputs,
-                observations: Vec::new(),
-            };
-            let source = FormSource {
-                bytes: bytes.window(),
-                records,
-                scope,
-                cages,
-                stream: &entry.name,
-            };
-            let membership = collect_membership(ctx, scan, source, scopes, &mut facts, losses)?;
-            let compacted = facts.prepare_resources();
-            let mut membership = remap_membership(membership, &compacted);
-            if membership_has_duplicate_members(&membership) {
-                membership = facts.reconcile(membership.clone(), membership);
-            }
-            let membership = facts.enforce_resource_membership(membership);
-            let construction =
-                FormConstruction::try_new(facts.inputs, facts.observations, membership)
-                    .map_err(CodecError::malformed)?;
-            retained = retain_knowledge(&retained, &construction)?;
-            if membership_evidence_conflicts(retained.inputs()) {
-                note(
-                    losses,
-                    F3dLossCode::FeatureFormMembershipConflict,
-                    &scope.id,
-                    "source membership counts or positions cannot be reconciled",
-                );
-            }
-            if retained.observations().iter().any(|observation| {
-                matches!(
-                    &observation.binding,
-                    FormCageBinding::Undecoded {
-                        availability: FormResourceAvailability::Ambiguous,
-                        ..
-                    }
-                )
-            }) {
-                note(
-                    losses,
-                    F3dLossCode::FeatureFormCageBindingAmbiguous,
-                    &scope.id,
-                    "resource association remains ambiguous",
-                );
-            }
-            if !retained.membership_is_complete() {
-                note(
-                    losses,
-                    F3dLossCode::FeatureFormMembershipUnresolved,
-                    &scope.id,
-                    "cage membership or identity joins remain incomplete",
-                );
-            }
+        let known = self
+            .origins
+            .get(&lane)
+            .and_then(|groups| groups.get(&origin))
+            .copied();
+        let label = if let Some(label) = known {
+            label
         } else {
-            note(
-                losses,
-                F3dLossCode::FeatureFormSourceUnavailable,
-                feature.id.as_str(),
-                "source scope or Design payload is unavailable",
-            );
-        }
-        feature
-            .evaluation
-            .set_definition(FeatureDefinition::Operation(FeatureOperation::Form(
-                retained,
-            )));
+            self.origins
+                .try_reserve(1)
+                .map_err(|_| group_allocation_error::<(ReferenceLane, HashMap<PhysicalGroup, FormReferenceGroup>)>(ctx, 1))?;
+            let stored_lane = ReferenceLane {
+                source: NativeId::mint(group_string(ctx, lane.source.as_str())?)
+                    .map_err(CodecError::malformed)?,
+                role,
+            };
+            let groups = self.origins.entry(stored_lane).or_default();
+            groups.try_reserve(1).map_err(|_| {
+                group_allocation_error::<(PhysicalGroup, FormReferenceGroup)>(ctx, 1)
+            })?;
+            let next = u64::try_from(groups.len()).map_err(CodecError::malformed)?;
+            let label = FormReferenceGroup::from_label(next);
+            groups.insert(origin, label);
+            label
+        };
+        self.active
+            .try_reserve(1)
+            .map_err(|_| group_allocation_error::<GroupKey>(ctx, 1))?;
+        self.active.insert(GroupKey { lane, label });
+        Ok(BoundGroup {
+            source,
+            role,
+            label,
+        })
     }
+
+    fn check(
+        &self,
+        ctx: &DecodeContext<'_>,
+        construction: &FormConstruction,
+        witness: Option<&HashSet<Vec<u8>>>,
+        fresh: bool,
+    ) -> Result<(), CodecError> {
+        for reference in &construction.inputs().reference_evidence {
+            let Some(label) = reference.group else {
+                continue;
+            };
+            let witnessed = if fresh {
+                let key = GroupKey {
+                    lane: ReferenceLane {
+                        source: NativeId::mint(group_string(ctx, reference.source.as_str())?)
+                            .map_err(CodecError::malformed)?,
+                        role: reference.role,
+                    },
+                    label,
+                };
+                self.active.contains(&key)
+            } else if let Some(facts) = witness {
+                facts.contains(&group_json_key(ctx, reference)?)
+            } else {
+                false
+            };
+            if !witnessed {
+                return Err(CodecError::malformed("Form group origin is unavailable"));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn published_facts(
+    ctx: &DecodeContext<'_>,
+    construction: &FormConstruction,
+) -> Result<HashSet<Vec<u8>>, CodecError> {
+    let references = &construction.inputs().reference_evidence;
+    let count = references
+        .iter()
+        .filter(|reference| reference.group.is_some())
+        .count();
+    let mut facts = HashSet::new();
+    facts
+        .try_reserve(count)
+        .map_err(|_| group_allocation_error::<Vec<u8>>(ctx, count))?;
+    for reference in references
+        .iter()
+        .filter(|reference| reference.group.is_some())
+    {
+        facts.insert(group_json_key(ctx, reference)?);
+    }
+    Ok(facts)
+}
+
+fn sort_reference_evidence(
+    ctx: &DecodeContext<'_>,
+    inputs: &mut FormInputs,
+) -> Result<(), CodecError> {
+    let count = inputs.reference_evidence.len();
+    let mut references = Vec::new();
+    references
+        .try_reserve_exact(count)
+        .map_err(|_| group_allocation_error::<(Vec<u8>, usize, FormNativeReference)>(ctx, count))?;
+    for (index, reference) in inputs.reference_evidence.drain(..).enumerate() {
+        references.push((group_json_key(ctx, &reference)?, index, reference));
+    }
+    references.sort_unstable_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+    inputs
+        .reference_evidence
+        .extend(references.into_iter().map(|(_, _, reference)| reference));
     Ok(())
 }
 
+pub(crate) struct FormProjection<'scan> {
+    scan: &'scan ContainerScan<'scan>,
+    indices: HashMap<String, IndexedRecordOffsets>,
+    groups: ReferenceGroups,
+    published: HashMap<String, HashSet<Vec<u8>>>,
+}
+
+impl<'scan> FormProjection<'scan> {
+    pub(crate) fn new(scan: &'scan ContainerScan<'scan>) -> Self {
+        Self {
+            scan,
+            indices: HashMap::new(),
+            groups: ReferenceGroups::default(),
+            published: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn project(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        scopes: &[DesignParameterScope],
+        features: &mut [Feature],
+        cages: &[SubdSurface],
+        losses: &mut Vec<LossNote>,
+    ) -> Result<(), CodecError> {
+        if let Some(limit) = ctx.resource_refusal() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        for feature in features {
+            let mut retained = match feature.evaluation.definition() {
+                FeatureDefinition::Operation(FeatureOperation::Form(construction)) => {
+                    construction.clone()
+                }
+                FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters })
+                    if kind.as_str() == "Form" =>
+                {
+                    FormConstruction::try_new(
+                        FormInputs {
+                            parameters: parameters.clone(),
+                            ..FormInputs::default()
+                        },
+                        Vec::new(),
+                        FormConstruction::default().membership().clone(),
+                    )
+                    .map_err(CodecError::malformed)?
+                }
+                _ => continue,
+            };
+            let witness = self.published.get(feature.id.as_str());
+            self.groups.check(ctx, &retained, witness, false)?;
+            let scan = self.scan;
+            let scope = scopes.iter().find(|scope| {
+                NativeId::mint(scope.id.clone()).is_ok()
+                    && scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form
+                    && match feature.native_ref.as_deref() {
+                        Some(native_ref) => native_ref == scope.id.as_str(),
+                        None => feature.id == crate::ids::neutral_feature_id(scope),
+                    }
+            });
+            if let Some(scope) = scope {
+                let mut inputs = retained.inputs().clone();
+                merge_reference_runs(&mut inputs, &form_inputs(scope)?.references, &[]);
+                retained = FormConstruction::try_new(
+                    inputs,
+                    retained.observations().to_vec(),
+                    retained.membership().clone(),
+                )
+                .map_err(CodecError::malformed)?;
+            }
+            let entry = scope
+                .and_then(|scope| native_stream(&scope.id))
+                .and_then(|stream| {
+                    scan.design_stream_entry_for_scope(
+                        cadmpeg_core::container::ContainerRole::Bulkstream,
+                        stream,
+                    )
+                });
+            if let (Some(scope), Some(entry), Some(bytes)) = (
+                scope,
+                entry,
+                entry.and_then(|entry| scan.entry_view(&entry.name)),
+            ) {
+                self.indices.try_reserve(1).map_err(|_| {
+                    group_allocation_error::<(String, IndexedRecordOffsets)>(ctx, 1)
+                })?;
+                let records = self
+                    .indices
+                    .entry(group_string(ctx, &entry.name)?)
+                    .or_insert_with(|| IndexedRecordOffsets::build(bytes.window()));
+                let mut inputs = form_inputs(scope)?;
+                inputs.parameters = retained.inputs().parameters.clone();
+                let mut facts = FormFacts {
+                    inputs,
+                    observations: Vec::new(),
+                };
+                let source = FormSource {
+                    bytes: bytes.window(),
+                    records,
+                    scope,
+                    cages,
+                    stream: &entry.name,
+                };
+                self.groups.active.clear();
+                let membership = collect_membership(
+                    ctx,
+                    scan,
+                    source,
+                    scopes,
+                    &mut facts,
+                    &mut self.groups,
+                    losses,
+                )?;
+                let compacted = facts.prepare_resources();
+                let mut membership = remap_membership(membership, &compacted);
+                if membership_has_duplicate_members(&membership) {
+                    membership = facts.reconcile(membership.clone(), membership);
+                }
+                let membership = facts.enforce_resource_membership(membership);
+                sort_reference_evidence(ctx, &mut facts.inputs)?;
+                let construction =
+                    FormConstruction::try_new(facts.inputs, facts.observations, membership)
+                        .map_err(CodecError::malformed)?;
+                retained = retain_knowledge(ctx, &retained, &construction, &self.groups, witness)?;
+                if membership_evidence_conflicts(retained.inputs()) {
+                    note(
+                        losses,
+                        F3dLossCode::FeatureFormMembershipConflict,
+                        &scope.id,
+                        "source membership counts or positions cannot be reconciled",
+                    );
+                }
+                if retained.observations().iter().any(|observation| {
+                    matches!(
+                        &observation.binding,
+                        FormCageBinding::Undecoded {
+                            availability: FormResourceAvailability::Ambiguous,
+                            ..
+                        }
+                    )
+                }) {
+                    note(
+                        losses,
+                        F3dLossCode::FeatureFormCageBindingAmbiguous,
+                        &scope.id,
+                        "resource association remains ambiguous",
+                    );
+                }
+                if !retained.membership_is_complete() {
+                    note(
+                        losses,
+                        F3dLossCode::FeatureFormMembershipUnresolved,
+                        &scope.id,
+                        "cage membership or identity joins remain incomplete",
+                    );
+                }
+            } else {
+                note(
+                    losses,
+                    F3dLossCode::FeatureFormSourceUnavailable,
+                    feature.id.as_str(),
+                    "source scope or Design payload is unavailable",
+                );
+            }
+            let published = published_facts(ctx, &retained)?;
+            if published.is_empty() {
+                self.published.remove(feature.id.as_str());
+            } else {
+                self.published
+                    .try_reserve(1)
+                    .map_err(|_| group_allocation_error::<(String, HashSet<Vec<u8>>)>(ctx, 1))?;
+                let feature_id = group_string(ctx, feature.id.as_str())?;
+                self.published.insert(feature_id, published);
+            }
+            feature
+                .evaluation
+                .set_definition(FeatureDefinition::Operation(FeatureOperation::Form(
+                    retained,
+                )));
+        }
+        Ok(())
+    }
+}
+
 fn retain_knowledge(
+    ctx: &DecodeContext<'_>,
     old: &FormConstruction,
     new: &FormConstruction,
+    groups: &ReferenceGroups,
+    witness: Option<&HashSet<Vec<u8>>>,
 ) -> Result<FormConstruction, CodecError> {
+    groups.check(ctx, old, witness, false)?;
+    groups.check(ctx, new, None, true)?;
     let mut facts = FormFacts {
         inputs: old.inputs().clone(),
         observations: old.observations().to_vec(),
@@ -359,6 +691,7 @@ fn retain_knowledge(
         facts.reconcile(old_membership, new_membership)
     };
     membership = facts.enforce_resource_membership(membership);
+    sort_reference_evidence(ctx, &mut facts.inputs)?;
     FormConstruction::try_new(facts.inputs, facts.observations, membership)
         .map_err(CodecError::malformed)
 }
@@ -727,6 +1060,93 @@ struct FormSurface {
     record: Option<u64>,
 }
 
+fn native_reference(
+    ctx: &DecodeContext<'_>,
+    scope: &DesignParameterScope,
+    slot: ReferenceSlot,
+    reference: &FormReference,
+    resource: Option<FormResource>,
+) -> Result<FormNativeReference, CodecError> {
+    use crate::bytes::Reference;
+    let (inline_type_guid, target) = match reference {
+        Reference::Null => (None, FormNativeReferenceTarget::Null {}),
+        Reference::Local {
+            target,
+            inline_type_guid,
+        } => (
+            inline_type_guid
+                .as_deref()
+                .map(|value| group_string(ctx, value))
+                .transpose()?,
+            FormNativeReferenceTarget::Local {
+                target: group_record_id(ctx, scope, *target)?,
+            },
+        ),
+        Reference::CrossSegment {
+            target,
+            inline_type_guid,
+            segment,
+            asset_guid,
+        } => (
+            inline_type_guid
+                .as_deref()
+                .map(|value| group_string(ctx, value))
+                .transpose()?,
+            FormNativeReferenceTarget::Segment {
+                target: *target,
+                segment: *segment,
+                asset_guid: asset_guid
+                    .as_deref()
+                    .map(|value| group_string(ctx, value))
+                    .transpose()?,
+            },
+        ),
+        Reference::CrossDocument {
+            target,
+            inline_type_guid,
+            segment,
+            asset_guid,
+            target_type_guid,
+            link_name,
+            version,
+        } => (
+            inline_type_guid
+                .as_deref()
+                .map(|value| group_string(ctx, value))
+                .transpose()?,
+            FormNativeReferenceTarget::Document {
+                target: *target,
+                segment: *segment,
+                asset_guid: group_string(ctx, asset_guid)?,
+                target_type_guid: target_type_guid
+                    .as_deref()
+                    .map(|value| group_string(ctx, value))
+                    .transpose()?,
+                link_name: group_string(ctx, link_name)?,
+                version: version
+                    .as_ref()
+                    .map(|(key, urn)| {
+                        Ok::<_, CodecError>(FormExternalVersion {
+                            key: group_string(ctx, key)?,
+                            urn: group_string(ctx, urn)?,
+                        })
+                    })
+                    .transpose()?,
+            },
+        ),
+    };
+    let mut evidence = FormNativeReference::new(
+        group_record_id(ctx, scope, u64::from(slot.source))?,
+        slot.role,
+        slot.ordinal,
+        target,
+    );
+    evidence.group = slot.group;
+    evidence.inline_type_guid = inline_type_guid;
+    evidence.resource = resource;
+    Ok(evidence)
+}
+
 impl FormFacts {
     fn capture_closure(&mut self, membership: &FormMembership) {
         if let FormMembership::Complete {
@@ -997,68 +1417,11 @@ impl FormFacts {
         &mut self,
         ctx: &DecodeContext<'_>,
         scope: &DesignParameterScope,
-        source: u32,
-        slot: (FormReferenceRole, u32, Option<usize>),
+        slot: ReferenceSlot,
         reference: &crate::bytes::Reference<String, String>,
         resource: Option<FormResource>,
     ) -> Result<(), CodecError> {
-        use crate::bytes::Reference;
-        let (inline_type_guid, target) = match reference {
-            Reference::Null => (None, FormNativeReferenceTarget::Null {}),
-            Reference::Local {
-                target,
-                inline_type_guid,
-            } => (
-                inline_type_guid.clone(),
-                FormNativeReferenceTarget::Local {
-                    target: record_id(scope, target)?,
-                },
-            ),
-            Reference::CrossSegment {
-                target,
-                inline_type_guid,
-                segment,
-                asset_guid,
-            } => (
-                inline_type_guid.clone(),
-                FormNativeReferenceTarget::Segment {
-                    target: *target,
-                    segment: *segment,
-                    asset_guid: asset_guid.clone(),
-                },
-            ),
-            Reference::CrossDocument {
-                target,
-                inline_type_guid,
-                segment,
-                asset_guid,
-                target_type_guid,
-                link_name,
-                version,
-            } => (
-                inline_type_guid.clone(),
-                FormNativeReferenceTarget::Document {
-                    target: *target,
-                    segment: *segment,
-                    asset_guid: asset_guid.clone(),
-                    target_type_guid: target_type_guid.clone(),
-                    link_name: link_name.clone(),
-                    version: version.as_ref().map(|(key, urn)| FormExternalVersion {
-                        key: key.clone(),
-                        urn: urn.clone(),
-                    }),
-                },
-            ),
-        };
-        let evidence = FormNativeReference {
-            source: record_id(scope, source)?,
-            role: slot.0,
-            ordinal: slot.1,
-            run: slot.2,
-            inline_type_guid,
-            target,
-            resource,
-        };
+        let evidence = native_reference(ctx, scope, slot, reference, resource)?;
         if !self.inputs.reference_evidence.contains(&evidence) {
             let mut lengths = [0; 6];
             lengths[0] = evidence.inline_type_guid.as_deref().map_or(0, str::len);
@@ -1100,23 +1463,21 @@ impl FormFacts {
     fn missing_reference(
         &mut self,
         scope: &DesignParameterScope,
-        source: u32,
-        slot: (FormReferenceRole, u32, Option<usize>),
+        slot: ReferenceSlot,
         unvisited: bool,
     ) -> Result<(), CodecError> {
-        let evidence = FormNativeReference {
-            source: record_id(scope, source)?,
-            role: slot.0,
-            ordinal: slot.1,
-            run: slot.2,
-            inline_type_guid: None,
-            target: if unvisited {
-                FormNativeReferenceTarget::Unvisited {}
-            } else {
-                FormNativeReferenceTarget::Unreadable {}
-            },
-            resource: None,
+        let target = if unvisited {
+            FormNativeReferenceTarget::Unvisited {}
+        } else {
+            FormNativeReferenceTarget::Unreadable {}
         };
+        let mut evidence = FormNativeReference::new(
+            record_id(scope, slot.source)?,
+            slot.role,
+            slot.ordinal,
+            target,
+        );
+        evidence.group = slot.group;
         if !self.inputs.reference_evidence.contains(&evidence) {
             self.inputs.reference_evidence.push(evidence);
         }
@@ -1635,8 +1996,7 @@ impl FormFacts {
                 let FormTrackingRun::Parsed { owner, members } = run else {
                     self.missing_reference(
                         source.scope,
-                        group,
-                        (FormReferenceRole::TrackingOwner, 0, None),
+                        ReferenceSlot::ungrouped(group, FormReferenceRole::TrackingOwner, 0),
                         false,
                     )?;
                     note(
@@ -1651,8 +2011,7 @@ impl FormFacts {
                 self.reference(
                     ctx,
                     source.scope,
-                    group,
-                    (FormReferenceRole::TrackingOwner, 0, None),
+                    ReferenceSlot::ungrouped(group, FormReferenceRole::TrackingOwner, 0),
                     &owner,
                     None,
                 )?;
@@ -1734,11 +2093,10 @@ impl FormFacts {
                         let Some(reference) = reference else {
                             self.missing_reference(
                                 source.scope,
-                                group,
-                                (
+                                ReferenceSlot::ungrouped(
+                                    group,
                                     reference_role,
                                     u32::try_from(ordinal).map_err(CodecError::malformed)?,
-                                    None,
                                 ),
                                 failed && !fixed_slots,
                             )?;
@@ -1748,11 +2106,10 @@ impl FormFacts {
                         self.reference(
                             ctx,
                             source.scope,
-                            group,
-                            (
+                            ReferenceSlot::ungrouped(
+                                group,
                                 reference_role,
                                 u32::try_from(ordinal).map_err(CodecError::malformed)?,
-                                None,
                             ),
                             reference,
                             None,
@@ -1877,12 +2234,7 @@ impl FormFacts {
             self.reference(
                 ctx,
                 scope,
-                serializer.record,
-                (
-                    FormReferenceRole::SerializerSurface,
-                    0,
-                    Some(serializer.offset),
-                ),
+                serializer.slot()?,
                 reference,
                 Some(resource.clone()),
             )?;
@@ -2075,26 +2427,12 @@ fn retain_serializer_candidate(
         facts.reference(
             ctx,
             scope,
-            serializer.record,
-            (
-                FormReferenceRole::SerializerSurface,
-                0,
-                Some(serializer.offset),
-            ),
+            serializer.slot()?,
             reference,
             Some(resource.clone()),
         )?;
     } else {
-        facts.missing_reference(
-            scope,
-            serializer.record,
-            (
-                FormReferenceRole::SerializerSurface,
-                0,
-                Some(serializer.offset),
-            ),
-            false,
-        )?;
+        facts.missing_reference(scope, serializer.slot()?, false)?;
     }
     let mut path = FormInputPath {
         references: NonEmptyMembers::one(record_id(scope, serializer.record)?),
@@ -2219,6 +2557,7 @@ fn collect_membership(
     source: FormSource<'_>,
     scopes: &[DesignParameterScope],
     facts: &mut FormFacts,
+    groups: &mut ReferenceGroups,
     losses: &mut Vec<LossNote>,
 ) -> Result<FormMembership, CodecError> {
     let FormSource {
@@ -2233,7 +2572,8 @@ fn collect_membership(
         Ok(None) | Err(CodecError::Malformed(_)) => None,
         Err(error) => return Err(error),
     };
-    let serializers = form_serializers(ctx, bytes, records, types.as_ref())?;
+    let mut serializers = form_serializers(ctx, bytes, records, types.as_ref())?;
+    bind_serializers(ctx, source, &mut serializers, groups)?;
     if let Some(types) = &types {
         facts.tracking(ctx, source, types, losses)?;
     }
@@ -2461,7 +2801,7 @@ fn collect_membership(
         scan,
         source,
         (&types, &serializers),
-        facts,
+        (facts, groups),
         ordinary,
         losses,
     )
@@ -2472,11 +2812,12 @@ fn body_membership(
     scan: &ContainerScan,
     source: FormSource<'_>,
     admission: (&FormRecordTypes, &FormCageSerializers),
-    facts: &mut FormFacts,
+    state: (&mut FormFacts, &mut ReferenceGroups),
     ordinary: Option<FormMembership>,
     losses: &mut Vec<LossNote>,
 ) -> Result<FormMembership, CodecError> {
     let (types, serializers) = admission;
+    let (facts, groups) = state;
     let FormSource {
         bytes,
         records,
@@ -2494,7 +2835,8 @@ fn body_membership(
         );
     }
     for &body in &types.bodies {
-        let alternatives = form_body_references(ctx, bytes, records, body)?;
+        let mut alternatives = form_body_references(ctx, bytes, records, body)?;
+        bind_body_runs(ctx, source, body, &mut alternatives, groups)?;
         if alternatives.is_empty() {
             closed = false;
             continue;
@@ -2548,6 +2890,9 @@ fn body_membership(
         let mut selected = Vec::new();
         for run in alternatives {
             let null_only = run.is_null_only();
+            let group = run
+                .group
+                .ok_or_else(|| CodecError::malformed("Form body group is unavailable"))?;
             let references = run.references;
             let mut local = [None; FORM_BODY_REFERENCE_COUNT];
             let mut failed = false;
@@ -2555,12 +2900,7 @@ fn body_membership(
                 let Some(reference) = reference else {
                     facts.missing_reference(
                         scope,
-                        body,
-                        (
-                            FormReferenceRole::Body,
-                            u32::try_from(ordinal).map_err(CodecError::malformed)?,
-                            Some(run.offset),
-                        ),
+                        group.slot(u32::try_from(ordinal).map_err(CodecError::malformed)?),
                         failed,
                     )?;
                     failed = true;
@@ -2569,12 +2909,7 @@ fn body_membership(
                 facts.reference(
                     ctx,
                     scope,
-                    body,
-                    (
-                        FormReferenceRole::Body,
-                        u32::try_from(ordinal).map_err(CodecError::malformed)?,
-                        Some(run.offset),
-                    ),
+                    group.slot(u32::try_from(ordinal).map_err(CodecError::malformed)?),
                     reference,
                     None,
                 )?;
@@ -2970,6 +3305,7 @@ fn take_form_reference(
 struct FormBodyRun {
     offset: usize,
     references: [Option<FormReference>; FORM_BODY_REFERENCE_COUNT],
+    group: Option<BoundGroup>,
 }
 
 impl FormBodyRun {
@@ -3029,6 +3365,7 @@ fn form_body_references(
         runs.push(FormBodyRun {
             offset: at,
             references,
+            group: None,
         });
     }
     Ok(runs)
@@ -3642,6 +3979,141 @@ struct FormSerializer {
     ambiguous: bool,
     reference: Option<FormReference>,
     valid: bool,
+    group: Option<BoundGroup>,
+}
+
+impl FormSerializer {
+    fn slot(&self) -> Result<ReferenceSlot, CodecError> {
+        self.group
+            .map(|group| group.slot(0))
+            .ok_or_else(|| CodecError::malformed("Form serializer group is unavailable"))
+    }
+}
+
+fn profile_reference(
+    ctx: &DecodeContext<'_>,
+    scope: &DesignParameterScope,
+    slot: ReferenceSlot,
+    reference: Option<&FormReference>,
+    unvisited: bool,
+) -> Result<FormNativeReference, CodecError> {
+    if let Some(reference) = reference {
+        native_reference(ctx, scope, slot, reference, None)
+    } else {
+        let target = if unvisited {
+            FormNativeReferenceTarget::Unvisited {}
+        } else {
+            FormNativeReferenceTarget::Unreadable {}
+        };
+        Ok(FormNativeReference::new(
+            group_record_id(ctx, scope, u64::from(slot.source))?,
+            slot.role,
+            slot.ordinal,
+            target,
+        ))
+    }
+}
+
+fn bind_serializers(
+    ctx: &DecodeContext<'_>,
+    source: FormSource<'_>,
+    serializers: &mut FormCageSerializers,
+    groups: &mut ReferenceGroups,
+) -> Result<(), CodecError> {
+    let mut entries = Vec::new();
+    for serializer in serializers
+        .entries
+        .values_mut()
+        .flatten()
+        .chain(serializers.unbound.iter_mut())
+    {
+        let slot =
+            ReferenceSlot::ungrouped(serializer.record, FormReferenceRole::SerializerSurface, 0);
+        let fact = profile_reference(
+            ctx,
+            source.scope,
+            slot,
+            serializer.reference.as_ref(),
+            false,
+        )?;
+        let profile = group_json_key(ctx, &(fact, &serializer.name))?;
+        entries
+            .try_reserve(1)
+            .map_err(|_| group_allocation_error::<(Vec<u8>, usize, &mut FormSerializer)>(ctx, 1))?;
+        let index = entries.len();
+        entries.push((profile, index, serializer));
+    }
+    entries.sort_unstable_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+    for (_, _, serializer) in entries {
+        serializer.group = Some(groups.bind(
+            ctx,
+            source.scope,
+            serializer.record,
+            FormReferenceRole::SerializerSurface,
+            PhysicalGroup::Serializer {
+                stream: group_string(ctx, source.stream)?,
+                frame: serializer.offset,
+            },
+        )?);
+    }
+    Ok(())
+}
+
+fn bind_body_runs(
+    ctx: &DecodeContext<'_>,
+    source: FormSource<'_>,
+    body: u32,
+    runs: &mut [FormBodyRun],
+    groups: &mut ReferenceGroups,
+) -> Result<(), CodecError> {
+    if runs.is_empty() {
+        return Ok(());
+    }
+    let (frame, _) = one_indexed_frame(source.records, body)
+        .ok_or_else(|| CodecError::malformed("Form body frame is unavailable"))?;
+    let mut profiles = Vec::new();
+    profiles
+        .try_reserve(runs.len())
+        .map_err(|_| group_allocation_error::<(Vec<u8>, usize)>(ctx, runs.len()))?;
+    for (index, run) in runs.iter().enumerate() {
+        let mut facts = Vec::new();
+        facts.try_reserve_exact(run.references.len()).map_err(|_| {
+            group_allocation_error::<FormNativeReference>(ctx, run.references.len())
+        })?;
+        let mut failed = false;
+        for (ordinal, reference) in run.references.iter().enumerate() {
+            let slot = ReferenceSlot::ungrouped(
+                body,
+                FormReferenceRole::Body,
+                u32::try_from(ordinal).map_err(CodecError::malformed)?,
+            );
+            facts.push(profile_reference(
+                ctx,
+                source.scope,
+                slot,
+                reference.as_ref(),
+                failed,
+            )?);
+            failed |= reference.is_none();
+        }
+        profiles.push((group_json_key(ctx, &facts)?, index));
+    }
+    profiles.sort_unstable_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+    for (_, index) in profiles {
+        let run = &mut runs[index];
+        run.group = Some(groups.bind(
+            ctx,
+            source.scope,
+            body,
+            FormReferenceRole::Body,
+            PhysicalGroup::Body {
+                stream: group_string(ctx, source.stream)?,
+                frame,
+                envelope: run.offset,
+            },
+        )?);
+    }
+    Ok(())
 }
 struct FormCageSerializers {
     ordered: Vec<u64>,
@@ -3861,6 +4333,7 @@ fn collect_form_cage_serializers(
                 ambiguous: false,
                 reference,
                 valid: false,
+                group: None,
             });
             continue;
         };
@@ -3875,6 +4348,7 @@ fn collect_form_cage_serializers(
             ambiguous: false,
             reference,
             valid,
+            group: None,
         });
     }
     let mut primary_offsets = HashMap::<u32, HashSet<usize>>::new();
