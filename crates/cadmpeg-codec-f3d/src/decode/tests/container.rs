@@ -544,3 +544,71 @@ fn source_image_marks(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<ArenaCla
     );
     marks
 }
+
+#[test]
+fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_definition() {
+    use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+    use cadmpeg_ir::products::{
+        Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    };
+    let definition = |id: &str| ProductDefinition {
+        id: ProductDefinitionId::mint(id).unwrap(),
+        kind: ProductDefinitionKind::Part,
+        source_name: None,
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::new(),
+        bodies: Vec::new(),
+        sketches: Vec::new(),
+        native_ref: None,
+    };
+    let occurrence = |id: &str, definition: &str, parent: Option<&str>| Occurrence {
+        id: OccurrenceId::mint(id).unwrap(),
+        prototype: PrototypeReference::Local {
+            definition: ProductDefinitionId::mint(definition).unwrap(),
+        },
+        parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
+            OccurrenceParent::Occurrence {
+                occurrence: OccurrenceId::mint(parent).unwrap(),
+            }
+        }),
+        ordinal: 0,
+        transform: cadmpeg_ir::transform::Transform::identity(),
+        linked_prototype: None,
+        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+        name: None,
+        visible: None,
+        link: None,
+        native_ref: None,
+    };
+    let root = "f3d:model:component#root";
+    let child = "f3d:model:component#child";
+    let member = "f3d:xref/role-a/reference-0/occurrence-0/archive:product-definition#0";
+    let file_definition = |model: &cadmpeg_ir::document::Model| {
+        super::super::file_definition(model).map(|id| id.as_str().to_owned())
+    };
+
+    let mut model = cadmpeg_ir::document::Model::default();
+    model.product_definitions = vec![definition(root), definition(child), definition(member)];
+    model.occurrences = vec![
+        occurrence("f3d:model:occurrence#root-a", root, None),
+        occurrence(
+            "f3d:model:occurrence#a",
+            child,
+            Some("f3d:model:occurrence#root-a"),
+        ),
+        occurrence("f3d:model:occurrence#xref", member, None),
+    ];
+    assert_eq!(file_definition(&model).as_deref(), Some(root));
+
+    model.occurrences.clear();
+    model.product_definitions = vec![definition(root), definition(member)];
+    assert_eq!(file_definition(&model).as_deref(), Some(root));
+
+    model.product_definitions.push(definition(child));
+    assert_eq!(file_definition(&model), None, "two unplaced definitions");
+
+    model.product_definitions.clear();
+    assert_eq!(file_definition(&model), None, "no definition");
+}

@@ -5072,7 +5072,7 @@ fn decode_result(
 }
 
 /// Commits each archive entry the scan gave up, its stub linked to the
-/// document's root product definition when the document has exactly one.
+/// product definition of the file that holds the archive.
 /// `header_losses` already put each part's loss in the report.
 pub(crate) fn commit_given_up_parts(
     ctx: &DecodeContext<'_>,
@@ -5080,32 +5080,58 @@ pub(crate) fn commit_given_up_parts(
     ir: &mut CadIr,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<(), CodecError> {
-    let placed = ir
-        .model
-        .occurrences
-        .iter()
-        .filter_map(|occurrence| match &occurrence.prototype {
-            cadmpeg_ir::products::PrototypeReference::Local { definition } => Some(definition),
-            _ => None,
-        })
-        .collect::<std::collections::BTreeSet<_>>();
-    let mut roots = ir
-        .model
-        .product_definitions
-        .iter()
-        .filter(|definition| !placed.contains(&definition.id));
-    let root = match (roots.next(), roots.next()) {
-        (Some(root), None) => Some(cadmpeg_ir::ids::Identity::from(root.id.clone())),
-        _ => None,
-    };
+    let owner = file_definition(&ir.model).map(cadmpeg_ir::ids::Identity::from);
     for given_up in scan.given_up.iter().cloned() {
-        let given_up = match &root {
-            Some(root) => given_up.contained_in(root.clone()),
+        let given_up = match &owner {
+            Some(owner) => given_up.contained_in(owner.clone()),
             None => given_up,
         };
         given_up.commit(ctx, ir, fidelity)?;
     }
     Ok(())
+}
+
+/// The definition the decoded file holds at its top: the prototype of its
+/// root occurrence, or with none, the one definition no occurrence places.
+/// Definitions of merged archive members belong to their own files.
+fn file_definition(
+    model: &cadmpeg_ir::document::Model,
+) -> Option<cadmpeg_ir::ids::ProductDefinitionId> {
+    use cadmpeg_ir::ids::ProductDefinitionId;
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+    fn local(occurrence: &cadmpeg_ir::products::Occurrence) -> Option<&ProductDefinitionId> {
+        match &occurrence.prototype {
+            PrototypeReference::Local { definition } => Some(definition),
+            _ => None,
+        }
+    }
+    let own = |definition: &&ProductDefinitionId| !definition.as_str().starts_with("f3d:xref/");
+    let mut top = model
+        .occurrences
+        .iter()
+        .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+        .filter_map(local)
+        .filter(own)
+        .collect::<std::collections::BTreeSet<_>>();
+    if top.is_empty() {
+        let placed = model
+            .occurrences
+            .iter()
+            .filter_map(local)
+            .collect::<std::collections::BTreeSet<_>>();
+        top = model
+            .product_definitions
+            .iter()
+            .map(|definition| &definition.id)
+            .filter(|definition| !placed.contains(definition))
+            .filter(own)
+            .collect();
+    }
+    let mut top = top.into_iter();
+    match (top.next(), top.next()) {
+        (Some(definition), None) => Some(definition.clone()),
+        _ => None,
+    }
 }
 
 pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {

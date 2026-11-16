@@ -173,7 +173,8 @@ fn inline_given_up_parts(
             stream.to_owned(),
             record.offset(),
             cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data },
-        )?;
+        )?
+        .with_untyped(record.untyped().iter().copied());
         inlined.push((id.clone(), retained));
     }
     for (id, retained) in inlined {

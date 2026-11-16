@@ -19,7 +19,7 @@ use std::io::Read;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{
-    DecodeArena, DecodeCheckpoint, DecodeContext, LimitScope, ResourceLimit, View,
+    ArenaClass, DecodeArena, DecodeCheckpoint, DecodeContext, LimitScope, ResourceLimit, View,
 };
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -125,6 +125,19 @@ pub(crate) fn classify(name: &str) -> ContainerRole {
         ContainerRole::OgsCache
     } else {
         ContainerRole::Other
+    }
+}
+
+/// The content classes an entry of `role` can hold.
+fn held_classes(role: ContainerRole) -> &'static [ArenaClass] {
+    match role {
+        ContainerRole::Directory => &[],
+        ContainerRole::DesignConfig => &[ArenaClass::Design],
+        ContainerRole::Metastream | ContainerRole::Bulkstream => {
+            &[ArenaClass::Model, ArenaClass::Design]
+        }
+        ContainerRole::Other => &ArenaClass::ALL,
+        _ => &[ArenaClass::Model],
     }
 }
 
@@ -571,9 +584,14 @@ fn scan_in<'a>(
                     .ok_or_else(|| CodecError::malformed("F3D ZIP payload escapes the archive"))?;
                 attributes.insert("payload_error".to_owned(), error.to_string());
                 // The source image record keeps every stored byte of the archive.
-                let mut part = Part::new("f3d", "archive-entry", stored)
-                    .named(name.as_str())
-                    .digest_only();
+                let mut part = Part::new(
+                    "f3d",
+                    "archive-entry",
+                    stored,
+                    held_classes(role).iter().copied(),
+                )
+                .named(name.as_str())
+                .digest_only();
                 if let Some(stream) = stream {
                     part = part.in_stream(stream.clone());
                 }

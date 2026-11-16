@@ -8,7 +8,9 @@
 //! contains it, its bytes are retained, and one `record.unreadable` loss
 //! names it. Nothing else in the document describes the failure.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use std::collections::BTreeSet;
+
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
@@ -42,6 +44,7 @@ pub struct Part<'a> {
     stream: Option<StreamName>,
     offset: u64,
     bytes: &'a [u8],
+    holds: BTreeSet<ArenaClass>,
     containing: Option<Identity>,
     dropped: Vec<Identity>,
     lost: Vec<String>,
@@ -51,16 +54,36 @@ pub struct Part<'a> {
 
 impl<'a> Part<'a> {
     /// A part of `kind` whose bytes are `extent`, in the root stream of
-    /// `codec`'s source.
+    /// `codec`'s source, holding content of the classes in `holds`.
     #[must_use]
-    pub fn new(codec: &'static str, kind: &'static str, extent: View<'a>) -> Self {
-        Self::at(codec, kind, u64_from_index(extent.start()), extent.window())
+    pub fn new(
+        codec: &'static str,
+        kind: &'static str,
+        extent: View<'a>,
+        holds: impl IntoIterator<Item = ArenaClass>,
+    ) -> Self {
+        Self::at(
+            codec,
+            kind,
+            u64_from_index(extent.start()),
+            extent.window(),
+            holds,
+        )
     }
 
     /// A part of `kind` whose `bytes` start at `offset` in the root stream
-    /// of `codec`'s source.
+    /// of `codec`'s source, holding content of the classes in `holds`.
+    ///
+    /// The classes are those the part's bytes can hold. The retained bytes of
+    /// a given-up part are marked `untyped` with them.
     #[must_use]
-    pub fn at(codec: &'static str, kind: &'static str, offset: u64, bytes: &'a [u8]) -> Self {
+    pub fn at(
+        codec: &'static str,
+        kind: &'static str,
+        offset: u64,
+        bytes: &'a [u8],
+        holds: impl IntoIterator<Item = ArenaClass>,
+    ) -> Self {
         Self {
             codec,
             kind,
@@ -68,6 +91,7 @@ impl<'a> Part<'a> {
             stream: None,
             offset,
             bytes,
+            holds: holds.into_iter().collect(),
             containing: None,
             dropped: Vec::new(),
             lost: Vec::new(),
@@ -253,6 +277,39 @@ pub fn restate_loss(loss: &mut LossNote, from: &str, to: &str) -> bool {
     true
 }
 
+/// Links the committed stub `id` in `codec`'s `unknowns` arena to the
+/// innermost record that contains its part, replacing any link it had, for a
+/// decoder that defines that record after the commit, as when a decoder
+/// composing several documents defines the member that holds the part.
+/// Returns whether `ir` holds the stub.
+///
+/// # Errors
+///
+/// [`CodecError::Malformed`] when `id` cannot name a stub.
+pub fn link_committed(
+    ir: &mut CadIr,
+    codec: &str,
+    id: &str,
+    record: Identity,
+) -> Result<bool, CodecError> {
+    let Some(arena) = ir
+        .native
+        .0
+        .get_mut(codec)
+        .and_then(|namespace| namespace.arenas_mut().get_mut("unknowns"))
+    else {
+        return Ok(false);
+    };
+    let Some(stub) = arena.iter_mut().find(|stub| stub.id() == id) else {
+        return Ok(false);
+    };
+    *stub = NativeRecord::from(&NativeUnknownRecord {
+        id: UnknownId::mint(id.to_owned()).map_err(CodecError::malformed)?,
+        links: vec![record],
+    });
+    Ok(true)
+}
+
 /// Gives up the parts a decoder cannot read.
 pub trait DecodeParts {
     /// Gives up `part` after its decode, run inside
@@ -296,7 +353,8 @@ impl DecodeParts for DecodeContext<'_> {
             .stream
             .clone()
             .map_or(SourceOwner::Root, SourceOwner::from);
-        let retained = RetainedSourceRecord::from_bytes(owner, part.offset(), retained_bytes)?;
+        let retained = RetainedSourceRecord::from_bytes(owner, part.offset(), retained_bytes)?
+            .with_untyped(part.holds.iter().copied());
         let mut dropped: Vec<&str> = part.dropped.iter().map(Identity::as_str).collect();
         dropped.sort_unstable();
         dropped.dedup();

@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
@@ -70,6 +70,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                     "pvz",
                     "archive-entry",
                     package.stored(package.structure_name())?,
+                    [ArenaClass::Model],
                 )
                 .named(package.structure_name())
                 .costing(format!(
@@ -105,7 +106,13 @@ fn give_up_member(
     owner: Option<&ProductDefinition>,
     error: CodecError,
 ) -> Result<GivenUpPart, CodecError> {
-    let mut part = Part::new("pvz", "archive-entry", package.stored(name)?).named(name);
+    let mut part = Part::new(
+        "pvz",
+        "archive-entry",
+        package.stored(name)?,
+        [ArenaClass::Model],
+    )
+    .named(name);
     if let Some(owner) = owner {
         part = part.contained_in(Identity::from(owner.id.clone()));
     }

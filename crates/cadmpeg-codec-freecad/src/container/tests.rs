@@ -208,6 +208,151 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
         .any(|window| window == [0x28, 0xb5, 0x2f, 0xfd]));
 }
 
+/// An archive whose deflated `Document.xml` nests `depth` elements below
+/// `Document`, beside stored GUI, side, and thumbnail entries.
+fn archive_with_deflated_document(depth: usize) -> (Vec<u8>, usize) {
+    use std::io::Write;
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/>{}{}</Document>"#,
+        "<Nest>".repeat(depth),
+        "</Nest>".repeat(depth)
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file(
+        "Document.xml",
+        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated),
+    )
+    .unwrap();
+    zip.write_all(document.as_bytes()).unwrap();
+    let stored = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, data) in [
+        (
+            "GuiDocument.xml",
+            b"<Document SchemaVersion=\"1\"/>".as_slice(),
+        ),
+        ("Shared.bin", b"shared"),
+        ("thumbnails/Thumbnail.png", b"png"),
+    ] {
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(data).unwrap();
+    }
+    (zip.finish().unwrap().into_inner(), document.len())
+}
+
+#[test]
+fn a_part_refusal_on_document_xml_gives_up_that_entry_and_keeps_the_others() {
+    use cadmpeg_core::decode::ArenaClass;
+    let (bytes, document_len) = archive_with_deflated_document(100);
+    let mut past_expansion = DecodeOptions::default();
+    past_expansion
+        .policy
+        .limits
+        .max_decompressed_bytes_per_expand = cadmpeg_core::decode::u64_from_index(document_len - 1);
+    let mut past_depth = DecodeOptions::default();
+    past_depth.policy.limits.max_recursion_depth = 64;
+    for (case, options) in [("expansion", past_expansion), ("depth", past_depth)] {
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(&bytes), &options)
+            .unwrap_or_else(|error| panic!("{case}: a Part refusal refuses no file: {error:?}"));
+        let losses: Vec<_> = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+            .map(|loss| loss.message.clone())
+            .collect();
+        let [message] = losses.as_slice() else {
+            panic!("{case}: one record.unreadable loss: {losses:?}");
+        };
+        assert!(
+            message.starts_with("part archive-entry \"Document.xml\" stream=\"\" offset=")
+                && message.contains("scope Part"),
+            "{case}: {message}"
+        );
+        assert!(decoded.ir().source.is_none(), "{case}");
+        assert_eq!(decoded.report().format(), "fcstd", "{case}");
+        let namespace = decoded.ir().native.namespace("fcstd").expect("namespace");
+        assert!(!namespace.arenas().contains_key("document"), "{case}");
+        let mut entries = namespace
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .expect("entries")
+            .iter()
+            .map(|entry| (entry.name().to_owned(), entry.data().to_vec()))
+            .collect::<Vec<_>>();
+        entries.sort();
+        assert_eq!(
+            entries,
+            [
+                (
+                    "GuiDocument.xml".to_owned(),
+                    b"<Document SchemaVersion=\"1\"/>".to_vec()
+                ),
+                ("Shared.bin".to_owned(), b"shared".to_vec()),
+                ("thumbnails/Thumbnail.png".to_owned(), b"png".to_vec()),
+            ],
+            "{case}"
+        );
+        assert!(
+            crate::test_support::validate_native(decoded.ir()).is_empty(),
+            "{case}: {:?}",
+            crate::test_support::validate_native(decoded.ir())
+        );
+        crate::test_support::test_archive::assert_valid_document(decoded.ir());
+        let ledger = namespace
+            .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
+            .expect("physical ledger");
+        let (ir, _, fidelity) = decoded.into_parts();
+        let [stub] = ir
+            .native_unknowns("fcstd")
+            .expect("stub")
+            .try_into()
+            .unwrap();
+        assert!(
+            message.contains(&format!(" record={}: ", stub.id)),
+            "{case}"
+        );
+        let [link] = stub.links.as_slice() else {
+            panic!("{case}: one link: {:?}", stub.links);
+        };
+        assert!(ledger.iter().any(|span| span.id == link.as_str()
+            && matches!(&span.role,
+                crate::native::ArchiveSpanRole::CompressedPayload(entry) if entry == "Document.xml")));
+        let retained = fidelity
+            .retained_record(stub.id.as_str())
+            .expect("Document.xml's stored bytes are retained");
+        let start = usize::try_from(retained.offset()).unwrap();
+        let end = usize::try_from(retained.end_offset()).unwrap();
+        assert_eq!(retained.data(), Some(&bytes[start..end]), "{case}");
+        assert_eq!(
+            retained.untyped(),
+            &ArenaClass::ALL.into_iter().collect(),
+            "{case}"
+        );
+        assert_eq!(
+            fidelity.unrepresented(),
+            ArenaClass::ALL.into_iter().collect(),
+            "{case}"
+        );
+
+        let summary = FcstdCodec
+            .inspect(
+                &mut Cursor::new(&bytes),
+                &cadmpeg_core::decode::InspectOptions {
+                    limits: options.policy.limits,
+                },
+            )
+            .unwrap_or_else(|error| panic!("{case}: inspect: {error:?}"));
+        assert!(summary.dialects().is_none(), "{case}");
+        assert!(
+            summary
+                .losses
+                .iter()
+                .any(|loss| loss.code.to_string() == "decode/record.unreadable"),
+            "{case}"
+        );
+    }
+}
+
 #[test]
 fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
     let bytes = br#"<Document SchemaVersion="4"><!-- <Objects><Object/> --><Note attr=">"> <![CDATA[<Object/>]]> </Note><Objects><Object/><Object/></Objects></Document>"#;
@@ -535,7 +680,12 @@ fn producer_version_metadata_does_not_refuse_the_document() {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
         let scan = crate::container::scan(&ctx, root)
             .expect("metadata does not select persistence grammar");
-        assert_eq!(scan.document.program_version.as_deref(), expected);
+        assert_eq!(
+            scan.persistence
+                .as_ref()
+                .and_then(|persistence| persistence.document.program_version.as_deref()),
+            expected
+        );
         let summary = crate::container::summarize(&scan);
         assert!(summary.losses.iter().any(|loss| loss.code
             == crate::loss::FreecadLossCode::ProgramVersionNoncanonical

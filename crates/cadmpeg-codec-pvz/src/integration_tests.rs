@@ -326,10 +326,11 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         .message
         .contains(&format!("record={}", stub.id)));
     let (_, _, fidelity) = result.into_parts();
-    assert_eq!(
-        fidelity.retained_record(stub.id.as_str()).unwrap().data(),
-        Some(b"not a bzip2 stream".as_slice())
-    );
+    let retained = fidelity.retained_record(stub.id.as_str()).unwrap();
+    assert_eq!(retained.data(), Some(b"not a bzip2 stream".as_slice()));
+    let model = std::collections::BTreeSet::from([cadmpeg_core::decode::ArenaClass::Model]);
+    assert_eq!(retained.untyped(), &model);
+    assert_eq!(fidelity.unrepresented(), model);
 }
 
 #[test]

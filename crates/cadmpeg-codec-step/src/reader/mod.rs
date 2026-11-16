@@ -756,6 +756,7 @@ fn give_up_statements(
             statement.kind,
             u64_from_index(statement.span.start),
             bytes,
+            [ArenaClass::Model],
         )
         .dropping(dropped)
         .losing_entries(

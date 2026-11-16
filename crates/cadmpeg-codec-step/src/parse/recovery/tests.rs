@@ -78,13 +78,17 @@ fn bounded_defects_preserve_independent_instances_and_exact_bytes() {
             .find(|record| record.id.as_str().starts_with("step:source:part#"))
             .expect("given-up statement stub");
         assert!(stub.links.is_empty());
+        let retained = fidelity
+            .retained_record(stub.id.as_str())
+            .expect("fidelity payload");
+        assert_eq!(retained.data(), Some(defective.as_bytes()));
         assert_eq!(
-            fidelity
-                .retained_record(stub.id.as_str())
-                .expect("fidelity payload")
-                .data(),
-            Some(defective.as_bytes())
+            retained.untyped(),
+            &std::collections::BTreeSet::from([cadmpeg_core::decode::ArenaClass::Model])
         );
+        assert!(fidelity
+            .unrepresented()
+            .contains(&cadmpeg_core::decode::ArenaClass::Model));
         assert_eq!(
             cadmpeg_test_support::wire::coverage_count(&report, "bytes_unclassified"),
             0

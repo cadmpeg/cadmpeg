@@ -231,6 +231,103 @@ fn a_merged_member_part_loss_names_the_stub_in_the_document() {
 }
 
 #[test]
+fn each_member_part_links_to_its_own_member_definition() {
+    let preview = "FusionAssetName[Active]/Previews/thumbnail.png";
+    let member = || {
+        let mut member = crate::test_support::zip_test::f3d_with_configuration(
+            &synthetic_geometry_smbh(),
+            preview,
+            b"preview",
+        );
+        damage_local_frame(&mut member, preview);
+        member
+    };
+    let (first, second) = (member(), member());
+    let root = f3d_without_brep(
+        "assembly-design",
+        "root.f3d",
+        &[("first.f3d", "first-role"), ("second.f3d", "second-role")],
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", &root),
+            ("first.f3d", &first),
+            ("second.f3d", &second),
+        ],
+    );
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(&archive),
+            &DecodeOptions::default(),
+        )
+        .unwrap(),
+    );
+    let definitions = decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .map(|definition| definition.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(definitions.len(), 2, "{definitions:?}");
+    let stubs = decoded
+        .ir()
+        .native_unknowns("f3d")
+        .unwrap()
+        .into_iter()
+        .filter(|stub| stub.id.as_str().contains("/source:part#"))
+        .collect::<Vec<_>>();
+    assert_eq!(stubs.len(), 2, "{stubs:?}");
+    let mut owners = Vec::new();
+    for stub in &stubs {
+        let [link] = stub.links.as_slice() else {
+            panic!("{} has one link: {:?}", stub.id, stub.links);
+        };
+        let (member, _) = stub.id.as_str().split_once("/source:part#").unwrap();
+        assert_eq!(
+            link.as_str(),
+            format!("{member}/archive:product-definition#0"),
+            "{}",
+            stub.id
+        );
+        assert!(definitions.contains(&link.as_str()));
+        owners.push(link.as_str());
+        let retained = decoded
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .expect("the part is named in the sidecar");
+        assert_eq!(
+            retained.untyped(),
+            &std::collections::BTreeSet::from([cadmpeg_core::decode::ArenaClass::Model])
+        );
+    }
+    owners.sort_unstable();
+    owners.dedup();
+    assert_eq!(owners.len(), 2, "each member owns its own part");
+    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .unwrap()
+        .findings;
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.check == cadmpeg_ir::report::check::Check::NativeLinks),
+        "{findings:#?}"
+    );
+    assert!(decoded
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_core::decode::ArenaClass::Model));
+    assert!(<F3dCodec as CodecBackend>::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir(),
+        None,
+    )
+    .unwrap()
+    .is_empty());
+}
+
+#[test]
 fn a_model_root_part_keeps_its_bytes_when_the_root_source_image_is_replaced() {
     let preview = "FusionAssetName[Active]/Previews/thumbnail.png";
     let mut root = crate::test_support::zip_test::f3d_with_configuration(
