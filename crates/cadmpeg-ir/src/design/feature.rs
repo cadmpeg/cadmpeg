@@ -18,6 +18,7 @@ use super::ops::body::{
     Combine, DeleteBodies, DeleteFaces, Extract, Flex, Graft, MoveFaces, Pattern, ReplaceFaces,
     Split, TemplateInstance, TransformBodies,
 };
+use super::ops::datum::Datum;
 use super::ops::dressup::{
     Chamfer, Decal, Dome, Draft, Emboss, Fillet, Hole, Offset, ShellFeature, Thicken, Thread,
 };
@@ -169,6 +170,8 @@ pub enum FeatureOperation {
     SpatialSketch(SpatialSketchId),
     /// A sheet: names the sheet record the feature owns.
     Spreadsheet(SpreadsheetId),
+    /// A datum (§6.2).
+    Datum(Box<Datum>),
     /// An extrusion (§6.3).
     Extrude(Box<Extrude>),
     /// A revolution (§6.3).
