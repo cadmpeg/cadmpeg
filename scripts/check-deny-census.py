@@ -84,6 +84,7 @@ import os
 import re
 import stat
 import sys
+import tomllib
 from pathlib import Path
 
 # Share the source-policy lexer so comments, literals and cfg(test) bodies do
@@ -1095,6 +1096,15 @@ def deserializer_macro_contracts(path):
     return contracts
 
 
+# The package that defines each forwarding macro, and the module a path
+# through that package's root names it by.
+DESERIALIZER_MACRO_OWNERS = {
+    "selection_field_deserializer": ("cadmpeg-ir", "features"),
+    "named_field": ("cadmpeg-ir", "units"),
+    "named_optional_field": ("cadmpeg-core", "absent_key"),
+}
+
+
 def deserializer_helpers(path, contracts=None):
     """Collect local macro-generated deserializers with source proof.
 
@@ -1111,13 +1121,25 @@ def deserializer_helpers(path, contracts=None):
     forwarders = set()
     named = {}
     call_re = re.compile(
-        r"(?:::)?(?:[A-Za-z_]\w*::)*(?P<macro>"
+        r"(?P<prefix>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*)(?P<macro>"
         r"selection_field_deserializer|named_field|named_optional_field)\s*!\s*\("
     )
+    crate = Path(*path.parts[:path.parts.index("src")])
     for call in call_re.finditer(code):
         end = delimited_end(code, call.end() - 1, "(", ")")
         if end is None:
             raise ValueError(f"{path}: incomplete deserializer macro at byte {call.start()}")
+        owner, module = DESERIALIZER_MACRO_OWNERS[call.group("macro")]
+        prefix = canonical_path(call.group("prefix"))
+        if prefix:
+            spelled = call.group("prefix") + call.group("macro")
+            segments = canonical_path(spelled).lstrip(":").split("::")
+            if reader_path_failure(
+                spelled, crate, (owner,), module if len(segments) > 2 else None
+            ) is not None:
+                continue
+        elif (manifest(crate) or {}).get("package", {}).get("name") != owner:
+            continue
         args = code[call.end():end - 1]
         parts = list(split_metadata(args))
         if not parts:
@@ -1357,36 +1379,275 @@ def split_tuple_types(text):
 
 
 class Arm:
-    def __init__(self, name, kind, types, untagged, skipped_newtype=False, tag_only=False):
+    def __init__(self, name, kind, types, untagged, skipped_newtype=False, tag_only=False,
+                 tag_only_failure=None):
         self.name = name
         self.kind = kind
         self.types = types
         self.untagged = untagged
         self.skipped_newtype = skipped_newtype
         self.tag_only = tag_only
+        # Why a path that spells the tag-only reader names another reader.
+        self.tag_only_failure = tag_only_failure
+
+
+# A reader the census accepts by its path is that crate's reader only where
+# the path's root binds that crate. The using crate's manifest maps a
+# wire-crate root to the workspace's own package of that name, a registry
+# root to the registry package of that name, and a standard root to no
+# dependency. A token of the using crate's sources that spells the root other
+# than as a path's first segment can bind it to something else: a module, a
+# `use` rename, an `extern crate .. as`, an item, a macro argument. A glob
+# import from outside the crate can bring in a module of that name. Either
+# leaves the path unproved. `crate::` names the reader only in the crate that
+# is the workspace's package of it.
+PATH_READER_PACKAGES = {"cadmpeg_core": "cadmpeg-core", "cadmpeg_ir": "cadmpeg-ir"}
+STANDARD_ROOTS = {"std", "core", "alloc"}
+REGISTRY_ROOTS = {"serde_json", "serde_bytes", "indexmap"}
+DEPENDENCY_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
+
+
+@SOURCE_POLICY.cached_analysis
+def manifest(directory):
+    """The parsed ``Cargo.toml`` of ``directory``, or ``None``."""
+    try:
+        return tomllib.loads((Path(directory) / "Cargo.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+
+
+@SOURCE_POLICY.cached_analysis
+def workspace_root(crate):
+    """The nearest directory at or above ``crate`` whose manifest is a workspace."""
+    here = Path(crate).resolve()
+    for directory in (here, *here.parents):
+        stated = manifest(directory)
+        if stated is not None and "workspace" in stated:
+            return directory
+    return None
+
+
+@SOURCE_POLICY.cached_analysis
+def package_directory(crate, package):
+    """The directory of the workspace's own ``package``, read from ``crate``'s
+    workspace, or ``None``."""
+    root = workspace_root(crate)
+    if root is None:
+        return None
+    found = {
+        (root / spec["path"]).resolve()
+        for key, spec in manifest(root).get("workspace", {}).get("dependencies", {}).items()
+        if isinstance(spec, dict) and spec.get("package", key) == package and "path" in spec
+    }
+    if len(found) != 1:
+        return None
+    directory = found.pop()
+    if (manifest(directory) or {}).get("package", {}).get("name") != package:
+        return None
+    return directory
+
+
+def dependency_source(crate, key, spec):
+    """``(package, directory, registry)`` of one dependency entry, or ``None``.
+
+    A ``workspace = true`` entry is read from the workspace's own table, and
+    a path is resolved from the manifest that states it.
+    """
+    if isinstance(spec, str):
+        return key, None, True
+    if not isinstance(spec, dict):
+        return None
+    base = Path(crate).resolve()
+    if spec.get("workspace") is True:
+        root = workspace_root(crate)
+        inherited = (
+            manifest(root).get("workspace", {}).get("dependencies", {}).get(key)
+            if root is not None else None
+        )
+        if isinstance(inherited, str):
+            inherited = {"version": inherited}
+        if not isinstance(inherited, dict):
+            return None
+        spec = {**inherited, **{name: value for name, value in spec.items() if name != "workspace"}}
+        base = root
+    package = spec.get("package", key)
+    if "path" in spec:
+        return package, (base / spec["path"]).resolve(), False
+    return package, None, "git" not in spec
+
+
+@SOURCE_POLICY.cached_analysis
+def manifest_binding(crate, root):
+    """Why ``crate``'s manifest does not bind ``root`` to its real crate, or ``None``."""
+    stated = manifest(crate)
+    where = Path(crate).as_posix()
+    if stated is None:
+        return f"{where} has no Cargo.toml the census reads, so {root} names no crate it can prove"
+    tables = [stated.get(table, {}) for table in DEPENDENCY_TABLES]
+    for target in stated.get("target", {}).values():
+        tables += [target.get(table, {}) for table in DEPENDENCY_TABLES]
+    sources = []
+    for table in tables:
+        for key, spec in table.items():
+            if key.replace("-", "_") != root:
+                continue
+            source = dependency_source(crate, key, spec)
+            if source is None:
+                return f"the dependency {key} of {where} is no entry the census reads"
+            sources.append(source)
+    if root in STANDARD_ROOTS:
+        return f"{where} names a dependency {root}, which shadows the standard crate" if sources else None
+    if not sources:
+        return f"{where} names no dependency {root}"
+    for package, directory, registry in sources:
+        if root in PATH_READER_PACKAGES:
+            wanted = PATH_READER_PACKAGES[root]
+            if package != wanted or directory is None or directory != package_directory(crate, wanted):
+                return f"the dependency {root} of {where} is not the workspace's {wanted}"
+        elif package.replace("-", "_") != root or not registry:
+            return f"the dependency {root} of {where} is not the registry crate {root}"
+    return None
+
+
+@SOURCE_POLICY.cached_analysis
+def crate_source_files(crate):
+    """Every non-test Rust source under ``crate``'s ``src``."""
+    files = []
+    for directory, children, names in os.walk(Path(crate) / "src"):
+        children[:] = sorted(name for name in children if name not in SKIP_DIRS)
+        files.extend(
+            Path(directory) / name for name in sorted(names)
+            if name.endswith(".rs") and name not in SKIP_BASENAMES
+        )
+    return tuple(files)
+
+
+@SOURCE_POLICY.cached_analysis
+def root_shadowing(crate, root, absolute=False):
+    """Where a token of ``crate``'s sources can bind ``root`` to anything but
+    the crate its manifest names, or ``None``.
+
+    A path's first segment and a ``use`` rename's original bind nothing. An
+    ``absolute`` path starts at the extern prelude, which only ``extern crate
+    .. as`` rebinds, so for it the census reads the ``as`` and every macro
+    token tree that could spell one.
+    """
+    named = re.compile(rf"(?<![\w$]){re.escape(root)}(?![\w$])")
+    files = crate_source_files(crate)
+    modules = set()
+    for path in files:
+        code, _ = SOURCE_POLICY.production_source(read_source(path))
+        modules.update(re.findall(r"(?<![\w$])mod\s+([A-Za-z_]\w*)", code))
+    for path in files:
+        source = read_source(path)
+        code, _ = SOURCE_POLICY.production_source(source)
+        trees = [(tree.start, tree.end) for tree in macro_token_trees(path)] if absolute else []
+        for mention in named.finditer(code):
+            before = code[max(0, mention.start() - 64):mention.start()].rstrip()
+            after = code[mention.end():mention.end() + 64]
+            head = re.match(r"\s*(?:::|as\b)", after) is not None
+            if absolute:
+                binds = re.search(r"(?<![\w$])as\Z", before) is not None or (
+                    not head and any(start < mention.start() < end for start, end in trees)
+                )
+            else:
+                binds = not head or (
+                    before.endswith("::") and re.search(r"[\w$>]\Z", before[:-2].rstrip())
+                )
+            if binds:
+                line = source.count("\n", 0, mention.start()) + 1
+                return f"{path.as_posix()}:{line} spells {root} where it can bind another item"
+        if absolute:
+            continue
+        for binding in collect_imports(path):
+            if binding.alias != "*":
+                continue
+            head = binding.target.split("::", 1)[0]
+            if binding.target.startswith("::") or head not in {"crate", "self", "super"} | modules:
+                return (
+                    f"{path.as_posix()} imports every name of {binding.target}, "
+                    f"which can bring in a {root}"
+                )
+    return None
+
+
+def extern_root_failure(crate, root, absolute=False):
+    """Why ``root``, written in ``crate``, can name anything but its real crate."""
+    return manifest_binding(crate, root) or root_shadowing(crate, root, absolute)
+
+
+def module_declared(home, module):
+    """Whether the crate root at ``home`` declares the module ``module``."""
+    try:
+        source = read_source(Path(home) / "src" / "lib.rs")
+    except OSError:
+        return False
+    code, _ = SOURCE_POLICY.production_source(source)
+    offsets, scopes = lexical_scopes(code)
+    return any(
+        not scopes[bisect_right(offsets, declared.start()) - 1]
+        for declared in re.finditer(rf"(?<![\w$])mod\s+{re.escape(module)}\s*[;{{]", code)
+    )
+
+
+def reader_path_failure(value, crate, packages, module=None):
+    """Why the path ``value``, written in ``crate``, names no reader of the
+    workspace's ``packages``, or ``None``. A path through ``module`` needs the
+    package's root to declare that module."""
+    if "$crate" in value:
+        return f"{value} names $crate, which a path in a string does not resolve"
+    path = canonical_path(value)
+    head = path.lstrip(":").split("::", 1)[0]
+    package = PATH_READER_PACKAGES.get(head)
+    if head == "crate" and not path.startswith("::"):
+        stated = (manifest(crate) or {}).get("package", {}).get("name")
+        if stated not in packages or package_directory(crate, stated) != Path(crate).resolve():
+            return f"{path} is written outside {' and '.join(packages)}"
+        home = Path(crate)
+    elif package in packages:
+        reason = extern_root_failure(crate, head, path.startswith("::"))
+        if reason is not None:
+            return reason
+        home = package_directory(crate, package)
+    else:
+        return f"{path} names no root of {' or '.join(packages)}"
+    if module is not None and not module_declared(home, module):
+        return f"the root of {home.as_posix()} declares no module {module}"
+    return None
+
+
+def external_path_failure(path, crate):
+    """Why a standard or registry path written in ``crate`` can name another
+    item, or ``None`` for any other path."""
+    if "::" not in path:
+        return None
+    root = path.lstrip(":").split("::", 1)[0]
+    if root not in STANDARD_ROOTS | REGISTRY_ROOTS:
+        return None
+    return extern_root_failure(crate, root, path.startswith("::"))
 
 
 # A unit arm read through `cadmpeg_core::tag_only::read` refuses every key
-# beside its tag by name. `crate::tag_only::read` names that reader only in
-# the crate that declares it.
+# beside its tag by name.
 TAG_ONLY_READER = "cadmpeg_core::tag_only::read"
 TAG_ONLY_OWNER = "cadmpeg-core"
 
 
 def reads_by_tag_alone(raw, item):
-    """Whether a unit arm's one unconditional reader is the tag-only reader."""
+    """Whether a unit arm's one unconditional reader is the tag-only reader,
+    and why not when its path spells that reader."""
     readers = [(reader_type(value), conditional)
                for key, value, conditional in serde_options(raw)
                if key == "deserialize_with"]
     if len(readers) != 1:
-        return False
+        return False, None
     reader, conditional = readers[0]
     if conditional or reader is None:
-        return False
-    path = canonical_path(reader)
-    return path.lstrip(":") == TAG_ONLY_READER or (
-        path == "crate::tag_only::read" and item.crate.name == TAG_ONLY_OWNER
-    )
+        return False, None
+    if canonical_path(reader).lstrip(":") not in {TAG_ONLY_READER, "crate::tag_only::read"}:
+        return False, None
+    reason = reader_path_failure(reader, item.crate, (TAG_ONLY_OWNER,), "tag_only")
+    return reason is None, reason
 
 
 GENERIC_HEADER_RE = re.compile(
@@ -2277,6 +2538,17 @@ DISTINCT_MAP_HELPERS = {
 LOCAL_ID_HELPERS = {
     "crate::ids::deserialize_local_id",
 }
+# The packages whose module each helper and keyless adapter path names, and
+# that module.
+PATH_HELPER_OWNERS = {
+    "crate::absent_key": (("cadmpeg-core",), "absent_key"),
+    "cadmpeg_core::absent_key": (("cadmpeg-core",), "absent_key"),
+    "crate::distinct_keys": (("cadmpeg-core",), "distinct_keys"),
+    "cadmpeg_core::distinct_keys": (("cadmpeg-core",), "distinct_keys"),
+    "crate::ids": (("cadmpeg-ir",), "ids"),
+    "crate::bytes": (("cadmpeg-ir",), "bytes"),
+    "cadmpeg_ir::bytes": (("cadmpeg-ir",), "bytes"),
+}
 OPEN_READER_ROUTE = re.compile(
     r"\bdeserialize_(?:any|map|struct|enum|identifier|ignored_any|"
     r"newtype_struct|seq|tuple)\s*\(|"
@@ -2349,8 +2621,9 @@ def untagged_arms(item):
             )
             arms.append(Arm(name, "tuple", fields, untagged, skipped_newtype))
         else:
+            tag_only, failure = reads_by_tag_alone(raw, item)
             arms.append(Arm(name, "unit", [], untagged,
-                            tag_only=reads_by_tag_alone(raw, item)))
+                            tag_only=tag_only, tag_only_failure=failure))
     return arms
 
 
@@ -2430,15 +2703,16 @@ OMITTED_OPTIONAL_KEY = re.compile(r'skip_serializing_if\s*=\s*"Option::is_none"'
 DESERIALIZE_WITH = re.compile(r'deserialize_with\s*=\s*"([\w:]+)"')
 SERDE_WITH = re.compile(r'(?<!\w)with\s*=\s*"([\w:]+)"')
 ABSENT_KEY_NULLABLE = re.compile(
-    r'deserialize_with\s*=\s*"(?:crate|cadmpeg_core)::absent_key::nullable"'
+    r'deserialize_with\s*=\s*"(?P<path>(?:crate|cadmpeg_core)::absent_key::nullable)"'
 )
 # The one workspace macro that declares a named reader forwarding to
 # ``absent_key::named_present``. Its expansion carries the same absence
 # spelling and names the key in whatever it refuses. The macro path is read,
 # not the bare name: a ``macro_rules! named_optional_field`` anywhere else
 # expands to whatever it likes, so the census names that definition instead.
+# The whole path is read, so a root it spells must bind the real crate.
 PRESENT_FORWARDER_MACRO = re.compile(
-    r"(?:(cadmpeg_core|crate)\s*::\s*)?named_optional_field!\s*\("
+    r"(?<![\w$])(?P<path>(?:::\s*)?(?:[A-Za-z_$]\w*\s*::\s*)*)named_optional_field\s*!\s*\("
 )
 DECLARED_READER_NAME = re.compile(r"\s*(?:pub\s*(?:\([^)]*\)\s*)?)?(\w+)")
 PRESENT_FORWARDER_DEFINITION = re.compile(r"macro_rules!\s*named_optional_field\b")
@@ -2605,8 +2879,18 @@ def present_forwarders():
         offsets, scopes = lexical_scopes(source)
         declarations = forwarders.setdefault(crate, {})
         for match in PRESENT_FORWARDER_MACRO.finditer(source):
-            qualifier = match.group(1)
-            if qualifier is None:
+            qualifier = canonical_path(match.group("path")).lstrip(":").split("::", 1)[0]
+            if not qualifier:
+                continue
+            failure = reader_path_failure(
+                match.group("path") + "named_optional_field", crate, ("cadmpeg-core",)
+            )
+            if failure is not None:
+                failures.append((
+                    path,
+                    raw.count("\n", 0, match.start()) + 1,
+                    f"named_optional_field!: {failure}",
+                ))
                 continue
             if qualifier == "crate" and crate not in macro_crates:
                 continue
@@ -2942,7 +3226,14 @@ def reader_option_failures(path, item, owner, field, reader, declarations):
                 "with cadmpeg_core::named_optional_field! beside serde(default)"
             )
         else:
-            if ABSENT_KEY_NULLABLE.search(text) or declared:
+            nullable = ABSENT_KEY_NULLABLE.search(text)
+            if nullable is not None and not declared:
+                reason = reader_path_failure(
+                    nullable.group("path"), item.crate, ("cadmpeg-core",), "absent_key"
+                )
+                if reason is None:
+                    continue
+            if declared:
                 continue
             spelling = reason or (
                 "a stated optional key states no absence spelling; read it "
@@ -3394,6 +3685,8 @@ def main():
                 if target is None or not passes(target):
                     return False
                 continue
+            if accepted_path_failure(path, context) is not None:
+                return False
             # A handwritten map/JSON reader is object-open. It must be
             # carried by an explicit free-form payload type, not hidden in a
             # custom wrapper behind a denying enum.
@@ -3454,6 +3747,8 @@ def main():
                 if target is None or not passes(target):
                     return False
                 continue
+            if accepted_path_failure(path, item) is not None:
+                return False
             if is_free_form_map(path) or is_builtin_path(path, MAP_TYPES, index):
                 return False
             if is_keyless_path(path, index):
@@ -3474,6 +3769,14 @@ def main():
             if not passes(target):
                 return False
         return True
+
+    def accepted_path_failure(path, owner):
+        """Why a standard, registry or keyless-adapter path written for
+        ``owner`` can name another item than the one the census accepts."""
+        spelled = path.lstrip(":")
+        if spelled in QUALIFIED_KEYLESS_ADAPTERS:
+            return reader_path_failure(path, owner.crate, *PATH_HELPER_OWNERS[spelled])
+        return external_path_failure(path, owner.crate)
 
     def target_for_type(path, owner):
         path = path.replace("$crate", "crate")
@@ -3872,7 +4175,13 @@ def main():
                 if optional:
                     target_type = f"Option<{target_type}>"
                 return payload_proof(target_type, owner)
-            elif helper in ABSENT_KEY_HELPERS or (
+            named_by_path = PATH_HELPER_OWNERS.get(helper.rsplit("::", 1)[0].lstrip(":"))
+            if helper in ABSENT_KEY_HELPERS | LOCAL_ID_HELPERS | DISTINCT_MAP_HELPERS:
+                packages, module = named_by_path
+                failure = reader_path_failure(custom[0], owner.crate, packages, module)
+                if failure is not None:
+                    return False, f"helper {helper}: {failure}"
+            if helper in ABSENT_KEY_HELPERS or (
                 "::" not in helper
                 and helper_name in helper_forwarders
                 and helper_forwarder_applies(helper_name, owner)
@@ -3915,6 +4224,9 @@ def main():
                 return False, f"payload reader {path} lacks checked unknown-key refusal"
             return True, f"payload reader {path} is checked"
 
+        failure = accepted_path_failure(resolved_path, owner)
+        if failure is not None:
+            return False, failure
         if is_free_form_map(resolved_path):
             return True, "explicit free-form map/value"
         if path in {"[", "("}:
@@ -4093,9 +4405,13 @@ def main():
                     arm_failures.append((
                         item.path, item.line,
                         f"{item.name}::{arm.name}: an internally tagged unit arm "
-                        "ignores unknown keys even with deny_unknown_fields; "
-                        f"read it through {TAG_ONLY_READER} or use an empty "
-                        "struct arm",
+                        + (
+                            f"names {TAG_ONLY_READER}, but {arm.tag_only_failure}"
+                            if arm.tag_only_failure else
+                            "ignores unknown keys even with deny_unknown_fields; "
+                            f"read it through {TAG_ONLY_READER} or use an empty "
+                            "struct arm"
+                        ),
                     ))
                 if units:
                     return False

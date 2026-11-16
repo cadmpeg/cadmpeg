@@ -22,15 +22,60 @@ census = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(census)
 
 
+# The root of each wire package a reader path can name, as a fixture states it.
+WIRE_PACKAGES = {
+    "cadmpeg-core": "pub mod absent_key; pub mod distinct_keys; pub mod tag_only;",
+    "cadmpeg-ir": "pub mod bytes; pub mod features; pub mod ids; pub mod units;",
+}
+REGISTRY_PACKAGES = {"serde_json": "1", "serde_bytes": "0.11", "indexmap": "2"}
+
+
+def write_workspace(directory: Path, crate: Path, package: str) -> None:
+    """A workspace around one fixture crate: each wire package its reader
+    paths name, and a manifest that depends on every one of them."""
+    homes = {}
+    for wire, root in WIRE_PACKAGES.items():
+        homes[wire] = crate if package == wire else directory / "crates" / wire
+        if package != wire:
+            (homes[wire] / "src").mkdir(parents=True, exist_ok=True)
+            (homes[wire] / "Cargo.toml").write_text(f'[package]\nname = "{wire}"\n')
+            (homes[wire] / "src" / "lib.rs").write_text(root)
+    workspace = "[workspace]\n[workspace.dependencies]\n" + "".join(
+        f'{wire} = {{ path = "{home.relative_to(directory).as_posix()}" }}\n'
+        for wire, home in homes.items()
+    ) + "".join(f'{name} = "{version}"\n' for name, version in REGISTRY_PACKAGES.items())
+    dependencies = "".join(
+        f"{name}.workspace = true\n"
+        for name in [*WIRE_PACKAGES, *REGISTRY_PACKAGES] if name != package
+    )
+    stated = f'[package]\nname = "{package}"\n[dependencies]\n{dependencies}'
+    crate.mkdir(parents=True, exist_ok=True)
+    if crate == directory:
+        (crate / "Cargo.toml").write_text(f"{stated}{workspace}")
+    else:
+        (directory / "Cargo.toml").write_text(workspace)
+        (crate / "Cargo.toml").write_text(stated)
+
+
+def write_fixture(src: Path, files: dict[str, str]) -> list[Path]:
+    """Write ``files`` under ``src``; a ``../`` name replaces a file of the
+    crate itself, such as its manifest. Returns the Rust sources."""
+    paths = []
+    for name, source in files.items():
+        path = src / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+        if path.suffix == ".rs":
+            paths.append(path)
+    return paths
+
+
 class DenyCensusTests(unittest.TestCase):
     def run_census(self, files: dict[str, str], crate: str = "") -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as directory:
-            paths = []
-            for name, source in files.items():
-                path = Path(directory, crate, "src", name)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(source, encoding="utf-8")
-                paths.append(path)
+            root = Path(directory)
+            write_workspace(root, root / crate, crate or "fixture")
+            paths = write_fixture(root / crate / "src", files)
             output = io.StringIO()
             # The absent-key rule has its own scope, the whole crates tree.
             # These fixtures state the unknown-key rule only, so that pass is
@@ -46,12 +91,9 @@ class DenyCensusTests(unittest.TestCase):
     def run_absent_key_census(self, files: dict[str, str]) -> list[str]:
         """The absent-key rule's findings over one fixture tree."""
         with tempfile.TemporaryDirectory() as directory:
-            paths = []
-            for name, source in files.items():
-                path = Path(directory) / "crates" / "fixture" / "src" / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(source, encoding="utf-8")
-                paths.append(path)
+            crate = Path(directory) / "crates" / "fixture"
+            write_workspace(Path(directory), crate, "fixture")
+            paths = write_fixture(crate / "src", files)
             with patch.object(census, "absent_key_source_files", return_value=paths), \
                     patch.object(census, "ABSENT_KEY_EXCEPTIONS", {}):
                 return [message for _, _, message in census.absent_key_failures()]
@@ -59,12 +101,9 @@ class DenyCensusTests(unittest.TestCase):
     def run_absent_key_main(self, files: dict[str, str]) -> tuple[int, str]:
         """The whole census over one fixture tree, absent-key rule included."""
         with tempfile.TemporaryDirectory() as directory:
-            paths = []
-            for name, source in files.items():
-                path = Path(directory) / "crates" / "fixture" / "src" / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(source, encoding="utf-8")
-                paths.append(path)
+            crate = Path(directory) / "crates" / "fixture"
+            write_workspace(Path(directory), crate, "fixture")
+            paths = write_fixture(crate / "src", files)
             output = io.StringIO()
             with patch.object(census, "source_files", return_value=[]), \
                     patch.object(census, "absent_key_source_files",
@@ -527,6 +566,7 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         for crate, reader in cases:
             with self.subTest(crate=crate, reader=reader):
                 status, output = self.run_census({"lib.rs": f'''
+                    pub mod tag_only;
                     #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
                     enum Reader {{
                         #[serde(deserialize_with = "{reader}")]
@@ -569,6 +609,134 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
                 '''}, crate="cadmpeg-ir")
                 self.assertEqual(status, 1, output)
                 self.assertIn("Reader::A: an internally tagged unit arm", output)
+
+    TAG_ONLY_ARM = '''
+        #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+        enum Reader {
+            #[serde(deserialize_with = "READER")]
+            A,
+            B { value: u8 },
+        }
+    '''
+    LOCAL_TAG_ONLY = '''pub mod tag_only {
+            pub fn read<'de, D: serde::Deserializer<'de>>(d: D) -> Result<(), D::Error> {
+                serde::Deserialize::deserialize(d).map(|_: ::serde_json::Value| ())
+            }
+        }'''
+
+    def test_a_tag_only_path_whose_root_binds_another_item_is_no_reader(self) -> None:
+        """The root names the workspace's cadmpeg-core only where nothing in
+        the crate binds it otherwise."""
+        arm = self.TAG_ONLY_ARM.replace("READER", "cadmpeg_core::tag_only::read")
+        absolute = self.TAG_ONLY_ARM.replace("READER", "::cadmpeg_core::tag_only::read")
+        local = self.LOCAL_TAG_ONLY
+        renamed = (
+            '[package]\nname = "cadmpeg-ir"\n[dependencies]\n'
+            'cadmpeg_core = { package = "evil", path = "../evil" }\n'
+            'serde_json.workspace = true\n'
+        )
+        moved = (
+            '[package]\nname = "cadmpeg-ir"\n[dependencies]\n'
+            'cadmpeg-core = { path = "../evil" }\nserde_json.workspace = true\n'
+        )
+        spelled = r"lib\.rs:\d+ spells cadmpeg_core where it can bind another item"
+        cases = {
+            "a local module": (
+                {"lib.rs": f"mod cadmpeg_core {{ {local} }}" + arm}, spelled,
+            ),
+            "a module in another file": (
+                {"lib.rs": "mod cadmpeg_core;" + arm, "cadmpeg_core.rs": local}, spelled,
+            ),
+            "a use rename": (
+                {"lib.rs": f"mod other {{ {local} }} use other as cadmpeg_core;" + arm}, spelled,
+            ),
+            "a re-export another module's glob brings in": (
+                {"lib.rs": "mod api; use api::*;" + arm,
+                 "api.rs": f"pub mod other {{ {local} }} pub use other as cadmpeg_core;"},
+                spelled.replace("lib", "api"),
+            ),
+            "a glob from outside the crate": (
+                {"lib.rs": "use serde_json::*;" + arm}, "imports every name of serde_json",
+            ),
+            "an extern crate rename": (
+                {"lib.rs": "extern crate serde_json as cadmpeg_core;" + arm}, spelled,
+            ),
+            "an extern crate rename of an absolute path": (
+                {"lib.rs": "extern crate serde_json as cadmpeg_core;" + absolute}, spelled,
+            ),
+            "a macro that declares the module it is passed": (
+                {"lib.rs": f"macro_rules! module {{ ($name:ident) => {{ mod $name {{ {local} }} }}; }}"
+                           " module!(cadmpeg_core);" + arm},
+                spelled,
+            ),
+            "a dependency renamed to the root": (
+                {"lib.rs": arm, "../Cargo.toml": renamed},
+                "is not the workspace's cadmpeg-core",
+            ),
+            "a dependency on another directory": (
+                {"lib.rs": arm, "../Cargo.toml": moved},
+                "is not the workspace's cadmpeg-core",
+            ),
+        }
+        for case, (files, reason) in cases.items():
+            with self.subTest(case=case):
+                status, output = self.run_census(files, crate="cadmpeg-ir")
+                self.assertEqual(status, 1, output)
+                self.assertIn(
+                    "Reader::A: an internally tagged unit arm names "
+                    "cadmpeg_core::tag_only::read, but", output,
+                )
+                self.assertRegex(output, reason)
+        for files in ({"lib.rs": arm}, {"lib.rs": "mod std {}" + absolute}):
+            with self.subTest(control=files["lib.rs"][:12]):
+                status, output = self.run_census(files, crate="cadmpeg-ir")
+                self.assertEqual(status, 0, output)
+
+    def test_a_crate_path_to_the_tag_only_reader_needs_the_real_module(self) -> None:
+        for crate, files, reason in (
+            ("cadmpeg-core", {"lib.rs": self.TAG_ONLY_ARM.replace(
+                "READER", "$crate::tag_only::read")}, "names $crate"),
+            ("cadmpeg-core", {"lib.rs": f"mod other {{ {self.LOCAL_TAG_ONLY} }}"
+                              + self.TAG_ONLY_ARM.replace("READER", "crate::tag_only::read")},
+             "declares no module tag_only"),
+            ("cadmpeg-ir", {"lib.rs": "pub mod tag_only;" + self.TAG_ONLY_ARM.replace(
+                "READER", "crate::tag_only::read")}, "is written outside cadmpeg-core"),
+        ):
+            with self.subTest(crate=crate, reason=reason):
+                status, output = self.run_census(files, crate=crate)
+                self.assertEqual(status, 1, output)
+                self.assertIn("names cadmpeg_core::tag_only::read, but", output)
+                self.assertIn(reason, output)
+
+    def test_every_reader_accepted_by_path_needs_its_root_to_bind_the_real_crate(self) -> None:
+        """The distinct-key, absent-key and free-form readers are each read
+        by their path, so a local module of the root's name is not one."""
+        payloads = {
+            "a distinct-key map": (
+                "cadmpeg_core",
+                '#[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")] '
+                'BTreeMap<String, u8>',
+            ),
+            "a nullable optional": (
+                "cadmpeg_core",
+                '#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<u8>',
+            ),
+            "a free-form value": ("serde_json", "serde_json::Value"),
+        }
+        for case, (root, payload) in payloads.items():
+            reader = f'''
+                #[derive(Deserialize)]
+                #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+                enum Reader {{ A({payload}) }}
+            '''
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": reader}, crate="cadmpeg-ir")
+                self.assertEqual(status, 0, output)
+                status, output = self.run_census(
+                    {"lib.rs": f"mod {root} {{}}" + reader}, crate="cadmpeg-ir"
+                )
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader::A: payload", output)
 
     def test_internal_tagged_empty_struct_and_skipped_unit_arms(self) -> None:
         status, output = self.run_census({"lib.rs": '''
@@ -1690,7 +1858,7 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         self.assertEqual(flow_mutated, 0, flow_output)
 
     def run_mutated_census(
-        self, files: dict[str, str], old: str, new: str
+        self, files: dict[str, str], old: str, new: str, crate: str = ""
     ) -> tuple[int, str]:
         source = Path(__file__).with_name("check-deny-census.py").read_text(
             encoding="utf-8"
@@ -1702,12 +1870,9 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         }
         exec(compile(source.replace(old, new), "<mutated-census>", "exec"), namespace)
         with tempfile.TemporaryDirectory() as directory:
-            paths = []
-            for name, content in files.items():
-                path = Path(directory) / "src" / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content, encoding="utf-8")
-                paths.append(path)
+            root = Path(directory)
+            write_workspace(root, root / crate, crate or "fixture")
+            paths = write_fixture(root / crate / "src", files)
             namespace["source_files"] = lambda: paths
             namespace["EXCEPTIONS"] = {}
             # The absent-key rule has its own scope, the whole crates tree,
@@ -1854,6 +2019,7 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
             macro_contract_old,
             '''if True:
                 forwarders.add(name)''',
+            crate="cadmpeg-ir",
         )
         self.assertEqual(macro_contract_mutated, 0, macro_contract_output)
 
@@ -1885,6 +2051,29 @@ class AbsentKeyCensusTests(unittest.TestCase):
         self.assertEqual(
             self.run_absent_key_census({"wire.rs": declared + shim}), []
         )
+
+    def test_a_declaration_macro_whose_root_binds_another_item_declares_nothing(self) -> None:
+        declared = self.OMITTED % ',\n        deserialize_with = "read_key"'
+        local = (
+            "mod cadmpeg_core { macro_rules! named_optional_field "
+            "{ ($($t:tt)*) => {}; } }\n"
+        )
+        for shim, reason in (
+            ('cadmpeg_core::named_optional_field!(read_key, u32, "key");\n',
+             "spells cadmpeg_core where it can bind another item"),
+            ('other::cadmpeg_core::named_optional_field!(read_key, u32, "key");\n',
+             "names no root of cadmpeg-core"),
+            ('crate::named_optional_field!(read_key, u32, "key");\n',
+             "is written outside cadmpeg-core"),
+        ):
+            with self.subTest(shim=shim):
+                findings = self.run_absent_key_census({"wire.rs": local + declared + shim})
+                self.assertTrue(
+                    any("named_optional_field!: " in finding and reason in finding
+                        for finding in findings),
+                    findings,
+                )
+                self.assertTrue(any("Wire.key" in finding for finding in findings), findings)
 
     def test_the_unnamed_refusal_is_not_a_declaration(self) -> None:
         declared = self.OMITTED % (
