@@ -258,14 +258,12 @@ fn regeneration_fixture_preserves_parent_relation() {
 }
 
 #[test]
-fn recipe_parent_stored_after_its_child_drops_only_that_edge() {
+fn recipe_parent_stored_after_its_child_keeps_its_edge_after_ordering() {
     let scan = regeneration_scan();
     let mut ir = reconciliation_ir_for_ordering();
-    for feature in &mut ir.model.features {
-        feature.ordinal = match feature.id.as_str() {
-            "creo:model:feature#10" => 0,
-            _ => 1,
-        };
+    ir.model.features.reverse();
+    for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
+        feature.ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
     }
     let mut losses = Vec::new();
     crate::decode::with_service_context(|ctx| {
@@ -273,6 +271,32 @@ fn recipe_parent_stored_after_its_child_drops_only_that_edge() {
     })
     .expect("a later recipe parent keeps the decode");
     let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
+    let parent = IrFeatureId::mint("creo:model:feature#3").expect("fixture parent ID");
+    assert_eq!(ir.model.features.len(), 2);
+    assert_eq!(ir.model.feature_regeneration_parent(&child), Some(&parent));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn recipe_parent_that_depends_on_its_child_drops_that_edge() {
+    let scan = regeneration_scan();
+    let mut ir = reconciliation_ir_for_ordering();
+    ir.model.features.reverse();
+    let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
+    let parent = IrFeatureId::mint("creo:model:feature#3").expect("fixture parent ID");
+    for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
+        feature.ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
+        if feature.id == parent {
+            feature.dependencies =
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![child.clone()])
+                    .expect("one dependency");
+        }
+    }
+    let mut losses = Vec::new();
+    crate::decode::with_service_context(|ctx| {
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new(), &mut losses)
+    })
+    .expect("a cyclic recipe parent keeps the decode");
     assert_eq!(ir.model.features.len(), 2);
     assert_eq!(ir.model.feature_regeneration_parent(&child), None);
     assert_eq!(losses.len(), 1);
@@ -282,8 +306,9 @@ fn recipe_parent_stored_after_its_child_drops_only_that_edge() {
             .note(String::new())
             .code
     );
-    assert!(losses[0].message.contains("creo:model:feature#10"));
-    assert!(losses[0].message.contains("creo:model:feature#3"));
+    assert!(losses[0].message.starts_with(
+        "feature creo:model:feature#10 keeps no regeneration parent creo:model:feature#3: "
+    ));
 }
 
 #[test]

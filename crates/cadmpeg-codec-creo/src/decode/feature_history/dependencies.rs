@@ -4,6 +4,7 @@
 use super::super::surfaces::prototypes::unique_surface_prototype_associations;
 use super::knit::surface_transition_dependencies;
 use crate::container::ContainerScan;
+use crate::decode::build::ir_features::commit_regeneration_edges;
 use crate::decode::sketch_transfer::recipe::{
     admitted_feature_recipe, admitted_feature_recipe_parent, current_feature_recipe_parent,
 };
@@ -407,26 +408,6 @@ pub(in super::super) fn agreed_feature_replay_edge_ids(
     )
 }
 
-/// Set each regeneration parent the model admits. An edge the model refuses,
-/// such as one whose parent is stored after its child, is dropped with one
-/// loss naming both features.
-pub(in super::super) fn commit_regeneration_edges(
-    ir: &mut CadIr,
-    edges: Vec<(IrFeatureId, IrFeatureId)>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
-    for (child, parent) in edges {
-        if let Err(error) = ir.model.set_feature_regeneration_parent(&child, &parent) {
-            let note = crate::loss::CreoLossCode::FeatureRegenerationParentDropped.note(format!(
-                "feature {child} keeps no regeneration parent {parent}: {error}"
-            ));
-            if !losses.contains(&note) {
-                losses.push(note);
-            }
-        }
-    }
-}
-
 pub(in super::super) fn reconcile_feature_links(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -526,7 +507,8 @@ pub(in super::super) fn reconcile_feature_links(
             }
         }
     }
-    commit_regeneration_edges(ir, regeneration_edges, losses);
+    let pending_parents: BTreeMap<IrFeatureId, IrFeatureId> =
+        regeneration_edges.iter().cloned().collect();
     let mut remaining = Vec::new();
     remaining.extend(0..ir.model.features.len());
     let mut ordered = Vec::new();
@@ -538,6 +520,7 @@ pub(in super::super) fn reconcile_feature_links(
                 .dependencies
                 .iter()
                 .chain(ir.model.feature_parent(&feature.id))
+                .chain(pending_parents.get(&feature.id))
                 .all(|required| !emitted.contains(required) || preceding.contains(required))
         }) else {
             break;
@@ -549,6 +532,13 @@ pub(in super::super) fn reconcile_feature_links(
     ordered.extend(remaining);
     for (ordinal, index) in ordered.into_iter().enumerate() {
         ir.model.features[index].ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
+    }
+    for (child, parent, reason) in commit_regeneration_edges(ir, regeneration_edges) {
+        losses.push(
+            crate::loss::CreoLossCode::FeatureRegenerationParentDropped.note(format!(
+                "feature {child} keeps no regeneration parent {parent}: {reason}"
+            )),
+        );
     }
     Ok(())
 }

@@ -17,8 +17,7 @@ use crate::feature::schema::SchemaClass;
 use super::super::curve_expressions::transfer_curve_expression_features;
 use super::super::feature_history::axes::geometry_generator_features;
 use super::super::feature_history::dependencies::{
-    commit_regeneration_edges, feature_dependencies, reconcile_feature_links,
-    surface_prototype_feature_dependencies,
+    feature_dependencies, reconcile_feature_links, surface_prototype_feature_dependencies,
 };
 use super::super::feature_history::dimensions::transfer_feature_dimensions;
 use super::super::feature_history::draft::{
@@ -53,6 +52,21 @@ fn compose_feature_id(feature_id: u32) -> Result<IrFeatureId, cadmpeg_core::Code
         namespace.kind()
     );
     IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+}
+
+/// Set each regeneration parent the model admits, and return each refused
+/// edge with the model's reason.
+pub(in crate::decode) fn commit_regeneration_edges(
+    ir: &mut CadIr,
+    edges: Vec<(IrFeatureId, IrFeatureId)>,
+) -> Vec<(IrFeatureId, IrFeatureId, String)> {
+    let mut refused = Vec::new();
+    for (child, parent) in edges {
+        if let Err(error) = ir.model.set_feature_regeneration_parent(&child, &parent) {
+            refused.push((child, parent, error.to_string()));
+        }
+    }
+    refused
 }
 
 fn append_regeneration_edge(
@@ -109,7 +123,6 @@ pub(super) fn emit_model_features(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let schema_classes = FeatureSchemaClasses::new(scan);
     let mut regeneration_edges = Vec::new();
@@ -568,7 +581,9 @@ pub(super) fn emit_model_features(
         source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(ctx, scan, ir)?;
     }
-    commit_regeneration_edges(ir, regeneration_edges, losses);
+    // `reconcile_feature_links` retries each refused edge after it orders the
+    // features, and charges the edges it still refuses.
+    let _refused = commit_regeneration_edges(ir, regeneration_edges);
     Ok(geometry_generator_feature_count)
 }
 
