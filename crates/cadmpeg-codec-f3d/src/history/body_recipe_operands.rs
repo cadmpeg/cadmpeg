@@ -319,7 +319,14 @@ fn body_recipe_operand_history_pair<'a>(
     let state_id = scope.history_state_id()?;
     let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
     let (history, state, previous) =
-        unique_history_state_pair(histories, state_id, previous_state_id)?;
+        unique_history_state_pair(histories, state_id, previous_state_id).or_else(|| {
+            super::linked_states::operand_brep_history_state_pair(
+                operand,
+                histories,
+                state_id,
+                previous_state_id,
+            )
+        })?;
     Some((history, state, previous))
 }
 

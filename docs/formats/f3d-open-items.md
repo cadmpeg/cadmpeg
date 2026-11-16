@@ -751,18 +751,6 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** The decoder assigns a point or curve whose backlink names a group to the sketch that the group names, stores the group record index in `geometry_group`, and emits `sketch.geometry-group-member-unlisted` when the member run omits the record. The native `sketch_geometry_groups` record keeps the member run in `members` and the owning sketch reference in `sketch_reference`. A member reference that names a record without a decoded backlink to the group assigns no owner, and the decoder emits `sketch.geometry-group-member-unbacklinked`.
 
-### DR-302. Word before the body-group reference of a Reverse Normal scope
-
-**Question.** Is the u32 before the marked body-group reference of a `Reverse Normal` scope the count of the marked references that follow it?
-
-**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives u32 `1` at offset 21 of the compact prefix and offset 25 of the shifted prefix, followed by one marked reference to the body group. The body group carries every selected body. The decoder keeps a scope with another value as a native feature.
-
-**Need.** A `Reverse Normal` scope with a value other than `1`, or a controlled save that selects bodies from more than one component.
-
-**Conflict.** None.
-
-**Note.** None.
-
 ### DR-303. GUID field of a Reverse Normal scope
 
 **Question.** What does the LP-UTF16 GUID after the body-group reference of a `Reverse Normal` scope identify?

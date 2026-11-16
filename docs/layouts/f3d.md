@@ -11197,7 +11197,7 @@ Parsed by:
 | 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The compact Reverse Normal prefix |
 | 21 | 4 | `group_count` | `u32` | little | spec | The compact Reverse Normal prefix · value `1` |
 | 25 | 11 | `group_reference` | `bytes[11]` | little | spec | The compact Reverse Normal prefix |
-| 36 | 76 | `null_guid` | `bytes[76]` | little | spec | The compact Reverse Normal prefix |
+| 36 | 76 | `link_guid` | `bytes[76]` | little | spec | The compact Reverse Normal prefix |
 | 112 | 3 | `zero_tail` | `bytes[3]` | little | spec | The compact Reverse Normal prefix |
 
 ## `shifted_reverse_normal_prefix`
@@ -11215,7 +11215,7 @@ Parsed by:
 | 21 | 4 | `zero_run_after_marker` | `bytes[4]` | little | spec | The shifted Reverse Normal prefix |
 | 25 | 4 | `group_count` | `u32` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. · value `1` |
 | 29 | 11 | `group_reference` | `bytes[11]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
-| 40 | 76 | `null_guid` | `bytes[76]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
+| 40 | 76 | `link_guid` | `bytes[76]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
 | 116 | 3 | `zero_tail` | `bytes[3]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
 
 ## `path_pattern_settings`

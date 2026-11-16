@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! CC0 Fusion API saves of surface Revolves whose bodies a Reverse Normal selects.
+//! CC0 Fusion saves of Reverse Normal: surface Revolves whose bodies it
+//! selects, and surface bodies of one component and of several components.
 
 use std::io::Cursor;
 
@@ -77,4 +78,163 @@ fn a_reverse_normal_of_two_revolved_bodies_selects_both_bodies() {
         "../../../../corpus/f3d/reverse_normal_two_revolves.f3d"
     ));
     assert_reverse_selects_revolve_bodies(&ir, 2);
+}
+
+/// The IR as JSON and the loss codes of a corpus file, after checking that
+/// the neutral model validates.
+fn decoded_with_loss_codes(bytes: &[u8]) -> (serde_json::Value, Vec<String>) {
+    let result = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the corpus file");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).unwrap();
+    assert!(validation.is_ok(), "{validation:#?}");
+    let mut codes = Vec::new();
+    loss_codes(
+        &serde_json::to_value(&result.report().losses).expect("serialize the losses"),
+        &mut codes,
+    );
+    assert!(!codes.is_empty(), "the report names loss codes");
+    (
+        serde_json::to_value(result.ir()).expect("serialize the IR"),
+        codes,
+    )
+}
+
+/// Every `code` string in a serialized loss list.
+fn loss_codes(value: &serde_json::Value, codes: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, value) in map {
+                match value.as_str() {
+                    Some(code) if key == "code" => codes.push(code.to_owned()),
+                    _ => loss_codes(value, codes),
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                loss_codes(item, codes);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The features named `Reverse Normal 1`, in timeline order.
+fn reverse_normals(ir: &serde_json::Value) -> Vec<&serde_json::Value> {
+    let mut features = ir["model"]["features"]
+        .as_array()
+        .expect("feature list")
+        .iter()
+        .filter(|feature| feature["name"] == "Reverse Normal 1")
+        .collect::<Vec<_>>();
+    features.sort_by_key(|feature| feature["ordinal"].as_u64());
+    features
+}
+
+/// The historical bodies that a Reverse Normal feature reverses.
+fn reversed_bodies(feature: &serde_json::Value) -> Vec<&str> {
+    let definition = &feature["definition"]["value"];
+    assert_eq!(definition["kind"], "reverse_shape", "{definition}");
+    let source = &definition["value"]["source"];
+    assert_eq!(source["kind"], "historical", "{source}");
+    source["value"]["bodies"]
+        .as_array()
+        .expect("historical bodies")
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect()
+}
+
+#[test]
+fn a_reverse_normal_of_one_component_reverses_both_of_its_bodies() {
+    let (ir, _) = decoded_with_loss_codes(include_bytes!(
+        "../../../../corpus/f3d/reverse_normal_two_bodies.f3d"
+    ));
+    let features = reverse_normals(&ir);
+    assert_eq!(features.len(), 1);
+    assert_eq!(reversed_bodies(features[0]).len(), 2);
+}
+
+#[test]
+fn each_linked_scope_of_a_two_component_reverse_normal_reverses_its_own_body() {
+    // Fusion stores one linked Reverse Normal per component for one timeline
+    // item; the timeline names only the first.
+    let (ir, _) = decoded_with_loss_codes(include_bytes!(
+        "../../../../corpus/f3d/reverse_normal_two_components.f3d"
+    ));
+    let links = ir["native"]["f3d"]["design_parameter_scopes"]
+        .as_array()
+        .expect("scopes")
+        .iter()
+        .filter_map(|scope| scope["reverse_normal_operation"]["link"]["value"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        links,
+        [
+            "180f14e0-154e-434b-acff-8bfbd101803c",
+            "180f14e0-154e-434b-acff-8bfbd101803c"
+        ]
+    );
+    let features = reverse_normals(&ir);
+    assert_eq!(features.len(), 2);
+    assert_eq!(
+        features[1]["ordinal"].as_u64(),
+        features[0]["ordinal"].as_u64().map(|ordinal| ordinal + 1)
+    );
+    assert_ne!(
+        features[0]["product_definition"],
+        features[1]["product_definition"]
+    );
+    for feature in features {
+        let bodies = reversed_bodies(feature);
+        assert_eq!(bodies.len(), 1, "{feature}");
+        // The reversed body is a body of the feature's own input state.
+        let state = feature["definition"]["value"]["value"]["source"]["value"]["state"]
+            .as_str()
+            .expect("input state");
+        assert!(
+            bodies[0].starts_with(&state.replace(":state#", ":body#")),
+            "{state} {bodies:?}"
+        );
+    }
+}
+
+#[test]
+fn each_component_of_a_linked_reverse_normal_reverses_its_own_bodies() {
+    // Two bodies in the first component and one in the second; three
+    // components with one body each.
+    for (bytes, counts) in [
+        (
+            &include_bytes!("../../../../corpus/f3d/reverse_normal_two_plus_one.f3d")[..],
+            &[2, 1][..],
+        ),
+        (
+            &include_bytes!("../../../../corpus/f3d/reverse_normal_three_components.f3d")[..],
+            &[1, 1, 1],
+        ),
+    ] {
+        let (ir, _) = decoded_with_loss_codes(bytes);
+        let features = reverse_normals(&ir);
+        assert_eq!(
+            features
+                .iter()
+                .map(|feature| reversed_bodies(feature).len())
+                .collect::<Vec<_>>(),
+            counts
+        );
+        let components = features
+            .iter()
+            .map(|feature| feature["product_definition"].as_str())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(components.len(), counts.len());
+        let first = features[0]["ordinal"].as_u64().expect("ordinal");
+        for (at, feature) in features.iter().enumerate() {
+            assert_eq!(
+                feature["ordinal"].as_u64(),
+                Some(first + u64::try_from(at).unwrap())
+            );
+        }
+    }
 }

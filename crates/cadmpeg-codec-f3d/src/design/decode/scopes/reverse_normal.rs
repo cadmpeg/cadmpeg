@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::shared_frames::marked_record_reference;
-use crate::design::decode::text::fixed_utf16_ascii_eq;
+use crate::design::decode::text::fixed_guid_ascii;
 use crate::layout::reverse_normal_prefix as compact;
 use crate::layout::shifted_reverse_normal_prefix as shifted;
 use crate::records::feature::body_ops::DesignReverseNormalOperation;
@@ -12,7 +12,7 @@ struct PrefixFields {
     group_count: usize,
     group_count_value: u32,
     group_reference: usize,
-    null_guid: usize,
+    link_guid: usize,
     zero_tail: usize,
 }
 
@@ -34,7 +34,7 @@ pub(super) fn reverse_normal_operation(
                 group_count: compact::GROUP_COUNT,
                 group_count_value: compact::GROUP_COUNT_VALUE,
                 group_reference: compact::GROUP_REFERENCE,
-                null_guid: compact::NULL_GUID,
+                link_guid: compact::LINK_GUID,
                 zero_tail: compact::ZERO_TAIL,
             }
         }
@@ -51,20 +51,17 @@ pub(super) fn reverse_normal_operation(
                 group_count: shifted::GROUP_COUNT,
                 group_count_value: shifted::GROUP_COUNT_VALUE,
                 group_reference: shifted::GROUP_REFERENCE,
-                null_guid: shifted::NULL_GUID,
+                link_guid: shifted::LINK_GUID,
                 zero_tail: shifted::ZERO_TAIL,
             }
         }
         _ => return None,
     };
     let group = marked_record_reference(bytes, at(fields.group_reference)?)?;
+    let (guid, guid_end) = fixed_guid_ascii(bytes, at(fields.link_guid)?)?;
     if View::u32_le_at(bytes, at(fields.group_count)?)? != fields.group_count_value
         || references.first() != Some(&group)
-        || fixed_utf16_ascii_eq(
-            bytes,
-            at(fields.null_guid)?,
-            "00000000-0000-0000-0000-000000000000",
-        )? != at(fields.zero_tail)?
+        || guid_end != at(fields.zero_tail)?
         || bytes
             .get(at(fields.zero_tail)?..reference_count_at)?
             .iter()
@@ -72,11 +69,21 @@ pub(super) fn reverse_normal_operation(
     {
         return None;
     }
+    let link = if guid == *b"00000000-0000-0000-0000-000000000000" {
+        None
+    } else {
+        let text = std::str::from_utf8(&guid).ok()?.to_owned();
+        Some(Located {
+            value: crate::records::mesh::DesignRelaxedGuidText::try_from(text).ok()?,
+            offset: u64_from_index(at(fields.link_guid)?.checked_add(4)?),
+        })
+    };
     Some(DesignReverseNormalOperation {
         body_group: Located {
             value: group,
             offset: u64_from_index(at(fields.group_reference)?.checked_add(1)?),
         },
+        link,
     })
 }
 

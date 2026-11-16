@@ -19,6 +19,8 @@ pub(super) fn project_reverse_normal(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
+    // A linked scope reverses the bodies of its own component, as Fusion's
+    // linked feature in that component does.
     let operation = scope.reverse_normal_operation()?;
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
     let mut references = scope.reference_members().values().copied();
@@ -61,4 +63,37 @@ pub(super) fn project_reverse_normal(
             source: BodySelection::Native(group.id.clone()),
         },
     ))
+}
+
+/// The link GUID that a scope shares with the other scopes of one linked
+/// timeline item.
+pub(super) fn timeline_link(scope: &DesignParameterScope) -> Option<&str> {
+    scope
+        .reverse_normal_operation()?
+        .link
+        .as_ref()
+        .map(|link| link.value.as_str())
+}
+
+/// The linked scopes that are not timeline items, by link GUID, in record
+/// order.
+pub(super) fn linked_scopes_outside<'a>(
+    scopes: &[&'a DesignParameterScope],
+    items: &[u64],
+) -> std::collections::HashMap<&'a str, Vec<u64>> {
+    let items = items
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let mut linked = std::collections::HashMap::<&str, Vec<u64>>::new();
+    for scope in scopes {
+        let record = u64::from(scope.record_index);
+        if let Some(link) = timeline_link(scope).filter(|_| !items.contains(&record)) {
+            linked.entry(link).or_default().push(record);
+        }
+    }
+    for records in linked.values_mut() {
+        records.sort_unstable();
+    }
+    linked
 }

@@ -44,6 +44,7 @@ fn scope(body_group: Option<u32>) -> DesignParameterScope {
     if let DesignScopePayloadMut::ReverseNormal(slot) = scope.payload_mut() {
         *slot = body_group.map(|value| DesignReverseNormalOperation {
             body_group: Located { value, offset: 26 },
+            link: None,
         });
     }
     scope
