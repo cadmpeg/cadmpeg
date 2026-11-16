@@ -53,6 +53,10 @@ enum Body {
 #[derive(Default)]
 struct Index {
     decls: BTreeMap<String, Vec<Decl>>,
+    /// Type aliases by name: the declaring file and the aliased type.
+    aliases: BTreeMap<String, Vec<(String, syn::Type)>>,
+    /// The names each file imports, with the path each is imported from.
+    imports: BTreeMap<String, Vec<(String, Vec<String>)>>,
     hand_serialize: BTreeMap<String, Vec<String>>,
     option_readers: BTreeSet<String>,
     macro_serde_attrs: Vec<(String, Vec<TokenTree>)>,
@@ -73,8 +77,12 @@ enum Holder {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Payload {
-    Struct { has_kind: bool },
+    Struct {
+        has_kind: bool,
+    },
     Value,
+    /// A generic parameter with no default: no declaration proves it a struct.
+    Generic(String),
     Unresolved(String),
 }
 
@@ -160,8 +168,97 @@ fn item_attrs(item: &Item) -> &[Attribute] {
         Item::Mod(item) => &item.attrs,
         Item::Macro(item) => &item.attrs,
         Item::Const(item) => &item.attrs,
+        Item::Type(item) => &item.attrs,
+        Item::Use(item) => &item.attrs,
         _ => &[],
     }
+}
+
+/// Each name a `use` tree imports, with its full path. A renamed or glob
+/// import names no declaration by its own name, so it is not recorded.
+fn use_paths(tree: &syn::UseTree, prefix: &mut Vec<String>, out: &mut Vec<(String, Vec<String>)>) {
+    match tree {
+        syn::UseTree::Path(path) => {
+            prefix.push(path.ident.to_string());
+            use_paths(&path.tree, prefix, out);
+            prefix.pop();
+        }
+        syn::UseTree::Name(name) if name.ident == "self" => {
+            if let Some(last) = prefix.last() {
+                out.push((last.clone(), prefix.clone()));
+            }
+        }
+        syn::UseTree::Name(name) => {
+            let mut path = prefix.clone();
+            path.push(name.ident.to_string());
+            out.push((name.ident.to_string(), path));
+        }
+        syn::UseTree::Group(group) => {
+            for tree in &group.items {
+                use_paths(tree, prefix, out);
+            }
+        }
+        syn::UseTree::Rename(_) | syn::UseTree::Glob(_) => {}
+    }
+}
+
+/// The name a wire crate's source directory is imported by.
+fn crate_name(crate_dir: &str) -> String {
+    crate_dir
+        .trim_end_matches("/src")
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .replace('-', "_")
+}
+
+/// The crate and module path of a source file of a wire crate.
+fn module_of(file: &str) -> Option<(String, Vec<String>)> {
+    WIRE_CRATES.iter().find_map(|crate_dir| {
+        let rest = file.strip_prefix(crate_dir)?.strip_prefix('/')?;
+        let name = crate_name(crate_dir);
+        let mut module: Vec<String> = rest
+            .trim_end_matches(".rs")
+            .split('/')
+            .map(ToOwned::to_owned)
+            .collect();
+        if module.len() == 1 && module[0] == "lib"
+            || module.last().is_some_and(|last| last == "mod")
+        {
+            module.pop();
+        }
+        Some((name, module))
+    })
+}
+
+/// The crate and module a `use` path names its last segment in, read from a
+/// file of module `module` in crate `krate`.
+fn import_module(krate: &str, module: &[String], path: &[String]) -> (String, Vec<String>) {
+    let segments = path.split_last().map_or(path, |(_, rest)| rest);
+    let mut krate = krate.to_owned();
+    let mut resolved = module.to_vec();
+    let mut segments = segments.iter().peekable();
+    match segments.peek().map(|segment| segment.as_str()) {
+        Some("crate") => {
+            resolved.clear();
+            segments.next();
+        }
+        Some("self") => {
+            segments.next();
+        }
+        Some(name) if WIRE_CRATES.iter().any(|dir| crate_name(dir) == name) => {
+            name.clone_into(&mut krate);
+            resolved.clear();
+            segments.next();
+        }
+        _ => {}
+    }
+    while segments.peek().is_some_and(|segment| *segment == "super") {
+        resolved.pop();
+        segments.next();
+    }
+    resolved.extend(segments.cloned());
+    (krate, resolved)
 }
 
 fn source_tokens(text: &str, first_line: usize, last_line: usize) -> Vec<String> {
@@ -327,6 +424,17 @@ impl Walker<'_> {
                         self.items(nested, index);
                     }
                 }
+                Item::Type(item) => {
+                    index
+                        .aliases
+                        .entry(item.ident.to_string())
+                        .or_default()
+                        .push((self.file.to_owned(), (*item.ty).clone()));
+                }
+                Item::Use(item) => {
+                    let imports = index.imports.entry(self.file.to_owned()).or_default();
+                    use_paths(&item.tree, &mut Vec::new(), imports);
+                }
                 Item::Macro(item) => {
                     let name = item
                         .ident
@@ -430,6 +538,74 @@ impl Index {
         }
     }
 
+    /// Of the files that declare a name, the one file `from` means by it: its
+    /// own declaration, else the one it imports. `None` when neither picks
+    /// exactly one.
+    fn pick<'a>(&self, files: &[&'a str], name: &str, from: &str) -> Option<&'a str> {
+        if let [file] = files {
+            return Some(file);
+        }
+        if let Some(file) = files.iter().find(|file| **file == from) {
+            return Some(file);
+        }
+        let (krate, module) = module_of(from)?;
+        let targets: Vec<(String, Vec<String>)> = self
+            .imports
+            .get(from)?
+            .iter()
+            .filter(|(leaf, _)| leaf == name)
+            .map(|(_, path)| import_module(&krate, &module, path))
+            .collect();
+        let mut matched = files.iter().filter(|file| {
+            module_of(file).is_some_and(|(file_crate, file_module)| {
+                targets.iter().any(|(target_crate, target_module)| {
+                    *target_crate == file_crate && target_module.starts_with(&file_module)
+                })
+            })
+        });
+        match (matched.next(), matched.next()) {
+            (Some(file), None) => Some(file),
+            _ => None,
+        }
+    }
+
+    /// The declaration a type named `name`, written in file `from`, refers to.
+    fn resolve(&self, name: &str, from: &str) -> Option<&Decl> {
+        if let Some(decl) = self.unique(name) {
+            return Some(decl);
+        }
+        let decls = self.decls.get(name)?;
+        let serialized: Vec<&Decl> = decls
+            .iter()
+            .filter(|decl| derives(&decl.attrs, "Serialize") || derives(&decl.attrs, "Deserialize"))
+            .collect();
+        let candidates = if serialized.is_empty() {
+            decls.iter().collect()
+        } else {
+            serialized
+        };
+        let files: Vec<&str> = candidates.iter().map(|decl| decl.file.as_str()).collect();
+        let file = self.pick(&files, name, from)?;
+        let mut in_file = candidates.into_iter().filter(|decl| decl.file == file);
+        match (in_file.next(), in_file.next()) {
+            (Some(decl), None) => Some(decl),
+            _ => None,
+        }
+    }
+
+    /// The type an alias named `name`, written in file `from`, stands for,
+    /// with the file that declares the alias.
+    fn alias(&self, name: &str, from: &str) -> Option<(&str, &syn::Type)> {
+        let aliases = self.aliases.get(name)?;
+        let files: Vec<&str> = aliases.iter().map(|(file, _)| file.as_str()).collect();
+        let file = self.pick(&files, name, from)?;
+        let mut in_file = aliases.iter().filter(|(alias_file, _)| alias_file == file);
+        match (in_file.next(), in_file.next()) {
+            (Some((file, ty)), None) => Some((file.as_str(), ty)),
+            _ => None,
+        }
+    }
+
     fn is_collection(&self, ty: &syn::Type, depth: usize) -> bool {
         let Some((ident, arguments)) = last_segment(ty) else {
             return matches!(ty, syn::Type::Slice(_));
@@ -482,39 +658,53 @@ impl Index {
         newtype && last_segment(&field.ty).is_some_and(|(ident, _)| ident == "Option")
     }
 
-    fn payload(&self, ty: &syn::Type, owner: Option<&Decl>, depth: usize) -> Payload {
+    /// The payload a type writes. `from` is the file the type is written in,
+    /// which names the declaration a repeated name refers to.
+    fn payload(&self, ty: &syn::Type, owner: Option<&Decl>, from: &str, depth: usize) -> Payload {
         let Some((ident, arguments)) = last_segment(ty) else {
             return Payload::Value;
         };
         let name = ident.to_string();
         if matches!(name.as_str(), "Box" | "Arc" | "Rc") {
-            return first_type_argument(arguments)
-                .map_or(Payload::Value, |inner| self.payload(inner, owner, depth));
+            return first_type_argument(arguments).map_or(Payload::Value, |inner| {
+                self.payload(inner, owner, from, depth)
+            });
         }
         if let Some(owner) = owner.filter(|owner| owner.generics.contains(&name)) {
             return owner.generic_defaults.get(&name).map_or_else(
-                || Payload::Unresolved(format!("generic parameter {name} has no default")),
-                |default| self.payload(default, None, depth + 1),
+                || Payload::Generic(name.clone()),
+                |default| self.payload(default, None, &owner.file, depth + 1),
             );
         }
         if depth > 6 {
             return Payload::Unresolved(format!("{name} nests too deep"));
         }
-        let Some(decl) = self.unique(&name) else {
+        let Some(decl) = self.resolve(&name, from) else {
             if self.decls.contains_key(&name) {
                 return Payload::Unresolved(format!("{name} has more than one declaration"));
+            }
+            if let Some((file, aliased)) = self.alias(&name, from) {
+                return self.payload(aliased, None, file, depth + 1);
+            }
+            if self.aliases.contains_key(&name) {
+                return Payload::Unresolved(format!("{name} has more than one alias"));
             }
             return Payload::Value;
         };
         let metas = serde_metas(&decl.attrs);
         if let Some(target) = value(&metas, "into") {
-            return self.payload(&syn::parse_str(target).unwrap(), owner, depth + 1);
+            return self.payload(
+                &syn::parse_str(target).unwrap(),
+                owner,
+                &decl.file,
+                depth + 1,
+            );
         }
         let Body::Struct(Fields::Named(fields)) = &decl.body else {
             return Payload::Value;
         };
         if has(&metas, "transparent") {
-            return self.payload(&fields.named[0].ty, Some(decl), depth + 1);
+            return self.payload(&fields.named[0].ty, Some(decl), &decl.file, depth + 1);
         }
         if !derives(&decl.attrs, "Serialize") {
             if let Some(tokens) = self.hand_serialize.get(&name) {
@@ -528,7 +718,7 @@ impl Index {
                 continue;
             }
             if has(&field_metas, "flatten") {
-                match self.payload(&field.ty, Some(decl), depth + 1) {
+                match self.payload(&field.ty, Some(decl), &decl.file, depth + 1) {
                     Payload::Struct {
                         has_kind: flattened,
                     } => has_kind |= flattened,
@@ -588,25 +778,30 @@ impl Index {
                 Fields::Unnamed(fields) if fields.unnamed.len() != 1 => {
                     Some(format!("{} holds a tuple", variant.ident))
                 }
-                Fields::Unnamed(fields) => match self.payload(&fields.unnamed[0].ty, Some(decl), 0)
-                {
-                    Payload::Struct { has_kind: false } => None,
-                    Payload::Struct { has_kind: true } => Some(format!(
-                        "{} wraps a struct with a field named kind",
+                Fields::Unnamed(fields) => {
+                    match self.payload(&fields.unnamed[0].ty, Some(decl), &decl.file, 0) {
+                        Payload::Struct { has_kind: false } => None,
+                        Payload::Struct { has_kind: true } => Some(format!(
+                            "{} wraps a struct with a field named kind",
+                            variant.ident
+                        )),
+                        Payload::Value => Some(format!(
+                            "{} wraps a value that is not a struct",
+                            variant.ident
+                        )),
+                        Payload::Generic(parameter) => Some(format!(
+                        "{} wraps the generic parameter {parameter}, which need not be a struct",
                         variant.ident
                     )),
-                    Payload::Value => Some(format!(
-                        "{} wraps a value that is not a struct",
-                        variant.ident
-                    )),
-                    Payload::Unresolved(why) => {
-                        problems.push(format!(
-                            "{}:{} {}::{}: payload unresolved: {why}",
-                            decl.file, decl.line, decl.name, variant.ident
-                        ));
-                        None
+                        Payload::Unresolved(why) => {
+                            problems.push(format!(
+                                "{}:{} {}::{}: payload unresolved: {why}",
+                                decl.file, decl.line, decl.name, variant.ident
+                            ));
+                            None
+                        }
                     }
-                },
+                }
             };
             if let Some(reason) = reason {
                 return (Form::Adjacent, reason);
@@ -983,6 +1178,55 @@ fn the_census_reads_newtype_fields_and_adjacent_unit_variants() {
     expected.sort();
     assert_eq!(probe_problems(DEPARTING_PROBE), expected);
     assert_eq!(probe_problems(STATING_PROBE), Vec::<String>::new());
+}
+
+#[test]
+fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
+    let root =
+        std::env::temp_dir().join(format!("cadmpeg-wire-form-census-{}", std::process::id()));
+    let sources = [
+        ("crates/cadmpeg-core/src/lib.rs", ""),
+        (
+            "crates/cadmpeg-ir/src/one.rs",
+            "#[derive(Serialize)] pub struct Payload { pub a: u32 }\n\
+             pub type Alias = Payload;\n",
+        ),
+        (
+            "crates/cadmpeg-ir/src/two.rs",
+            "#[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Payload { A(u32) }\n",
+        ),
+        (
+            "crates/cadmpeg-ir/src/user.rs",
+            "use crate::one::{Alias, Payload};\n\
+             #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Imported { Item(Payload) }\n\
+             #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Aliased { Item(Alias) }\n\
+             #[derive(Serialize)] #[serde(tag = \"kind\")]\n\
+             pub enum Generic<T> { Item(T) }\n",
+        ),
+    ];
+    for (path, text) in sources {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let problems = census(&root);
+    std::fs::remove_dir_all(&root).unwrap();
+    for (name, form) in [
+        ("Imported", "Internal"),
+        ("Aliased", "Internal"),
+        ("Generic", "Adjacent"),
+    ] {
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.contains(&format!(" {name}: enum must take form {form}"))),
+            "{name}: {problems:#?}"
+        );
+    }
+    assert_eq!(problems.len(), 3, "{problems:#?}");
 }
 
 #[test]

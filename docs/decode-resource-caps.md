@@ -26,11 +26,16 @@ from the name of the constant.
    Rhino `checked_count_bytes`). Excess refuses that record or that decode as
    malformed or unsupported, or skips that record. A per-input bound does not
    set the session fuse.
-3. **Session ceiling.** Only the six `ResourceLimits` fields are session
-   ceilings: `max_input_bytes`, `max_decompressed_bytes_total`,
-   `max_decompressed_bytes_per_expand`, `max_retained_bytes`,
-   `max_entities`, and `max_recursion_depth`. `DecodeContext` charges them.
-   Excess refuses the session and sets the fuse.
+3. **Session ceiling.** Only the `ResourceLimits` fields are session
+   ceilings. `DecodeContext` charges six of them: `max_input_bytes`,
+   `max_decompressed_bytes_total`, `max_decompressed_bytes_per_expand`,
+   `max_retained_bytes`, `max_entities`, and `max_recursion_depth`. Excess
+   refuses the session and sets the fuse. Reading CADIR design values
+   (`cadmpeg_ir::design::read::from_str`) enforces the other four as nesting
+   ceilings: `max_expression_depth`, `max_name_depth`, `max_pick_depth`, and
+   `max_construction_depth`. Excess refuses that read with
+   `CodecError::ResourceLimit` (`RecursionDepth`, `BudgetExceeded`); it sets
+   no fuse.
 4. **Local work cap.** The limit bounds a search, an iteration, a
    convergence loop, a walk over derived data, or the size of derived output.
    A `WorkBudget` or a local counter enforces it. At exhaustion the decoder
