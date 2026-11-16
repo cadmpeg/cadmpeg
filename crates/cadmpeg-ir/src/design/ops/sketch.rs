@@ -16,8 +16,8 @@ use std::num::NonZeroU32;
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::de::{self, DeserializeOwned};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use super::shared::{EvaluationStatus, LinkState, RunSides, Spacing};
 use crate::design::construction::{kinds, Construction, ScalarDimension};
@@ -211,31 +211,6 @@ impl SketchSpace for Spatial {
     type Point = FinitePoint3;
     type Direction = UnitVector3;
     type Curve = SpatialCurve;
-}
-
-/// A planar direction is written `[x, y]` and read only at unit length.
-impl Serialize for UnitVector2 {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.get().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for UnitVector2 {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let components = <[f64; 2]>::deserialize(deserializer)?;
-        Self::new(components).ok_or_else(|| de::Error::custom("a planar direction has unit length"))
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for UnitVector2 {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "UnitVector2".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        <[f64; 2]>::json_schema(generator)
-    }
 }
 
 /// An entity of a sketch: geometry with its defining form, its roles, and
