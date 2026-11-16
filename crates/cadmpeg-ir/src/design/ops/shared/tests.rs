@@ -12,10 +12,17 @@ use crate::scalar::Length;
 /// tagged enum is its `kind` alone and refuses a stated `value`.
 #[test]
 fn every_adjacent_unit_variant_refuses_a_stated_value() {
-    let readers: [(&'static str, Reader); 3] = [
+    let readers: [(&'static str, Reader); 10] = [
+        ("Alignment", reads::<Alignment>),
+        ("InstanceOrientation", reads::<InstanceOrientation>),
         ("Interpolation", reads::<Interpolation>),
+        ("JointKind", reads::<JointKind>),
+        ("JointMotion", reads::<JointMotion>),
         ("Limit", reads::<Limit<Length>>),
         ("OffsetJoin", reads::<OffsetJoin>),
+        ("RunSides", reads::<RunSides<Length>>),
+        ("SlotPosition", reads::<SlotPosition>),
+        ("WidthMode", reads::<WidthMode>),
     ];
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/design/ops/shared.rs");
     assert_units_refuse_value(&[file], &BTreeMap::from(readers));
