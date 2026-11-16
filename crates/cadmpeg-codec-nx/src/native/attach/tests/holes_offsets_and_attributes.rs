@@ -39,6 +39,7 @@ fn insert_test_procedural_surface(
         id: owner.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_surface(owner, procedural)
@@ -106,6 +107,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     geometry.surfaces.push(Surface {
         id: cap_surface.clone(),
@@ -118,6 +120,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let (entry_loop, cylinder_cap_loop, cap_face_loop) = {
         let mut add_circle_loop =
@@ -142,14 +145,17 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                             .unwrap(),
                         )),
                         source_object: None,
+                        native_ref: None,
                     });
                     geometry.edges.push(Edge {
                         id: edge_id.clone(),
                         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-                        start: VertexId::mint("test:model:entity#vertex")
-                            .expect("identity grammar"),
-                        end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                            VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                            VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                        )),
                         tolerance: None,
+                        native_ref: None,
                     });
                 }
                 let coedge_id = CoedgeId::mint(format!("test:model:entity#{loop_name}-coedge"))
@@ -162,6 +168,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                     sense: Sense::Forward,
                     pcurves: Vec::new(),
                     use_curve: None,
+                    native_ref: None,
                 });
                 loop_id
             };
@@ -198,6 +205,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     geometry.faces.push(Face {
         id: cap_face.clone(),
@@ -208,32 +216,28 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     let body = BodyId::mint("test:model:entity#blind-body").expect("identity grammar");
     geometry.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("test:model:entity#blind-region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     geometry.regions.push(Region {
         id: RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
         body: body.clone(),
         shells: vec![ShellId::mint("test:model:entity#blind-shell").expect("identity grammar")],
+        native_ref: None,
     });
-    geometry.shells.push(
-        Shell::new(
-            ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
-            RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
-            vec![cylinder_face, cap_face],
-            Vec::new(),
-            Vec::new(),
-        )
-        .unwrap(),
-    );
+    geometry.shells.push(Shell::new(
+        ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
+        RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
+    ));
     let mut ir = CadIr::empty();
     ir.geometry = geometry;
 
@@ -316,14 +320,8 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         }][..])) && actual_diameter.get() == 4.0 && actual_length.get() == 3.0)));
 
         let mut missing_cap = ir.clone();
-        missing_cap.geometry.shells[0]
-            .edit_topology(|faces, _, _| {
-                faces.retain(|face| {
-                    face != &FaceId::mint("test:model:entity#blind-cap-face")
-                        .expect("identity grammar")
-                });
-            })
-            .unwrap();
+        let removed = FaceId::mint("test:model:entity#blind-cap-face").expect("identity grammar");
+        missing_cap.geometry.faces.retain(|face| face.id != removed);
         assert!(blind_hole_body_projection(
             &missing_cap,
             std::slice::from_ref(&operation),
@@ -345,10 +343,8 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
-        duplicate_cap.geometry.shells[0].add_face(
-            FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
-        );
         assert!(blind_hole_body_projection(
             &duplicate_cap,
             std::slice::from_ref(&operation),
@@ -450,14 +446,17 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                             .unwrap(),
                         )),
                         source_object: None,
+                        native_ref: None,
                     });
                     geometry.edges.push(Edge {
                         id: edge_id.clone(),
                         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-                        start: VertexId::mint("test:model:entity#vertex")
-                            .expect("identity grammar"),
-                        end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                            VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                            VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                        )),
                         tolerance: None,
+                        native_ref: None,
                     });
                 }
                 geometry.coedges.push(Coedge {
@@ -468,6 +467,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                     sense: Sense::Forward,
                     pcurves: Vec::new(),
                     use_curve: None,
+                    native_ref: None,
                 });
                 loop_id
             };
@@ -481,6 +481,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             });
         };
         let bore_surface =
@@ -497,6 +498,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let bore_loops = vec![
             add_circle_loop("bore-entry", None, Point3::new(0.0, 0.0, 0.0), 2.0),
@@ -523,6 +525,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let counterbore_loops = vec![
             add_circle_loop(
@@ -553,6 +556,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let shoulder_loops = vec![
             add_circle_loop(
@@ -579,31 +583,22 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         geometry.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Solid,
-            regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         geometry.regions.push(Region {
             id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
             body: body.clone(),
             shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
+            native_ref: None,
         });
-        geometry.shells.push(
-            Shell::new(
-                ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-                RegionId::mint("test:model:entity#region").expect("identity grammar"),
-                vec![
-                    FaceId::mint("test:model:entity#bore-face").expect("identity grammar"),
-                    FaceId::mint("test:model:entity#counterbore-face").expect("identity grammar"),
-                    FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar"),
-                ],
-                Vec::new(),
-                Vec::new(),
-            )
-            .unwrap(),
-        );
+        geometry.shells.push(Shell::new(
+            ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+            RegionId::mint("test:model:entity#region").expect("identity grammar"),
+        ));
         let mut ir = CadIr::empty();
         ir.geometry = geometry;
         let operations = vec![operation.clone()];
@@ -703,14 +698,11 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         }][..])) && actual_diameter.get() == 8.0 && actual_depth.get() == 2.0 && actual_diameter_2.get() == 4.0)));
 
         let mut missing_shoulder = ir.clone();
-        missing_shoulder.geometry.shells[0]
-            .edit_topology(|faces, _, _| {
-                faces.retain(|face| {
-                    face != &FaceId::mint("test:model:entity#shoulder-face")
-                        .expect("identity grammar")
-                });
-            })
-            .unwrap();
+        let removed = FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar");
+        missing_shoulder
+            .geometry
+            .faces
+            .retain(|face| face.id != removed);
         assert!(
             counterbore_body_projection(default_ctx, &missing_shoulder, &operations, &outputs)
                 .unwrap()
@@ -1157,7 +1149,6 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
         } else {
             BodyKind::Solid
         };
-        body.regions = region_ids.clone();
         ir.geometry.bodies.push(body.clone());
         if copy.is_multiple_of(10) {
             body.kind = BodyKind::Sheet;
@@ -1170,16 +1161,9 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
             region.shells = vec![shell_id.clone()];
             ir.geometry.regions.push(region);
         }
-        ir.geometry.shells.push(
-            Shell::new(
-                shell_id.clone(),
-                region_ids[0].clone(),
-                face_ids.clone(),
-                Vec::new(),
-                Vec::new(),
-            )
-            .unwrap(),
-        );
+        ir.geometry
+            .shells
+            .push(Shell::new(shell_id.clone(), region_ids[0].clone()));
         for (part, (face_id, template)) in face_ids.iter().zip(template_faces).enumerate() {
             if copy % 5 == 2 && part == 0 {
                 continue;
@@ -1198,16 +1182,12 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
     }
     let scan = |body_id: &BodyId, connected_solid: bool| {
         let body = ir.geometry.bodies.iter().find(|body| body.id == *body_id)?;
-        if connected_solid && (body.kind != BodyKind::Solid || body.regions.len() != 1) {
+        let regions = ir.geometry.body_regions(&body.id).collect::<Vec<_>>();
+        if connected_solid && (body.kind != BodyKind::Solid || regions.len() != 1) {
             return None;
         }
         let mut faces = Vec::new();
-        for region_id in &body.regions {
-            let region = ir
-                .geometry
-                .regions
-                .iter()
-                .find(|region| region.id == *region_id && region.body == body.id)?;
+        for region in regions {
             if connected_solid && region.shells.len() != 1 {
                 return None;
             }
@@ -1217,12 +1197,7 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
-                for face_id in shell.faces() {
-                    let face = ir
-                        .geometry
-                        .faces
-                        .iter()
-                        .find(|face| face.id == *face_id && face.shell == shell.id)?;
+                for face in ir.geometry.shell_faces(&shell.id) {
                     faces.push((face.id.clone(), face.surface.clone()));
                 }
             }
@@ -1286,6 +1261,7 @@ fn feature_projection_index_matches_the_owned_procedural_scan() {
             id: surface_id(next(30)),
             geometry,
             source_object: None,
+            native_ref: None,
         });
     }
     for ordinal in 0..40 {

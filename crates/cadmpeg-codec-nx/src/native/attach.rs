@@ -747,9 +747,9 @@ fn ensure_rm_color_appearance(
     annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<AppearanceId, CodecError> {
     let color = Color::new(
-        definition.components[0].0.value(),
-        definition.components[1].0.value(),
-        definition.components[2].0.value(),
+        f64::from(definition.components[0].0.value()),
+        f64::from(definition.components[1].0.value()),
+        f64::from(definition.components[2].0.value()),
         1.0,
     )
     .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;

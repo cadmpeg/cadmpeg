@@ -1328,7 +1328,6 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
                 .expect("identity grammar");
         intermediate_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
-        stepped.geometry.shells[0].add_face(intermediate_face.id.clone());
         stepped.geometry.faces.push(intermediate_face);
         assert_eq!(
             placement(&stepped, dimensions, std::slice::from_ref(&output)),
@@ -1386,7 +1385,6 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
                 .expect("identity grammar");
         curved_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
-        curved_feature.geometry.shells[0].add_face(curved_face.id.clone());
         curved_feature.geometry.faces.push(curved_face);
         assert_eq!(
             placement(&curved_feature, dimensions, &[]),
@@ -1405,9 +1403,6 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
             .expect("identity grammar");
         second_region.shells.clear();
-        disconnected.geometry.bodies[0]
-            .regions
-            .push(second_region.id.clone());
         disconnected.geometry.regions.push(second_region);
         assert_eq!(
             placement(&disconnected, dimensions, std::slice::from_ref(&output),),
@@ -1423,14 +1418,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         let body = ir.geometry.bodies[0].id.clone();
         let face = ir.geometry.faces[0].id.clone();
         let surface = ir.geometry.faces[0].surface.clone();
-        {
-            let members = vec![face];
-            ir.geometry.shells[0].edit_topology(|faces, _, _| *faces = members)
-        }
-        .unwrap();
-        ir.geometry
-            .faces
-            .retain(|candidate| candidate.id == ir.geometry.shells[0].faces()[0]);
+        ir.geometry.faces.retain(|candidate| candidate.id == face);
         ir.geometry
             .surfaces
             .retain(|candidate| candidate.id == surface);
@@ -1483,11 +1471,6 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
 
         let mut second_body = ir.geometry.bodies[0].clone();
         second_body.id = BodyId::mint("test:model:entity#second-body").expect("identity grammar");
-        second_body.regions =
-            vec![
-                cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
-                    .expect("identity grammar"),
-            ];
         let mut second_region = ir.geometry.regions[0].clone();
         second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
             .expect("identity grammar");
@@ -1501,14 +1484,6 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         second_shell.id = cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell")
             .expect("identity grammar");
         second_shell.region = second_region.id.clone();
-        {
-            let members = vec![
-                cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
-                    .expect("identity grammar"),
-            ];
-            second_shell.edit_topology(|faces, _, _| *faces = members)
-        }
-        .unwrap();
         let mut second_face = ir.geometry.faces[0].clone();
         second_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
             .expect("identity grammar");

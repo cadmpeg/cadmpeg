@@ -316,13 +316,19 @@ impl Shell {
 impl crate::document::Topology {
     /// The faces of `shell`, the faces whose [`Face::shell`] names it, in
     /// arena order.
-    pub fn shell_faces<'a>(&'a self, shell: &'a ShellId) -> impl Iterator<Item = &'a Face> + 'a {
+    pub fn shell_faces<'a, 'b>(
+        &'a self,
+        shell: &'b ShellId,
+    ) -> impl Iterator<Item = &'a Face> + use<'a, 'b> {
         self.faces.iter().filter(move |face| &face.shell == shell)
     }
 
     /// The regions of `body`, the regions whose [`Region::body`] names it, in
     /// arena order.
-    pub fn body_regions<'a>(&'a self, body: &'a BodyId) -> impl Iterator<Item = &'a Region> + 'a {
+    pub fn body_regions<'a, 'b>(
+        &'a self,
+        body: &'b BodyId,
+    ) -> impl Iterator<Item = &'a Region> + use<'a, 'b> {
         self.regions
             .iter()
             .filter(move |region| &region.body == body)

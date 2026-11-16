@@ -301,8 +301,17 @@ fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
         .unwrap();
 
     let edge = result.ir().geometry.edges.first().expect("closed edge");
-    assert_eq!(edge.start, edge.end);
-    assert!(edge.start.as_str().contains("closed-edge"));
+    assert_eq!(
+        edge.ends.as_ref().unwrap().start,
+        edge.ends.as_ref().unwrap().end
+    );
+    assert!(edge
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .as_str()
+        .contains("closed-edge"));
     assert_eq!(result.ir().geometry.loops.len(), 1);
     assert_eq!(result.ir().geometry.coedges.len(), 1);
     assert!(
@@ -340,8 +349,17 @@ fn decode_aliases_partner_closed_null_vertex_fin_to_edge_start() {
         .unwrap();
 
     let edge = result.ir().geometry.edges.first().expect("closed edge");
-    assert_eq!(edge.start, edge.end);
-    assert!(edge.start.as_str().contains("closed-edge"));
+    assert_eq!(
+        edge.ends.as_ref().unwrap().start,
+        edge.ends.as_ref().unwrap().end
+    );
+    assert!(edge
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .as_str()
+        .contains("closed-edge"));
     assert_eq!(result.ir().geometry.loops.len(), 1);
     assert_eq!(result.ir().geometry.coedges.len(), 1);
     assert!(
@@ -529,7 +547,7 @@ fn decode_does_not_attach_unreferenced_point_to_solid_topology() {
 
     assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.ir().geometry.vertices.len(), 1);
-    assert_eq!(result.ir().geometry.shells[0].free_vertices().len(), 0);
+    assert_eq!(result.ir().geometry.shells[0].free_vertices().count(), 0);
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -910,7 +928,14 @@ fn decode_preserves_multiple_shells_in_one_region() {
     assert_eq!(result.ir().geometry.regions.len(), 1);
     assert_eq!(result.ir().geometry.shells.len(), 2);
     assert_eq!(result.ir().geometry.regions[0].shells.len(), 2);
-    assert_eq!(result.ir().geometry.bodies[0].regions.len(), 1);
+    assert_eq!(
+        result
+            .ir()
+            .geometry
+            .body_regions(&result.ir().geometry.bodies[0].id)
+            .count(),
+        1
+    );
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -1063,11 +1088,26 @@ fn decode_runs_each_edge_along_its_curve_and_chains_loop_coedges() {
     };
 
     assert_eq!(geometry.edges.len(), 3);
-    assert_eq!(position(&edge("#8").start), [10.0, 0.0, 0.0]);
-    assert_eq!(position(&edge("#8").end), [0.0, 10.0, 0.0]);
-    assert_eq!(position(&edge("#15").start), [0.0, 10.0, 0.0]);
-    assert_eq!(position(&edge("#16").start), [10.0, 0.0, 0.0]);
-    assert_eq!(position(&edge("#16").end), [0.0, 0.0, 0.0]);
+    assert_eq!(
+        position(&edge("#8").ends.as_ref().unwrap().start),
+        [10.0, 0.0, 0.0]
+    );
+    assert_eq!(
+        position(&edge("#8").ends.as_ref().unwrap().end),
+        [0.0, 10.0, 0.0]
+    );
+    assert_eq!(
+        position(&edge("#15").ends.as_ref().unwrap().start),
+        [0.0, 10.0, 0.0]
+    );
+    assert_eq!(
+        position(&edge("#16").ends.as_ref().unwrap().start),
+        [10.0, 0.0, 0.0]
+    );
+    assert_eq!(
+        position(&edge("#16").ends.as_ref().unwrap().end),
+        [0.0, 0.0, 0.0]
+    );
     let traversal = |coedge: &cadmpeg_ir::ids::CoedgeId| {
         let coedge = geometry
             .coedges
@@ -1080,8 +1120,14 @@ fn decode_runs_each_edge_along_its_curve_and_chains_loop_coedges() {
             .find(|candidate| candidate.id == coedge.edge)
             .expect("edge");
         match coedge.sense {
-            cadmpeg_ir::topology::Sense::Forward => (edge.start.clone(), edge.end.clone()),
-            cadmpeg_ir::topology::Sense::Reversed => (edge.end.clone(), edge.start.clone()),
+            cadmpeg_ir::topology::Sense::Forward => (
+                edge.ends.as_ref().unwrap().start.clone(),
+                edge.ends.as_ref().unwrap().end.clone(),
+            ),
+            cadmpeg_ir::topology::Sense::Reversed => (
+                edge.ends.as_ref().unwrap().end.clone(),
+                edge.ends.as_ref().unwrap().start.clone(),
+            ),
         }
     };
     let coedges = geometry.loops[0].coedges();

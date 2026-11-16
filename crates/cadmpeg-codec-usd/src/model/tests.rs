@@ -111,7 +111,10 @@ fn curves_become_wire_bodies() {
     assert_eq!(ir.geometry.edges.len(), 2);
     assert_eq!(ir.geometry.curves.len(), 2);
     let closed = &ir.geometry.edges[1];
-    assert_eq!(closed.start, closed.end);
+    assert_eq!(
+        closed.ends.as_ref().unwrap().start,
+        closed.ends.as_ref().unwrap().end
+    );
     assert_eq!(ir.geometry.vertices.len(), 3);
 }
 
