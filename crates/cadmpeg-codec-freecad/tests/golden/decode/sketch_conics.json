@@ -1026,13 +1026,9 @@
     "source": {
       "attributes": {
         "application_domains": "App,Sketcher",
-        "archive_entry_count": "4",
         "document_kind": "application-document",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "2",
-        "physical_archive_bytes": "4309",
-        "physical_ledger_spans": "29",
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
@@ -1106,6 +1102,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

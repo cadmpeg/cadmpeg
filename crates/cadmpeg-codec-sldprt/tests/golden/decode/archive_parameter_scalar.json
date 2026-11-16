@@ -124,7 +124,6 @@
     },
     "source": {
       "attributes": {
-        "block_count": "2",
         "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
@@ -291,6 +290,8 @@
         }
       }
     },
+    "decode_digest": "354aa77dac50ed6aef2ac123c79310bf035854d4a89bb0d6c4252d3b78dfa1bb",
+    "file_digests": {},
     "retained_records": {
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -298,8 +299,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

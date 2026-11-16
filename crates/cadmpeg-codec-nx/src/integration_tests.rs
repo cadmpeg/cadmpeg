@@ -90,7 +90,6 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
     crate::decode::Scan {
         container: crate::container::Container {
             data: Vec::new().into(),
-            physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
             entries: Vec::new(),
             fastload_table: None,
@@ -104,6 +103,7 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Preview,
         }],
+        untyped: std::cell::RefCell::default(),
     }
 }
 
@@ -168,6 +168,27 @@ fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
     let result = decode(bytes);
     assert!(!result.report().geometry_transferred());
     assert!(!result.source_fidelity().retained_records().is_empty());
+}
+
+#[test]
+fn a_parasolid_stream_kept_without_decoding_is_untyped_model_content() {
+    let result = decode(legacy_cfb_with_ug_part());
+    assert!(!result.report().geometry_transferred());
+    let streams = result
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .filter(|record| {
+            record
+                .untyped()
+                .contains(&cadmpeg_core::decode::ArenaClass::Model)
+        })
+        .count();
+    assert!(streams > 0);
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_core::decode::ArenaClass::Model));
 }
 
 #[test]

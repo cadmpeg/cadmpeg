@@ -420,17 +420,13 @@
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "4",
-        "bmp_thumbnail_count": "0",
         "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "compound_stream_count": "0",
         "displaylist_triangles": "1",
         "displaylist_vertices": "3",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0",
         "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#487:0",
@@ -696,6 +692,8 @@
         }
       }
     },
+    "decode_digest": "697ca2b020cd4b5d8916eb814d15c0ec5783e53e585dca1ec70b56a9e9d2eb1d",
+    "file_digests": {},
     "retained_records": {
       "sldprt:displaylist:record#348": {
         "bytes": {
@@ -703,7 +701,8 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/DisplayLists"
+        "stream": "Contents/DisplayLists",
+        "untyped": []
       },
       "sldprt:file:block#12": {
         "bytes": {
@@ -711,7 +710,8 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:block#348": {
         "bytes": {
@@ -719,7 +719,8 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/DisplayLists"
+        "stream": "Contents/DisplayLists",
+        "untyped": []
       },
       "sldprt:file:block#487": {
         "bytes": {
@@ -727,7 +728,8 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords"
+        "stream": "Contents/Keywords",
+        "untyped": []
       },
       "sldprt:file:block#607": {
         "bytes": {
@@ -735,7 +737,11 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features"
+        "stream": "Contents/Features",
+        "untyped": [
+          "model",
+          "design"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -743,8 +749,13 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

@@ -200,15 +200,7 @@
       "process": true
     },
     "source": {
-      "attributes": {
-        "external_reference_count": "0",
-        "file_size": "359",
-        "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "359",
-        "preview_count": "0",
-        "stream_count": "2"
-      },
+      "attributes": {},
       "identity": {
         "dialects": {
           "extra": [],
@@ -635,6 +627,8 @@
         }
       }
     },
+    "decode_digest": "50b40607c29f48050412fd356f5526352160ed5ef947f43c3d8c7a27a26c900d",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#freeform": {
         "bytes": {
@@ -642,8 +636,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

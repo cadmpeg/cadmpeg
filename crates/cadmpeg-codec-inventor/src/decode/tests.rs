@@ -570,3 +570,33 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
     assert!(charged(&unverified));
     assert!(!charged(&verified));
 }
+
+#[test]
+fn a_kernel_carrier_kept_without_decoding_is_untyped_model_content() {
+    let marks = |kernel: &[u8]| {
+        let bytes = primary_envelope_fixture_with_kernel(EnvelopeDeclarations::default(), kernel);
+        let (_, _, fidelity) = InventorCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("the part decodes")
+            .into_parts();
+        fidelity
+            .retained_records()
+            .iter()
+            .map(|(id, record)| {
+                (
+                    id.as_str().to_owned(),
+                    record.untyped().iter().copied().collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let sphere = acis_sphere_kernel_stream(21_800);
+    assert!(marks(&sphere).is_empty());
+    assert_eq!(
+        marks(&sphere[..sphere.len() / 2]),
+        [(
+            "inventor:kernel:carrier#seg-0".to_owned(),
+            vec![cadmpeg_core::decode::ArenaClass::Model]
+        )]
+    );
+}

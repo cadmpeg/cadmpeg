@@ -51,11 +51,12 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    decode_container(ctx, &InventorContainer::open(ctx, root)?)
+    decode_container(ctx, root, &InventorContainer::open(ctx, root)?)
 }
 
 fn decode_container<'a>(
     ctx: &DecodeContext<'a>,
+    root: View<'a>,
     container: &InventorContainer<'a>,
 ) -> Result<Decoded, CodecError> {
     // One predicate, read once from the parsed declarations: it decides the
@@ -83,14 +84,6 @@ fn decode_container<'a>(
     attributes.insert(
         "cfb_major_version".to_owned(),
         container.snapshot.major_version().to_string(),
-    );
-    attributes.insert(
-        "cfb_sector_size".to_owned(),
-        container.snapshot.sector_size().to_string(),
-    );
-    attributes.insert(
-        "rse_segment_pairs".to_owned(),
-        container.rse.segments.len().to_string(),
     );
     let mut document_kind = container.rse.document_kind();
     let mut metadata = MetadataProjection::default();
@@ -1237,7 +1230,7 @@ fn decode_container<'a>(
         }
     }
     let preview_asset_count = ir.model.assets.len();
-    let mut source_fidelity = SourceFidelity::default();
+    let mut source_fidelity = SourceFidelity::for_root(root);
     let mut annotations = AnnotationBuilder::new();
     for record in kernel_annotations {
         admit_kernel_annotation(&mut annotations, &record)?;
@@ -1253,21 +1246,35 @@ fn decode_container<'a>(
                 "retain Inventor kernel carrier that read no geometry",
             )?;
             let data = carrier.bytes.window().to_vec();
+            let id = UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
+                carrier.segment_token.clone().dash(carrier.record_ordinal),
+            );
             source_fidelity.retain_unknown_records(
                 format!("RSeStorage/B{}:expanded", carrier.segment_token),
                 [UnknownRecord::retained(
-                    UnknownId::compose(
-                        &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
-                        carrier.segment_token.clone().dash(carrier.record_ordinal),
-                    ),
+                    id.clone(),
                     carrier.carrier_offset,
                     data,
                     vec![active_carrier.id().to_owned()],
                 )],
             )?;
+            if !empty_kernel_stream {
+                source_fidelity
+                    .mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
+            }
         }
     }
     if !kernel_unknowns.is_empty() {
+        // Topology-only vertex and edge records carry nothing the arenas lack.
+        let untyped = kernel_unknowns
+            .iter()
+            .filter(|record| {
+                let id = record.id().as_str();
+                !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+            })
+            .map(|record| record.id().clone())
+            .collect::<Vec<_>>();
         source_fidelity
             .attach_native_unknown_records(&mut ir, "inventor", kernel_unknowns, ctx)
             .map_err(|error| {
@@ -1275,6 +1282,9 @@ fn decode_container<'a>(
                     "Inventor kernel unknown retention failed: {error}"
                 ))
             })?;
+        for id in untyped {
+            source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
+        }
     }
     let kernel_unknown_record_count = ir.native_unknowns("inventor")?.len();
     let appearance_binding_count = ir.model.appearance_bindings.len();
@@ -2189,12 +2199,6 @@ fn apply_kernel_header(
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("kernel_save_format_version"),
             format!("{version}"),
-        );
-    }
-    if let Some(count) = header.entity_count {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("kernel_entity_count"),
-            format!("{count}"),
         );
     }
     if let Some(flags) = header.flags {

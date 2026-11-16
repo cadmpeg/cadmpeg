@@ -583,19 +583,7 @@
         "process": true
       },
       "source": {
-        "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "331",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "317",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "partition_streams": "0",
-          "plain_streams": "0",
-          "rmfastload_active_object_count": "50"
-        },
+        "attributes": {},
         "identity": {
           "dialects": {
             "extra": [],
@@ -672,7 +660,10 @@
         "exactness": {},
         "provenance": {}
       },
-      "retained_records": {}
+      "decode_digest": "6eacfee0d80fbf06779bed4ee159abeaf2adff8bd840a7e042ef8ce6ba0f7da1",
+      "file_digests": {},
+      "retained_records": {},
+      "unrepresented": []
     }
   },
   "inspect": {

@@ -210,20 +210,7 @@
       "process": true
     },
     "source": {
-      "attributes": {
-        "brep_stream_len": "324",
-        "brep_stream_sha256": "867e7b5fa60057a348df5093bcadcc75d8e7c8f8795b5f954091bbf7985295fe",
-        "external_reference_count": "0",
-        "fbb_face_rows": "2",
-        "fbb_runs": "1",
-        "file_size": "587",
-        "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "587",
-        "preview_count": "0",
-        "stream_count": "2",
-        "vertex_records": "3"
-      },
+      "attributes": {},
       "identity": {
         "dialects": {
           "extra": [],
@@ -767,6 +754,8 @@
         }
       }
     },
+    "decode_digest": "4cab3f9a412ca4c759f3977401502456366d2613ad12e43eade5d060b318f447",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
         "bytes": {
@@ -774,8 +763,10 @@
           "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

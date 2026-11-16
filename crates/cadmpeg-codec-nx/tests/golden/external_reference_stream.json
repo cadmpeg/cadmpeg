@@ -354,20 +354,10 @@
       },
       "source": {
         "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "2",
           "external_reference.0": "child.prt",
           "external_reference.1": "dirA",
           "external_reference.2": "dirB",
-          "external_reference.3": "extra",
-          "file_size": "487",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "473",
-          "header_entry_count": "2",
-          "jpeg_preview_count": "0",
-          "partition_streams": "1",
-          "plain_streams": "0"
+          "external_reference.3": "extra"
         },
         "identity": {
           "dialects": {
@@ -590,6 +580,8 @@
           }
         }
       },
+      "decode_digest": "792eec33271e33d8300dc45d90deba9aa922312312d4874dd0abb4e6ef3f7bbd",
+      "file_digests": {},
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -597,9 +589,15 @@
             "kind": "inline"
           },
           "offset": 120,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {
