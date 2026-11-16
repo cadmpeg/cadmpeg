@@ -42,7 +42,11 @@ fn shape_entries(bytes: &[u8]) -> Vec<(String, usize)> {
     snapshot
         .entries()
         .iter()
-        .filter(|entry| entry.name.ends_with(".brp"))
+        .filter(|entry| {
+            std::path::Path::new(&entry.name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("brp"))
+        })
         .filter_map(|entry| {
             let range = entry.stored_range().ok()?;
             (range.end > range.start)
@@ -82,7 +86,7 @@ fn an_unreadable_shape_entry_drops_only_the_objects_that_need_it() {
             let owners = baseline_properties
                 .iter()
                 .filter(|property| property.family == crate::native::PropertyFamily::Geometry)
-                .filter(|property| property.side_entries().iter().any(|name| *name == entry))
+                .filter(|property| property.side_entries().contains(&entry))
                 .map(|property| property.owner.clone())
                 .filter(|owner| baseline_objects.iter().any(|object| object.id() == owner))
                 .collect::<BTreeSet<_>>();
