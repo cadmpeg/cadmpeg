@@ -481,3 +481,7 @@
           ]
         },
         "ends": {
+          "start": "synthetic:cube:vertex#3",
+          "end": "synthetic:cube:vertex#0"
+        }
+      },

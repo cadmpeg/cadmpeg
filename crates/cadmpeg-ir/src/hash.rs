@@ -9,7 +9,9 @@ use cadmpeg_core::CodecError;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::document::{CadIr, Process, SortedDesign, SortedModel, SortedTopology, SourceMeta};
+use crate::document::{
+    CadIr, SortedDesign, SortedModel, SortedProcess, SortedTopology, SourceMeta,
+};
 use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 
@@ -159,7 +161,7 @@ pub fn document_local_sha256_without_carried(
             geometry: ir.geometry.sorted(),
             model: ir.model.sorted()?,
             design: ir.design.sorted(),
-            process: &ir.process,
+            process: ir.process.sorted(),
             native: normalized_native(&ir.native, format, &unknowns, carried),
         })
     })()?;
@@ -205,7 +207,7 @@ struct NormalizedDocument<'a> {
     geometry: SortedTopology<'a>,
     model: SortedModel<'a>,
     design: SortedDesign<'a>,
-    process: &'a Process,
+    process: SortedProcess<'a>,
     native: BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>,
 }
 
@@ -608,7 +610,7 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
-            "7ebd0fddef7e035e5679137fff3f4311f01acf1e90cab1d7fa57a5cdd6d9f200"
+            "a2ebc5b1908638faa4ca6c905b43d19bbb12042d07ab982b24aa9f6561e54158"
         );
         assert_eq!(
             document_local_sha256(
@@ -619,7 +621,7 @@ mod tests {
                 "pin:test:source-image#0"
             )
             .unwrap(),
-            "67cdc2f4e3b072623b5cd58d5feb9804c2312acf092d82dba69917ab9ef8d739"
+            "f8605c7741d812c41eac484670bfbcb35ac5bd70a6cca0faf835a9343b57fe86"
         );
     }
 
@@ -706,7 +708,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "847a56e59007aa4e74394149a545939d31c44942ddc3f256bdc031ab0eb16716"
+            "e2c46aa1b52c9ba488b1fc42a09a2fdadf43a8aa15068db0c23c70351839fffa"
         );
         assert_eq!(
             document_local_sha256(

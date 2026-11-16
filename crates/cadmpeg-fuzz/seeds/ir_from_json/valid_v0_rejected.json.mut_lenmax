@@ -26,10 +26,10 @@
     "edges": [],
     "vertices": [],
     "points": [],
- ÿÿÿÿsurfaces": [],
+    "surfaces": [],
     "curves": [],
     "subds": [],
-    "pcurves": [],
+ÿÿÿÿ"pcurves": [],
     "procedural_surfaces": [],
     "procedural_curves": []
   },
@@ -85,6 +85,18 @@
     "evaluations": [],
     "names": []
   },
-  "process": {},
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }

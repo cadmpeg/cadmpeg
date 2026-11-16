@@ -66,16 +66,16 @@ pub(crate) struct FeatureRegenerationParents(
     BTreeMap<crate::features::FeatureId, crate::features::FeatureId>,
 );
 
-/// Every neutral arena with its [`ArenaClass`] token (`model` or `design`)
-/// and its home token, the [`CadIr`] field that holds it (`geometry`,
-/// `model`, or `design`).
+/// Every neutral arena with its [`ArenaClass`] token (`model`, `design`, or
+/// `process`) and its home token, the [`CadIr`] field that holds it
+/// (`geometry`, `model`, `design`, or `process`).
 ///
 /// Consumers that need the class match `$class:ident` after the type; every
 /// other consumer goes through [`arena_registry!`] or
 /// [`every_arena_registry!`], which drop the class token. A consumer reaches
 /// an arena of a document as `ir.$home.$field`. The arenas of the `design`
-/// home follow every other, so the canonical index of every other arena does
-/// not depend on them.
+/// and `process` homes follow every other, so the canonical index of every
+/// other arena does not depend on them.
 macro_rules! classified_arena_registry {
     ($macro:ident) => {
         $crate::document::classified_arena_registry! { @entries [$macro] }
@@ -145,6 +145,17 @@ macro_rules! classified_arena_registry {
             arrangements: crate::design::configuration::Arrangement, design, design, "The arrangements of the scopes' occurrences.", [];
             publications: crate::design::configuration::Publication, design, design, "The publications: named entry points into the scopes.", [];
             evaluations: crate::design::evaluation::Evaluation, design, design, "The evaluations: the states of the scopes other than their current states.", [];
+            setups: crate::process::setup::Setup, process, process, "The setups: placements of workpieces on a machine.", [];
+            operations: crate::process::operation::Operation, process, process, "The operations and modifiers of the setups.", [];
+            features: crate::process::feature::MachiningFeature, process, process, "The machining features.", [];
+            groups: crate::process::groups::ProcessGroup, process, process, "The groups that operations share for values and geometry.", [];
+            tools: crate::process::tool::Tool, process, process, "The tools.", [];
+            presets: crate::process::tool::Preset, process, process, "The tool presets.", [];
+            machines: crate::process::tool::Machine, process, process, "The machines.", [];
+            programs: crate::process::setup::Program, process, process, "The NC programs.", [];
+            parameters: crate::process::groups::ProcessParameter, process, process, "The process parameters.", [];
+            toolpaths: crate::process::toolpath::Toolpath, process, process, "The toolpaths: the evaluations of the operations.", [];
+            states: crate::process::state::ProcessState, process, process, "The process states: stored workpiece geometry along the process.", [];
         }
     };
 }
@@ -153,12 +164,13 @@ pub(crate) use classified_arena_registry;
 /// Every neutral arena of the `geometry` and `model` homes with its home
 /// token, without its class token.
 ///
-/// The arenas of the `design` home share ids with the `model` records they
-/// restate, so identity indexes, drafts, and validators read only these.
+/// The records of the `design` and `process` homes have no identity rewrite,
+/// and a design record shares the id of the `model` record it restates, so
+/// identity indexes, drafts, and validators read only these.
 macro_rules! arena_registry {
     ($macro:ident) => {
         $crate::document::classified_arena_registry! {
-            @entries [$crate::document::strip_design_arenas] $macro
+            @entries [$crate::document::strip_v11_homes] $macro
         }
     };
 }
@@ -182,28 +194,34 @@ macro_rules! strip_arena_class {
 }
 pub(crate) use strip_arena_class;
 
-macro_rules! strip_design_arenas {
+macro_rules! strip_v11_homes {
     (@keep $target:ident [$($kept:tt)*]) => {
         $target! { $($kept)* }
     };
     (@keep $target:ident [$($kept:tt)*] $field:ident: $ty:ty, $class:ident, design, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
-        $crate::document::strip_design_arenas! { @keep $target [$($kept)*] $($rest)* }
+        $crate::document::strip_v11_homes! { @keep $target [$($kept)*] $($rest)* }
+    };
+    (@keep $target:ident [$($kept:tt)*] $field:ident: $ty:ty, $class:ident, process, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        $crate::document::strip_v11_homes! { @keep $target [$($kept)*] $($rest)* }
     };
     (@keep $target:ident [$($kept:tt)*] $field:ident: $ty:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
-        $crate::document::strip_design_arenas! { @keep $target [$($kept)* $field: $ty, $home, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] $($rest)* }
+        $crate::document::strip_v11_homes! { @keep $target [$($kept)* $field: $ty, $home, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] $($rest)* }
     };
     ($target:ident; $($entries:tt)*) => {
-        $crate::document::strip_design_arenas! { @keep $target [] $($entries)* }
+        $crate::document::strip_v11_homes! { @keep $target [] $($entries)* }
     };
 }
-pub(crate) use strip_design_arenas;
+pub(crate) use strip_v11_homes;
 
-/// A registered arena's name: its JSON key, qualified by `design.` in the
-/// `design` home, where the key alone also names an arena of the `model`
-/// home.
+/// A registered arena's name: its JSON key, qualified by its home in the
+/// `design` and `process` homes, where the key alone also names an arena of
+/// another home.
 macro_rules! arena_label {
     ($field:ident, design) => {
         concat!("design.", stringify!($field))
+    };
+    ($field:ident, process) => {
+        concat!("process.", stringify!($field))
     };
     ($field:ident, $home:ident) => {
         stringify!($field)
@@ -250,6 +268,9 @@ macro_rules! arena_home {
     };
     (design) => {
         $crate::document::ArenaHome::Design
+    };
+    (process) => {
+        $crate::document::ArenaHome::Process
     };
 }
 pub(crate) use arena_home;
@@ -565,25 +586,29 @@ macro_rules! sorted_model_value {
 }
 
 /// Splits the registry by home token and declares [`Topology`] from the
-/// `geometry` arenas, [`Model`] from the `model` arenas, and [`Design`] from
-/// the `design` arenas.
+/// `geometry` arenas, [`Model`] from the `model` arenas, [`Design`] from the
+/// `design` arenas, and [`Process`] from the `process` arenas.
 macro_rules! declare_homes {
-    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] $field:ident: $ty:ty, geometry, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
-        declare_homes! { @split [$($geometry)* $field: $ty, geometry, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] [$($model)*] [$($design)*] $($rest)* }
+    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] [$($process:tt)*] $field:ident: $ty:ty, geometry, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        declare_homes! { @split [$($geometry)* $field: $ty, geometry, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] [$($model)*] [$($design)*] [$($process)*] $($rest)* }
     };
-    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] $field:ident: $ty:ty, model, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
-        declare_homes! { @split [$($geometry)*] [$($model)* $field: $ty, model, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] [$($design)*] $($rest)* }
+    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] [$($process:tt)*] $field:ident: $ty:ty, model, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        declare_homes! { @split [$($geometry)*] [$($model)* $field: $ty, model, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] [$($design)*] [$($process)*] $($rest)* }
     };
-    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] $field:ident: $ty:ty, design, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
-        declare_homes! { @split [$($geometry)*] [$($model)*] [$($design)* $field: $ty, design, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] $($rest)* }
+    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] [$($process:tt)*] $field:ident: $ty:ty, design, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        declare_homes! { @split [$($geometry)*] [$($model)*] [$($design)* $field: $ty, design, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] [$($process)*] $($rest)* }
     };
-    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*]) => {
+    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] [$($process:tt)*] $field:ident: $ty:ty, process, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; $($rest:tt)*) => {
+        declare_homes! { @split [$($geometry)*] [$($model)*] [$($design)*] [$($process)* $field: $ty, process, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;] $($rest)* }
+    };
+    (@split [$($geometry:tt)*] [$($model:tt)*] [$($design:tt)*] [$($process:tt)*]) => {
         declare_topology! { $($geometry)* }
         declare_model! { $($model)* }
         declare_design! { $($design)* }
+        declare_process! { $($process)* }
     };
     ($($entries:tt)*) => {
-        declare_homes! { @split [] [] [] $($entries)* }
+        declare_homes! { @split [] [] [] [] $($entries)* }
     };
 }
 
@@ -991,6 +1016,45 @@ macro_rules! declare_design {
     };
 }
 
+macro_rules! declare_process {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+        /// The process class's arenas: setups, operations, machining
+        /// features, groups, tools, presets, machines, programs, parameters,
+        /// toolpaths, and process states.
+        #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(deny_unknown_fields)]
+        pub struct Process {
+            $(
+                #[doc = $doc]
+                pub $field: Vec<$ty>,
+            )*
+        }
+
+        declare_home_arenas!(Process, $($field: $ty;)*);
+
+        /// Every process arena borrowed in canonical identity order.
+        #[derive(Serialize)]
+        pub(crate) struct SortedProcess<'a> {
+            $($field: Vec<&'a $ty>,)*
+        }
+
+        impl Process {
+            /// Borrow every arena in canonical identity order.
+            pub(crate) fn sorted(&self) -> SortedProcess<'_> {
+                SortedProcess {
+                    $($field: sorted_rows(&self.$field, |value| value),)*
+                }
+            }
+
+            /// The records of this process whose identity `ids` holds.
+            pub(crate) fn repro_select(&self, ids: &std::collections::BTreeSet<String>) -> Self {
+                self.repro_select_arenas(ids)
+            }
+        }
+    };
+}
+
 /// Methods that walk every neutral arena of a document, in registry order.
 macro_rules! declare_document_arenas {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
@@ -1013,7 +1077,10 @@ macro_rules! declare_document_arenas {
 
             /// Total number of admitted neutral entities across all arenas.
             pub(crate) fn entity_count(self) -> usize {
-                self.geometry.entity_count() + self.model.entity_count() + self.design.entity_count()
+                self.geometry.entity_count()
+                    + self.model.entity_count()
+                    + self.design.entity_count()
+                    + self.process.entity_count()
             }
 
             pub(crate) fn repro_graph(self, finding: &crate::report::check::Finding) -> Result<crate::repro::selection::Graph<'a>, CodecError> {
@@ -1913,21 +1980,14 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
     })
 }
 
-/// The process class's arenas: setups, operations, machining features,
-/// tools, presets, machines, programs, parameters, toolpaths, and process
-/// states.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct Process {}
-
 /// The neutral arenas of one document, borrowed: its current geometry, its
-/// model, and its design.
+/// model, its design, and its process.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Arenas<'a> {
     pub(crate) geometry: &'a Topology,
     pub(crate) model: &'a Model,
     pub(crate) design: &'a Design,
+    pub(crate) process: &'a Process,
 }
 
 /// A versioned CAD document.
@@ -2067,9 +2127,18 @@ impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = CadIrReadWire::deserialize(deserializer)?;
         check_ir_version(wire.ir_version.as_ref())?;
-        crate::design::evaluation::admit_state_chains(&wire.design.evaluations)
+        wire.admit_state_chains()
             .map_err(serde::de::Error::custom)?;
         wire.try_into().map_err(serde::de::Error::custom)
+    }
+}
+
+impl CadIrReadWire {
+    /// Walks every chain of state bases, through the process states and the
+    /// evaluations they rest on, under the state chain ceiling.
+    fn admit_state_chains(&self) -> Result<(), String> {
+        let evaluations = crate::design::evaluation::admit_state_chains(&self.design.evaluations)?;
+        crate::process::state::admit_state_chains(&self.process.states, &evaluations)
     }
 }
 
@@ -2371,6 +2440,7 @@ impl CadIr {
             geometry: &self.geometry,
             model: &self.model,
             design: &self.design,
+            process: &self.process,
         }
     }
 
@@ -2416,17 +2486,20 @@ impl CadIr {
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        serde_json::from_str::<CadIrReadWire>(s)?
-            .try_into()
+        let wire = serde_json::from_str::<CadIrReadWire>(s)?;
+        wire.admit_state_chains()
+            .map_err(<serde_json::Error as serde::de::Error>::custom)?;
+        wire.try_into()
             .map_err(<serde_json::Error as serde::de::Error>::custom)
     }
 
-    /// Sort geometry, model, design, native, and unknown-record arenas by
-    /// identity.
+    /// Sort geometry, model, design, process, native, and unknown-record
+    /// arenas by identity.
     pub fn finalize(&mut self) {
         self.geometry.finalize();
         self.model.finalize();
         self.design.finalize();
+        self.process.finalize();
         self.native.finalize();
     }
 

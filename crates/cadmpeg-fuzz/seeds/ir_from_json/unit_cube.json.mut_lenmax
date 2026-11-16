@@ -249,9 +249,8 @@
       },
       {
         "id": "synthetic:cube:coedge#bottom:1",
-        "owner_loop": "synthetic:cuÿÿÿÿoop#bottom",
-        "edge": "synthetic:cube:edge#3",
-        "radial_next": "synthetic:cube:coedge#left:0",
+        "owner_loop": "synthetic:cube:loop#bottom",
+        "edge": "synthetic:cube:edge#ÿÿÿÿ        "radial_next": "synthetic:cube:coedge#left:0",
         "sense": "reversed",
         "pcurves": []
       },
@@ -1103,6 +1102,18 @@
     "evaluations": [],
     "names": []
   },
-  "process": {},
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }

@@ -35,7 +35,7 @@ from the name of the constant.
    ceilings: `max_expression_depth`, `max_name_depth`, `max_pick_depth`, and
    `max_construction_depth`. Reading a document enforces
    `max_state_chain_depth` on each chain of state bases its evaluations
-   form, and refuses a cycle as malformed. Excess refuses that read with
+   and process states form, and refuses a cycle as malformed. Excess refuses that read with
    `CodecError::ResourceLimit` (`RecursionDepth`, `BudgetExceeded`); it sets
    no fuse.
 4. **Local work cap.** The limit bounds a search, an iteration, a

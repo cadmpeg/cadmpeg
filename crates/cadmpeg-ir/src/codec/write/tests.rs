@@ -319,6 +319,7 @@ macro_rules! uniform_dispositions {
             ArenaDispositions {
                 $($field: disposition,)*
                 design: super::DesignArenaDispositions::uniform(disposition),
+                process: super::ProcessArenaDispositions::uniform(disposition),
             }
         }
     };
@@ -389,6 +390,36 @@ fn an_omitted_design_arena_is_charged_only_without_v10_design_records() {
     let losses = coverage_losses(&ir, omitted);
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert!(losses[0].message.contains("`spreadsheets`"), "{losses:?}");
+}
+
+#[test]
+fn an_omitted_process_arena_is_charged_as_a_process_record() {
+    let mut ir = CadIr::empty();
+    ir.process
+        .groups
+        .push(crate::process::groups::ProcessGroup {
+            id: crate::design::ids::ProcessGroupId::try_from("test:process:group#1".to_owned())
+                .unwrap(),
+            kind: crate::process::groups::GroupKind::Method,
+            name: None,
+            parent: None,
+            native_ref: None,
+        });
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    dispositions.process.groups = ArenaDisposition::Omitted;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(losses[0].code.local_code(), "arena.omitted");
+    assert_eq!(
+        losses[0].code.taxonomy(),
+        crate::report::loss::LossTaxonomy::ProcessRecordOmitted
+    );
+    assert!(losses[0].message.contains("`process.groups`"), "{losses:?}");
+    assert!(coverage_losses(
+        &ir,
+        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written))
+    )
+    .is_empty());
 }
 
 #[test]

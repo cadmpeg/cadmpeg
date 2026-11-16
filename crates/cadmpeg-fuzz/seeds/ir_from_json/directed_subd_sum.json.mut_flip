@@ -149,12 +149,12 @@
                 0.5
               ],
               "tag": "smooth_x",
-       ß      "sector_coefficients": [
+              "sector_coefficients": [
                 0.25,
                 0.75
               ]
             },
-            {
+  ß         {
               "vertices": [
                 2,
                 0
@@ -281,6 +281,18 @@
     "evaluations": [],
     "names": []
   },
-  "process": {},
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }

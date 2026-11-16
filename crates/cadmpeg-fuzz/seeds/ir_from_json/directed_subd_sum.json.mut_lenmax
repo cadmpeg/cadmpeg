@@ -77,9 +77,9 @@
         "geometry": {
           "kind": "solved",
           "value": {
- ÿÿÿÿ       "kind": "line",
+            "kind": "line",
             "origin": {
-              "x": 0.0,
+   ÿÿÿÿ       "x": 0.0,
               "y": 0.0,
               "z": 0.0
             },
@@ -281,6 +281,18 @@
     "evaluations": [],
     "names": []
   },
-  "process": {},
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }
