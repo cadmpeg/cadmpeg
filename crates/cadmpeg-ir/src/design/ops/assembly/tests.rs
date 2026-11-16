@@ -21,10 +21,11 @@ use crate::design::construction::{
 use crate::design::dimension::Dimension;
 use crate::design::names::{NameKind, TopoName};
 use crate::design::ops::shared::{
-    AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, Coupling, DimensionRun, DimensionTable,
-    DriveAxis, DriveMode, Increment, InstanceOrientation, JointDrive, JointMotion, JointOffset,
-    LinearRun, Locus, PairElement, PathAxisControl, PathPosition, PathReference, PathRollControl,
-    PatternRun, RunSides, SlotPosition, Spacing, TableRow, TangentContact, UpToFill, WidthMode,
+    Alignment, AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, Coupling, DimensionRun,
+    DimensionTable, DriveAxis, DriveMode, Increment, InstanceOrientation, JointConnector,
+    JointDrive, JointKind, JointMotion, JointOffset, LinearRun, Locus, PairElement,
+    PathAxisControl, PathPosition, PathReference, PathRollControl, PatternRun, RunSides,
+    SlotPosition, Spacing, TableRow, TangentContact, UpToFill, WidthMode,
 };
 use crate::design::options::{NativeOption, SymmetricMeasure};
 use crate::design::read;

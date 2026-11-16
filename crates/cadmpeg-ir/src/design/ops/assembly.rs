@@ -17,7 +17,7 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::shared::{Alignment, JointConnector, JointKind, PatternLayout};
+use super::shared::{Joint, PatternLayout};
 use crate::design::construction::{kinds, Construction};
 use crate::design::names::InstanceIndex;
 use crate::design::options::NativeOptions;
@@ -99,32 +99,6 @@ pub struct PlaceSet {
     /// `occurrences` of a definition the scope spans, and
     /// `Occurrence.transform` holds its placement.
     pub occurrences: Vec<OccurrenceId>,
-    /// Source options whose meaning is not established, and the values of
-    /// typed facts whose carrier is unread.
-    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub native_options: NativeOptions,
-    /// Source options with no design meaning.
-    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub source_settings: NativeOptions,
-}
-
-/// A relation between two connectors: a mate, an assembly constraint, a
-/// joint, a USD physics joint, or a STEP kinematic pair.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct Joint {
-    /// The two connectors the joint relates.
-    pub connectors: [JointConnector; 2],
-    /// What the joint holds.
-    pub kind: JointKind,
-    /// The relative sense of the connectors' z axes or normals.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_alignment"
-    )]
-    pub alignment: Option<Alignment>,
     /// Source options whose meaning is not established, and the values of
     /// typed facts whose carrier is unread.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
@@ -306,7 +280,6 @@ pub enum ContextEffect {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_about<T>, T, "about");
-cadmpeg_core::named_optional_field!(deserialize_alignment<T>, T, "alignment");
 cadmpeg_core::named_optional_field!(deserialize_base<T>, T, "base");
 cadmpeg_core::named_optional_field!(deserialize_orientation<T>, T, "orientation");
 cadmpeg_core::named_optional_field!(deserialize_packaged<T>, T, "packaged");

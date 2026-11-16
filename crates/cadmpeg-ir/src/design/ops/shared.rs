@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Types that more than one family of the feature vocabulary uses.
-//!
-//! The layouts, runs, and spacing of a pattern, which part and component
-//! patterns share; the element of a pair; and the connectors, kinds, and
-//! alignment of a joint, which joints and body mates share.
+//! Types that more than one operation family shares.
 
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
@@ -12,12 +8,299 @@ use serde::{Deserialize, Serialize};
 
 use crate::design::construction::{kinds, Construction, FrameAxis, ScalarDimension};
 use crate::design::dimension::Dimension;
-use crate::design::options::{PathRef, SymmetricMeasure};
-use crate::design::selection::OrderedSelection;
+use crate::design::expr::Expression;
+use crate::design::options::{LimitOffset, NativeOptions, PathRef, SymmetricMeasure};
+use crate::design::selection::{DefinitionRef, OrderedSelection, SetSelection};
 use crate::features::ParameterId;
 use crate::scalar::{
     Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, PositiveReal,
 };
+use crate::transform::Transform;
+
+/// A size measured on the radius or on the diameter, as the source states
+/// it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(
+        serialize = "Q: Serialize, P: Serialize",
+        deserialize = "Q: Deserialize<'de>, P: Deserialize<'de>"
+    )
+)]
+pub enum RadialDimension<Q, P = ParameterId> {
+    /// The size on the radius.
+    Radius(Dimension<Q, P>),
+    /// The size on the diameter.
+    Diameter(Dimension<Q, P>),
+}
+
+/// Material placed along a direction or about an axis, measured from the
+/// operation's origin.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+)]
+pub enum Span<Q> {
+    /// From `start` to `end`. `end` is measured along the direction and
+    /// `start` against it.
+    Between {
+        /// The limit against the direction.
+        start: Box<Limit<Q>>,
+        /// The limit along the direction.
+        end: Box<Limit<Q>>,
+    },
+    /// Both sides of the origin equally.
+    Symmetric {
+        /// The amount.
+        amount: Dimension<Q>,
+        /// Whether `amount` is the extent of each side or the total.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_measure"
+        )]
+        measure: Option<SymmetricMeasure>,
+    },
+}
+
+/// One end of a span.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+)]
+pub enum Limit<Q> {
+    /// At the operation's origin.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    AtOrigin,
+    /// A signed distance or angle from the origin.
+    Amount(Dimension<Q>),
+    /// Through every target body; in a revolve, a full turn.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    ThroughAll,
+    /// At the first face the swept profile meets.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Next,
+    /// At the last face the swept profile meets.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Last,
+    /// At faces, surfaces, or bodies.
+    ToGeometry {
+        /// The faces, surfaces, or bodies.
+        target: SetSelection,
+        /// The offset of the limit from the target.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset"
+        )]
+        offset: Option<LimitOffset>,
+        /// Whether the target faces extend until the profile meets them.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_extend"
+        )]
+        extend: Option<Dimension<bool>>,
+        /// Where `target` picks bodies, whether the limit is the far side of
+        /// the body the profile meets.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_far"
+        )]
+        far: Option<Dimension<bool>>,
+    },
+    /// At a plane.
+    ToPlane(Construction<kinds::Plane>),
+    /// Where the swept profile reaches a point.
+    ToPoint(Construction<kinds::Point>),
+    /// A source limit kind whose meaning is not established.
+    Native(NonBlankString),
+}
+
+/// A function of a quantity along a path parameter from 0 to 1.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+)]
+pub enum Law<Q> {
+    /// A constant.
+    Constant(Dimension<Q>),
+    /// A linear ramp.
+    Linear {
+        /// The value at the path's start.
+        start: Dimension<Q>,
+        /// The value at the path's end.
+        end: Dimension<Q>,
+    },
+    /// A law curve that the source selects.
+    Curve(OrderedSelection),
+    /// An expression in the law parameter whose result has the quantity.
+    Expression(Expression),
+    /// A source law whose meaning is not established.
+    Native(NonBlankString),
+}
+
+/// How a value or a section changes between consecutive stations or
+/// sections.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum Interpolation {
+    /// Each consecutive pair blends linearly, which leaves an edge at each
+    /// intermediate section.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Linear,
+    /// One smooth surface passes through every section.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Smooth,
+    /// A source interpolation whose meaning is not established.
+    Native(NonBlankString),
+}
+
+/// The corner law between offset faces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum OffsetJoin {
+    /// Rounded arcs.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Round,
+    /// Sharp intersection: the sides extend to meet.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Sharp,
+    /// A source join whose meaning is not established.
+    Native(NonBlankString),
+}
+
+/// The faces of a sheet-metal wall that a cut's side faces are normal to, the
+/// cut being made as if the part were flat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SheetCutNormal {
+    /// The face the wall is built from.
+    Defining,
+    /// The other face.
+    Opposite,
+    /// A cut through the thickness in the flat state.
+    Both,
+}
+
+/// The status of stored solved values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum EvaluationStatus {
+    /// The source does not flag the values.
+    Current,
+    /// The values predate an edit of what they depend on.
+    Stale,
+    /// The source records a failure to compute the values.
+    Failed,
+}
+
+/// The link of a frozen copy of geometry to the geometry it copies.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct Link {
+    /// The linked entities. Its picks' contexts state the source definition,
+    /// the assembly the link runs through, and the configuration each level
+    /// reads, and its anchor the state it reads.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source"
+    )]
+    pub source: Option<SetSelection>,
+    /// The source definition, and the configuration of it the link reads,
+    /// only where `source` is absent or unread.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_document"
+    )]
+    pub document: Option<DefinitionRef>,
+    /// A frozen placement of the copy.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform"
+    )]
+    pub transform: Option<Transform>,
+    /// A uniform scale of the copy.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_scale"
+    )]
+    pub scale: Option<FiniteReal>,
+    /// Whether the copy follows its source.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_associative"
+    )]
+    pub associative: Option<bool>,
+    /// The source's record of the link's health.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_state"
+    )]
+    pub state: Option<LinkState>,
+    /// The native record that holds the link.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+}
+
+/// The source's record of a link's associativity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum LinkState {
+    /// The copy matches its source.
+    Current,
+    /// The source changed after the copy was made.
+    OutOfDate,
+    /// The source does not resolve.
+    Broken,
+    /// The copy does not follow its source.
+    Locked,
+}
 
 /// Where a pattern's instances lie. Every direction, axis, and plane is a
 /// construction.
@@ -472,6 +755,21 @@ pub struct TableRow {
     pub values: Vec<Option<ScalarDimension>>,
 }
 
+/// What the source does with the tools of an operation. Which bodies the
+/// current geometry holds is stated by the current states, never derived from
+/// this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum ToolDisposition {
+    /// The tools stay as bodies.
+    Kept,
+    /// The tools are removed.
+    Consumed,
+    /// The tool body moves under the operation with its history editable.
+    Absorbed,
+}
+
 /// One member of a pair of elements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -481,6 +779,30 @@ pub enum PairElement {
     First,
     /// The second member.
     Second,
+}
+
+/// A joint: a relation between two connectors, a design feature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct Joint {
+    /// The two connectors the joint relates.
+    pub connectors: [JointConnector; 2],
+    /// What the joint does.
+    pub kind: JointKind,
+    /// The relative sense of the connectors' z axes or normals; its only home.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_alignment"
+    )]
+    pub alignment: Option<Alignment>,
+    /// Source options whose effect is not established.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub native_options: NativeOptions,
+    /// Source options that select how the source computes the result.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub source_settings: NativeOptions,
 }
 
 /// A connector: a construction of the element a joint relates, or the picked
@@ -1171,23 +1493,33 @@ pub enum PathRollControl {
     },
 }
 
+cadmpeg_core::named_optional_field!(deserialize_alignment<T>, T, "alignment");
 cadmpeg_core::named_optional_field!(deserialize_angle<T>, T, "angle");
+cadmpeg_core::named_optional_field!(deserialize_associative<T>, T, "associative");
 cadmpeg_core::named_optional_field!(deserialize_axes<T>, T, "axes");
 cadmpeg_core::named_optional_field!(deserialize_contact<T>, T, "contact");
 cadmpeg_core::named_optional_field!(deserialize_count<T>, T, "count");
 cadmpeg_core::named_optional_field!(deserialize_damping<T>, T, "damping");
 cadmpeg_core::named_optional_field!(deserialize_distance<T>, T, "distance");
+cadmpeg_core::named_optional_field!(deserialize_document<T>, T, "document");
+cadmpeg_core::named_optional_field!(deserialize_end<T>, T, "end");
+cadmpeg_core::named_optional_field!(deserialize_extend, Dimension<bool>, "extend");
 cadmpeg_core::named_optional_field!(deserialize_extent<T>, T, "extent");
+cadmpeg_core::named_optional_field!(deserialize_far, Dimension<bool>, "far");
 cadmpeg_core::named_optional_field!(deserialize_flip<T>, T, "flip");
 cadmpeg_core::named_optional_field!(deserialize_from<T>, T, "from");
 cadmpeg_core::named_optional_field!(deserialize_from_end<T>, T, "from_end");
+cadmpeg_core::named_optional_field!(deserialize_hand<T>, T, "hand");
 cadmpeg_core::named_optional_field!(deserialize_joints<T>, T, "joints");
+cadmpeg_core::named_optional_field!(deserialize_law<T>, T, "law");
 cadmpeg_core::named_optional_field!(deserialize_limits<T>, T, "limits");
 cadmpeg_core::named_optional_field!(deserialize_lock_rotation<T>, T, "lock_rotation");
 cadmpeg_core::named_optional_field!(deserialize_max<T>, T, "max");
 cadmpeg_core::named_optional_field!(deserialize_max_force<T>, T, "max_force");
+cadmpeg_core::named_optional_field!(deserialize_measure, SymmetricMeasure, "measure");
 cadmpeg_core::named_optional_field!(deserialize_min<T>, T, "min");
 cadmpeg_core::named_optional_field!(deserialize_mode<T>, T, "mode");
+cadmpeg_core::named_optional_field!(deserialize_native_ref<T>, T, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_offset<T>, T, "offset");
 cadmpeg_core::named_optional_field!(deserialize_orientation<T>, T, "orientation");
 cadmpeg_core::named_optional_field!(deserialize_pitch<T>, T, "pitch");
@@ -1199,18 +1531,24 @@ cadmpeg_core::named_optional_field!(deserialize_ratio<T>, T, "ratio");
 cadmpeg_core::named_optional_field!(deserialize_reference<T>, T, "reference");
 cadmpeg_core::named_optional_field!(deserialize_rest<T>, T, "rest");
 cadmpeg_core::named_optional_field!(deserialize_roll<T>, T, "roll");
+cadmpeg_core::named_optional_field!(deserialize_scale<T>, T, "scale");
 cadmpeg_core::named_optional_field!(deserialize_second<T>, T, "second");
 cadmpeg_core::named_optional_field!(deserialize_seed<T>, T, "seed");
 cadmpeg_core::named_optional_field!(deserialize_seed_axis<T>, T, "seed_axis");
 cadmpeg_core::named_optional_field!(deserialize_seed_only<T>, T, "seed_only");
 cadmpeg_core::named_optional_field!(deserialize_sides<T>, T, "sides");
+cadmpeg_core::named_optional_field!(deserialize_source<T>, T, "source");
+cadmpeg_core::named_optional_field!(deserialize_start<T>, T, "start");
+cadmpeg_core::named_optional_field!(deserialize_state<T>, T, "state");
 cadmpeg_core::named_optional_field!(deserialize_stiffness<T>, T, "stiffness");
 cadmpeg_core::named_optional_field!(deserialize_stitch_tolerance<T>, T, "stitch_tolerance");
+cadmpeg_core::named_optional_field!(deserialize_taper<T>, T, "taper");
 cadmpeg_core::named_optional_field!(deserialize_target_position<T>, T, "target_position");
 cadmpeg_core::named_optional_field!(deserialize_target_velocity<T>, T, "target_velocity");
+cadmpeg_core::named_optional_field!(deserialize_transform<T>, T, "transform");
 cadmpeg_core::named_optional_field!(deserialize_x<T>, T, "x");
 cadmpeg_core::named_optional_field!(deserialize_y<T>, T, "y");
 cadmpeg_core::named_optional_field!(deserialize_z<T>, T, "z");
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
