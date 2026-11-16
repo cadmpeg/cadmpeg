@@ -15,6 +15,7 @@ pub mod dimension;
 pub mod expr;
 pub mod ids;
 pub mod names;
+pub mod ops;
 pub mod options;
 pub mod read;
 pub mod refs;
