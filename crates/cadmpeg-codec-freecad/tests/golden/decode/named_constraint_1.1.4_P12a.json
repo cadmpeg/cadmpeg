@@ -5514,15 +5514,6 @@
           "states": [
             {
               "assets": [],
-              "attributes": {},
-              "kind": {
-                "kind": "Native",
-                "value": "Expand"
-              },
-              "order": 0
-            },
-            {
-              "assets": [],
               "attributes": {
                 "settings": ""
               },

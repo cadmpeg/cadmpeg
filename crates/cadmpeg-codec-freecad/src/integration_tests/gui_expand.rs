@@ -9,6 +9,13 @@ use crate::test_support::test_archive::archive_entries;
 use crate::FcstdCodec;
 
 fn decode(expand: &str) -> cadmpeg_ir::DecodeResult {
+    decode_with(
+        r#"<ViewProvider name="Body"><Properties Count="0"/></ViewProvider><ViewProvider name="Pad"><Properties Count="0"/></ViewProvider><ViewProvider name="Sketch"><Properties Count="0"/></ViewProvider>"#,
+        expand,
+    )
+}
+
+fn decode_with(providers: &str, expand: &str) -> cadmpeg_ir::DecodeResult {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">
  <Object type="App::DocumentObjectGroup" name="Body"/>
@@ -20,8 +27,9 @@ fn decode(expand: &str) -> cadmpeg_ir::DecodeResult {
  <Object name="Pad"><Properties Count="0"/></Object>
  <Object name="Sketch"><Properties Count="0"/></Object>
 </ObjectData></Document>"#;
+    let count = providers.matches("<ViewProvider ").count();
     let gui = format!(
-        r#"<Document SchemaVersion="1"><ViewProviderData Count="3"><ViewProvider name="Body"><Properties Count="0"/></ViewProvider><ViewProvider name="Pad"><Properties Count="0"/></ViewProvider><ViewProvider name="Sketch"><Properties Count="0"/></ViewProvider></ViewProviderData>{expand}<Camera settings=""/></Document>"#
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="{count}">{providers}</ViewProviderData>{expand}<Camera settings=""/></Document>"#
     );
     FcstdCodec
         .decode(
@@ -106,6 +114,52 @@ fn an_expand_name_without_a_view_provider_charges_a_loss() {
     let losses = unresolved_gui_losses(&result);
     assert!(
         losses.iter().any(|message| message.contains("Ghost")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn an_expand_name_whose_provider_has_no_object_charges_a_loss() {
+    let result = decode_with(
+        r#"<ViewProvider name="Body"><Properties Count="0"/></ViewProvider><ViewProvider name="Ghost"><Properties Count="0"/></ViewProvider>"#,
+        r#"<Expand count="1"><Expand name="Ghost"/></Expand>"#,
+    );
+    assert_eq!(expanded(&result, "Ghost"), None);
+    let losses = unresolved_gui_losses(&result);
+    assert!(
+        losses
+            .iter()
+            .any(|message| message.contains("Ghost, which resolves to no object")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn expand_wins_over_a_provider_stored_false_with_a_loss() {
+    let result = decode_with(
+        r#"<ViewProvider name="Body" expanded="0"><Properties Count="0"/></ViewProvider>"#,
+        r#"<Expand count="1"><Expand name="Body"/></Expand>"#,
+    );
+    assert_eq!(expanded(&result, "Body"), Some(true));
+    let losses = unresolved_gui_losses(&result);
+    assert!(
+        losses
+            .iter()
+            .any(|message| message.contains("stores expanded=false")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn an_unnamed_expand_item_charges_a_loss_and_keeps_its_named_children() {
+    let result =
+        decode(r#"<Expand count="1"><Expand count="1"><Expand name="Pad"/></Expand></Expand>"#);
+    assert_eq!(expanded(&result, "Pad"), Some(true));
+    let losses = unresolved_gui_losses(&result);
+    assert!(
+        losses
+            .iter()
+            .any(|message| message.contains("item without a name")),
         "{losses:?}"
     );
 }

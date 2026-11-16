@@ -72,6 +72,20 @@ independently.
 
 **Note.** QA sweep locations: `crates/cadmpeg-codec-freecad/src/brep/location_identity.rs:57-90` and `crates/cadmpeg-codec-freecad/src/topology_transfer.rs:136-148`. This is the FreeCAD analogue of the unrecorded selection threshold in ASM GC-34.
 
+## GUI-01. Tree expansion recorded twice
+
+**Question.** When the `Expand` element of `GuiDocument.xml` and a `ViewProvider` `expanded`
+attribute disagree for one object, which one holds?
+
+**Known.** `freecad_fcstd.md` §1 gives both carriers. The decoder reads every object that `Expand`
+names, at any nesting depth, as expanded, and reads a provider's own attribute for the other
+objects. When a provider stores `expanded` false for an object that `Expand` names, the decoder
+reads the object as expanded and charges `source.gui-metadata-unresolved`. The neutral flag is per
+object; the native `Expand` state keeps the tree path.
+
+**Need.** A document that saves the two carriers from different states shows a different tree
+than the one FreeCAD restores.
+
 ## REV-01. Midplane with a nonzero revolution Type
 
 **Question.** Which angular sides apply when a PartDesign Revolution or Groove has

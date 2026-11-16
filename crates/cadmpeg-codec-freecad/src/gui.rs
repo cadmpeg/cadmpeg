@@ -721,26 +721,47 @@ fn transfer_neutral_presentation(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut state_losses = Vec::new();
-    let expanded_names = graph
+    let mut expanded_names = BTreeSet::new();
+    for value in graph
         .documents
         .iter()
         .flat_map(|document| &document.states)
         .filter(|state| state.kind == "Expand")
         .flat_map(|state| &state.values)
         .filter(|value| value.tag == "Expand")
-        .filter_map(|value| value.attributes.get("name"))
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
-    for name in expanded_names.iter().filter(|name| {
-        !graph
-            .providers
-            .iter()
-            .any(|provider| provider.name == **name)
-    }) {
+    {
+        match value.attributes.get("name") {
+            Some(name) => {
+                expanded_names.insert(name.as_str());
+            }
+            None => state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(
+                "GUI Expand holds an item without a name; the item stays in the native Expand state",
+            )),
+        }
+    }
+    let resolved_names = graph
+        .providers
+        .iter()
+        .filter(|provider| provider.object.is_some())
+        .map(|provider| provider.name.as_str())
+        .collect::<HashSet<_>>();
+    for name in expanded_names
+        .iter()
+        .filter(|name| !resolved_names.contains(**name))
+    {
         state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
-            "GUI Expand names {name}, which no view provider has; the name stays in the native Expand state"
+            "GUI Expand names {name}, which resolves to no object; the name stays in the native Expand state"
         )));
     }
+    for provider in graph.providers.iter().filter(|provider| {
+        provider.expanded == Some(false) && expanded_names.contains(provider.name.as_str())
+    }) {
+        state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
+            "GUI Expand names {}, whose view provider stores expanded=false; the item is read as expanded",
+            provider.name
+        )));
+    }
+    expanded_names.retain(|name| resolved_names.contains(name));
     for document in &graph.documents {
         let mut presentation = PresentationDocument::new(PresentationId::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "presentation", "document"),

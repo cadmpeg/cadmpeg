@@ -101,8 +101,8 @@ unregistered properties retain their ordered values without semantic dispatch.
 
 An `Expand` element in `GuiDocument.xml` records the saved expansion of the document tree. Each
 child `Expand` element names one expanded tree item by object name in its `name` attribute and
-nests the expanded items beneath that item; its `count` attribute gives the number of nested
-entries. An empty `Expand` element records that no item is expanded. A `ViewProvider` may also
+nests the expanded items beneath that item. An empty `Expand` element records that no item is
+expanded. A `ViewProvider` may also
 carry its own `expanded` attribute.
 
 Each `ObjectData` object has at most one direct `Extensions` container and at most one direct
