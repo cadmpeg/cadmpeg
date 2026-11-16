@@ -6781,7 +6781,9 @@ all-around symbol and integer `1` enables it for the owning tolerance frame.
 the same `ref_id` and `ref_type` pair as the tolerance attributes.
 
 `Annot_Type` 8 identifies a dimension. Its neutral attributes include
-`PTC_DIM_TYPE`, `PTC_DIM_NOMINAL_VAL`, and `PTC_TOLERANCE_MODE`. `Limits`
+`PTC_DIM_TYPE`, `PTC_DIM_NOMINAL_VAL`, and `PTC_TOLERANCE_MODE`.
+`PTC_DIM_TYPE` text `Linear`, `Diameter`, `Radius`, or `Angle` names a
+linear, diameter, radius, or angular dimension. `Limits`
 stores absolute bounds in `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT`.
 `+- Symmetric` stores a deviation magnitude in `PTC_DIM_TOL_VALUE`.
 `Plus-Minus` stores deviation magnitudes in `PTC_DIM_LOWER_TOL_VALUE` and
