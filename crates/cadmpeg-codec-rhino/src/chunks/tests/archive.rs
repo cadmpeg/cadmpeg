@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
 const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-12;
