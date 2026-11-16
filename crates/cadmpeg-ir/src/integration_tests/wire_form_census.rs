@@ -4,16 +4,17 @@
 //!
 //! The census parses the two crates' source at run time. It finds each enum
 //! that derives `Serialize` or `Deserialize` and computes the one tag form the
-//! spec gives it from its variants. It finds each field and checks that an
-//! `Option` is omitted for `None` and refuses `null`, and that no field other
-//! than an `Option` is ever left out. Test files and `#[cfg(test)]` items are
-//! not wire types.
+//! spec gives it from its variants. It finds each field, named or in a newtype,
+//! and checks that an `Option` is omitted for `None` and refuses `null`, and
+//! that no field other than an `Option` is ever left out. Test files and
+//! `#[cfg(test)]` items are not wire types.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
+use syn::spanned::Spanned;
 use syn::{Attribute, Fields, Item, Variant};
 
 const WIRE_CRATES: [&str; 2] = ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"];
@@ -29,6 +30,8 @@ const OPTION_READER_MACRO: &str = "named_optional_field";
 const OPTION_READER: &str = "named_present";
 
 const TAG_ONLY_READER: &str = "::tag_only::read";
+
+const VALUE_REFUSER: &str = "::tag_only::refuse_value";
 
 #[derive(Clone)]
 struct Decl {
@@ -60,6 +63,12 @@ enum Form {
     Name,
     Internal,
     Adjacent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Holder {
+    Struct,
+    Variant,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -447,6 +456,32 @@ impl Index {
         }
     }
 
+    /// Whether `ty` is a newtype struct over an `Option`, which writes `null`
+    /// for `None` as the `Option` does.
+    fn is_optional_newtype(&self, ty: &syn::Type) -> bool {
+        let Some((ident, _)) = last_segment(ty) else {
+            return false;
+        };
+        let Some(decl) = self.unique(&ident.to_string()) else {
+            return false;
+        };
+        let Body::Struct(fields) = &decl.body else {
+            return false;
+        };
+        let newtype = match fields {
+            Fields::Unnamed(_) => true,
+            Fields::Named(_) => has(&serde_metas(&decl.attrs), "transparent"),
+            Fields::Unit => false,
+        };
+        let mut serialized = fields
+            .iter()
+            .filter(|field| !has(&serde_metas(&field.attrs), "skip"));
+        let (Some(field), None) = (serialized.next(), serialized.next()) else {
+            return false;
+        };
+        newtype && last_segment(&field.ty).is_some_and(|(ident, _)| ident == "Option")
+    }
+
     fn payload(&self, ty: &syn::Type, owner: Option<&Decl>, depth: usize) -> Payload {
         let Some((ident, arguments)) = last_segment(ty) else {
             return Payload::Value;
@@ -615,21 +650,30 @@ fn check_enum(
         ));
     }
     // serde reads an internally tagged unit variant by its tag and skips every
-    // other key, `deny_unknown_fields` or not.
-    if reads && actual == Some(Form::Internal) {
+    // other key, `deny_unknown_fields` or not; it reads an adjacently tagged
+    // unit variant's stated `value` as a unit, so `null` is a second spelling.
+    let unit_reader = match actual {
+        Some(Form::Internal) => Some(TAG_ONLY_READER),
+        Some(Form::Adjacent) => Some(VALUE_REFUSER),
+        Some(Form::Name) | None => None,
+    };
+    if let Some(expected) = unit_reader.filter(|_| reads) {
         for variant in &live {
             let metas = serde_metas(&variant.attrs);
             let reader = value(&metas, "deserialize_with");
-            let tag_only = reader.is_some_and(|reader| {
+            let refuses = reader.is_some_and(|reader| {
                 reader
                     .strip_prefix("cadmpeg_core")
                     .or(reader.strip_prefix("crate"))
-                    == Some(TAG_ONLY_READER)
+                    == Some(expected)
             });
-            if matches!(variant.fields, Fields::Unit) && !tag_only {
+            if matches!(variant.fields, Fields::Unit) && !refuses {
                 problems.push(format!(
-                    "{}:{} {}::{}: unit variant does not read through cadmpeg_core{TAG_ONLY_READER}",
-                    decl.file, decl.line, decl.name, variant.ident
+                    "{}:{} {}::{}: unit variant does not read through cadmpeg_core{expected}",
+                    decl.file,
+                    variant.ident.span().start().line,
+                    decl.name,
+                    variant.ident
                 ));
             }
         }
@@ -639,41 +683,68 @@ fn check_enum(
 fn check_fields(
     index: &Index,
     fields: &Fields,
+    holder: Holder,
     at: &str,
     writes: bool,
     reads: bool,
     problems: &mut Vec<String>,
 ) {
-    let Fields::Named(fields) = fields else {
-        return;
-    };
-    for field in &fields.named {
+    let newtype = matches!(fields, Fields::Unnamed(_));
+    for (position, field) in fields.iter().enumerate() {
         let metas = serde_metas(&field.attrs);
         if has(&metas, "skip") {
             continue;
         }
-        let ident = field.ident.as_ref().unwrap();
-        let at = format!("{at}.{ident}@{}", ident.span().start().line);
+        let at = match &field.ident {
+            Some(ident) => format!("{at}.{ident}@{}", ident.span().start().line),
+            None => format!("{at}.{position}@{}", field.ty.span().start().line),
+        };
         let skip = value(&metas, "skip_serializing_if");
         let reader = value(&metas, "deserialize_with").or_else(|| value(&metas, "with"));
         if reader.is_some_and(|reader| reader.contains("nullable")) {
             problems.push(format!("{at}: reads null through a nullable reader"));
         }
+        let named_reader = reader.is_some_and(|reader| {
+            let name = reader.rsplit("::").next().unwrap_or(reader);
+            let name = name.split('<').next().unwrap_or(name);
+            name == OPTION_READER || index.option_readers.contains(name)
+        });
         if last_segment(&field.ty).is_some_and(|(ident, _)| ident == "Option") {
+            if newtype {
+                // A derived newtype variant writes `value` for every payload,
+                // so it writes `"value": null` for `None`. A newtype struct
+                // writes its `Option` as itself, and the fields that hold it
+                // omit `None`.
+                if writes && holder == Holder::Variant {
+                    problems.push(format!(
+                        "{at}: newtype variant wraps an Option and writes null for None"
+                    ));
+                }
+                if reads && !named_reader {
+                    problems.push(format!(
+                        "{at}: newtype Option is not read by a named_present reader"
+                    ));
+                }
+                continue;
+            }
             if writes && skip != Some("Option::is_none") && !has(&metas, "serialize_with") {
                 problems.push(format!("{at}: Option field writes null for None"));
             }
-            if reads {
-                let named_reader = reader.is_some_and(|reader| {
-                    let name = reader.rsplit("::").next().unwrap_or(reader);
-                    let name = name.split('<').next().unwrap_or(name);
-                    name == OPTION_READER || index.option_readers.contains(name)
-                });
-                if !has(&metas, "default") || !named_reader {
-                    problems.push(format!(
-                        "{at}: Option field is not read by a default named_present reader"
-                    ));
-                }
+            if reads && (!has(&metas, "default") || !named_reader) {
+                problems.push(format!(
+                    "{at}: Option field is not read by a default named_present reader"
+                ));
+            }
+        } else if index.is_optional_newtype(&field.ty) {
+            if writes && skip.is_none() {
+                problems.push(format!(
+                    "{at}: field holding a newtype over an Option writes null for None"
+                ));
+            }
+            if reads && !has(&metas, "default") {
+                problems.push(format!(
+                    "{at}: field holding a newtype over an Option refuses its omission"
+                ));
             }
         } else {
             if let Some(skip) = skip {
@@ -729,60 +800,70 @@ fn index(root: &Path) -> Index {
         let mut files = Vec::new();
         rust_files(&root.join(crate_dir), &mut files);
         files.sort();
-        let mut parsed = Vec::new();
+        let mut sources = Vec::new();
         for path in &files {
             let relative = path
                 .strip_prefix(root)
                 .unwrap()
                 .to_string_lossy()
                 .replace('\\', "/");
-            if is_test_path(&relative) {
-                continue;
-            }
-            let text = std::fs::read_to_string(path).unwrap();
-            let file = syn::parse_file(&text).unwrap_or_else(|error| panic!("{relative}: {error}"));
-            parsed.push((relative, text, file));
-        }
-        let mut excluded = Vec::new();
-        for (relative, text, file) in &parsed {
-            let mut walker = Walker {
-                file: relative,
-                text,
-                test_modules: Vec::new(),
-            };
-            walker.items(&file.items, &mut Index::default());
-            let dir = if relative.ends_with("/lib.rs") || relative.ends_with("/mod.rs") {
-                relative.rsplit_once('/').unwrap().0.to_owned()
-            } else {
-                relative.trim_end_matches(".rs").to_owned()
-            };
-            for module in walker.test_modules {
-                excluded.push(format!("{dir}/{module}.rs"));
-                excluded.push(format!("{dir}/{module}/"));
+            if !is_test_path(&relative) {
+                sources.push((relative, std::fs::read_to_string(path).unwrap()));
             }
         }
-        for (relative, text, file) in &parsed {
-            let is_excluded = excluded.iter().any(|path| {
-                relative == path || (path.ends_with('/') && relative.starts_with(path.as_str()))
-            });
-            if is_excluded {
-                continue;
-            }
-            let mut walker = Walker {
-                file: relative,
-                text,
-                test_modules: Vec::new(),
-            };
-            walker.items(&file.items, &mut index);
-        }
+        index_sources(&sources, &mut index);
     }
     index
+}
+
+/// Indexes one crate's non-test sources, given as `(relative path, text)`.
+fn index_sources(sources: &[(String, String)], index: &mut Index) {
+    let mut parsed = Vec::new();
+    for (relative, text) in sources {
+        let file = syn::parse_file(text).unwrap_or_else(|error| panic!("{relative}: {error}"));
+        parsed.push((relative, text, file));
+    }
+    let mut excluded = Vec::new();
+    for (relative, text, file) in &parsed {
+        let mut walker = Walker {
+            file: relative,
+            text,
+            test_modules: Vec::new(),
+        };
+        walker.items(&file.items, &mut Index::default());
+        let dir = if relative.ends_with("/lib.rs") || relative.ends_with("/mod.rs") {
+            relative.rsplit_once('/').unwrap().0.to_owned()
+        } else {
+            relative.trim_end_matches(".rs").to_owned()
+        };
+        for module in walker.test_modules {
+            excluded.push(format!("{dir}/{module}.rs"));
+            excluded.push(format!("{dir}/{module}/"));
+        }
+    }
+    for (relative, text, file) in &parsed {
+        let is_excluded = excluded.iter().any(|path| {
+            *relative == path || (path.ends_with('/') && relative.starts_with(path.as_str()))
+        });
+        if is_excluded {
+            continue;
+        }
+        let mut walker = Walker {
+            file: relative,
+            text,
+            test_modules: Vec::new(),
+        };
+        walker.items(&file.items, index);
+    }
 }
 
 /// Every departure from the §2.5 wire form among the serialized types of the
 /// wire crates under `root`.
 pub(crate) fn census(root: &Path) -> Vec<String> {
-    let index = index(root);
+    problems(&index(root))
+}
+
+fn problems(index: &Index) -> Vec<String> {
     let mut problems = Vec::new();
     for decl in index.decls.values().flatten() {
         let metas = serde_metas(&decl.attrs);
@@ -798,11 +879,19 @@ pub(crate) fn census(root: &Path) -> Vec<String> {
         let at = format!("{}:{} {}", decl.file, decl.line, decl.name);
         match &decl.body {
             Body::Enum(variants) => {
-                check_enum(&index, decl, variants, reads, &mut problems);
+                check_enum(index, decl, variants, reads, &mut problems);
                 for variant in variants {
                     if !has(&serde_metas(&variant.attrs), "skip") {
                         let at = format!("{at}::{}", variant.ident);
-                        check_fields(&index, &variant.fields, &at, writes, reads, &mut problems);
+                        check_fields(
+                            index,
+                            &variant.fields,
+                            Holder::Variant,
+                            &at,
+                            writes,
+                            reads,
+                            &mut problems,
+                        );
                     }
                 }
             }
@@ -812,13 +901,88 @@ pub(crate) fn census(root: &Path) -> Vec<String> {
                         "{at}: struct reads every omitted field as its default"
                     ));
                 }
-                check_fields(&index, fields, &at, writes, reads, &mut problems);
+                check_fields(
+                    index,
+                    fields,
+                    Holder::Struct,
+                    &at,
+                    writes,
+                    reads,
+                    &mut problems,
+                );
             }
         }
     }
-    check_macro_attrs(&index, &mut problems);
+    check_macro_attrs(index, &mut problems);
     problems.sort();
     problems
+}
+
+const PROBE: &str = "crates/cadmpeg-ir/src/probe.rs";
+
+const DEPARTING_PROBE: &str = r#"#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", deny_unknown_fields)]
+enum Section {
+    Unnamed,
+    Unresolved(#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<String>),
+}
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
+struct State(#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<u32>);
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Holder {
+    state: State,
+}
+"#;
+
+const STATING_PROBE: &str = r#"#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", deny_unknown_fields, into = "SectionWire")]
+enum Section {
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Unnamed,
+    Unresolved(#[serde(deserialize_with = "deserialize_native")] Option<String>),
+}
+cadmpeg_core::named_optional_field!(deserialize_native, String, "value");
+#[derive(Serialize)]
+#[serde(tag = "kind", content = "value")]
+enum SectionWire {
+    Unnamed,
+    Unresolved(String),
+}
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
+struct State(#[serde(deserialize_with = "deserialize_state")] Option<u32>);
+cadmpeg_core::named_optional_field!(deserialize_state, u32, "state");
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Holder {
+    #[serde(default = "State::unstated", skip_serializing_if = "State::is_unstated")]
+    state: State,
+}
+"#;
+
+fn probe_problems(source: &str) -> Vec<String> {
+    let mut index = Index::default();
+    index_sources(&[(PROBE.to_owned(), source.to_owned())], &mut index);
+    problems(&index)
+}
+
+#[test]
+fn the_census_reads_newtype_fields_and_adjacent_unit_variants() {
+    let mut expected = vec![
+        format!("{PROBE}:4 Section::Unnamed: unit variant does not read through cadmpeg_core{VALUE_REFUSER}"),
+        format!("{PROBE}:3 Section::Unresolved.0@5: reads null through a nullable reader"),
+        format!("{PROBE}:3 Section::Unresolved.0@5: newtype variant wraps an Option and writes null for None"),
+        format!("{PROBE}:3 Section::Unresolved.0@5: newtype Option is not read by a named_present reader"),
+        format!("{PROBE}:9 State.0@9: reads null through a nullable reader"),
+        format!("{PROBE}:9 State.0@9: newtype Option is not read by a named_present reader"),
+        format!("{PROBE}:12 Holder.state@13: field holding a newtype over an Option writes null for None"),
+        format!("{PROBE}:12 Holder.state@13: field holding a newtype over an Option refuses its omission"),
+    ];
+    expected.sort();
+    assert_eq!(probe_problems(DEPARTING_PROBE), expected);
+    assert_eq!(probe_problems(STATING_PROBE), Vec::<String>::new());
 }
 
 #[test]
