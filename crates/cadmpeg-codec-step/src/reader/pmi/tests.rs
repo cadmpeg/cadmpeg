@@ -314,6 +314,41 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
 }
 
 #[test]
+fn only_dimension_entities_decode_as_dimensions() {
+    use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiTarget};
+
+    let result = decode_inline(
+        "#2=REPRESENTATION_CONTEXT('','');
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('from','',#5,.T.);
+#7=SHAPE_ASPECT('to','',#5,.T.);
+#10=DIRECTED_DIMENSIONAL_LOCATION('offset','',#6,#7);
+#20=PRESENTATION_VIEW('Front',(),#2);
+#21=DESCRIPTIVE_REPRESENTATION_ITEM('A3','');
+#22=PRESENTATION_SIZE(#20,#21);
+#30=SURFACE_ELEMENT_LOCATION('element point','',#6);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let dimensions = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .filter_map(|annotation| match &annotation.definition {
+            PmiDefinition::Dimension(relation) => Some((annotation, relation)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(dimensions.len(), 1);
+    let (annotation, relation) = dimensions[0];
+    assert!(matches!(relation.kind(), DimensionKind::Location));
+    let source = |id: &str| PmiTarget::ShapeAspect {
+        source_id: cadmpeg_core::text::NonBlankString::new(id).expect("nonempty source identity"),
+    };
+    assert_eq!(annotation.targets, vec![source("#6"), source("#7")]);
+}
+
+#[test]
 fn dimensional_characteristic_selects_the_named_nominal_measure() {
     use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiQuantity};
 
