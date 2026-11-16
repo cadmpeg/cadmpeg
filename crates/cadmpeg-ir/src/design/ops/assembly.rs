@@ -22,7 +22,6 @@ use crate::design::construction::{kinds, Construction};
 use crate::design::names::InstanceIndex;
 use crate::design::options::NativeOptions;
 use crate::design::selection::{OccurrencePath, OrderedSelection};
-use crate::design::wire;
 use crate::ids::OccurrenceId;
 
 #[cfg(test)]
@@ -144,7 +143,7 @@ pub struct Joint {
 pub struct RigidGroup {
     /// The members, as paths from the definition that owns the group; the
     /// empty path is that definition's own origin.
-    #[serde(with = "wire::set")]
+    #[serde(with = "cadmpeg_core::distinct_keys::set")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<OccurrencePath>"))]
     pub members: BTreeSet<OccurrencePath>,
     /// Source options whose meaning is not established, and the values of
@@ -296,9 +295,11 @@ pub enum MirrorPivot {
 pub enum ContextEffect {
     /// Only the participating instances: the result is `instance_bodies` of
     /// the assembly definition at each participant's path.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Instances,
     /// The participants' definitions: each changed definition's scope holds a
     /// resulting feature with `driven_by` naming the assembly feature.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Definitions,
     /// An effect whose meaning is not established.
     Native(NonBlankString),

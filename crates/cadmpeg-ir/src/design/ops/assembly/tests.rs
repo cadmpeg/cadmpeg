@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
+use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
 #[cfg(feature = "schema")]
@@ -30,6 +31,7 @@ use crate::design::read;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PathStep, PickTarget, Picked, Picks, Selection, StepRef,
 };
+use crate::design::tests::unit_variants::{self, assert_units_refuse_value, Reader};
 use crate::features::{FinitePoint3, ParameterId};
 use crate::math::Point3;
 use crate::scalar::{
@@ -275,7 +277,7 @@ fn up_to_fills<Q>(pitch: Q) -> Vec<UpToFill<Q>> {
 
 fn loci() -> Vec<Locus> {
     vec![
-        Locus::Centroid {},
+        Locus::Centroid,
         Locus::Point(Box::new(point_construction())),
     ]
 }
@@ -299,7 +301,7 @@ fn spacings<Q: Clone>(value: Q) -> Vec<Spacing<Q>> {
             reference: Box::new(selection(3)),
             fill: UpToFill::Count(literal(5)),
             offset: Some(literal(value.clone())),
-            from: Some(Locus::Centroid {}),
+            from: Some(Locus::Centroid),
         },
         Spacing::UpTo {
             reference: Box::new(unread()),
@@ -379,7 +381,7 @@ fn linear_runs() -> Vec<LinearRun> {
 
 fn path_references() -> Vec<PathReference> {
     vec![
-        PathReference::PlaneNormal {},
+        PathReference::PlaneNormal,
         PathReference::Direction(Box::new(direction_construction())),
     ]
 }
@@ -390,7 +392,7 @@ fn instance_orientations() -> Vec<InstanceOrientation> {
         InstanceOrientation::Follow,
         InstanceOrientation::Frenet,
         InstanceOrientation::Rolled {
-            reference: PathReference::PlaneNormal {},
+            reference: PathReference::PlaneNormal,
             reference_axis: FrameAxis::Y,
             seed_axis: None,
         },
@@ -502,7 +504,7 @@ fn pattern_layouts() -> Vec<PatternLayout> {
         },
         PatternLayout::Points {
             points: selection(7),
-            reference: Some(Locus::Centroid {}),
+            reference: Some(Locus::Centroid),
         },
         PatternLayout::Points {
             points: unread(),
@@ -522,7 +524,7 @@ fn pattern_layouts() -> Vec<PatternLayout> {
             PatternLayout::Scale {
                 factor: literal(positive_real(2.0)),
                 count: literal(3),
-                center: Locus::Centroid {},
+                center: Locus::Centroid,
             },
         ]),
         PatternLayout::Scale {
@@ -707,7 +709,7 @@ fn slot_positions() -> Vec<SlotPosition> {
 
 fn path_positions() -> Vec<PathPosition> {
     vec![
-        PathPosition::Free {},
+        PathPosition::Free,
         PathPosition::Distance {
             distance: literal(non_negative(12.0)),
             from_end: Some(literal(true)),
@@ -725,7 +727,7 @@ fn path_positions() -> Vec<PathPosition> {
 
 fn path_axis_controls() -> Vec<PathAxisControl> {
     vec![
-        PathAxisControl::Free {},
+        PathAxisControl::Free,
         PathAxisControl::FollowPath {
             axis: FrameAxis::X,
             flip: Some(literal(false)),
@@ -739,7 +741,7 @@ fn path_axis_controls() -> Vec<PathAxisControl> {
 
 fn path_roll_controls() -> Vec<PathRollControl> {
     vec![
-        PathRollControl::Free {},
+        PathRollControl::Free,
         PathRollControl::UpVector {
             vector: Box::new(direction_construction()),
             axis: FrameAxis::Z,
@@ -856,7 +858,7 @@ fn joint_kinds() -> Vec<JointKind> {
             lock_rotation: None,
         },
         JointKind::Path {
-            position: Some(PathPosition::Free {}),
+            position: Some(PathPosition::Free),
             pitch_yaw: path_axis_controls().pop(),
             roll: path_roll_controls().pop(),
         },
@@ -1188,7 +1190,7 @@ fn the_tag_forms_of_the_family() {
         to_value(&JointMotion::Revolute { axis: FrameAxis::Y }),
         json!({"kind": "revolute", "value": {"axis": "y"}})
     );
-    assert_eq!(to_value(&PathPosition::Free {}), json!({"kind": "free"}));
+    assert_eq!(to_value(&PathPosition::Free), json!({"kind": "free"}));
     assert_eq!(
         to_value(&DriveAxis::Translation { axis: FrameAxis::X }),
         json!({"kind": "translation", "axis": "x"})
@@ -1211,7 +1213,7 @@ fn the_tag_forms_of_the_family() {
         json!({"kind": "belt", "value": {"radii": [null, null]}})
     );
     assert_eq!(
-        to_value(&PathReference::PlaneNormal {}),
+        to_value(&PathReference::PlaneNormal),
         json!({"kind": "plane_normal"})
     );
 }
@@ -1220,12 +1222,25 @@ fn the_tag_forms_of_the_family() {
 fn a_unit_arm_of_an_internally_tagged_enum_refuses_unknown_keys() {
     assert_eq!(
         reads::<PathPosition>(r#"{"kind": "free"}"#),
-        PathPosition::Free {}
+        PathPosition::Free
     );
     refuses::<PathPosition>(r#"{"kind": "free", "extra": 1}"#);
     refuses::<PathAxisControl>(r#"{"kind": "free", "extra": 1}"#);
     refuses::<PathRollControl>(r#"{"kind": "free", "extra": 1}"#);
     refuses::<PathReference>(r#"{"kind": "plane_normal", "extra": 1}"#);
+    assert_eq!(reads::<Locus>(r#"{"kind": "centroid"}"#), Locus::Centroid);
+    refuses::<Locus>(r#"{"kind": "centroid", "extra": 1}"#);
+    refuses::<Locus>(r#"{"kind": "centroid", "value": null}"#);
+}
+
+/// §2.5: each value has one spelling, so a unit variant of an adjacently
+/// tagged enum is its `kind` alone and refuses a stated `value`.
+#[test]
+fn every_adjacent_unit_variant_refuses_a_stated_value() {
+    let readers: [(&'static str, Reader); 1] =
+        [("ContextEffect", unit_variants::reads::<ContextEffect>)];
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/design/ops/assembly.rs");
+    assert_units_refuse_value(&[file], &BTreeMap::from(readers));
 }
 
 #[test]

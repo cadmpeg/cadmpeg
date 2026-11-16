@@ -249,9 +249,11 @@ pub struct PatternRun<Q> {
 )]
 pub enum RunSides<Q> {
     /// Along the run's direction from the seed.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     One,
     /// Against the run's direction from the seed, so the instances'
     /// coordinates are negative. It occurs only in a `Path` run.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Against,
     /// The run mirrored onto the reverse side.
     Symmetric {
@@ -363,7 +365,8 @@ pub enum UpToFill<Q> {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Locus {
     /// The seed's centroid.
-    Centroid {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Centroid,
     /// A constructed point.
     Point(Box<Construction<kinds::Point>>),
 }
@@ -380,10 +383,13 @@ pub enum Locus {
 )]
 pub enum InstanceOrientation {
     /// Keeps the seed's orientation.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Fixed,
     /// Turns with the layout: about the axis, or tangent to the path.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Follow,
     /// Follows the path's Frenet frame.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Frenet,
     /// Puts the instance's x axis on the path tangent and its
     /// `reference_axis` on the `reference` direction made orthogonal to the
@@ -414,7 +420,8 @@ pub enum InstanceOrientation {
 pub enum PathReference {
     /// The normal of the path's plane on the side of the z axis of the path's
     /// placement, and the definition's +Z for a path that is not planar.
-    PlaneNormal {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    PlaneNormal,
     /// A constructed direction.
     Direction(Box<Construction<kinds::Direction>>),
 }
@@ -508,11 +515,14 @@ pub enum JointConnector {
 )]
 pub enum Alignment {
     /// The same sense.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Aligned,
     /// Opposite senses: z₁ = −z₀.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Opposed,
     /// The source fixes no sense and the solver keeps the nearer one; the
     /// solved sense is in the connectors' resolved frames.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Nearest,
     /// A source alignment whose meaning is not established.
     Native(NonBlankString),
@@ -558,6 +568,7 @@ pub enum JointKind {
         offset: Option<Dimension<Length>>,
     },
     /// Two axes coincide.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Concentric,
     /// Two circles are coaxial, with coincident or offset planes.
     Insert {
@@ -604,8 +615,10 @@ pub enum JointKind {
         limits: Option<Bounds<Angle>>,
     },
     /// The elements are parallel.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Parallel,
     /// The elements are perpendicular.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Perpendicular,
     /// The elements touch tangentially.
     Tangent {
@@ -720,6 +733,7 @@ pub enum JointKind {
 pub enum JointMotion {
     /// None: the current relative placement of the two connectors is fixed. It
     /// needs no frame, so its connectors may be any variant.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Rigid,
     /// Rotation about `axis`.
     Revolute {
@@ -742,6 +756,7 @@ pub enum JointMotion {
         axis: FrameAxis,
     },
     /// Rotation about the origin.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Ball,
     /// Rotation about `axis` and translation along `slide`, another axis of the
     /// same frame.
@@ -1029,8 +1044,10 @@ pub enum TangentContact {
 )]
 pub enum WidthMode {
     /// Centred, so the two gaps are equal.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Centered,
     /// Free to move between them.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Free,
     /// At a distance from one element of the pair: the distance from the `from`
     /// element to the held element's face that faces it.
@@ -1061,8 +1078,10 @@ pub enum WidthMode {
 )]
 pub enum SlotPosition {
     /// Anywhere.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Free,
     /// At the middle of the slot's centre path.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Centered,
     /// A source slot position whose meaning is not established.
     Native(NonBlankString),
@@ -1074,7 +1093,8 @@ pub enum SlotPosition {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathPosition {
     /// Anywhere.
-    Free {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Free,
     /// At a distance along the path.
     Distance {
         /// The distance.
@@ -1110,7 +1130,8 @@ pub enum PathPosition {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathAxisControl {
     /// Not held.
-    Free {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Free,
     /// One axis of the second element's definition frame held tangent to the
     /// path.
     FollowPath {
@@ -1132,7 +1153,8 @@ pub enum PathAxisControl {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathRollControl {
     /// Not held.
-    Free {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Free,
     /// One axis held along a constructed direction.
     UpVector {
         /// The direction.
@@ -1189,3 +1211,6 @@ cadmpeg_core::named_optional_field!(deserialize_target_velocity<T>, T, "target_v
 cadmpeg_core::named_optional_field!(deserialize_x<T>, T, "x");
 cadmpeg_core::named_optional_field!(deserialize_y<T>, T, "y");
 cadmpeg_core::named_optional_field!(deserialize_z<T>, T, "z");
+
+#[cfg(test)]
+mod tests;
