@@ -27,7 +27,6 @@ use crate::design::options::{
 use crate::design::selection::{
     DatumPart, Fragment, OccurrencePath, Ordered, PathStep, StepRef, Unordered,
 };
-use crate::design::topology::Topology;
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, UnitSystem, ValueKind};
 use crate::scalar::{Angle, FiniteReal, Length};
 
@@ -175,7 +174,6 @@ fn every_design_type_round_trips() {
     report.check("Member", fixtures::members());
     report.check("Position", fixtures::positions());
     report.check("Evaluated", fixtures::evaluated());
-    report.check("Topology", vec![Topology::default()]);
     report.check("EntityRef", fixtures::entity_refs());
     report.check("RecordRef", fixtures::record_refs());
     report.check("NameTable", fixtures::name_tables());

@@ -19,7 +19,6 @@ pub mod options;
 pub mod read;
 pub mod refs;
 pub mod selection;
-pub mod topology;
 pub mod units;
 
 #[cfg(test)]

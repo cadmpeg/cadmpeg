@@ -37,7 +37,6 @@ use crate::design::selection::{
     PrincipalEntity, Propagation, RuleTerm, Selection, SelectionRule, SketchRegion, StepRef,
     Unordered, Witness,
 };
-use crate::design::topology::Topology;
 use crate::design::units::{
     AngularSpeed, Duration, Feed, PositiveArea, Quantity, Unit, UnitFactor, UnitSymbol, UnitSystem,
     ValueKind,
@@ -88,7 +87,6 @@ fn every_design_type_has_a_schema() {
     generates::<Generator>();
     generates::<GenerationRole>();
     generates::<HoleFaceRole>();
-    generates::<Topology>();
     generates::<Ordered>();
     generates::<Unordered>();
     generates::<Members<Picked, Ordered>>();

@@ -15,7 +15,7 @@ use crate::design::expr::{self, BinaryOp, Expression, ExpressionDialect, Neutral
 use crate::design::names::{CodecId, NameTable, TopoName};
 use crate::design::options::{Boolean, BooleanOp, Hand};
 use crate::design::refs::{Evaluated, StateRef};
-use crate::design::selection::{Members, Ordered, PickTarget, Picked, Picks, Unordered};
+use crate::design::selection::{Members, Ordered, PickTarget, Picked, Picks, Unordered, Witness};
 use crate::design::units::{Duration, Unit, UnitFactor, UnitSymbol};
 use crate::scalar::Length;
 
@@ -213,6 +213,29 @@ fn unordered_members_sort_by_identity_and_ordered_members_keep_order() {
     let doubled = serde_json::to_string(&vec![first.clone(), first]).unwrap();
     assert!(refuses::<Members<Picked, Unordered>>(&doubled).contains("twice"));
     assert!(refuses::<Members<Picked, Ordered>>(&doubled).contains("twice"));
+}
+
+/// A witness body is the document's `Topology`: it writes the document's
+/// form, and reading it attaches each procedural carrier to its owner.
+#[test]
+fn a_witness_body_is_the_document_topology() {
+    let body = fixtures::witness_body();
+    let witness = Witness {
+        body: Some(Box::new(body.clone())),
+        ..fixtures::witnesses().remove(1)
+    };
+    let value = to_value(&witness);
+    assert_eq!(value["body"], to_value(&body));
+    assert_eq!(
+        value["body"]["procedural_curves"].as_array().map(Vec::len),
+        Some(1)
+    );
+    let back: Witness = read_desktop(&value.to_string()).unwrap();
+    assert_eq!(back.body.as_deref(), Some(&body));
+    assert!(back.body.unwrap().curves[0]
+        .geometry
+        .procedural_construction()
+        .is_some());
 }
 
 #[test]
