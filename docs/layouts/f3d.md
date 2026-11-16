@@ -11797,6 +11797,37 @@ Unstated regions:
 
 - `0..21` (21 B): Indexed header and mesh scope prefix.
 
+## `work_axis_two_point_carrier`
+
+Spec §3.1 · layout: byte offsets · size: 232 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | After its indexed header it stores ten zero bytes |
+| 21 | 4 | `value_count` | `u32` | little | spec | u32 value count 8 |
+| 25 | 64 | `axis_values` | `f64[8]` | little | spec | eight f64 values at offset 25 |
+| 118 | 4 | `reference_count` | `u32` | little | spec | A u32 reference count of two at offset 118 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed record header precedes the fixed payload.
+- `89..118` (29 B): The fixed payload separates its values and reference count.
+- `122..232` (110 B): The two marked references and generation tail end at the paired header.
+
+## `work_axis_endpoint_carrier`
+
+Spec §3.1 · layout: byte offsets · size: 197 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 31 | `zero_run` | `bytes[31]` | little | spec | each stores 31 zero bytes after its indexed header |
+| 42 | 24 | `position` | `f64[3]` | little | spec | a three-coordinate point at offset 42 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed record header precedes the fixed point payload.
+- `66..197` (131 B): The generation tail ends at the paired indexed header.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

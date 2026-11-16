@@ -43917,15 +43917,20 @@
             "value": {
               "kind": "datum_axis",
               "value": {
-                "direction": {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 1.0
-                },
-                "origin": {
-                  "x": 2.0,
-                  "y": 3.0,
-                  "z": 0.0
+                "axis": {
+                  "direction": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 1.0
+                  },
+                  "inputs": [],
+                  "native_options": {},
+                  "origin": {
+                    "x": 2.0,
+                    "y": 3.0,
+                    "z": 0.0
+                  },
+                  "source_settings": {}
                 }
               }
             }

@@ -80,15 +80,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-319. WorkAxis point-and-direction construction rules
 
-**Question.** What do the position, direction, construction rules, and input roles encode for the other `refType` values of a WorkAxis point-and-direction carrier?
+**Question.** How do nonzero point parameters, unknown `refType` values, and point-and-direction operands determine the authored axis construction?
 
-**Known.** `f3d.md` §3.1 "A `WorkAxis` scope can reference a point-and-direction carrier" describes the carrier and the two-point rule.
+**Known.** `f3d.md` §3.1 describes version 1 and 4 carriers, the retained scalar/reference fields, and the refType 12 endpoint corroboration. Readable stored line components project independently into a checked datum axis. Unknown input roles remain absent; literal parameter expressions and source options remain source facts.
 
-**Need.** Controlled designs that vary one axis construction rule and its inputs at a time.
+**Need.** Controlled designs that vary each construction rule, nonzero point parameter, operand path and property lane independently, with independently measured solved axes.
 
-**Conflict.** None.
+**Conflict.** A pair of known point operands can disagree with the separately stored line. The points remain typed with unknown roles, and a separately named assumption identifies use of the stored line.
 
-**Note.** The decoder takes position and direction as the solved axis for other values and reports `feature.work-axis-rule-unassigned`; the construction inputs remain native.
+**Note.** Nonzero point parameters retain a named stored-line assumption and unknown rules retain `feature.work-axis-rule-unassigned`. Their authored construction semantics remain unassigned. Partial carriers retain actual unreadable-part records and source images; endpoint tolerance is an explicitly reported hypothesis.
 
 ### DR-284. Compact sketch-profile tail flags
 

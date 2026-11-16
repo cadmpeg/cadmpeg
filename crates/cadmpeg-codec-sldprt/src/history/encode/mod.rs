@@ -122,7 +122,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 *alternate_face,
                 corner.as_ref(),
             ),
-            FeatureDefinition::Operation(FeatureOperation::DatumAxis { origin, direction }) => {
+            FeatureDefinition::Operation(FeatureOperation::DatumAxis { axis }) => {
+                let Some((origin, direction)) = axis.geometry().filter(|_| !axis.has_controls())
+                else {
+                    return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unsupported datum-axis construction or partial geometry",
+                        self.feature.id
+                    )));
+                };
                 self.encode_datum_axis(origin, direction)
             }
             FeatureDefinition::Operation(FeatureOperation::DatumPoint { position, .. }) => {

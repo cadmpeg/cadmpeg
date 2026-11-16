@@ -1064,3 +1064,94 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
         ))
     );
 }
+
+#[test]
+fn work_axis_parameters_keep_literal_definitions_and_require_unique_owner_joins() {
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(44),
+        "Other + 12 deg",
+        "AlongDistance",
+        Some("mm"),
+        "",
+        1.25,
+    ))
+    .unwrap();
+    parameter.id = "f3d:native/BulkStream.dat:parameter#45".into();
+    parameter.record_index = 45;
+    let mut owner = crate::records::parameters::DesignParameterOwnerWire::from(
+        parse_parameter_owner(&parameter_owner_frame())
+            .unwrap()
+            .into_record("native/BulkStream.dat", 0)
+            .unwrap(),
+    );
+    owner.id = "f3d:native/BulkStream.dat:owner#44".into();
+    owner.record_index = 44;
+    owner.parameter_record_index = 45;
+    owner.scope_record_index = 1;
+    owner.companion_record_index = 46;
+    for case in 0..5 {
+        let mut owners =
+            vec![
+                crate::records::parameters::DesignParameterOwner::try_from(owner.clone()).unwrap(),
+            ];
+        let mut native = vec![parameter.clone()];
+        match case {
+            1 => {
+                let mut duplicate = owner.clone();
+                duplicate.id = "f3d:native/BulkStream.dat:owner#other".into();
+                duplicate.scope_record_index = 2;
+                owners.push(duplicate.try_into().unwrap());
+            }
+            2 => {
+                native[0].record_index = 47;
+                native[0].id = "f3d:native/BulkStream.dat:parameter#47".into();
+            }
+            3 => {
+                let mut duplicate = parameter.clone();
+                duplicate.id = "f3d:native/BulkStream.dat:parameter#other".into();
+                native.push(duplicate);
+            }
+            _ => {}
+        }
+        let scopes = [
+            DesignParameterScope::empty(
+                "f3d:native/BulkStream.dat:scope#1",
+                if case == 4 {
+                    crate::records::feature::scope::DesignFeatureKind::Extrude
+                } else {
+                    crate::records::feature::scope::DesignFeatureKind::WorkAxis
+                },
+                1,
+            ),
+            DesignParameterScope::empty(
+                "f3d:native/BulkStream.dat:scope#2",
+                crate::records::feature::scope::DesignFeatureKind::Extrude,
+                2,
+            ),
+        ];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+        let projected = crate::test_support::with_decode_context(|ctx| {
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &native,
+                    owners: &owners,
+                    scopes: &scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        });
+        assert_eq!(projected.parameters.len(), native.len());
+        for p in &projected.parameters {
+            assert_eq!(p.name, "");
+            assert_eq!(p.expression, "Other + 12 deg");
+            assert_eq!(p.owner.is_some(), case == 0 || case == 4);
+            assert_eq!(
+                p.value,
+                Some(ParameterValue::Length(Length::new(12.5).unwrap()))
+            );
+        }
+    }
+}

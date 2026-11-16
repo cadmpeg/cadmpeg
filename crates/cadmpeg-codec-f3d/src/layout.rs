@@ -4222,12 +4222,6 @@ pub(crate) mod work_axis_direct_carrier_class_297 {
     pub(crate) const LEN: usize = 215;
     /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const VALUE_COUNT: usize = 21;
-    /// Offset of `axis_values` (`f64[8]`, little-endian). Spec §3.1.
-    pub(crate) const AXIS_VALUES: usize = 25;
-    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_COUNT: usize = 89;
-    /// Offset of `reference_preamble` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_PREAMBLE: usize = 93;
 }
 
 /// Byte offsets for the `work_axis_direct_carrier_class_335` record.
@@ -4240,14 +4234,6 @@ pub(crate) mod work_axis_direct_carrier_class_297 {
 pub(crate) mod work_axis_direct_carrier_class_335 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 195;
-    /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const VALUE_COUNT: usize = 21;
-    /// Offset of `axis_values` (`f64[8]`, little-endian). Spec §3.1.
-    pub(crate) const AXIS_VALUES: usize = 25;
-    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_COUNT: usize = 89;
-    /// Offset of `reference_preamble` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_PREAMBLE: usize = 93;
 }
 
 /// Byte offsets for the `coil_compact_placement_matrix_frame` record.
@@ -10254,4 +10240,30 @@ pub(crate) mod mesh_plane_cut_scope_prefix {
     pub(crate) const MATRIX: usize = 29;
     /// Offset of `fill_selector` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FILL_SELECTOR: usize = 157;
+}
+
+/// Byte offsets for the `work_axis_two_point_carrier` record.
+///
+/// Spec §3.1. Record length 232 B.
+pub(crate) mod work_axis_two_point_carrier {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 232;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const VALUE_COUNT: usize = 21;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 118;
+}
+
+/// Byte offsets for the `work_axis_endpoint_carrier` record.
+///
+/// Spec §3.1. Record length 197 B.
+pub(crate) mod work_axis_endpoint_carrier {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 197;
+    /// Offset of `zero_run` (`bytes[31]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `position` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const POSITION: usize = 42;
 }

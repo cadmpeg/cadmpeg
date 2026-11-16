@@ -45,7 +45,10 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
+mod axis_bindings;
 pub(crate) mod form_cages;
+use axis_bindings::{AxisBinding, AxisBindings};
+
 mod mesh_face_groups;
 mod mirror;
 mod move_owners;
@@ -61,6 +64,7 @@ mod surface_untrim;
 pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
 mod unstitch;
+mod work_axes;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
 const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
@@ -701,6 +705,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             }
         }
     }
+    let feature_ids_by_text = scope_ids
+        .values()
+        .map(|feature| (feature.as_str(), feature))
+        .collect::<HashMap<_, _>>();
     let mut owners_by_index = HashMap::new();
     {
         for owner in owners {
@@ -711,6 +719,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let _ = owners_by_index.insert((stream, owner.record_index()), owner);
         }
     }
+    let axis_bindings = AxisBindings::new(native, owners, scopes);
     let extended_assembly_frames = scopes
         .iter()
         .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble)
@@ -746,6 +755,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 if let Some(parameter) = native.iter().find(|parameter| {
                     native_stream(&parameter.id) == Some(native_scope)
                         && parameter.record_index == owner.parameter_record_index()
+                        && !matches!(axis_bindings.owner(native_scope,owner.record_index(),parameter.record_index), AxisBinding::Unresolved)
                 }) {
                     parameters.push((owner.local_ordinal(), parameter));
                 }
@@ -1321,34 +1331,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::WorkAxis
                     {
-                        scope
-                            .work_axis_construction()
-                            .and_then(|construction| {
-                                let displacement = Vector3::new(
-                                    construction.displacement[0].get(),
-                                    construction.displacement[1].get(),
-                                    construction.displacement[2].get(),
-                                );
-                                Some((
-                                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                                        construction.origin[0].get() * 10.0,
-                                        construction.origin[1].get() * 10.0,
-                                        construction.origin[2].get() * 10.0,
-                                    ))?,
-                                    cadmpeg_ir::features::FeatureDirection3::from(
-                                        cadmpeg_ir::units::UnitVector3::normalized(displacement)?,
-                                    ),
-                                ))
-                            })
-                            .map_or_else(
-                                || native_scope_definition(scope, &parameters),
-                                |(origin, direction)| {
-                                    Ok(FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-                                        origin,
-                                        direction,
-                                    }))
-                                },
-                            )?
+                        work_axes::project(ctx, scope, &mut projection_losses)?
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::WorkPoint
                     {
@@ -1655,6 +1638,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     || retain_chamfer_records
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
+                    || scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkAxis
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
                     if retain_chamfer_records {
@@ -1762,6 +1746,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             Ok::<_, CodecError>(())
         };
         match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::DatumAxis { axis }) => {
+                use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+                axis.visit_identity_references(ctx, &mut |identity| {
+                    if let Some(dependency) = feature_ids_by_text.get(identity) {
+                        add_dependency(dependency)?;
+                    }
+                    Ok(())
+                })?;
+            }
             FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold { construction }) => {
                 if let Some(source) = &construction.unfold {
                     add_dependency(source)?;
@@ -1886,9 +1879,19 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         .iter()
         .map(|parameter| -> NeutralParameter {
             let stream = native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM);
-            let native_owner = parameter
+            let mut native_owner = parameter
                 .owner_record_index()
-                .and_then(|record_index| owners_by_index.get(&(stream, record_index)));
+                .and_then(|record_index| owners_by_index.get(&(stream, record_index)).copied());
+            if let Some(index) = parameter.owner_record_index() {
+                match axis_bindings.owner(stream,index,parameter.record_index) {
+                    AxisBinding::OutsideAxis => {}
+                    AxisBinding::Bound(owner) => native_owner = Some(owner),
+                    AxisBinding::Unresolved => {
+                        native_owner = None;
+                        projection_losses.push(crate::loss::F3dLossCode::FeatureWorkAxisBindingUnresolved.note(format!("WorkAxis parameter {} retains its literal definition with an unresolved owner because its same-stream parameter/owner chain is ambiguous or incompatible.", parameter.id)));
+                    }
+                }
+            }
             let owner =
                 native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index())));
             let mut properties = BTreeMap::new();
@@ -2197,14 +2200,20 @@ fn project_solid_primitive(
                     })();
                     match support {
                         Some((frame, false)) => (frame, None),
-                        Some((frame, true)) => (frame, Some((
-                            crate::loss::F3dLossCode::FeatureBoxSupportFlagsAssumed,
-                            "uses its stored support frame despite unresolved placement flags",
-                        ))),
-                        None => (local, Some((
-                            crate::loss::F3dLossCode::FeatureBoxSupportFrameAssumed,
-                            "applies an identity support frame because its placement construction has no unique usable frame",
-                        ))),
+                        Some((frame, true)) => (
+                            frame,
+                            Some((
+                                crate::loss::F3dLossCode::FeatureBoxSupportFlagsAssumed,
+                                "uses its stored support frame despite unresolved placement flags",
+                            )),
+                        ),
+                        None => (
+                            local,
+                            Some((
+                                crate::loss::F3dLossCode::FeatureBoxSupportFrameAssumed,
+                                "applies an identity support frame because its placement construction has no unique usable frame",
+                            )),
+                        ),
                     }
                 }
                 None => (
@@ -2909,10 +2918,7 @@ fn scope_parameter_expressions(
     for (_, parameter) in parameters {
         let name = parameter.name().to_owned();
         let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
-            return Err(cadmpeg_core::text::NamedEntryError::Blank {
-                record: scope.id.clone(),
-            }
-            .into());
+            continue;
         };
         if properties.contains_key(&name) {
             return Err(cadmpeg_core::text::NamedEntryError::Restated {

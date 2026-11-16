@@ -44,6 +44,35 @@ mod to_object_revolve;
 mod typed_references;
 mod unstitch;
 
+fn read_work_axis(
+    bytes: &[u8],
+    scope: &crate::records::feature::scope::DesignParameterScope,
+) -> crate::records::feature::work_axes::DesignWorkAxisConstruction {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut parts = Vec::new();
+    let evidence = super::work_axes::decode_work_axis(
+        &ctx,
+        source,
+        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        scope,
+        "test/BulkStream.dat",
+        super::work_axes::WorkAxisRegistrations {
+            entities: &std::collections::HashMap::new(),
+            classes: &std::collections::HashMap::new(),
+        },
+        &mut parts,
+    )
+    .unwrap();
+    assert!(parts.is_empty());
+    evidence
+}
+
 mod fixed_kind_path_operations;
 mod fixed_kind_tail_operations;
 

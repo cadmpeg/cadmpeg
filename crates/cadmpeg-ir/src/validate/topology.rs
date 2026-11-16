@@ -22,6 +22,7 @@ use crate::report::{
     Severity,
 };
 mod composite;
+mod datums;
 pub(super) mod graphs;
 mod sheet_metal;
 
@@ -2770,10 +2771,18 @@ fn check_feature_references(
                             .iter()
                             .any(|dependency| dependency.as_str() == reference.as_str()) =>
                     {
-                        super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, configuration.id.as_str(), &[feature.as_str(), reference.as_str()], format_args!(
+                        super::record_related_finding(
+                            findings,
+                            Check::ReferentialIntegrity,
+                            Severity::Error,
+                            configuration.id.as_str(),
+                            &[feature.as_str(), reference.as_str()],
+                            format_args!(
                                 "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
-                                feature.as_str(), reference.as_str()
-                            ));
+                                feature.as_str(),
+                                reference.as_str()
+                            ),
+                        );
                     }
                     Some(_) => {}
                 }
@@ -3409,8 +3418,11 @@ fn check_feature_references(
                             .iter()
                             .any(|dependency| dependency == plate)
                     {
-                        geometry_error(findings, feature.id.as_str(),
-                            "bend attached plate must precede the bend and occur in its dependencies");
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "bend attached plate must precede the bend and occur in its dependencies",
+                        );
                     }
                 }
             }
@@ -3934,7 +3946,14 @@ fn check_feature_references(
                     vertex_selections.push((point, "three-point datum-plane"));
                 }
             }
-            FeatureOperation::DatumAxis { .. } => {}
+            FeatureOperation::DatumAxis { axis } => datums::validate(
+                ctx,
+                ids,
+                feature,
+                axis,
+                ir.tolerances.linear.get(),
+                findings,
+            )?,
             FeatureOperation::DatumPoint { construction, .. } => {
                 let mut plane_references = Vec::new();
                 if let Some(construction) = construction.as_deref() {
@@ -4001,10 +4020,17 @@ fn check_feature_references(
                                         dependency.as_str() == reference.as_str()
                                     }) =>
                                 {
-                                    super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
+                                    super::record_related_finding(
+                                        findings,
+                                        Check::ReferentialIntegrity,
+                                        Severity::Error,
+                                        feature.id.as_str(),
+                                        &[reference.as_str()],
+                                        format_args!(
                                             "datum point omits plane feature `{}` from its dependencies",
                                             reference.as_str()
-                                        ));
+                                        ),
+                                    );
                                 }
                                 Some(_) => {}
                             }
@@ -4048,10 +4074,17 @@ fn check_feature_references(
                                 .iter()
                                 .any(|dependency| dependency.as_str() == block.as_str()) =>
                         {
-                            super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[block.as_str()], format_args!(
+                            super::record_related_finding(
+                                findings,
+                                Check::ReferentialIntegrity,
+                                Severity::Error,
+                                feature.id.as_str(),
+                                &[block.as_str()],
+                                format_args!(
                                     "sketch block instance omits block feature `{}` from its dependencies",
                                     block.as_str()
-                                ));
+                                ),
+                            );
                         }
                         Some(_) => {}
                     }
@@ -4127,20 +4160,34 @@ fn check_feature_references(
                                     );
                                 }
                                 Some(record) if record.ordinal >= feature.ordinal => {
-                                    super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
+                                    super::record_related_finding(
+                                        findings,
+                                        Check::ReferentialIntegrity,
+                                        Severity::Error,
+                                        feature.id.as_str(),
+                                        &[reference.as_str()],
+                                        format_args!(
                                             "reference plane `{}` does not precede its offset plane",
                                             reference.as_str()
-                                        ));
+                                        ),
+                                    );
                                 }
                                 Some(_)
                                     if !feature.dependencies.iter().any(|dependency| {
                                         dependency.as_str() == reference.as_str()
                                     }) =>
                                 {
-                                    super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
+                                    super::record_related_finding(
+                                        findings,
+                                        Check::ReferentialIntegrity,
+                                        Severity::Error,
+                                        feature.id.as_str(),
+                                        &[reference.as_str()],
+                                        format_args!(
                                             "offset plane omits reference feature `{}` from its dependencies",
                                             reference.as_str()
-                                        ));
+                                        ),
+                                    );
                                 }
                                 Some(_) => {}
                             }
@@ -5324,7 +5371,11 @@ fn check_feature_sketch_references(
                         }
                     });
                     if invalid {
-                        geometry_error(findings, feature.id.as_str(), "sketch regions have empty, repeated, invalid, or out-of-range boundaries");
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "sketch regions have empty, repeated, invalid, or out-of-range boundaries",
+                        );
                     }
                 }
                 ProfileReference::Planar(PlanarProfileRef::SketchEntities { sketch, entities }) => {
@@ -5333,7 +5384,11 @@ fn check_feature_sketch_references(
                             .get(entity.as_str())
                             .is_none_or(|owner| *owner != sketch.as_str())
                     }) {
-                        geometry_error(findings, feature.id.as_str(), "sketch profile entities are empty, repeated, missing, or owned by another sketch");
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "sketch profile entities are empty, repeated, missing, or owned by another sketch",
+                        );
                     }
                 }
                 ProfileReference::Planar(
@@ -5376,7 +5431,11 @@ fn check_feature_sketch_references(
                             .is_none_or(|owner| *owner != sketch.as_str())
                     });
                     if invalid {
-                        geometry_error(findings, feature.id.as_str(), "spatial sketch path curves are empty, repeated, missing, or owned by another sketch");
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            "spatial sketch path curves are empty, repeated, missing, or owned by another sketch",
+                        );
                     }
                     (
                         sketch.as_str(),

@@ -2038,6 +2038,8 @@ A two-point `WorkAxis` scope has five ordered references. Reference zero is a 23
 
 A `WorkAxis` scope can reference a point-and-direction carrier with type GUID `F2A7590D-6654-4674-B393-A2AEF4FEC48A` and version 1 or 4. Its base level has the fields of the Hole carrier above; version 1 omits the tangent point data prefix and tangent point data. For `refType` 12, `boundingboxIndex` is 8, the point parameters are zero, `position` is the axis origin in centimetres, and `direction` is a nonzero axis displacement. The two inputs name point-data records in endpoint order. The first point equals the origin and the second equals the origin plus the displacement.
 
+Carrier properties are ordered occurrences. Each property has a length-prefixed ASCII key, a length-prefixed ASCII intrinsic type name, and a value. Keys can be empty or repeated. `IntrinsicMetaTypeuint64` has a u64 value; `IntrinsicMetaTypedouble` has an f64 value.
+
 Two two-reference `WorkAxis` scope forms use direct axis carriers. Their scope frames are:
 
 | Primary class | Paired class | Frame length | Reference-count offset | Member-reference offsets | Current-state offset | Kind offset | Feature-ordinal offset |
