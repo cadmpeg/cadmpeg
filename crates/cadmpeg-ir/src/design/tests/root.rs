@@ -396,7 +396,7 @@ fn statements_nest_to_the_json_depth_limit_on_a_default_thread() {
             let read = read_desktop::<Statement>(&deepest).unwrap();
             let printed = serde_json::to_string(&read).unwrap();
             let cloned = read.clone();
-            assert!(cloned == read);
+            assert_eq!(cloned, read);
             drop(cloned);
             drop(read);
             printed
