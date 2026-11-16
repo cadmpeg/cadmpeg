@@ -244,9 +244,10 @@ impl<'de> Deserialize<'de> for DialectId {
 /// format namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Admission {
     /// Parsed with the strategy declared for the identified dialect.
+    #[serde(deserialize_with = "crate::tag_only::read")]
     Admitted,
     /// Parsed with another declared grammar of the same format namespace.
     ///
@@ -258,8 +259,10 @@ pub enum Admission {
     /// Parsed without any declared grammar: the residual path.
     ///
     /// The codec must charge its dialect-unverified loss.
+    #[serde(deserialize_with = "crate::tag_only::read")]
     Residual,
     /// Structurally identified; semantic decode refused.
+    #[serde(deserialize_with = "crate::tag_only::read")]
     Refused,
 }
 
@@ -345,7 +348,6 @@ pub struct DialectMatch {
     ///
     /// Declarations are evidence, never a control input: the dialect is what
     /// the bytes obey, not what they declare.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "crate::distinct_keys::btree_map")]
     declared: BTreeMap<NonBlankString, String>,
     /// Instance of this format layer inside the containing document.
@@ -543,7 +545,7 @@ impl FormatIdentityPayload for DialectLayers {
 /// either state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "classification", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FormatIdentity<T> {
     /// The payload carries the complete classified identity.
     Classified {
@@ -795,7 +797,7 @@ mod tests {
 
         assert_eq!(
             serde_json::to_string(&admitted).unwrap(),
-            "{\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}"
+            "{\"dialect\":\"rhino:archive-80\",\"declared\":{},\"admission\":{\"kind\":\"admitted\"}}"
         );
     }
 
@@ -804,7 +806,8 @@ mod tests {
         let restated = serde_json::json!({
             "format": "rhino",
             "dialect": "rhino:archive-80",
-            "admission": "admitted",
+            "declared": {},
+            "admission": {"kind": "admitted"},
         });
 
         let error = serde_json::from_value::<DialectMatch>(restated)
@@ -827,7 +830,7 @@ mod tests {
         assert_eq!(residual.using(), None);
         assert_eq!(
             serde_json::to_string(&residual).unwrap(),
-            "{\"dialect\":\"rhino:unknown\",\"admission\":\"residual\"}"
+            "{\"dialect\":\"rhino:unknown\",\"declared\":{},\"admission\":{\"kind\":\"residual\"}}"
         );
     }
 
@@ -851,7 +854,7 @@ mod tests {
         let serialized = serde_json::to_string(&unverified).unwrap();
         assert_eq!(
             serialized,
-            "{\"dialect\":\"acis:save-format-217\",\"admission\":{\"unverified\":{\"using\":\"save-format-218\"}}}"
+            "{\"dialect\":\"acis:save-format-217\",\"declared\":{},\"admission\":{\"kind\":\"unverified\",\"using\":\"save-format-218\"}}"
         );
         assert_eq!(
             serde_json::from_str::<DialectMatch>(&serialized).unwrap(),
@@ -863,9 +866,8 @@ mod tests {
     fn a_self_named_unverified_grammar_remains_opaque() {
         let self_named = serde_json::json!({
             "dialect": "rhino:unknown",
-            "admission": {
-                "unverified": { "using": "unknown" }
-            },
+            "declared": {},
+            "admission": { "kind": "unverified", "using": "unknown" },
         });
         let matched = serde_json::from_value::<DialectMatch>(self_named)
             .expect("core does not infer grammar semantics from an opaque dialect name");
@@ -881,9 +883,8 @@ mod tests {
     fn a_grammar_name_has_no_spelling_for_a_foreign_namespace() {
         let malformed = serde_json::json!({
             "dialect": "rhino:unknown",
-            "admission": {
-                "unverified": { "using": "step:ap242-e3" }
-            },
+            "declared": {},
+            "admission": { "kind": "unverified", "using": "step:ap242-e3" },
         });
         let error = serde_json::from_value::<DialectMatch>(malformed)
             .expect_err("a grammar substitute belongs to the classified format layer");

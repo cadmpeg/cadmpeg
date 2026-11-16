@@ -13,9 +13,11 @@ use crate::design::construction::SourceMode;
 use crate::design::dimension::Dimension;
 use crate::design::expr::{self, BinaryOp, Expression, ExpressionDialect, Neutral, Node};
 use crate::design::names::{CodecId, NameTable, TopoName};
-use crate::design::options::{Boolean, BooleanOp, Hand, Span};
+use crate::design::options::{Boolean, BooleanOp, Hand};
 use crate::design::refs::{Evaluated, StateRef};
-use crate::design::selection::{Members, Ordered, PickTarget, Picked, Picks, Unordered};
+use crate::design::selection::{
+    Keyed, Members, Ordered, PickDomain, PickKey, PickTarget, Picked, Picks, Unordered, Witness,
+};
 use crate::design::units::{Duration, Unit, UnitFactor, UnitSymbol};
 use crate::scalar::Length;
 
@@ -34,14 +36,6 @@ fn the_examples_of_section_2_5() {
             targets: None
         }),
         json!({"kind": "apply", "op": {"kind": "cut"}})
-    );
-    let span = Span::<Length>::Symmetric {
-        amount: literal,
-        measure: None,
-    };
-    assert_eq!(
-        to_value(&span),
-        json!({"kind": "symmetric", "amount": {"kind": "literal", "value": 2.5}})
     );
 }
 
@@ -147,7 +141,8 @@ fn an_option_field_is_omitted_and_a_list_field_is_always_written() {
     );
 }
 
-/// "A number has one zero: −0 equals 0, and a writer writes zero as `0`."
+/// "A number has one zero: −0 equals 0, a float zero is written `0.0`, and a
+/// writer never writes −0."
 #[test]
 fn negative_zero_is_never_written() {
     for zero in [0.0, -0.0] {
@@ -179,7 +174,9 @@ fn a_unit_symbol_has_one_spelling() {
 }
 
 /// Members are distinct by identity, `(target, context, native, domain)`; two
-/// picks that differ only in their witness are one member.
+/// picks that differ only in their witness are one member. Equality reads the
+/// whole pick and order reads only its key, so a pick has no order of its own
+/// and every sort and set of picks goes through the key.
 #[test]
 fn members_are_distinct_by_identity_not_by_witness() {
     let pick = fixtures::picks_full().remove(1);
@@ -187,8 +184,41 @@ fn members_are_distinct_by_identity_not_by_witness() {
     other.witness = None;
     other.resolved = None;
     assert!(pick.witness.is_some() && pick != other);
+    assert_eq!(pick.key(), other.key());
     assert!(Members::<Picked, Unordered>::new(vec![pick.clone(), other.clone()]).is_err());
-    assert!(Members::<Picked, Ordered>::new(vec![pick, other]).is_err());
+    assert!(Members::<Picked, Ordered>::new(vec![other.clone(), pick.clone()]).is_err());
+
+    let limited = |end: &Picked| Picked {
+        domain: Some(PickDomain::Limits {
+            start: None,
+            end: Some(Box::new(end.clone())),
+        }),
+        ..picked(3)
+    };
+    assert_ne!(limited(&pick), limited(&other));
+    assert_eq!(limited(&pick).key(), limited(&other).key());
+    assert!(Members::<Picked, Unordered>::new(vec![limited(&pick), limited(&other)]).is_err());
+
+    let picks = fixtures::picks_full();
+    for left in &picks {
+        for right in &picks {
+            if left == right {
+                assert_eq!(left.key(), right.key(), "{left:?}");
+            }
+            assert_eq!(
+                left.key().cmp(&right.key()).is_eq(),
+                left.key() == right.key()
+            );
+        }
+    }
+    let keys: BTreeSet<PickKey<'_>> = picks.iter().map(Picked::key).collect();
+    let set = Members::<Picked, Unordered>::new(picks.clone()).unwrap();
+    assert_eq!(keys.len(), picks.len());
+    assert!(set
+        .as_slice()
+        .iter()
+        .map(Picked::key)
+        .eq(keys.iter().copied()));
 }
 
 /// An unordered member list sorts by `(target, context, native, domain)` and
@@ -205,7 +235,7 @@ fn unordered_members_sort_by_identity_and_ordered_members_keep_order() {
     let given = vec![late.clone(), other.clone(), first.clone()];
     let set = Members::<Picked, Unordered>::new(given.clone()).unwrap();
     let mut sorted = given.clone();
-    sorted.sort();
+    sorted.sort_by(|left, right| left.key().cmp(&right.key()));
     assert_eq!(set.as_slice(), sorted.as_slice());
     assert_eq!(set.as_slice()[0].target, first.target);
     assert!(set.as_slice()[0].native.is_none() && set.as_slice()[1].native.is_some());
@@ -221,6 +251,29 @@ fn unordered_members_sort_by_identity_and_ordered_members_keep_order() {
     let doubled = serde_json::to_string(&vec![first.clone(), first]).unwrap();
     assert!(refuses::<Members<Picked, Unordered>>(&doubled).contains("twice"));
     assert!(refuses::<Members<Picked, Ordered>>(&doubled).contains("twice"));
+}
+
+/// A witness body is the document's `Topology`: it writes the document's
+/// form, and reading it attaches each procedural carrier to its owner.
+#[test]
+fn a_witness_body_is_the_document_topology() {
+    let body = fixtures::witness_body();
+    let witness = Witness {
+        body: Some(Box::new(body.clone())),
+        ..fixtures::witnesses().remove(1)
+    };
+    let value = to_value(&witness);
+    assert_eq!(value["body"], to_value(&body));
+    assert_eq!(
+        value["body"]["procedural_curves"].as_array().map(Vec::len),
+        Some(1)
+    );
+    let back: Witness = read_desktop(&value.to_string()).unwrap();
+    assert_eq!(back.body.as_deref(), Some(&body));
+    assert!(back.body.unwrap().curves[0]
+        .geometry
+        .procedural_construction()
+        .is_some());
 }
 
 #[test]

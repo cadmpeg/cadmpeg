@@ -9,8 +9,8 @@ use cadmpeg_core::CodecError;
 
 fn model(rows: &[(&str, &[&str])]) -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
-    let template = ir.model.curves[0].clone();
-    ir.model.curves = rows
+    let template = ir.geometry.curves[0].clone();
+    ir.geometry.curves = rows
         .iter()
         .map(|(identity, children)| {
             let mut curve = template.clone();

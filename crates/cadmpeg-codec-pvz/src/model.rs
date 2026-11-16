@@ -50,7 +50,7 @@ pub(crate) fn definitions(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let mut admitted = u64_from_index(ir.model.entity_count());
+    let mut admitted = u64_from_index(ir.entity_count());
     let mut dropped = Vec::new();
     for (index, definition) in structure.definitions.iter().enumerate() {
         let mut bom_properties = BTreeMap::new();
@@ -107,7 +107,7 @@ pub(crate) fn definitions(
             native_ref: Some(format!("definition {index}")),
         });
         ctx.admit_entities(
-            u64_from_index(ir.model.entity_count()),
+            u64_from_index(ir.entity_count()),
             &mut admitted,
             "pvz_definition",
         )?;
@@ -173,7 +173,7 @@ pub(crate) fn occurrences(
     }
     let max_depth = ctx.policy().limits.max_recursion_depth;
     let depth_limit = usize::try_from(max_depth).ok();
-    let mut admitted = u64_from_index(ir.model.entity_count());
+    let mut admitted = u64_from_index(ir.entity_count());
     let mut expanded: Vec<Expanded> = Vec::new();
     let mut cycles = 0_usize;
     let mut stopped = false;
@@ -207,7 +207,7 @@ pub(crate) fn occurrences(
             depth: 1,
         });
         ctx.admit_entities(
-            u64_from_index(ir.model.entity_count()),
+            u64_from_index(ir.entity_count()),
             &mut admitted,
             "pvz_occurrence",
         )?;
@@ -280,7 +280,7 @@ pub(crate) fn occurrences(
                 depth: depth + 1,
             });
             ctx.admit_entities(
-                u64_from_index(ir.model.entity_count()),
+                u64_from_index(ir.entity_count()),
                 &mut admitted,
                 "pvz_occurrence",
             )?;
@@ -407,7 +407,7 @@ pub(crate) fn display_geometry(
     let body = match exact {
         Some(body) => {
             let written = ir
-                .model
+                .geometry
                 .bodies
                 .iter_mut()
                 .rev()
@@ -421,7 +421,7 @@ pub(crate) fn display_geometry(
         None if geometry.meshes.is_empty() && !geometry.has_exact => return Ok(None),
         None => {
             let body = crate::ids::body(member);
-            ir.model.bodies.push(Body {
+            ir.geometry.bodies.push(Body {
                 id: body.clone(),
                 kind: BodyKind::General,
                 regions: Vec::new(),
@@ -433,7 +433,7 @@ pub(crate) fn display_geometry(
             body
         }
     };
-    let mut admitted = u64_from_index(ir.model.entity_count());
+    let mut admitted = u64_from_index(ir.entity_count());
     let mut used = BTreeSet::new();
     let mut rejected = Vec::new();
     let mut untriangulated = 0_usize;
@@ -464,7 +464,7 @@ pub(crate) fn display_geometry(
             Err(reason) => rejected.push(format!("mesh {index}: {reason}")),
         }
         ctx.admit_entities(
-            u64_from_index(ir.model.entity_count()),
+            u64_from_index(ir.entity_count()),
             &mut admitted,
             "pvz_tessellation",
         )?;

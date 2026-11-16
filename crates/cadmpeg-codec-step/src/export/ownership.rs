@@ -20,7 +20,7 @@ pub(super) fn construction_supports(ir: &CadIr) -> Result<BTreeSet<String>, Code
         }
         Ok(())
     };
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         let Some(mut geometry) = curve.geometry.solved() else {
             continue;
         };
@@ -33,13 +33,13 @@ pub(super) fn construction_supports(ir: &CadIr) -> Result<BTreeSet<String>, Code
             }
         }
     }
-    for surface in &ir.model.procedural_surfaces {
+    for surface in &ir.geometry.procedural_surfaces {
         surface.visit_references(&ctx, &mut visit)?;
     }
-    for curve in &ir.model.procedural_curves {
+    for curve in &ir.geometry.procedural_curves {
         curve.visit_references(&ctx, &mut visit)?;
     }
-    for pcurve in &ir.model.pcurves {
+    for pcurve in &ir.geometry.pcurves {
         pcurve.visit_references(&ctx, &mut visit)?;
     }
     Ok(supports)

@@ -456,7 +456,7 @@ fn assert_recipe_pad_topology(
         panic!("{label}: one Pad output body")
     };
     let body = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| &body.id == body_id)
@@ -466,7 +466,7 @@ fn assert_recipe_pad_topology(
         panic!("{label}: one output region")
     };
     let region = ir
-        .model
+        .geometry
         .regions
         .iter()
         .find(|region| &region.id == region_id)
@@ -475,7 +475,7 @@ fn assert_recipe_pad_topology(
         panic!("{label}: one output shell")
     };
     let shell = ir
-        .model
+        .geometry
         .shells
         .iter()
         .find(|shell| &shell.id == shell_id)
@@ -489,14 +489,14 @@ fn assert_recipe_pad_topology(
     let mut edge_curve_kinds = [0, 0];
     for face_id in face_ids {
         let face = ir
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| &face.id == face_id)
             .unwrap_or_else(|| panic!("{label}: face resolves"));
         assert_eq!(face.shell, shell.id, "{label}: face shell owner");
         match &ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
@@ -520,7 +520,7 @@ fn assert_recipe_pad_topology(
         assert_eq!(face.loops.len(), 1, "{label}: one loop per source face");
         for loop_id in &face.loops {
             let loop_ = ir
-                .model
+                .geometry
                 .loops
                 .iter()
                 .find(|loop_| &loop_.id == loop_id)
@@ -531,7 +531,7 @@ fn assert_recipe_pad_topology(
             loop_coedge_counts.push(ring.coedges().len());
             for coedge_id in ring.coedges() {
                 let coedge = ir
-                    .model
+                    .geometry
                     .coedges
                     .iter()
                     .find(|coedge| &coedge.id == coedge_id)
@@ -551,7 +551,7 @@ fn assert_recipe_pad_topology(
     assert_eq!(edge_ids.len(), 3, "{label}: unique output edges");
     for edge_id in edge_ids {
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id.as_str() == edge_id)
@@ -565,7 +565,7 @@ fn assert_recipe_pad_topology(
             panic!("{label}: closed solid edge has a curve")
         };
         let curve = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| &curve.id == curve_id)
@@ -585,13 +585,13 @@ fn assert_recipe_pad_topology(
         .iter()
         .map(|vertex_id| {
             let vertex = ir
-                .model
+                .geometry
                 .vertices
                 .iter()
                 .find(|vertex| vertex.id.as_str() == *vertex_id)
                 .unwrap_or_else(|| panic!("{label}: output vertex resolves"));
             let point = ir
-                .model
+                .geometry
                 .points
                 .iter()
                 .find(|point| point.id == vertex.point)

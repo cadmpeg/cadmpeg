@@ -29,7 +29,6 @@ pub struct ToleranceConstraints {
     )]
     pub maximum: Option<PositiveLength>,
     /// Independently specified tolerance zones.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zones: Vec<ToleranceZone>,
 }
 
@@ -48,7 +47,6 @@ pub struct ToleranceZone {
     /// Source-defined zone form, such as `cylindrical or circular`.
     pub form: NonBlankString,
     /// Projected extents belonging to this zone.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub projections: Vec<ToleranceProjection>,
 }
 
@@ -58,7 +56,6 @@ pub struct ToleranceZone {
 #[serde(deny_unknown_fields)]
 pub struct ToleranceProjection {
     /// Features that bound the projected zone.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boundaries: Vec<PmiTarget>,
     /// Feature at the projection end.
     pub end: PmiTarget,

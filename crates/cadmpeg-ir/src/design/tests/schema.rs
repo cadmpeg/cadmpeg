@@ -24,10 +24,9 @@ use crate::design::names::{
     NameKind, NameTable, NativeName, NativeNameValue, TopoName,
 };
 use crate::design::options::{
-    BodyForm, Boolean, BooleanOp, CornerRound, Hand, Law, Limit, LimitOffset, LoopNesting,
-    NativeOption, NativeOptions, ProjectionDirection, RadialDimension, SectionCondition,
-    SheetOutput, SolidOutput, Solidify, Span, Support, SymmetricMeasure, Targets, Thickness,
-    ThinEnds, ThinWall, WallSide,
+    BodyForm, Boolean, BooleanOp, CornerRound, Hand, LimitOffset, LoopNesting, NativeOption,
+    NativeOptions, ProjectionDirection, SectionCondition, SheetOutput, SolidOutput, Solidify,
+    Support, SymmetricMeasure, Targets, Thickness, ThinEnds, ThinWall, WallSide,
 };
 use crate::design::refs::{
     ConfigurationRef, EntityRef, Evaluated, Member, Position, RecordRef, StateRef,
@@ -38,12 +37,11 @@ use crate::design::selection::{
     PrincipalEntity, Propagation, RuleTerm, Selection, SelectionRule, SketchRegion, StepRef,
     Unordered, Witness,
 };
-use crate::design::topology::Topology;
 use crate::design::units::{
     AngularSpeed, Duration, Feed, PositiveArea, Quantity, Unit, UnitFactor, UnitSymbol, UnitSystem,
     ValueKind,
 };
-use crate::scalar::{Angle, FiniteReal, Length, NonNegativeLength, PositiveLength};
+use crate::scalar::{Angle, Length};
 
 fn generates<T: JsonSchema>() {
     let schema = serde_json::to_value(schema_for!(T)).unwrap();
@@ -89,7 +87,6 @@ fn every_design_type_has_a_schema() {
     generates::<Generator>();
     generates::<GenerationRole>();
     generates::<HoleFaceRole>();
-    generates::<Topology>();
     generates::<Ordered>();
     generates::<Unordered>();
     generates::<Members<Picked, Ordered>>();
@@ -174,8 +171,6 @@ fn every_design_type_has_a_schema() {
     generates::<PositiveArea>();
     generates::<NativeOptions>();
     generates::<NativeOption>();
-    generates::<RadialDimension<PositiveLength>>();
-    generates::<RadialDimension<NonNegativeLength>>();
     generates::<Hand>();
     generates::<LoopNesting>();
     generates::<SolidOutput>();
@@ -190,14 +185,8 @@ fn every_design_type_has_a_schema() {
     generates::<Targets>();
     generates::<SheetOutput>();
     generates::<Solidify>();
-    generates::<Span<Length>>();
-    generates::<Span<Angle>>();
     generates::<SymmetricMeasure>();
-    generates::<Limit<Length>>();
-    generates::<Limit<Angle>>();
     generates::<LimitOffset>();
-    generates::<Law<Length>>();
-    generates::<Law<FiniteReal>>();
     generates::<SectionCondition>();
     generates::<Support>();
     generates::<ProjectionDirection>();

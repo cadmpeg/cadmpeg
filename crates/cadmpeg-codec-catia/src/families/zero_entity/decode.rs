@@ -162,7 +162,7 @@ fn append_oriented_wire_curve(
                     CurveGeometry::Solved(geometry) => Some(geometry),
                 };
                 admission.charge()?;
-                ir.model.procedural_curves.push(procedural);
+                ir.geometry.procedural_curves.push(procedural);
                 CurveGeometry::Procedural {
                     construction: construction_id,
                     cache,
@@ -183,7 +183,7 @@ fn append_oriented_wire_curve(
     )?;
     annotations.derived(&curve_id, "geometry")?;
     admission.charge()?;
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id,
         geometry,
@@ -222,7 +222,7 @@ fn source_wire_procedural(
     let CurveGeometry::Procedural { construction, .. } = geometry else {
         return Ok(None);
     };
-    ir.model
+    ir.geometry
         .procedural_curves
         .iter()
         .find(|candidate| candidate.id == *construction)
@@ -343,11 +343,11 @@ fn transfer_closed_wire_loops(
                 annotations.derived(&point_id, "position")?;
                 annotations.derived(&vertex_id, "point")?;
                 admission.charge()?;
-                ir.model
+                ir.geometry
                     .points
                     .push(Point::new(point_id.clone(), start, None));
                 admission.charge()?;
-                ir.model.vertices.push(Vertex {
+                ir.geometry.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id,
                     tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
@@ -385,7 +385,7 @@ fn transfer_closed_wire_loops(
                     };
                     if !source_curve_geometries.contains_key(curve) {
                         let geometry = ir
-                            .model
+                            .geometry
                             .curves
                             .iter()
                             .find(|candidate| candidate.id == *curve)
@@ -498,7 +498,7 @@ fn transfer_closed_wire_loops(
                                         (procedural.as_ref(), source_procedural.as_ref())
                                     {
                                         if let Some(candidate) = ir
-                                            .model
+                                            .geometry
                                             .procedural_curves
                                             .iter_mut()
                                             .find(|candidate| {
@@ -514,7 +514,7 @@ fn transfer_closed_wire_loops(
                                         }
                                     } else {
                                         if let Some(candidate) = ir
-                                            .model
+                                            .geometry
                                             .curves
                                             .iter_mut()
                                             .find(|candidate| candidate.id == *curve)
@@ -567,7 +567,7 @@ fn transfer_closed_wire_loops(
                     (curve.clone(), None)
                 };
                 let param_range = param_range.and_then(|range| {
-                    ir.model
+                    ir.geometry
                         .curves
                         .iter()
                         .find(|candidate| candidate.id == curve_id)
@@ -594,7 +594,7 @@ fn transfer_closed_wire_loops(
                 annotations.derived(&edge_id, "start")?;
                 annotations.derived(&edge_id, "end")?;
                 admission.charge()?;
-                ir.model.edges.push(Edge {
+                ir.geometry.edges.push(Edge {
                     id: edge_id.clone(),
                     carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), param_range)
                         .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -614,7 +614,7 @@ fn transfer_closed_wire_loops(
             } else {
                 let regions = vec![region_id.clone()];
                 admission.charge()?;
-                ir.model.bodies.push(Body {
+                ir.geometry.bodies.push(Body {
                     id: body_id.clone(),
                     kind: BodyKind::Wire,
                     regions,
@@ -625,13 +625,13 @@ fn transfer_closed_wire_loops(
                 });
                 let shells = vec![shell_id.clone()];
                 admission.charge()?;
-                ir.model.regions.push(Region {
+                ir.geometry.regions.push(Region {
                     id: region_id.clone(),
                     body: body_id,
                     shells,
                 });
                 admission.charge()?;
-                ir.model.shells.push(
+                ir.geometry.shells.push(
                     match Shell::new(shell_id, region_id, Vec::new(), edge_ids, Vec::new()) {
                         Ok(shell) => shell,
                         Err(_) => {
@@ -691,7 +691,7 @@ fn transfer_closed_wire_loops(
         )?;
         let regions = vec![region_id.clone()];
         admission.charge()?;
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id: body_id.clone(),
             kind: BodyKind::Wire,
             regions,
@@ -702,13 +702,13 @@ fn transfer_closed_wire_loops(
         });
         let shells = vec![shell_id.clone()];
         admission.charge()?;
-        ir.model.regions.push(Region {
+        ir.geometry.regions.push(Region {
             id: region_id.clone(),
             body: body_id,
             shells,
         });
         admission.charge()?;
-        ir.model.shells.push(
+        ir.geometry.shells.push(
             match Shell::new(shell_id, region_id, Vec::new(), owned_edge_ids, Vec::new()) {
                 Ok(shell) => shell,
                 Err(_) => {
@@ -862,7 +862,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: id.clone(),
             geometry: surface.geometry,
             source_object: None,
@@ -890,7 +890,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                 if let Err(error) = admission.charge() {
                     return Some(Err(error));
                 }
-                ir.model.curves.push(Curve {
+                ir.geometry.curves.push(Curve {
                     parameter_range: None,
                     id: curve_id.clone(),
                     geometry,
@@ -909,7 +909,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                         continue;
                     };
                     let Some(surface_geometry) = ir
-                        .model
+                        .geometry
                         .surfaces
                         .iter()
                         .find(|candidate| candidate.id == surface)
@@ -980,7 +980,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             admitted!(annotations.derived(&construction_id, "curve").map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations.derived(&construction_id, "definition").map_err(cadmpeg_core::CodecError::from));
             admitted!(admission.charge());
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Procedural {
@@ -992,7 +992,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model
+            ir.geometry
                 .procedural_curves
                 .push(ProceduralCurve::new(construction_id, definition));
             support_curve_ids.insert(support.record_ordinal, curve_id);
@@ -1033,16 +1033,16 @@ pub(in crate::families) fn try_decode_zero_entity(
             _ => {
                 // Only source carriers precede this transfer. Remove its
                 // speculative topology before the wire fallback uses them.
-                candidate_ir.model.bodies.clear();
-                candidate_ir.model.regions.clear();
-                candidate_ir.model.shells.clear();
-                candidate_ir.model.faces.clear();
-                candidate_ir.model.loops.clear();
-                candidate_ir.model.coedges.clear();
-                candidate_ir.model.edges.clear();
-                candidate_ir.model.vertices.clear();
-                candidate_ir.model.points.clear();
-                candidate_ir.model.pcurves.clear();
+                candidate_ir.geometry.bodies.clear();
+                candidate_ir.geometry.regions.clear();
+                candidate_ir.geometry.shells.clear();
+                candidate_ir.geometry.faces.clear();
+                candidate_ir.geometry.loops.clear();
+                candidate_ir.geometry.coedges.clear();
+                candidate_ir.geometry.edges.clear();
+                candidate_ir.geometry.vertices.clear();
+                candidate_ir.geometry.points.clear();
+                candidate_ir.geometry.pcurves.clear();
                 ir = candidate_ir;
                 None
             },
@@ -1173,7 +1173,7 @@ mod tests {
         let first = Point3::new(0.0, 0.0, 0.0);
         let corner = Point3::new(1.0, 0.0, 0.0);
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -1188,7 +1188,7 @@ mod tests {
             )),
             source_object: None,
         });
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1272,7 +1272,7 @@ mod tests {
 
         assert_eq!(counts.edges, 2);
         assert_eq!(
-            ir.model.edges[0]
+            ir.geometry.edges[0]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 1.0])
@@ -1291,7 +1291,7 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: CurveId::mint(format!("catia:test:curve#{index}")).expect("identity grammar"),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1415,30 +1415,30 @@ mod tests {
         assert_eq!(counts.vertices, 4);
         assert_eq!(counts.points, 4);
         assert_eq!(
-            ir.model.bodies[0].id,
+            ir.geometry.bodies[0].id,
             BodyId::mint("catia:zero-entity:owned-wire-body#8".to_string())
                 .expect("identity grammar")
         );
-        assert!(matches!(ir.model.bodies[0].kind, BodyKind::Wire));
-        assert_eq!(ir.model.shells[0].wire_edges().len(), 4);
+        assert!(matches!(ir.geometry.bodies[0].kind, BodyKind::Wire));
+        assert_eq!(ir.geometry.shells[0].wire_edges().len(), 4);
         assert_eq!(
-            ir.model.edges[0]
+            ir.geometry.edges[0]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 1.0])
         );
         assert_eq!(
-            ir.model.edges[1]
+            ir.geometry.edges[1]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 1.0])
         );
         assert_eq!(
-            ir.model.edges[1].curve().cloned(),
+            ir.geometry.edges[1].curve().cloned(),
             Some(CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
         );
         assert!(matches!(ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id
@@ -1450,14 +1450,14 @@ mod tests {
                 origin == corner && direction == Vector3::new(-1.0, 0.0, 0.0)
             }));
         assert_eq!(
-            ir.model.edges[2].curve().cloned(),
+            ir.geometry.edges[2].curve().cloned(),
             Some(
                 CurveId::mint("catia:zero-entity:wire-curve#1-2-6-0".to_string())
                     .expect("identity grammar")
             )
         );
         assert_eq!(
-            ir.model.edges[3].curve().cloned(),
+            ir.geometry.edges[3].curve().cloned(),
             Some(
                 CurveId::mint("catia:zero-entity:wire-curve#1-2-6-1".to_string())
                     .expect("identity grammar")
@@ -1479,7 +1479,7 @@ mod tests {
         let corner = Point3::new(end_angle.cos(), end_angle.sin(), 0.0);
         let chord = first.distance(corner);
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: CurveId::mint("catia:test:circle#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -1493,7 +1493,7 @@ mod tests {
             )),
             source_object: None,
         });
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1580,13 +1580,13 @@ mod tests {
 
         assert_eq!(counts.loops, 1);
         assert_eq!(
-            ir.model.edges[0]
+            ir.geometry.edges[0]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([start_angle, end_angle])
         );
         assert_eq!(
-            ir.model.edges[1]
+            ir.geometry.edges[1]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, chord])
@@ -1626,7 +1626,7 @@ mod tests {
             .unwrap(),
         );
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Procedural {
@@ -1635,7 +1635,7 @@ mod tests {
             },
             source_object: None,
         });
-        ir.model
+        ir.geometry
             .add_procedural_curve(
                 &curve_id,
                 ProceduralCurve::new(construction_id.clone(), definition.clone()),
@@ -1703,26 +1703,29 @@ mod tests {
         assert_eq!(counts.loops, 1);
         assert_eq!(counts.edges, 2);
         assert_eq!(
-            ir.model.edges[0]
+            ir.geometry.edges[0]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 1.0])
         );
         assert_eq!(
-            ir.model.edges[1]
+            ir.geometry.edges[1]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 1.0])
         );
-        assert_eq!(ir.model.edges[0].curve().cloned(), Some(curve_id.clone()));
+        assert_eq!(
+            ir.geometry.edges[0].curve().cloned(),
+            Some(curve_id.clone())
+        );
         let derived_curve_id = CurveId::mint("catia:zero-entity:wire-curve#1-2-3-1".to_string())
             .expect("identity grammar");
         assert_eq!(
-            ir.model.edges[1].curve().cloned(),
+            ir.geometry.edges[1].curve().cloned(),
             Some(derived_curve_id.clone())
         );
         let source_definition = ir
-            .model
+            .geometry
             .procedural_curves
             .iter()
             .find(|construction| construction.id == construction_id)
@@ -1731,7 +1734,7 @@ mod tests {
             .clone();
         assert_ne!(source_definition, definition);
         let derived_construction = match &ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == derived_curve_id)
@@ -1743,7 +1746,7 @@ mod tests {
         };
         assert_ne!(derived_construction, construction_id);
         assert_eq!(
-            ir.model
+            ir.geometry
                 .procedural_curves
                 .iter()
                 .find(|construction| construction.id == derived_construction)
@@ -1814,7 +1817,7 @@ mod tests {
         .expect("valid exactness fields");
 
         assert_eq!(counts, WireTransferCounts::default());
-        assert!(ir.model.bodies.is_empty());
+        assert!(ir.geometry.bodies.is_empty());
     }
 
     #[test]

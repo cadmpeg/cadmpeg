@@ -17,7 +17,7 @@ fn visualization_refuses_coordinate(coordinate: f64, axis: usize) -> bool {
         let mut ir = CadIr::empty();
         let mut coordinates = [0.0; 3];
         coordinates[axis] = coordinate;
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint("catia:test:point#numeric-range").expect("identity grammar"),
             FinitePoint3::new(Point3::new(coordinates[0], coordinates[1], coordinates[2]))
                 .expect("finite point"),

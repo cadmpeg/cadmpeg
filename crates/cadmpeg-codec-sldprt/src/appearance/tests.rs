@@ -325,7 +325,7 @@ fn unresolved_feature_scope_keeps_source_bound_display_colour() {
     assert_eq!(binding.object_type.as_deref(), Some("DisplayFace"));
     assert!(result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .all(|face| face.color.is_none()));
@@ -364,7 +364,7 @@ fn decode_retains_visual_property_without_fabricating_body_ownership() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.ir().model.bodies[0].color.is_none());
+    assert!(result.ir().geometry.bodies[0].color.is_none());
     let color = result.ir().model.appearances[0].base_color.unwrap();
     assert!((color.r() - 32.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.g() - 64.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
@@ -392,13 +392,13 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
     assert!(result.ir().model.appearance_bindings.is_empty());
     assert!(result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .all(|body| body.color.is_none() && body.name.is_none()));
 
-    let moved = result.ir_mut().model.points[0].position().get();
-    result.ir_mut().model.points[0].set_position(
+    let moved = result.ir_mut().geometry.points[0].position().get();
+    result.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,

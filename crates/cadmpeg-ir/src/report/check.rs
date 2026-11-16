@@ -170,7 +170,6 @@ pub struct Finding {
     pub entity: Option<String>,
     /// Other document entities a finding about `entity` involves, in message
     /// order. Empty when `entity` is absent.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub related: Vec<String>,
 }
 
@@ -185,7 +184,6 @@ pub struct ValidationReport {
     /// Findings, in discovery order.
     pub findings: Vec<Finding>,
     /// Loss notes supplied to validation.
-    #[serde(default)]
     pub losses: Vec<LossNote>,
 }
 
@@ -221,12 +219,13 @@ mod tests {
     use crate::report::Severity;
 
     #[test]
-    fn finding_without_related_omits_the_key() -> Result<(), serde_json::Error> {
+    fn finding_without_related_writes_an_empty_list() -> Result<(), serde_json::Error> {
         let wire = serde_json::json!({
             "check": "referential_integrity",
             "severity": "error",
             "message": "invalid reference",
-            "entity": "test:model:feature#consumer"
+            "entity": "test:model:feature#consumer",
+            "related": []
         });
         let finding: Finding = serde_json::from_value(wire.clone())?;
         assert!(finding.related.is_empty());

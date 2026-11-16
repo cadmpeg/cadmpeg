@@ -442,7 +442,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let mut shared_carrier_lines = std::collections::BTreeMap::new();
     {
-        let model_surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
+        let model_surfaces = ModelSurfaceIndex::new(&ir.geometry.surfaces);
         for row in
             crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id)
         {
@@ -541,7 +541,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             continue;
         };
         let id = curve_id;
-        if ir.model.curves.iter().any(|curve| curve.id == id) {
+        if ir.geometry.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
         annotate(
@@ -683,7 +683,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             continue;
         };
         let geometry = |surface_id| {
-            exactly_one(ir.model.surfaces.iter().filter(|surface| {
+            exactly_one(ir.geometry.surfaces.iter().filter(|surface| {
                 crate::identity::matches_numbered_identity(
                     surface.id.as_str(),
                     "creo:visibgeom:surface#",
@@ -750,7 +750,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         };
         let id =
             crate::identity::compose_checked::<CurveId>(&crate::identity::VISIBGEOM_CURVE, row.id)?;
-        if ir.model.curves.iter().any(|curve| curve.id == id) {
+        if ir.geometry.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
         annotate(
@@ -950,7 +950,7 @@ mod tests {
             offset: 0,
         };
         let mut ir = CadIr::empty();
-        ir.model.surfaces.extend([1, 2].map(|id| {
+        ir.geometry.surfaces.extend([1, 2].map(|id| {
             Surface {
                 id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
                     .expect("identity grammar"),
@@ -970,7 +970,7 @@ mod tests {
             super::mapped_cylinder_generator_paths(
                 ctx,
                 &scan,
-                &crate::decode::analytic::pcurves::ModelSurfaceIndex::new(&ir.model.surfaces),
+                &crate::decode::analytic::pcurves::ModelSurfaceIndex::new(&ir.geometry.surfaces),
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
                 &row,
             )
@@ -1094,7 +1094,7 @@ mod tests {
         ];
 
         let mut ir = CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
                     .expect("identity grammar"),
@@ -1147,7 +1147,7 @@ mod tests {
             ])
         );
         assert!(matches!(ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id
@@ -1239,11 +1239,11 @@ mod tests {
             source_object: None,
         };
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(extrusion.clone());
+        ir.geometry.surfaces.push(extrusion.clone());
         if duplicate_extrusion {
-            ir.model.surfaces.push(extrusion);
+            ir.geometry.surfaces.push(extrusion);
         }
-        ir.model.surfaces.push(plane);
+        ir.geometry.surfaces.push(plane);
         (scan, ir)
     }
 
@@ -1265,7 +1265,7 @@ mod tests {
         .expect("transfer should not fail");
 
         assert!(result.ids.is_empty());
-        assert!(ir.model.curves.is_empty());
+        assert!(ir.geometry.curves.is_empty());
     }
 
     #[test]

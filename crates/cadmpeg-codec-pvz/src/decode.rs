@@ -15,7 +15,8 @@ use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, EntityRewrite, Model, SourceMeta};
+use cadmpeg_ir::document::{CadIr, EntityRewrite, SourceMeta, Topology};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
@@ -28,8 +29,6 @@ use crate::pvs::Structure;
 
 /// Source attribute naming the structure member.
 const ATTRIBUTE_STRUCTURE_MEMBER: &str = "structure_member";
-/// Source attribute counting the geometry members.
-const ATTRIBUTE_GEOMETRY_MEMBERS: &str = "geometry_member_count";
 
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let package = Package::open(ctx, root)?;
@@ -40,17 +39,10 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         .into_iter()
         .chain(classification.loss())
         .collect();
-    let geometry_members = package.geometry_names().len();
-    let attributes = BTreeMap::from([
-        (
-            cadmpeg_core::nonblank_const!(ATTRIBUTE_STRUCTURE_MEMBER),
-            package.structure_name().to_owned(),
-        ),
-        (
-            cadmpeg_core::nonblank_const!(ATTRIBUTE_GEOMETRY_MEMBERS),
-            geometry_members.to_string(),
-        ),
-    ]);
+    let attributes = BTreeMap::from([(
+        cadmpeg_core::nonblank_const!(ATTRIBUTE_STRUCTURE_MEMBER),
+        package.structure_name().to_owned(),
+    )]);
     let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(classification.into_matched()),
         attributes,
@@ -72,9 +64,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => losses.push(PvzLossCode::StructureMemberMalformed.note(format!(
                 "the .pvs structure member {} did not decode ({error}); the package carries no \
-                 product structure, and none of its {geometry_members} .ol geometry members \
-                 was placed",
-                package.structure_name()
+                 product structure, and none of its {} .ol geometry members was placed",
+                package.structure_name(),
+                package.geometry_names().len(),
             ))),
         }
     }
@@ -84,7 +76,10 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             losses,
             ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), geometry_transferred))
         },
-        source_fidelity: SourceFidelity::with_annotations(annotations),
+        source_fidelity: SourceFidelity::with_annotations(
+            annotations,
+            Sha256Digest::digest(root.window()),
+        ),
     })
 }
 
@@ -156,7 +151,7 @@ fn decode_model(
         transferred |= ir.model.tessellations.len() > meshes;
         for extra in exact.iter().skip(1) {
             if let Some(written) = ir
-                .model
+                .geometry
                 .bodies
                 .iter_mut()
                 .rev()
@@ -224,7 +219,7 @@ fn exact_geometry(
             return Ok(Vec::new());
         }
     };
-    let mut model = Model::default();
+    let mut geometry = Topology::default();
     let mut builder = AnnotationBuilder::new();
     let mut notes = Vec::new();
     let stream = StreamHandle::new(
@@ -238,7 +233,7 @@ fn exact_geometry(
                 &stream_model,
                 &crate::ids::member_scope(name),
                 &mut crate::brep::emit::Sink {
-                    model: &mut model,
+                    geometry: &mut geometry,
                     annotations: &mut builder,
                     losses: &mut notes,
                     stream: &stream,
@@ -248,7 +243,7 @@ fn exact_geometry(
         });
     match emitted {
         Ok(bodies) => {
-            ir.model.extend_rewritten(model, &mut Unchanged)?;
+            ir.geometry.extend_rewritten(geometry, &mut Unchanged)?;
             annotations.append(builder.build())?;
             losses.extend(notes);
             Ok(bodies)

@@ -131,18 +131,20 @@ impl<'de> Deserialize<'de> for Bundle {
 /// A row address within a document projection.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Row {
-    /// Model or native arena JSON pointer.
+    /// Neutral or native arena JSON pointer.
     pub arena: String,
     /// Position within the array.
     pub index: usize,
 }
 
-/// Index every model and native arena row.
+/// Index every neutral and native arena row.
 pub fn rows(value: &Value) -> Vec<Row> {
     let mut rows = Vec::new();
-    if let Some(model) = value["model"].as_object() {
-        for (name, arena) in model {
-            add_rows(&mut rows, &format!("/model/{name}"), arena);
+    for home in crate::document::ArenaHome::ALL {
+        if let Some(arenas) = value[home.as_str()].as_object() {
+            for (name, arena) in arenas {
+                add_rows(&mut rows, &format!("/{home}/{name}"), arena);
+            }
         }
     }
     if let Some(native) = value["native"].as_object() {
@@ -225,7 +227,7 @@ pub fn projection_size(document: &Document, options: &CutOptions) -> Result<usiz
 }
 
 fn project(document: &Document, options: &CutOptions) -> Result<LimitedProjection, CodecError> {
-    let mut count = document.model.entity_count();
+    let mut count = document.entity_count();
     for namespace in document.native.0.values() {
         for arena in namespace.arenas().values() {
             count = count

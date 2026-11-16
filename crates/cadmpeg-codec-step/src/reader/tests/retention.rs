@@ -73,8 +73,8 @@ fn retention_reference_index_reuses_transferred_carrier_ownership() {
         .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
         .expect("owned coordinate");
     let ir = decoded.ir();
-    assert_eq!(ir.model.points.len(), 1);
-    assert!(ir.model.points[0].source_object.is_some());
+    assert_eq!(ir.geometry.points.len(), 1);
+    assert!(ir.geometry.points[0].source_object.is_some());
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("carrier references");

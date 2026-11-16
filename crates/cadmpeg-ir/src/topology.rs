@@ -156,7 +156,6 @@ pub struct Body {
     /// Arena id.
     pub id: BodyId,
     /// The dimensional kind of topology contained by the body.
-    #[serde(default)]
     pub kind: BodyKind,
     /// Constituent regions.
     pub regions: Vec<RegionId>,
@@ -498,7 +497,7 @@ impl Face {
 /// produce one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "classification", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum FaceLoops {
     /// The source did not classify outer versus inner; loops keep source order.
@@ -670,7 +669,6 @@ pub enum LoopBoundary {
         /// Referenced pole vertex.
         vertex: VertexId,
         /// Ordered parameter-space images associated with the pole.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pcurves: Vec<PcurveUse>,
     },
     /// An ordered coedge ring and its anchored pole occurrences.
@@ -695,7 +693,6 @@ impl std::error::Error for LoopRingError {}
 #[serde(try_from = "LoopRingWire")]
 pub struct LoopRing {
     coedges: Vec<CoedgeId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     vertex_uses: Vec<AnchoredVertexUse>,
 }
 
@@ -706,7 +703,6 @@ struct LoopRingWire {
     /// Coedges in source traversal order.
     coedges: Vec<CoedgeId>,
     /// Pole occurrences in source traversal order.
-    #[serde(default)]
     vertex_uses: Vec<AnchoredVertexUse>,
 }
 
@@ -953,7 +949,6 @@ pub struct AnchoredVertexUse {
     /// Preceding coedge in the cyclic traversal.
     pub after: CoedgeId,
     /// Ordered parameter-space images associated with this pole occurrence.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
 }
 
@@ -976,7 +971,6 @@ pub struct Coedge {
     /// Direction relative to the edge curve.
     pub sense: Sense,
     /// Ordered parameter-space images of this coedge on the face surface.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
     /// Optional coedge-local 3D carrier used instead of the shared edge curve.
     #[serde(
@@ -1590,12 +1584,10 @@ mod tests {
 
         for wire in [
             serde_json::json!({
-                "classification": "unspecified",
-                "loops": ["t:b:loop#1", "t:b:loop#2"]
+                "kind": "unspecified", "loops": ["t:b:loop#1", "t:b:loop#2"]
             }),
             serde_json::json!({
-                "classification": "classified",
-                "outer": "t:b:loop#1",
+                "kind": "classified", "outer": "t:b:loop#1",
                 "inner": ["t:b:loop#2"]
             }),
         ] {
@@ -1607,7 +1599,7 @@ mod tests {
         // refused for the missing key, so it is not a second spelling of an
         // unclassified face.
         let error = serde_json::from_value::<FaceLoops>(
-            serde_json::json!({"classification": "classified", "inner": ["t:b:loop#2"]}),
+            serde_json::json!({"kind": "classified", "inner": ["t:b:loop#2"]}),
         )
         .unwrap_err()
         .to_string();
@@ -1661,7 +1653,7 @@ mod tests {
 
         let mut edge = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model
+            .geometry
             .edges
             .remove(0);
         let curve = edge.curve().cloned().expect("the cube edges have carriers");
@@ -1696,7 +1688,7 @@ mod tests {
 
         let mut edge = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model
+            .geometry
             .edges
             .remove(0);
         let interval = ParameterInterval::new([-1.5, 2.0]).expect("ordered");
@@ -1730,7 +1722,7 @@ mod tests {
     fn edge_parameter_edits_commit_only_valid_pairs() {
         let mut edge = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model
+            .geometry
             .edges
             .remove(0);
         let original = edge.clone();
@@ -2019,7 +2011,7 @@ mod tests {
             "use_curve": {
                 "curve": "test:model:curve#0",
                 "parameter_range": [0.25, 0.75]
-            }
+            }, "pcurves": []
         })
     }
 
@@ -2060,10 +2052,10 @@ mod tests {
 
     #[test]
     fn a_coedge_states_no_ring_neighbor_and_its_loop_order_survives_a_round_trip() {
-        let model = crate::examples::unit_cube()
+        let geometry = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model;
-        let coedge = &model.coedges[0];
+            .geometry;
+        let coedge = &geometry.coedges[0];
         let wire = serde_json::to_value(coedge).unwrap();
         assert!(wire.get("next").is_none(), "{wire}");
         assert!(wire.get("previous").is_none(), "{wire}");
@@ -2076,9 +2068,9 @@ mod tests {
         assert!(error.contains("next"), "{error}");
         assert_eq!(&serde_json::from_value::<Coedge>(wire).unwrap(), coedge);
 
-        let before = coedge_ring_neighbors(&model.loops, coedge).expect("a ring neighbor pair");
-        let round_tripped: crate::document::Model =
-            serde_json::from_value(serde_json::to_value(&model).unwrap()).unwrap();
+        let before = coedge_ring_neighbors(&geometry.loops, coedge).expect("a ring neighbor pair");
+        let round_tripped: crate::document::Topology =
+            serde_json::from_value(serde_json::to_value(&geometry).unwrap()).unwrap();
         let after = coedge_ring_neighbors(&round_tripped.loops, &round_tripped.coedges[0])
             .expect("a ring neighbor pair");
         assert_eq!(before, after);
@@ -2125,7 +2117,8 @@ mod tests {
             "face": "test:model:face#0",
             "boundary": {
                 "kind": "vertex",
-                "vertex": "test:model:vertex#0"
+                "vertex": "test:model:vertex#0",
+                "pcurves": []
             }
         });
         let loop_: Loop = serde_json::from_value(json.clone()).unwrap();
@@ -2147,7 +2140,8 @@ mod tests {
                 "coedges": ["test:model:coedge#0"],
                 "vertex_uses": [{
                     "vertex": "test:model:vertex#0",
-                    "after": "test:model:coedge#0"
+                    "after": "test:model:coedge#0",
+                    "pcurves": []
                 }]
             }
         });
@@ -2178,7 +2172,7 @@ mod tests {
             "boundary": {
                 "kind": "ring",
                 "coedges": ["test:model:coedge#0"],
-                "vertex_uses": [{ "vertex": "test:model:vertex#0" }]
+                "vertex_uses": [{ "vertex": "test:model:vertex#0", "pcurves": [] }]
             }
         });
         assert!(serde_json::from_value::<Loop>(ring_without_anchor).is_err());
@@ -2200,19 +2194,16 @@ mod tests {
 
     #[test]
     fn a_classified_face_states_its_outer_loop_once() {
-        let mut model = crate::examples::unit_cube()
+        let mut geometry = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model;
-        let face = &mut model.faces[0];
+            .geometry;
+        let face = &mut geometry.faces[0];
         let mut members = face.loops.iter().cloned();
         let outer = members.next().expect("a cube face states a loop");
         let inner = members.collect();
         face.loops = FaceLoops::classified(outer.clone(), inner);
         let wire = serde_json::to_value(&*face).unwrap();
-        assert_eq!(
-            wire["loops"]["classification"],
-            serde_json::json!("classified")
-        );
+        assert_eq!(wire["loops"]["kind"], serde_json::json!("classified"));
         assert_eq!(wire["loops"]["outer"], serde_json::json!(outer.as_str()));
         assert!(wire["loops"].get("loops").is_none());
         let restored: Face = serde_json::from_value(wire).unwrap();
@@ -2232,16 +2223,13 @@ mod tests {
 
     #[test]
     fn an_unclassified_face_states_its_loops_in_source_order() {
-        let model = crate::examples::unit_cube()
+        let geometry = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model;
-        let face = &model.faces[0];
+            .geometry;
+        let face = &geometry.faces[0];
         assert!(matches!(face.loops, FaceLoops::Unspecified { .. }));
         let wire = serde_json::to_value(face).unwrap();
-        assert_eq!(
-            wire["loops"]["classification"],
-            serde_json::json!("unspecified")
-        );
+        assert_eq!(wire["loops"]["kind"], serde_json::json!("unspecified"));
         assert!(wire["loops"].get("outer").is_none());
         assert_eq!(
             wire["loops"]["loops"]
@@ -2257,25 +2245,23 @@ mod tests {
     #[test]
     fn a_face_states_either_a_classification_or_a_loop_order() {
         for wire in [
-            serde_json::json!({"classification": "classified", "outer": "test:model:loop#0", "inner": []}),
-            serde_json::json!({"classification": "unspecified", "loops": ["test:model:loop#0"]}),
+            serde_json::json!({"kind": "classified", "outer": "test:model:loop#0", "inner": []}),
+            serde_json::json!({"kind": "unspecified", "loops": ["test:model:loop#0"]}),
         ] {
             let loops: FaceLoops = serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(&loops).unwrap(), wire);
         }
         // Mixing the two arms' keys names no shape.
         assert!(serde_json::from_value::<FaceLoops>(serde_json::json!({
-            "classification": "classified",
-            "outer": "test:model:loop#0",
+            "kind": "classified", "outer": "test:model:loop#0",
             "loops": ["test:model:loop#0"]
         }))
         .is_err());
         // A face with no boundary has a spelling: nx, sat, step and freecad
         // each produce one, so `loops` is a plain list.
         let none: FaceLoops =
-            serde_json::from_value(serde_json::json!({"classification": "unspecified",
-                "loops": []}))
-            .unwrap();
+            serde_json::from_value(serde_json::json!({"kind": "unspecified", "loops": []}))
+                .unwrap();
         assert!(none.is_empty());
     }
 
@@ -2303,8 +2289,7 @@ mod tests {
             "surface": "test:model:surface#0",
             "sense": "forward",
             "loops": {
-                "classification": "classified",
-                "outer": ["test:model:loop#0", "test:model:loop#1"],
+                "kind": "classified", "outer": ["test:model:loop#0", "test:model:loop#1"],
                 "inner": []
             }
         });
@@ -2319,8 +2304,7 @@ mod tests {
             "surface": "test:model:surface#0",
             "sense": "forward",
             "loops": {
-                "classification": "classified",
-                "outer": "test:model:loop#0",
+                "kind": "classified", "outer": "test:model:loop#0",
                 "inner": [],
                 "zz_bogus": 1
             }
@@ -2337,7 +2321,7 @@ mod tests {
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary_role": "outer",
-            "boundary": { "kind": "vertex", "vertex": "test:model:vertex#0" }
+            "boundary": { "kind": "vertex", "vertex": "test:model:vertex#0", "pcurves": [] }
         });
         let error = serde_json::from_value::<Loop>(wire)
             .unwrap_err()

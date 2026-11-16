@@ -76,18 +76,23 @@ fn lateral_ellipse_certificate_bounds_the_complete_carrier_and_its_projection() 
 }
 
 fn prism_topology() -> AsmHistoricalTopology {
+    prism_over(1.0)
+}
+
+/// A prism of height 2 over the rectangle from the origin to `(width, 1)`.
+pub(in crate::design::profile_select) fn prism_over(width: f64) -> AsmHistoricalTopology {
     use crate::history_records::{
         AsmHistoricalCurveAxis, AsmHistoricalEdge, AsmHistoricalOptionalCarrierBinding,
         AsmHistoricalPoint,
     };
     let points = [
         Point3::new(0.0, 0.0, 0.0),
-        Point3::new(1.0, 0.0, 0.0),
-        Point3::new(1.0, 1.0, 0.0),
+        Point3::new(width, 0.0, 0.0),
+        Point3::new(width, 1.0, 0.0),
         Point3::new(0.0, 1.0, 0.0),
         Point3::new(0.0, 0.0, 2.0),
-        Point3::new(1.0, 0.0, 2.0),
-        Point3::new(1.0, 1.0, 2.0),
+        Point3::new(width, 0.0, 2.0),
+        Point3::new(width, 1.0, 2.0),
         Point3::new(0.0, 1.0, 2.0),
     ];
     let facets = [

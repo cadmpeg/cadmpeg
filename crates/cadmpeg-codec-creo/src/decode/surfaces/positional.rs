@@ -101,7 +101,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 &crate::identity::VISIBGEOM_SURFACE,
                 row.id,
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
             let Ok(sphere_surface) = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -209,7 +209,7 @@ pub(in super::super) fn transfer_positional_tori(
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         let Some(section) = scan
@@ -319,7 +319,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             record.surface_id,
         )?;
         if ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id == surface_id)
@@ -561,7 +561,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             replay.surface_id,
         )?;
         if ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id == surface_id)

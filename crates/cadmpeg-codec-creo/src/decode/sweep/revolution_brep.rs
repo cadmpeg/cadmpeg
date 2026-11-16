@@ -272,7 +272,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             continue;
         };
         let body_id: BodyId = revolution_identity(feature_id, "body")?;
-        if ir.model.bodies.iter().any(|body| body.id == body_id) {
+        if ir.geometry.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
         let region_id: RegionId = revolution_identity(feature_id, "region")?;
@@ -397,7 +397,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 )?;
                 let ring_coedges = vec![coedge_id.clone()];
                 ctx.charge_entities(1, "admit Creo model loops")?;
-                ir.model.loops.push(IrLoop {
+                ir.geometry.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -455,10 +455,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             continue;
         };
         ctx.charge_entities(1, "admit Creo model shells")?;
-        ir.model.shells.push(shell);
+        ir.geometry.shells.push(shell);
         let region_shells = vec![shell_id];
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.model.regions.push(Region {
+        ir.geometry.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: region_shells,

@@ -14,6 +14,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::io::{Cursor, Write};
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::loss::LossKind;
 use zip::CompressionMethod;
@@ -92,8 +93,19 @@ fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
         "FusionAssetName[Active]/Breps.BlobParts/BREP1.sat",
     ]);
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .decode(&mut Cursor::new(archive.clone()), &DecodeOptions::default())
         .unwrap();
+    assert_eq!(source_image_marks(&decoded), [ArenaClass::Model]);
+    let container_only = F3dCodec
+        .decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(source_image_marks(&container_only), [ArenaClass::Model]);
     let message = |code: LossKind| {
         let loss = decoded
             .report()
@@ -177,10 +189,10 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
         kernel.declared()["carrier"],
         "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"
     );
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
-    assert_eq!(decoded.ir().model.surfaces.len(), 1);
-    let surface = &decoded.ir().model.surfaces[0];
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.surfaces.len(), 1);
+    let surface = &decoded.ir().geometry.surfaces[0];
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
@@ -463,8 +475,8 @@ fn empty_model_maps_do_not_decode_or_blame_a_sketch_snapshot() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir().model.bodies.is_empty());
-    assert!(decoded.ir().model.curves.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
+    assert!(decoded.ir().geometry.curves.is_empty());
     let geometry = decoded
         .report()
         .losses
@@ -514,4 +526,21 @@ fn model_brep_reports_distinguish_failed_and_successful_empty_decodes() {
             .iter()
             .all(|loss| loss.code != F3dLossCode::MissingGeometryStream.kind()));
     }
+}
+
+fn source_image_marks(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<ArenaClass> {
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded.clone());
+    let fidelity = decoded.source_fidelity();
+    let marks = fidelity
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .expect("the source image is retained")
+        .untyped()
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fidelity.unrepresented().into_iter().collect::<Vec<_>>(),
+        marks
+    );
+    marks
 }

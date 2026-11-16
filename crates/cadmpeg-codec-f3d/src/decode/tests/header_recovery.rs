@@ -32,7 +32,7 @@ fn malformed_smt_metadata_keeps_geometry_and_reports_recovery() {
             .unwrap()
     };
     let expected = decode(original);
-    assert_eq!(expected.ir().model.faces.len(), 1);
+    assert_eq!(expected.ir().geometry.faces.len(), 1);
     for source in [
         original.replace("9 Synthetic", ""),
         original.replace(
@@ -47,6 +47,7 @@ fn malformed_smt_metadata_keeps_geometry_and_reports_recovery() {
         original.replacen(" 0 2 2", " invalid 2 2", 1),
     ] {
         let recovered = decode(&source);
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert!(recovered.report().losses.iter().any(|loss| loss.code
             == crate::loss::F3dLossCode::TextHeaderNoncanonical
@@ -85,12 +86,13 @@ fn binary_product_encoding_recovery_keeps_independent_geometry() {
             .unwrap()
     };
     let expected = decode(&original);
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     let mut cursor = 47; // ASM BinaryFile8 fixed words; docs/layouts/asm.toml.
     for _ in 0..3 {
         let mut source = original.clone();
         source[cursor + 2] = 0xff;
         let recovered = decode(&source);
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_eq!(recovered.ir().tolerances, expected.ir().tolerances);
         assert!(recovered.report().losses.iter().any(
@@ -118,6 +120,7 @@ fn smt_tolerance_overflow_in_document_units_keeps_geometry() {
     };
     let expected = decode(&original);
     let recovered = decode(&modified);
+    assert_eq!(recovered.ir().geometry, expected.ir().geometry);
     assert_eq!(recovered.ir().model, expected.ir().model);
     assert_eq!(
         recovered.ir().tolerances.linear,
@@ -149,7 +152,7 @@ fn invalid_binary_kernel_tolerances_keep_independent_geometry() {
             .unwrap()
     };
     let expected = decode(&original);
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     // The header builder ends with three tagged doubles; each payload is 8 bytes.
     let header_end = smbh_header_prefix().len();
     for (offset, values) in [
@@ -163,6 +166,7 @@ fn invalid_binary_kernel_tolerances_keep_independent_geometry() {
             let mut modified = original.clone();
             modified[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
             let recovered = decode(&modified);
+            assert_eq!(recovered.ir().geometry, expected.ir().geometry);
             assert_eq!(recovered.ir().model, expected.ir().model);
             assert!(recovered.report().losses.iter().any(|loss| loss.code
                 == crate::loss::F3dLossCode::KernelHeaderToleranceUnresolved.kind()));
@@ -225,6 +229,7 @@ fn manifest_metadata_recovery_preserves_geometry_and_exact_archive() {
                 .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
                 .unwrap(),
         );
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert!(recovered
             .report()

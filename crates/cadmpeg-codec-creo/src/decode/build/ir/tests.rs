@@ -215,7 +215,7 @@ fn positional_plane_cross_overflow_refuses_at_ir_transfer() {
         )
         .expect_err("finite plane support cross overflows the frame");
         assert!(matches!(error, CodecError::NotImplemented(_)));
-        assert!(ir.model.surfaces.is_empty());
+        assert!(ir.geometry.surfaces.is_empty());
     });
 }
 
@@ -244,7 +244,7 @@ fn positional_plane_missing_slots_remain_unplaced() {
             &mut SourceUnitCarriers::default(),
         )
         .expect("a missing support slot does not define a frame");
-        assert!(ir.model.surfaces.is_empty());
+        assert!(ir.geometry.surfaces.is_empty());
     });
 }
 
@@ -281,7 +281,11 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
     });
     let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
-    )) = ir.model.surfaces.first().map(|surface| &surface.geometry)
+    )) = ir
+        .geometry
+        .surfaces
+        .first()
+        .map(|surface| &surface.geometry)
     else {
         panic!("placed plane was not admitted");
     };
@@ -298,7 +302,11 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
     assert_eq!(source_plane.origin, [1.0, 0.0, 0.0]);
     let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
-    )) = ir.model.surfaces.first().map(|surface| &surface.geometry)
+    )) = ir
+        .geometry
+        .surfaces
+        .first()
+        .map(|surface| &surface.geometry)
     else {
         panic!("placed plane changed family");
     };
@@ -387,7 +395,7 @@ fn placed_plane_scaled_origin_overflow_refuses_unrepresentable_ir() {
         .expect_err("the millimeter plane origin is not representable");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
     });
-    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
 }
 
 fn inch_datum_plane(offset: f64) -> ContainerScan<'static> {
@@ -419,7 +427,7 @@ fn datum_plane_origin_is_in_millimeters_at_ir_admission() {
         transfer_datum_plane_surfaces(ctx, &scan, &mut ir, &mut annotations, &mut source_carriers)
             .expect("datum plane transfer");
     });
-    let surface = ir.model.surfaces.first().expect("datum surface");
+    let surface = ir.geometry.surfaces.first().expect("datum surface");
     let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
     ) = &surface.geometry
@@ -436,7 +444,7 @@ fn datum_plane_origin_is_in_millimeters_at_ir_admission() {
     assert_eq!(source_plane.origin().get(), Point3::new(1.0, 0.0, 0.0));
     let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
-    ) = &ir.model.surfaces[0].geometry
+    ) = &ir.geometry.surfaces[0].geometry
     else {
         panic!("datum plane changed family");
     };
@@ -460,7 +468,7 @@ fn datum_plane_scaled_origin_overflow_refuses_unrepresentable_ir() {
         .expect_err("millimeter datum origin cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
     });
-    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
 }
 
 #[test]
@@ -489,7 +497,7 @@ fn reference_line_origin_is_in_millimeters_at_ir_admission() {
         )
         .expect("reference line transfer");
     });
-    let curve = ir.model.curves.first().expect("reference line");
+    let curve = ir.geometry.curves.first().expect("reference line");
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &curve.geometry else {
         panic!("reference line changed family");
     };
@@ -500,7 +508,7 @@ fn reference_line_origin_is_in_millimeters_at_ir_admission() {
         panic!("source reference line changed family");
     };
     assert_eq!(source_line.origin().get(), Point3::new(1.0, 0.0, 0.0));
-    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &ir.model.curves[0].geometry
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &ir.geometry.curves[0].geometry
     else {
         panic!("reference line changed family");
     };
@@ -534,7 +542,7 @@ fn reference_line_scaled_origin_overflow_refuses_before_ir_admission() {
         .expect_err("millimeter origin cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
     });
-    assert!(ir.model.curves.is_empty());
+    assert!(ir.geometry.curves.is_empty());
 }
 
 #[test]
@@ -571,7 +579,7 @@ fn reference_circle_radius_is_in_millimeters_at_ir_admission() {
         )
         .expect("reference circle transfer");
     });
-    let curve = ir.model.curves.first().expect("reference circle");
+    let curve = ir.geometry.curves.first().expect("reference circle");
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = &curve.geometry else {
         panic!("reference circle changed family");
     };
@@ -615,7 +623,7 @@ fn reference_ellipse_radii_are_in_millimeters_at_ir_admission() {
         )
         .expect("reference ellipse transfer");
     });
-    let curve = ir.model.curves.first().expect("reference ellipse");
+    let curve = ir.geometry.curves.first().expect("reference ellipse");
     let CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) = &curve.geometry else {
         panic!("reference ellipse changed family");
     };
@@ -676,6 +684,6 @@ fn first_instance_prototype_chart_takes_precedence_over_a_neutral_outline_chart(
             )
         })
         .expect("plane transfer");
-        assert_eq!(ir.model.surfaces.len(), usize::from(placed));
+        assert_eq!(ir.geometry.surfaces.len(), usize::from(placed));
     }
 }

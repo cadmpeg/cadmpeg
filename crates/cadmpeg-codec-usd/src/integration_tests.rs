@@ -58,21 +58,27 @@ fn close(left: f64, right: f64) -> bool {
 /// a body.
 fn meshed_on_write(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
     let model = &result.ir().model;
-    model.bodies.iter().any(|body| {
+    let geometry = &result.ir().geometry;
+    geometry.bodies.iter().any(|body| {
         let tessellated = model
             .tessellations
             .iter()
             .any(|tessellation| tessellation.body.as_ref() == Some(&body.id));
         !tessellated
-            && model
+            && geometry
                 .shells
                 .iter()
                 .filter(|shell| body.regions.contains(&shell.region))
                 .flat_map(|shell| shell.faces().iter())
-                .filter_map(|face| model.faces.iter().find(|candidate| &candidate.id == face))
+                .filter_map(|face| {
+                    geometry
+                        .faces
+                        .iter()
+                        .find(|candidate| &candidate.id == face)
+                })
                 .any(|face| {
                     !face.loops.is_empty()
-                        || !model.surfaces.iter().any(|surface| {
+                        || !geometry.surfaces.iter().any(|surface| {
                             surface.id == face.surface
                                 && matches!(
                                     surface.geometry,
@@ -89,6 +95,7 @@ fn meshed_on_write(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
 /// no edge uses hold, in order.
 fn coordinates(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<f64> {
     let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let mut out = Vec::new();
     for tessellation in &model.tessellations {
         for vertex in tessellation.vertices() {
@@ -96,8 +103,8 @@ fn coordinates(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<f64> {
             out.extend([point.x, point.y, point.z]);
         }
     }
-    for curve in model.curves.iter().filter(|curve| {
-        !model
+    for curve in geometry.curves.iter().filter(|curve| {
+        !geometry
             .edges
             .iter()
             .any(|edge| edge.carrier.curve() == Some(&curve.id))
@@ -129,23 +136,24 @@ fn every_fixture_round_trips_its_geometry() {
         let second = decode(&written);
         let structure = |result: &cadmpeg_ir::codec::DecodeResult| {
             let model = &result.ir().model;
+            let geometry = &result.ir().geometry;
             (
                 model
                     .tessellations
                     .iter()
                     .map(cadmpeg_ir::tessellation::Tessellation::triangles)
                     .collect::<Vec<_>>(),
-                model
+                geometry
                     .curves
                     .iter()
                     .filter(|curve| {
-                        !model
+                        !geometry
                             .edges
                             .iter()
                             .any(|edge| edge.carrier.curve() == Some(&curve.id))
                     })
                     .count(),
-                model.surfaces.len(),
+                geometry.surfaces.len(),
                 model.occurrences.len(),
                 model.appearances.len(),
                 model.appearance_bindings.len(),

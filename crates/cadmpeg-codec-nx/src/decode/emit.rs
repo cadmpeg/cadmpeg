@@ -12,13 +12,12 @@ use super::pcurves::{
     pcurve_matches_edge_range_with_index_and_budget, pcurve_parameter_range, EndpointWitnesses,
     IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
 };
-use super::{offset_store_control_counts, Scan};
+use super::Scan;
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::native::substrate::ParsedStreams;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{FaceLoopFailure, Graph, Node};
-use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
@@ -92,7 +91,7 @@ pub(super) fn emit_topology(
 ) -> Result<EndpointWitnesses, CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let &TopologyBudgets {
         exact_transfer: exact_transfer_budget,
@@ -204,7 +203,7 @@ pub(super) fn emit_topology(
         }
         bodies.insert(body_xmt, id.clone());
 
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id,
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
@@ -258,13 +257,13 @@ pub(super) fn emit_topology(
             }
             annotations.derived(region.as_str(), "body")?;
 
-            ir.model.regions.push(Region {
+            ir.geometry.regions.push(Region {
                 id: region.clone(),
                 body: body.clone(),
                 shells: Vec::new(),
             });
             if let Some(parent) = ir
-                .model
+                .geometry
                 .bodies
                 .iter_mut()
                 .find(|candidate| candidate.id == body)
@@ -301,7 +300,7 @@ pub(super) fn emit_topology(
             );
         }
 
-        ir.model.shells.push(
+        ir.geometry.shells.push(
             Shell::new(
                 shell_id.clone(),
                 region_id.clone(),
@@ -312,7 +311,7 @@ pub(super) fn emit_topology(
             .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
         );
         if let Some(parent) = ir
-            .model
+            .geometry
             .regions
             .iter_mut()
             .find(|candidate| candidate.id == region_id)
@@ -322,7 +321,7 @@ pub(super) fn emit_topology(
         shells.insert(node.xmt(), shell_id);
     }
     let mut point_positions: BTreeMap<PointId, Point3> = BTreeMap::new();
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         if !point_positions.contains_key(&point.id) {
             point_positions.insert(point.id.clone(), point.position().get());
         }
@@ -355,7 +354,7 @@ pub(super) fn emit_topology(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
 
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex.clone(),
             point: point_ref.clone(),
             tolerance,
@@ -370,18 +369,18 @@ pub(super) fn emit_topology(
         );
     }
     let mut pcurve_indices: BTreeMap<PcurveId, usize> = BTreeMap::new();
-    for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
+    for (index, pcurve) in ir.geometry.pcurves.iter().enumerate() {
         pcurve_indices.insert(pcurve.id.clone(), index);
     }
     let mut curve_indices: BTreeMap<CurveId, usize> = BTreeMap::new();
-    for (index, curve) in ir.model.curves.iter().enumerate() {
+    for (index, curve) in ir.geometry.curves.iter().enumerate() {
         if !curve_indices.contains_key(&curve.id) {
             curve_indices.insert(curve.id.clone(), index);
         }
     }
     let mut procedural_curve_ids: BTreeSet<CurveId> = BTreeSet::new();
-    for procedural in &ir.model.procedural_curves {
-        if let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) {
+    for procedural in &ir.geometry.procedural_curves {
+        if let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) {
             procedural_curve_ids.insert(owner.clone());
         }
     }
@@ -419,7 +418,7 @@ pub(super) fn emit_topology(
                 let Some(pcurve_index) = pcurve_indices.get(pcurve_id) else {
                     return Ok(None);
                 };
-                let Some(pcurve) = ir.model.pcurves.get(*pcurve_index) else {
+                let Some(pcurve) = ir.geometry.pcurves.get(*pcurve_index) else {
                     return Ok(None);
                 };
                 let Some(surface_ref) = pcurve_supports.get(&xmt) else {
@@ -459,7 +458,7 @@ pub(super) fn emit_topology(
                 );
                 annotations.derived(carrier.as_str(), "geometry")?;
 
-                ir.model.curves.push(Curve {
+                ir.geometry.curves.push(Curve {
                     parameter_range: None,
                     id: carrier.clone(),
                     geometry: CurveGeometry::Procedural {
@@ -470,7 +469,7 @@ pub(super) fn emit_topology(
                 });
 
                 let _attached = procedural_admission.add_curve(
-                    &mut ir.model,
+                    &mut ir.geometry,
                     &carrier.clone(),
                     ProceduralCurve::new(
                         construction,
@@ -600,7 +599,7 @@ pub(super) fn emit_topology(
             {
                 orient_edge_range_for_geometry_with_budget(
                     &EdgeGeometryRange {
-                        geometry: &ir.model.curves[curve_index].geometry,
+                        geometry: &ir.geometry.curves[curve_index].geometry,
                         curve: carrier,
                         range,
                         start_position,
@@ -631,7 +630,7 @@ pub(super) fn emit_topology(
             }
         }
 
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
                 .map_err(CodecError::malformed)?,
@@ -645,7 +644,7 @@ pub(super) fn emit_topology(
         }
     }
     let mut edge_curves_by_id: BTreeMap<EdgeId, CurveId> = BTreeMap::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         if let Some(curve) = edge.curve() {
             edge_curves_by_id.insert(edge.id.clone(), curve.clone());
         }
@@ -757,12 +756,12 @@ pub(super) fn emit_topology(
     // unrelated coedge pcurve must not become a general admission shortcut.
     let mut endpoint_witnesses = EndpointWitnesses::new();
     let mut intersection_pcurves = IntersectionPcurveIndex::new();
-    for procedural in &ir.model.procedural_curves {
+    for procedural in &ir.geometry.procedural_curves {
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
         else {
             continue;
         };
-        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+        let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) else {
             continue;
         };
         for side in context.sides() {
@@ -1031,7 +1030,7 @@ pub(super) fn emit_topology(
                     annotations.derived(pcurve_id.as_str(), "fit_tolerance")?;
                 }
 
-                ir.model.pcurves.push(Pcurve {
+                ir.geometry.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry: geometry.clone(),
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -1067,7 +1066,7 @@ pub(super) fn emit_topology(
         } else {
             fields.sense
         };
-        ir.model.coedges.push(Coedge {
+        ir.geometry.coedges.push(Coedge {
             id: id.clone(),
             owner_loop: loop_id.clone(),
             edge,
@@ -1105,7 +1104,7 @@ pub(super) fn emit_topology(
                 continue;
             };
 
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: id.clone(),
                 face: face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -1129,7 +1128,7 @@ pub(super) fn emit_topology(
         }
         let loops = face_loops.remove(&pending.id).unwrap_or_default();
 
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: pending.id,
             shell: pending.shell,
             surface: pending.surface,
@@ -1174,24 +1173,24 @@ pub(super) fn emit_topology(
     intersection_index.complete_new_pcurves_from_stream(ir, intersection_starts.pcurves);
 
     let mut owned_edges: BTreeSet<EdgeId> = BTreeSet::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         owned_edges.insert(coedge.edge.clone());
     }
     let mut candidate_edges = BTreeSet::new();
     for edge in edges.into_values() {
         candidate_edges.insert(edge);
     }
-    ir.model
+    ir.geometry
         .edges
         .retain(|edge| !candidate_edges.contains(&edge.id) || owned_edges.contains(&edge.id));
     let mut retained_vertices: BTreeSet<VertexId> = BTreeSet::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         for vertex in [&edge.start, &edge.end] {
             retained_vertices.insert(vertex.clone());
         }
     }
     let scope_prefix = scope.prefix();
-    ir.model.vertices.retain(|vertex| {
+    ir.geometry.vertices.retain(|vertex| {
         !vertex.id.as_str().starts_with(&scope_prefix) || retained_vertices.contains(&vertex.id)
     });
     Ok(endpoint_witnesses)
@@ -1245,7 +1244,7 @@ pub(super) fn retain_unresolved_topology_carriers(
         );
         annotations.exactness(id.as_str(), Exactness::Unknown);
 
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(unknown.clone()),
@@ -1277,7 +1276,7 @@ pub(super) fn retain_unresolved_topology_carriers(
         );
         annotations.exactness(id.as_str(), Exactness::Unknown);
 
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -1370,7 +1369,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     } = closed_edge;
 
     let parameter = {
-        let geometry = &ir.model.curves[curve_index].geometry;
+        let geometry = &ir.geometry.curves[curve_index].geometry;
         range.map_or_else(
             || match geometry {
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
@@ -1382,7 +1381,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         )
     };
     let Some(position) = ({
-        let geometry = &ir.model.curves[curve_index].geometry;
+        let geometry = &ir.geometry.curves[curve_index].geometry;
         curve_point_cache.point_with_budget(curve, geometry, parameter, geometry_budget)?
     }) else {
         return Ok(None);
@@ -1410,11 +1409,11 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     );
     annotations.exactness(vertex.as_str(), Exactness::Inferred);
 
-    ir.model
+    ir.geometry
         .points
         .push(Point::new(point.clone(), position, None));
 
-    ir.model.vertices.push(Vertex {
+    ir.geometry.vertices.push(Vertex {
         id: vertex.clone(),
         point,
         tolerance,
@@ -1658,63 +1657,6 @@ pub(super) fn source_meta(
     parsed: Option<&ParsedStreams<'_>>,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
-    insert_source_attribute(&mut attributes, "file_size", scan.container.physical_size);
-    insert_source_attribute(
-        &mut attributes,
-        "directory_entries",
-        scan.container.entries.len(),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "header_entry_count",
-        scan.container.entry_count(crate::container::Region::Header),
-    );
-    if let crate::container::ContainerLayout::Modern {
-        footer: Some(footer),
-        ..
-    } = scan.container.layout
-    {
-        insert_source_attribute(&mut attributes, "footer_offset", footer.offset);
-        insert_source_attribute(
-            &mut attributes,
-            "footer_entry_count",
-            scan.container.entry_count(crate::container::Region::Footer),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "footer_fingerprint",
-            format_args!("{:08x}", assemble_u32_be(footer.fingerprint)),
-        );
-    }
-    let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
-    if control_count != 0 {
-        insert_source_attribute(&mut attributes, "offset_store_control_count", control_count);
-        insert_source_attribute(
-            &mut attributes,
-            "classified_offset_store_control_count",
-            classified_control_count,
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "unclassified_offset_store_control_count",
-            control_count - classified_control_count,
-        );
-    }
-    insert_source_attribute(
-        &mut attributes,
-        "partition_streams",
-        scan.count(StreamKind::Partition),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "deltas_streams",
-        scan.count(StreamKind::Deltas),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "plain_streams",
-        scan.count(StreamKind::Plain),
-    );
     for (index, path) in scan
         .container
         .external_reference_paths()
@@ -1725,13 +1667,6 @@ pub(super) fn source_meta(
             &mut attributes,
             format_args!("external_reference.{index}"),
             path,
-        );
-    }
-    if let Some((_, table)) = scan.container.rmfastload_object_id_table() {
-        insert_source_attribute(
-            &mut attributes,
-            "rmfastload_active_object_count",
-            table.object_ids.as_slice().len(),
         );
     }
     let mut preview_count = 0usize;
@@ -1776,20 +1711,8 @@ pub(super) fn source_meta(
             format_args!("jpeg_preview_{preview_count}_components"),
             components,
         );
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("jpeg_preview_{preview_count}_byte_len"),
-            payload.len(),
-        );
-
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("jpeg_preview_{preview_count}_sha256"),
-            LowerHex(&sha256(payload)),
-        );
         preview_count += 1;
     }
-    insert_source_attribute(&mut attributes, "jpeg_preview_count", preview_count);
     for (index, (ordinal, stream)) in scan
         .streams
         .iter()
@@ -1804,14 +1727,6 @@ pub(super) fn source_meta(
             uncached = cadmpeg_parasolid::records::DeltasRecords::read(&stream.inflated)?;
             &uncached
         };
-        let census = owner.census();
-        for (key, value) in [
-            ("instances", census.instance_count()),
-            ("schemas", census.schema_count()),
-            ("bytes_decoded", census.bytes_decoded()),
-        ] {
-            insert_source_attribute(&mut attributes, format_args!("deltas.{index}.{key}"), value);
-        }
         insert_source_attribute(
             &mut attributes,
             format_args!("deltas.{index}.selection"),
@@ -1822,25 +1737,11 @@ pub(super) fn source_meta(
             format_args!("deltas.{index}.grammar"),
             "sequential_owned_records",
         );
-        if let cadmpeg_parasolid::records::deltas::DeltasEnd::Stopped { offset, reason } =
-            owner.end()
-        {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.stop_offset"),
-                offset,
-            );
+        if let cadmpeg_parasolid::records::deltas::DeltasEnd::Stopped { reason, .. } = owner.end() {
             insert_source_attribute(
                 &mut attributes,
                 format_args!("deltas.{index}.stop_reason"),
                 format_args!("{reason:?}"),
-            );
-        }
-        for (name, count) in census.full_counts() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.full.{name}"),
-                count,
             );
         }
     }
@@ -1875,7 +1776,6 @@ mod tests {
         Scan {
             container: Container {
                 data: Vec::new().into(),
-                physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
                 fastload_table: None,
@@ -1883,6 +1783,7 @@ mod tests {
                 om_section_cache: std::sync::OnceLock::new(),
             },
             streams: Vec::new(),
+            untyped: std::cell::RefCell::default(),
         }
     }
 

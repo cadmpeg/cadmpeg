@@ -450,12 +450,12 @@ mod tests {
     #[test]
     fn carrier_selection_keeps_its_procedure_and_support_surface() {
         use cadmpeg_ir::geometry::{ProceduralSurface, ProceduralSurfaceDefinition, Surface};
-        let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-        let carrier = model.faces[0].surface.clone();
+        let mut geometry = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
+        let carrier = geometry.faces[0].surface.clone();
         let support = cadmpeg_ir::ids::SurfaceId::mint("f3d:brep:surface#support").unwrap();
-        model.surfaces.push(Surface {
+        geometry.surfaces.push(Surface {
             id: support.clone(),
-            geometry: model.surfaces[0].geometry.clone(),
+            geometry: geometry.surfaces[0].geometry.clone(),
             source_object: None,
         });
         let definition = ProceduralSurface::new(
@@ -468,18 +468,18 @@ mod tests {
         );
         let mut brep = Brep {
             asm: AsmBrep {
-                bodies: model.bodies,
-                regions: model.regions,
-                shells: model.shells,
-                faces: model.faces,
-                loops: model.loops,
-                coedges: model.coedges,
-                edges: model.edges,
-                vertices: model.vertices,
-                points: model.points,
-                surfaces: model.surfaces,
-                curves: model.curves,
-                pcurves: model.pcurves,
+                bodies: geometry.bodies,
+                regions: geometry.regions,
+                shells: geometry.shells,
+                faces: geometry.faces,
+                loops: geometry.loops,
+                coedges: geometry.coedges,
+                edges: geometry.edges,
+                vertices: geometry.vertices,
+                points: geometry.points,
+                surfaces: geometry.surfaces,
+                curves: geometry.curves,
+                pcurves: geometry.pcurves,
                 procedural_surfaces: vec![(carrier, definition)],
                 ..AsmBrep::default()
             },
