@@ -3,8 +3,11 @@
 
 use std::num::NonZeroI8;
 
+use super::super::read;
 use super::super::units::{Unit, UnitFactor, UnitSymbol};
-use super::{level, BendVariable, BinaryOp, Constant, ExprError, Function, Measure, Node, UnaryOp};
+use super::{
+    level, BendVariable, BinaryOp, Chain, Constant, ExprError, Function, Measure, Node, UnaryOp,
+};
 use crate::scalar::NonNegativeReal;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -154,102 +157,206 @@ impl<R: Clone> Parser<'_, R> {
         }
     }
 
+    /// The operator that continues a chain of `spine` at the next token.
+    fn chain_op(&self, spine: Spine) -> Option<BinaryOp> {
+        match spine {
+            Spine::Or => self.at_word("or").then_some(BinaryOp::Or),
+            Spine::And => self.at_word("and").then_some(BinaryOp::And),
+            Spine::Sum if self.at_mark("+") => Some(BinaryOp::Add),
+            Spine::Sum if self.at_mark("-") => Some(BinaryOp::Subtract),
+            Spine::Prod if self.at_mark("*") => Some(BinaryOp::Multiply),
+            Spine::Prod if self.at_mark("/") => Some(BinaryOp::Divide),
+            Spine::Sum | Spine::Prod => None,
+        }
+    }
+
+    fn comparison_op(&self) -> Option<BinaryOp> {
+        match self.peek() {
+            Some(Tok::Mark("==")) => Some(BinaryOp::Equal),
+            Some(Tok::Mark("!=")) => Some(BinaryOp::NotEqual),
+            Some(Tok::Mark("<")) => Some(BinaryOp::Less),
+            Some(Tok::Mark("<=")) => Some(BinaryOp::LessEqual),
+            Some(Tok::Mark(">")) => Some(BinaryOp::Greater),
+            Some(Tok::Mark(">=")) => Some(BinaryOp::GreaterEqual),
+            _ => None,
+        }
+    }
+
+    /// Reads an `expr`. Each rule partly read waits as a frame on a work
+    /// stack, so the depth of the tree does not reach the thread's stack.
     fn expr(&mut self) -> Result<Node<R>, ExprError> {
-        let _level = level()?;
-        let mut node = self.and()?;
-        while self.at_word("or") {
-            self.i += 1;
-            node = Self::binary(BinaryOp::Or, node, self.and()?);
-        }
-        Ok(node)
-    }
-
-    fn and(&mut self) -> Result<Node<R>, ExprError> {
-        let mut node = self.not()?;
-        while self.at_word("and") {
-            self.i += 1;
-            node = Self::binary(BinaryOp::And, node, self.not()?);
-        }
-        Ok(node)
-    }
-
-    fn not(&mut self) -> Result<Node<R>, ExprError> {
-        if self.at_word("not") {
-            let _level = level()?;
-            self.i += 1;
-            return Ok(Node::Unary {
-                op: UnaryOp::Not,
-                operand: Box::new(self.not()?),
-            });
-        }
-        self.cmp()
-    }
-
-    fn cmp(&mut self) -> Result<Node<R>, ExprError> {
-        let node = self.sum()?;
-        let op = match self.peek() {
-            Some(Tok::Mark("==")) => BinaryOp::Equal,
-            Some(Tok::Mark("!=")) => BinaryOp::NotEqual,
-            Some(Tok::Mark("<")) => BinaryOp::Less,
-            Some(Tok::Mark("<=")) => BinaryOp::LessEqual,
-            Some(Tok::Mark(">")) => BinaryOp::Greater,
-            Some(Tok::Mark(">=")) => BinaryOp::GreaterEqual,
-            _ => return Ok(node),
-        };
-        self.i += 1;
-        Ok(Self::binary(op, node, self.sum()?))
-    }
-
-    fn sum(&mut self) -> Result<Node<R>, ExprError> {
-        let mut node = self.prod()?;
+        let mut frames = Vec::new();
+        let mut rule = Rule::Expr;
         loop {
-            let op = if self.at_mark("+") {
-                BinaryOp::Add
-            } else if self.at_mark("-") {
-                BinaryOp::Subtract
-            } else {
-                return Ok(node);
-            };
-            self.i += 1;
-            node = Self::binary(op, node, self.prod()?);
+            let mut node = self.descend(rule, &mut frames)?;
+            loop {
+                let Some(frame) = frames.pop() else {
+                    return Ok(node);
+                };
+                match self.resume(frame, node, &mut frames)? {
+                    Next::Node(read) => node = read,
+                    Next::Read(next) => {
+                        rule = next;
+                        break;
+                    }
+                }
+            }
         }
     }
 
-    fn prod(&mut self) -> Result<Node<R>, ExprError> {
-        let mut node = self.neg()?;
+    /// Enters `rule` and the rules it starts with, down to the atom they
+    /// start with, and reads that atom, or enters the `expr` it opens.
+    fn descend(
+        &mut self,
+        mut rule: Rule,
+        frames: &mut Vec<Frame<Node<R>>>,
+    ) -> Result<Node<R>, ExprError> {
         loop {
-            let op = if self.at_mark("*") {
-                BinaryOp::Multiply
-            } else if self.at_mark("/") {
-                BinaryOp::Divide
-            } else {
-                return Ok(node);
+            rule = match rule {
+                Rule::Expr => {
+                    frames.push(Frame::chain(Spine::Or, Some(level()?)));
+                    Rule::And
+                }
+                Rule::And => {
+                    frames.push(Frame::chain(Spine::And, None));
+                    Rule::Not
+                }
+                Rule::Not => {
+                    if self.at_word("not") {
+                        let depth = level()?;
+                        self.i += 1;
+                        frames.push(Frame::Not(depth));
+                        Rule::Not
+                    } else {
+                        frames.push(Frame::Cmp(None));
+                        Rule::Sum
+                    }
+                }
+                Rule::Sum => {
+                    frames.push(Frame::chain(Spine::Sum, None));
+                    Rule::Prod
+                }
+                Rule::Prod => {
+                    frames.push(Frame::chain(Spine::Prod, None));
+                    Rule::Neg
+                }
+                Rule::Neg => {
+                    if self.at_mark("-") {
+                        let depth = level()?;
+                        self.i += 1;
+                        frames.push(Frame::Neg(depth));
+                        Rule::Neg
+                    } else {
+                        frames.push(Frame::Pow(None));
+                        match self.atom(frames)? {
+                            Some(node) => return Ok(node),
+                            None => Rule::Expr,
+                        }
+                    }
+                }
             };
-            self.i += 1;
-            node = Self::binary(op, node, self.neg()?);
         }
     }
 
-    fn neg(&mut self) -> Result<Node<R>, ExprError> {
-        if self.at_mark("-") {
-            let _level = level()?;
-            self.i += 1;
-            return Ok(Node::Unary {
-                op: UnaryOp::Negate,
-                operand: Box::new(self.neg()?),
-            });
-        }
-        self.pow()
-    }
-
-    fn pow(&mut self) -> Result<Node<R>, ExprError> {
-        let node = self.atom()?;
-        if self.at_mark("^") {
-            let _level = level()?;
-            self.i += 1;
-            return Ok(Self::binary(BinaryOp::Power, node, self.neg()?));
-        }
-        Ok(node)
+    /// Gives `frame` the node it waits for: the rule ends with a node, or
+    /// waits again, on the stack, for the rule it reads next.
+    fn resume(
+        &mut self,
+        frame: Frame<Node<R>>,
+        node: Node<R>,
+        frames: &mut Vec<Frame<Node<R>>>,
+    ) -> Result<Next<Node<R>>, ExprError> {
+        Ok(match frame {
+            Frame::Chain {
+                spine,
+                depth,
+                mut chain,
+                left,
+            } => {
+                let node = match left {
+                    None => node,
+                    Some((left, op)) => Self::binary(op, left, node),
+                };
+                let Some(op) = self.chain_op(spine) else {
+                    drop(depth);
+                    return Ok(Next::Node(node));
+                };
+                self.i += 1;
+                chain.next()?;
+                frames.push(Frame::Chain {
+                    spine,
+                    depth,
+                    chain,
+                    left: Some((node, op)),
+                });
+                Next::Read(spine.operand())
+            }
+            Frame::Not(depth) => {
+                drop(depth);
+                Next::Node(Node::Unary {
+                    op: UnaryOp::Not,
+                    operand: Box::new(node),
+                })
+            }
+            Frame::Cmp(None) => match self.comparison_op() {
+                Some(op) => {
+                    self.i += 1;
+                    frames.push(Frame::Cmp(Some((node, op))));
+                    Next::Read(Rule::Sum)
+                }
+                None => Next::Node(node),
+            },
+            Frame::Cmp(Some((left, op))) => Next::Node(Self::binary(op, left, node)),
+            Frame::Neg(depth) => {
+                drop(depth);
+                Next::Node(Node::Unary {
+                    op: UnaryOp::Negate,
+                    operand: Box::new(node),
+                })
+            }
+            Frame::Pow(None) => {
+                if self.at_mark("^") {
+                    let depth = level()?;
+                    self.i += 1;
+                    frames.push(Frame::Pow(Some((node, depth))));
+                    Next::Read(Rule::Neg)
+                } else {
+                    Next::Node(node)
+                }
+            }
+            Frame::Pow(Some((left, depth))) => {
+                drop(depth);
+                Next::Node(Self::binary(BinaryOp::Power, left, node))
+            }
+            Frame::Paren => {
+                self.expect_mark(")")?;
+                Next::Node(node)
+            }
+            Frame::If(mut parts) => {
+                parts.push(node);
+                if parts.len() < 3 {
+                    self.expect_mark(",")?;
+                    frames.push(Frame::If(parts));
+                    Next::Read(Rule::Expr)
+                } else {
+                    self.expect_mark(")")?;
+                    let branches = <[Node<R>; 3]>::try_from(parts)
+                        .map_err(|_| ExprError::Malformed("an if states three parts".into()))?;
+                    Next::Node(Node::If(Box::new(branches)))
+                }
+            }
+            Frame::Call(function, mut args) => {
+                args.push(node);
+                if self.at_mark(",") {
+                    self.i += 1;
+                    frames.push(Frame::Call(function, args));
+                    Next::Read(Rule::Expr)
+                } else {
+                    self.expect_mark(")")?;
+                    Next::Node(Node::Call { function, args })
+                }
+            }
+        })
     }
 
     fn unit(&mut self) -> Result<Unit, ExprError> {
@@ -297,8 +404,10 @@ impl<R: Clone> Parser<'_, R> {
         }
     }
 
-    fn atom(&mut self) -> Result<Node<R>, ExprError> {
-        match self.next() {
+    /// Reads an atom, or opens one that holds an `expr` and returns `None`:
+    /// a parenthesis, an `if`, or a call, which waits as a frame.
+    fn atom(&mut self, frames: &mut Vec<Frame<Node<R>>>) -> Result<Option<Node<R>>, ExprError> {
+        let node = match self.next() {
             Some(Tok::Num(text)) => {
                 let value = text
                     .parse::<f64>()
@@ -311,40 +420,34 @@ impl<R: Clone> Parser<'_, R> {
                     unit = self.unit()?;
                     self.expect_mark("]")?;
                 }
-                Ok(Node::Number { value, unit })
+                Node::Number { value, unit }
             }
-            Some(Tok::Str(value)) => Ok(Node::Text(value)),
+            Some(Tok::Str(value)) => Node::Text(value),
             Some(Tok::Ref(index)) => match self.refs.get(index) {
-                Some(reference) => Ok(Node::Reference(reference.clone())),
-                None => malformed(format!("${index} names no entry of refs")),
+                Some(reference) => Node::Reference(reference.clone()),
+                None => return malformed(format!("${index} names no entry of refs")),
             },
             Some(Tok::Meas(index)) => match self.measures.get(index) {
-                Some(measure) => Ok(Node::Measure(Box::new(measure.clone()))),
-                None => malformed(format!("@{index} names no entry of measures")),
+                Some(measure) => Node::Measure(Box::new(measure.clone())),
+                None => return malformed(format!("@{index} names no entry of measures")),
             },
             Some(Tok::Mark("(")) => {
-                let node = self.expr()?;
-                self.expect_mark(")")?;
-                Ok(node)
+                frames.push(Frame::Paren);
+                return Ok(None);
             }
             Some(Tok::Word(word)) => match word.as_str() {
-                "pi" => Ok(Node::Constant(Constant::Pi)),
-                "e" => Ok(Node::Constant(Constant::E)),
-                "true" => Ok(Node::Boolean(true)),
-                "false" => Ok(Node::Boolean(false)),
-                "t" => Ok(Node::LawParameter),
-                "bendangle" => Ok(Node::Bend(BendVariable::Angle)),
-                "bendradius" => Ok(Node::Bend(BendVariable::InsideRadius)),
-                "bendthickness" => Ok(Node::Bend(BendVariable::Thickness)),
+                "pi" => Node::Constant(Constant::Pi),
+                "e" => Node::Constant(Constant::E),
+                "true" => Node::Boolean(true),
+                "false" => Node::Boolean(false),
+                "t" => Node::LawParameter,
+                "bendangle" => Node::Bend(BendVariable::Angle),
+                "bendradius" => Node::Bend(BendVariable::InsideRadius),
+                "bendthickness" => Node::Bend(BendVariable::Thickness),
                 "if" => {
                     self.expect_mark("(")?;
-                    let condition = self.expr()?;
-                    self.expect_mark(",")?;
-                    let then = self.expr()?;
-                    self.expect_mark(",")?;
-                    let otherwise = self.expr()?;
-                    self.expect_mark(")")?;
-                    Ok(Node::If(Box::new([condition, then, otherwise])))
+                    frames.push(Frame::If(Vec::with_capacity(3)));
+                    return Ok(None);
                 }
                 name => {
                     let function = Function::ALL
@@ -354,18 +457,92 @@ impl<R: Clone> Parser<'_, R> {
                             ExprError::Malformed(format!("word {name:?} is no keyword or function"))
                         })?;
                     self.expect_mark("(")?;
-                    let mut args = vec![self.expr()?];
-                    while self.at_mark(",") {
-                        self.i += 1;
-                        args.push(self.expr()?);
-                    }
-                    self.expect_mark(")")?;
-                    Ok(Node::Call { function, args })
+                    frames.push(Frame::Call(function, Vec::new()));
+                    return Ok(None);
                 }
             },
-            other => malformed(format!("unexpected {other:?}")),
+            other => return malformed(format!("unexpected {other:?}")),
+        };
+        Ok(Some(node))
+    }
+}
+
+/// A rule of the grammar the parser enters next.
+#[derive(Clone, Copy)]
+enum Rule {
+    Expr,
+    And,
+    Not,
+    Sum,
+    Prod,
+    Neg,
+}
+
+/// A left-associative chain of operators of one precedence.
+#[derive(Clone, Copy)]
+enum Spine {
+    Or,
+    And,
+    Sum,
+    Prod,
+}
+
+impl Spine {
+    /// The rule each operand of the chain reads.
+    const fn operand(self) -> Rule {
+        match self {
+            Self::Or => Rule::And,
+            Self::And => Rule::Not,
+            Self::Sum => Rule::Prod,
+            Self::Prod => Rule::Neg,
         }
     }
+}
+
+/// A rule partly read, waiting for the node it reads next, with the levels
+/// of the ceiling it holds.
+enum Frame<N> {
+    /// A chain, with the `expr` level for `or`, and the operands read so far
+    /// with the operator that follows them.
+    Chain {
+        spine: Spine,
+        depth: Option<read::Depth>,
+        chain: Chain,
+        left: Option<(N, BinaryOp)>,
+    },
+    /// `not` before its operand.
+    Not(read::Depth),
+    /// A comparison, with its left operand and operator once read.
+    Cmp(Option<(N, BinaryOp)>),
+    /// `-` before its operand.
+    Neg(read::Depth),
+    /// A power, with its base and the level of its exponent once read.
+    Pow(Option<(N, read::Depth)>),
+    /// `(` before its `expr`.
+    Paren,
+    /// An `if`, with the parts read so far.
+    If(Vec<N>),
+    /// A call, with the arguments read so far.
+    Call(Function, Vec<N>),
+}
+
+impl<N> Frame<N> {
+    const fn chain(spine: Spine, depth: Option<read::Depth>) -> Self {
+        Self::Chain {
+            spine,
+            depth,
+            chain: Chain::new(),
+            left: None,
+        }
+    }
+}
+
+/// What a frame does with the node it waited for.
+enum Next<N> {
+    /// The frame's rule ends with this node.
+    Node(N),
+    /// The frame waits again for a node of this rule.
+    Read(Rule),
 }
 
 /// Parses canonical text against its side lists. `$i` is `refs[i]` and `@i`

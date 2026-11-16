@@ -1530,7 +1530,7 @@ mod tests {
     fn model_points_of_an_inch_model_are_converted_to_millimetres() {
         let ir =
             model_point_ir(Point3::new(1.0, -2.0, 0.5)).expect("valid millimeter point admission");
-        assert_point3(ir.model.points[0].position().get(), [25.4, -50.8, 12.7]);
+        assert_point3(ir.geometry.points[0].position().get(), [25.4, -50.8, 12.7]);
     }
 
     #[test]
@@ -1567,12 +1567,13 @@ mod tests {
                         id: curve_id,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                         source_object: None,
+                        native_ref: None,
                     },
                 )
         })
         .expect_err("overflow must refuse");
         assert!(matches!(error, CodecError::NotImplemented(_)));
-        assert!(ir.model.curves.is_empty());
+        assert!(ir.geometry.curves.is_empty());
     }
 
     #[test]
@@ -1735,6 +1736,7 @@ mod tests {
                         SolvedSurfaceGeometry::Unknown { record: None },
                     ),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1780,6 +1782,7 @@ mod tests {
                         SolvedCurveGeometry::Unknown { record: None },
                     ),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1811,7 +1814,7 @@ mod tests {
             .admit_procedural_curve(&mut ir, &curve_id, curve)
             .expect("curve construction admission");
 
-        let surface = &ir.model.procedural_surfaces[0];
+        let surface = &ir.geometry.procedural_surfaces[0];
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
             surface.definition()
         else {
@@ -1846,7 +1849,7 @@ mod tests {
             Some([Some(8.0), None, Some(9.0), None])
         );
 
-        let curve = &ir.model.procedural_curves[0];
+        let curve = &ir.geometry.procedural_curves[0];
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
             curve.definition()
         else {
@@ -1929,12 +1932,13 @@ mod tests {
                 crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
             let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
                 .expect("identity grammar");
-            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
                 id: surface_id.clone(),
                 geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                     SolvedSurfaceGeometry::Unknown { record: None },
                 ),
                 source_object: None,
+                native_ref: None,
             });
             let surface = cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(

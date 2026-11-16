@@ -19,7 +19,7 @@
 //!
 //! let cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
 //! let mut tessellator = Tessellator::new(&cube, Options::default());
-//! let face = &cube.model.faces[0].id;
+//! let face = &cube.geometry.faces[0].id;
 //! let mesh = tessellator.face(face).expect("planar face");
 //! assert_eq!(mesh.triangles.len(), 2);
 //! ```

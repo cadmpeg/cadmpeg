@@ -1263,8 +1263,8 @@ fn semantic_writer_preserves_parametric_history() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -1314,8 +1314,8 @@ fn semantic_writer_applies_neutral_feature_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        let moved = ir_edit.model.points[0].position().get();
-        ir_edit.model.points[0].set_position(
+        let moved = ir_edit.geometry.points[0].position().get();
+        ir_edit.geometry.points[0].set_position(
             cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x,
                 moved.y,

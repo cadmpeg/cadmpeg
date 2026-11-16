@@ -82,25 +82,27 @@ fn disconnected_cycles_become_separate_open_sheet_bodies() {
     let count = with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &plans))
         .expect("emit two sheets");
     assert_eq!(count, 2);
-    assert_eq!(ir.model.entity_count(), 42);
-    assert_eq!(ir.model.points.len(), 6);
-    assert_eq!(ir.model.vertices.len(), 6);
-    assert_eq!(ir.model.curves.len(), 6);
-    assert_eq!(ir.model.edges.len(), 6);
-    assert_eq!(ir.model.coedges.len(), 6);
-    assert_eq!(ir.model.surfaces.len(), 2);
-    assert_eq!(ir.model.faces.len(), 2);
-    assert_eq!(ir.model.loops.len(), 2);
-    assert_eq!(ir.model.regions.len(), 2);
-    assert_eq!(ir.model.shells.len(), 2);
+    assert_eq!(ir.entity_count(), 42);
+    assert_eq!(ir.geometry.points.len(), 6);
+    assert_eq!(ir.geometry.vertices.len(), 6);
+    assert_eq!(ir.geometry.curves.len(), 6);
+    assert_eq!(ir.geometry.edges.len(), 6);
+    assert_eq!(ir.geometry.coedges.len(), 6);
+    assert_eq!(ir.geometry.surfaces.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 2);
+    assert_eq!(ir.geometry.loops.len(), 2);
+    assert_eq!(ir.geometry.regions.len(), 2);
+    assert_eq!(ir.geometry.shells.len(), 2);
+    assert!(ir.geometry.bodies.iter().all(
+        |body| body.kind == BodyKind::Sheet && ir.geometry.body_regions(&body.id).count() == 1
+    ));
     assert!(ir
-        .model
-        .bodies
+        .geometry
+        .shells
         .iter()
-        .all(|body| body.kind == BodyKind::Sheet && body.regions.len() == 1));
-    assert!(ir.model.shells.iter().all(|shell| shell.faces().len() == 1));
+        .all(|shell| ir.geometry.shell_faces(&shell.id).count() == 1));
     assert!(ir
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.radial_next == coedge.id));
@@ -131,27 +133,28 @@ fn reversed_use_preserves_native_line_and_endpoint_parameterization() {
     let mut annotations = AnnotationBuilder::new();
     with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &[plan(vec![lines])]))
         .expect("emit reversed use");
-    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = ir.model.curves[0].geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = ir.geometry.curves[0].geometry
+    else {
         panic!("native line carrier")
     };
     assert_eq!(line.origin().get(), Point3::new(6.0, 0.0, 0.0));
     assert_eq!(*line.direction().as_raw(), Vector3::new(-1.0, 0.0, 0.0));
     assert_eq!(
-        ir.model.curves[0]
+        ir.geometry.curves[0]
             .parameter_range
             .expect("native curve interval")
             .endpoints(),
         [2.0, 6.0]
     );
-    let edge = &ir.model.edges[0];
+    let edge = &ir.geometry.edges[0];
     let point = |vertex: &cadmpeg_ir::ids::VertexId| {
         let vertex = ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|candidate| candidate.id == *vertex)
             .expect("edge vertex");
-        ir.model
+        ir.geometry
             .points
             .iter()
             .find(|point| point.id == vertex.point)
@@ -159,10 +162,16 @@ fn reversed_use_preserves_native_line_and_endpoint_parameterization() {
             .position()
             .get()
     };
-    assert_eq!(point(&edge.start), Point3::new(4.0, 0.0, 0.0));
-    assert_eq!(point(&edge.end), Point3::new(0.0, 0.0, 0.0));
-    assert_eq!(ir.model.coedges[0].sense, Sense::Reversed);
-    assert_eq!(ir.model.faces[0].sense, Sense::Forward);
+    assert_eq!(
+        point(&edge.ends.as_ref().expect("edge has vertices").start),
+        Point3::new(4.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        point(&edge.ends.as_ref().expect("edge has vertices").end),
+        Point3::new(0.0, 0.0, 0.0)
+    );
+    assert_eq!(ir.geometry.coedges[0].sense, Sense::Reversed);
+    assert_eq!(ir.geometry.faces[0].sense, Sense::Forward);
     validate(&mut ir, &annotations);
 }
 
@@ -182,13 +191,13 @@ fn translated_signed_chart_places_points_and_plane_without_reflection() {
         Point3::new(7.0, -20.0, 30.0),
     ] {
         assert!(ir
-            .model
+            .geometry
             .points
             .iter()
             .any(|point| point.position().get().distance(expected) <= EPS_POSITION));
     }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
-        ir.model.surfaces[0].geometry
+        ir.geometry.surfaces[0].geometry
     else {
         panic!("plane carrier")
     };
@@ -207,7 +216,7 @@ fn entity_budget_refuses_the_complete_batch_before_model_or_annotation_mutation(
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities && limit.operation == "admit outer sketch sheet entities")
     );
-    assert_eq!(ir.model.entity_count(), 0);
+    assert_eq!(ir.entity_count(), 0);
     assert!(annotations.annotations().provenance.is_empty());
     with_entity_limit(42, |ctx| {
         assert_eq!(
@@ -228,7 +237,7 @@ fn invalid_later_component_leaves_prior_model_and_annotations_intact() {
     let first = plan(vec![triangle(500, 0.0, 10)]);
     with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &[first]))
         .expect("existing sheet");
-    let before_model = ir.model.clone();
+    let before_geometry = ir.geometry.clone();
     let before_annotations = annotations.annotations().clone();
     let mut second = plan(vec![triangle(600, 10.0, 20), triangle(700, 20.0, 30)]);
     second.source_offset = 800;
@@ -238,7 +247,7 @@ fn invalid_later_component_leaves_prior_model_and_annotations_intact() {
             .expect("withhold the incomplete candidate"),
         0
     );
-    assert_eq!(ir.model, before_model);
+    assert_eq!(ir.geometry, before_geometry);
     assert_eq!(*annotations.annotations(), before_annotations);
 }
 
@@ -252,51 +261,51 @@ fn source_scopes_and_existing_sheets_keep_distinct_entity_identities() {
     second.origin = Point3::new(0.0, 0.0, 5.0);
     with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &[first]))
         .expect("first sheet");
-    let original = ir.model.clone();
+    let original = ir.geometry.clone();
     with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &[second]))
         .expect("second sheet");
-    assert_eq!(&ir.model.points[..3], original.points.as_slice());
-    assert_eq!(&ir.model.curves[..3], original.curves.as_slice());
-    assert_eq!(&ir.model.bodies[..1], original.bodies.as_slice());
+    assert_eq!(&ir.geometry.points[..3], original.points.as_slice());
+    assert_eq!(&ir.geometry.curves[..3], original.curves.as_slice());
+    assert_eq!(&ir.geometry.bodies[..1], original.bodies.as_slice());
     let ids = annotations
         .annotations()
         .provenance
         .keys()
         .collect::<HashSet<_>>();
-    assert_eq!(ids.len(), ir.model.entity_count());
+    assert_eq!(ids.len(), ir.entity_count());
     validate(&mut ir, &annotations);
 }
 
 #[test]
 fn every_emitted_arena_refuses_an_existing_identity_before_mutation() {
-    use cadmpeg_ir::document::Model;
+    use cadmpeg_ir::document::Topology;
 
     let plans = [plan(vec![triangle(500, 0.0, 10)])];
     let mut prototype = CadIr::empty();
     with_service_context(|ctx| emit(ctx, &mut prototype, &mut AnnotationBuilder::new(), &plans))
         .expect("authored sheet prototype");
-    let model = prototype.model;
-    let mut collisions: [Model; 11] = std::array::from_fn(|_| Model::default());
-    collisions[0].points = model.points;
-    collisions[1].vertices = model.vertices;
-    collisions[2].curves = model.curves;
-    collisions[3].edges = model.edges;
-    collisions[4].coedges = model.coedges;
-    collisions[5].surfaces = model.surfaces;
-    collisions[6].faces = model.faces;
-    collisions[7].loops = model.loops;
-    collisions[8].shells = model.shells;
-    collisions[9].regions = model.regions;
-    collisions[10].bodies = model.bodies;
+    let geometry = prototype.geometry;
+    let mut collisions: [Topology; 11] = std::array::from_fn(|_| Topology::default());
+    collisions[0].points = geometry.points;
+    collisions[1].vertices = geometry.vertices;
+    collisions[2].curves = geometry.curves;
+    collisions[3].edges = geometry.edges;
+    collisions[4].coedges = geometry.coedges;
+    collisions[5].surfaces = geometry.surfaces;
+    collisions[6].faces = geometry.faces;
+    collisions[7].loops = geometry.loops;
+    collisions[8].shells = geometry.shells;
+    collisions[9].regions = geometry.regions;
+    collisions[10].bodies = geometry.bodies;
     for existing in collisions {
         let mut ir = CadIr::empty();
-        ir.model = existing;
-        let before = ir.model.clone();
+        ir.geometry = existing;
+        let before = ir.geometry.clone();
         let mut annotations = AnnotationBuilder::new();
         let error = with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &plans))
             .expect_err("existing arena identity must be preserved");
         assert!(matches!(error, CodecError::Malformed(_)));
-        assert_eq!(ir.model, before);
+        assert_eq!(ir.geometry, before);
         assert!(annotations.annotations().provenance.is_empty());
     }
 }
@@ -327,7 +336,7 @@ fn overflowing_chart_withholds_its_plan_and_retains_another_valid_plan() {
     })
     .expect("geometric overflow withholds one candidate");
     assert_eq!(bodies, 1);
-    assert_eq!(ir.model.entity_count(), 21);
+    assert_eq!(ir.entity_count(), 21);
     assert_eq!(annotations.annotations().provenance.len(), 21);
     validate(&mut ir, &annotations);
 }
@@ -358,7 +367,7 @@ fn tightened_model_tolerance_withholds_only_the_mismatched_plan() {
     })
     .expect("the mismatched candidate remains native");
     assert_eq!(count, 1);
-    assert_eq!(ir.model.entity_count(), 21);
+    assert_eq!(ir.entity_count(), 21);
     validate(&mut ir, &annotations);
 }
 
@@ -371,6 +380,6 @@ fn repeated_plans_refuse_staged_identities_before_any_batch_commit() {
         with_service_context(|ctx| emit(ctx, &mut ir, &mut annotations, &[source.clone(), source]))
             .expect_err("a prior staged plan already owns these identities");
     assert!(matches!(error, CodecError::Malformed(_)));
-    assert_eq!(ir.model.entity_count(), 0);
+    assert_eq!(ir.entity_count(), 0);
     assert!(annotations.annotations().provenance.is_empty());
 }

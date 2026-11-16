@@ -26,7 +26,9 @@ fuzz_target!(|data: &[u8]| {
         Ok(ir) => ir,
         Err(_) => return,
     };
-    let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::default();
+    let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::new(
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(json_str.as_bytes()),
+    );
 
     match strategy % 13 {
         0 => {
@@ -36,20 +38,20 @@ fuzz_target!(|data: &[u8]| {
             ) else {
                 return;
             };
-            for point in &mut ir.model.points {
+            for point in &mut ir.geometry.points {
                 point.set_position(extreme);
             }
         }
         1 => {
             // Create invalid cross-references
-            if !ir.model.vertices.is_empty() {
-                ir.model.vertices[0].point = cadmpeg_ir::ids::PointId::mint("fuzz:missing:point#0")
+            if !ir.geometry.vertices.is_empty() {
+                ir.geometry.vertices[0].point = cadmpeg_ir::ids::PointId::mint("fuzz:missing:point#0")
                     .expect("identity grammar");
             }
         }
         2 => {
             if let Some(loop_) = ir
-                .model
+                .geometry
                 .loops
                 .iter_mut()
                 .find(|loop_| !loop_.coedges().is_empty())
@@ -65,49 +67,49 @@ fuzz_target!(|data: &[u8]| {
         }
         3 => {
             // Create inconsistent edge references
-            if !ir.model.edges.is_empty() {
-                ir.model.edges[0].start = cadmpeg_ir::ids::VertexId::mint("fuzz:missing:vertex#0")
+            if let Some(ends) = ir.geometry.edges.first_mut().and_then(|edge| edge.ends.as_mut()) {
+                ends.start = cadmpeg_ir::ids::VertexId::mint("fuzz:missing:vertex#0")
                     .expect("identity grammar");
             }
         }
         4 => {
             // Create empty body (no regions)
-            if !ir.model.bodies.is_empty() {
-                ir.model.bodies[0].regions.clear();
+            if let Some(body) = ir.geometry.bodies.first().map(|body| body.id.clone()) {
+                ir.geometry.regions.retain(|region| region.body != body);
             }
         }
         5 => {
             // Create face with no loops
-            if !ir.model.faces.is_empty() {
-                ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+            if !ir.geometry.faces.is_empty() {
+                ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
             }
         }
         6 => {
             // Duplicate a point identity in the document arena.
-            if let Some(point) = ir.model.points.first().cloned() {
-                ir.model.points.push(point);
+            if let Some(point) = ir.geometry.points.first().cloned() {
+                ir.geometry.points.push(point);
             }
         }
         7 => {
             // Clear all geometry but keep topology
-            ir.model.points.clear();
-            ir.model.curves.clear();
-            ir.model.surfaces.clear();
+            ir.geometry.points.clear();
+            ir.geometry.curves.clear();
+            ir.geometry.surfaces.clear();
         }
         8 => {
             // Break a radial ring with an unresolved coedge.
-            if let Some(coedge) = ir.model.coedges.first_mut() {
+            if let Some(coedge) = ir.geometry.coedges.first_mut() {
                 coedge.radial_next = cadmpeg_ir::ids::CoedgeId::mint("fuzz:missing:coedge#0")
                     .expect("identity grammar");
             }
         }
         9 => {
             // Violate canonical arena ordering.
-            ir.model.coedges.reverse();
+            ir.geometry.coedges.reverse();
         }
         10 => {
             // Put a coedge-owned edge into a shell's wire set.
-            if let (Some(shell), Some(edge)) = (ir.model.shells.first_mut(), ir.model.edges.first())
+            if let (Some(shell), Some(edge)) = (ir.geometry.shells.first_mut(), ir.geometry.edges.first())
             {
                 shell.add_wire_edge(edge.id.clone());
             }
@@ -123,8 +125,8 @@ fuzz_target!(|data: &[u8]| {
                 .expect("annotation arena append");
         }
         12 => {
-            if let Some(edge) = ir.model.edges.first().cloned() {
-                ir.model.edges.push(edge);
+            if let Some(edge) = ir.geometry.edges.first().cloned() {
+                ir.geometry.edges.push(edge);
             }
         }
         _ => {}

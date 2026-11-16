@@ -76,7 +76,7 @@ fn step_export_loss_codes(source: &Path, written: &Path, report: &Path) -> Vec<S
         .as_array()
         .unwrap()
         .iter()
-        .map(|loss| loss["code"]["code"].as_str().unwrap().to_owned())
+        .map(|loss| loss["code"]["value"]["code"].as_str().unwrap().to_owned())
         .collect()
 }
 

@@ -120,6 +120,7 @@ fn face(attribute: u32) -> Face {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     }
 }
 

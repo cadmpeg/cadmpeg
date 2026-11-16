@@ -73,7 +73,8 @@ mod tests {
             ir.model.drawings.push(
                 serde_json::from_value(serde_json::json!({
                     "id": id, "object": "test:source:unknown#record", "kind": "page",
-                    "runtime_type": "Test", "order": 7, "native_ref": "test:source:unknown#record"
+                    "runtime_type": "Test", "order": 7, "native_ref": "test:source:unknown#record",
+                    "relationships": {}, "curves": [], "parameters": {}, "assets": []
                 }))
                 .unwrap(),
             );

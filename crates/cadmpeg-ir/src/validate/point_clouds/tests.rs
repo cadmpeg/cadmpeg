@@ -22,6 +22,8 @@ fn a_cloud_with_one_value_per_point_is_valid() {
     ir.model.point_clouds.push(cloud(serde_json::json!({
         "id": "test:model:point-cloud#scan",
         "positions": [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 0.0, "z": 0.0}],
+        "normals": [],
+        "colors": [],
         "channels": [{"name": "intensity", "values": [0.25, 0.75]}]
     })));
     assert!(findings(&ir).is_empty(), "{:?}", findings(&ir));
@@ -34,6 +36,8 @@ fn per_point_values_must_match_the_points() {
         "id": "test:model:point-cloud#scan",
         "product_definition": "test:model:definition#missing",
         "positions": [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 0.0, "z": 0.0}],
+        "normals": [],
+        "colors": [],
         "channels": [
             {"name": "intensity", "values": [0.25]},
             {"name": "intensity", "values": [0.25, 0.75]}

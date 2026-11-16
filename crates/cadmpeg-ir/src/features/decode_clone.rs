@@ -218,7 +218,7 @@ rewrite_enum!(FeatureOperation, []; {
     ComponentTransfer { mode, occurrence, component, source_owner, target_owner, source_transform, target_transform },
     CapturedComponentPositions { positions },
     AssemblyJoint { joint },
-    Form { cages },
+    Form(field0),
     CosmeticThread { face, standard, designation, diameter, pitch, modeled, extent },
     ReferenceImage { asset, visible, mirror_u, mirror_v, frame, bounds, opacity },
     Decal { asset, faces, mapping, opacity },

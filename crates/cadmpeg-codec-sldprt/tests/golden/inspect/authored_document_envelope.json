@@ -10,8 +10,8 @@
         "sha256": "e71201b18f650ff3ae29d3d798a2a094b3f03adfa1e3e9da3d369e9c3e4d58e9",
         "type_id": "0x00000020"
       },
-      "compression": "deflate",
       "expanded": 701,
+      "kind": "deflate",
       "name": "Contents/Config-0-Partition",
       "role": "block",
       "stored": 279
@@ -23,8 +23,8 @@
         "sha256": "752b1c0caa94a3157bb342c490fcc240c09055acace99ffe1ce117dccb95c536",
         "type_id": "0x00000043"
       },
-      "compression": "deflate",
       "expanded": 472,
+      "kind": "deflate",
       "name": "SWObjects",
       "role": "block",
       "stored": 251
@@ -36,8 +36,8 @@
         "sha256": "ad953ff8d8d6ad383961a12b1afadfebcac37fe6e2ded3779ae646f3bfcbc64a",
         "type_id": "0x00000044"
       },
-      "compression": "deflate",
       "expanded": 64,
+      "kind": "deflate",
       "name": "Units",
       "role": "block",
       "stored": 69
@@ -49,8 +49,8 @@
         "sha256": "a43790da2e3406f2bae4d13a1da4fc2358d0cba873bc096aed123d9ec60b1e64",
         "type_id": "0x00000042"
       },
-      "compression": "deflate",
       "expanded": 68,
+      "kind": "deflate",
       "name": "Contents/Keywords",
       "role": "block",
       "stored": 73
@@ -62,8 +62,8 @@
         "sha256": "a607e8d2c83c2f7280e62dfab609d47a3f5b4b72f22062db57ce0dcbbfc6f870",
         "type_id": "0x00000043"
       },
-      "compression": "deflate",
       "expanded": 253,
+      "kind": "deflate",
       "name": "Contents/Features",
       "role": "block",
       "stored": 153
@@ -75,8 +75,8 @@
         "sha256": "6cbccbd1e4b6e977610255170c9b72be34f7ef0070c957634de882f4635642cd",
         "type_id": "0x00000043"
       },
-      "compression": "deflate",
       "expanded": 44,
+      "kind": "deflate",
       "name": "SWObjects/PartRoot",
       "role": "block",
       "stored": 39
@@ -86,11 +86,11 @@
         "offset": "1151",
         "type_id": "0x00000020"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "Contents/Config-0-Partition",
       "role": "directory-entry",
       "size": {
-        "form": "payload_only",
+        "kind": "payload_only",
         "payload": 279
       }
     },
@@ -99,11 +99,11 @@
         "offset": "1224",
         "type_id": "0x00000043"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "SWObjects",
       "role": "directory-entry",
       "size": {
-        "form": "payload_only",
+        "kind": "payload_only",
         "payload": 251
       }
     },
@@ -112,11 +112,11 @@
         "offset": "1279",
         "type_id": "0x00000044"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "Units",
       "role": "directory-entry",
       "size": {
-        "form": "payload_only",
+        "kind": "payload_only",
         "payload": 69
       }
     },
@@ -125,11 +125,11 @@
         "offset": "1330",
         "type_id": "0x00000042"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "Contents/Keywords",
       "role": "directory-entry",
       "size": {
-        "form": "payload_only",
+        "kind": "payload_only",
         "payload": 73
       }
     },
@@ -138,11 +138,11 @@
         "offset": "1393",
         "type_id": "0x00000043"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "Contents/Features",
       "role": "directory-entry",
       "size": {
-        "form": "payload_only",
+        "kind": "payload_only",
         "payload": 153
       }
     },
@@ -151,21 +151,22 @@
         "offset": "1456",
         "type_id": "0x00000043"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "SWObjects/PartRoot",
       "role": "directory-entry",
       "size": {
-        "form": "payload_only",
+        "kind": "payload_only",
         "payload": 39
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [
         {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "carrier": "block@12:Contents/Config-0-Partition+0",
             "schema": "SCH_SW_33103_11000"
@@ -174,19 +175,25 @@
         }
       ],
       "primary": {
-        "admission": "residual",
+        "admission": {
+          "kind": "residual"
+        },
+        "declared": {},
         "dialect": "sldprt:unknown"
       }
-    }
+    },
+    "kind": "classified"
   },
   "losses": [
     {
       "code": {
-        "code": "source.dialect-unverified",
-        "kind": "source_dialect_unverified",
-        "namespace": "sldprt",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "kind": "namespaced",
+        "value": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "sldprt",
+          "strict_floor": "warning"
+        }
       },
       "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
       "severity": "warning"

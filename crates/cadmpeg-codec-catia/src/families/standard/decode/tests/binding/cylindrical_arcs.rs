@@ -59,7 +59,7 @@ fn emit_strip(tilt: f64, [first_strip, second_strip]: [bool; 2]) -> CadIr {
         [-2.0, 0.0, -3.0],
     ];
     let mut ir = CadIr::empty();
-    ir.model.points = points
+    ir.geometry.points = points
         .iter()
         .enumerate()
         .map(|(i, &[x, y, z])| {
@@ -88,12 +88,13 @@ fn emit_strip(tilt: f64, [first_strip, second_strip]: [bool; 2]) -> CadIr {
         let id = standard_id("surf", format_args!("{i}"), SurfaceId::mint).expect("surface ID");
         bindings.push((id.clone(), false, 0));
         surface_indices.insert(id.clone(), i);
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: id.clone(),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: standard_id("face", format_args!("{i}"), FaceId::mint).expect("face ID"),
             shell: ShellId::mint("catia:test:shell#strip").expect("shell ID"),
             surface: id,
@@ -102,6 +103,7 @@ fn emit_strip(tilt: f64, [first_strip, second_strip]: [bool; 2]) -> CadIr {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
     }
     let line = |pos, face| StandardCurveSupport {
@@ -201,32 +203,42 @@ fn emit_strip(tilt: f64, [first_strip, second_strip]: [bool; 2]) -> CadIr {
 #[test]
 fn cylindrical_arc_recovery_reverses_the_edge_and_its_occurrence() {
     let ir = emit_strip(0.0, [true, false]);
-    let edge = &ir.model.edges[0];
+    let edge = &ir.geometry.edges[0];
     assert_eq!(edge.param_range().expect("recovered arc").get(), [PI, TAU]);
-    assert_eq!(edge.start.as_str(), "catia:standard:v#1");
-    assert_eq!(edge.end.as_str(), "catia:standard:v#0");
-    assert_eq!(ir.model.coedges[0].sense, Sense::Reversed);
+    assert_eq!(
+        edge.ends
+            .as_ref()
+            .expect("edge has vertices")
+            .start
+            .as_str(),
+        "catia:standard:v#1"
+    );
+    assert_eq!(
+        edge.ends.as_ref().expect("edge has vertices").end.as_str(),
+        "catia:standard:v#0"
+    );
+    assert_eq!(ir.geometry.coedges[0].sense, Sense::Reversed);
 }
 
 #[test]
 fn cylindrical_arc_recovery_rejects_crossed_generators() {
     let ir = emit_strip(PI, [true, false]);
-    assert!(ir.model.edges[2].param_range().is_some());
-    assert!(ir.model.edges[0].param_range().is_none());
+    assert!(ir.geometry.edges[2].param_range().is_some());
+    assert!(ir.geometry.edges[0].param_range().is_none());
 }
 
 #[test]
 fn cylindrical_arc_recovery_rejects_conflicting_opposite_arcs() {
     let opposite = emit_strip(0.0, [false, true]);
     assert_eq!(
-        opposite.model.edges[0]
+        opposite.geometry.edges[0]
             .param_range()
             .expect("opposite strip range")
             .get(),
         [0.0, PI]
     );
     let ir = emit_strip(0.0, [true, true]);
-    assert!(ir.model.edges[2].param_range().is_some());
-    assert!(ir.model.edges[5].param_range().is_some());
-    assert!(ir.model.edges[0].param_range().is_none());
+    assert!(ir.geometry.edges[2].param_range().is_some());
+    assert!(ir.geometry.edges[5].param_range().is_some());
+    assert!(ir.geometry.edges[0].param_range().is_none());
 }

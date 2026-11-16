@@ -118,7 +118,7 @@ fn occurrence(
 ) -> cadmpeg_ir::products::Occurrence {
     let mut wire = serde_json::json!({
         "id":id, "parent":parent.map_or_else(||serde_json::json!({"kind":"root"}), |id|serde_json::json!({"kind":"occurrence","occurrence":id})),
-        "prototype":{"scope":"local","definition":"f3d:test:definition#1"},
+        "prototype":{"kind":"local","definition":"f3d:test:definition#1"},
         "ordinal":0,"transform":[[1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.]],"scale":[1.,1.,1.]
     });
     if let Some(reference) = reference {
