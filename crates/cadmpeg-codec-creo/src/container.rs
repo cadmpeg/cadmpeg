@@ -1586,13 +1586,28 @@ fn loop_array_sections<'a>(
     selected
 }
 
-fn surface_rows(sections: &[ScannedSection<'_>]) -> Result<Vec<SurfaceRow>, CodecError> {
-    collect_section_records_result(
-        sections.iter(),
-        |bytes| Ok(surface::rows(bytes)),
-        |row, base| row.offset += base,
-        |row| row.offset,
-    )
+fn surface_rows(
+    sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<SurfaceRow> {
+    let mut rows = Vec::new();
+    for section in sections {
+        let base = section.section.offset();
+        let (section_rows, readings) = surface::rows_with_packed_readings(section.region);
+        for reading in readings {
+            losses.push(crate::loss::CreoLossCode::SurfaceRowPackedReading.note(format!(
+                "srf_array frame at byte {} reads packed c0..df XX YY row fields in place of {} one- and two-byte row readings",
+                base + reading.frame_start,
+                reading.replaced
+            )));
+        }
+        rows.extend(section_rows.into_iter().map(|mut row| {
+            row.offset += base;
+            row
+        }));
+    }
+    rows.as_mut_slice().sort_by_key(|left| left.offset);
+    rows
 }
 
 fn cross_section_surface_rows(
@@ -2854,12 +2869,13 @@ pub(crate) fn scan_bytes<'a>(
         sections,
     );
     let loop_arrays = loop_array_scan(&loop_array_sections);
-    let mut nonvisible_surface_rows = surface_rows(&nonvisible_geometry_sections)?;
+    let mut nonvisible_surface_rows =
+        surface_rows(&nonvisible_geometry_sections, &mut local_work_cap_losses);
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
     nonvisible_surface_rows
         .as_mut_slice()
         .sort_by_key(|left| left.offset);
-    let mut surface_rows = surface_rows(&model_geometry_sections)?;
+    let mut surface_rows = surface_rows(&model_geometry_sections, &mut local_work_cap_losses);
     surface_rows.extend(legacy_geometry.rows);
     let surface_row_owners = collect_section_records_result(
         model_geometry_sections.iter(),

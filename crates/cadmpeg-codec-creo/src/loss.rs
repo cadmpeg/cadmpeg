@@ -178,6 +178,9 @@ pub(crate) enum CreoLossCode {
     NurbsBoundaryCarrierUnresolved,
     /// `VisibGeom` surface rows share a non-unique identity.
     VisibGeomSurfaceAmbiguous,
+    /// Surface rows read the packed `c0..df XX YY` identifier tier where the
+    /// one- and two-byte reading of the same frame also forms rows.
+    SurfaceRowPackedReading,
     /// `VisibGeom` curve-topology rows share a non-unique identity.
     VisibGeomCurveAmbiguous,
     /// Decoded section segments retain source-native geometry.
@@ -397,6 +400,7 @@ impl CreoLossCode {
             Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
             Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
+            Self::SurfaceRowPackedReading => "geometry.surface-row-packed-reading",
             Self::VisibGeomCurveAmbiguous => "geometry.visibgeom-curve-ambiguous",
             Self::SectionSegmentGeometryUnresolved => "geometry.section-segment-unresolved",
             Self::CarrierVisibGeomPlanes => "carrier.visibgeom-planes",
@@ -469,6 +473,7 @@ impl CreoLossCode {
         match self {
             Self::ContainerCensus
             | Self::VisibGeomSurfaceAmbiguous
+            | Self::SurfaceRowPackedReading
             | Self::VisibGeomCurveAmbiguous
             | Self::CarrierVisibGeomPlanes
             | Self::CarrierTopologyBoundPlanes
@@ -691,6 +696,7 @@ impl CreoLossCode {
             | Self::LegacySurfaceCarrierUnresolved
             | Self::NurbsBoundaryCarrierUnresolved
             | Self::VisibGeomSurfaceAmbiguous
+            | Self::SurfaceRowPackedReading
             | Self::VisibGeomCurveAmbiguous
             | Self::SectionSegmentGeometryUnresolved
             | Self::SectionSplineUnresolved
@@ -860,6 +866,7 @@ mod tests {
                 "geometry.legacy-surface-carrier-unresolved",
                 "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",
+                "geometry.surface-row-packed-reading",
                 "geometry.visibgeom-curve-ambiguous",
                 "geometry.section-segment-unresolved",
                 "carrier.visibgeom-planes",

@@ -3322,7 +3322,88 @@ pub(crate) fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
     rows_with_boundaries(payload, &[BoundaryType::Code00, BoundaryType::Code06])
 }
 
+/// A counted `srf_array` frame whose rows read the packed `c0..df XX YY`
+/// tier where the compact reading of the same frame also forms rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackedRowReading {
+    /// Offset of the first byte after the frame count.
+    pub(crate) frame_start: usize,
+    /// Compact-reading rows the packed reading replaces.
+    pub(crate) replaced: usize,
+}
+
 fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<SurfaceRow> {
+    rows_and_packed_readings(payload, boundary_types).0
+}
+
+/// Rows of every frame, and the frames whose packed reading replaces compact
+/// rows.
+///
+/// A frame keeps its packed reading when its rows fit the frame count, and
+/// otherwise its compact reading when those fit. The count is the frame's
+/// slot extent: a slot can lack a materialized fixed-prefix header, and more
+/// headers than slots withhold the frame.
+fn rows_and_packed_readings(
+    payload: &[u8],
+    boundary_types: &[BoundaryType],
+) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
+    let packed = row_candidates(payload, boundary_types, row_prefix::RowReading::Packed);
+    let frames: Vec<SurfaceArrayFrame> = surface_array_frames(payload).collect();
+    if frames.is_empty() {
+        return (packed, Vec::new());
+    }
+    let compact = row_candidates(payload, boundary_types, row_prefix::RowReading::Compact);
+    let in_frame = |rows: &[SurfaceRow], frame: &SurfaceArrayFrame| -> Vec<SurfaceRow> {
+        rows.iter()
+            .filter(|row| row.offset >= frame.start && row.offset < frame.end)
+            .cloned()
+            .collect()
+    };
+    let mut framed = Vec::new();
+    let mut readings = Vec::new();
+    let mut saw_framed_candidate = false;
+    for frame in &frames {
+        let packed_rows = in_frame(&packed, frame);
+        let compact_rows = in_frame(&compact, frame);
+        saw_framed_candidate |= !packed_rows.is_empty() || !compact_rows.is_empty();
+        if packed_rows.len() <= frame.count {
+            let replaced = compact_rows
+                .iter()
+                .filter(|row| !packed_rows.contains(row))
+                .count();
+            if replaced != 0 && compact_rows.len() <= frame.count {
+                readings.push(PackedRowReading {
+                    frame_start: frame.start,
+                    replaced,
+                });
+            }
+            framed.extend(packed_rows);
+        } else if compact_rows.len() <= frame.count {
+            framed.extend(compact_rows);
+        }
+    }
+    if saw_framed_candidate {
+        framed.as_mut_slice().sort_by_key(|left| left.offset);
+        framed.dedup_by_key(|row| row.offset);
+        (framed, readings)
+    } else {
+        (packed, readings)
+    }
+}
+
+/// Rows of every `srf_array` frame, and the frames whose packed reading
+/// replaces compact rows.
+pub(crate) fn rows_with_packed_readings(
+    payload: &[u8],
+) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
+    rows_and_packed_readings(payload, BOUNDARY_TYPES)
+}
+
+fn row_candidates(
+    payload: &[u8],
+    boundary_types: &[BoundaryType],
+    reading: row_prefix::RowReading,
+) -> Vec<SurfaceRow> {
     let mut result = Vec::new();
     let mut namespace_start = 0;
     while let Some(array) = find(payload, b"srf_array\0", namespace_start) {
@@ -3331,7 +3412,8 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
         namespace_start = start;
         let value = |label: &[u8]| {
             find_in(payload, label, start, end).and_then(|at| {
-                row_prefix::row_field(payload, at + label.len(), end).map(|(value, _)| (value, at))
+                row_prefix::named_row_field(payload, at + label.len(), end, reading)
+                    .map(|value| (value, at))
             })
         };
         let typed_kind = find_in(payload, b"geom_type\0", start, end)
@@ -3388,14 +3470,16 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
             .unwrap_or(0);
         let short = id_ending_at(payload, type_offset);
         let anchored = |start: usize| row_prefix::packed_id_anchored(payload, start, &frame_starts);
-        let packed =
-            row_prefix::packed_id_ending_at(payload, type_offset, lower).filter(|(_, start)| {
+        let packed = (reading == row_prefix::RowReading::Packed)
+            .then(|| row_prefix::packed_id_ending_at(payload, type_offset, lower))
+            .flatten()
+            .filter(|(_, start)| {
                 anchored(*start) && !short.is_some_and(|(_, short)| anchored(short))
             });
         let Some((id, id_start)) = packed.or(short) else {
             continue;
         };
-        let Some(prefix) = row_prefix::row_prefix(payload, type_offset, limit) else {
+        let Some(prefix) = row_prefix::row_prefix(payload, type_offset, limit, reading) else {
             continue;
         };
         result.push(SurfaceRow {
@@ -3432,36 +3516,6 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
             .any(|(start, end)| row.offset >= *start && row.offset < *end)
     });
     result.retain(|row| boundary_types.contains(&row.boundary_type));
-    let mut frames = surface_array_frames(payload).peekable();
-    if frames.peek().is_some() {
-        let mut framed = Vec::new();
-        let mut saw_framed_candidate = false;
-        for frame in frames {
-            let selected_count = result
-                .iter()
-                .filter(|row| row.offset >= frame.start && row.offset < frame.end)
-                .count();
-            saw_framed_candidate |= selected_count != 0;
-            // The count is the frame's slot extent. Releases can leave slots
-            // without a materialized fixed-prefix header; retaining the
-            // validated headers preserves the rows that are present without
-            // treating an incomplete frame as complete. More headers than
-            // slots is structurally invalid, so withhold that frame. Exact-
-            // count callers are kept separate in `counted_row_bounds` and
-            // `complete_surface_array_bounds`.
-            if selected_count <= frame.count {
-                for row in result
-                    .iter()
-                    .filter(|row| row.offset >= frame.start && row.offset < frame.end)
-                {
-                    framed.push(row.clone());
-                }
-            }
-        }
-        if saw_framed_candidate {
-            result = framed;
-        }
-    }
     result
 }
 

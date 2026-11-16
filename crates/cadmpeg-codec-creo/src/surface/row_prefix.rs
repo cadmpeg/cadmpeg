@@ -20,6 +20,28 @@ const FRAME_END_LABELS: [&[u8]; 4] = [
 /// Row-close byte after which a packed `geom_id` can start.
 const ROW_CLOSE: u8 = 0xe3;
 
+/// Named-record header byte.
+const NAMED_RECORD: u8 = 0xe0;
+
+/// Largest named-record field-type byte.
+const NAMED_RECORD_FIELD_TYPE_MAX: u8 = 0x24;
+
+/// Longest positional row header: a packed id, the type byte, a packed
+/// `feat_id`, the two discriminators, and a packed `next_geom_ptr`.
+const POSITIONAL_HEADER_MAX: usize = 12;
+
+/// Length of a packed field.
+const PACKED_FIELD_LEN: usize = 3;
+
+/// The compact-integer tiers a row scan reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RowReading {
+    /// The one-byte and two-byte tiers, and a lone control byte as its own value.
+    Compact,
+    /// The packed `c0..df XX YY` tier first, then the compact reading.
+    Packed,
+}
+
 /// A canonical packed `c0..df XX YY` field that ends at or before `limit`.
 fn packed_field(payload: &[u8], offset: usize, limit: usize) -> Option<(u32, usize)> {
     matches!(payload.get(offset), Some(0xc0..=0xdf)).then_some(())?;
@@ -27,22 +49,56 @@ fn packed_field(payload: &[u8], offset: usize, limit: usize) -> Option<(u32, usi
         .filter(|(value, _)| *value >= PACKED_ROW_FIELD_MIN)
 }
 
-/// The readings of a row field in priority order: the packed tier, then the
-/// generic compact integer.
+/// The readings of a row field in priority order.
 fn field_readings(
     payload: &[u8],
     offset: usize,
     limit: usize,
+    reading: RowReading,
 ) -> impl Iterator<Item = (u32, usize)> {
-    let packed = packed_field(payload, offset, limit);
+    let packed = match reading {
+        RowReading::Packed => packed_field(payload, offset, limit),
+        RowReading::Compact => None,
+    };
     let (value, end) = psb::compact_int(payload, offset);
-    let generic = (end > offset).then_some((value, end));
-    packed.into_iter().chain(generic)
+    let compact = (end > offset).then_some((value, end));
+    packed.into_iter().chain(compact)
 }
 
 /// The first reading of a row field.
-pub(super) fn row_field(payload: &[u8], offset: usize, limit: usize) -> Option<(u32, usize)> {
-    field_readings(payload, offset, limit).next()
+fn row_field(
+    payload: &[u8],
+    offset: usize,
+    limit: usize,
+    reading: RowReading,
+) -> Option<(u32, usize)> {
+    field_readings(payload, offset, limit, reading).next()
+}
+
+/// Whether a named-record header starts at `offset`.
+fn named_record_header_at(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset) == Some(&NAMED_RECORD)
+        && payload
+            .get(offset + 1)
+            .is_some_and(|field_type| *field_type <= NAMED_RECORD_FIELD_TYPE_MAX)
+        && payload.get(offset + 2).is_some_and(u8::is_ascii_alphabetic)
+}
+
+/// The value of a named row field at `offset`, bounded by the namespace end,
+/// the next frame label, and the next named-record header.
+pub(super) fn named_row_field(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    reading: RowReading,
+) -> Option<u32> {
+    let mut limit = end.min(label_limit(payload, offset, PACKED_FIELD_LEN));
+    if let Some(header) =
+        (offset + 1..offset + PACKED_FIELD_LEN).find(|at| named_record_header_at(payload, *at))
+    {
+        limit = limit.min(header);
+    }
+    row_field(payload, offset, limit, reading).map(|(value, _)| value)
 }
 
 /// A named-record row identifier: the packed tier or a reference identifier.
@@ -50,11 +106,15 @@ pub(crate) fn named_row_identifier(payload: &[u8], offset: usize) -> Option<(u32
     packed_field(payload, offset, payload.len()).or_else(|| psb::reference_id(payload, offset).ok())
 }
 
-/// The offset of the first frame-closing label at or after `from`.
-pub(super) fn frame_limit(payload: &[u8], from: usize) -> usize {
+/// The start of the first frame-closing label that begins within `span`
+/// bytes of `from`, or the payload end.
+fn label_limit(payload: &[u8], from: usize, span: usize) -> usize {
     FRAME_END_LABELS
         .iter()
-        .filter_map(|label| find(payload, label, from))
+        .filter_map(|label| {
+            let window_end = payload.len().min(from + span + label.len());
+            find(payload.get(from..window_end)?, label, 0).map(|at| from + at)
+        })
         .min()
         .unwrap_or(payload.len())
 }
@@ -86,12 +146,17 @@ pub(super) struct RowPrefix {
 /// Read `feat_id`, `orient`, `boundary_type`, and `next_geom_ptr` after the
 /// type byte at `type_offset`. The first `feat_id` reading followed by valid
 /// discriminators selects the header.
-pub(super) fn row_prefix(payload: &[u8], type_offset: usize, limit: usize) -> Option<RowPrefix> {
-    field_readings(payload, type_offset + 1, limit).find_map(|(feature_id, pos)| {
+pub(super) fn row_prefix(
+    payload: &[u8],
+    type_offset: usize,
+    limit: usize,
+    reading: RowReading,
+) -> Option<RowPrefix> {
+    field_readings(payload, type_offset + 1, limit, reading).find_map(|(feature_id, pos)| {
         let orientation = *payload.get(pos)?;
         matches!(orientation, 0x01 | 0xf6).then_some(())?;
         let boundary_type = BoundaryType::from_byte(*payload.get(pos + 1)?)?;
-        let (next_surface, end) = row_field(payload, pos + 2, limit)?;
+        let (next_surface, end) = row_field(payload, pos + 2, limit, reading)?;
         Some(RowPrefix {
             feature_id,
             reversed: orientation == 0xf6,
@@ -108,14 +173,16 @@ pub(super) fn packed_id_ending_at(
     type_offset: usize,
     lower: usize,
 ) -> Option<(u32, usize)> {
-    let start = type_offset.checked_sub(3).filter(|start| *start >= lower)?;
+    let start = type_offset
+        .checked_sub(PACKED_FIELD_LEN)
+        .filter(|start| *start >= lower)?;
     packed_field(payload, start, type_offset)
         .filter(|(_, end)| *end == type_offset)
         .map(|(value, _)| (value, start))
 }
 
 /// Whether a packed `geom_id` can start at `offset`: at a frame start or
-/// after a row close.
+/// after an `e3` byte.
 pub(super) fn packed_id_anchored(payload: &[u8], offset: usize, frame_starts: &[usize]) -> bool {
     frame_starts.contains(&offset)
         || offset.checked_sub(1).and_then(|before| payload.get(before)) == Some(&ROW_CLOSE)
@@ -123,13 +190,18 @@ pub(super) fn packed_id_anchored(payload: &[u8], offset: usize, frame_starts: &[
 
 /// The byte after a positional row's `next_geom_ptr`.
 pub(crate) fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
-    let limit = frame_limit(payload, row.offset);
-    let (_, after_id) = row_field(payload, row.offset, limit)?;
+    let limit = label_limit(payload, row.offset, POSITIONAL_HEADER_MAX);
+    let (_, after_id) = row_field(payload, row.offset, limit, RowReading::Packed)?;
     (payload
         .get(after_id)
         .and_then(|byte| SurfaceKind::from_byte(*byte))
         == Some(row.kind))
     .then_some(())?;
-    let prefix = row_prefix(payload, after_id, limit)?;
-    (prefix.feature_id == row.feature_id).then_some(prefix.end)
+    [RowReading::Packed, RowReading::Compact]
+        .into_iter()
+        .filter_map(|reading| row_prefix(payload, after_id, limit, reading))
+        .find(|prefix| {
+            prefix.feature_id == row.feature_id && prefix.next_surface == row.next_surface
+        })
+        .map(|prefix| prefix.end)
 }

@@ -1625,3 +1625,59 @@ fn terminal_scalar_frame_keeps_gaps_and_opaque_end_distinct() {
     with_opaque_end.body.push(0x5f);
     assert!(with_opaque_end.terminal_scalar_frame().is_none());
 }
+
+#[test]
+fn compact_reading_keeps_a_frame_the_packed_reading_overfills() {
+    // c5 10 20 is a packed feat_id that makes a second header in a one-slot frame.
+    let payload = b"srf_array\0\xf8\x01\x07\x22\x04\x01\x00\x00\x05\x22\xc5\x10\x20\x01\x00\x00";
+    let ids = rows(payload).iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(ids, vec![7]);
+    assert!(crate::surface::rows_with_packed_readings(payload)
+        .1
+        .is_empty());
+}
+
+#[test]
+fn packed_reading_over_a_compact_row_is_reported() {
+    // feat_id c5 01 00 gives next 00; feat_id c5 gives next 01.
+    let payload = b"srf_array\0\xf8\x01\x05\x22\xc5\x01\x00\x01\x00\x00";
+    let (decoded, readings) = crate::surface::rows_with_packed_readings(payload);
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(
+        (decoded[0].feature_id, decoded[0].next_surface),
+        (0x5_0100, 0)
+    );
+    assert_eq!(
+        readings,
+        vec![crate::surface::PackedRowReading {
+            frame_start: b"srf_array\0\xf8\x01".len(),
+            replaced: 1,
+        }]
+    );
+    assert_eq!(
+        positional_body_start(payload, &decoded[0]),
+        Some(b"srf_array\0\xf8\x01".len() + 8)
+    );
+}
+
+#[test]
+fn named_packed_field_stops_at_a_frame_label() {
+    let payload = b"srf_array\0\xf8\x01\
+        \xe0\x01geom_id\0\x05\xe0\x01geom_type\0\x22\
+        \xe0\x01feat_id\0\x04\xe0\x01orient\0\x01\
+        \xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\xc0\x4ecrv_array\0";
+    let decoded = rows(payload);
+    assert_eq!(decoded.len(), 1);
+    assert_ne!(decoded[0].next_surface, 0x4e63);
+}
+
+#[test]
+fn named_packed_field_stops_at_a_named_record_header() {
+    let payload = b"srf_array\0\xf8\x01\
+        \xe0\x01geom_id\0\xc5\xe0\x01geom_type\0\x22\
+        \xe0\x01feat_id\0\x04\xe0\x01orient\0\x01\
+        \xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00";
+    let decoded = rows(payload);
+    assert_eq!(decoded.len(), 1);
+    assert_ne!(decoded[0].id, 0x05_e001);
+}

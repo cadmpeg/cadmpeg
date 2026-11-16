@@ -776,3 +776,35 @@ fn datum_outline_constructor_requires_one_plane() {
         ]
     );
 }
+
+#[test]
+fn positional_plane_reads_packed_row_fields() {
+    let mut data = b"srf_array\0\xf8\x01".to_vec();
+    data.extend([0xc0, 0x4e, 0x20, 0x22, 0xc0, 0x42, 0x68, 1, 1, 0]);
+    data.extend([0x0f; 4]);
+    data.extend(ieee8(2.0));
+    data.push(0x0f);
+    data.extend(ieee8(3.0));
+    data.extend(ieee8(-2.0));
+    data.push(0x0f);
+    data.extend(ieee8(-3.0));
+    assert_eq!(
+        planes(&data),
+        vec![DatumPlaneRecord::new(
+            20_000,
+            17_000,
+            DatumPlane::new(Axis::Y, 0.0).expect("valid datum fixture"),
+            0.0,
+            [[Some(2.0), Some(3.0)], [Some(-2.0), Some(-3.0)]],
+            12
+        )
+        .expect("valid datum fixture")]
+    );
+}
+
+#[test]
+fn named_plane_reads_packed_row_fields() {
+    let data = b"\xe0\x01geom_id\0\xc0\x4e\x20\xe0\x01feat_id\0\xc0\x42\x68outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    let plane = named_plane(data).expect("named plane");
+    assert_eq!((plane.id, plane.feature_id), (20_000, 17_000));
+}
