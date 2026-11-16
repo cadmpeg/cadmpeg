@@ -3289,3 +3289,23 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** The geometry carrier of these records.
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
+
+### DR-705. Cut Extrude whose removed planes disagree with the sampled regions
+
+**Question.** Which rule selects the atomic regions of a Cut `Extrude` whose counted selection matches no arrangement face when the planes that the Cut changed select more regions than its transition certifies?
+
+**Known.** A public RailCore Mini Cut `Extrude` has a Sketch of three profiles and an arrangement of 14 atomic regions. The Cut changes three planes parallel to the Sketch. The regions whose interior points a changed plane held before the Cut and not after it do not pass the exact transition certificate. Its counted selection lists four rings of four, four, one, and four curves, and one ring has incidence words greater than two. No ring matches an arrangement face.
+
+**Need.** The rule that relates the incidence words greater than two to the removed regions, or a certificate that selects the removed regions without the sampled points.
+
+**Note.** The selection stays native with `feature.profile-selection-native`.
+
+### DR-706. Cut Extrude with atomic regions that have no sample point
+
+**Question.** How are the atomic regions of a Cut `Extrude` found when the arrangement has a region that holds no sample point of the grid?
+
+**Known.** A public RailCore Mini Cut `Extrude` has a Sketch of 54 profiles and a counted selection of eight rings of three curves. The arrangement has 72 faces. Sampling the atomic regions finds no interior point for at least one region, so no removed-region candidate forms. The rings come in pairs of the same three curves in opposite order.
+
+**Need.** An interior point rule for narrow regions, or a certificate that does not sample.
+
+**Note.** The selection stays native with `feature.profile-selection-native`.

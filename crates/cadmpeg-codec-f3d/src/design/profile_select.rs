@@ -798,6 +798,16 @@ pub(crate) fn bind_extrude_profile_selections(
                                 *profile = ProfileRef::Planar(selected);
                                 break 'feature_edit;
                             }
+                            if let Some(states) = scope.history_state_id().zip(effective_previous_history_state_id) {
+                                if let Some(selected) = region_members::resolve_certified(
+                                    stream, operand, sketch, curve_resolution.curve_identities,
+                                    scoped_resolution, states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                )? {
+                                    *profile = ProfileRef::Planar(selected);
+                                    break 'feature_edit;
+                                }
+                            }
                             unresolved_region_operand = Some((operand, stream));
                         }
                     }
@@ -1005,6 +1015,94 @@ pub(crate) fn bind_extrude_profile_selections(
                         }
                     }
                     if matching_groups.is_empty() {
+                        if scope
+                            .extrude_profile()
+                            .is_none_or(|operand| operand.region_selection.is_none())
+                        {
+                            if let Some(states) = scope
+                                .history_state_id()
+                                .zip(effective_previous_history_state_id)
+                            {
+                                let sweep = cap_regions::compact::Sweep {
+                                    operation: op,
+                                    start,
+                                    direction,
+                                    extent,
+                                };
+                                let candidate = if cut {
+                                    cap_regions::compact::removed_candidate(
+                                        sketch,
+                                        scoped_resolution,
+                                        states,
+                                        sweep,
+                                    )?
+                                } else {
+                                    cap_regions::compact::added_candidate(
+                                        sketch,
+                                        scoped_resolution,
+                                        states,
+                                        sweep,
+                                    )?
+                                };
+                                match candidate {
+                                    Some(candidate) => {
+                                        if !selects_whole_sketch(&candidate, sketch) {
+                                            *profile = ProfileRef::Planar(candidate);
+                                        }
+                                    }
+                                    None => {
+                                        // No certificate selects regions. The inserted
+                                        // or removed faces still contradict the whole
+                                        // Sketch when they select only some profiles.
+                                        let inferred_before =
+                                            scoped_resolution.profile_work.inferred_counts();
+                                        let assumed_before =
+                                            scoped_resolution.profile_work.assumed_flags();
+                                        let subset = match transition_profile_selection(
+                                            sketch,
+                                            scoped_resolution,
+                                            states.0,
+                                            states.1,
+                                        )? {
+                                            Some(ResolvedProfileSelection::Loops(mut loops)) => {
+                                                loops.sort_unstable();
+                                                loops.dedup();
+                                                !sketch.profiles.is_empty()
+                                                    && loops.len() < sketch.profiles.len()
+                                            }
+                                            Some(ResolvedProfileSelection::Regions(regions)) => {
+                                                PlanarProfileRef::sketch_regions(
+                                                    sketch.id.clone(),
+                                                    regions,
+                                                )
+                                                .is_ok_and(|selection| {
+                                                    !sketch.profiles.is_empty()
+                                                        && !selects_whole_sketch(&selection, sketch)
+                                                })
+                                            }
+                                            None => false,
+                                        };
+                                        scoped_resolution
+                                            .profile_work
+                                            .set_inferred_counts(inferred_before);
+                                        scoped_resolution
+                                            .profile_work
+                                            .set_assumed_flags(assumed_before);
+                                        if subset {
+                                            *profile = ProfileRef::Planar(
+                                                PlanarProfileRef::sketch_selection(
+                                                    sketch.id.clone(),
+                                                    vec![scope.id.clone()],
+                                                )
+                                                .unwrap_or_else(|_| {
+                                                    PlanarProfileRef::Native(scope.id.clone())
+                                                }),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         break 'feature_edit;
                     }
                     let group_ids: Vec<_> = matching_groups
@@ -1104,6 +1202,58 @@ pub(crate) fn bind_extrude_profile_selections(
         resolution.profile_work.finish_selection();
     }
     Ok(losses)
+}
+
+fn sorted(
+    mut entities: Vec<&cadmpeg_ir::sketches::SketchEntityId>,
+) -> Vec<&cadmpeg_ir::sketches::SketchEntityId> {
+    entities.sort_unstable();
+    entities
+}
+
+/// Whether `selection` names every Sketch profile as its own filled region,
+/// which is what the whole Sketch means. A trimmed region counts as a profile
+/// when it has no hole and bounds the same curves.
+fn selects_whole_sketch(
+    selection: &cadmpeg_ir::features::PlanarProfileRef,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+) -> bool {
+    use cadmpeg_ir::features::SketchProfileRegion;
+
+    let cadmpeg_ir::features::PlanarProfileRef::SketchRegions { regions, .. } = selection else {
+        return false;
+    };
+    let mut taken = Vec::new();
+    for region in regions.as_slice() {
+        let index = match region {
+            SketchProfileRegion::Loops { loops } if loops.holes().is_empty() => {
+                usize::try_from(loops.outer()).ok()
+            }
+            SketchProfileRegion::Trimmed {
+                outer_boundary,
+                hole_boundaries,
+            } if hole_boundaries.is_empty() => {
+                let boundary = sorted(outer_boundary.iter().map(|use_| &use_.entity).collect());
+                (0..sketch.profiles.len()).find(|&index| {
+                    !taken.contains(&index)
+                        && sorted(
+                            sketch.profiles[index]
+                                .iter()
+                                .map(|use_| &use_.entity)
+                                .collect(),
+                        ) == boundary
+                })
+            }
+            _ => None,
+        };
+        match index {
+            Some(index) if index < sketch.profiles.len() && !taken.contains(&index) => {
+                taken.push(index);
+            }
+            _ => return false,
+        }
+    }
+    taken.len() == sketch.profiles.len()
 }
 
 pub(crate) fn unprofiled_region_losses(
