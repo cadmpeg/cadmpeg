@@ -21,6 +21,7 @@ pub mod expr;
 pub mod feature;
 pub mod ids;
 pub mod names;
+pub mod ops;
 pub mod options;
 pub mod parameter;
 pub mod program;
