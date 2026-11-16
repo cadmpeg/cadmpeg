@@ -97,6 +97,7 @@ pub enum EvaluationStatus {
 )]
 pub enum StateBase {
     /// Nothing.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Empty,
     /// The extent of the scope's current state at the position.
     Current(Position),

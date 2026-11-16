@@ -145,10 +145,13 @@ pub enum PartNumber {
     /// A part number of the configuration's own.
     Text(String),
     /// The configuration's name.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ConfigurationName,
     /// The name of the configuration's parent.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ParentConfigurationName,
     /// The definition's title, else its source name.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     DocumentName,
 }
 
@@ -364,10 +367,13 @@ pub enum ArrangementKind {
     /// Relationship values and suppression, pattern offsets, positions,
     /// grounding, flexibility, and the positional arrangement of each
     /// sub-assembly.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Positional,
     /// Occurrence visibility, appearance, and transparency.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Display,
     /// Ordered moves of sets of occurrences, which change appearance only.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Explode,
     /// A kind whose meaning is not established, by the source's kind.
     Native(NonBlankString),

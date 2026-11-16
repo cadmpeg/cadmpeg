@@ -133,8 +133,10 @@ pub enum Driver {
 )]
 pub enum FuzzyTolerance {
     /// The modeling kernel's default tolerance.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     KernelDefault,
     /// A tolerance determined from the participating shapes.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Automatic,
     /// A stated positive tolerance.
     Explicit(Dimension<PositiveLength>),
@@ -161,6 +163,7 @@ pub enum FeatureOperation {
     Spreadsheet(SpreadsheetId),
     /// A design feature whose removed volume is the volume a manufacturing
     /// operation machines.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     MaterialRemoval,
     /// A feature defined by stored geometry.
     Stored {

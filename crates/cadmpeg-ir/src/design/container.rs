@@ -125,6 +125,7 @@ pub struct Folder {
 )]
 pub enum Rollback {
     /// After the last member.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     End,
     /// Before a member of the container.
     Before(Member),

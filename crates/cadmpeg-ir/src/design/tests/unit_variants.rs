@@ -12,13 +12,19 @@ use serde_json::{json, Value};
 use syn::{Fields, Item};
 
 use super::read_desktop;
+use crate::design::configuration::{ArrangementKind, PartNumber};
 use crate::design::construction::Relation;
+use crate::design::container::Rollback;
 use crate::design::dimension::ParameterRef;
+use crate::design::evaluation::StateBase;
 use crate::design::expr::{ExpressionDialect, MeasureKind, Node};
+use crate::design::feature::{FeatureOperation, FuzzyTolerance};
 use crate::design::names::GenerationRole;
 use crate::design::options::{
     BooleanOp, CornerRound, ProjectionDirection, SectionCondition, ThinEnds, WallSide,
 };
+use crate::design::parameter::{ParameterDefinition, Tolerance};
+use crate::design::program::ProgramStage;
 use crate::design::selection::{
     Anchor, Continuity, Ordered, PickTarget, Picks, Propagation, SelectionRule,
 };
@@ -35,23 +41,32 @@ fn reads<T: Serialize + DeserializeOwned>(value: &Value) -> Result<Value, String
 /// The reader of each adjacently tagged design enum with a unit variant, by
 /// the enum's name.
 fn readers() -> BTreeMap<&'static str, Reader> {
-    let readers: [(&'static str, Reader); 18] = [
+    let readers: [(&'static str, Reader); 27] = [
         ("Anchor", reads::<Anchor>),
+        ("ArrangementKind", reads::<ArrangementKind>),
         ("BooleanOp", reads::<BooleanOp>),
         ("Continuity", reads::<Continuity>),
         ("CornerRound", reads::<CornerRound>),
         ("ExpressionDialect", reads::<ExpressionDialect>),
+        ("FeatureOperation", reads::<FeatureOperation>),
+        ("FuzzyTolerance", reads::<FuzzyTolerance>),
         ("GenerationRole", reads::<GenerationRole>),
         ("MeasureKind", reads::<MeasureKind>),
         ("Node", reads::<Node<ParameterRef>>),
+        ("ParameterDefinition", reads::<ParameterDefinition>),
+        ("PartNumber", reads::<PartNumber>),
         ("PickTarget", reads::<PickTarget>),
         ("Picks", reads::<Picks<Ordered>>),
+        ("ProgramStage", reads::<ProgramStage>),
         ("ProjectionDirection", reads::<ProjectionDirection>),
         ("Propagation", reads::<Propagation>),
         ("Relation", reads::<Relation>),
+        ("Rollback", reads::<Rollback>),
         ("SectionCondition", reads::<SectionCondition>),
         ("SelectionRule", reads::<SelectionRule>),
+        ("StateBase", reads::<StateBase>),
         ("ThinEnds", reads::<ThinEnds>),
+        ("Tolerance", reads::<Tolerance>),
         ("ValueKind", reads::<ValueKind>),
         ("WallSide", reads::<WallSide>),
     ];

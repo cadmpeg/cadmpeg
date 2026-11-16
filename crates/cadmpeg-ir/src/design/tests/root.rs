@@ -3,7 +3,8 @@
 //! again; the wire forms §2.5 states for them; and the `design` home of a
 //! document.
 
-use cadmpeg_core::decode::{ArenaClass, ContentScope};
+use cadmpeg_core::decode::{ArenaClass, ContentScope, ResourceDimension, ResourceLimits};
+use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::json;
@@ -14,10 +15,12 @@ use super::{read_desktop, refuses, round_trip, to_value};
 use crate::design::configuration::{OccurrenceOverride, Overrides};
 use crate::design::container::Container;
 use crate::design::evaluation::StateDelta;
+use crate::design::expr::{Neutral, Node};
 use crate::design::feature::{
     FeatureDefinition, FeatureOperation, FuzzyTolerance, OperationFamily, StoredOrigin,
 };
-use crate::design::program::{ParameterProgram, ProgramBody};
+use crate::design::program::{ParameterProgram, ProgramBody, Statement};
+use crate::design::read::{self, Ceiling};
 use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::spreadsheet::Spreadsheet;
 use crate::document::{ArenaName, CadIr, Design, ScopeViolation};
@@ -341,4 +344,43 @@ fn diff_reports_design_arenas_and_names() {
         .unwrap();
     assert_eq!(names.added.len(), right.design.names.entries().len());
     assert!(crate::diff::diff(&right, &right).is_empty());
+}
+
+/// A program's statements nest no deeper than the expression ceiling. Under
+/// the desktop ceiling the JSON depth limit refuses a nesting first.
+#[test]
+fn statements_nest_to_the_expression_ceiling() {
+    fn nested(depth: u64) -> String {
+        let condition = || Neutral(Node::Boolean(true));
+        let mut statement = Statement::If {
+            condition: condition(),
+            then: Vec::new(),
+            otherwise: Vec::new(),
+        };
+        for _ in 1..depth {
+            statement = Statement::If {
+                condition: condition(),
+                then: vec![statement],
+                otherwise: Vec::new(),
+            };
+        }
+        serde_json::to_string(&statement).unwrap()
+    }
+    let service = ResourceLimits::service();
+    let limit = Ceiling::Expression.of(&service);
+    if let Err(error) = read::from_str::<Statement>(&nested(limit), &service) {
+        panic!("a statement nested to the ceiling of {limit} is refused: {error}");
+    }
+    match read::from_str::<Statement>(&nested(limit + 1), &service) {
+        Err(CodecError::ResourceLimit(refusal)) => {
+            assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+            assert_eq!(refusal.limit, limit);
+            assert_eq!(refusal.used, limit);
+            assert_eq!(refusal.additional, 1);
+        }
+        other => panic!("a statement one past the ceiling of {limit} gave {other:?}"),
+    }
+    let desktop = ResourceLimits::desktop();
+    let past = nested(Ceiling::Expression.of(&desktop) + 1);
+    assert!(read::from_str::<Statement>(&past, &desktop).is_err());
 }

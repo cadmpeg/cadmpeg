@@ -144,6 +144,7 @@ pub enum ParameterDefinition {
     /// By an expression; a literal parameter holds a one-literal expression.
     Expression(Expression),
     /// Geometry determines the value: a reference dimension.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Driven,
     /// A parameter program sets the value.
     Assigned(ParameterProgramId),
@@ -215,9 +216,11 @@ pub enum Tolerance {
     },
     /// The dimension has no tolerance of its own; the definition's general
     /// tolerance applies.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     General,
     /// The dimension is theoretically exact: it has no tolerance of its own
     /// and the general tolerance does not apply to it.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Basic,
     /// One limit only: the nominal is that limit, and the value may lie
     /// anywhere beyond it on the other side.
