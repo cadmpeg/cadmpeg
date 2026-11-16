@@ -750,8 +750,13 @@ The writer's supported schema identifiers are:
 `AUTOMOTIVE_DESIGN_CC2` is the schema name of the AP214 committee draft. Its
 schema identity is AP214, with or without an object identifier.
 
+`{ 1 0 10303 442 2 1 4 }` identifies ISO/TS 10303-442:2018, the AP242 module
+edition between the Edition 1 module (`442 1`) and the Edition 2 module
+(`442 3`). Its AP242 edition is open item ER-06.
+
 For the CADIR AP242 edition report, the first identifier must have the exact
-long-form name and one of the exact numeric object identifiers in the table.
+long-form name and one of the exact numeric object identifiers in the table,
+or the ISO/TS 10303-442:2018 identifier.
 An AP242 identifier with no object identifier, an ASN.1 named object
 identifier, or another numeric object identifier reports an unspecified
 edition. ASCII case differences compare equal. Later identifiers do not

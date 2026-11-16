@@ -149,6 +149,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
+        let schema_edition_loss = crate::dialect::schema_edition_loss(exchange, &primary);
         let ir = CadIr::empty();
 
         let mut body = DecodeBody::new(if ctx.container_only() {
@@ -166,9 +167,8 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 entry.name, entry.uri
             ));
         }
-        if let Some(loss) = dialect_loss {
-            body.losses.push(loss);
-        }
+        body.losses.extend(dialect_loss);
+        body.losses.extend(schema_edition_loss);
         for diagnostic in diagnostics {
             let (code, tag) = match diagnostic.kind {
                 crate::parse::ParseDiagnosticKind::RecordOmitted => {

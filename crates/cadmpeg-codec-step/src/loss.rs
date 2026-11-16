@@ -59,6 +59,9 @@ pub(crate) enum StepLossCode {
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
+    /// The declared schema object identifier names a module edition that the
+    /// decoder reads as a published AP edition.
+    SourceSchemaEditionAssumed,
     /// An attribute string field failed to decode.
     AttributeStringInvalid,
     /// `AXIS2_PLACEMENT_3D` reference direction was parallel to its axis.
@@ -415,6 +418,7 @@ impl StepLossCode {
         Self::HeaderMetadataNoncanonical,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
+        Self::SourceSchemaEditionAssumed,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
         Self::ConflictingRepresentationUnits,
@@ -598,6 +602,7 @@ impl StepLossCode {
             Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::SourceSchemaEditionAssumed => "source.schema-edition-assumed",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
             Self::ConflictingRepresentationUnits => "geometry.conflicting-representation-units",
@@ -866,9 +871,9 @@ impl StepLossCode {
             | Self::DrawingRecordTooFewParameters
             | Self::DrawingOrderUnstatable
             | Self::ParseExpansionBounded => LossTaxonomy::RecordNotTyped,
-            Self::ImplementationLevelUnverified | Self::SourceDialectUnverified => {
-                LossTaxonomy::SourceDialectUnverified
-            }
+            Self::ImplementationLevelUnverified
+            | Self::SourceDialectUnverified
+            | Self::SourceSchemaEditionAssumed => LossTaxonomy::SourceDialectUnverified,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
@@ -1075,6 +1080,7 @@ mod tests {
                 "parse.header-metadata-noncanonical",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
+                "source.schema-edition-assumed",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
                 "geometry.conflicting-representation-units",

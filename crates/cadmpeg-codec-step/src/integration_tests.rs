@@ -6,6 +6,7 @@ mod closed_faces;
 mod declared_measures;
 mod partial_geometry;
 mod pmi_scope;
+mod schema_module_edition;
 mod tolerance_zones;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};

@@ -39,6 +39,21 @@ it. The answer either adds the Edition 4 row, schema variant, and evaluation,
 or records Edition 4 as out of scope, marking future sources at the
 nearest-strategy fallback.
 
+### ER-06. AP242 edition of the ISO/TS 10303-442:2018 module identifier
+
+**Question.** Which AP242 edition does a `FILE_SCHEMA` identifier with the
+object identifier `{ 1 0 10303 442 2 1 4 }` declare?
+
+**Known.** `step.md` §6 gives `{ 1 0 10303 442 2 1 4 }` as the identifier of
+ISO/TS 10303-442:2018, the AP242 module edition between the Edition 1 module
+(`442 1`) and the Edition 2 module (`442 3`). The decoder reads it as
+`step:ap242-e2` and charges `source.schema-edition-assumed`. A same-format
+convert then declares the Edition 2 identifier `{ 1 0 10303 442 3 1 4 }`.
+
+**Need.** The decoder assumes that the 2018 module carries the Edition 2
+entity vocabulary. The answer either confirms the Edition 2 row or gives the
+module its own row and write target.
+
 ### ER-02. `step:ap242-e3` as the weakest supported row
 
 **Question.** Does an AP242 Edition 3 source decode to the Edition 3 grammar
