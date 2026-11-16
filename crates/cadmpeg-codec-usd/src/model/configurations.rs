@@ -62,7 +62,13 @@ impl super::Builder<'_, '_, '_, '_> {
                     .iter()
                     .map(|parameter| parameter.id.to_string()),
             )
-            .chain(self.ir.geometry.bodies.iter().map(|body| body.id.to_string()))
+            .chain(
+                self.ir
+                    .geometry
+                    .bodies
+                    .iter()
+                    .map(|body| body.id.to_string()),
+            )
             .collect();
         let named: BTreeSet<String> = self
             .feature_ids
@@ -128,17 +134,15 @@ impl super::Builder<'_, '_, '_, '_> {
                 insert(key, text.into());
             }
         }
-        if !names.is_empty() {
-            insert(
-                "properties",
-                names
-                    .into_iter()
-                    .zip(values)
-                    .map(|(name, value)| (name, serde_json::Value::from(value)))
-                    .collect::<serde_json::Map<_, _>>()
-                    .into(),
-            );
-        }
+        insert(
+            "properties",
+            names
+                .into_iter()
+                .zip(values)
+                .map(|(name, value)| (name, serde_json::Value::from(value)))
+                .collect::<serde_json::Map<_, _>>()
+                .into(),
+        );
         serde_json::from_value(serde_json::Value::Object(wire))
             .map_err(|error| format!("the configuration does not deserialize: {error}"))
     }

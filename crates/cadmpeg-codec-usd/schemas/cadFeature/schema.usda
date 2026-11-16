@@ -41,7 +41,8 @@ class CadFeature "CadFeature" (
         doc = """The evaluation is disabled. Unauthored, the source states no value."""
     )
     uniform token cad:feature:operation (
-        doc = """The definition tag of the CADIR feature definition, for example 'extrude'."""
+        doc = """The kind of the CADIR feature operation, for example 'extrude', or
+                 'post_process' for a post-processed operation."""
     )
     rel cad:feature:dependencies (
         doc = """The CadFeature prims that regeneration consumes, in source operand order."""

@@ -40,7 +40,7 @@ fn layers_and_attributes_survive_a_write() {
     ir.model.attributes = vec![
         record(serde_json::json!({
             "id": "test:model:attribute#1",
-            "target": {"kind": "face", "id": face},
+            "target": {"kind": "face", "value": face},
             "name": "finish",
             "values": [
                 {"kind": "string", "value": "anodized"},

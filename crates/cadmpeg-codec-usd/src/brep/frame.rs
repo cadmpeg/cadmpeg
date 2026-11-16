@@ -8,6 +8,7 @@
 //! and within the chord slack for curved ones.
 
 use super::{Brep, Catalog, CurveKind, SurfaceKind};
+use cadmpeg_ir::math::portable::Portable;
 
 /// A rigid frame: rows `x`, `y`, `z`, and the origin.
 pub(crate) type RowFrame = [[f64; 3]; 4];
@@ -94,10 +95,22 @@ fn curve_point(brep: &Brep, curve: (Catalog, usize), t: f64) -> Option<[f64; 3]>
             let param = |at: usize| record.params.get(at).copied().unwrap_or_default();
             let (along_x, along_y, along_z) = match record.kind {
                 CurveKind::Line => (0.0, 0.0, t),
-                CurveKind::Circle => (param(0) * t.cos(), param(0) * t.sin(), 0.0),
-                CurveKind::Ellipse => (param(0) * t.cos(), param(1) * t.sin(), 0.0),
+                CurveKind::Circle => (
+                    param(0) * t.portable_cos(),
+                    param(0) * t.portable_sin(),
+                    0.0,
+                ),
+                CurveKind::Ellipse => (
+                    param(0) * t.portable_cos(),
+                    param(1) * t.portable_sin(),
+                    0.0,
+                ),
                 CurveKind::Parabola => (param(0) * t * t, 2.0 * param(0) * t, 0.0),
-                CurveKind::Hyperbola => (param(0) * t.cosh(), param(1) * t.sinh(), 0.0),
+                CurveKind::Hyperbola => (
+                    param(0) * t.portable_cosh(),
+                    param(1) * t.portable_sinh(),
+                    0.0,
+                ),
             };
             Some([0, 1, 2].map(|k| {
                 frame.position[k]

@@ -139,17 +139,33 @@ impl super::Builder<'_, '_, '_, '_> {
             let definition = wire
                 .entry("definition")
                 .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-            let node = if definition
-                .get("definition")
-                .and_then(serde_json::Value::as_str)
-                == Some("post_process")
-            {
+            let serde_json::Value::Object(definition) = definition else {
+                return Err("the feature definition is not a JSON object".to_owned());
+            };
+            let post_processed =
+                definition.get("kind").and_then(serde_json::Value::as_str) == Some("post_process");
+            if !post_processed {
                 definition
+                    .entry("kind")
+                    .or_insert_with(|| "operation".into());
+            }
+            let value = definition
+                .entry("value")
+                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+            let operation = if post_processed {
+                value
                     .get_mut("operation")
                     .ok_or("a post-processed feature has no operation")?
             } else {
-                definition
+                value
             };
+            let serde_json::Value::Object(operation) = operation else {
+                return Err("the feature operation is not a JSON object".to_owned());
+            };
+            operation.entry("kind").or_insert_with(|| family.tag.into());
+            let node = operation
+                .entry("value")
+                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
             let ids = &self.feature_ids;
             let feature = |path: &str| {
                 ids.get(path).map_or_else(
@@ -234,33 +250,26 @@ impl super::Builder<'_, '_, '_, '_> {
         if let Some(name) = token(prim, "cad:feature:name", &mut self.issues) {
             insert("name", name.into());
         }
+        if let Some(suppressed) = boolean(prim, "cad:feature:suppressed", &mut self.issues) {
+            insert("suppressed", suppressed.into());
+        }
         insert(
-            "suppressed",
-            boolean(prim, "cad:feature:suppressed", &mut self.issues).into(),
+            "dependencies",
+            dependencies
+                .iter()
+                .map(|dependency| serde_json::Value::from(dependency.to_string()))
+                .collect(),
         );
-        if !dependencies.is_empty() {
-            insert(
-                "dependencies",
-                dependencies
-                    .iter()
-                    .map(|dependency| serde_json::Value::from(dependency.to_string()))
-                    .collect(),
-            );
-        }
-        if !outputs.is_empty() {
-            insert("outputs", outputs.into());
-        }
-        if !names.is_empty() {
-            insert(
-                "source_properties",
-                names
-                    .into_iter()
-                    .zip(values)
-                    .map(|(name, value)| (name, serde_json::Value::from(value)))
-                    .collect::<serde_json::Map<_, _>>()
-                    .into(),
-            );
-        }
+        insert("outputs", outputs.into());
+        insert(
+            "source_properties",
+            names
+                .into_iter()
+                .zip(values)
+                .map(|(name, value)| (name, serde_json::Value::from(value)))
+                .collect::<serde_json::Map<_, _>>()
+                .into(),
+        );
         if let Some(definition) = product_definition {
             insert("product_definition", definition.to_string().into());
         }

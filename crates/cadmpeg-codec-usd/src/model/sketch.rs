@@ -7,6 +7,7 @@
 //! counterclockwise from its end to its start. Profiles are the chains of
 //! non-construction curves whose ends meet.
 
+use cadmpeg_ir::math::portable::Portable;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue};
@@ -166,7 +167,7 @@ impl super::Builder<'_, '_, '_, '_> {
                             .push(curve.path.clone());
                         continue;
                     };
-                    let angle = |point: [f64; 2]| (point[1] - c[1]).atan2(point[0] - c[0]);
+                    let angle = |point: [f64; 2]| (point[1] - c[1]).portable_atan2(point[0] - c[0]);
                     let (first, second, first_point, second_point) = if *clockwise {
                         (angle(b), angle(a), b, a)
                     } else {
@@ -506,7 +507,7 @@ impl super::Builder<'_, '_, '_, '_> {
 /// Chains of profile curves whose ends meet within `tolerance`, each in
 /// traversal order with its curves' directions.
 fn chains(mut remaining: Vec<Ends>, tolerance: f64) -> Vec<Vec<SketchEntityUse>> {
-    let meets = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).hypot(a[1] - b[1]) <= tolerance;
+    let meets = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).portable_hypot(a[1] - b[1]) <= tolerance;
     let mut out = Vec::new();
     while !remaining.is_empty() {
         let first = remaining.remove(0);

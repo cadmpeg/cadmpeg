@@ -59,8 +59,10 @@ impl Writer<'_> {
         }
         let operation = payload
             .get("definition")
-            .and_then(|definition| definition.get("definition"))
-            .and_then(serde_json::Value::as_str)
+            .and_then(|definition| match definition.get("kind")?.as_str()? {
+                "operation" => definition.get("value")?.get("kind")?.as_str(),
+                kind => Some(kind),
+            })
             .unwrap_or("unknown")
             .to_owned();
         let paths = &self.feature_paths;
@@ -208,26 +210,31 @@ fn json_array<T: serde::Serialize>(records: &[T]) -> Option<String> {
 }
 
 /// The prim type of `definition` and the attributes of its typed leaves,
-/// which it removes from `definition` (spec §18.7). A post-processed
-/// operation types the leaves of its operation.
+/// which it removes from the `value` of its operation (spec §18.7).
 fn typed_definition(
     definition: &mut serde_json::Value,
     resolve: &dyn Fn(&str) -> Option<String>,
 ) -> (&'static str, Vec<String>) {
     let tag = |value: &serde_json::Value| {
         value
-            .get("definition")
+            .get("kind")
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
     };
-    let mut node = definition;
-    if tag(node).as_deref() == Some("post_process") {
-        match node.get_mut("operation") {
-            Some(operation) => node = operation,
-            None => return ("CadFeature", Vec::new()),
-        }
-    }
+    let node = match tag(definition).as_deref() {
+        Some("operation") => definition.get_mut("value"),
+        Some("post_process") => definition
+            .get_mut("value")
+            .and_then(|value| value.get_mut("operation")),
+        _ => None,
+    };
+    let Some(node) = node else {
+        return ("CadFeature", Vec::new());
+    };
     let Some(family) = tag(node).as_deref().and_then(feature::family) else {
+        return ("CadFeature", Vec::new());
+    };
+    let Some(node) = node.get_mut("value") else {
         return ("CadFeature", Vec::new());
     };
     let mut lines = Vec::new();

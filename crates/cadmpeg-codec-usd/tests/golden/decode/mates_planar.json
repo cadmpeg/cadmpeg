@@ -1,110 +1,18 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [
-        {
-          "id": "usd:stage:joint#/World/Mates/stack",
-          "native_ref": "/World/Mates/stack",
-          "operands": {
-            "arity": "pair",
-            "connectors": [
-              {
-                "detached": false,
-                "frame": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    5.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    10.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    30.0
-                  ]
-                ],
-                "operand": {
-                  "container": {
-                    "container": "occurrence",
-                    "occurrence": "usd:stage:occurrence#/World/A/Brep"
-                  },
-                  "object": "/World/A/Brep",
-                  "subelements": [
-                    "usd:stage:face#/World/A/Brep:face:5"
-                  ]
-                }
-              },
-              {
-                "detached": false,
-                "frame": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    5.0
-                  ],
-                  [
-                    0.0,
-                    -1.0,
-                    0.0,
-                    10.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    -1.0,
-                    0.0
-                  ]
-                ],
-                "operand": {
-                  "container": {
-                    "container": "occurrence",
-                    "occurrence": "usd:stage:occurrence#/World/B/Brep"
-                  },
-                  "object": "/World/B/Brep",
-                  "subelements": [
-                    "usd:stage:face#/World/B/Brep:face:4"
-                  ]
-                }
-              }
-            ],
-            "frame_sense": "opposed",
-            "kind": {
-              "kind": "plane_coincidence",
-              "sense": "opposed"
-            }
-          },
-          "suppressed": false
-        }
-      ],
-      "attributes": [],
+    "design": {},
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/World/A/Brep",
           "kind": "solid",
-          "name": "Brep",
-          "regions": [
-            "usd:stage:region#/World/A/Brep:region:0"
-          ]
+          "name": "Brep"
         },
         {
           "id": "usd:stage:body#/World/B/Brep",
           "kind": "solid",
-          "name": "Brep",
-          "regions": [
-            "usd:stage:region#/World/B/Brep:region:0"
-          ]
+          "name": "Brep"
         }
       ],
       "coedges": [
@@ -877,706 +785,776 @@
           "sense": "forward"
         }
       ],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.03,
-              0.03
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.03,
+                0.03
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:0"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.02,
-              0.02
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 30.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.02,
+                0.02
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:1"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.01,
-              0.01
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.01,
+                0.01
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:10"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.01,
-              0.01
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 30.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.01,
+                0.01
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:11"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.03,
-              0.03
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.03,
+                0.03
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:2"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.02,
-              0.02
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.02,
+                0.02
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:3"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.03,
-              0.03
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.03,
+                0.03
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:4"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.02,
-              0.02
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.02,
+                0.02
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:5"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.03,
-              0.03
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.03,
+                0.03
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:6"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.02,
-              0.02
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 30.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.02,
+                0.02
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:7"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.01,
-              0.01
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 30.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.01,
+                0.01
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:8"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.01,
-              0.01
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.01,
+                0.01
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/A/Brep:curve3d-nurbs:9"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.03,
-              0.03
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.03,
+                0.03
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:0"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.02,
-              0.02
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 30.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.02,
+                0.02
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:1"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.01,
-              0.01
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.01,
+                0.01
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:10"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.01,
-              0.01
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 30.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.01,
+                0.01
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:11"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.03,
-              0.03
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.03,
+                0.03
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:2"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.02,
-              0.02
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 20.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.02,
+                0.02
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:3"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.03,
-              0.03
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.03,
+                0.03
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:4"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.02,
-              0.02
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.02,
+                0.02
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:5"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.03,
-              0.03
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.03,
+                0.03
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:6"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.02,
-              0.02
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 30.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.02,
+                0.02
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 20.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:7"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.01,
-              0.01
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 30.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 30.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.01,
+                0.01
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 30.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:8"
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.01,
-              0.01
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.01,
+                0.01
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "usd:stage:curve#/World/B/Brep:curve3d-nurbs:9"
         }
       ],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -1586,9 +1564,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:1",
-          "id": "usd:stage:edge#/World/A/Brep:edge:0",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:1",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:0"
         },
         {
           "carrier": {
@@ -1598,9 +1578,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:1",
-          "id": "usd:stage:edge#/World/A/Brep:edge:1",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:1",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:1"
         },
         {
           "carrier": {
@@ -1610,9 +1592,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:6",
-          "id": "usd:stage:edge#/World/A/Brep:edge:10",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:6",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:10"
         },
         {
           "carrier": {
@@ -1622,9 +1606,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:7",
-          "id": "usd:stage:edge#/World/A/Brep:edge:11",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:7",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:11"
         },
         {
           "carrier": {
@@ -1634,9 +1620,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:2",
-          "id": "usd:stage:edge#/World/A/Brep:edge:2",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:2",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:3"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:2"
         },
         {
           "carrier": {
@@ -1646,9 +1634,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:0",
-          "id": "usd:stage:edge#/World/A/Brep:edge:3",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:0",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:3"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:3"
         },
         {
           "carrier": {
@@ -1658,9 +1648,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:5",
-          "id": "usd:stage:edge#/World/A/Brep:edge:4",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:5",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:4"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:4"
         },
         {
           "carrier": {
@@ -1670,9 +1662,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:6",
-          "id": "usd:stage:edge#/World/A/Brep:edge:5",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:6",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:4"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:5"
         },
         {
           "carrier": {
@@ -1682,9 +1676,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:7",
-          "id": "usd:stage:edge#/World/A/Brep:edge:6",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:6"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:7",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:6"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:6"
         },
         {
           "carrier": {
@@ -1694,9 +1690,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:7",
-          "id": "usd:stage:edge#/World/A/Brep:edge:7",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:5"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:7",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:5"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:7"
         },
         {
           "carrier": {
@@ -1706,9 +1704,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:5",
-          "id": "usd:stage:edge#/World/A/Brep:edge:8",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:5",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:8"
         },
         {
           "carrier": {
@@ -1718,9 +1718,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/World/A/Brep:vertex:4",
-          "id": "usd:stage:edge#/World/A/Brep:edge:9",
-          "start": "usd:stage:vertex#/World/A/Brep:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/World/A/Brep:vertex:4",
+            "start": "usd:stage:vertex#/World/A/Brep:vertex:3"
+          },
+          "id": "usd:stage:edge#/World/A/Brep:edge:9"
         },
         {
           "carrier": {
@@ -1730,9 +1732,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:1",
-          "id": "usd:stage:edge#/World/B/Brep:edge:0",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:1",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:0"
         },
         {
           "carrier": {
@@ -1742,9 +1746,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:1",
-          "id": "usd:stage:edge#/World/B/Brep:edge:1",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:1",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:1"
         },
         {
           "carrier": {
@@ -1754,9 +1760,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:6",
-          "id": "usd:stage:edge#/World/B/Brep:edge:10",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:6",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:10"
         },
         {
           "carrier": {
@@ -1766,9 +1774,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:7",
-          "id": "usd:stage:edge#/World/B/Brep:edge:11",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:7",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:11"
         },
         {
           "carrier": {
@@ -1778,9 +1788,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:2",
-          "id": "usd:stage:edge#/World/B/Brep:edge:2",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:2",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:3"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:2"
         },
         {
           "carrier": {
@@ -1790,9 +1802,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:0",
-          "id": "usd:stage:edge#/World/B/Brep:edge:3",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:0",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:3"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:3"
         },
         {
           "carrier": {
@@ -1802,9 +1816,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:5",
-          "id": "usd:stage:edge#/World/B/Brep:edge:4",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:5",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:4"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:4"
         },
         {
           "carrier": {
@@ -1814,9 +1830,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:6",
-          "id": "usd:stage:edge#/World/B/Brep:edge:5",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:6",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:4"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:5"
         },
         {
           "carrier": {
@@ -1826,9 +1844,11 @@
               0.03
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:7",
-          "id": "usd:stage:edge#/World/B/Brep:edge:6",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:6"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:7",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:6"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:6"
         },
         {
           "carrier": {
@@ -1838,9 +1858,11 @@
               0.02
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:7",
-          "id": "usd:stage:edge#/World/B/Brep:edge:7",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:5"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:7",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:5"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:7"
         },
         {
           "carrier": {
@@ -1850,9 +1872,11 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:5",
-          "id": "usd:stage:edge#/World/B/Brep:edge:8",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:5",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:8"
         },
         {
           "carrier": {
@@ -1862,17 +1886,19 @@
               0.01
             ]
           },
-          "end": "usd:stage:vertex#/World/B/Brep:vertex:4",
-          "id": "usd:stage:edge#/World/B/Brep:edge:9",
-          "start": "usd:stage:vertex#/World/B/Brep:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/World/B/Brep:vertex:4",
+            "start": "usd:stage:vertex#/World/B/Brep:vertex:3"
+          },
+          "id": "usd:stage:edge#/World/B/Brep:edge:9"
         }
       ],
       "faces": [
         {
           "id": "usd:stage:face#/World/A/Brep:face:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/A/Brep:loop:0"
           },
           "sense": "reversed",
@@ -1882,8 +1908,8 @@
         {
           "id": "usd:stage:face#/World/A/Brep:face:1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/A/Brep:loop:1"
           },
           "sense": "forward",
@@ -1893,8 +1919,8 @@
         {
           "id": "usd:stage:face#/World/A/Brep:face:2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/A/Brep:loop:2"
           },
           "sense": "reversed",
@@ -1904,8 +1930,8 @@
         {
           "id": "usd:stage:face#/World/A/Brep:face:3",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/A/Brep:loop:3"
           },
           "sense": "forward",
@@ -1915,8 +1941,8 @@
         {
           "id": "usd:stage:face#/World/A/Brep:face:4",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/A/Brep:loop:4"
           },
           "sense": "reversed",
@@ -1926,8 +1952,8 @@
         {
           "id": "usd:stage:face#/World/A/Brep:face:5",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/A/Brep:loop:5"
           },
           "sense": "forward",
@@ -1937,8 +1963,8 @@
         {
           "id": "usd:stage:face#/World/B/Brep:face:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/B/Brep:loop:0"
           },
           "sense": "reversed",
@@ -1948,8 +1974,8 @@
         {
           "id": "usd:stage:face#/World/B/Brep:face:1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/B/Brep:loop:1"
           },
           "sense": "forward",
@@ -1959,8 +1985,8 @@
         {
           "id": "usd:stage:face#/World/B/Brep:face:2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/B/Brep:loop:2"
           },
           "sense": "reversed",
@@ -1970,8 +1996,8 @@
         {
           "id": "usd:stage:face#/World/B/Brep:face:3",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/B/Brep:loop:3"
           },
           "sense": "forward",
@@ -1981,8 +2007,8 @@
         {
           "id": "usd:stage:face#/World/B/Brep:face:4",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/B/Brep:loop:4"
           },
           "sense": "reversed",
@@ -1992,8 +2018,8 @@
         {
           "id": "usd:stage:face#/World/B/Brep:face:5",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "usd:stage:loop#/World/B/Brep:loop:5"
           },
           "sense": "forward",
@@ -2001,7 +2027,6 @@
           "surface": "usd:stage:surface#/World/B/Brep:surface-nurbs:5"
         }
       ],
-      "features": [],
       "loops": [
         {
           "boundary": {
@@ -2011,7 +2036,8 @@
               "usd:stage:coedge#/World/A/Brep:orientedEdge:1",
               "usd:stage:coedge#/World/A/Brep:orientedEdge:0"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/A/Brep:face:0",
           "id": "usd:stage:loop#/World/A/Brep:loop:0"
@@ -2024,7 +2050,8 @@
               "usd:stage:coedge#/World/A/Brep:orientedEdge:6",
               "usd:stage:coedge#/World/A/Brep:orientedEdge:7"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/A/Brep:face:1",
           "id": "usd:stage:loop#/World/A/Brep:loop:1"
@@ -2037,7 +2064,8 @@
               "usd:stage:coedge#/World/A/Brep:orientedEdge:9",
               "usd:stage:coedge#/World/A/Brep:orientedEdge:8"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/A/Brep:face:2",
           "id": "usd:stage:loop#/World/A/Brep:loop:2"
@@ -2050,7 +2078,8 @@
               "usd:stage:coedge#/World/A/Brep:orientedEdge:14",
               "usd:stage:coedge#/World/A/Brep:orientedEdge:15"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/A/Brep:face:3",
           "id": "usd:stage:loop#/World/A/Brep:loop:3"
@@ -2063,7 +2092,8 @@
               "usd:stage:coedge#/World/A/Brep:orientedEdge:17",
               "usd:stage:coedge#/World/A/Brep:orientedEdge:16"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/A/Brep:face:4",
           "id": "usd:stage:loop#/World/A/Brep:loop:4"
@@ -2076,7 +2106,8 @@
               "usd:stage:coedge#/World/A/Brep:orientedEdge:22",
               "usd:stage:coedge#/World/A/Brep:orientedEdge:23"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/A/Brep:face:5",
           "id": "usd:stage:loop#/World/A/Brep:loop:5"
@@ -2089,7 +2120,8 @@
               "usd:stage:coedge#/World/B/Brep:orientedEdge:1",
               "usd:stage:coedge#/World/B/Brep:orientedEdge:0"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/B/Brep:face:0",
           "id": "usd:stage:loop#/World/B/Brep:loop:0"
@@ -2102,7 +2134,8 @@
               "usd:stage:coedge#/World/B/Brep:orientedEdge:6",
               "usd:stage:coedge#/World/B/Brep:orientedEdge:7"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/B/Brep:face:1",
           "id": "usd:stage:loop#/World/B/Brep:loop:1"
@@ -2115,7 +2148,8 @@
               "usd:stage:coedge#/World/B/Brep:orientedEdge:9",
               "usd:stage:coedge#/World/B/Brep:orientedEdge:8"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/B/Brep:face:2",
           "id": "usd:stage:loop#/World/B/Brep:loop:2"
@@ -2128,7 +2162,8 @@
               "usd:stage:coedge#/World/B/Brep:orientedEdge:14",
               "usd:stage:coedge#/World/B/Brep:orientedEdge:15"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/B/Brep:face:3",
           "id": "usd:stage:loop#/World/B/Brep:loop:3"
@@ -2141,7 +2176,8 @@
               "usd:stage:coedge#/World/B/Brep:orientedEdge:17",
               "usd:stage:coedge#/World/B/Brep:orientedEdge:16"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/B/Brep:face:4",
           "id": "usd:stage:loop#/World/B/Brep:loop:4"
@@ -2154,209 +2190,13 @@
               "usd:stage:coedge#/World/B/Brep:orientedEdge:22",
               "usd:stage:coedge#/World/B/Brep:orientedEdge:23"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "usd:stage:face#/World/B/Brep:face:5",
           "id": "usd:stage:loop#/World/B/Brep:loop:5"
         }
       ],
-      "occurrences": [
-        {
-          "id": "usd:stage:occurrence#/World",
-          "name": "World",
-          "native_ref": "/World",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/A",
-          "name": "A",
-          "native_ref": "/World/A",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/A",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/A/Brep",
-          "name": "Brep",
-          "native_ref": "/World/A/Brep",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World/A"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/A/Brep",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/B",
-          "name": "B",
-          "native_ref": "/World/B",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/B",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              30.0
-            ]
-          ]
-        },
-        {
-          "id": "usd:stage:occurrence#/World/B/Brep",
-          "name": "Brep",
-          "native_ref": "/World/B/Brep",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/World/B"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/World/B/Brep",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -2370,7 +2210,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -2386,7 +2226,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2401,7 +2241,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -2417,7 +2257,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2432,7 +2272,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -2448,7 +2288,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:10",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2463,7 +2303,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -2479,7 +2319,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:11",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2494,7 +2334,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -2510,7 +2350,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:12",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2525,7 +2365,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -2541,7 +2381,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:13",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2556,7 +2396,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -2572,7 +2412,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:14",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2587,7 +2427,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -2603,7 +2443,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:15",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2618,7 +2458,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.01,
@@ -2634,7 +2474,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:16",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2649,7 +2489,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -2665,7 +2505,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:17",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2680,7 +2520,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -2696,7 +2536,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:18",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2711,7 +2551,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.01,
@@ -2727,7 +2567,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:19",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2742,7 +2582,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -2758,7 +2598,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2773,7 +2613,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -2789,7 +2629,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:20",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2804,7 +2644,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -2820,7 +2660,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:21",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2835,7 +2675,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.01,
@@ -2851,7 +2691,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:22",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2866,7 +2706,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.01,
@@ -2882,7 +2722,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:23",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2897,7 +2737,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -2913,7 +2753,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2928,7 +2768,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -2944,7 +2784,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:4",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2959,7 +2799,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -2975,7 +2815,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:5",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2990,7 +2830,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3006,7 +2846,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:6",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3021,7 +2861,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -3037,7 +2877,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:7",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3052,7 +2892,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -3068,7 +2908,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:8",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3083,7 +2923,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3099,7 +2939,7 @@
           "id": "usd:stage:pcurve#/World/A/Brep:pcurve-nurbs:9",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3114,7 +2954,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -3130,7 +2970,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:0",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3145,7 +2985,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -3161,7 +3001,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:1",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3176,7 +3016,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3192,7 +3032,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:10",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3207,7 +3047,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -3223,7 +3063,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:11",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3238,7 +3078,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3254,7 +3094,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:12",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3269,7 +3109,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3285,7 +3125,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:13",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3300,7 +3140,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -3316,7 +3156,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:14",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3331,7 +3171,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -3347,7 +3187,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:15",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3362,7 +3202,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.01,
@@ -3378,7 +3218,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:16",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3393,7 +3233,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3409,7 +3249,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:17",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3424,7 +3264,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3440,7 +3280,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:18",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3455,7 +3295,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.01,
@@ -3471,7 +3311,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:19",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3486,7 +3326,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3502,7 +3342,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:2",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3517,7 +3357,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3533,7 +3373,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:20",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3548,7 +3388,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3564,7 +3404,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:21",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3579,7 +3419,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.01,
@@ -3595,7 +3435,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:22",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3610,7 +3450,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.01,
@@ -3626,7 +3466,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:23",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3641,7 +3481,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3657,7 +3497,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:3",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3672,7 +3512,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -3688,7 +3528,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:4",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3703,7 +3543,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3719,7 +3559,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:5",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3734,7 +3574,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3750,7 +3590,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:6",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3765,7 +3605,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -3781,7 +3621,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:7",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3796,7 +3636,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.03,
@@ -3812,7 +3652,7 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:8",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -3827,7 +3667,7 @@
             ],
             "periodic": false,
             "poles": {
-              "form": "polynomial",
+              "kind": "polynomial",
               "points": [
                 {
                   "u": 0.0,
@@ -3843,11 +3683,10 @@
           "id": "usd:stage:pcurve#/World/B/Brep:pcurve-nurbs:9",
           "metadata": {
             "form": {},
-            "source": "general"
+            "kind": "general"
           }
         }
       ],
-      "pmi": [],
       "points": [
         {
           "id": "usd:stage:point#/World/A/Brep:vertex:0",
@@ -3978,48 +3817,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [
-        {
-          "id": "usd:stage:definition#/World",
-          "kind": "group",
-          "native_ref": "/World",
-          "source_name": "World"
-        },
-        {
-          "id": "usd:stage:definition#/World/A",
-          "kind": "group",
-          "native_ref": "/World/A",
-          "source_name": "A"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/World/A/Brep"
-          ],
-          "id": "usd:stage:definition#/World/A/Brep",
-          "kind": "object",
-          "native_ref": "/World/A/Brep",
-          "source_name": "Brep"
-        },
-        {
-          "id": "usd:stage:definition#/World/B",
-          "kind": "group",
-          "native_ref": "/World/B",
-          "source_name": "B"
-        },
-        {
-          "bodies": [
-            "usd:stage:body#/World/B/Brep"
-          ],
-          "id": "usd:stage:definition#/World/B/Brep",
-          "kind": "object",
-          "native_ref": "/World/B/Brep",
-          "source_name": "Brep"
-        }
-      ],
       "regions": [
         {
           "body": "usd:stage:body#/World/A/Brep",
@@ -4036,691 +3835,681 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "usd:stage:shell#/World/A/Brep:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/A/Brep:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/A/Brep:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/A/Brep:face:2",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/A/Brep:face:3",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/A/Brep:face:4",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/A/Brep:face:5",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/A/Brep:region:0"
         },
         {
           "id": "usd:stage:shell#/World/B/Brep:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/B/Brep:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/B/Brep:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/B/Brep:face:2",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/B/Brep:face:3",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/B/Brep:face:4",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/B/Brep:face:5",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/B/Brep:region:0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": 0.0,
-                    "y": 20.001,
-                    "z": -0.001
-                  },
-                  {
-                    "x": 0.0,
-                    "y": -0.001,
-                    "z": -0.001
-                  }
-                ],
-                [
-                  {
-                    "x": 0.0,
-                    "y": 20.001,
-                    "z": 30.001
-                  },
-                  {
-                    "x": 0.0,
-                    "y": -0.001,
-                    "z": 30.001
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": 0.0,
+                      "y": 20.001,
+                      "z": -0.001
+                    },
+                    {
+                      "x": 0.0,
+                      "y": -0.001,
+                      "z": -0.001
+                    }
+                  ],
+                  [
+                    {
+                      "x": 0.0,
+                      "y": 20.001,
+                      "z": 30.001
+                    },
+                    {
+                      "x": 0.0,
+                      "y": -0.001,
+                      "z": 30.001
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.030001,
-              0.030001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -0.020001,
-              -0.020001,
-              1e-6,
-              1e-6
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.030001,
+                0.030001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -0.020001,
+                -0.020001,
+                1e-6,
+                1e-6
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/A/Brep:surface-nurbs:0"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": 10.0,
-                    "y": 20.001,
-                    "z": -0.001
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -0.001,
-                    "z": -0.001
-                  }
-                ],
-                [
-                  {
-                    "x": 10.0,
-                    "y": 20.001,
-                    "z": 30.001
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -0.001,
-                    "z": 30.001
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": 10.0,
+                      "y": 20.001,
+                      "z": -0.001
+                    },
+                    {
+                      "x": 10.0,
+                      "y": -0.001,
+                      "z": -0.001
+                    }
+                  ],
+                  [
+                    {
+                      "x": 10.0,
+                      "y": 20.001,
+                      "z": 30.001
+                    },
+                    {
+                      "x": 10.0,
+                      "y": -0.001,
+                      "z": 30.001
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.030001,
-              0.030001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -0.020001,
-              -0.020001,
-              1e-6,
-              1e-6
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.030001,
+                0.030001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -0.020001,
+                -0.020001,
+                1e-6,
+                1e-6
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/A/Brep:surface-nurbs:1"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": -0.001,
-                    "y": 0.0,
-                    "z": -0.001
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 0.0,
-                    "z": -0.001
-                  }
-                ],
-                [
-                  {
-                    "x": -0.001,
-                    "y": 0.0,
-                    "z": 30.001
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 0.0,
-                    "z": 30.001
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": -0.001,
+                      "y": 0.0,
+                      "z": -0.001
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 0.0,
+                      "z": -0.001
+                    }
+                  ],
+                  [
+                    {
+                      "x": -0.001,
+                      "y": 0.0,
+                      "z": 30.001
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 0.0,
+                      "z": 30.001
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.030001,
-              0.030001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -1e-6,
-              -1e-6,
-              0.010001,
-              0.010001
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.030001,
+                0.030001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -1e-6,
+                -1e-6,
+                0.010001,
+                0.010001
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/A/Brep:surface-nurbs:2"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": -0.001,
-                    "y": 20.0,
-                    "z": -0.001
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 20.0,
-                    "z": -0.001
-                  }
-                ],
-                [
-                  {
-                    "x": -0.001,
-                    "y": 20.0,
-                    "z": 30.001
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 20.0,
-                    "z": 30.001
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": -0.001,
+                      "y": 20.0,
+                      "z": -0.001
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 20.0,
+                      "z": -0.001
+                    }
+                  ],
+                  [
+                    {
+                      "x": -0.001,
+                      "y": 20.0,
+                      "z": 30.001
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 20.0,
+                      "z": 30.001
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.030001,
-              0.030001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -1e-6,
-              -1e-6,
-              0.010001,
-              0.010001
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.030001,
+                0.030001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -1e-6,
+                -1e-6,
+                0.010001,
+                0.010001
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/A/Brep:surface-nurbs:3"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": -0.001,
-                    "y": -0.001,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -0.001,
-                    "y": 20.001,
-                    "z": 0.0
-                  }
-                ],
-                [
-                  {
-                    "x": 10.001,
-                    "y": -0.001,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 20.001,
-                    "z": 0.0
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": -0.001,
+                      "y": -0.001,
+                      "z": 0.0
+                    },
+                    {
+                      "x": -0.001,
+                      "y": 20.001,
+                      "z": 0.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 10.001,
+                      "y": -0.001,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 20.001,
+                      "z": 0.0
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.010001,
-              0.010001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -1e-6,
-              -1e-6,
-              0.020001,
-              0.020001
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.010001,
+                0.010001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -1e-6,
+                -1e-6,
+                0.020001,
+                0.020001
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/A/Brep:surface-nurbs:4"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": -0.001,
-                    "y": -0.001,
-                    "z": 30.0
-                  },
-                  {
-                    "x": -0.001,
-                    "y": 20.001,
-                    "z": 30.0
-                  }
-                ],
-                [
-                  {
-                    "x": 10.001,
-                    "y": -0.001,
-                    "z": 30.0
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 20.001,
-                    "z": 30.0
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": -0.001,
+                      "y": -0.001,
+                      "z": 30.0
+                    },
+                    {
+                      "x": -0.001,
+                      "y": 20.001,
+                      "z": 30.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 10.001,
+                      "y": -0.001,
+                      "z": 30.0
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 20.001,
+                      "z": 30.0
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.010001,
-              0.010001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -1e-6,
-              -1e-6,
-              0.020001,
-              0.020001
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.010001,
+                0.010001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -1e-6,
+                -1e-6,
+                0.020001,
+                0.020001
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/A/Brep:surface-nurbs:5"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": 0.0,
-                    "y": 20.001,
-                    "z": -0.001
-                  },
-                  {
-                    "x": 0.0,
-                    "y": -0.001,
-                    "z": -0.001
-                  }
-                ],
-                [
-                  {
-                    "x": 0.0,
-                    "y": 20.001,
-                    "z": 30.001
-                  },
-                  {
-                    "x": 0.0,
-                    "y": -0.001,
-                    "z": 30.001
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": 0.0,
+                      "y": 20.001,
+                      "z": -0.001
+                    },
+                    {
+                      "x": 0.0,
+                      "y": -0.001,
+                      "z": -0.001
+                    }
+                  ],
+                  [
+                    {
+                      "x": 0.0,
+                      "y": 20.001,
+                      "z": 30.001
+                    },
+                    {
+                      "x": 0.0,
+                      "y": -0.001,
+                      "z": 30.001
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.030001,
-              0.030001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -0.020001,
-              -0.020001,
-              1e-6,
-              1e-6
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.030001,
+                0.030001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -0.020001,
+                -0.020001,
+                1e-6,
+                1e-6
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/B/Brep:surface-nurbs:0"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": 10.0,
-                    "y": 20.001,
-                    "z": -0.001
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -0.001,
-                    "z": -0.001
-                  }
-                ],
-                [
-                  {
-                    "x": 10.0,
-                    "y": 20.001,
-                    "z": 30.001
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -0.001,
-                    "z": 30.001
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": 10.0,
+                      "y": 20.001,
+                      "z": -0.001
+                    },
+                    {
+                      "x": 10.0,
+                      "y": -0.001,
+                      "z": -0.001
+                    }
+                  ],
+                  [
+                    {
+                      "x": 10.0,
+                      "y": 20.001,
+                      "z": 30.001
+                    },
+                    {
+                      "x": 10.0,
+                      "y": -0.001,
+                      "z": 30.001
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.030001,
-              0.030001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -0.020001,
-              -0.020001,
-              1e-6,
-              1e-6
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.030001,
+                0.030001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -0.020001,
+                -0.020001,
+                1e-6,
+                1e-6
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/B/Brep:surface-nurbs:1"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": -0.001,
-                    "y": 0.0,
-                    "z": -0.001
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 0.0,
-                    "z": -0.001
-                  }
-                ],
-                [
-                  {
-                    "x": -0.001,
-                    "y": 0.0,
-                    "z": 30.001
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 0.0,
-                    "z": 30.001
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": -0.001,
+                      "y": 0.0,
+                      "z": -0.001
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 0.0,
+                      "z": -0.001
+                    }
+                  ],
+                  [
+                    {
+                      "x": -0.001,
+                      "y": 0.0,
+                      "z": 30.001
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 0.0,
+                      "z": 30.001
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.030001,
-              0.030001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -1e-6,
-              -1e-6,
-              0.010001,
-              0.010001
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.030001,
+                0.030001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -1e-6,
+                -1e-6,
+                0.010001,
+                0.010001
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/B/Brep:surface-nurbs:2"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": -0.001,
-                    "y": 20.0,
-                    "z": -0.001
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 20.0,
-                    "z": -0.001
-                  }
-                ],
-                [
-                  {
-                    "x": -0.001,
-                    "y": 20.0,
-                    "z": 30.001
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 20.0,
-                    "z": 30.001
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": -0.001,
+                      "y": 20.0,
+                      "z": -0.001
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 20.0,
+                      "z": -0.001
+                    }
+                  ],
+                  [
+                    {
+                      "x": -0.001,
+                      "y": 20.0,
+                      "z": 30.001
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 20.0,
+                      "z": 30.001
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.030001,
-              0.030001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -1e-6,
-              -1e-6,
-              0.010001,
-              0.010001
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.030001,
+                0.030001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -1e-6,
+                -1e-6,
+                0.010001,
+                0.010001
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/B/Brep:surface-nurbs:3"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": -0.001,
-                    "y": -0.001,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -0.001,
-                    "y": 20.001,
-                    "z": 0.0
-                  }
-                ],
-                [
-                  {
-                    "x": 10.001,
-                    "y": -0.001,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 20.001,
-                    "z": 0.0
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": -0.001,
+                      "y": -0.001,
+                      "z": 0.0
+                    },
+                    {
+                      "x": -0.001,
+                      "y": 20.001,
+                      "z": 0.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 10.001,
+                      "y": -0.001,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 20.001,
+                      "z": 0.0
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.010001,
-              0.010001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -1e-6,
-              -1e-6,
-              0.020001,
-              0.020001
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.010001,
+                0.010001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -1e-6,
+                -1e-6,
+                0.020001,
+                0.020001
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/B/Brep:surface-nurbs:4"
         },
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": -0.001,
-                    "y": -0.001,
-                    "z": 30.0
-                  },
-                  {
-                    "x": -0.001,
-                    "y": 20.001,
-                    "z": 30.0
-                  }
-                ],
-                [
-                  {
-                    "x": 10.001,
-                    "y": -0.001,
-                    "z": 30.0
-                  },
-                  {
-                    "x": 10.001,
-                    "y": 20.001,
-                    "z": 30.0
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": -0.001,
+                      "y": -0.001,
+                      "z": 30.0
+                    },
+                    {
+                      "x": -0.001,
+                      "y": 20.001,
+                      "z": 30.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 10.001,
+                      "y": -0.001,
+                      "z": 30.0
+                    },
+                    {
+                      "x": 10.001,
+                      "y": 20.001,
+                      "z": 30.0
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 1,
-            "u_knots": [
-              -1e-6,
-              -1e-6,
-              0.010001,
-              0.010001
-            ],
-            "u_periodic": false,
-            "v_degree": 1,
-            "v_knots": [
-              -1e-6,
-              -1e-6,
-              0.020001,
-              0.020001
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 1,
+              "u_knots": [
+                -1e-6,
+                -1e-6,
+                0.010001,
+                0.010001
+              ],
+              "u_periodic": false,
+              "v_degree": 1,
+              "v_knots": [
+                -1e-6,
+                -1e-6,
+                0.020001,
+                0.020001
+              ],
+              "v_periodic": false
+            }
           },
           "id": "usd:stage:surface#/World/B/Brep:surface-nurbs:5"
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "usd:stage:vertex#/World/A/Brep:vertex:0",
@@ -4786,10 +4575,386 @@
           "id": "usd:stage:vertex#/World/B/Brep:vertex:7",
           "point": "usd:stage:point#/World/B/Brep:vertex:7"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [
+        {
+          "drives": [],
+          "id": "usd:stage:joint#/World/Mates/stack",
+          "native_ref": "/World/Mates/stack",
+          "operands": {
+            "kind": "pair",
+            "value": {
+              "connectors": [
+                {
+                  "detached": false,
+                  "frame": [
+                    [
+                      1.0,
+                      0.0,
+                      0.0,
+                      5.0
+                    ],
+                    [
+                      0.0,
+                      1.0,
+                      0.0,
+                      10.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      1.0,
+                      30.0
+                    ]
+                  ],
+                  "operand": {
+                    "container": {
+                      "kind": "occurrence",
+                      "occurrence": "usd:stage:occurrence#/World/A/Brep",
+                      "occurrence_path": []
+                    },
+                    "object": "/World/A/Brep",
+                    "subelements": [
+                      "usd:stage:face#/World/A/Brep:face:5"
+                    ]
+                  }
+                },
+                {
+                  "detached": false,
+                  "frame": [
+                    [
+                      1.0,
+                      0.0,
+                      0.0,
+                      5.0
+                    ],
+                    [
+                      0.0,
+                      -1.0,
+                      0.0,
+                      10.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      -1.0,
+                      0.0
+                    ]
+                  ],
+                  "operand": {
+                    "container": {
+                      "kind": "occurrence",
+                      "occurrence": "usd:stage:occurrence#/World/B/Brep",
+                      "occurrence_path": []
+                    },
+                    "object": "/World/B/Brep",
+                    "subelements": [
+                      "usd:stage:face#/World/B/Brep:face:4"
+                    ]
+                  }
+                }
+              ],
+              "frame_sense": "opposed",
+              "kind": {
+                "kind": "plane_coincidence",
+                "sense": "opposed"
+              }
+            }
+          },
+          "suppressed": false
+        }
       ],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/World",
+          "name": "World",
+          "native_ref": "/World",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/A",
+          "name": "A",
+          "native_ref": "/World/A",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/A",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/A/Brep",
+          "name": "Brep",
+          "native_ref": "/World/A/Brep",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World/A"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/A/Brep",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/B",
+          "name": "B",
+          "native_ref": "/World/B",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/B",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              30.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/World/B/Brep",
+          "name": "Brep",
+          "native_ref": "/World/B/Brep",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/World/B"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/World/B/Brep",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World",
+          "kind": "group",
+          "native_ref": "/World",
+          "sketches": [],
+          "source_name": "World"
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/A",
+          "kind": "group",
+          "native_ref": "/World/A",
+          "sketches": [],
+          "source_name": "A"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/World/A/Brep"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/A/Brep",
+          "kind": "object",
+          "native_ref": "/World/A/Brep",
+          "sketches": [],
+          "source_name": "Brep"
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/B",
+          "kind": "group",
+          "native_ref": "/World/B",
+          "sketches": [],
+          "source_name": "B"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/World/B/Brep"
+          ],
+          "bom_properties": {},
+          "id": "usd:stage:definition#/World/B/Brep",
+          "kind": "object",
+          "native_ref": "/World/B/Brep",
+          "sketches": [],
+          "source_name": "Brep"
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "World",
@@ -4797,17 +4962,19 @@
         "up_axis": "Z"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "header": "#usda 1.0"
             },
             "dialect": "usd:usda-1.0"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -4815,31 +4982,47 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "header": "#usda 1.0"
           },
           "dialect": "usd:usda-1.0"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "049c192145c2252ec957742446a7a4d9ec1089b260a429a14e186b88efbc14c8",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

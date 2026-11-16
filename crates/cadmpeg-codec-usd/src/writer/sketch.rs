@@ -6,6 +6,7 @@
 //! than the model tolerance are one prim, so a shared corner is one point.
 //! Arcs are written counterclockwise.
 
+use cadmpeg_ir::math::portable::Portable;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::ParameterValue;
@@ -48,11 +49,9 @@ impl Prims {
         construction: bool,
         tolerance: f64,
     ) -> String {
-        if let Some((name, _, _)) = self
-            .points
-            .iter()
-            .find(|(_, at, _)| (at[0] - position[0]).hypot(at[1] - position[1]) <= tolerance)
-        {
+        if let Some((name, _, _)) = self.points.iter().find(|(_, at, _)| {
+            (at[0] - position[0]).portable_hypot(at[1] - position[1]) <= tolerance
+        }) {
             return name.clone();
         }
         let name = names.unique("p");
@@ -230,7 +229,7 @@ impl Writer<'_> {
             } => {
                 let [u, v] = point(*center);
                 let r = radius.get() / unit;
-                let at = |angle: f64| [u + r * angle.cos(), v + r * angle.sin()];
+                let at = |angle: f64| [u + r * angle.portable_cos(), v + r * angle.portable_sin()];
                 let start = prims.point(names, at(start_angle.get()), false, tolerance);
                 let end = prims.point(names, at(end_angle.get()), false, tolerance);
                 let middle = prims.point(names, [u, v], false, tolerance);

@@ -4,6 +4,8 @@
 
 This document gives, for each CADIR arena and document field, the OpenUSD form that holds it. Each form is an official schema, the preliminary `UsdSolid` schema (`docs/formats/usd.md` §17), a `Cad*` schema of this codec, or none. The goal is a mapping in which a CADIR document written as OpenUSD and read again gives the same document.
 
+The arena names are those of CADIR wire `"11"` (`docs/cadir-v11.md` §2). The topology arenas, from `bodies` to `subds`, are under the document root `geometry`. The other arenas are under the root `model`. The JSON payloads that `Cad*` prims hold are in the wire form of `docs/cadir-v11.md` §2.5.
+
 This document uses ASD-STE100 Simplified Technical English. Schema, attribute, and arena names are technical names.
 
 ## 1. Status of each arena
@@ -11,15 +13,15 @@ This document uses ASD-STE100 Simplified Technical English. Schema, attribute, a
 | Arena or field | OpenUSD form now | Gap to 1:1 | Proposed form |
 | --- | --- | --- | --- |
 | `units`, `tolerances` | `metersPerUnit`; `brep:intersectTol3d` per B-rep; `customLayerData` dictionary `cad` with the document tolerances (`usd.md` §18) | none | none |
-| `source`, `decode_depth` | none | source format, dialects, and decode depth | `customLayerData` dictionary `cad:source` |
-| `bodies`, `regions`, `shells` | `BrepArray` B-reps, regions, and shells | a face that two solid regions share; body kind, color, and visibility on a B-rep in a multi-B-rep prim | IR change for shared faces; per-B-rep kind, color, and visibility arrays |
-| `faces`, `loops`, `coedges`, `edges`, `vertices`, `points` | `BrepArray` faces, loops, edgeuses, edges, vertices; `CadBrepIdentityAPI` identities and names; `CadBrepToleranceAPI` tolerances | face colors, wire edges, free vertices | face colors as `GeomSubset` display colors; read and write `wireEdge:*` and `BrepPointAPI:shellPoint` |
+| `source`, `scope` | none | source format, dialects, and content scope | `customLayerData` dictionary `cad:source` |
+| `bodies`, `regions`, `shells` | `BrepArray` B-reps, regions, and shells; each region and shell names its parent, and a `BrepArray` lists the children | a face that two solid regions share; body kind, color, and visibility on a B-rep in a multi-B-rep prim | IR change for shared faces; per-B-rep kind, color, and visibility arrays |
+| `faces`, `loops`, `coedges`, `edges`, `vertices`, `points` | `BrepArray` faces, loops, edgeuses, edges, vertices; `CadBrepIdentityAPI` identities and names; `CadBrepToleranceAPI` tolerances | face colors, wire edges, free vertices, closed edges with no vertex (`Edge.ends` absent) | face colors as `GeomSubset` display colors; read and write `wireEdge:*` and `BrepPointAPI:shellPoint`; a vertex form for a closed edge that has none |
 | `surfaces`, `curves` | rational NURBS in `BrepSurfaceNurbAPI` and `BrepCurve3dNurbAPI`; exact carriers in `CadBrepAnalyticAPI` (`usd.md` §18.5) | a carrier that two faces or edges share | shared catalog indices in `CadBrepAnalyticAPI` |
 | `pcurves` | NURBS trim curves in `BrepCurveUvNurbAPI`; exact pcurves in `CadBrepAnalyticAPI` | pcurve kinds other than line, circle, ellipse, and NURBS | added `CadBrepAnalyticAPI` pcurve types |
 | `procedural_surfaces`, `procedural_curves` | extrusion and revolution surfaces in `CadBrepAnalyticAPI` | sum, sweep, offset, subset, ruled, blend; intersection, projection, offset, subset curves | `CadBrepProceduralAPI`: a construction for each carrier, beside its NURBS solved form; the writer needs a NURBS form of each kind |
 | `subds` | none | subdivision cages | `Mesh` with `subdivisionScheme = "catmullClark"`, creases, and corners (official) |
 | `tessellations` | `Mesh` with normals, texture coordinates, and `GeomSubset` triangle groups | per-vertex colors (a scan mesh) and channels other than coordinates, such as intensity and confidence | vertex-interpolated `primvars:displayColor` and primvars by channel name (official) |
-| point clouds (no CADIR arena) | `UsdGeomPoints` prims are not read; free CADIR `points` are written as one `UsdGeomPoints` prim | a CADIR arena of packed points with per-point channels (normal, color, intensity, classification) and a sensor frame | `UsdGeomPoints` with `normals`, `widths`, `ids`, per-point `displayColor`, and primvars by channel name (official); capture metadata (sensor pose, capture time, registration) as `assetInfo` or a `CadScanAPI` |
+| `point_clouds` | none: `UsdGeomPoints` prims are not read, and the writer omits the arena; free CADIR `points` are written as one `UsdGeomPoints` prim | positions, normals, colors, named channels, and sensor pose | `UsdGeomPoints` with `normals`, `widths`, `ids`, per-point `displayColor`, and primvars by channel name (official); capture metadata (sensor pose, capture time, registration) as `assetInfo` or a `CadScanAPI` |
 | `appearances`, `appearance_bindings` | materials; bindings to bodies, tessellations, triangle groups, `BrepArray` faces and B-reps | bindings to edges, vertices, free curves, free points, and native carriers | `GeomSubset` of `BrepArray` with `elementType = "edge"` and `"vertex"` |
 | `assets` | package members and asset paths | none for images; other asset kinds keep their path | none |
 | `product_definitions`, `occurrences` | `Xform` prims, references, instancing, `kind`; `cad:id` and `cad:definition:*` identities and product data; `documentation` (`usd.md` §18) | asset identifier and version | `assetInfo` (official) |
@@ -61,7 +63,6 @@ These are applied API schemas on a `BrepArray` prim. A reader that does not know
 
 ## 3. Changes outside the USD codec
 
-- CADIR: a point cloud arena that holds packed positions and per-point channels, as `tessellations` hold packed meshes. Free `points` records hold one identity per point, which a scan of millions of points does not admit.
 - CADIR: a face that two solid regions share. A `BrepArray` represents it; a CADIR face belongs to one shell.
 - `cadmpeg-measure`: the per-edge work allowance of `cadmpeg check` is below the cost of a rational NURBS circle edge, so a check of a `BrepArray` body skips its measurement checks.
 

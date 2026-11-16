@@ -68,8 +68,14 @@ macro_rules! extrude_side {
 macro_rules! revolve_termination {
     ($name:literal) => {
         [
-            field(&["construction", "extent", $name, "kind"], Leaf::Token),
-            field(&["construction", "extent", $name, "angle"], Leaf::Angle),
+            field(
+                &["construction", "value", "extent", $name, "kind"],
+                Leaf::Token,
+            ),
+            field(
+                &["construction", "value", "extent", $name, "angle"],
+                Leaf::Angle,
+            ),
         ]
     };
 }
@@ -96,7 +102,8 @@ const EXTRUDE: &[Field] = &[
     EXTRUDE_SECOND[1],
     EXTRUDE_SECOND[2],
     field(&["profile", "kind"], Leaf::Token),
-    field(&["profile", "value"], Leaf::Text),
+    field(&["profile", "value", "kind"], Leaf::Token),
+    field(&["profile", "value", "value"], Leaf::Text),
     field(&["solid"], Leaf::Flag),
     field(&["inner_wire_taper"], Leaf::Token),
     field(&["length_along_profile_normal"], Leaf::Flag),
@@ -109,20 +116,26 @@ const REVOLVE_SECOND: [Field; 2] = revolve_termination!("second");
 
 const REVOLVE: &[Field] = &[
     field(&["op"], Leaf::Token),
-    field(&["construction", "state"], Leaf::Token),
-    field(&["construction", "axis", "origin"], Leaf::Point),
-    field(&["construction", "axis", "direction"], Leaf::Vector),
-    field(&["construction", "extent", "kind"], Leaf::Token),
+    field(&["construction", "kind"], Leaf::Token),
+    field(&["construction", "value", "axis", "origin"], Leaf::Point),
+    field(
+        &["construction", "value", "axis", "direction"],
+        Leaf::Vector,
+    ),
+    field(&["construction", "value", "extent", "kind"], Leaf::Token),
     REVOLVE_TERMINATION[0],
     REVOLVE_TERMINATION[1],
     REVOLVE_FIRST[0],
     REVOLVE_FIRST[1],
     REVOLVE_SECOND[0],
     REVOLVE_SECOND[1],
-    field(&["construction", "profile", "kind"], Leaf::Token),
-    field(&["construction", "profile", "value"], Leaf::Text),
-    field(&["construction", "solid"], Leaf::Flag),
-    field(&["construction", "allow_multi_profile_faces"], Leaf::Flag),
+    field(&["construction", "value", "profile", "kind"], Leaf::Token),
+    field(&["construction", "value", "profile", "value"], Leaf::Text),
+    field(&["construction", "value", "solid"], Leaf::Flag),
+    field(
+        &["construction", "value", "allow_multi_profile_faces"],
+        Leaf::Flag,
+    ),
 ];
 
 const TREE_NODE: &[Field] = &[
@@ -132,8 +145,8 @@ const TREE_NODE: &[Field] = &[
 ];
 
 const SKETCH: &[Field] = &[
+    field(&["sketch", "kind"], Leaf::Token),
     field(&["sketch", "sketch"], Leaf::Text),
-    field(&["sketch", "space"], Leaf::Token),
 ];
 
 const FILLET: &[Field] = &[
@@ -174,11 +187,23 @@ const HOLE: &[Field] = &[
     field(&["bottom", "included_angle"], Leaf::Angle),
     field(&["bottom", "depth_to_tip"], Leaf::Flag),
     field(&["shape", "diameter"], Leaf::Length),
-    field(&["shape", "construction", "construction"], Leaf::Token),
-    field(&["shape", "construction", "kind", "kind"], Leaf::Token),
-    field(&["shape", "construction", "kind", "angle"], Leaf::Angle),
-    field(&["shape", "construction", "kind", "diameter"], Leaf::Length),
-    field(&["shape", "construction", "kind", "depth"], Leaf::Length),
+    field(&["shape", "construction", "kind"], Leaf::Token),
+    field(
+        &["shape", "construction", "value", "kind", "kind"],
+        Leaf::Token,
+    ),
+    field(
+        &["shape", "construction", "value", "kind", "angle"],
+        Leaf::Angle,
+    ),
+    field(
+        &["shape", "construction", "value", "kind", "diameter"],
+        Leaf::Length,
+    ),
+    field(
+        &["shape", "construction", "value", "kind", "depth"],
+        Leaf::Length,
+    ),
     field(&["allow_multi_profile_faces"], Leaf::Flag),
 ];
 
