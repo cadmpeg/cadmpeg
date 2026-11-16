@@ -1093,6 +1093,21 @@ Offsets are relative to the payload after the 4+w-byte B-family frame header. He
 | 18 | 16 | `direction_xy` | `f64[2]` | little | spec | `+18` direction XY (`2×f64le`) |
 | 34 | 32 | `bounds` | `f64[4]` | little | spec | the 66-byte two-component direction payload has bounds at `+34` |
 
+## `consolidated_plane_spatial_signed_y_payload`
+
+Spec §6.3 · layout: byte offsets · size: 66 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `+0` marker `b4` |
+| 1 | 1 | `selector` | `u8` | little | spec | `+1` selector |
+| 2 | 24 | `origin` | `f64[3]` | little | spec | `+2` origin XYZ (`3×f64le`) |
+| 26 | 8 | `direction_y` | `f64` | little | spec | `+26` signed Y component (`f64le`) |
+| 34 | 32 | `bounds` | `f64[4]` | little | spec | \| `(0,direction_y,0)` \| `+34` \| 66 \| |
+
 ## `consolidated_packed_plane_implicit_u_payload`
 
 Spec §6.3 · layout: byte offsets · size: 43 B
