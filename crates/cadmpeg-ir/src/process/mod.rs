@@ -69,7 +69,7 @@ pub struct Choice<T> {
     pub value: Option<T>,
     /// The parameters the variant is read from. The variant's own fields bind
     /// their own parameters, and this set does not name them.
-    #[serde(with = "wire::set")]
+    #[serde(with = "cadmpeg_core::distinct_keys::set")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<ProcessParameterId>"))]
     pub parameters: BTreeSet<ProcessParameterId>,
 }

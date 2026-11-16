@@ -13,7 +13,7 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{wire, Choice, ProcessConstruction, ProcessDimension};
+use super::{Choice, ProcessConstruction, ProcessDimension};
 use crate::design::construction::kinds;
 use crate::design::dimension::ParamRef;
 use crate::design::ops::shared::RadialDimension;
@@ -27,7 +27,7 @@ use crate::scalar::{Angle, Length};
 #[serde(deny_unknown_fields)]
 pub struct Technology {
     /// The feeds by role, each in the form the source authors.
-    #[serde(with = "wire::pairs")]
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<(FeedRole, FeedRate)>"))]
     pub feeds: BTreeMap<FeedRole, FeedRate>,
     /// The spindle speed.

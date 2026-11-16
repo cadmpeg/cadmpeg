@@ -117,7 +117,7 @@ fn maps_are_objects_or_sorted_pairs_and_refuse_a_repeated_key() {
     assert!(text.contains(r#""bottom":{}"#), "{text}");
     let text = text.replacen(r#""heights":{"#, r#""heights":{"bottom":{},"#, 1);
     let message = refuses::<Operation>(&text);
-    assert!(message.contains("twice"), "{message}");
+    assert!(message.contains("duplicate key bottom"), "{message}");
 
     let technology = fixtures::full_technology();
     let feeds = &to_value(&technology)["feeds"];
@@ -140,6 +140,31 @@ fn maps_are_objects_or_sorted_pairs_and_refuse_a_repeated_key() {
     assert!(text.contains(parameter), "{text}");
     text = text.replacen(parameter, &format!("{parameter},{parameter}"), 1);
     refuses::<Cycle>(&text);
+}
+
+#[test]
+fn a_role_key_displays_as_its_wire_name() {
+    use crate::process::limits::{AxialRole, HeightRole, RadiusRole};
+    fn check<T: serde::Serialize + std::fmt::Display>(roles: &[T]) {
+        for role in roles {
+            assert_eq!(to_value(role), json!(role.to_string()));
+        }
+    }
+    check(&[
+        HeightRole::Clearance,
+        HeightRole::Retract,
+        HeightRole::Feed,
+        HeightRole::Top,
+        HeightRole::Bottom,
+    ]);
+    check(&[
+        RadiusRole::Outer,
+        RadiusRole::Inner,
+        RadiusRole::OuterClearance,
+        RadiusRole::InnerClearance,
+        RadiusRole::OuterRetract,
+    ]);
+    check(&[AxialRole::Front, AxialRole::Back]);
 }
 
 #[test]

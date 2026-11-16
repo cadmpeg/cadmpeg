@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 
 use super::technology::FeedRole;
 use super::toolpath::{Motion, MotionValue};
-use super::wire;
 use crate::design::construction::FrameAxis;
 use crate::design::units::{Duration, Feed};
 use crate::features::FinitePoint3;
@@ -66,7 +65,7 @@ pub struct Cycle {
     )]
     pub depth: Option<Length>,
     /// The cycle's feeds by role.
-    #[serde(with = "wire::pairs")]
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<(FeedRole, Feed)>"))]
     pub feeds: BTreeMap<FeedRole, Feed>,
     /// The dwell at the bottom.

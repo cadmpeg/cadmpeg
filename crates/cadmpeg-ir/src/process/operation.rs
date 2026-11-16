@@ -17,7 +17,7 @@ use super::limits::{AxialLimit, AxialRole, Height, HeightRole, RadialLimit, Radi
 use super::settings::{CycleSettings, Leads, Linking, PlungeStrategy};
 use super::stock::Wcs;
 use super::technology::Technology;
-use super::{wire, Choice, ProcessConstruction, ProcessDimension, WorkpieceSelection};
+use super::{Choice, ProcessConstruction, ProcessDimension, WorkpieceSelection};
 use crate::design::construction::{kinds, Construction};
 use crate::design::ids::{MachiningFeatureId, OperationId, PresetId, ProcessGroupId, ToolId};
 use crate::design::names::NativeName;
@@ -66,15 +66,15 @@ pub struct Operation {
     /// What the operation machines or avoids, by role.
     pub geometry: Vec<ProcessGeometry>,
     /// The levels along the tool axis of the operation's frame, by role.
-    #[serde(deserialize_with = "wire::object")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub heights: BTreeMap<HeightRole, Height>,
     /// The radial limits of a turning operation about the spindle axis, by
     /// role.
-    #[serde(deserialize_with = "wire::object")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub radii: BTreeMap<RadiusRole, Choice<RadialLimit>>,
     /// The axial limits of a turning operation along the spindle axis, by
     /// role.
-    #[serde(deserialize_with = "wire::object")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub axial: BTreeMap<AxialRole, AxialLimit>,
     /// The feeds, speeds, allowances, and cut mode.
     pub technology: Technology,

@@ -7,6 +7,8 @@
 //! offset, and the reference is a [`Choice`] so that the source's mode
 //! parameter binds it.
 
+use std::fmt;
+
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -36,6 +38,19 @@ pub enum HeightRole {
     Top,
     /// The operation's final depth.
     Bottom,
+}
+
+/// The role's wire name, as a key of `Operation.heights`.
+impl fmt::Display for HeightRole {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Clearance => "clearance",
+            Self::Retract => "retract",
+            Self::Feed => "feed",
+            Self::Top => "top",
+            Self::Bottom => "bottom",
+        })
+    }
 }
 
 /// A height: a reference level plus an offset, along the operation's own
@@ -75,6 +90,19 @@ pub enum RadiusRole {
     InnerClearance,
     /// The radius a lead-out rises to.
     OuterRetract,
+}
+
+/// The role's wire name, as a key of `Operation.radii`.
+impl fmt::Display for RadiusRole {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Outer => "outer",
+            Self::Inner => "inner",
+            Self::OuterClearance => "outer_clearance",
+            Self::InnerClearance => "inner_clearance",
+            Self::OuterRetract => "outer_retract",
+        })
+    }
 }
 
 /// A radial limit of a turning operation.
@@ -146,6 +174,16 @@ pub enum AxialRole {
     Front,
     /// The limit at the back.
     Back,
+}
+
+/// The role's wire name, as a key of `Operation.axial`.
+impl fmt::Display for AxialRole {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Front => "front",
+            Self::Back => "back",
+        })
+    }
 }
 
 /// An axial limit of a turning operation: a base plus an offset along the
