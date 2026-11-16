@@ -606,6 +606,7 @@ fn append_component(
             id: vertex_id,
             point: point_id,
             tolerance: PositiveReal::new(vertex_gaps[&vertex].max(GAP_MM)),
+            native_ref: None,
         });
     }
     for (&edge, uses) in &edges {
@@ -633,6 +634,7 @@ fn append_component(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(side.curve.clone())),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.edges.push(Edge {
             id: edge_id,
@@ -641,9 +643,12 @@ fn append_component(
                 Some(side.curve.full_knot_endpoints().endpoints()),
             )
             .map_err(CodecError::malformed)?,
-            start: id!(VertexId, "vertex", side.vertices[0].0),
-            end: id!(VertexId, "vertex", side.vertices[1].0),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                id!(VertexId, "vertex", side.vertices[0].0),
+                id!(VertexId, "vertex", side.vertices[1].0),
+            )),
             tolerance,
+            native_ref: None,
         });
     }
     let mut faces = Vec::new();
@@ -658,6 +663,7 @@ fn append_component(
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(patch.surface.clone()),
             source_object: None,
+            native_ref: None,
         });
         let outer = ring.clone();
         let mut inner_rings = Vec::new();
@@ -704,6 +710,7 @@ fn append_component(
                     id: pcurve.clone(),
                     geometry: side.pcurve.clone(),
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+                    native_ref: None,
                 });
                 let [lo, hi] = side.curve.full_knot_endpoints().endpoints();
                 let range = if orders[&(patch.face, side.edge)] {
@@ -725,6 +732,7 @@ fn append_component(
                         parameter_range: Some(range),
                     }],
                     use_curve: None,
+                    native_ref: None,
                 });
             }
             ir.geometry.loops.push(Loop {
@@ -733,6 +741,7 @@ fn append_component(
                 boundary: LoopBoundary::Ring(
                     LoopRing::new(coedges, Vec::new()).map_err(CodecError::malformed)?,
                 ),
+                native_ref: None,
             });
         }
         ir.geometry.faces.push(Face {
@@ -744,6 +753,7 @@ fn append_component(
             name: None,
             color: None,
             tolerance,
+            native_ref: None,
         });
         faces.push(face);
     }
@@ -755,22 +765,28 @@ fn append_component(
             annotations.field_exactness(face, "sense", Exactness::Inferred)?;
         }
     }
-    ir.geometry.shells.push(
-        Shell::with_faces(shell.clone(), region.clone(), faces).map_err(CodecError::malformed)?,
-    );
+    if faces.is_empty() {
+        return Err(CodecError::malformed(
+            cadmpeg_ir::features::BodySelectionError::Empty,
+        ));
+    }
+    ir.geometry
+        .shells
+        .push(Shell::new(shell.clone(), region.clone()));
     ir.geometry.regions.push(Region {
         id: region.clone(),
         body: body_id.clone(),
         shells: vec![shell],
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
-        regions: vec![region],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     Ok(true)
 }

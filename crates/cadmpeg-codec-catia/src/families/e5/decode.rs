@@ -186,7 +186,7 @@ pub(in crate::families) fn try_decode_e5(
                 id: vertex_id,
                 point: point_id,
                 tolerance: None,
-            });
+             native_ref: None, });
         }
         for (index, circle) in circles.iter().enumerate() {
             let id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "e5", "curve"), index, CurveId::mint));
@@ -199,7 +199,7 @@ parameter_range: None,
                 id,
                 geometry: circle.geometry.clone(),
                 source_object: None,
-            });
+             native_ref: None, });
         }
         for (index, surface) in surfaces.iter().enumerate() {
             let id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "e5", "surf"), index, SurfaceId::mint));
@@ -218,7 +218,7 @@ parameter_range: None,
                 id,
                 geometry: surface.geometry.clone(),
                 source_object: None,
-            });
+             native_ref: None, });
         }
         for (index, jet) in rolling_ball_jets.iter().enumerate() {
             let surface_index = surfaces.len() + index;
@@ -247,7 +247,7 @@ parameter_range: None,
                     cache: None,
                 },
                 source_object: None,
-            });
+             native_ref: None, });
             admitted!(annotate(&mut annotations, &procedural_id, "e5_0d_03", u64_from_index(jet.pos), "rolling_ball_jet_definition", Exactness::ByteExact));
             admitted!(annotations.derived(&procedural_id, "surface").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations.derived(&procedural_id, "definition").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
@@ -1029,7 +1029,6 @@ fn attach_e5_free_vertices(
             Exactness::Inferred,
         )?;
     }
-    let regions = vec![region_id.clone()];
     let shells = vec![shell_id.clone()];
     let free_vertices = ir
         .geometry
@@ -1041,27 +1040,29 @@ fn attach_e5_free_vertices(
     ir.geometry.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Wire,
-        regions,
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     admission.charge()?;
     ir.geometry.regions.push(Region {
         id: region_id.clone(),
         body: body_id,
         shells,
+        native_ref: None,
     });
     admission.charge()?;
-    ir.geometry.shells.push(
-        match Shell::new(shell_id, region_id, Vec::new(), Vec::new(), free_vertices) {
-            Ok(shell) => shell,
-            Err(_) => {
-                return Ok(());
-            }
-        },
-    );
+    if free_vertices.is_empty() {
+        return Ok(());
+    }
+    ir.geometry.shells.push(Shell::with_members(
+        shell_id,
+        region_id,
+        Vec::new(),
+        free_vertices,
+    ));
     Ok(())
 }
 
@@ -1930,6 +1931,7 @@ fn emit_e5_curves_and_edges(
             id,
             geometry: (geometry).clone(),
             source_object: None,
+            native_ref: None,
         });
     }
     for (&record_id, context) in intersections {
@@ -2020,7 +2022,7 @@ fn emit_e5_curves_and_edges(
             "ff_edge_use",
             Exactness::ByteExact,
         )?;
-        for field in ["start", "end"] {
+        for field in ["ends.start", "ends.end"] {
             annotations.derived(&id, field)?;
         }
         if edge_curve_ids.contains_key(&record_id) {
@@ -2035,9 +2037,12 @@ fn emit_e5_curves_and_edges(
                 edge_curves.get(&record_id).map(|(_, range)| *range),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
-            start: vertex_for_ref[&edge.start_vertex].clone(),
-            end: vertex_for_ref[&edge.end_vertex].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertex_for_ref[&edge.start_vertex].clone(),
+                vertex_for_ref[&edge.end_vertex].clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     Ok(())
@@ -2080,7 +2085,7 @@ fn emit_e5_pcurves(
                 ),
                 None,
             ),
-        });
+         native_ref: None, });
     }
     Ok(())
 }
@@ -2112,16 +2117,15 @@ fn emit_e5_bodies(
             Exactness::ByteExact,
         )?;
         annotations.derived(&body_id, "kind")?;
-        annotations.derived(&body_id, "regions")?;
         admission.charge()?;
         ir.geometry.bodies.push(Body {
             id: body_id.clone(),
             kind: plan.kind,
-            regions: region_ids.clone(),
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         for (component, component_faces) in plan.components.iter().enumerate() {
             let region_id = region_ids[component].clone();
@@ -2143,6 +2147,7 @@ fn emit_e5_bodies(
                 id: region_id.clone(),
                 body: body_id.clone(),
                 shells,
+                native_ref: None,
             });
             annotate(
                 annotations,
@@ -2153,7 +2158,6 @@ fn emit_e5_bodies(
                 Exactness::Inferred,
             )?;
             annotations.derived(&shell_id, "region")?;
-            annotations.derived(&shell_id, "faces")?;
             admission.charge()?;
             let mut face_ids = Vec::new();
 
@@ -2164,16 +2168,12 @@ fn emit_e5_bodies(
                     FaceId::mint,
                 )?);
             }
-            ir.geometry.shells.push(
-                match Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()) {
-                    Ok(shell) => shell,
-                    Err(_) => {
-                        return Err(cadmpeg_core::CodecError::malformed(
-                            "shell owns no topology",
-                        ));
-                    }
-                },
-            );
+            if face_ids.is_empty() {
+                return Err(cadmpeg_core::CodecError::malformed(
+                    "shell owns no topology",
+                ));
+            }
+            ir.geometry.shells.push(Shell::new(shell_id, region_id));
         }
     }
     Ok(())
@@ -2285,6 +2285,7 @@ fn emit_e5_faces_loops_coedges(
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
 
         for loop_plan in &face_plan.loops {
@@ -2337,6 +2338,7 @@ fn emit_e5_faces_loops_coedges(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                native_ref: None,
             });
             for member in members {
                 let index = member.orientation.serialized_index;
@@ -2399,6 +2401,7 @@ fn emit_e5_faces_loops_coedges(
                     },
                     pcurves,
                     use_curve: None,
+                    native_ref: None,
                 });
             }
         }
@@ -4307,6 +4310,7 @@ mod route_tests {
                 point: PointId::mint("catia:test:point#point-10".to_string())
                     .expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: VertexId::mint("catia:test:vertex#vertex-11".to_string())
@@ -4314,6 +4318,7 @@ mod route_tests {
                 point: PointId::mint("catia:test:point#point-11".to_string())
                     .expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             },
         ]);
         ir.geometry.points.push(Point::new(
@@ -4327,6 +4332,7 @@ mod route_tests {
             point: PointId::mint("catia:test:point#point-12".to_string())
                 .expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         });
         let surface = crate::families::e5::records::E5Surface {
             pos: 0,
@@ -4739,6 +4745,7 @@ mod route_tests {
                     .expect("valid test plane"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             let mut unused = Vec::new();
             super::prune_e5_unused_surfaces(

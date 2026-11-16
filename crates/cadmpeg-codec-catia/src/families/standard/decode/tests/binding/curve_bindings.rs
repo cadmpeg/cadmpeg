@@ -74,6 +74,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let support = StandardCurveSupport {
         pos: 0,
@@ -711,6 +712,7 @@ fn edge_support_reuses_the_surface_with_matching_source_record() {
         id: id.clone(),
         geometry: geometry.clone(),
         source_object: Some(source),
+        native_ref: None,
     });
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry);
     let matched = crate::test_support::with_service_context(|ctx| {

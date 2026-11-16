@@ -92,6 +92,7 @@ fn emit_strip(tilt: f64, [first_strip, second_strip]: [bool; 2]) -> CadIr {
             id: id.clone(),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.faces.push(Face {
             id: standard_id("face", format_args!("{i}"), FaceId::mint).expect("face ID"),
@@ -102,6 +103,7 @@ fn emit_strip(tilt: f64, [first_strip, second_strip]: [bool; 2]) -> CadIr {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
     }
     let line = |pos, face| StandardCurveSupport {
@@ -203,8 +205,14 @@ fn cylindrical_arc_recovery_reverses_the_edge_and_its_occurrence() {
     let ir = emit_strip(0.0, [true, false]);
     let edge = &ir.geometry.edges[0];
     assert_eq!(edge.param_range().expect("recovered arc").get(), [PI, TAU]);
-    assert_eq!(edge.start.as_str(), "catia:standard:v#1");
-    assert_eq!(edge.end.as_str(), "catia:standard:v#0");
+    assert_eq!(
+        edge.ends.as_ref().unwrap().start.as_str(),
+        "catia:standard:v#1"
+    );
+    assert_eq!(
+        edge.ends.as_ref().unwrap().end.as_str(),
+        "catia:standard:v#0"
+    );
     assert_eq!(ir.geometry.coedges[0].sense, Sense::Reversed);
 }
 

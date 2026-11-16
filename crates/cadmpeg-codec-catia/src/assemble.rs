@@ -1301,6 +1301,7 @@ mod route_tests {
                     .expect("valid LineCurve fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
         }
         let unsorted = cadmpeg_ir::validate::validate_neutral_with_additional_native_identities(
@@ -1355,6 +1356,7 @@ mod route_tests {
                 record: Some(record_id.clone()),
             }),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry
             .add_procedural_curve(
@@ -1395,6 +1397,7 @@ mod route_tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let surface_id =
             SurfaceId::mint("catia:test:surface#surface-0".to_string()).expect("identity grammar");
@@ -1402,6 +1405,7 @@ mod route_tests {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let offset_id =
             SurfaceId::mint("catia:test:surface#surface-1".to_string()).expect("identity grammar");
@@ -1409,6 +1413,7 @@ mod route_tests {
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
@@ -1511,12 +1516,14 @@ mod route_tests {
                         record: None,
                     }),
                     source_object: None,
+                    native_ref: None,
                 });
             }
             ir.geometry.surfaces.push(Surface {
                 id: surface_id(CHAIN),
                 geometry: terminal,
                 source_object: None,
+                native_ref: None,
             });
             for index in 0..CHAIN {
                 let construction =
@@ -1608,6 +1615,7 @@ mod route_tests {
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let run = |_: &cadmpeg_core::decode::DecodeContext<'_>| {
             let mut payload = UnknownRecord::retained(
@@ -1637,6 +1645,7 @@ mod route_tests {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let mut losses = Vec::new();
         super::insert_unresolved_carrier_loss(&ir, &mut losses);
