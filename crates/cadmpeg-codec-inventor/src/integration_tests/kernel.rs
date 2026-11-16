@@ -32,6 +32,7 @@ fn empty_solved_partition_retains_the_carrier_and_reports_the_blocking_loss() {
     );
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Blocking);
     assert!(!fidelity.retained_records().is_empty());
+    assert!(fidelity.unrepresented().is_empty());
     let native = ir.native.namespace("inventor").expect("native carrier");
     let carriers = native
         .arena_as::<crate::native::ActiveCarrierRecord>("active_carrier")

@@ -927,21 +927,7 @@
         "process": true
       },
       "source": {
-        "attributes": {
-          "classified_offset_store_control_count": "0",
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "636",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "622",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "offset_store_control_count": "1",
-          "partition_streams": "0",
-          "plain_streams": "0",
-          "unclassified_offset_store_control_count": "1"
-        },
+        "attributes": {},
         "identity": {
           "dialects": {
             "extra": [],
@@ -1185,6 +1171,8 @@
           }
         }
       },
+      "decode_digest": "4b8d909808c9790d5cd825985ebd1c58b08945b8c6797252238338cbc8fd94df",
+      "file_digests": {},
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {
@@ -1192,7 +1180,11 @@
             "kind": "inline"
           },
           "offset": 586,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model",
+            "design"
+          ]
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -1200,7 +1192,8 @@
             "kind": "inline"
           },
           "offset": 602,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#10": {
           "bytes": {
@@ -1208,7 +1201,8 @@
             "kind": "inline"
           },
           "offset": 611,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#11": {
           "bytes": {
@@ -1216,7 +1210,8 @@
             "kind": "inline"
           },
           "offset": 612,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#12": {
           "bytes": {
@@ -1224,7 +1219,8 @@
             "kind": "inline"
           },
           "offset": 613,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#13": {
           "bytes": {
@@ -1232,7 +1228,8 @@
             "kind": "inline"
           },
           "offset": 614,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#14": {
           "bytes": {
@@ -1240,7 +1237,8 @@
             "kind": "inline"
           },
           "offset": 615,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#15": {
           "bytes": {
@@ -1248,7 +1246,8 @@
             "kind": "inline"
           },
           "offset": 616,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#16": {
           "bytes": {
@@ -1256,7 +1255,8 @@
             "kind": "inline"
           },
           "offset": 617,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#17": {
           "bytes": {
@@ -1264,7 +1264,8 @@
             "kind": "inline"
           },
           "offset": 618,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#18": {
           "bytes": {
@@ -1272,7 +1273,8 @@
             "kind": "inline"
           },
           "offset": 619,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#19": {
           "bytes": {
@@ -1280,7 +1282,8 @@
             "kind": "inline"
           },
           "offset": 620,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -1288,7 +1291,8 @@
             "kind": "inline"
           },
           "offset": 603,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#20": {
           "bytes": {
@@ -1296,7 +1300,8 @@
             "kind": "inline"
           },
           "offset": 621,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#3": {
           "bytes": {
@@ -1304,7 +1309,8 @@
             "kind": "inline"
           },
           "offset": 604,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#4": {
           "bytes": {
@@ -1312,7 +1318,8 @@
             "kind": "inline"
           },
           "offset": 605,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#5": {
           "bytes": {
@@ -1320,7 +1327,8 @@
             "kind": "inline"
           },
           "offset": 606,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#6": {
           "bytes": {
@@ -1328,7 +1336,8 @@
             "kind": "inline"
           },
           "offset": 607,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#7": {
           "bytes": {
@@ -1336,7 +1345,8 @@
             "kind": "inline"
           },
           "offset": 608,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#8": {
           "bytes": {
@@ -1344,7 +1354,8 @@
             "kind": "inline"
           },
           "offset": 609,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#9": {
           "bytes": {
@@ -1352,9 +1363,14 @@
             "kind": "inline"
           },
           "offset": 610,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": [
+        "model",
+        "design"
+      ]
     }
   },
   "inspect": {

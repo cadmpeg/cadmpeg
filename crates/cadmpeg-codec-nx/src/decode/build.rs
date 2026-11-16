@@ -301,6 +301,7 @@ pub(super) fn try_decode_geometry(
                 Some(stream.kind().label()),
             );
             annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+            scan.note_untyped(unknown.id(), [cadmpeg_core::decode::ArenaClass::Model]);
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
             continue;
@@ -1266,6 +1267,7 @@ pub(super) fn try_decode_geometry(
             Some(stream.kind().label()),
         );
         annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+        scan.note_untyped(unknown.id(), [cadmpeg_core::decode::ArenaClass::Model]);
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
     }

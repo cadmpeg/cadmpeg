@@ -94,12 +94,6 @@
     },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "28",
-        "bytes_structural": "539",
-        "bytes_typed": "30",
-        "bytes_unclassified": "0",
-        "data_sections": "2",
-        "entity_instances": "2",
         "schema": "AP242"
       },
       "identity": {
@@ -132,7 +126,14 @@
     }
   },
   "report": {
-    "coverage": {},
+    "coverage": {
+      "bytes_named_opaque": 28,
+      "bytes_structural": 539,
+      "bytes_typed": 30,
+      "bytes_unclassified": 0,
+      "data_sections": 2,
+      "entity_instances": 2
+    },
     "identity": {
       "dialects": {
         "extra": [],
@@ -232,6 +233,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "decode_digest": "46c8315eb30763649e852f221f917853175810cd936be52cee921ed4e864fdd4",
+    "file_digests": {},
     "retained_records": {
       "step:data:example_record#2": {
         "bytes": {
@@ -239,7 +242,10 @@
           "kind": "inline"
         },
         "offset": 398,
-        "stream": ""
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       },
       "step:file:signature#0": {
         "bytes": {
@@ -247,8 +253,12 @@
           "kind": "inline"
         },
         "offset": 453,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

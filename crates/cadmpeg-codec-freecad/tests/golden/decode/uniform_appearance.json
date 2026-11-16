@@ -2564,13 +2564,9 @@
     "source": {
       "attributes": {
         "application_domains": "Part",
-        "archive_entry_count": "6",
         "document_kind": "part",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "1",
-        "physical_archive_bytes": "3744",
-        "physical_ledger_spans": "43",
         "program_version": "1.0R39109 (Git)"
       },
       "identity": {
@@ -2644,6 +2640,9 @@
       "exactness": {},
       "provenance": {}
     },
-    "retained_records": {}
+    "decode_digest": "b6840ea50a0b17df9385d99fbaa4895164ca0739219d876ab2f3ac8ec186cf48",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

@@ -185,15 +185,9 @@
     },
     "source": {
       "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "151",
-        "section.0.length": "75",
         "section.0.name": "DEPDB_DATA",
-        "section.0.offset": "76",
         "section.0.raw_name": "DEPDB_DATA",
         "section.0.role": "metadata",
-        "section_count": "1",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
@@ -715,6 +709,9 @@
         }
       }
     },
-    "retained_records": {}
+    "decode_digest": "e98ea187757905e565ebbf8cf3493b56dfd125bea1d84eb198b3a8e82273895c",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }
