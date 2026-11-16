@@ -843,7 +843,7 @@ pub enum Propagation {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_continuity"
+            deserialize_with = "deserialize_connected_continuity"
         )]
         continuity: Option<Continuity>,
         /// The angle tolerance.
@@ -934,7 +934,7 @@ cadmpeg_core::named_optional_field!(deserialize_body, Box<Topology>, "body");
 cadmpeg_core::named_optional_field!(deserialize_configuration, ConfigurationRef, "configuration");
 cadmpeg_core::named_optional_field!(deserialize_container, ContainerId, "container");
 cadmpeg_core::named_optional_field!(deserialize_context, PickContext, "context");
-cadmpeg_core::named_optional_field!(deserialize_continuity, Continuity, "continuity");
+cadmpeg_core::named_optional_field!(deserialize_connected_continuity, Continuity, "continuity");
 cadmpeg_core::named_optional_field!(deserialize_direction, UnitVector3, "direction");
 cadmpeg_core::named_optional_field!(deserialize_domain, PickDomain, "domain");
 cadmpeg_core::named_optional_field!(deserialize_end, Box<Picked>, "end");

@@ -209,7 +209,7 @@ impl<R: Clone> Parser<'_, R> {
     fn descend(
         &mut self,
         mut rule: Rule,
-        frames: &mut Vec<Frame<R>>,
+        frames: &mut Vec<Frame<Node<R>>>,
     ) -> Result<Node<R>, ExprError> {
         loop {
             rule = match rule {
@@ -262,10 +262,10 @@ impl<R: Clone> Parser<'_, R> {
     /// waits again, on the stack, for the rule it reads next.
     fn resume(
         &mut self,
-        frame: Frame<R>,
+        frame: Frame<Node<R>>,
         node: Node<R>,
-        frames: &mut Vec<Frame<R>>,
-    ) -> Result<Next<R>, ExprError> {
+        frames: &mut Vec<Frame<Node<R>>>,
+    ) -> Result<Next<Node<R>>, ExprError> {
         Ok(match frame {
             Frame::Chain {
                 spine,
@@ -406,7 +406,7 @@ impl<R: Clone> Parser<'_, R> {
 
     /// Reads an atom, or opens one that holds an `expr` and returns `None`:
     /// a parenthesis, an `if`, or a call, which waits as a frame.
-    fn atom(&mut self, frames: &mut Vec<Frame<R>>) -> Result<Option<Node<R>>, ExprError> {
+    fn atom(&mut self, frames: &mut Vec<Frame<Node<R>>>) -> Result<Option<Node<R>>, ExprError> {
         let node = match self.next() {
             Some(Tok::Num(text)) => {
                 let value = text
@@ -501,32 +501,32 @@ impl Spine {
 
 /// A rule partly read, waiting for the node it reads next, with the levels
 /// of the ceiling it holds.
-enum Frame<R> {
+enum Frame<N> {
     /// A chain, with the `expr` level for `or`, and the operands read so far
     /// with the operator that follows them.
     Chain {
         spine: Spine,
         depth: Option<read::Depth>,
         chain: Chain,
-        left: Option<(Node<R>, BinaryOp)>,
+        left: Option<(N, BinaryOp)>,
     },
     /// `not` before its operand.
     Not(read::Depth),
     /// A comparison, with its left operand and operator once read.
-    Cmp(Option<(Node<R>, BinaryOp)>),
+    Cmp(Option<(N, BinaryOp)>),
     /// `-` before its operand.
     Neg(read::Depth),
     /// A power, with its base and the level of its exponent once read.
-    Pow(Option<(Node<R>, read::Depth)>),
+    Pow(Option<(N, read::Depth)>),
     /// `(` before its `expr`.
     Paren,
     /// An `if`, with the parts read so far.
-    If(Vec<Node<R>>),
+    If(Vec<N>),
     /// A call, with the arguments read so far.
-    Call(Function, Vec<Node<R>>),
+    Call(Function, Vec<N>),
 }
 
-impl<R> Frame<R> {
+impl<N> Frame<N> {
     const fn chain(spine: Spine, depth: Option<read::Depth>) -> Self {
         Self::Chain {
             spine,
@@ -538,9 +538,9 @@ impl<R> Frame<R> {
 }
 
 /// What a frame does with the node it waited for.
-enum Next<R> {
+enum Next<N> {
     /// The frame's rule ends with this node.
-    Node(Node<R>),
+    Node(N),
     /// The frame waits again for a node of this rule.
     Read(Rule),
 }

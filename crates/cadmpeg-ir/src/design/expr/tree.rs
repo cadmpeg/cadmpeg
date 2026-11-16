@@ -101,24 +101,19 @@ impl<R: Clone> Node<R> {
 }
 
 impl<R: Clone> Clone for Node<R> {
+    /// Each node is visited twice: first to clone its operands, then, with
+    /// their clones built, to build its own.
     fn clone(&self) -> Self {
-        enum Visit<'a, R> {
-            Enter(&'a Node<R>),
-            Build(&'a Node<R>),
-        }
-        let mut work = vec![Visit::Enter(self)];
+        let mut work = vec![(self, false)];
         let mut built = Vec::new();
-        while let Some(visit) = work.pop() {
-            match visit {
-                Visit::Enter(node) => {
-                    work.push(Visit::Build(node));
-                    work.extend(node.operands().rev().map(Visit::Enter));
-                }
-                Visit::Build(node) => {
-                    let at = built.len() - node.operands().count();
-                    let operands = built.split_off(at);
-                    built.push(node.with_operands(operands));
-                }
+        while let Some((node, operands_built)) = work.pop() {
+            if operands_built {
+                let at = built.len() - node.operands().count();
+                let operands = built.split_off(at);
+                built.push(node.with_operands(operands));
+            } else {
+                work.push((node, true));
+                work.extend(node.operands().rev().map(|operand| (operand, false)));
             }
         }
         built

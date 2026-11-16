@@ -139,15 +139,15 @@ const fn binary_mark(op: BinaryOp) -> &'static str {
 /// What is left to print, taken from the end of the printer's work stack.
 /// A step that holds a level of the ceiling sits below the steps that print
 /// inside it, so the level is held until they are printed.
-enum Step<'a, R> {
+enum Step<'a, N> {
     /// Prints a node where its context binds at the precedence, in
     /// parentheses if it binds looser. Parentheses nest a level.
-    Show(&'a Node<R>, u8),
+    Show(&'a N, u8),
     /// Prints an operand that the parser reads one level deeper, where its
     /// context binds at the precedence.
-    Nested(&'a Node<R>, u8),
+    Nested(&'a N, u8),
     /// Prints a node.
-    Raw(&'a Node<R>),
+    Raw(&'a N),
     /// Writes fixed text.
     Text(&'static str),
     /// Writes a binary operator between spaces.
@@ -161,7 +161,7 @@ enum Step<'a, R> {
     Chain {
         at: u8,
         chain: Chain,
-        operations: Vec<(BinaryOp, &'a Node<R>)>,
+        operations: Vec<(BinaryOp, &'a N)>,
     },
 }
 
@@ -186,8 +186,8 @@ impl<R: PartialEq + Clone> Printer<R> {
 
     fn step<'a>(
         &mut self,
-        step: Step<'a, R>,
-        work: &mut Vec<Step<'a, R>>,
+        step: Step<'a, Node<R>>,
+        work: &mut Vec<Step<'a, Node<R>>>,
     ) -> Result<(), ExprError> {
         match step {
             Step::Show(node, need) => {
@@ -238,7 +238,11 @@ impl<R: PartialEq + Clone> Printer<R> {
 
     /// Writes a leaf, or the text a node writes before its first operand and
     /// the steps that print the rest.
-    fn raw<'a>(&mut self, node: &'a Node<R>, work: &mut Vec<Step<'a, R>>) -> Result<(), ExprError> {
+    fn raw<'a>(
+        &mut self,
+        node: &'a Node<R>,
+        work: &mut Vec<Step<'a, Node<R>>>,
+    ) -> Result<(), ExprError> {
         match node {
             Node::Number { value, unit } => {
                 self.text.push_str(&format_number(value.get())?);
@@ -359,7 +363,7 @@ impl<R: PartialEq + Clone> Printer<R> {
 
 /// Pushes the steps that print `args`, each one level deeper, separated by
 /// commas, and the closing parenthesis.
-fn arguments<'a, R>(args: &'a [Node<R>], work: &mut Vec<Step<'a, R>>) {
+fn arguments<'a, R>(args: &'a [Node<R>], work: &mut Vec<Step<'a, Node<R>>>) {
     work.push(Step::Text(")"));
     for (i, arg) in args.iter().enumerate().rev() {
         work.push(Step::Nested(arg, 0));
