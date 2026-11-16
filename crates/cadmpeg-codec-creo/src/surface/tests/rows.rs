@@ -154,6 +154,53 @@ fn finds_one_byte_and_two_byte_surface_rows() {
 }
 
 #[test]
+fn packed_three_byte_row_fields_decode_and_link() {
+    // id 20000 = c0 4e 20, feature 17000 = c0 42 68, id 20001 = c0 4e 21.
+    let payload = b"srf_array\0\xf8\x02\
+        \xc0\x4e\x20\x22\xc0\x42\x68\x01\x00\xc0\x4e\x21\
+        \xc0\x4e\x21\x22\xc0\x42\x68\xf6\x00\x00";
+    let decoded = rows(payload);
+    let first_offset = b"srf_array\0\xf8\x02".len();
+    assert_eq!(
+        decoded,
+        vec![
+            SurfaceRow {
+                id: 20_000,
+                kind: SurfaceKind::Plane,
+                feature_id: 17_000,
+                reversed: false,
+                boundary_type: crate::surface::BoundaryType::Code00,
+                next_surface: 20_001,
+                offset: first_offset,
+            },
+            SurfaceRow {
+                id: 20_001,
+                kind: SurfaceKind::Plane,
+                feature_id: 17_000,
+                reversed: true,
+                boundary_type: crate::surface::BoundaryType::Code00,
+                next_surface: 0,
+                offset: first_offset + 12,
+            },
+        ]
+    );
+    let successor = unique_surface_row(&decoded, decoded[0].next_surface).unwrap();
+    assert_eq!(successor.offset, first_offset + 12);
+    assert_eq!(
+        positional_body_start(payload, &decoded[0]),
+        Some(first_offset + 12)
+    );
+    assert_eq!(complete_surface_array_bounds(payload).len(), 1);
+}
+
+#[test]
+fn packed_row_field_requires_its_canonical_range() {
+    // c0 00 07 stores 7, which a canonical writer stores in one byte.
+    let payload = b"srf_array\0\xf8\x01\x05\x22\xc0\x00\x07\x01\x00\x00";
+    assert!(rows(payload).is_empty());
+}
+
+#[test]
 fn accepts_type24_row_with_boundary_type_eight() {
     let payload = b"srf_array\0\xf8\x01\xae\x71\x24\xae\x5a\xf6\x08\0";
     let decoded = rows(payload);

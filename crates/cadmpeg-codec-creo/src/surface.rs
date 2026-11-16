@@ -3330,8 +3330,7 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
         let value = |label: &[u8]| {
             find_in(payload, label, start, end).and_then(|at| {
                 let value_start = at + label.len();
-                let (value, after) = compact_int(payload, value_start);
-                (after > value_start).then_some((value, at))
+                packed_row_field(payload, value_start).map(|(value, _)| (value, at))
             })
         };
         let typed_kind = find_in(payload, b"geom_type\0", start, end)
@@ -3375,12 +3374,9 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
         let Some((id, id_start)) = id_ending_at(payload, type_offset) else {
             continue;
         };
-        let mut pos = type_offset + 1;
-        let (feature_id, next) = compact_int(payload, pos);
-        if next == pos || next > payload.len() {
+        let Some((feature_id, mut pos)) = packed_row_field(payload, type_offset + 1) else {
             continue;
-        }
-        pos = next;
+        };
         let Some(&orientation) = payload.get(pos) else {
             continue;
         };
@@ -3394,10 +3390,9 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
             continue;
         };
         pos += 2;
-        let (next_surface, end) = compact_int(payload, pos);
-        if end == pos {
+        let Some((next_surface, _)) = packed_row_field(payload, pos) else {
             continue;
-        }
+        };
         result.push(SurfaceRow {
             id,
             kind,
@@ -4072,23 +4067,19 @@ fn parent_feature_array_trailer(body: &[u8]) -> bool {
 }
 
 fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
-    let (_, after_id) = compact_int(payload, row.offset);
+    let (_, after_id) = packed_row_field(payload, row.offset)?;
     (payload
         .get(after_id)
         .and_then(|byte| SurfaceKind::from_byte(*byte))
         == Some(row.kind))
     .then_some(())?;
-    let mut cursor = after_id + 1;
-    let (feature_id, next) = compact_int(payload, cursor);
-    (next > cursor && feature_id == row.feature_id).then_some(())?;
-    cursor = next;
+    let (feature_id, cursor) = packed_row_field(payload, after_id + 1)?;
+    (feature_id == row.feature_id).then_some(())?;
     let orientation = *payload.get(cursor)?;
     let boundary = *payload.get(cursor + 1)?;
     (matches!(orientation, 0x01 | 0xf6) && BoundaryType::from_byte(boundary).is_some())
         .then_some(())?;
-    cursor += 2;
-    let (_, next) = compact_int(payload, cursor);
-    (next > cursor).then_some(next)
+    packed_row_field(payload, cursor + 2).map(|(_, next)| next)
 }
 
 fn decode_row_scalar(
@@ -8803,7 +8794,27 @@ impl ApexConeHalfAngle {
     }
 }
 
+/// The smallest value the packed `c0..df XX YY` form stores canonically.
+const PACKED_ROW_FIELD_MIN: u32 = 0x4000;
+
+/// A surface-row compact-integer field: `00..7f`, `80..bf XX`, or the packed
+/// `c0..df XX YY` form.
+fn packed_row_field(payload: &[u8], offset: usize) -> Option<(u32, usize)> {
+    match *payload.get(offset)? {
+        0xc0..=0xdf => psb::packed_compact_int(payload, offset)
+            .filter(|(value, _)| *value >= PACKED_ROW_FIELD_MIN),
+        _ => psb::packed_compact_int(payload, offset),
+    }
+}
+
 fn id_ending_at(payload: &[u8], type_offset: usize) -> Option<(u32, usize)> {
+    if let Some(start) = type_offset.checked_sub(3) {
+        if let Some((value, end)) = packed_row_field(payload, start) {
+            if end == type_offset && value >= PACKED_ROW_FIELD_MIN {
+                return Some((value, start));
+            }
+        }
+    }
     if type_offset >= 2 && matches!(payload[type_offset - 2], 0x80..=0xbf) {
         let (value, end) = compact_int(payload, type_offset - 2);
         if end == type_offset {
