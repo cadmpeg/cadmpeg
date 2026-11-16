@@ -56,7 +56,7 @@ fn native_expand_states(result: &cadmpeg_ir::DecodeResult) -> usize {
         .model
         .presentation_documents
         .iter()
-        .flat_map(|document| document.states())
+        .flat_map(cadmpeg_ir::PresentationDocument::states)
         .filter(
             |state| matches!(&state.kind, PresentationStateKind::Native(kind) if kind == "Expand"),
         )
