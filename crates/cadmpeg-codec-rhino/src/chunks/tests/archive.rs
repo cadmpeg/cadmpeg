@@ -304,14 +304,9 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
         let result = decode(&archive_version(version, &[object]));
         assert_eq!(result.ir().geometry.subds.len(), 1, "archive {version}");
         assert_eq!(
-            wire::field::<Vec<subd::SubdEdgeUse>>(
-                &(wire::field::<Vec<subd::SubdFace>>(
-                    &(result.ir().geometry.subds[0].cage),
-                    "faces"
-                )[0]),
-                "edges"
-            )
-            .len(),
+            result.ir().geometry.subds[0].cage.faces()[0]
+                .edge_uses()
+                .count(),
             4
         );
         assert!(!result

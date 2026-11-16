@@ -513,8 +513,8 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
         assert_eq!(topology.vertices.len(), 1);
         for shell in &topology.shells {
             assert_eq!(
-                shell.free_vertices(),
-                std::slice::from_ref(&topology.vertices[0].id)
+                shell.free_vertices().collect::<Vec<_>>(),
+                [&topology.vertices[0].id]
             );
         }
         let candidate = HistoryBody {

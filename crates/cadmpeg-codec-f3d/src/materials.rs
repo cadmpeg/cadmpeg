@@ -8,7 +8,6 @@
 //! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
-use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use crate::records::references::DesignVisualToken;
@@ -887,8 +886,8 @@ fn appearance_opacity(
                 record.guid
             ))
         })?;
-    f32_from_f64(1.0 - transparency.get())
-        .and_then(|opacity| color.with_alpha(opacity))
+    color
+        .with_alpha(1.0 - transparency.get())
         .ok_or_else(|| CodecError::Malformed("Protein opacity is outside [0, 1]".into()))
 }
 
@@ -939,14 +938,7 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
     values
         .iter()
         .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-        .then(|| {
-            Color::new(
-                f32_from_f64(values[0])?,
-                f32_from_f64(values[1])?,
-                f32_from_f64(values[2])?,
-                f32_from_f64(values[3])?,
-            )
-        })
+        .then(|| Color::new(values[0], values[1], values[2], values[3]))
         .flatten()
 }
 
@@ -1259,7 +1251,12 @@ fn legacy_face_appearance_assignments(
 fn normalized_legacy_face_color(bytes: &[u8], offset: usize) -> Option<Color> {
     let raw = bytes.get(offset..offset + 4 * size_of::<f32>())?;
     let component = |at: usize| View::f32_le_at(raw, at);
-    let color = Color::new(component(0)?, component(4)?, component(8)?, component(12)?)?;
+    let color = Color::new(
+        f64::from(component(0)?),
+        f64::from(component(4)?),
+        f64::from(component(8)?),
+        f64::from(component(12)?),
+    )?;
     (color.a() == 1.0).then_some(color)
 }
 

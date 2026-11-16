@@ -62,14 +62,17 @@ pub(super) fn admit(
                     matches!(curve.definition(), ProceduralCurveDefinition::Exact { .. })
                 })
         })
-        .flat_map(|edge| [edge.start.as_str(), edge.end.as_str()])
+        .flat_map(|edge| edge.vertices().map(cadmpeg_ir::ids::VertexId::as_str))
         .collect();
     if candidates.is_empty() {
         return Ok(());
     }
     let mut misses = HashMap::<String, EndpointMisses>::new();
     for edge in &ir.geometry.edges {
-        if !candidates.contains(edge.start.as_str()) && !candidates.contains(edge.end.as_str()) {
+        if !edge
+            .vertices()
+            .any(|vertex| candidates.contains(vertex.as_str()))
+        {
             continue;
         }
         let carrier = edge
@@ -84,7 +87,7 @@ pub(super) fn admit(
         let fit = construction
             .and_then(cadmpeg_ir::geometry::ProceduralCurve::cache_fit_tolerance)
             .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
-        for (side, id) in [&edge.start, &edge.end].into_iter().enumerate() {
+        for (side, id) in edge.vertices().into_iter().enumerate() {
             if !candidates.contains(id.as_str()) {
                 continue;
             }
@@ -131,9 +134,12 @@ pub(super) fn admit(
         let Some(edge) = index.edges(coedge.edge.as_str(), StandardIndex) else {
             continue;
         };
+        let Some(ends) = &edge.ends else {
+            continue;
+        };
         let vertices = match coedge.sense {
-            cadmpeg_ir::topology::Sense::Forward => [&edge.start, &edge.end],
-            cadmpeg_ir::topology::Sense::Reversed => [&edge.end, &edge.start],
+            cadmpeg_ir::topology::Sense::Forward => [&ends.start, &ends.end],
+            cadmpeg_ir::topology::Sense::Reversed => [&ends.end, &ends.start],
         };
         let curve = index.curves(use_curve.curve.as_str(), StandardIndex);
         for (id, parameter) in vertices
@@ -235,7 +241,7 @@ fn vertex_bounds<'a>(ir: &'a CadIr, index: &ModelIndex<'a>) -> HashMap<String, f
         let Some(bodies) = owners.get(edge.id.as_str()) else {
             continue;
         };
-        for vertex in [&edge.start, &edge.end] {
+        for vertex in edge.vertices() {
             vertices
                 .entry(vertex.as_str())
                 .or_default()

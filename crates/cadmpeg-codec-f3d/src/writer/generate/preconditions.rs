@@ -1062,10 +1062,13 @@ pub(super) fn validate_source_less_design_links(
         }
         let member_form_is_valid = match &wire.members {
             cadmpeg_asm::brep::records::WireMembers::Edges(edges) => {
-                !edges.is_empty() && edges.iter().all(|edge| shell.wire_edges().contains(edge))
+                !edges.is_empty()
+                    && edges
+                        .iter()
+                        .all(|edge| shell.wire_edges().any(|member| member == edge))
             }
             cadmpeg_asm::brep::records::WireMembers::Vertex(vertex) => {
-                shell.free_vertices().contains(vertex)
+                shell.free_vertices().any(|member| member == vertex)
             }
         };
         if !member_form_is_valid {
@@ -1095,7 +1098,9 @@ pub(super) fn validate_source_less_body_kinds(
     // reads it back as collapsed when both endpoints name one vertex.
     let collapsed = |edge: &cadmpeg_ir::ids::EdgeId| {
         edges.get(edge).is_some_and(|edge| {
-            edge.start == edge.end
+            edge.ends
+                .as_ref()
+                .is_some_and(|ends| ends.start == ends.end)
                 && edge.curve().is_none_or(|curve| {
                     curves.get(curve).is_some_and(|curve| {
                         matches!(
@@ -1114,16 +1119,18 @@ pub(super) fn validate_source_less_body_kinds(
             .flat_map(|region| &region.shells)
             .collect::<BTreeSet<_>>();
         let face_ids = geometry
-            .shells
+            .faces
             .iter()
-            .filter(|shell| shell_ids.contains(&shell.id))
-            .flat_map(cadmpeg_ir::topology::Shell::faces)
+            .filter(|face| shell_ids.contains(&face.shell))
+            .map(|face| &face.id)
             .collect::<BTreeSet<_>>();
         let has_wires = geometry
             .shells
             .iter()
             .filter(|shell| shell_ids.contains(&shell.id))
-            .any(|shell| !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty());
+            .any(|shell| {
+                !shell.wire_edges().next().is_none() || !shell.free_vertices().next().is_none()
+            });
         let loop_ids = geometry
             .faces
             .iter()
@@ -1230,22 +1237,20 @@ pub(super) fn validate_source_less_wire_ownership(
 
     let mut regions = Vec::new();
     for region in &geometry.regions {
-        let (body, owner, position) = geometry
+        let body = geometry
             .bodies
             .iter()
-            .enumerate()
-            .find_map(|(ordinal, body)| {
-                if body.id != region.body {
-                    return None;
-                }
-                body.regions
-                    .iter()
-                    .position(|id| *id == region.id)
-                    .map(|position| (ordinal, body, position))
-            })
+            .position(|body| body.id == region.body)
             .ok_or_else(inconsistent)?;
-        let next_region = owner
-            .regions
+        let siblings = geometry
+            .body_regions(&region.body)
+            .map(|sibling| &sibling.id)
+            .collect::<Vec<_>>();
+        let position = siblings
+            .iter()
+            .position(|id| **id == region.id)
+            .ok_or_else(inconsistent)?;
+        let next_region = siblings
             .get(position + 1)
             .map(|id| region_ordinal(id).ok_or_else(inconsistent))
             .transpose()?;
@@ -1271,19 +1276,11 @@ pub(super) fn validate_source_less_wire_ownership(
 
     let mut bodies = Vec::new();
     for body in &geometry.bodies {
-        let first_region = body
-            .regions
-            .first()
-            .and_then(&region_ordinal)
+        let first_region = geometry
+            .body_regions(&body.id)
+            .next()
+            .and_then(|region| region_ordinal(&region.id))
             .ok_or_else(inconsistent)?;
-        if body.regions.iter().any(|id| {
-            !geometry
-                .regions
-                .iter()
-                .any(|region| region.id == *id && region.body == body.id)
-        }) {
-            return Err(inconsistent());
-        }
         bodies.push(WireBodyOwnership {
             first_region,
             first_shell: regions[first_region].first_shell,

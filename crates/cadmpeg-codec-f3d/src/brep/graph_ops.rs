@@ -115,6 +115,13 @@ impl Brep {
                 .or_default()
                 .push(row.id.as_str());
         }
+        let mut faces_by_shell = HashMap::<&str, Vec<&str>>::new();
+        for face in &self.asm.faces {
+            faces_by_shell
+                .entry(face.shell.as_str())
+                .or_default()
+                .push(face.id.as_str());
+        }
         let mut edges_by_loop = HashMap::<&str, Vec<&str>>::new();
         for coedge in &self.asm.coedges {
             edges_by_loop
@@ -139,19 +146,23 @@ impl Brep {
             let shells = shells.get(row.id.as_str()).map_or(&[][..], Vec::as_slice);
             let mut edge_count = 0_usize;
             let is_region = shells.iter().all(|shell| {
-                shell.wire_edges().is_empty()
-                    && shell.faces().iter().all(|face| {
-                        !attributed_faces.contains(face.as_str())
-                            && loops_by_face
-                                .get(face.as_str())
-                                .into_iter()
-                                .flatten()
-                                .flat_map(|ring| edges_by_loop.get(ring).into_iter().flatten())
-                                .all(|edge| {
-                                    edge_count += 1;
-                                    linked_edges.contains(edge)
-                                })
-                    })
+                shell.wire_edges().next().is_none()
+                    && faces_by_shell
+                        .get(shell.id.as_str())
+                        .into_iter()
+                        .flatten()
+                        .all(|face| {
+                            !attributed_faces.contains(face)
+                                && loops_by_face
+                                    .get(face)
+                                    .into_iter()
+                                    .flatten()
+                                    .flat_map(|ring| edges_by_loop.get(ring).into_iter().flatten())
+                                    .all(|edge| {
+                                        edge_count += 1;
+                                        linked_edges.contains(edge)
+                                    })
+                        })
             });
             if is_region && edge_count != 0 {
                 regions.insert(row.body.clone());
@@ -365,11 +376,11 @@ mod tests {
                 bodies: vec![Body {
                     id: BodyId::mint("f3d:brep:entity#1").unwrap(),
                     kind: BodyKind::default(),
-                    regions: vec![],
                     transform: None,
                     name: Some("f3d:brep:entity#1".into()),
                     color: None,
                     visible: None,
+                    native_ref: None,
                 }],
                 points: vec![Point::new(
                     PointId::mint("f3d:brep:point#2").unwrap(),
@@ -457,6 +468,7 @@ mod tests {
             id: support.clone(),
             geometry: geometry.surfaces[0].geometry.clone(),
             source_object: None,
+            native_ref: None,
         });
         let definition = ProceduralSurface::new(
             "f3d:brep:procedure#replica".try_into().unwrap(),

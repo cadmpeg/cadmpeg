@@ -2605,7 +2605,7 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
         *component = value;
     }
     *cursor = view.position();
-    let [r, g, b, a] = components;
+    let [r, g, b, a] = components.map(f64::from);
     Color::new(r, g, b, a)
 }
 

@@ -895,6 +895,7 @@ fn generated_source_less_f3d_rejects_subds() {
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::default(),
+        native_ref: None,
     });
 
     let error = F3dCodec
@@ -1211,6 +1212,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
                 .unwrap(),
             )),
             source_object: Some(association),
+            native_ref: None,
         });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1302,16 +1304,22 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: None,
+            native_ref: None,
         });
-    let first_vertex = source_less.geometry.edges[0].start.clone();
-    source_less.geometry.edges[2].end = vertex_id.clone();
+    let first_vertex = source_less.geometry.edges[0]
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .clone();
+    source_less.geometry.edges[2].ends.as_mut().unwrap().end = vertex_id.clone();
     let edge_id = EdgeId::mint("generated:test:edge#3").expect("identity grammar");
     source_less.geometry.edges.push(cadmpeg_ir::topology::Edge {
         id: edge_id.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0])).unwrap(),
-        start: vertex_id,
-        end: first_vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex_id, first_vertex)),
         tolerance: None,
+        native_ref: None,
     });
     let coedge_id = CoedgeId::mint("generated:test:coedge#3").expect("identity grammar");
     let loop_id = source_less.geometry.loops[0].id.clone();
@@ -1326,6 +1334,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             sense: cadmpeg_ir::topology::Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
     let mut coedges = source_less.geometry.loops[0].coedges().to_vec();
     coedges.push(coedge_id);
@@ -1387,7 +1396,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
             .geometry
             .vertices
             .iter()
-            .find(|vertex| vertex.id == edge.start)
+            .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
             .and_then(|vertex| {
                 source_less
                     .geometry
@@ -1402,7 +1411,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
             .geometry
             .vertices
             .iter()
-            .find(|vertex| vertex.id == edge.end)
+            .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().end)
             .and_then(|vertex| {
                 source_less
                     .geometry
@@ -1426,6 +1435,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(start, direction).unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         source_less.geometry.edges[index]
             .set_curve(Some(id))
@@ -1506,6 +1516,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         id: curve_id.clone(),
         geometry: expected.clone(),
         source_object: None,
+        native_ref: None,
     });
     source_less.geometry.edges[0]
         .set_curve(Some(curve_id))
@@ -1589,6 +1600,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         id: curve_id.clone(),
         geometry: expected.clone(),
         source_object: None,
+        native_ref: None,
     });
     source_less.geometry.edges[0]
         .set_curve(Some(curve_id))
@@ -1707,21 +1719,22 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
     source_less.geometry.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Sheet,
-        regions: vec![region.clone()],
         transform: None,
         name: Some("closed cylinder band".into()),
         color: None,
         visible: None,
+        native_ref: None,
     });
     source_less.geometry.regions.push(Region {
         id: region.clone(),
         body,
         shells: vec![shell.clone()],
+        native_ref: None,
     });
     source_less
         .geometry
         .shells
-        .push(Shell::with_face(shell.clone(), region, face.clone()));
+        .push(Shell::new(shell.clone(), region));
     source_less.geometry.faces.push(Face {
         id: face.clone(),
         shell,
@@ -1731,6 +1744,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     source_less.geometry.surfaces.push(Surface {
         id: surface,
@@ -1744,6 +1758,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     for index in 0..2 {
         let z = f64_from_index(index).expect("fixture index is exact in f64") * 10.0;
@@ -1754,6 +1769,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
                 cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
                     .expect("fixture ring admission"),
             ),
+            native_ref: None,
         });
         source_less.geometry.coedges.push(Coedge {
             id: coedges[index].clone(),
@@ -1767,6 +1783,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             },
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
         source_less.geometry.edges.push(Edge {
             id: edges[index].clone(),
@@ -1775,9 +1792,12 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
                 Some([-std::f64::consts::PI, std::f64::consts::PI]),
             )
             .unwrap(),
-            start: vertices[index].clone(),
-            end: vertices[index].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertices[index].clone(),
+                vertices[index].clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         source_less.geometry.curves.push(Curve {
             parameter_range: None,
@@ -1792,11 +1812,13 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         source_less.geometry.vertices.push(Vertex {
             id: vertices[index].clone(),
             point: points[index].clone(),
             tolerance: None,
+            native_ref: None,
         });
         source_less.geometry.points.push(Point::new(
             points[index].clone(),
@@ -1822,7 +1844,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
     assert_eq!(round_trip.ir().geometry.edges.len(), 2);
     assert!(
         round_trip.ir().geometry.edges.iter().all(|edge| {
-            edge.start == edge.end
+            edge.ends.as_ref().unwrap().start == edge.ends.as_ref().unwrap().end
                 && edge.param_range().is_some_and(|range| {
                     (range[0] + std::f64::consts::PI).abs() < 1.0e-12
                         && (range[1] - std::f64::consts::PI).abs() < 1.0e-12

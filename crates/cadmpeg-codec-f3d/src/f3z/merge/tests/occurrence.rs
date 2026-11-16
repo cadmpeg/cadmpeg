@@ -167,11 +167,11 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             .map(|index| Body {
                 id: BodyId::mint(format!("f3d:brep:saved-edge-body#{index}")).unwrap(),
                 kind: BodyKind::Wire,
-                regions: Vec::new(),
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             })
             .collect();
         let member_loss = crate::decode::saved_free_edge_bodies_loss(&member).unwrap();
@@ -278,16 +278,17 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
         bodies: vec![Body {
             id: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
             kind: BodyKind::Solid,
-            regions: vec![RegionId::mint("f3d:brep:entity#2").expect("identity grammar")],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         }],
         regions: vec![Region {
             id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
             body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
             shells: Vec::new(),
+            native_ref: None,
         }],
         ..Topology::default()
     };
@@ -306,10 +307,6 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     for ordinal in 0..2 {
         let prefix = format!("f3d:xref/role/occurrence-{ordinal}/brep:entity#");
         assert_eq!(merged.bodies[ordinal].id.as_str(), format!("{prefix}1"));
-        assert_eq!(
-            merged.bodies[ordinal].regions[0].as_str(),
-            format!("{prefix}2")
-        );
         assert_eq!(merged.regions[ordinal].id.as_str(), format!("{prefix}2"));
         assert_eq!(merged.regions[ordinal].body.as_str(), format!("{prefix}1"));
     }
@@ -414,11 +411,11 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     let body = Body {
         id: BodyId::mint(source_id).unwrap(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("f3d:model:region#source").unwrap()],
         transform: None,
         name: Some(source_id.into()),
         color: None,
         visible: None,
+        native_ref: None,
     };
     let scoped = OccurrenceScope {
         native_text: &TextReplacements::default(),
@@ -428,10 +425,6 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     .rewrite(body)
     .unwrap();
     assert_eq!(scoped.id.as_str(), "f3d:xref/component-0/model:body#source");
-    assert_eq!(
-        scoped.regions[0].as_str(),
-        "f3d:xref/component-0/model:region#source"
-    );
     assert_eq!(scoped.name.as_deref(), Some(source_id));
 }
 
@@ -1108,7 +1101,6 @@ fn imported_definition_bodies_keep_their_definition_frame() {
     let original = ir.geometry.bodies[0].transform;
     let mut free_body = ir.geometry.bodies[0].clone();
     free_body.id = BodyId::mint("f3d:model:body#free").unwrap();
-    free_body.regions.clear();
     free_body.transform = Some(
         Transform::affine([
             [1.0, 0.0, 0.0, 20.0],
