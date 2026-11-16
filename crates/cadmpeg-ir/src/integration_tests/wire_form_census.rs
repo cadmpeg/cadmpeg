@@ -555,6 +555,21 @@ fn last_segment(ty: &syn::Type) -> Option<(&syn::Ident, &syn::PathArguments)> {
     }
 }
 
+/// The generic parameter of `owner` whose associated type `ty` names, as in
+/// `S::Curve` or `<S as Space>::Curve`. Its payload is whatever each
+/// implementation chooses, so it is no declaration that shares its last name.
+fn associated_parameter(ty: &syn::Type, owner: &Decl) -> Option<String> {
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+    let parameter = match &path.qself {
+        Some(qself) => last_segment(&qself.ty)?.0.to_string(),
+        None if path.path.segments.len() > 1 => path.path.segments.first()?.ident.to_string(),
+        None => return None,
+    };
+    owner.generics.contains(&parameter).then_some(parameter)
+}
+
 fn first_type_argument(arguments: &syn::PathArguments) -> Option<&syn::Type> {
     let syn::PathArguments::AngleBracketed(arguments) = arguments else {
         return None;
@@ -804,6 +819,9 @@ impl Index {
             return first_type_argument(arguments).map_or(Payload::Value, |inner| {
                 self.payload(inner, owner, from, depth)
             });
+        }
+        if let Some(parameter) = owner.and_then(|owner| associated_parameter(ty, owner)) {
+            return Payload::Generic(format!("{parameter}::{name}"));
         }
         if let Some(owner) = owner.filter(|owner| owner.generics.contains(&name)) {
             return owner.generic_defaults.get(&name).map_or_else(
@@ -1446,6 +1464,27 @@ fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
         );
     }
     assert_eq!(problems.len(), 4, "{problems:#?}");
+}
+
+const ASSOCIATED_PROBE: &str = r#"#[derive(Serialize)]
+pub struct Curve { pub a: u32 }
+pub trait Space { type Curve; }
+#[derive(Serialize)]
+#[serde(tag = "kind")]
+pub enum Internal<S: Space> { Item(S::Curve) }
+#[derive(Serialize)]
+#[serde(tag = "kind", content = "value")]
+pub enum Adjacent<S: Space> { Item(S::Curve), Qualified(<S as Space>::Curve) }
+"#;
+
+#[test]
+fn an_associated_type_of_a_generic_parameter_need_not_be_a_struct() {
+    let problems = probe_problems(ASSOCIATED_PROBE);
+    assert_eq!(problems.len(), 1, "{problems:#?}");
+    assert!(
+        problems[0].contains(" Internal: enum must take form Adjacent"),
+        "{problems:#?}"
+    );
 }
 
 #[test]

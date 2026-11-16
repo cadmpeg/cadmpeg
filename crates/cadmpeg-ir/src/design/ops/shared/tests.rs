@@ -10,6 +10,7 @@ use std::path::Path;
 use serde_json::json;
 
 use super::*;
+use crate::design::ops::sketch::{TextAlign, TextContent, TextHorizontalBox, TextVerticalBox};
 use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
 use crate::scalar::PositiveLength;
 use fixtures::*;
@@ -645,7 +646,7 @@ fn each_shared_enum_has_its_tag_form() {
 /// tagged enum is its `kind` alone and refuses a stated `value`.
 #[test]
 fn every_adjacent_unit_variant_refuses_a_stated_value() {
-    let readers: [(&'static str, Reader); 11] = [
+    let readers: [(&'static str, Reader); 10] = [
         ("Alignment", reads::<Alignment>),
         ("InstanceOrientation", reads::<InstanceOrientation>),
         ("Interpolation", reads::<Interpolation>),
@@ -655,7 +656,6 @@ fn every_adjacent_unit_variant_refuses_a_stated_value() {
         ("OffsetJoin", reads::<OffsetJoin>),
         ("RunSides", reads::<RunSides<Length>>),
         ("SlotPosition", reads::<SlotPosition>),
-        ("TextAlign", reads::<TextAlign>),
         ("WidthMode", reads::<WidthMode>),
     ];
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/design/ops/shared.rs");
@@ -678,6 +678,7 @@ mod schema {
     use schemars::{schema_for, JsonSchema};
 
     use super::super::*;
+    use crate::design::ops::sketch::{TextAlign, TextContent, TextHorizontalBox, TextVerticalBox};
     use crate::scalar::PositiveLength;
 
     fn generates<T: JsonSchema>() {

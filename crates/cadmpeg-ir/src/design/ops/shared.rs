@@ -10,11 +10,12 @@ use crate::design::construction::{kinds, Construction, FrameAxis, ScalarDimensio
 use crate::design::dimension::Dimension;
 use crate::design::expr::Expression;
 use crate::design::options::{LimitOffset, NativeOptions, PathRef, SymmetricMeasure};
-use crate::design::selection::{OrderedSelection, SetSelection};
+use crate::design::selection::{DefinitionRef, OrderedSelection, SetSelection};
 use crate::features::ParameterId;
 use crate::scalar::{
     Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, PositiveReal,
 };
+use crate::transform::Transform;
 
 /// A size measured on the radius or on the diameter, as the source states
 /// it.
@@ -214,143 +215,91 @@ pub enum SheetCutNormal {
     Both,
 }
 
-/// The content of a sketch text or a text curve, with its font, size, and
-/// layout of the glyphs.
+/// The status of stored solved values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum EvaluationStatus {
+    /// The source does not flag the values.
+    Current,
+    /// The values predate an edit of what they depend on.
+    Stale,
+    /// The source records a failure to compute the values.
+    Failed,
+}
+
+/// The link of a frozen copy of geometry to the geometry it copies.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct TextContent {
-    /// The text.
-    pub content: NonBlankString,
-    /// The font name.
+pub struct Link {
+    /// The linked entities. Its picks' contexts state the source definition,
+    /// the assembly the link runs through, and the configuration each level
+    /// reads, and its anchor the state it reads.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_font"
+        deserialize_with = "deserialize_source"
     )]
-    pub font: Option<NonBlankString>,
-    /// The cap height: the distance from the baseline to the top of a flat
-    /// capital letter. `None` where the stored size is not established against
-    /// a glyph outline.
+    pub source: Option<SetSelection>,
+    /// The source definition, and the configuration of it the link reads,
+    /// only where `source` is absent or unread.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_height"
+        deserialize_with = "deserialize_document"
     )]
-    pub height: Option<Dimension<Length>>,
-    /// The scale of the nominal glyph width.
+    pub document: Option<DefinitionRef>,
+    /// A frozen placement of the copy.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_width_factor"
+        deserialize_with = "deserialize_transform"
     )]
-    pub width_factor: Option<Dimension<FiniteReal>>,
-    /// The rotation of the text from the sketch x axis.
+    pub transform: Option<Transform>,
+    /// A uniform scale of the copy.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_angle"
+        deserialize_with = "deserialize_scale"
     )]
-    pub angle: Option<Dimension<Angle>>,
-    /// The horizontal alignment, against the box `horizontal_box` names.
+    pub scale: Option<FiniteReal>,
+    /// Whether the copy follows its source.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_horizontal"
+        deserialize_with = "deserialize_associative"
     )]
-    pub horizontal: Option<TextAlign>,
-    /// The vertical alignment, against the box `vertical_box` names.
+    pub associative: Option<bool>,
+    /// The source's record of the link's health.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_vertical"
+        deserialize_with = "deserialize_state"
     )]
-    pub vertical: Option<TextAlign>,
-    /// The box the horizontal alignment is measured against.
+    pub state: Option<LinkState>,
+    /// The native record that holds the link.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_horizontal_box"
+        deserialize_with = "deserialize_native_ref"
     )]
-    pub horizontal_box: Option<TextHorizontalBox>,
-    /// The box the vertical alignment is measured against. With `CapHeight`,
-    /// `vertical` is not `Baseline`.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_vertical_box"
-    )]
-    pub vertical_box: Option<TextVerticalBox>,
-    /// The distance added between consecutive characters.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_tracking"
-    )]
-    pub tracking: Option<Dimension<Length>>,
-    /// The shear of the glyphs: x' = x + y tan(`oblique`).
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_oblique"
-    )]
-    pub oblique: Option<Dimension<Angle>>,
-    /// `Some(false)` makes the glyphs wires, not faces.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_filled"
-    )]
-    pub filled: Option<Dimension<bool>>,
+    pub native_ref: Option<String>,
 }
 
-/// The alignment of text against its box.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum TextAlign {
-    /// At the box's start; vertically, against `CapHeight`, the baseline.
-    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
-    Start,
-    /// At the box's centre.
-    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
-    Center,
-    /// At the box's end.
-    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
-    End,
-    /// On the baseline.
-    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
-    Baseline,
-    /// A source alignment whose meaning is not established.
-    Native(NonBlankString),
-}
-
-/// The box horizontal text alignment is measured against.
+/// The source's record of a link's associativity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum TextHorizontalBox {
-    /// The ink's extent.
-    Ink,
-    /// The pen's extent from its origin, leading space and side bearing
-    /// included.
-    Pen,
-}
-
-/// The box vertical text alignment is measured against.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum TextVerticalBox {
-    /// The ink's extent.
-    Ink,
-    /// The band from the baseline to the cap height.
-    CapHeight,
+pub enum LinkState {
+    /// The copy matches its source.
+    Current,
+    /// The source changed after the copy was made.
+    OutOfDate,
+    /// The source does not resolve.
+    Broken,
+    /// The copy does not follow its source.
+    Locked,
 }
 
 /// Where a pattern's instances lie. Every direction, axis, and plane is a
@@ -1546,24 +1495,21 @@ pub enum PathRollControl {
 
 cadmpeg_core::named_optional_field!(deserialize_alignment<T>, T, "alignment");
 cadmpeg_core::named_optional_field!(deserialize_angle<T>, T, "angle");
+cadmpeg_core::named_optional_field!(deserialize_associative<T>, T, "associative");
 cadmpeg_core::named_optional_field!(deserialize_axes<T>, T, "axes");
 cadmpeg_core::named_optional_field!(deserialize_contact<T>, T, "contact");
 cadmpeg_core::named_optional_field!(deserialize_count<T>, T, "count");
 cadmpeg_core::named_optional_field!(deserialize_damping<T>, T, "damping");
 cadmpeg_core::named_optional_field!(deserialize_distance<T>, T, "distance");
+cadmpeg_core::named_optional_field!(deserialize_document<T>, T, "document");
 cadmpeg_core::named_optional_field!(deserialize_end<T>, T, "end");
 cadmpeg_core::named_optional_field!(deserialize_extend, Dimension<bool>, "extend");
 cadmpeg_core::named_optional_field!(deserialize_extent<T>, T, "extent");
 cadmpeg_core::named_optional_field!(deserialize_far, Dimension<bool>, "far");
-cadmpeg_core::named_optional_field!(deserialize_filled<T>, T, "filled");
 cadmpeg_core::named_optional_field!(deserialize_flip<T>, T, "flip");
-cadmpeg_core::named_optional_field!(deserialize_font<T>, T, "font");
 cadmpeg_core::named_optional_field!(deserialize_from<T>, T, "from");
 cadmpeg_core::named_optional_field!(deserialize_from_end<T>, T, "from_end");
 cadmpeg_core::named_optional_field!(deserialize_hand<T>, T, "hand");
-cadmpeg_core::named_optional_field!(deserialize_height<T>, T, "height");
-cadmpeg_core::named_optional_field!(deserialize_horizontal<T>, T, "horizontal");
-cadmpeg_core::named_optional_field!(deserialize_horizontal_box<T>, T, "horizontal_box");
 cadmpeg_core::named_optional_field!(deserialize_joints<T>, T, "joints");
 cadmpeg_core::named_optional_field!(deserialize_law<T>, T, "law");
 cadmpeg_core::named_optional_field!(deserialize_limits<T>, T, "limits");
@@ -1573,7 +1519,7 @@ cadmpeg_core::named_optional_field!(deserialize_max_force<T>, T, "max_force");
 cadmpeg_core::named_optional_field!(deserialize_measure, SymmetricMeasure, "measure");
 cadmpeg_core::named_optional_field!(deserialize_min<T>, T, "min");
 cadmpeg_core::named_optional_field!(deserialize_mode<T>, T, "mode");
-cadmpeg_core::named_optional_field!(deserialize_oblique<T>, T, "oblique");
+cadmpeg_core::named_optional_field!(deserialize_native_ref<T>, T, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_offset<T>, T, "offset");
 cadmpeg_core::named_optional_field!(deserialize_orientation<T>, T, "orientation");
 cadmpeg_core::named_optional_field!(deserialize_pitch<T>, T, "pitch");
@@ -1585,21 +1531,21 @@ cadmpeg_core::named_optional_field!(deserialize_ratio<T>, T, "ratio");
 cadmpeg_core::named_optional_field!(deserialize_reference<T>, T, "reference");
 cadmpeg_core::named_optional_field!(deserialize_rest<T>, T, "rest");
 cadmpeg_core::named_optional_field!(deserialize_roll<T>, T, "roll");
+cadmpeg_core::named_optional_field!(deserialize_scale<T>, T, "scale");
 cadmpeg_core::named_optional_field!(deserialize_second<T>, T, "second");
 cadmpeg_core::named_optional_field!(deserialize_seed<T>, T, "seed");
 cadmpeg_core::named_optional_field!(deserialize_seed_axis<T>, T, "seed_axis");
 cadmpeg_core::named_optional_field!(deserialize_seed_only<T>, T, "seed_only");
 cadmpeg_core::named_optional_field!(deserialize_sides<T>, T, "sides");
+cadmpeg_core::named_optional_field!(deserialize_source<T>, T, "source");
 cadmpeg_core::named_optional_field!(deserialize_start<T>, T, "start");
+cadmpeg_core::named_optional_field!(deserialize_state<T>, T, "state");
 cadmpeg_core::named_optional_field!(deserialize_stiffness<T>, T, "stiffness");
 cadmpeg_core::named_optional_field!(deserialize_stitch_tolerance<T>, T, "stitch_tolerance");
 cadmpeg_core::named_optional_field!(deserialize_taper<T>, T, "taper");
 cadmpeg_core::named_optional_field!(deserialize_target_position<T>, T, "target_position");
 cadmpeg_core::named_optional_field!(deserialize_target_velocity<T>, T, "target_velocity");
-cadmpeg_core::named_optional_field!(deserialize_tracking<T>, T, "tracking");
-cadmpeg_core::named_optional_field!(deserialize_vertical<T>, T, "vertical");
-cadmpeg_core::named_optional_field!(deserialize_vertical_box<T>, T, "vertical_box");
-cadmpeg_core::named_optional_field!(deserialize_width_factor<T>, T, "width_factor");
+cadmpeg_core::named_optional_field!(deserialize_transform<T>, T, "transform");
 cadmpeg_core::named_optional_field!(deserialize_x<T>, T, "x");
 cadmpeg_core::named_optional_field!(deserialize_y<T>, T, "y");
 cadmpeg_core::named_optional_field!(deserialize_z<T>, T, "z");
