@@ -4,3 +4,4 @@
 pub mod shared;
 pub mod sheet_metal;
 pub mod surface;
+pub mod swept;

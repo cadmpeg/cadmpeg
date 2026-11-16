@@ -768,12 +768,14 @@ fn each_shared_enum_has_its_tag_form() {
 /// tagged enum is its `kind` alone and refuses a stated `value`.
 #[test]
 fn every_adjacent_unit_variant_refuses_a_stated_value() {
-    let readers: [(&'static str, Reader); 8] = [
+    let readers: [(&'static str, Reader); 10] = [
         ("Alignment", reads::<Alignment>),
         ("CornerTransition", reads::<CornerTransition>),
+        ("Interpolation", reads::<Interpolation>),
         ("JointKind", reads::<JointKind>),
         ("JointMotion", reads::<JointMotion>),
         ("Limit", reads::<Limit<Length>>),
+        ("OffsetJoin", reads::<OffsetJoin>),
         ("SlotPosition", reads::<SlotPosition>),
         ("TextAlign", reads::<TextAlign>),
         ("WidthMode", reads::<WidthMode>),

@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Types that several feature families share.
-//!
-//! A type that more than one family of the feature vocabulary names is defined
-//! here once, and every family imports it.
+//! Types that more than one operation family shares.
 
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
@@ -20,7 +17,8 @@ use crate::scalar::{
     PositiveLength, PositiveReal,
 };
 
-/// A size measured on the radius or on the diameter, as the source states it.
+/// A size measured on the radius or on the diameter, as the source states
+/// it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -159,6 +157,62 @@ pub enum Law<Q> {
     Expression(Expression),
     /// A source law whose meaning is not established.
     Native(NonBlankString),
+}
+
+/// How a value or a section changes between consecutive stations or
+/// sections.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum Interpolation {
+    /// Each consecutive pair blends linearly, which leaves an edge at each
+    /// intermediate section.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Linear,
+    /// One smooth surface passes through every section.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Smooth,
+    /// A source interpolation whose meaning is not established.
+    Native(NonBlankString),
+}
+
+/// The corner law between offset faces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum OffsetJoin {
+    /// Rounded arcs.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Round,
+    /// Sharp intersection: the sides extend to meet.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Sharp,
+    /// A source join whose meaning is not established.
+    Native(NonBlankString),
+}
+
+/// The faces of a sheet-metal wall that a cut's side faces are normal to, the
+/// cut being made as if the part were flat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SheetCutNormal {
+    /// The face the wall is built from.
+    Defining,
+    /// The other face.
+    Opposite,
+    /// A cut through the thickness in the flat state.
+    Both,
 }
 
 /// The content of a sketch text or a text curve, with its font, size, and
@@ -550,20 +604,6 @@ pub enum PairElement {
     First,
     /// The second member.
     Second,
-}
-
-/// The faces of a sheet-metal wall that a cut's side faces are normal to, the
-/// cut being made as if the part were flat.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum SheetCutNormal {
-    /// The face the wall is built from.
-    Defining,
-    /// The other face.
-    Opposite,
-    /// A cut through the thickness in the flat state.
-    Both,
 }
 
 /// A joint: a relation between two connectors, a design feature.
