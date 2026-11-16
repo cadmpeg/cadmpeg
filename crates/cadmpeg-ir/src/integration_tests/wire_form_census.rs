@@ -677,6 +677,35 @@ impl Index {
         }
     }
 
+    /// The declaration a module-qualified type such as `mesh::Payload`,
+    /// written in file `from`, refers to: the one in the module its qualifier
+    /// names. `None` for an unqualified type or when no single one matches.
+    fn qualified(&self, ty: &syn::Type, name: &str, from: &str) -> Option<&Decl> {
+        let syn::Type::Path(ty) = ty else {
+            return None;
+        };
+        if ty.path.segments.len() < 2 {
+            return None;
+        }
+        let path: Vec<String> = ty
+            .path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect();
+        let (krate, module) = module_of(from)?;
+        let target = import_module(&krate, &module, &path);
+        let mut matched = self
+            .decls
+            .get(name)?
+            .iter()
+            .filter(|decl| module_of(&decl.file).as_ref() == Some(&target));
+        match (matched.next(), matched.next()) {
+            (Some(decl), None) => Some(decl),
+            _ => None,
+        }
+    }
+
     /// The type an alias named `name`, written in file `from`, stands for,
     /// with the file that declares the alias.
     fn alias(&self, name: &str, from: &str) -> Option<(&str, &syn::Type)> {
@@ -806,7 +835,10 @@ impl Index {
         if let Some((file, aliased)) = self.scoped_alias(&name, from) {
             return self.payload(aliased, None, file, depth + 1);
         }
-        let Some(decl) = self.resolve(&name, from) else {
+        let Some(decl) = self
+            .qualified(ty, &name, from)
+            .or_else(|| self.resolve(&name, from))
+        else {
             if self.decls.contains_key(&name) {
                 return Payload::Unresolved(format!("{name} has more than one declaration"));
             }
@@ -1453,6 +1485,52 @@ fn an_associated_type_of_a_generic_parameter_need_not_be_a_struct() {
         problems[0].contains(" Internal: enum must take form Adjacent"),
         "{problems:#?}"
     );
+}
+
+#[test]
+fn a_module_qualified_payload_resolves_in_the_module_it_names() {
+    let root = std::env::temp_dir().join(format!(
+        "cadmpeg-wire-form-census-qualified-{}",
+        std::process::id()
+    ));
+    let sources = [
+        ("crates/cadmpeg-core/src/lib.rs", ""),
+        (
+            "crates/cadmpeg-ir/src/user/inner.rs",
+            "#[derive(Serialize)] pub struct Payload { pub a: u32 }\n",
+        ),
+        (
+            "crates/cadmpeg-ir/src/other.rs",
+            "#[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Payload { A(u32) }\n",
+        ),
+        (
+            "crates/cadmpeg-ir/src/user.rs",
+            "#[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Qualified { Item(inner::Payload) }\n\
+             #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Bare { Item(Payload) }\n",
+        ),
+    ];
+    for (path, text) in sources {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let problems = census(&root);
+    std::fs::remove_dir_all(&root).unwrap();
+    assert!(
+        problems
+            .iter()
+            .any(|problem| problem.contains(" Qualified: enum must take form Internal")),
+        "{problems:#?}"
+    );
+    assert!(
+        problems.iter().any(|problem| problem
+            .contains("Bare::Item: payload unresolved: Payload has more than one declaration")),
+        "{problems:#?}"
+    );
+    assert_eq!(problems.len(), 3, "{problems:#?}");
 }
 
 #[test]

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::design::construction::{kinds, Construction, FrameAxis, ScalarDimension};
 use crate::design::dimension::Dimension;
 use crate::design::expr::Expression;
-use crate::design::options::{LimitOffset, PathRef, SymmetricMeasure};
+use crate::design::options::{LimitOffset, NativeOptions, PathRef, SymmetricMeasure};
 use crate::design::selection::{OrderedSelection, SetSelection};
 use crate::features::ParameterId;
 use crate::scalar::{
@@ -691,6 +691,30 @@ pub enum PairElement {
     First,
     /// The second member.
     Second,
+}
+
+/// A joint: a relation between two connectors, a design feature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct Joint {
+    /// The two connectors the joint relates.
+    pub connectors: [JointConnector; 2],
+    /// What the joint does.
+    pub kind: JointKind,
+    /// The relative sense of the connectors' z axes or normals; its only home.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_alignment"
+    )]
+    pub alignment: Option<Alignment>,
+    /// Source options whose effect is not established.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub native_options: NativeOptions,
+    /// Source options that select how the source computes the result.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub source_settings: NativeOptions,
 }
 
 /// A connector: a construction of the element a joint relates, or the picked
@@ -1381,19 +1405,23 @@ pub enum PathRollControl {
     },
 }
 
+cadmpeg_core::named_optional_field!(deserialize_alignment<T>, T, "alignment");
 cadmpeg_core::named_optional_field!(deserialize_angle<T>, T, "angle");
 cadmpeg_core::named_optional_field!(deserialize_axes<T>, T, "axes");
 cadmpeg_core::named_optional_field!(deserialize_contact<T>, T, "contact");
 cadmpeg_core::named_optional_field!(deserialize_count<T>, T, "count");
 cadmpeg_core::named_optional_field!(deserialize_damping<T>, T, "damping");
 cadmpeg_core::named_optional_field!(deserialize_distance<T>, T, "distance");
+cadmpeg_core::named_optional_field!(deserialize_end<T>, T, "end");
 cadmpeg_core::named_optional_field!(deserialize_extend, Dimension<bool>, "extend");
 cadmpeg_core::named_optional_field!(deserialize_extent<T>, T, "extent");
 cadmpeg_core::named_optional_field!(deserialize_far, Dimension<bool>, "far");
 cadmpeg_core::named_optional_field!(deserialize_flip<T>, T, "flip");
 cadmpeg_core::named_optional_field!(deserialize_from<T>, T, "from");
 cadmpeg_core::named_optional_field!(deserialize_from_end<T>, T, "from_end");
+cadmpeg_core::named_optional_field!(deserialize_hand<T>, T, "hand");
 cadmpeg_core::named_optional_field!(deserialize_joints<T>, T, "joints");
+cadmpeg_core::named_optional_field!(deserialize_law<T>, T, "law");
 cadmpeg_core::named_optional_field!(deserialize_limits<T>, T, "limits");
 cadmpeg_core::named_optional_field!(deserialize_lock_rotation<T>, T, "lock_rotation");
 cadmpeg_core::named_optional_field!(deserialize_max<T>, T, "max");
@@ -1417,8 +1445,10 @@ cadmpeg_core::named_optional_field!(deserialize_seed<T>, T, "seed");
 cadmpeg_core::named_optional_field!(deserialize_seed_axis<T>, T, "seed_axis");
 cadmpeg_core::named_optional_field!(deserialize_seed_only<T>, T, "seed_only");
 cadmpeg_core::named_optional_field!(deserialize_sides<T>, T, "sides");
+cadmpeg_core::named_optional_field!(deserialize_start<T>, T, "start");
 cadmpeg_core::named_optional_field!(deserialize_stiffness<T>, T, "stiffness");
 cadmpeg_core::named_optional_field!(deserialize_stitch_tolerance<T>, T, "stitch_tolerance");
+cadmpeg_core::named_optional_field!(deserialize_taper<T>, T, "taper");
 cadmpeg_core::named_optional_field!(deserialize_target_position<T>, T, "target_position");
 cadmpeg_core::named_optional_field!(deserialize_target_velocity<T>, T, "target_velocity");
 cadmpeg_core::named_optional_field!(deserialize_x<T>, T, "x");
@@ -1426,4 +1456,4 @@ cadmpeg_core::named_optional_field!(deserialize_y<T>, T, "y");
 cadmpeg_core::named_optional_field!(deserialize_z<T>, T, "z");
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
