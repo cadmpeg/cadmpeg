@@ -59,6 +59,9 @@ struct Index {
     imports: BTreeMap<String, Vec<(String, Vec<String>)>>,
     hand_serialize: BTreeMap<String, Vec<String>>,
     option_readers: BTreeSet<String>,
+    /// Functions that forward to another helper, by name, with each helper a
+    /// function of that name forwards to.
+    option_forwards: BTreeMap<String, BTreeSet<String>>,
     macro_serde_attrs: Vec<(String, Vec<TokenTree>)>,
 }
 
@@ -291,6 +294,43 @@ fn serde_groups(tokens: &TokenStream, out: &mut Vec<Vec<TokenTree>>) {
     }
 }
 
+/// The helper `function` forwards to, when its body is one call of a helper
+/// named without a path on its one parameter, followed by nothing but `.map`
+/// calls. `Result::map` rewrites only `Ok`, so such a function refuses
+/// whatever its callee refuses. The source census reads a forward by the same
+/// rule.
+fn forwarded_reader(function: &syn::ItemFn) -> Option<String> {
+    let mut parameters = function.sig.inputs.iter();
+    let (Some(syn::FnArg::Typed(parameter)), None) = (parameters.next(), parameters.next()) else {
+        return None;
+    };
+    let syn::Pat::Ident(parameter) = parameter.pat.as_ref() else {
+        return None;
+    };
+    let [syn::Stmt::Expr(body, None)] = function.block.stmts.as_slice() else {
+        return None;
+    };
+    let mut expression = body;
+    while let syn::Expr::MethodCall(call) = expression {
+        if call.method != "map" || call.args.len() != 1 {
+            return None;
+        }
+        expression = &call.receiver;
+    }
+    let syn::Expr::Call(call) = expression else {
+        return None;
+    };
+    let syn::Expr::Path(callee) = call.func.as_ref() else {
+        return None;
+    };
+    let callee = callee.path.get_ident()?;
+    let mut arguments = call.args.iter();
+    let (Some(syn::Expr::Path(argument)), None) = (arguments.next(), arguments.next()) else {
+        return None;
+    };
+    (argument.path.get_ident()? == &parameter.ident).then(|| callee.to_string())
+}
+
 fn macro_option_readers(tokens: &TokenStream, out: &mut BTreeSet<String>) {
     let tokens: Vec<TokenTree> = tokens.clone().into_iter().collect();
     for window in tokens.windows(3) {
@@ -418,7 +458,16 @@ impl Walker<'_> {
                         }
                     }
                 }
-                Item::Fn(item) => self.block(&item.block, index),
+                Item::Fn(item) => {
+                    if let Some(callee) = forwarded_reader(item) {
+                        index
+                            .option_forwards
+                            .entry(item.sig.ident.to_string())
+                            .or_default()
+                            .insert(callee);
+                    }
+                    self.block(&item.block, index);
+                }
                 Item::Mod(item) => {
                     if let Some((_, nested)) = &item.content {
                         self.items(nested, index);
@@ -525,6 +574,19 @@ fn field_name(field: &syn::Field) -> String {
 }
 
 impl Index {
+    /// Whether `name` is a `named_optional_field!` reader, or a function
+    /// every definition of which forwards to one. A forward refuses whatever
+    /// its callee refuses, so it reads a set through the set reader and still
+    /// refuses `null` at its key.
+    fn is_option_reader(&self, name: &str) -> bool {
+        self.option_readers.contains(name)
+            || self.option_forwards.get(name).is_some_and(|callees| {
+                callees
+                    .iter()
+                    .all(|callee| self.option_readers.contains(callee))
+            })
+    }
+
     fn unique(&self, name: &str) -> Option<&Decl> {
         let decls = self.decls.get(name)?;
         let serialized: Vec<&Decl> = decls
@@ -952,7 +1014,7 @@ fn check_fields(
         let named_reader = reader.is_some_and(|reader| {
             let name = reader.rsplit("::").next().unwrap_or(reader);
             let name = name.split('<').next().unwrap_or(name);
-            name == OPTION_READER || index.option_readers.contains(name)
+            name == OPTION_READER || index.is_option_reader(name)
         });
         if last_segment(ty).is_some_and(|(ident, _)| ident == "Option") {
             if newtype {
@@ -1228,6 +1290,41 @@ fn the_census_reads_newtype_fields_and_adjacent_unit_variants() {
     expected.sort();
     assert_eq!(probe_problems(DEPARTING_PROBE), expected);
     assert_eq!(probe_problems(STATING_PROBE), Vec::<String>::new());
+}
+
+const FORWARDING_PROBE: &str = r#"#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Holder {
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_set")]
+    set: Option<BTreeSet<u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_loose")]
+    loose: Option<BTreeSet<u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_lenient")]
+    lenient: Option<BTreeSet<u32>>,
+}
+fn deserialize_set<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<u32>>, D::Error> {
+    deserialize_members(d).map(|set| set.map(|Members(set)| set))
+}
+fn deserialize_loose<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<u32>>, D::Error> {
+    read_members(d).map(|set| set.map(|Members(set)| set))
+}
+fn deserialize_lenient<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<u32>>, D::Error> {
+    deserialize_members(d).or_else(|_| Ok(None))
+}
+cadmpeg_core::named_optional_field!(deserialize_members, Members, "set");
+"#;
+
+/// A helper that only forwards to a `named_optional_field!` reader is one;
+/// a forward to another helper, or a call that rewrites the refusal, is not.
+#[test]
+fn a_forward_to_an_option_reader_reads_as_one() {
+    let unread = |line: usize, field: &str| {
+        format!("{PROBE}:3 Holder.{field}@{line}: Option field is not read by a default named_present reader")
+    };
+    assert_eq!(
+        probe_problems(FORWARDING_PROBE),
+        vec![unread(9, "lenient"), unread(7, "loose")]
+    );
 }
 
 #[test]
