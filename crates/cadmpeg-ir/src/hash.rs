@@ -963,6 +963,7 @@ mod tests {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
             ir.geometry.procedural_curves.push(ProceduralCurve::new(
                 construction,
@@ -1006,6 +1007,7 @@ mod tests {
                         cache: None,
                     },
                     source_object: None,
+                    native_ref: None,
                 });
             }
             let arena = DecodeArena::new();

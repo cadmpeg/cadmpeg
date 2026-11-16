@@ -513,6 +513,7 @@ fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(overflowing_plane()),
         source_object: None,
+        native_ref: None,
     });
     let index = crate::index::ModelIndex::build(&ir);
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
@@ -925,11 +926,13 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
             id: base_id.clone(),
             geometry: SurfaceGeometry::Solved(plane.clone()),
             source_object: None,
+            native_ref: None,
         },
         crate::geometry::Surface {
             id: subset_id.clone(),
             geometry: SurfaceGeometry::Solved(plane),
             source_object: None,
+            native_ref: None,
         },
     ];
     // The u range runs down from 1e308 while its sense runs up, so the

@@ -30,7 +30,7 @@ fn subd_round_trip_and_directed_ring_validation() {
                 SubdEdge::new([1, 2], [0.25, 0.0], SubdEdgeTag::SmoothX, None, [1.0, 1.0]).unwrap(),
                 SubdEdge::new([2, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [1.0, 1.0]).unwrap(),
             ],
-            vec![SubdFace::new(vec![
+            vec![SubdFace::from_edge_uses(vec![
                 SubdEdgeUse {
                     edge: 0,
                     reversed: false,
@@ -48,6 +48,7 @@ fn subd_round_trip_and_directed_ring_validation() {
             Vec::new(),
         )
         .unwrap(),
+        native_ref: None,
     });
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
@@ -59,7 +60,7 @@ fn subd_round_trip_and_directed_ring_validation() {
     assert_eq!(wire["cage"]["vertices"].as_array().unwrap().len(), 3);
     assert_eq!(wire["cage"]["edges"].as_array().unwrap().len(), 3);
     assert_eq!(
-        wire["cage"]["faces"][0]["edges"].as_array().unwrap().len(),
+        wire["cage"]["faces"][0]["sides"].as_array().unwrap().len(),
         3
     );
     assert_eq!(
@@ -67,12 +68,12 @@ fn subd_round_trip_and_directed_ring_validation() {
         serde_json::json!("smooth_x")
     );
     let cage = &ir.geometry.subds[0].cage;
-    let mut edges = cage.faces[0].edges.clone();
+    let mut edges: Vec<_> = cage.faces[0].edge_uses().copied().collect();
     edges[1].reversed = true;
     assert!(crate::subd::SubdCage::new(
         cage.vertices.clone(),
         cage.edges.clone(),
-        vec![SubdFace::new(edges).unwrap()],
+        vec![SubdFace::from_edge_uses(edges).unwrap()],
         Vec::new(),
     )
     .is_err());
@@ -239,7 +240,7 @@ fn triangle_cage() -> crate::subd::SubdCage {
                 SubdEdge::new(vertices, [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0]).unwrap()
             })
             .collect(),
-        vec![SubdFace::new(
+        vec![SubdFace::from_edge_uses(
             (0..3)
                 .map(|edge| SubdEdgeUse {
                     edge,
@@ -271,10 +272,10 @@ fn face_admission_requires_three_edge_uses() {
             };
             count
         ];
-        assert!(SubdFace::new(edges.clone()).is_err());
+        assert!(SubdFace::from_edge_uses(edges.clone()).is_err());
         assert!(serde_json::from_value::<SubdFace>(serde_json::json!({ "edges": edges })).is_err());
     }
-    assert!(SubdFace::new(vec![
+    assert!(SubdFace::from_edge_uses(vec![
         SubdEdgeUse {
             edge: 0,
             reversed: false
@@ -292,10 +293,10 @@ fn cage_admission_requires_valid_edge_indices_and_closed_directed_rings() {
         rejects_cage_wire(wire);
     }
     let mut wire = serde_json::to_value(triangle_cage()).unwrap();
-    wire["faces"][0]["edges"][0]["edge"] = 3.into();
+    wire["faces"][0]["sides"][0]["edges"][0]["edge"] = 3.into();
     rejects_cage_wire(wire);
     let mut wire = serde_json::to_value(triangle_cage()).unwrap();
-    wire["faces"][0]["edges"][0]["reversed"] = true.into();
+    wire["faces"][0]["sides"][0]["edges"][0]["reversed"] = true.into();
     rejects_cage_wire(wire);
 }
 
@@ -632,7 +633,7 @@ fn cage_user_knots_follow_edges_and_preserve_extension_presence() {
     assert_eq!(cage.edges()[2].user_knot, Some(SubdUserKnot::Inherit));
     let mut reordered = cage.edges.clone();
     reordered.swap(0, 1);
-    let faces = vec![SubdFace::new(vec![
+    let faces = vec![SubdFace::from_edge_uses(vec![
         SubdEdgeUse {
             edge: 1,
             reversed: false,

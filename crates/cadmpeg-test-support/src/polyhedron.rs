@@ -56,6 +56,7 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
             id: polyhedron_id!(VertexId, "vertex", index),
             point: polyhedron_id!(PointId, "point", index),
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -96,6 +97,7 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
                 },
                 pcurves: Vec::new(),
                 use_curve: None,
+                native_ref: None,
             });
             if let Some(uses) = edge_uses.get_mut(edge_index) {
                 uses.push(coedge_index);
@@ -117,11 +119,13 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
                     .map_err(ExampleError::Geometry)?,
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.loops.push(Loop {
             id: loop_id.clone(),
             face: polyhedron_id!(FaceId, "face", face_index),
             boundary: LoopBoundary::Ring(LoopRing::new(coedges, Vec::new())?),
+            native_ref: None,
         });
         ir.geometry.faces.push(Face {
             id: polyhedron_id!(FaceId, "face", face_index),
@@ -132,6 +136,7 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
     }
     for uses in &edge_uses {
@@ -145,28 +150,21 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
 
     let region = polyhedron_id!(RegionId, "region", 0_usize);
     let body = polyhedron_id!(BodyId, "body", 0_usize);
-    ir.geometry.shells.push(Shell::new(
-        shell,
-        region.clone(),
-        (0..faces.len())
-            .map(|face_index| polyhedron_id!(FaceId, "face", face_index))
-            .collect(),
-        Vec::new(),
-        Vec::new(),
-    )?);
+    ir.geometry.shells.push(Shell::new(shell, region.clone()));
     ir.geometry.regions.push(Region {
         id: region.clone(),
         body: body.clone(),
         shells: vec![polyhedron_id!(ShellId, "shell", 0_usize)],
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::Solid,
-        regions: vec![region],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.finalize();
     Ok(ir)
@@ -190,14 +188,18 @@ fn push_edge(
                 .map_err(ExampleError::Geometry)?,
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.edges.push(Edge {
         id: polyhedron_id!(EdgeId, "edge", edge_index),
         carrier: EdgeCarrier::new(Some(curve), Some([0.0, length]))
             .map_err(ExampleError::Geometry)?,
-        start: polyhedron_id!(VertexId, "vertex", from),
-        end: polyhedron_id!(VertexId, "vertex", to),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            polyhedron_id!(VertexId, "vertex", from),
+            polyhedron_id!(VertexId, "vertex", to),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     Ok(())
 }

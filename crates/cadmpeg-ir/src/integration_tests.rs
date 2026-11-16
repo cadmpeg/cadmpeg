@@ -72,6 +72,7 @@ fn source_association_is_a_free_carrier_root() {
             layer: Some("layer-0".into()),
             instance_path: Vec::new(),
         }),
+        native_ref: None,
     });
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
@@ -134,17 +135,18 @@ fn insert_free_vertex_shell(
             id: VertexId::mint(vertex_id).expect("valid identity"),
             point: PointId::mint(point_id).expect("valid identity"),
             tolerance: None,
+            native_ref: None,
         })
         .unwrap();
     draft
         .insert(Body {
             id: BodyId::mint(body_id).expect("valid identity"),
             kind: BodyKind::Wire,
-            regions: vec![RegionId::mint(region_id).expect("valid identity")],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         })
         .unwrap();
     draft
@@ -152,6 +154,7 @@ fn insert_free_vertex_shell(
             id: RegionId::mint(region_id).expect("valid identity"),
             body: BodyId::mint(body_id).expect("valid identity"),
             shells: vec![ShellId::mint(shell_id).expect("valid identity")],
+            native_ref: None,
         })
         .unwrap();
     draft
@@ -222,7 +225,7 @@ proptest! {
                 id: "prop:test:vertex#dangling".try_into().expect("valid identity"),
                 point: PointId::mint("x:y:z#missing").expect("valid identity"),
                 tolerance: None,
-            });
+             native_ref: None, });
             broken.finalize();
             let report = validate_neutral(&broken, Vec::new()).expect("validate the neutral model");
             prop_assert!(
@@ -261,7 +264,7 @@ proptest! {
                 id: vertex_id.clone().try_into().expect("valid identity"),
                 point: missing.try_into().expect("valid identity"),
                 tolerance: None,
-            })
+             native_ref: None, })
             .unwrap();
         let mut base = CadIr::empty();
         let dangling_result = dangling.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap();

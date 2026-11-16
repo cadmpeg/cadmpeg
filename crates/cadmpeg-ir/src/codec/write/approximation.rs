@@ -307,8 +307,11 @@ fn trims_meet_vertices(
                 let Some(edge) = index.edges(coedge.edge.as_str(), StandardIndex) else {
                     return false;
                 };
+                let Some(ends) = &edge.ends else {
+                    return false;
+                };
                 let (Some((start, start_tolerance)), Some((end, end_tolerance))) =
-                    (vertex(edge.start.as_str()), vertex(edge.end.as_str()))
+                    (vertex(ends.start.as_str()), vertex(ends.end.as_str()))
                 else {
                     return false;
                 };

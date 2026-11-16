@@ -499,11 +499,13 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
@@ -738,6 +740,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             id: id.clone(),
             geometry: CurveGeometry::Solved(geometry.clone()),
             source_object: None,
+            native_ref: None,
         });
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
             &cadmpeg_test_support::service_decode_context(),
@@ -834,6 +837,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             id: id.clone(),
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         });
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
             &cadmpeg_test_support::service_decode_context(),
@@ -864,6 +868,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let index = crate::index::ModelIndex::build(&ir);
     let point = Point3::new(0.5, 0.005, 0.0);
@@ -925,6 +930,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         id: id.clone(),
         geometry: CurveGeometry::Solved(geometry.clone()),
         source_object: None,
+        native_ref: None,
     });
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(
         &cadmpeg_test_support::service_decode_context(),
@@ -973,6 +979,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
             crate::geometry::analytic::DegenerateCurve::try_new(point).unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let seed = 123.5;
     assert_eq!(
@@ -1081,6 +1088,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: first_id.clone(),
@@ -1089,6 +1097,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: second_id.clone(),
@@ -1097,6 +1106,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         },
     ];
     ir.geometry.procedural_surfaces = vec![
@@ -1188,6 +1198,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: offset_id.clone(),
@@ -1196,6 +1207,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         },
     ];
     ir.geometry.procedural_surfaces.push(procedural_surface! {
@@ -1254,6 +1266,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: offset_id.clone(),
@@ -1262,6 +1275,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         },
     ];
     ir.geometry.procedural_surfaces.push(procedural_surface! {
@@ -1311,16 +1325,19 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             id: base_id.clone(),
             geometry: SurfaceGeometry::Solved(plane.clone()),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: subset_id.clone(),
             geometry: SurfaceGeometry::Solved(plane),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         },
     ];
     ir.geometry
@@ -1382,11 +1399,13 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: bounded_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         },
     ];
     ir.geometry
@@ -1453,11 +1472,13 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
             .expect("placed curve"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
@@ -1531,6 +1552,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -1539,6 +1561,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
@@ -1636,11 +1659,13 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
             .expect("placed curve"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
@@ -1710,11 +1735,13 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
@@ -1761,11 +1788,13 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.add_procedural_surface(&surface_id, procedural_surface! {
             id: ProceduralSurfaceId::mint("test:model:entity#wide-angle-construction").expect("valid identity"),
@@ -1824,6 +1853,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.points.extend([
         Point::new(
@@ -1844,25 +1874,31 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
             id: start_vertex_id.clone(),
             point: start_point_id,
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: end_vertex_id.clone(),
             point: end_point_id,
             tolerance: None,
+            native_ref: None,
         },
     ]);
     ir.geometry.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#normalized-profile-edge").expect("valid identity"),
         carrier: crate::topology::EdgeCarrier::new(Some(directrix_id.clone()), Some([0.0, 10.0]))
             .unwrap(),
-        start: start_vertex_id,
-        end: end_vertex_id,
+        ends: Some(crate::topology::EdgeEnds::new(
+            start_vertex_id,
+            end_vertex_id,
+        )),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
