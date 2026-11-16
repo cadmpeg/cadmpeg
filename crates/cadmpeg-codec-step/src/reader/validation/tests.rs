@@ -259,7 +259,7 @@ fn a_product_definition_shape_property_targets_the_definition() {
         assert_eq!(measure.label.as_deref(), Some("validated"));
     }
     assert!(ir
-        .model
+        .geometry
         .points
         .iter()
         .all(|point| { !point.id.as_str().ends_with(&format!("#{}", 1009)) }));
@@ -289,7 +289,7 @@ fn aspect_part(
     let first = format!("step:data:body#{}", part.items[0]);
     let bodies = result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.id.as_str() == first)
@@ -394,7 +394,7 @@ fn item_names_select_the_class_of_each_quantity() {
         assert!(
             !result
                 .ir()
-                .model
+                .geometry
                 .points
                 .iter()
                 .any(|point| point.id.as_str().ends_with(&format!("#{id}"))),

@@ -32,7 +32,7 @@ fn native_unknown_admission_matches_product_projection_without_mutation() {
         new_id.try_into().unwrap(),
         72,
         vec![23; 65536],
-        vec![ir.model.points[0].id.as_str().to_owned()],
+        vec![ir.geometry.points[0].id.as_str().to_owned()],
     )];
     let pointer = raw[0].data().unwrap().as_ptr();
     let mut builder = crate::AnnotationBuilder::new();

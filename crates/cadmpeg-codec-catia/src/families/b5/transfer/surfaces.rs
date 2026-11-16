@@ -647,7 +647,7 @@ pub(super) fn emit_surfaces(
         }
         let model_id = id.clone();
         admission.charge()?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: model_id,
             geometry: plan.geometry,
             source_object: Some(cgm_source("surface", object_id)?),
@@ -679,7 +679,7 @@ pub(super) fn emit_surfaces(
                 )?;
                 annotations.derived(directrix_id.as_str(), "geometry")?;
                 admission.charge()?;
-                ir.model.curves.push(Curve {
+                ir.geometry.curves.push(Curve {
                     parameter_range: None,
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -700,7 +700,7 @@ pub(super) fn emit_surfaces(
                     Exactness::Derived,
                 )?;
                 admission.charge()?;
-                let _attached = ir.model.add_procedural_surface(
+                let _attached = ir.geometry.add_procedural_surface(
                     &id,
                     cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                         directrix_id,
@@ -742,7 +742,7 @@ pub(super) fn emit_surfaces(
                     Exactness::ByteExact,
                 )?;
                 admission.charge()?;
-                let _attached = ir.model.add_procedural_surface(
+                let _attached = ir.geometry.add_procedural_surface(
                     &id,
                     ProceduralSurface::new(procedural_id, *definition, None),
                 );
@@ -780,7 +780,7 @@ pub(super) fn emit_surfaces(
         )?;
         let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
         admission.charge()?;
-        let _attached = ir.model.add_procedural_surface(
+        let _attached = ir.geometry.add_procedural_surface(
             &surface.clone(),
             ProceduralSurface::new(
                 procedural_id,
@@ -826,7 +826,7 @@ fn emit_extrusion_procedure(
                 Exactness::Derived,
             )?;
             admission.charge()?;
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: directrix_id.clone(),
                 geometry: curve,
@@ -854,7 +854,7 @@ fn emit_extrusion_procedure(
                 Exactness::Derived,
             )?;
             admission.charge()?;
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: source_id.clone(),
                 geometry: source_curve,
@@ -868,7 +868,7 @@ fn emit_extrusion_procedure(
                 Exactness::Unknown,
             )?;
             admission.charge()?;
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -887,7 +887,7 @@ fn emit_extrusion_procedure(
                 Exactness::ByteExact,
             )?;
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve(&directrix_id.clone(), ProceduralCurve::new(
+            let _attached = ir.geometry.add_procedural_curve(&directrix_id.clone(), ProceduralCurve::new(
                     procedure_id,
                     ProceduralCurveDefinition::Offset(
                         cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::along_direction(
@@ -915,7 +915,7 @@ fn emit_extrusion_procedure(
     )?;
     let record_bounds = super::parameter_record_bounds(extrusion.parameter_bounds);
     admission.charge()?;
-    let _attached = ir.model.add_procedural_surface(
+    let _attached = ir.geometry.add_procedural_surface(
         surface_id,
         ProceduralSurface::new(
             procedure_id,
@@ -1023,7 +1023,7 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         let surface_id = SurfaceId::mint("catia:test:surface#result-30").expect("identity grammar");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -1044,17 +1044,17 @@ mod tests {
         });
 
         assert!(matches!(
-            &ir.model.curves[0].geometry,
+            &ir.geometry.curves[0].geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
         ));
-        assert!(ir.model.procedural_curves.is_empty());
-        assert!(match ir.model.procedural_surfaces[0].definition() {
+        assert!(ir.geometry.procedural_curves.is_empty());
+        assert!(match ir.geometry.procedural_surfaces[0].definition() {
             ProceduralSurfaceDefinition::Extrusion(matched_payload) =>
                 matches!((&matched_payload.parameter_interval().map(cadmpeg_ir::units::FiniteVector::get), matched_payload.direction(), &matched_payload.native_position(),), (Some([0.0, 1.0]), direction, None,) if *direction == Vector3::new(0.0, 0.0, 1.0)),
             _ => false,
         });
         assert_eq!(
-            ir.model.procedural_surfaces[0]
+            ir.geometry.procedural_surfaces[0]
                 .record_bounds()
                 .map(cadmpeg_ir::geometry::RecordBounds::get),
             Some([Some(-2.0), Some(3.0), Some(0.0), Some(1.0)])

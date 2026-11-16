@@ -25,8 +25,9 @@ const DEFAULT_MAX_PATHS: usize = 10_000;
 pub(crate) struct GraphArgs {
     /// JSON file, or `-` for standard input.
     file: std::path::PathBuf,
-    /// Arena address: `model.<arena>`, `native.<codec>.<arena>`, or bare
-    /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
+    /// Arena address: `<home>.<arena>` with home `geometry`, `model`,
+    /// `design`, or `process`, `native.<codec>.<arena>`, or bare `<arena>` as
+    /// shorthand for the arena in its home. Same dotted names as
     /// `query counts --json`.
     arena: String,
     /// Which records of the arena to walk from.
@@ -344,7 +345,7 @@ mod tests {
     #[test]
     fn graph_follows_array_of_ids() {
         let document = doc(&json!({
-            "model": {
+            "geometry": {
                 "bodies": [{"id": "b1", "regions": ["r1", "r2"]}],
                 "regions": [{"id": "r1"}, {"id": "r2"}]
             }
@@ -360,7 +361,7 @@ mod tests {
     #[test]
     fn graph_hops_1_vs_2() {
         let document = doc(&json!({
-            "model": {
+            "geometry": {
                 "bodies": [{"id": "b1", "regions": ["r1"]}],
                 "regions": [{"id": "r1", "shells": ["s1"]}],
                 "shells": [{"id": "s1"}]
@@ -467,7 +468,7 @@ mod tests {
     #[test]
     fn graph_array_of_objects_uses_nested_path_without_indices() {
         let document = doc(&json!({
-            "model": {
+            "geometry": {
                 "faces": [{"id": "f1", "pcurves": [{"pcurve": "c1"}]}],
                 "curves": [{"id": "c1"}]
             }

@@ -93,23 +93,23 @@ impl BodyTopology {
             + self.points.len()
     }
 
-    /// The nest as a model that holds only its records, for the topology checks.
+    /// The nest as a topology that holds only its records, for the topology checks.
     #[must_use]
-    pub fn to_model(&self) -> crate::document::Model {
-        let mut model = crate::document::Model::default();
-        model.bodies.push(self.body.clone());
-        model.regions.clone_from(&self.regions);
-        model.shells.clone_from(&self.shells);
-        model.faces.clone_from(&self.faces);
-        model.loops.clone_from(&self.loops);
-        model.coedges.clone_from(&self.coedges);
-        model.edges.clone_from(&self.edges);
-        model.vertices.clone_from(&self.vertices);
-        model.surfaces.clone_from(&self.surfaces);
-        model.curves.clone_from(&self.curves);
-        model.pcurves.clone_from(&self.pcurves);
-        model.points.clone_from(&self.points);
-        model
+    pub fn to_topology(&self) -> crate::document::Topology {
+        let mut geometry = crate::document::Topology::default();
+        geometry.bodies.push(self.body.clone());
+        geometry.regions.clone_from(&self.regions);
+        geometry.shells.clone_from(&self.shells);
+        geometry.faces.clone_from(&self.faces);
+        geometry.loops.clone_from(&self.loops);
+        geometry.coedges.clone_from(&self.coedges);
+        geometry.edges.clone_from(&self.edges);
+        geometry.vertices.clone_from(&self.vertices);
+        geometry.surfaces.clone_from(&self.surfaces);
+        geometry.curves.clone_from(&self.curves);
+        geometry.pcurves.clone_from(&self.pcurves);
+        geometry.points.clone_from(&self.points);
+        geometry
     }
 }
 

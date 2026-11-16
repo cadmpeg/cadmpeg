@@ -1,16 +1,9 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
+      "design": {},
       "fragment": false,
-      "ir_version": "11",
-      "model": {
-        "appearance_bindings": [],
-        "appearances": [],
-        "articulations": [],
-        "assembly_joints": [],
-        "assets": [],
-        "attributes": [],
+      "geometry": {
         "bodies": [
           {
             "id": "nx:s0:body#2",
@@ -38,8 +31,6 @@
             "sense": "forward"
           }
         ],
-        "colliders": [],
-        "configurations": [],
         "curves": [
           {
             "geometry": {
@@ -61,8 +52,6 @@
             "id": "nx:s0:crv#0"
           }
         ],
-        "declared_measures": [],
-        "drawings": [],
         "edges": [
           {
             "carrier": {
@@ -111,10 +100,6 @@
             "tolerance": 0.2
           }
         ],
-        "feature_input_topologies": [],
-        "feature_result_topologies": [],
-        "features": [],
-        "history_bodies": [],
         "loops": [
           {
             "boundary": {
@@ -139,14 +124,7 @@
             "id": "nx:s0:loop#5"
           }
         ],
-        "mass_properties": [],
-        "occurrences": [],
-        "parameters": [],
         "pcurves": [],
-        "physical_materials": [],
-        "physics_scenes": [],
-        "pmi": [],
-        "point_clouds": [],
         "points": [
           {
             "id": "nx:s0:pt#0",
@@ -157,11 +135,8 @@
             }
           }
         ],
-        "presentation_documents": [],
-        "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_definitions": [],
         "regions": [
           {
             "body": "nx:s0:body#2",
@@ -172,8 +147,6 @@
             ]
           }
         ],
-        "rigid_bodies": [],
-        "semantic_annotations": [],
         "shells": [
           {
             "id": "nx:s0:shell#13",
@@ -196,14 +169,6 @@
             "region": "nx:s0:region#12"
           }
         ],
-        "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
-        "solver_settings": [],
-        "spatial_sketch_constraints": [],
-        "spatial_sketch_entities": [],
-        "spatial_sketches": [],
-        "spreadsheets": [],
         "subds": [],
         "surfaces": [
           {
@@ -231,14 +196,51 @@
             "id": "nx:s0:surf#0"
           }
         ],
-        "tessellations": [],
         "vertices": [
           {
             "id": "nx:s0:vertex#10",
             "point": "nx:s0:pt#0",
             "tolerance": 0.1
           }
-        ],
+        ]
+      },
+      "ir_version": "11",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "articulations": [],
+        "assembly_joints": [],
+        "assets": [],
+        "attributes": [],
+        "colliders": [],
+        "configurations": [],
+        "declared_measures": [],
+        "drawings": [],
+        "feature_input_topologies": [],
+        "feature_result_topologies": [],
+        "features": [],
+        "history_bodies": [],
+        "mass_properties": [],
+        "occurrences": [],
+        "parameters": [],
+        "physical_materials": [],
+        "physics_scenes": [],
+        "pmi": [],
+        "point_clouds": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "product_definitions": [],
+        "rigid_bodies": [],
+        "semantic_annotations": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "solver_settings": [],
+        "spatial_sketch_constraints": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "tessellations": [],
         "view_presentations": []
       },
       "native": {
@@ -253,6 +255,12 @@
             }
           ]
         }
+      },
+      "process": {},
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
       },
       "source": {
         "attributes": {

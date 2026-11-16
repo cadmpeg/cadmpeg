@@ -450,7 +450,7 @@ pub(super) fn inventory(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
 ) -> Result<EdgeInventory, CodecError> {
-    if ctx.container_only() || ctx.depth() != cadmpeg_core::decode::DecodeDepth::Full {
+    if ctx.container_only() || ctx.depth() < cadmpeg_core::decode::DecodeDepth::Design {
         return Ok(EdgeInventory::default());
     }
     let ActiveCarrierState::Selected(carrier) = &document.active_carrier else {

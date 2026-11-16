@@ -132,12 +132,12 @@ pub(super) fn check_procedural_support_consistency(
         pass: evaluations,
     };
     let curves = BorrowedIdentities::build(|add| {
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             add(curve.id.as_str(), &curve.geometry);
         }
     });
     let owners = curve_owners(ir);
-    for procedural in &ir.model.procedural_curves {
+    for procedural in &ir.geometry.procedural_curves {
         let Some(owner) = owners.get_unique(procedural.id.as_str()).copied() else {
             continue;
         };
@@ -629,7 +629,7 @@ fn on_construction(context: &crate::geometry::IntcurveSupportContext, range: [f6
 
 fn curve_owners(ir: &CadIr) -> BorrowedIdentities<'_, &crate::ids::CurveId> {
     BorrowedIdentities::build(|add| {
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             if let Some(construction) = curve.geometry.procedural_construction() {
                 add(construction.as_str(), &curve.id);
             }
@@ -639,12 +639,12 @@ fn curve_owners(ir: &CadIr) -> BorrowedIdentities<'_, &crate::ids::CurveId> {
 
 fn vertex_positions(ir: &CadIr) -> BorrowedIdentities<'_, (Point3, Option<f64>)> {
     let points = BorrowedIdentities::build(|add| {
-        for point in &ir.model.points {
+        for point in &ir.geometry.points {
             add(point.id.as_str(), point.position().get());
         }
     });
     BorrowedIdentities::build(|add| {
-        for vertex in &ir.model.vertices {
+        for vertex in &ir.geometry.vertices {
             if let Some(position) = points.get(vertex.point.as_str()) {
                 add(
                     vertex.id.as_str(),
@@ -684,12 +684,12 @@ pub(super) fn check_edge_endpoint_consistency(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let curves = BorrowedIdentities::build(|add| {
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             add(curve.id.as_str(), &curve.geometry);
         }
     });
     let curve_domains = BorrowedIdentities::build(|add| {
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             if let Some(domain) = bounded_curve_domain(curve) {
                 add(curve.id.as_str(), domain);
             }
@@ -697,14 +697,14 @@ pub(super) fn check_edge_endpoint_consistency(
     });
     let owners = curve_owners(ir);
     let curve_cache_tolerances = BorrowedIdentities::build(|add| {
-        for curve in &ir.model.procedural_curves {
+        for curve in &ir.geometry.procedural_curves {
             if let Some(owner) = owners.get_unique(curve.id.as_str()) {
                 add(owner.as_str(), curve.cache_fit_tolerance());
             }
         }
     });
     let vertices = vertex_positions(ir);
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         let Some(curve_id) = edge.curve() else {
             continue;
         };
@@ -779,11 +779,11 @@ pub(super) fn check_edge_endpoint_consistency(
         }
     }
     let edges = BorrowedIdentities::build(|add| {
-        for edge in &ir.model.edges {
+        for edge in &ir.geometry.edges {
             add(edge.id.as_str(), edge);
         }
     });
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         let Some(use_curve) = &coedge.use_curve else {
             continue;
         };
@@ -860,24 +860,24 @@ pub(super) fn check_pcurve_surface_consistency(
         pass: evaluations,
     };
     let curves = BorrowedIdentities::build(|add| {
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             add(curve.id.as_str(), &curve.geometry);
         }
     });
     let surfaces = BorrowedIdentities::build(|add| {
-        for surface in &ir.model.surfaces {
+        for surface in &ir.geometry.surfaces {
             add(surface.id.as_str(), &surface.geometry);
         }
     });
     let surface_owners = BorrowedIdentities::build(|add| {
-        for surface in &ir.model.surfaces {
+        for surface in &ir.geometry.surfaces {
             if let Some(construction) = surface.geometry.procedural_construction() {
                 add(construction.as_str(), &surface.id);
             }
         }
     });
     let procedurally_parameterized_surfaces = BorrowedIdentities::build(|add| {
-        for surface in &ir.model.procedural_surfaces {
+        for surface in &ir.geometry.procedural_surfaces {
             if !matches!(
                 surface.definition(),
                 crate::geometry::ProceduralSurfaceDefinition::Subset(_)
@@ -889,28 +889,28 @@ pub(super) fn check_pcurve_surface_consistency(
         }
     });
     let pcurves = BorrowedIdentities::build(|add| {
-        for pcurve in &ir.model.pcurves {
+        for pcurve in &ir.geometry.pcurves {
             add(pcurve.id.as_str(), pcurve);
         }
     });
     let edges = BorrowedIdentities::build(|add| {
-        for edge in &ir.model.edges {
+        for edge in &ir.geometry.edges {
             add(edge.id.as_str(), edge);
         }
     });
     let faces = BorrowedIdentities::build(|add| {
-        for face in &ir.model.faces {
+        for face in &ir.geometry.faces {
             add(face.id.as_str(), face);
         }
     });
     let loops = BorrowedIdentities::build(|add| {
-        for lp in &ir.model.loops {
+        for lp in &ir.geometry.loops {
             add(lp.id.as_str(), lp);
         }
     });
     let vertices = vertex_positions(ir);
 
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         let Some((first_use, last_use)) = coedge.pcurves.first().zip(coedge.pcurves.last()) else {
             continue;
         };

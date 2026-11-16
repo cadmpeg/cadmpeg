@@ -15,7 +15,7 @@ use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, EntityRewrite, Model, SourceMeta};
+use cadmpeg_ir::document::{CadIr, EntityRewrite, SourceMeta, Topology};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
@@ -156,7 +156,7 @@ fn decode_model(
         transferred |= ir.model.tessellations.len() > meshes;
         for extra in exact.iter().skip(1) {
             if let Some(written) = ir
-                .model
+                .geometry
                 .bodies
                 .iter_mut()
                 .rev()
@@ -224,7 +224,7 @@ fn exact_geometry(
             return Ok(Vec::new());
         }
     };
-    let mut model = Model::default();
+    let mut geometry = Topology::default();
     let mut builder = AnnotationBuilder::new();
     let mut notes = Vec::new();
     let stream = StreamHandle::new(
@@ -238,7 +238,7 @@ fn exact_geometry(
                 &stream_model,
                 &crate::ids::member_scope(name),
                 &mut crate::brep::emit::Sink {
-                    model: &mut model,
+                    geometry: &mut geometry,
                     annotations: &mut builder,
                     losses: &mut notes,
                     stream: &stream,
@@ -248,7 +248,7 @@ fn exact_geometry(
         });
     match emitted {
         Ok(bodies) => {
-            ir.model.extend_rewritten(model, &mut Unchanged)?;
+            ir.geometry.extend_rewritten(geometry, &mut Unchanged)?;
             annotations.append(builder.build())?;
             losses.extend(notes);
             Ok(bodies)

@@ -33,7 +33,7 @@ enum JoinMode {
 pub(crate) struct JoinArgs {
     /// JSON file, or `-` for standard input.
     file: PathBuf,
-    /// Left arena (`model.<arena>`, `native.<codec>.<arena>`, or bare
+    /// Left arena (`<home>.<arena>`, `native.<codec>.<arena>`, or bare
     /// `<arena>`). Same dotted names as `query counts --json`.
     left_arena: String,
     /// Right arena. Same spelling as the left arena.

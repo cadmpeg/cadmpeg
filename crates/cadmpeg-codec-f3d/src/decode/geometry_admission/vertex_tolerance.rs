@@ -32,7 +32,7 @@ pub(super) fn admit(
     annotations: &mut [cadmpeg_asm::brep::annotations::AnnotationRecord],
 ) -> Result<(), CodecError> {
     if !ir
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .any(|curve| matches!(curve.definition(), ProceduralCurveDefinition::Exact { .. }))
@@ -41,7 +41,7 @@ pub(super) fn admit(
     }
     let index = ModelIndex::new_model_only(ir);
     let candidates: HashSet<_> = ir
-        .model
+        .geometry
         .edges
         .iter()
         .filter(|edge| {
@@ -68,7 +68,7 @@ pub(super) fn admit(
         return Ok(());
     }
     let mut misses = HashMap::<String, EndpointMisses>::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         if !candidates.contains(edge.start.as_str()) && !candidates.contains(edge.end.as_str()) {
             continue;
         }
@@ -124,7 +124,7 @@ pub(super) fn admit(
             entry.exact_miss |= exact && miss > allowance;
         }
     }
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         let Some(use_curve) = &coedge.use_curve else {
             continue;
         };
@@ -167,7 +167,7 @@ pub(super) fn admit(
     let bounds = vertex_bounds(ir, &index);
     let mut widened = HashSet::new();
     let mut maximum_widening = 0.0_f64;
-    for vertex in &mut ir.model.vertices {
+    for vertex in &mut ir.geometry.vertices {
         let Some(miss) = misses.get(vertex.id.as_str()) else {
             continue;
         };
@@ -208,7 +208,7 @@ fn vertex_bounds<'a>(ir: &'a CadIr, index: &ModelIndex<'a>) -> HashMap<String, f
         let region = index.regions(shell.region.as_str(), StandardIndex)?;
         index.bodies(region.body.as_str(), StandardIndex)
     };
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         let body = index
             .loops(coedge.owner_loop.as_str(), StandardIndex)
             .and_then(|loop_| index.faces(loop_.face.as_str(), StandardIndex))
@@ -220,7 +220,7 @@ fn vertex_bounds<'a>(ir: &'a CadIr, index: &ModelIndex<'a>) -> HashMap<String, f
                 .push(body.id.as_str());
         }
     }
-    for shell in &ir.model.shells {
+    for shell in &ir.geometry.shells {
         if let Some(body) = body_for_shell(shell.id.as_str()) {
             for edge in shell.wire_edges() {
                 owners
@@ -231,7 +231,7 @@ fn vertex_bounds<'a>(ir: &'a CadIr, index: &ModelIndex<'a>) -> HashMap<String, f
         }
     }
     let mut vertices = HashMap::<_, Vec<_>>::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         let Some(bodies) = owners.get(edge.id.as_str()) else {
             continue;
         };
@@ -242,7 +242,7 @@ fn vertex_bounds<'a>(ir: &'a CadIr, index: &ModelIndex<'a>) -> HashMap<String, f
                 .extend(bodies.iter().copied());
         }
     }
-    for shell in &ir.model.shells {
+    for shell in &ir.geometry.shells {
         if let Some(body) = body_for_shell(shell.id.as_str()) {
             for vertex in shell.free_vertices() {
                 vertices
@@ -252,7 +252,7 @@ fn vertex_bounds<'a>(ir: &'a CadIr, index: &ModelIndex<'a>) -> HashMap<String, f
             }
         }
     }
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         let Some((vertex, _uses)) = loop_.singular_vertex() else {
             continue;
         };

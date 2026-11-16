@@ -31,7 +31,7 @@ fn each_cube_face_is_two_outward_triangles_of_its_area() {
     let cube = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut tessellator = Tessellator::new(&cube, Options::default());
     let mut total = 0.0;
-    for face in &cube.model.faces {
+    for face in &cube.geometry.faces {
         let mesh = tessellator.face(&face.id).unwrap();
         assert_eq!(mesh.triangles.len(), 2, "{}", face.id);
         total += area(&mesh);
@@ -43,13 +43,13 @@ fn each_cube_face_is_two_outward_triangles_of_its_area() {
         assert!(mesh.deviation <= AREA_TOLERANCE);
     }
     let side = cube
-        .model
+        .geometry
         .points
         .iter()
         .map(|point| point.position().get().x)
         .fold(0.0, f64::max)
         - cube
-            .model
+            .geometry
             .points
             .iter()
             .map(|point| point.position().get().x)
@@ -64,7 +64,7 @@ fn a_history_body_is_invisible_to_the_tessellator() {
     plain.model.history_bodies.clear();
     let mut with = Tessellator::new(&nested, Options::default());
     let mut without = Tessellator::new(&plain, Options::default());
-    for face in &plain.model.faces {
+    for face in &plain.geometry.faces {
         let found = with.face(&face.id).expect("model face");
         let expected = without.face(&face.id).expect("model face");
         assert_eq!(found.positions, expected.positions);

@@ -1,15 +1,8 @@
 {
   "ir": {
-    "decode_depth": "full",
+    "design": {},
     "fragment": false,
-    "ir_version": "11",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "articulations": [],
-      "assembly_joints": [],
-      "assets": [],
-      "attributes": [],
+    "geometry": {
       "bodies": [
         {
           "id": "fcstd:model:body#Compound:Shape:Compound.Shape.brp:17%40location1",
@@ -2812,8 +2805,6 @@
           "sense": "forward"
         }
       ],
-      "colliders": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
@@ -5543,8 +5534,6 @@
           }
         }
       ],
-      "declared_measures": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -7468,275 +7457,6 @@
           "tolerance": 1e-7
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Compound",
-          "name": "Compound",
-          "native_ref": "fcstd:native:object#Compound",
-          "ordinal": 7,
-          "outputs": [
-            "fcstd:model:body#Compound:Shape:Compound.Shape.brp:17%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#CurveCarriers",
-          "name": "CurveCarriers",
-          "native_ref": "fcstd:native:object#CurveCarriers",
-          "ordinal": 9,
-          "outputs": [
-            "fcstd:model:body#CurveCarriers:Shape:CurveCarriers.Shape.brp:14%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Degenerate",
-          "name": "Degenerate",
-          "native_ref": "fcstd:native:object#Degenerate",
-          "ordinal": 4,
-          "outputs": [
-            "fcstd:model:body#Degenerate:Shape:Degenerate.Shape.brp:11%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#FreeformSurface",
-          "name": "FreeformSurface",
-          "native_ref": "fcstd:native:object#FreeformSurface",
-          "ordinal": 10,
-          "outputs": [
-            "fcstd:model:body#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#MultiShell",
-          "name": "MultiShell",
-          "native_ref": "fcstd:native:object#MultiShell",
-          "ordinal": 8,
-          "outputs": [
-            "fcstd:model:body#MultiShell:Shape:MultiShell.Shape.brp:67%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Revolved",
-          "name": "Revolved",
-          "native_ref": "fcstd:native:object#Revolved",
-          "ordinal": 11,
-          "outputs": [
-            "fcstd:model:body#Revolved:Shape:Revolved.Shape.brp:24%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Seam",
-          "name": "Seam",
-          "native_ref": "fcstd:native:object#Seam",
-          "ordinal": 3,
-          "outputs": [
-            "fcstd:model:body#Seam:Shape:Seam.Shape.brp:13%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Sheet",
-          "name": "Sheet",
-          "native_ref": "fcstd:native:object#Sheet",
-          "ordinal": 5,
-          "outputs": [
-            "fcstd:model:body#Sheet:Shape:Sheet.Shape.brp:10%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Solid",
-          "name": "Solid",
-          "native_ref": "fcstd:native:object#Solid",
-          "ordinal": 1,
-          "outputs": [
-            "fcstd:model:body#Solid:Shape:Solid.Shape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Swept",
-          "name": "Swept",
-          "native_ref": "fcstd:native:object#Swept",
-          "ordinal": 12,
-          "outputs": [
-            "fcstd:model:body#Swept:Shape:Swept.Shape.brp:13%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Void",
-          "name": "Void",
-          "native_ref": "fcstd:native:object#Void",
-          "ordinal": 2,
-          "outputs": [
-            "fcstd:model:body#Void:Shape:Void.Shape.brp:68%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Wire",
-          "name": "Wire",
-          "native_ref": "fcstd:native:object#Wire",
-          "ordinal": 6,
-          "outputs": [
-            "fcstd:model:body#Wire:Shape:Wire.Shape.brp:6%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        }
-      ],
-      "history_bodies": [],
       "loops": [
         {
           "boundary": {
@@ -8396,9 +8116,6 @@
           "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:65%40location1%3A1"
         }
       ],
-      "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -12373,10 +12090,6 @@
           }
         }
       ],
-      "physical_materials": [],
-      "physics_scenes": [],
-      "pmi": [],
-      "point_clouds": [],
       "points": [
         {
           "id": "fcstd:model:point#Compound:Shape:Compound.Shape.brp:1%40location1",
@@ -13367,8 +13080,6 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [
         {
@@ -13390,7 +13101,6 @@
           "surface": "fcstd:model:surface#Swept:Shape:Swept.Shape.brp:1"
         }
       ],
-      "product_definitions": [],
       "regions": [
         {
           "body": "fcstd:model:body#Compound:Shape:Compound.Shape.brp:17%40location1",
@@ -13520,8 +13230,6 @@
           ]
         }
       ],
-      "rigid_bodies": [],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "fcstd:model:shell#Compound:Shape:Compound.Shape.brp:15%40location1",
@@ -13858,14 +13566,6 @@
           "region": "fcstd:model:region#Wire:Shape:Wire.Shape.brp:6%40location1"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
@@ -15477,7 +15177,6 @@
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "fcstd:model:vertex#Compound:Shape:Compound.Shape.brp:1%40location1",
@@ -15859,7 +15558,310 @@
           "point": "fcstd:model:point#Wire:Shape:Wire.Shape.brp:4%40location1",
           "tolerance": 1e-7
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Compound",
+          "name": "Compound",
+          "native_ref": "fcstd:native:object#Compound",
+          "ordinal": 7,
+          "outputs": [
+            "fcstd:model:body#Compound:Shape:Compound.Shape.brp:17%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#CurveCarriers",
+          "name": "CurveCarriers",
+          "native_ref": "fcstd:native:object#CurveCarriers",
+          "ordinal": 9,
+          "outputs": [
+            "fcstd:model:body#CurveCarriers:Shape:CurveCarriers.Shape.brp:14%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Degenerate",
+          "name": "Degenerate",
+          "native_ref": "fcstd:native:object#Degenerate",
+          "ordinal": 4,
+          "outputs": [
+            "fcstd:model:body#Degenerate:Shape:Degenerate.Shape.brp:11%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#FreeformSurface",
+          "name": "FreeformSurface",
+          "native_ref": "fcstd:native:object#FreeformSurface",
+          "ordinal": 10,
+          "outputs": [
+            "fcstd:model:body#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#MultiShell",
+          "name": "MultiShell",
+          "native_ref": "fcstd:native:object#MultiShell",
+          "ordinal": 8,
+          "outputs": [
+            "fcstd:model:body#MultiShell:Shape:MultiShell.Shape.brp:67%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Revolved",
+          "name": "Revolved",
+          "native_ref": "fcstd:native:object#Revolved",
+          "ordinal": 11,
+          "outputs": [
+            "fcstd:model:body#Revolved:Shape:Revolved.Shape.brp:24%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Seam",
+          "name": "Seam",
+          "native_ref": "fcstd:native:object#Seam",
+          "ordinal": 3,
+          "outputs": [
+            "fcstd:model:body#Seam:Shape:Seam.Shape.brp:13%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Sheet",
+          "name": "Sheet",
+          "native_ref": "fcstd:native:object#Sheet",
+          "ordinal": 5,
+          "outputs": [
+            "fcstd:model:body#Sheet:Shape:Sheet.Shape.brp:10%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Solid",
+          "name": "Solid",
+          "native_ref": "fcstd:native:object#Solid",
+          "ordinal": 1,
+          "outputs": [
+            "fcstd:model:body#Solid:Shape:Solid.Shape.brp:34%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Swept",
+          "name": "Swept",
+          "native_ref": "fcstd:native:object#Swept",
+          "ordinal": 12,
+          "outputs": [
+            "fcstd:model:body#Swept:Shape:Swept.Shape.brp:13%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Void",
+          "name": "Void",
+          "native_ref": "fcstd:native:object#Void",
+          "ordinal": 2,
+          "outputs": [
+            "fcstd:model:body#Void:Shape:Void.Shape.brp:68%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Wire",
+          "name": "Wire",
+          "native_ref": "fcstd:native:object#Wire",
+          "ordinal": 6,
+          "outputs": [
+            "fcstd:model:body#Wire:Shape:Wire.Shape.brp:6%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        }
       ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -16629,6 +16631,12 @@
         }
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
+    },
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {

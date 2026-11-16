@@ -26,6 +26,7 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
         .unwrap();
     let model = &decoded.ir().model;
     assert_eq!(model.sketches.len(), 2);
+    let geometry = &decoded.ir().geometry;
     let sketch = |name: &str| {
         model
             .sketches
@@ -250,18 +251,18 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
     let [selected] = edges.as_slice() else {
         panic!("Fillet.Edge1 selection count")
     };
-    let edge = model
+    let edge = geometry
         .edges
         .iter()
         .find(|edge| &edge.id == selected)
         .unwrap();
     let vertex_position = |id: &cadmpeg_ir::ids::VertexId| {
-        let vertex = model
+        let vertex = geometry
             .vertices
             .iter()
             .find(|vertex| &vertex.id == id)
             .unwrap();
-        model
+        geometry
             .points
             .iter()
             .find(|point| point.id == vertex.point)
@@ -286,7 +287,7 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
         "Fillet.Edge1 endpoints: {start:?}, {end:?}"
     );
     let curve_id = edge.curve().unwrap();
-    let curve = model
+    let curve = geometry
         .curves
         .iter()
         .find(|curve| &curve.id == curve_id)

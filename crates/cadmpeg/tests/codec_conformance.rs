@@ -612,7 +612,7 @@ mod product_roundtrip {
                 .iter()
                 .map(|definition| definition.bodies.len())
                 .sum::<usize>(),
-            source.model.bodies.len(),
+            source.geometry.bodies.len(),
             "each FCStd body belongs to its source product definition"
         );
         let expected_definitions = definition_names(&source)
@@ -849,11 +849,16 @@ mod subset_carriers {
     /// innermost first, that maps the edge onto `RANGE` of the basis.
     fn chain(basis: Basis, links: &[([f64; 2], bool)]) -> CadIr {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let edge = ir.model.edges[0].clone();
+        let edge = ir.geometry.edges[0].clone();
         let position = |vertex: &cadmpeg_ir::ids::VertexId| {
-            let vertex = ir.model.vertices.iter().find(|v| v.id == *vertex).unwrap();
+            let vertex = ir
+                .geometry
+                .vertices
+                .iter()
+                .find(|v| v.id == *vertex)
+                .unwrap();
             let point = ir
-                .model
+                .geometry
                 .points
                 .iter()
                 .find(|p| p.id == vertex.point)
@@ -871,7 +876,7 @@ mod subset_carriers {
         let (first, second) = if forward { (start, end) } else { (end, start) };
         let root = cadmpeg_ir::ids::CurveId::mint("test:model:curve#subset-source").unwrap();
         let mut source = (root.clone(), Some(through(basis, first, second, normal)));
-        ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
             id: root,
             geometry: CurveGeometry::Solved(source.1.clone().unwrap()),
             parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new(RANGE),
@@ -886,7 +891,7 @@ mod subset_carriers {
                 let curve_id =
                     cadmpeg_ir::ids::CurveId::mint(format!("test:model:curve#subset-{index}"))
                         .unwrap();
-                ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+                ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(line_placeholder()),
                     parameter_range: None,
@@ -909,7 +914,7 @@ mod subset_carriers {
             }
             let construction =
                 ProceduralCurveId::mint(format!("test:model:construction#subset-{index}")).unwrap();
-            ir.model
+            ir.geometry
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == curve_id)
@@ -929,14 +934,14 @@ mod subset_carriers {
                     ))
                     .unwrap();
             }
-            ir.model
+            ir.geometry
                 .add_procedural_curve(&curve_id, ProceduralCurve::new(construction, definition))
                 .unwrap();
             span = range[1] - range[0];
             source = (curve_id, cache);
         }
-        ir.model.edges[0].set_param_range(Some(ParameterInterval::new([0.0, span]).unwrap()));
-        ir.model
+        ir.geometry.edges[0].set_param_range(Some(ParameterInterval::new([0.0, span]).unwrap()));
+        ir.geometry
             .curves
             .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         ir
@@ -1067,15 +1072,15 @@ mod subset_carriers {
             assert_valid(decoded.ir(), &label);
             let decoded = decoded.ir();
             let mut subset_edges = 0;
-            for procedural in &decoded.model.procedural_curves {
+            for procedural in &decoded.geometry.procedural_curves {
                 let ProceduralCurveDefinition::Subset(subset) = procedural.definition() else {
                     continue;
                 };
                 let [first, last] = subset.parameter_range().endpoints();
                 let span = last - first;
-                let owner = decoded.model.procedural_curve_owner(&procedural.id);
+                let owner = decoded.geometry.procedural_curve_owner(&procedural.id);
                 for edge in decoded
-                    .model
+                    .geometry
                     .edges
                     .iter()
                     .filter(|edge| edge.curve() == owner)

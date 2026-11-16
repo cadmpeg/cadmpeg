@@ -40,7 +40,7 @@ fn exchange(entity: &str) -> Vec<u8> {
 
 fn ir() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.points.extend((0..ENTITY_COUNT).map(|index| {
+    ir.geometry.points.extend((0..ENTITY_COUNT).map(|index| {
         Point::new(
             PointId::mint(format!("test:bench:point#{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(index), 2.0, 3.0))

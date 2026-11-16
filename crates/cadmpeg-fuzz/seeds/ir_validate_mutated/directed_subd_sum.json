@@ -1,7 +1,11 @@
 {
-  "fragment": false,
   "ir_version": "11",
-  "decode_depth": "full",
+  "fragment": false,
+  "scope": {
+    "model": true,
+    "design": true,
+    "process": true
+  },
   "units": {
     "length": "millimeter",
     "angle": "radian",
@@ -12,7 +16,7 @@
     "linear": 1e-6,
     "angular": 1e-10
   },
-  "model": {
+  "geometry": {
     "bodies": [],
     "regions": [],
     "shells": [],
@@ -211,7 +215,9 @@
         }
       }
     ],
-    "procedural_curves": [],
+    "procedural_curves": []
+  },
+  "model": {
     "assets": [],
     "features": [],
     "feature_input_topologies": [],
@@ -249,5 +255,7 @@
     "point_clouds": [],
     "history_bodies": []
   },
+  "design": {},
+  "process": {},
   "native": {}
 }

@@ -46,16 +46,16 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
             .expect("mesh-surface decode"),
     );
 
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     let native = f3d_native(result.ir());
     assert_eq!(native.mesh_surface_sentinels.len(), 1);
     assert_eq!(
         native.mesh_surface_sentinels[0].surface,
-        result.ir().model.surfaces[0].id
+        result.ir().geometry.surfaces[0].id
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.severity == cadmpeg_ir::report::Severity::Info
@@ -90,7 +90,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.model.surfaces[0].geometry =
+    source_less.geometry.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     source_less
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
@@ -166,7 +166,7 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
                 &DecodeOptions::default(),
             )
             .expect("exact spline surface decode");
-        let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+        let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
         assert_eq!(
             procedural
                 .cache_fit_tolerance()
@@ -204,7 +204,7 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less exact spline surface round trip");
         assert_eq!(
-            round_trip.ir().model.procedural_surfaces[0].definition(),
+            round_trip.ir().geometry.procedural_surfaces[0].definition(),
             &ProceduralSurfaceDefinition::Exact(
                 cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
                     ExactSpline::Legacy {
@@ -233,7 +233,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                 &DecodeOptions::default(),
             )
             .expect("ruled spline surface decode");
-        let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+        let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
         assert_eq!(
             procedural
                 .cache_fit_tolerance()
@@ -246,13 +246,13 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
         };
         assert!(result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .any(|curve| curve.id == *first));
         assert!(result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .any(|curve| curve.id == *second));
@@ -265,7 +265,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
             .unwrap();
         for (ordinal, profile) in profiles.into_iter().enumerate() {
             source_less
-                .model
+                .geometry
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == profile)
@@ -293,7 +293,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less ruled surface round trip");
         let ProceduralSurfaceDefinition::Ruled { first, second, .. } =
-            &round_trip.ir().model.procedural_surfaces[0].definition()
+            &round_trip.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip ruled surface")
         };
@@ -301,7 +301,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
             assert!(matches!(
                 round_trip
                     .ir()
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|curve| curve.id == *profile)
@@ -324,7 +324,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                 &DecodeOptions::default(),
             )
             .expect("sum spline surface decode");
-        let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+        let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
         let ProceduralSurfaceDefinition::Sum(definition_payload) = procedural.definition() else {
             panic!("expected sum surface construction")
         };
@@ -338,13 +338,13 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
         let source_curves = [first.clone(), second.clone()];
         assert!(result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .any(|curve| curve.id == *first));
         assert!(result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .any(|curve| curve.id == *second));
@@ -356,7 +356,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
             .unwrap();
         for (ordinal, source) in source_curves.into_iter().enumerate() {
             source_less
-                .model
+                .geometry
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == source)
@@ -384,7 +384,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less sum surface round trip");
         assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition(),
+            round_trip.ir().geometry.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Sum(definition_payload)
                 if *definition_payload.basepoint()
                     == cadmpeg_ir::math::Vector3::new(10.0, -20.0, 30.0)
@@ -408,7 +408,7 @@ fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
             .expect("cacheless exact surface decode");
         let procedural = result
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .first()
             .expect("cacheless procedural surface");
@@ -420,11 +420,11 @@ fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
         assert!(matches!(
             result
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| {
-                    result.ir().model.procedural_surface_owner(&procedural.id)
+                    result.ir().geometry.procedural_surface_owner(&procedural.id)
                         == Some(&surface.id)
                 })
                 .map(|surface| &surface.geometry),
@@ -446,7 +446,7 @@ fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("cacheless exact surface source-less round trip");
         assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition(),
+            round_trip.ir().geometry.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Ruled { .. } | ProceduralSurfaceDefinition::Sum { .. }
         ));
     }
@@ -463,7 +463,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
                 &DecodeOptions::default(),
             )
             .expect("revolution spline surface decode");
-        let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+        let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
         let ProceduralSurfaceDefinition::Revolution(definition_payload) = procedural.definition()
         else {
             panic!("expected revolution surface construction")
@@ -496,7 +496,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
         assert!(!transposed);
         assert!(result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .any(|curve| curve.id == *directrix));
@@ -508,7 +508,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
             .unwrap();
         source_less
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == directrix)
@@ -535,14 +535,14 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less revolution surface round trip");
         assert!(
-            match round_trip.ir().model.procedural_surfaces[0].definition() {
+            match round_trip.ir().geometry.procedural_surfaces[0].definition() {
                 ProceduralSurfaceDefinition::Revolution(matched_payload) =>
                     matches!((matched_payload.transposed(),), (false,)),
                 _ => false,
             }
         );
         let ProceduralSurfaceDefinition::Revolution(definition_payload) =
-            &round_trip.ir().model.procedural_surfaces[0].definition()
+            &round_trip.ir().geometry.procedural_surfaces[0].definition()
         else {
             unreachable!()
         };
@@ -550,7 +550,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
         assert!(matches!(
             round_trip
                 .ir()
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == *directrix)
@@ -589,7 +589,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
                 &DecodeOptions::default(),
             )
             .expect("offset spline surface decode");
-        let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+        let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
         let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
         else {
             panic!("expected offset surface construction")
@@ -608,7 +608,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         assert_eq!(*flags, expected_flags);
         assert!(result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id == *support));
@@ -627,7 +627,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less offset surface round trip");
         let ProceduralSurfaceDefinition::Offset(definition_payload) =
-            &round_trip.ir().model.procedural_surfaces[0].definition()
+            &round_trip.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip offset surface")
         };
@@ -658,7 +658,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("compound spline surface decode");
-    let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+    let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
     let ProceduralSurfaceDefinition::Compound(definition_payload) = procedural.definition() else {
         panic!("expected compound surface construction")
     };
@@ -674,11 +674,15 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
     assert_eq!(components.len(), 2);
     let solved = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| {
-            result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            result
+                .ir()
+                .geometry
+                .procedural_surface_owner(&procedural.id)
+                == Some(&surface.id)
         })
         .expect("compound solved surface");
     let Some(SolvedSurfaceGeometry::Nurbs(solved)) = solved.geometry.solved_cache() else {
@@ -687,7 +691,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
     assert!(solved.weights().is_none());
     let rational_component = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == components[1].component)
@@ -711,7 +715,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less compound surface round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::Compound(definition_payload) if matches!((definition_payload.components(),), (components,) if components.iter().map(|item| item.parameter.get()).collect::<Vec<_>>() == [-0.5, 1.5] && components.len() == 2)));
+        round_trip.ir().geometry.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::Compound(definition_payload) if matches!((definition_payload.components(),), (components,) if components.iter().map(|item| item.parameter.get()).collect::<Vec<_>>() == [-0.5, 1.5] && components.len() == 2)));
 }
 
 #[test]
@@ -738,7 +742,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             )
             .expect("taper surface decode");
         let ProceduralSurfaceDefinition::Taper(definition_payload) =
-            &result.ir().model.procedural_surfaces[0].definition()
+            &result.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected taper surface")
         };
@@ -752,13 +756,13 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
         assert!(pcurve.is_some());
         assert!(result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id == *support));
         assert!(result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .any(|curve| curve.id == *reference));
@@ -780,7 +784,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
             .unwrap();
         source_less
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == reference)
@@ -807,7 +811,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less taper round trip");
         let ProceduralSurfaceDefinition::Taper(definition_payload) =
-            &round_trip.ir().model.procedural_surfaces[0].definition()
+            &round_trip.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip taper")
         };
@@ -815,7 +819,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
         assert!(matches!(
             round_trip
                 .ir()
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == *reference)
@@ -845,7 +849,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             )
             .expect("loft surface decode");
         let ProceduralSurfaceDefinition::Loft(definition_payload) =
-            &result.ir().model.procedural_surfaces[0].definition()
+            &result.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected loft surface")
         };
@@ -907,7 +911,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
             .unwrap();
         source_less
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == line_profile)
@@ -934,7 +938,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less loft round trip");
         let ProceduralSurfaceDefinition::Loft(definition_payload) =
-            &round_trip.ir().model.procedural_surfaces[0].definition()
+            &round_trip.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip loft surface")
         };
@@ -977,7 +981,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         assert!(matches!(
             round_trip
                 .ir()
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == profile.id)
@@ -1004,7 +1008,7 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
         )
         .expect("net surface decode");
     let ProceduralSurfaceDefinition::Net(definition_payload) =
-        &decoded.ir().model.procedural_surfaces[0].definition()
+        &decoded.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected net surface")
     };
@@ -1037,7 +1041,7 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less net surface round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition(),
+        round_trip.ir().geometry.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Net(..)
     ));
 }
@@ -1053,7 +1057,7 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
         )
         .expect("profile-first sweep decode");
     let ProceduralSurfaceDefinition::Sweep(definition_payload) =
-        &decoded.ir().model.procedural_surfaces[0].definition()
+        &decoded.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -1099,7 +1103,7 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less profile-first sweep round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::Sweep(definition_payload) if matches!((definition_payload.native(),), (Some(_),))));
+        round_trip.ir().geometry.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::Sweep(definition_payload) if matches!((definition_payload.native(),), (Some(_),))));
 }
 
 #[test]
@@ -1121,7 +1125,7 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
             &DecodeOptions::default(),
         )
         .expect("T-spline surface decode");
-    let native = construction(decoded.ir().model.procedural_surfaces[0].definition()).clone();
+    let native = construction(decoded.ir().geometry.procedural_surfaces[0].definition()).clone();
     assert_eq!(
         native
             .parameter_ranges()
@@ -1153,7 +1157,7 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less T-spline round trip");
     assert_eq!(
-        construction(round_trip.ir().model.procedural_surfaces[0].definition()),
+        construction(round_trip.ir().geometry.procedural_surfaces[0].definition()),
         &native
     );
 }
@@ -1170,7 +1174,7 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
             )
             .expect("helix surface decode");
         let ProceduralSurfaceDefinition::Helix { construction } =
-            &decoded.ir().model.procedural_surfaces[0].definition()
+            &decoded.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected helix surface")
         };
@@ -1186,8 +1190,8 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
 
         let surface_id = decoded
             .ir()
-            .model
-            .procedural_surface_owner(&decoded.ir().model.procedural_surfaces[0].id)
+            .geometry
+            .procedural_surface_owner(&decoded.ir().geometry.procedural_surfaces[0].id)
             .expect("helix surface owner")
             .clone();
         let (mut source_less, _, _) = decoded.into_parts();
@@ -1196,7 +1200,7 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
             .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
             .unwrap();
         let surface = source_less
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == surface_id)
@@ -1205,7 +1209,7 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
             matches!(
                 &surface.geometry,
                 SurfaceGeometry::Procedural { construction, .. }
-                    if *construction == source_less.model.procedural_surfaces[0].id
+                    if *construction == source_less.geometry.procedural_surfaces[0].id
             ),
             "unexpected helix carrier: {:?}",
             surface.geometry
@@ -1219,7 +1223,7 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less helix surface round trip");
         assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition(),
+            round_trip.ir().geometry.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Helix { .. }
         ));
     }

@@ -22,7 +22,7 @@ fn form_cage_program_failures_retain_the_active_resource_and_native_parser_loss(
             panic!("Form");
         };
         assert_eq!(construction.membership_is_complete(), valid);
-        assert_eq!(decoded.ir().model.subds.len(), usize::from(valid));
+        assert_eq!(decoded.ir().geometry.subds.len(), usize::from(valid));
         assert_eq!(
             decoded
                 .report()
