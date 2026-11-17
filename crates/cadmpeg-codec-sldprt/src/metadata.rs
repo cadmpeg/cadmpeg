@@ -353,7 +353,7 @@ fn attribute(
     )?;
     Ok(SourceAttribute {
         id,
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: name.as_str().into(),
         values,
     })

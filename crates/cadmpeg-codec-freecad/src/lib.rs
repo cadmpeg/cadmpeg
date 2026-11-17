@@ -994,13 +994,7 @@ impl CodecBackend for FcstdCodec {
             drawing::transfer_neutral(ctx, &mut ir.model, &drawings, &graph.properties)?;
             namespace.set_arena(ctx, "drawings", &drawings)?;
             let annotations = annotation::transfer(ctx, &graph.objects, &graph.properties)?;
-            annotation::transfer_neutral(
-                ctx,
-                &mut ir.model,
-                &annotations,
-                &graph.properties,
-                &drawings,
-            )?;
+            annotation::transfer_neutral(ctx, &mut ir.model, &annotations, &graph.properties)?;
             drawing::content::enrich(
                 ctx,
                 &mut ir.model,

@@ -144,7 +144,7 @@ impl<'m> BodyNames<'m> {
     pub(super) fn new(ir: &'m cadmpeg_ir::CadIr) -> Self {
         let mut names = Self::default();
         for attribute in &ir.model.attributes {
-            let (kind, entity) = match &attribute.target {
+            let (kind, entity) = match &attribute.target.entity {
                 AttributeTarget::Face(face) => (EntityKind::Face, face.as_str()),
                 AttributeTarget::Edge(edge) => (EntityKind::Edge, edge.as_str()),
                 _ => continue,

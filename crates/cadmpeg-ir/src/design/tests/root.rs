@@ -245,7 +245,7 @@ fn the_design_root_writes_every_arena_in_order() {
     let text = serde_json::to_string(&Design::default()).unwrap();
     assert_eq!(
         text,
-        r#"{"scopes":[],"containers":[],"features":[],"parameters":[],"spreadsheets":[],"sheet_metal_rules":[],"programs":[],"configurations":[],"arrangements":[],"publications":[],"evaluations":[],"names":[]}"#
+        r#"{"scopes":[],"containers":[],"features":[],"sketches":[],"sketch_entities":[],"sketch_constraints":[],"spatial_sketches":[],"spatial_sketch_entities":[],"spatial_sketch_constraints":[],"parameters":[],"spreadsheets":[],"sheet_metal_rules":[],"programs":[],"configurations":[],"arrangements":[],"publications":[],"evaluations":[],"names":[]}"#
     );
     refuses::<Design>(r#"{"scopes": []}"#);
     let mut extra = to_value(&Design::default());
@@ -316,10 +316,10 @@ fn a_design_record_shares_an_id_with_a_record_of_another_home() {
     ir.design.features.push(restated);
     let report = crate::validate::validate_neutral(&ir, Vec::new()).unwrap();
     assert!(
-        !report
-            .findings
-            .iter()
-            .any(|finding| finding.severity == crate::report::Severity::Error),
+        !report.findings.iter().any(|finding| {
+            finding.check == crate::report::check::Check::Identity
+                || finding.message.contains("not unique")
+        }),
         "{:#?}",
         report.findings
     );

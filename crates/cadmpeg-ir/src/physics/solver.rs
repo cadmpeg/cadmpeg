@@ -17,6 +17,7 @@ use crate::ids::{
     ProductDefinitionId, SolverSettingsId,
 };
 use crate::products::JointId;
+use crate::references::InstanceTarget;
 use crate::scalar::FiniteReal;
 
 /// The model record that solver settings apply to.
@@ -161,7 +162,7 @@ pub enum SolverValue {
     /// Model records that the property names.
     Targets {
         /// The records.
-        targets: Vec<SolverTarget>,
+        targets: Vec<InstanceTarget<SolverTarget>>,
     },
 }
 
@@ -178,7 +179,7 @@ pub struct SolverSettings {
     /// more than once, such as `PhysxLimitAPI:angular`.
     pub schema: String,
     /// The record the settings apply to.
-    pub target: SolverTarget,
+    pub target: InstanceTarget<SolverTarget>,
     /// The properties by their schema names.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub values: BTreeMap<String, SolverValue>,

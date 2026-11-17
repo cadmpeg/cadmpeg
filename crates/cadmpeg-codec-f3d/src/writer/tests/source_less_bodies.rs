@@ -247,7 +247,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             assert_eq!(attribute.values[1], AttributeValue::Integer(-1));
             assert_eq!(
                 reference_index(&attribute.values[4]),
-                target_index(&attribute.target)
+                target_index(&attribute.target.entity)
             );
 
             let index = attribute_index(attribute);

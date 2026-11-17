@@ -38,8 +38,8 @@ pub(crate) enum NumericPairSlot {
         /// Byte offset within the `7C07` payload.
         offset: usize,
     },
-    /// Zero-payload `0xE8` control marker.
-    ControlE8 {
+    /// `0xE8`: the value 0.0 with no payload.
+    ZeroLiteral {
         /// Byte offset within the `7C07` payload.
         offset: usize,
     },
@@ -72,11 +72,21 @@ pub(crate) enum RangeIntervalSlot {
         /// Byte offset of `E6` within the complete `7C07` payload.
         offset: usize,
     },
-    /// Zero-payload `E8` state.
-    Unset {
+    /// `E8`: the value 0.0 with no payload.
+    ZeroLiteral {
         /// Byte offset of `E8` within the complete `7C07` payload.
         offset: usize,
     },
+}
+
+impl RangeIntervalSlot {
+    /// The slot's binary64 bits; `E8` is 0.0.
+    pub(crate) fn bits(&self) -> u64 {
+        match self {
+            Self::Binary64 { bits, .. } => *bits,
+            Self::ZeroLiteral { .. } => 0.0_f64.to_bits(),
+        }
+    }
 }
 
 /// Complete encoded value selected by a source-schema entry named `Range`.
@@ -104,7 +114,17 @@ pub(crate) enum NumericPacketItem {
         /// Byte offset within the `7C07` payload.
         offset: usize,
     },
-    /// One zero-payload control marker in `0xE7..=0xE9`.
+    /// `0xE7`: the value 1.0 with no payload.
+    UnitLiteral {
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+    /// `0xE8`: the value 0.0 with no payload.
+    ZeroLiteral {
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+    /// One zero-payload `0xE9` control marker.
     Control {
         /// Stored control code.
         code: u8,
@@ -589,7 +609,9 @@ impl EntityValuePacket {
             } => {
                 let item_end = match items.last()? {
                     NumericPacketItem::Binary64 { offset, .. } => offset.checked_add(9)?,
-                    NumericPacketItem::Control { offset, .. } => offset.checked_add(1)?,
+                    NumericPacketItem::UnitLiteral { offset }
+                    | NumericPacketItem::ZeroLiteral { offset }
+                    | NumericPacketItem::Control { offset, .. } => offset.checked_add(1)?,
                 };
                 Some(*offset..item_end.checked_add(*terminator_count)?)
             }
@@ -766,7 +788,15 @@ fn parse_numeric_value_packet(
                 binary64_count += 1;
                 at = end;
             }
-            code @ 0xe7..=0xe9 => {
+            0xe7 => {
+                items.push(NumericPacketItem::UnitLiteral { offset: at });
+                at += 1;
+            }
+            0xe8 => {
+                items.push(NumericPacketItem::ZeroLiteral { offset: at });
+                at += 1;
+            }
+            code @ 0xe9 => {
                 items.push(NumericPacketItem::Control { code, offset: at });
                 at += 1;
             }
@@ -1256,7 +1286,7 @@ pub(crate) fn parse_numeric_pair(payload: &[u8]) -> Option<NumericPair> {
             }
             0xe8 => {
                 at += 1;
-                Some(NumericPairSlot::ControlE8 { offset })
+                Some(NumericPairSlot::ZeroLiteral { offset })
             }
             _ => None,
         }
@@ -1436,7 +1466,7 @@ pub(crate) fn parse_range_interval(
                         }
                         0xe8 => {
                             at += 1;
-                            Some(RangeIntervalSlot::Unset { offset })
+                            Some(RangeIntervalSlot::ZeroLiteral { offset })
                         }
                         _ => None,
                     }
@@ -1696,7 +1726,7 @@ mod tests {
             Some(NumericPair {
                 prefix_atoms: [17, 4],
                 slots: [
-                    NumericPairSlot::ControlE8 { offset: 8 },
+                    NumericPairSlot::ZeroLiteral { offset: 8 },
                     NumericPairSlot::Binary64 {
                         bits: 4.5_f64.to_bits(),
                         offset: 9,
@@ -1780,8 +1810,8 @@ mod tests {
             Some(RangeInterval {
                 prefix: RangeIntervalPrefix::EscapedWord { word: 100_718 },
                 slots: Some([
-                    RangeIntervalSlot::Unset { offset: 16 },
-                    RangeIntervalSlot::Unset { offset: 17 },
+                    RangeIntervalSlot::ZeroLiteral { offset: 16 },
+                    RangeIntervalSlot::ZeroLiteral { offset: 17 },
                 ]),
             })
         );
@@ -2141,6 +2171,34 @@ mod tests {
     }
 
     #[test]
+    fn numeric_packet_literals_read_as_one_and_zero() {
+        let mut payload = vec![0xaa, 0x81, 0x87, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6];
+        payload.extend_from_slice(&2.5_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0xe7, 0xe8, 0xfe, 0xbb]);
+        let fields = value_block::tokenize(&payload);
+        let packets = value_packets(&payload, &fields);
+        let [EntityValuePacket::Numeric { items, .. }] = packets.as_slice() else {
+            panic!("one numeric packet: {packets:?}");
+        };
+        let values = items
+            .iter()
+            .map(|item| match item {
+                NumericPacketItem::Binary64 { bits, .. } => f64::from_bits(*bits),
+                NumericPacketItem::UnitLiteral { .. } => 1.0,
+                NumericPacketItem::ZeroLiteral { .. } => 0.0,
+                NumericPacketItem::Control { .. } => f64::NAN,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(values, [2.5, 1.0, 0.0]);
+
+        let literal_only = [
+            0xaa, 0x81, 0x87, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe8, 0xe8, 0xe7, 0xfe, 0xbb,
+        ];
+        let fields = value_block::tokenize(&literal_only);
+        assert!(value_packets(&literal_only, &fields).is_empty());
+    }
+
+    #[test]
     fn embedded_numeric_value_packet_preserves_exact_values_and_controls() {
         let mut payload = vec![0xaa, 0x81, 0x87, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84];
         payload.push(0xe7);
@@ -2161,10 +2219,7 @@ mod tests {
                 layout_atom: 3,
                 value_atom: 4,
                 items: vec![
-                    NumericPacketItem::Control {
-                        code: 0xe7,
-                        offset: 9,
-                    },
+                    NumericPacketItem::UnitLiteral { offset: 9 },
                     NumericPacketItem::Binary64 {
                         bits: (-32.0_f64).to_bits(),
                         offset: 10,
@@ -2203,34 +2258,19 @@ mod tests {
                 layout_atom: 8,
                 value_atom: 1,
                 items: vec![
-                    NumericPacketItem::Control {
-                        code: 0xe8,
-                        offset: 9,
-                    },
-                    NumericPacketItem::Control {
-                        code: 0xe8,
-                        offset: 10,
-                    },
-                    NumericPacketItem::Control {
-                        code: 0xe8,
-                        offset: 11,
-                    },
+                    NumericPacketItem::ZeroLiteral { offset: 9 },
+                    NumericPacketItem::ZeroLiteral { offset: 10 },
+                    NumericPacketItem::ZeroLiteral { offset: 11 },
                     NumericPacketItem::Binary64 {
                         bits: 12.7_f64.to_bits(),
                         offset: 12,
                     },
-                    NumericPacketItem::Control {
-                        code: 0xe8,
-                        offset: 21,
-                    },
+                    NumericPacketItem::ZeroLiteral { offset: 21 },
                     NumericPacketItem::Binary64 {
                         bits: std::f64::consts::PI.to_bits(),
                         offset: 22,
                     },
-                    NumericPacketItem::Control {
-                        code: 0xe7,
-                        offset: 31,
-                    },
+                    NumericPacketItem::UnitLiteral { offset: 31 },
                 ],
                 terminator_count: 1,
             }]
