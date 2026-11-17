@@ -42,6 +42,7 @@ fn inverse_boundary_cache_reports_distance_and_exact_isocurve_has_no_loss() {
             source_object: None,
             parameter_range: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+            native_ref: None,
         });
         let surface = NurbsSurface::from_lanes(
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),

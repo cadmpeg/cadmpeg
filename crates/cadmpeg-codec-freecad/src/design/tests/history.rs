@@ -1070,7 +1070,7 @@ Ve 0.001 0 0 0 0 0 1001000 *
     let visible = |name: &str| {
         result
             .ir()
-            .model
+            .geometry
             .bodies
             .iter()
             .find(|body| body.id.as_str().contains(&format!(":{name}:")))

@@ -3,6 +3,7 @@
 
 use crate::math::portable::Portable;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -14,7 +15,7 @@ crate::ids::id_type!(
 );
 
 /// Semantic role of a drawing entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -70,7 +71,6 @@ pub struct Drawing {
     )]
     pub visible: Option<bool>,
     /// Ordered relationships grouped by exact source-property role.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub relationships: BTreeMap<NonBlankString, Vec<crate::references::ReferenceSelection>>,
     /// Page template drawing identity.
@@ -105,7 +105,6 @@ pub struct Drawing {
     pub sheet: Option<DrawingSheet>,
     /// Curves in source order. Origin is the view origin; X points right and Y points up.
     /// Coordinates are millimetres before view scale and rotation.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub curves: Vec<DrawingCurve>,
     /// Page-space template primitives and positioned text; template owners only.
     #[serde(
@@ -122,11 +121,9 @@ pub struct Drawing {
     )]
     pub x_direction: Option<crate::units::NonzeroVector<3>>,
     /// Remaining typed or exactly framed parameters by source name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameters: BTreeMap<NonBlankString, String>,
     /// Template, image, symbol, or other retained assets.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
     /// Native drawing record supplying this entity.
     pub native_ref: String,
@@ -216,7 +213,7 @@ mod tests {
             {"geometry": {"kind": "line", "start": [0.0, 1.0], "end": [2.0, 3.0]}, "visibility": "hidden", "source": "projected_model_edge"},
             {"geometry": {"kind": "circle", "center": [0.0, 0.0], "radius": 2.0}, "visibility": "visible", "source": "cosmetic"},
             {"geometry": {"kind": "arc", "center": [0.0, 0.0], "radius": 2.0, "start": [2.0, 0.0], "middle": [0.0, 2.0], "end": [-2.0, 0.0]}, "visibility": "visible", "source": "center_line"}
-        ]});
+        ], "relationships": {}, "parameters": {}, "assets": []});
         let drawing: Drawing = serde_json::from_value(wire.clone()).unwrap();
         assert!(drawing.sheet.as_ref().unwrap().is_valid());
         assert!(drawing.curves.iter().all(super::DrawingCurve::is_valid));
@@ -246,7 +243,7 @@ mod tests {
 
     #[test]
     fn template_reference_preserves_string_wire_and_rejects_invalid_ids() {
-        let value = serde_json::json!({"id": "synthetic:test:drawing#page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native"});
+        let value = serde_json::json!({"id": "synthetic:test:drawing#page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native", "relationships": {}, "curves": [], "parameters": {}, "assets": []});
         let drawing: Drawing = serde_json::from_value(value.clone()).expect("valid drawing");
         assert_eq!(
             drawing.template.as_ref().map(DrawingId::as_str),
@@ -264,7 +261,7 @@ mod tests {
     }
     #[test]
     fn numeric_admission_names_fields_and_preserves_valid_values() {
-        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation_degrees": -90.0});
+        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation_degrees": -90.0, "relationships": {}, "curves": [], "parameters": {}, "assets": []});
         let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
         assert_eq!(serde_json::to_value(drawing).expect("serialize"), wire);
         for (field, invalid) in [
@@ -289,7 +286,7 @@ mod tests {
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "parameters": {"   ": "value"},
+            "parameters": {"   ": "value"}, "relationships": {}, "curves": [], "assets": []
         });
         let error = serde_json::from_value::<Drawing>(wire).expect_err("blank parameter role");
         assert!(error.to_string().contains("must not be blank"), "{error}");
@@ -301,7 +298,7 @@ mod tests {
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "relationships": {"": []},
+            "relationships": {"": []}, "curves": [], "parameters": {}, "assets": []
         });
         let error =
             serde_json::from_value::<Drawing>(relationships).expect_err("blank relationship role");
@@ -314,7 +311,7 @@ mod tests {
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "parameters": {" scale ": "value"},
+            "parameters": {" scale ": "value"}, "relationships": {}, "curves": [], "assets": []
         });
         let drawing: Drawing =
             serde_json::from_value(named).expect("a named role is kept verbatim");
@@ -338,7 +335,6 @@ pub struct DrawingSheet {
     /// Positive sheet height in millimetres.
     pub height_mm: crate::scalar::PositiveReal,
     /// Ordered name/value pairs; names are unique.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<TitleBlockField>,
 }
 
@@ -354,7 +350,7 @@ pub struct TitleBlockField {
 }
 
 /// Hidden-line classification, independent of presentation style.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CurveVisibility {
@@ -365,7 +361,7 @@ pub enum CurveVisibility {
 }
 
 /// Curve origin.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CurveSource {

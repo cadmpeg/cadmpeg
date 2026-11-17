@@ -77,13 +77,13 @@ fn feature_output_bodies_with_history(
     for surface_id in generated_surfaces {
         let surface = format!("creo:visibgeom:surface#{surface_id}");
         for face in ir
-            .model
+            .geometry
             .faces
             .iter()
             .filter(|face| face.surface.as_str() == surface)
         {
             let Some(shell) = exactly_one(
-                ir.model
+                ir.geometry
                     .shells
                     .iter()
                     .filter(|shell| shell.id == face.shell),
@@ -91,7 +91,7 @@ fn feature_output_bodies_with_history(
                 continue;
             };
             let Some(region) = exactly_one(
-                ir.model
+                ir.geometry
                     .regions
                     .iter()
                     .filter(|region| region.id == shell.region),
@@ -181,46 +181,56 @@ fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) -> Result<Vec<BodyId>, 
     }
     let mut shell_ids = BTreeSet::new();
     for coedge in ir
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|coedge| selected.contains(&coedge.edge))
     {
         let lp = exactly_one(
-            ir.model
+            ir.geometry
                 .loops
                 .iter()
                 .filter(|lp| lp.id == coedge.owner_loop),
         );
-        let Some(face) =
-            lp.and_then(|lp| exactly_one(ir.model.faces.iter().filter(|face| face.id == lp.face)))
+        let Some(face) = lp
+            .and_then(|lp| exactly_one(ir.geometry.faces.iter().filter(|face| face.id == lp.face)))
         else {
             continue;
         };
         shell_ids.insert(&face.shell);
     }
-    for shell in ir.model.shells.iter().filter(|shell| {
-        shell
-            .wire_edges()
-            .iter()
-            .any(|edge| selected.contains(edge))
-    }) {
+    for shell in ir
+        .geometry
+        .shells
+        .iter()
+        .filter(|shell| shell.wire_edges().any(|edge| selected.contains(edge)))
+    {
         shell_ids.insert(&shell.id);
     }
     let mut bodies = Vec::new();
     for shell_id in shell_ids {
-        let Some(shell) = exactly_one(ir.model.shells.iter().filter(|shell| shell.id == *shell_id))
-        else {
+        let Some(shell) = exactly_one(
+            ir.geometry
+                .shells
+                .iter()
+                .filter(|shell| shell.id == *shell_id),
+        ) else {
             continue;
         };
         let region = exactly_one(
-            ir.model
+            ir.geometry
                 .regions
                 .iter()
                 .filter(|region| region.id == shell.region),
         );
         let Some(region) = region.filter(|region| {
-            exactly_one(ir.model.bodies.iter().filter(|body| body.id == region.body)).is_some()
+            exactly_one(
+                ir.geometry
+                    .bodies
+                    .iter()
+                    .filter(|body| body.id == region.body),
+            )
+            .is_some()
         }) else {
             continue;
         };
@@ -248,7 +258,7 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
             namespace.kind(),
         );
         if exactly_one(
-            ir.model
+            ir.geometry
                 .bodies
                 .iter()
                 .filter(|body| body.id.as_str() == candidate),
@@ -272,7 +282,7 @@ pub(in super::super) fn evaluated_sweep_body_kind(
         "revolution" => "creo:feature:revolution#",
         _ => return None,
     };
-    exactly_one(ir.model.bodies.iter().filter(|body| {
+    exactly_one(ir.geometry.bodies.iter().filter(|body| {
         body.id
             .as_str()
             .strip_suffix(":body")

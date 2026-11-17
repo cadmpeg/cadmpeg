@@ -18,11 +18,12 @@ fn line_in_nurbs_carrier() -> (CadIr, CurveId) {
     )
     .unwrap();
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
         source_object: None,
+        native_ref: None,
     });
     (ir, curve_id)
 }

@@ -66,7 +66,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     };
     assert_eq!(
         serde_json::to_value(refusal).expect("serialize refusal")["refusal"],
-        serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "format": "step"}})
+        serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "value": "step"}})
     );
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
@@ -378,7 +378,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     let format = source.format().to_owned();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": format},
+            "identity": {"kind": "unclassified", "format": format},
             "attributes": source.attributes,
         }))
         .unwrap(),
@@ -487,11 +487,11 @@ fn recorded_digest(ir: &CadIr) -> Option<&String> {
 #[test]
 fn only_a_full_decode_records_the_digest() {
     let full = decode_at(DecodeDepth::Full);
-    assert_eq!(full.ir().decode_depth(), DecodeDepth::Full);
+    assert_eq!(full.ir().scope(), DecodeDepth::Full.scope());
     assert!(recorded_digest(full.ir()).is_some());
     for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
         let decoded = decode_at(depth);
-        assert_eq!(decoded.ir().decode_depth(), depth);
+        assert_eq!(decoded.ir().scope(), depth.scope());
         assert_eq!(recorded_digest(decoded.ir()), None, "{depth}");
     }
 }
@@ -567,7 +567,7 @@ fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
 
     let mut edited = decoded.ir().clone();
     let body = edited
-        .model
+        .geometry
         .bodies
         .first_mut()
         .expect("the fixture decodes a body");

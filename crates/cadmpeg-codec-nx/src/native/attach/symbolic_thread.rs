@@ -140,7 +140,10 @@ fn face_interval(
                     else {
                         return Ok(None);
                     };
-                    if !include(&edge.start)? || !include(&edge.end)? {
+                    let Some(ends) = &edge.ends else {
+                        return Ok(None);
+                    };
+                    if !include(&ends.start)? || !include(&ends.end)? {
                         return Ok(None);
                     }
                 }
@@ -155,20 +158,14 @@ fn cylinder_groups(
     ir: &CadIr,
 ) -> Result<Vec<PhysicalCylinder>, CodecError> {
     let index = ModelIndex::new_model_only(ir);
-    let owners = (ir
-        .model
+    let shells = ir
+        .geometry
         .shells
         .iter()
-        .flat_map(|shell| shell.faces().iter().map(move |face| (face.as_str(), shell))))
-    .fold(
-        std::collections::BTreeMap::<_, Vec<_>>::new(),
-        |mut groups, (key, value)| {
-            groups.entry(key).or_default().push(value);
-            groups
-        },
-    );
+        .map(|shell| (&shell.id, shell))
+        .collect::<std::collections::BTreeMap<_, _>>();
     let mut groups: Vec<PhysicalCylinder> = Vec::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         let Some(surface) = index.surfaces(face.surface.as_str(), cadmpeg_ir::index::StandardIndex)
         else {
             continue;
@@ -176,12 +173,9 @@ fn cylinder_groups(
         let Some(SolvedSurfaceGeometry::Cylinder(cylinder)) = surface.geometry.solved() else {
             continue;
         };
-        let Some([shell]) = owners.get(face.id.as_str()).map(Vec::as_slice) else {
+        let Some(shell) = shells.get(&face.shell) else {
             continue;
         };
-        if shell.id != face.shell {
-            continue;
-        }
         let Some(region) = index.regions(shell.region.as_str(), cadmpeg_ir::index::StandardIndex)
         else {
             continue;
@@ -194,9 +188,6 @@ fn cylinder_groups(
             continue;
         };
         if body.transform.is_some() {
-            continue;
-        }
-        if body.regions.iter().filter(|id| **id == region.id).count() != 1 {
             continue;
         }
         let direction = cylinder.frame().axis().as_raw();

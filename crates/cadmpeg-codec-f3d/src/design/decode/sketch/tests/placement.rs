@@ -781,6 +781,75 @@ fn legacy_sketch_nurbs_payload() -> Vec<u8> {
     bytes
 }
 
+/// A reference-run NURBS record whose four local references are typed.
+fn typed_reference_run_sketch_nurbs_payload() -> Vec<u8> {
+    const POINT: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
+    let mut bytes = Vec::new();
+    lp_ascii(&mut bytes, "431");
+    bytes.extend_from_slice(&1200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.push(1);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for (name, value) in [("crv_primary_id", 700u64), ("crv_secondary_id", 0)] {
+        lp_ascii(&mut bytes, name);
+        lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(bytes.len(), 133);
+    bytes.extend_from_slice(&[0xff; 8]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"432");
+    bytes.extend_from_slice(&1200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    push_typed_member_reference(&mut bytes, 1201, POINT);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&0.000_01f64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.push(1);
+    for target in [1202, 1203, 1204] {
+        push_typed_member_reference(&mut bytes, target, POINT);
+    }
+    bytes.extend_from_slice(&[1, 0]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e]);
+    for (values, count) in [
+        (vec![0.0f64, 0.0, 0.0, 1.0, 1.0, 1.0], 6u32),
+        (vec![1.0f64, 1.0, 1.0], 3),
+        (vec![0.0f64, 0.0, 0.0, 0.5, 0.75, 0.0, 1.0, 0.0, 0.0], 3),
+    ] {
+        bytes.extend_from_slice(&count.to_le_bytes());
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+#[test]
+fn typed_reference_run_sketch_nurbs_decodes_its_counted_arrays() {
+    let bytes = typed_reference_run_sketch_nurbs_payload();
+    let (geometry, end) = tested_decode_legacy_sketch_nurbs(&bytes, 0)
+        .transpose()
+        .expect("valid source scaling")
+        .expect("typed reference run NURBS");
+    let SketchCurveGeometry::Nurbs { geometry, .. } = geometry else {
+        panic!("expected NURBS");
+    };
+    assert_eq!(end, bytes.len());
+    assert_eq!(geometry.degree(), 2);
+    assert_eq!(geometry.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(
+        geometry.poles().points().nth(1).copied().unwrap(),
+        Point3::new(5.0, 7.5, 0.0)
+    );
+    // The fifth byte after the fit tolerance is `01` in the typed form.
+    let mut invalid = bytes;
+    invalid[133 + 94] = 0;
+    assert!(tested_decode_legacy_sketch_nurbs(&invalid, 0).is_none());
+}
+
 #[test]
 fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     let mut bytes = legacy_sketch_nurbs_payload();
@@ -992,6 +1061,92 @@ fn sketch_member_run_counts_base_point_and_stops_at_count() {
     assert_eq!(values(&bytes), Vec::<u32>::new());
 }
 
+fn push_typed_member_reference(bytes: &mut Vec<u8>, target: u32, guid: &str) {
+    bytes.push(1);
+    bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+    bytes.extend_from_slice(&36u32.to_le_bytes());
+    bytes.extend_from_slice(guid.as_bytes());
+    bytes.extend_from_slice(&[0, 0]);
+}
+
+/// A typed member-run record for sketch container 100 with `name`.
+fn typed_member_run_record(name: &str, members: &[u32]) -> Vec<u8> {
+    const HEAD: &str = "F47A46FB-DA27-4AFA-8A72-1B38FA596E23";
+    const POINT: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"306");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    push_typed_member_reference(&mut bytes, 316, HEAD);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1]);
+    let units: Vec<u16> = name.encode_utf16().collect();
+    bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+    for unit in units {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes.push(0);
+    bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+    for member in members {
+        push_typed_member_reference(&mut bytes, *member, POINT);
+    }
+    bytes
+}
+
+#[test]
+fn typed_legacy_sketch_pair_counts_members_after_the_sketch_name() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"305");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.resize(40, 0);
+    let paired_at = bytes.len();
+    bytes.extend_from_slice(&typed_member_run_record(
+        "Reconstructed-Sketch1",
+        &[317, 319],
+    ));
+    let members =
+        tested_parse_legacy_sketch_member_run(&bytes, 0, 100).expect("named typed member run");
+    assert_eq!(
+        members.iter().map(|row| row.value).collect::<Vec<_>>(),
+        [317, 319]
+    );
+    let first = paired_at + 81 + 2 * "Reconstructed-Sketch1".len() + 4;
+    assert_eq!(members[0].offset, u64_from_index(first + 1));
+}
+
+#[test]
+fn typed_sketch_member_run_follows_the_name_and_counts_typed_references() {
+    let values = |bytes: &[u8]| {
+        tested_parse_sketch_member_run(bytes, 0, 100)
+            .into_iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        values(&typed_member_run_record("", &[317, 319])),
+        [317, 319]
+    );
+    let named = typed_member_run_record("Reconstructed-Sketch1", &[317, 319, 321]);
+    assert_eq!(values(&named), [317, 319, 321]);
+    let located = tested_parse_sketch_member_run(&named, 0, 100);
+    let first = 81 + 2 * "Reconstructed-Sketch1".len() + 4;
+    assert_eq!(located[0].offset, u64_from_index(first + 1));
+    assert_eq!(located[1].offset, u64_from_index(first + 51 + 1));
+    // The container suffix must equal the record index of the paired record.
+    assert_eq!(tested_parse_sketch_member_run(&named, 0, 101), vec![]);
+    // A run that overruns the stream names no members.
+    let mut short = named.clone();
+    short.truncate(short.len() - 1);
+    assert_eq!(values(&short), Vec::<u32>::new());
+    // A name followed by a nonzero byte is not this form.
+    let mut broken = named;
+    let terminator = 80 + 2 * "Reconstructed-Sketch1".len();
+    broken[terminator] = 1;
+    assert_eq!(values(&broken), Vec::<u32>::new());
+}
+
 #[test]
 fn sketch_member_run_backfills_relation_free_owners() {
     let mut bytes = vec![0u8; 40];
@@ -1154,8 +1309,8 @@ fn compact_planar_line_admits_a_typed_trailing_reference() {
     assert!(truncated.is_none());
 }
 
-/// A compact planar line's z component is zero when it is at most one
-/// floating-point epsilon of the same vector's largest planar coordinate,
+/// A compact planar line's z component is zero when it is at most 1024
+/// floating-point epsilons of the same vector's largest planar coordinate,
 /// floored at 1 cm; a larger z keeps the line rejected.
 #[test]
 fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
@@ -1167,13 +1322,18 @@ fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
         0.5,
         f64::EPSILON
     ));
+    assert!(crate::design::decode::sketch::planar_z_is_zero(
+        0.0,
+        0.5,
+        1024.0 * f64::EPSILON
+    ));
     assert!(!crate::design::decode::sketch::planar_z_is_zero(
         0.0,
         0.5,
-        2.0 * f64::EPSILON
+        2048.0 * f64::EPSILON
     ));
     assert!(!crate::design::decode::sketch::planar_z_is_zero(
-        100.0, 0.0, 1.0e-12
+        100.0, 0.0, 1.0e-9
     ));
 
     let line = |z: f64| {

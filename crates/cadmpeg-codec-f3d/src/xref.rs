@@ -641,6 +641,9 @@ pub(crate) fn project_occurrences(
                 + cadmpeg_core::decode::u64_from_index(projection.occurrences.len());
             if used >= sources.limits.max_entities {
                 return Err(cadmpeg_core::decode::ResourceLimit {
+                    scope: cadmpeg_core::decode::LimitScope::for_dimension(
+                        cadmpeg_core::decode::ResourceDimension::Entities,
+                    ),
                     dimension: cadmpeg_core::decode::ResourceDimension::Entities,
                     reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
                     limit: sources.limits.max_entities,
@@ -1902,7 +1905,6 @@ fn same_external_target(
                 target: a,
                 segment: sa,
                 asset_guid: aa,
-                target_type_guid: ta,
                 link_name: ra,
                 version: va,
                 ..
@@ -1911,7 +1913,6 @@ fn same_external_target(
                 target: b,
                 segment: sb,
                 asset_guid: ab,
-                target_type_guid: tb,
                 link_name: rb,
                 version: vb,
                 ..
@@ -1920,7 +1921,10 @@ fn same_external_target(
             a == b
                 && sa == sb
                 && aa.eq_ignore_ascii_case(ab)
-                && ta.eq_ignore_ascii_case(tb)
+                && left
+                    .document_type()
+                    .zip(right.document_type())
+                    .is_some_and(|(a, b)| a.eq_ignore_ascii_case(b))
                 && ra == rb
                 && match (va, vb) {
                     (None, None) => true,
@@ -2329,8 +2333,14 @@ impl ClosingOccurrenceChain<'_> {
             return false;
         }
         let mut at = 0;
-        matches!(take_reference(self.references.window(), &mut at), Some(Reference::Local { target, inline_type_guid }) if target == placement && inline_type_guid.is_none_or(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)))
-            && matches!(take_reference(self.references.window(), &mut at), Some(Reference::CrossDocument { target: record, target_type_guid, link_name, .. }) if record == target && target_type_guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID) && link_name.eq_str(role))
+        if !matches!(take_reference(self.references.window(), &mut at), Some(Reference::Local { target, inline_type_guid }) if target == placement && inline_type_guid.is_none_or(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)))
+        {
+            return false;
+        }
+        let Some(reference) = take_reference(self.references.window(), &mut at) else {
+            return false;
+        };
+        matches!(&reference, Reference::CrossDocument { target: record, link_name, .. } if *record == target && reference.document_type().is_some_and(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)) && link_name.eq_str(role))
     }
 }
 
@@ -2538,16 +2548,11 @@ fn cross_document_target<'a>(
 ) -> Option<(u64, &'a str)> {
     match reference {
         Reference::CrossDocument {
-            target,
-            inline_type_guid,
-            target_type_guid,
-            link_name,
-            ..
+            target, link_name, ..
         } if *target != 0
-            && target_type_guid.eq_ignore_ascii_case(type_guid)
-            && inline_type_guid
-                .as_deref()
-                .is_none_or(|inline| inline.eq_ignore_ascii_case(target_type_guid)) =>
+            && reference
+                .document_type()
+                .is_some_and(|guid| guid.eq_ignore_ascii_case(type_guid)) =>
         {
             Some((*target, link_name.as_str()))
         }
@@ -2897,6 +2902,15 @@ pub(crate) fn identity_component_insert_carrier(
 /// not an admission key: the type-table identity and exact member framing are
 /// the stable discriminators.
 fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f64; 4]; 4]>)> {
+    legacy_occurrence_placement_details(body)
+        .map(|(link_name, _, transform)| (link_name, transform.map(|(_, matrix)| matrix)))
+}
+
+/// The legacy typed placement with the payload offset of its role and the
+/// offset of its matrix, relative to the record header.
+type LegacyPlacementDetails<'a> = (Utf16View<'a>, usize, Option<(usize, [[f64; 4]; 4])>);
+
+fn legacy_occurrence_placement_details(body: &[u8]) -> Option<LegacyPlacementDetails<'_>> {
     let (mut at, targets_match) = legacy_occurrence_prefix(body, false)?;
     if !targets_match {
         return None;
@@ -2907,8 +2921,9 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
         1 => None,
         0 => {
             let matrix = decode_rigid_matrix(body, at)?;
+            let offset = at;
             at = at.checked_add(128)?;
-            Some(matrix)
+            Some((offset, matrix))
         }
         _ => return None,
     };
@@ -2916,6 +2931,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
         return None;
     }
     at += 4;
+    let role_offset = at.checked_add(4)?;
     let (link_name, after_role) = lp_utf16_bounded_view(body, at, 36..=36)?;
     if !link_name.is_guid_relaxed() {
         return None;
@@ -2925,7 +2941,35 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
         return None;
     }
     at += 12;
-    (at == body.len()).then_some((link_name, transform))
+    (at == body.len()).then_some((link_name, role_offset, transform))
+}
+
+/// Bind a legacy typed occurrence placement to a Component Insert scope
+/// through its relation record. The carrier ends at the relation record, and
+/// its placement equals the scope transform.
+pub(crate) fn legacy_typed_component_insert_carrier(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+    expected_transform: [[f64; 4]; 4],
+) -> Option<(String, usize, Option<usize>)> {
+    let body = bytes.get(carrier_at..relation_at)?;
+    if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
+        return None;
+    }
+    let (role, role_offset, transform) = legacy_occurrence_placement_details(body)?;
+    let matrix = transform.map_or(
+        cadmpeg_ir::transform::Transform::identity().rows(),
+        |(_, matrix)| matrix,
+    );
+    (matrix == expected_transform).then(|| {
+        (
+            role.to_string(),
+            carrier_at + role_offset,
+            transform.map(|(offset, _)| carrier_at + offset),
+        )
+    })
 }
 
 /// Return the role from a structurally valid legacy placement prefix.

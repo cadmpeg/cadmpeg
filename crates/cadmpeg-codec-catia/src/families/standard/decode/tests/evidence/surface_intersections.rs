@@ -35,7 +35,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         .into_iter()
         .enumerate()
     {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
@@ -43,7 +43,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         ));
     }
     for index in 0..2 {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -59,6 +59,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     let support = StandardCurveSupport {
@@ -114,9 +115,9 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, Some([0.0, 3.0]));
-    assert_eq!(ir.model.curves[0].id, id);
+    assert_eq!(ir.geometry.curves[0].id, id);
     assert_eq!(
-        ir.model.curves[0].geometry.solved_cache(),
+        ir.geometry.curves[0].geometry.solved_cache(),
         Some(&SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(1.0, 0.0, 0.0),
@@ -125,13 +126,16 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
             .expect("valid LineCurve fixture")
         ))
     );
-    let [procedural] = ir.model.procedural_curves.as_slice() else {
+    let [procedural] = ir.geometry.procedural_curves.as_slice() else {
         panic!("one procedural curve");
     };
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("intersection construction");
     };
-    assert_eq!(ir.model.procedural_curve_owner(&procedural.id), Some(&id));
+    assert_eq!(
+        ir.geometry.procedural_curve_owner(&procedural.id),
+        Some(&id)
+    );
     assert!(context.sides()[0]
         .surface
         .as_ref()
@@ -148,7 +152,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let section_radius = 3.0_f64.sqrt();
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [
             Point3::new(1.0 + section_radius, 3.0, 3.0),
             Point3::new(1.0 - section_radius, 3.0, 3.0),
@@ -168,7 +172,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         SurfaceId::mint("catia:test:surface#sphere".to_string()).expect("identity grammar");
     let plane_id =
         SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         Surface {
             id: sphere_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
@@ -181,6 +185,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
                 .expect("valid SphereSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: plane_id.clone(),
@@ -193,6 +198,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let support = StandardCurveSupport {
@@ -224,7 +230,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
-    let Some(SolvedCurveGeometry::Circle(circle_curve)) = ir.model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) = ir.geometry.curves[0].geometry.solved()
     else {
         panic!("sphere-plane spline did not derive a circle");
     };
@@ -234,8 +240,8 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
     assert!(center.distance(Point3::new(1.0, 3.0, 3.0)) <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
     assert!(axis.cross(Vector3::new(0.0, 1.0, 0.0)).norm() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
     assert!((radius - section_radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
-    assert_eq!(ir.model.curves[0].id, id);
-    assert!(ir.model.procedural_curves.is_empty());
+    assert_eq!(ir.geometry.curves[0].id, id);
+    assert!(ir.geometry.procedural_curves.is_empty());
 }
 
 #[test]
@@ -243,7 +249,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let sqrt_three = 3.0_f64.sqrt();
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [
             Point3::new(0.0, -2.0 / sqrt_three, -2.0),
             Point3::new(0.0, 2.0 / sqrt_three, 2.0),
@@ -263,7 +269,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         SurfaceId::mint("catia:test:surface#cylinder".to_string()).expect("identity grammar");
     let plane_id =
         SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         Surface {
             id: cylinder_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -276,6 +282,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: plane_id.clone(),
@@ -288,6 +295,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let support = StandardCurveSupport {
@@ -322,7 +330,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
-    let Some(SolvedCurveGeometry::Ellipse(ellipse_curve)) = ir.model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Ellipse(ellipse_curve)) = ir.geometry.curves[0].geometry.solved()
     else {
         panic!("cylinder-plane spline did not derive an ellipse");
     };
@@ -344,15 +352,15 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
     );
     assert!((major_radius - 4.0 / sqrt_three).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE);
     assert!((minor_radius - 2.0).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE);
-    assert_eq!(ir.model.curves[0].id, id);
-    assert!(ir.model.procedural_curves.is_empty());
+    assert_eq!(ir.geometry.curves[0].id, id);
+    assert!(ir.geometry.procedural_curves.is_empty());
 }
 
 #[test]
 fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [Point3::new(2.0, 0.0, 2.0), Point3::new(-2.0, 0.0, -2.0)]
             .into_iter()
             .enumerate()
@@ -370,7 +378,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
         SurfaceId::mint("catia:test:surface#first-cylinder".to_string()).expect("identity grammar");
     let second_id = SurfaceId::mint("catia:test:surface#second-cylinder".to_string())
         .expect("identity grammar");
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         Surface {
             id: first_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -383,6 +391,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: second_id.clone(),
@@ -396,6 +405,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let support = StandardCurveSupport {
@@ -427,7 +437,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
-    let Some(SolvedCurveGeometry::Ellipse(ellipse_curve)) = ir.model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Ellipse(ellipse_curve)) = ir.geometry.curves[0].geometry.solved()
     else {
         panic!("perpendicular cylinders did not select an ellipse branch");
     };
@@ -450,14 +460,14 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
     );
     assert!((major_radius - 2.0 * 2.0_f64.sqrt()).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
     assert!((minor_radius - 2.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
-    assert_eq!(ir.model.curves[0].id, id);
-    assert!(ir.model.procedural_curves.is_empty());
+    assert_eq!(ir.geometry.curves[0].id, id);
+    assert!(ir.geometry.procedural_curves.is_empty());
 }
 
 #[test]
 fn standard_spline_retains_a_procedural_rolling_ball_support() {
     let mut ir = CadIr::empty();
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
             .into_iter()
             .enumerate()
@@ -559,28 +569,28 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
     })
     .expect("valid source object identity");
     let curve = curve.expect("procedural support identifies the curve");
-    assert_eq!(ir.model.surfaces.len(), 2);
-    let [procedural] = ir.model.procedural_surfaces.as_slice() else {
+    assert_eq!(ir.geometry.surfaces.len(), 2);
+    let [procedural] = ir.geometry.procedural_surfaces.as_slice() else {
         panic!("one procedural surface");
     };
     assert_eq!(
-        ir.model
+        ir.geometry
             .procedural_surface_owner(&procedural.id)
             .map(cadmpeg_ir::ids::SurfaceId::as_str),
         Some("catia:standard:edge-support-surface#21")
     );
     assert_eq!(procedural.definition(), &rolling_ball_definition);
     assert!(ir
-        .model
+        .geometry
         .procedural_curves
         .iter()
-        .any(|construction| ir.model.procedural_curve_owner(&construction.id) == Some(&curve)));
+        .any(|construction| ir.geometry.procedural_curve_owner(&construction.id) == Some(&curve)));
 }
 
 #[test]
 fn standard_intersection_entity_limit_refuses_before_procedural_curve_creation() {
     let mut ir = CadIr::empty();
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
             .into_iter()
             .enumerate()
@@ -653,9 +663,9 @@ fn standard_intersection_entity_limit_refuses_before_procedural_curve_creation()
         assert_eq!(limit.used, 3);
         assert_eq!(limit.operation, "admit CATIA family model entity");
     });
-    assert_eq!(ir.model.curves.len(), 1);
-    assert_eq!(ir.model.surfaces.len(), 2);
-    assert!(ir.model.procedural_curves.is_empty());
+    assert_eq!(ir.geometry.curves.len(), 1);
+    assert_eq!(ir.geometry.surfaces.len(), 2);
+    assert!(ir.geometry.procedural_curves.is_empty());
 }
 
 #[test]
@@ -668,13 +678,14 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
     };
     let solve = |geometry, points: [Point3; 2]| {
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#surface".to_string())
                 .expect("identity grammar"),
             geometry,
             source_object: None,
+            native_ref: None,
         });
-        ir.model
+        ir.geometry
             .points
             .extend(points.into_iter().enumerate().map(|(index, position)| {
                 Point::new(

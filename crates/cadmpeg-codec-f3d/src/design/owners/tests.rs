@@ -43,7 +43,8 @@ fn model(native: &F3dNative) -> Model {
     for space in &native.design_component_naming_spaces {
         model.product_definitions.push(
             serde_json::from_value(serde_json::json!({
-                "id": crate::ids::neutral_component_id(&space.context_uuid), "kind": "part"
+                "id": crate::ids::neutral_component_id(&space.context_uuid), "kind": "part",
+                "bom_properties": {}, "bodies": [], "sketches": []
             }))
             .unwrap(),
         );
@@ -124,7 +125,8 @@ fn product_history_owner_reports_missing_and_multiple_definitions() {
         .design_component_naming_spaces
         .push(space(30, "33333333-3333-3333-3333-333333333333"));
     model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id": crate::ids::neutral_component_id(&native.design_component_naming_spaces[2].context_uuid), "kind": "part"
+        "id": crate::ids::neutral_component_id(&native.design_component_naming_spaces[2].context_uuid), "kind": "part",
+                "bom_properties": {}, "bodies": [], "sketches": []
     })).unwrap());
     losses.clear();
     attach(&native, &mut model, &mut losses).unwrap();
@@ -151,7 +153,8 @@ fn product_history_owner_attaches_bound_planar_sketch_to_component() {
     let mut model = model(&native);
     let sketch: cadmpeg_ir::sketches::Sketch = serde_json::from_value(serde_json::json!({
         "id": "test:model:sketch#profile",
-        "placement": {"kind": "unresolved"}
+        "placement": {"kind": "unresolved"},
+        "profiles": []
     }))
     .unwrap();
     model.features[0].evaluation = FeatureEvaluation::from_definition(
@@ -293,7 +296,8 @@ fn sketch_model(native: &F3dNative, sketch_id: &str) -> (Model, cadmpeg_ir::sket
     let mut model = model(native);
     let sketch: cadmpeg_ir::sketches::Sketch = serde_json::from_value(serde_json::json!({
         "id": sketch_id,
-        "placement": {"kind": "unresolved"}
+        "placement": {"kind": "unresolved"},
+        "profiles": []
     }))
     .unwrap();
     let id = sketch.id.clone();
@@ -495,7 +499,20 @@ fn attach(
     model: &mut Model,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    super::attach_with_implicit_roots(native, model, losses, &BTreeSet::new())
+    attach_with_implicit_roots(native, model, losses, &BTreeSet::new())
+}
+
+fn attach_with_implicit_roots(
+    native: &F3dNative,
+    model: &mut Model,
+    losses: &mut Vec<LossNote>,
+    implicit_roots: &BTreeSet<ProductDefinitionId>,
+) -> Result<(), CodecError> {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model = std::mem::take(model);
+    let attached = super::attach_with_implicit_roots(native, &mut ir, losses, implicit_roots);
+    *model = ir.model;
+    attached
 }
 
 #[test]
@@ -505,8 +522,7 @@ fn product_history_implicit_root_uses_archive_owner_until_release() {
     let mut model = model(&native);
     let root = model.product_definitions.remove(0).id;
     let mut losses = Vec::new();
-    super::attach_with_implicit_roots(&native, &mut model, &mut losses, &BTreeSet::from([root]))
-        .unwrap();
+    attach_with_implicit_roots(&native, &mut model, &mut losses, &BTreeSet::from([root])).unwrap();
     assert!(losses.is_empty());
     assert!(model
         .features

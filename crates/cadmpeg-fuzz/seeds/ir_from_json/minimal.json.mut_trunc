@@ -1,14 +1,22 @@
 {
-  "ir_version": "10",
-  "decode_depth": "full",
+  "ir_version": "11",
+  "fragment": false,
+  "scope": {
+    "model": true,
+    "design": true,
+    "process": true
+  },
   "units": {
-    "length": "millimeter"
+    "length": "millimeter",
+    "angle": "radian",
+    "mass": "kilogram",
+    "time": "second"
   },
   "tolerances": {
     "linear": 1e-6,
     "angular": 1e-10
   },
-  "model": {
+  "geometry": {
     "bodies": [],
     "regions": [],
     "shells": [],
@@ -23,7 +31,25 @@
     "subds": [],
     "pcurves": [],
     "procedural_surfaces": [],
-    "procedural_curves": [],
+    "procedural_curves": []
+  },
+  "model": {
+    "assets": [],
     "features": [],
+    "feature_input_topologies": [],
+    "feature_result_topologies": [],
     "configurations": [],
-    "parameters":
+    "parameters": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
+    "spreadsheets": [],
+    "product_definitions": [],
+    "occurrences": [],
+    "assembly_joints": [],
+    "drawings": [],
+    "semantic_annotations": [],
+    "presentation_documents": []

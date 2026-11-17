@@ -72,7 +72,7 @@ fn complete_authored_inputs_cover_nested_sketch_geometry_and_constraints() {
 fn complete_authored_inputs_cover_presentation_metadata_and_pmi() {
     use cadmpeg_ir::appearance::AppearanceTarget;
     use cadmpeg_ir::attributes::AttributeValue;
-    const EPS_AUTHORED_COLOR_COMPONENT: f32 = f32::EPSILON;
+    const EPS_AUTHORED_COLOR_COMPONENT: f64 = 1.0e-7;
     let fixtures = harness().fixture_inputs();
     for name in [
         "authored_partition_deltas_color",
@@ -104,7 +104,7 @@ fn complete_authored_inputs_cover_presentation_metadata_and_pmi() {
                 assert_eq!(ir.model.appearances.len(), 1);
                 assert_eq!(ir.model.appearance_bindings.len(), 1);
                 assert!(
-                    matches!(&ir.model.appearance_bindings[0].target, AppearanceTarget::Face(face) if face == &ir.model.faces[0].id)
+                    matches!(&ir.model.appearance_bindings[0].target.entity, AppearanceTarget::Face(face) if face == &ir.geometry.faces[0].id)
                 );
                 let color = ir.model.appearances[0]
                     .base_color
@@ -132,11 +132,11 @@ fn complete_authored_inputs_cover_presentation_metadata_and_pmi() {
                 assert_eq!(ir.model.tessellations.len(), 1);
                 assert_eq!(
                     ir.model.tessellations[0].body.as_ref(),
-                    Some(&ir.model.bodies[0].id)
+                    Some(&ir.geometry.bodies[0].id)
                 );
                 assert_eq!(
                     ir.model.tessellations[0].faces,
-                    [ir.model.faces[0].id.clone()]
+                    [ir.geometry.faces[0].id.clone()]
                 );
             }
             "authored_document_envelope" => {

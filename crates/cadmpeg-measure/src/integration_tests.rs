@@ -13,6 +13,7 @@ mod cylinders;
 mod declared;
 mod extrusion;
 mod findings;
+mod history_bodies;
 mod mass;
 mod nurbs;
 mod occurrences;

@@ -104,7 +104,7 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
     feature.dependencies.clear();
     feature.source_content = FeatureContent::default();
     let wire = serde_json::to_value(&feature).unwrap();
-    assert!(wire.get("dependencies").is_none());
-    assert!(wire.get("source_content").is_none());
+    assert_eq!(wire["dependencies"], serde_json::json!([]));
+    assert_eq!(wire["source_content"], serde_json::json!([]));
     assert_eq!(serde_json::from_value::<Feature>(wire).unwrap(), feature);
 }

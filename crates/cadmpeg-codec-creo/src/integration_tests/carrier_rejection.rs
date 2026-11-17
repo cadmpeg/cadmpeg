@@ -80,7 +80,7 @@ fn compact_plane_decode_and_validation_use_the_same_finite_frame() {
         .expect("decode compact plane");
     let plane = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find_map(|surface| {
@@ -120,7 +120,7 @@ fn compact_plane_missing_origin_keeps_the_specific_loss() {
             &DecodeOptions::default(),
         )
         .expect("retain incomplete plane");
-    assert!(!result.ir().model.surfaces.iter().any(|surface| {
+    assert!(!result.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "creo:visibgeom:surface#7"
             && matches!(
                 surface.geometry,

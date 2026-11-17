@@ -35,6 +35,7 @@ jobs:
           set -euo pipefail
 
           crates=(
+            cadmpeg-derive
             cadmpeg-core
             cadmpeg-container
             cadmpeg-parasolid

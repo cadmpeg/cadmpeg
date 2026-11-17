@@ -580,37 +580,26 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         },
     )
     .unwrap();
-    let body = |id: &str, region: &str, visible| Body {
+    let body = |id: &str, visible| Body {
         id: BodyId::mint(id).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint(region).expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible,
+        native_ref: None,
     };
     let bodies = [
-        body(
-            "f3d:brep/current/brep:body#1",
-            "test:model:region#current-region",
-            Some(true),
-        ),
-        body(
-            "f3d:brep/external/brep:body#1",
-            "test:model:region#external-region",
-            Some(true),
-        ),
-        body(
-            "f3d:brep/cache/brep:body#1",
-            "test:model:region#cache-region",
-            None,
-        ),
+        body("f3d:brep/current/brep:body#1", Some(true)),
+        body("f3d:brep/external/brep:body#1", Some(true)),
+        body("f3d:brep/cache/brep:body#1", None),
     ];
     let regions = [
         Region {
             id: RegionId::mint("test:model:region#current-region").expect("identity grammar"),
             body: bodies[0].id.clone(),
             shells: vec![ShellId::mint("test:model:shell#current-shell").expect("identity grammar")],
+            native_ref: None,
         },
         Region {
             id: RegionId::mint("test:model:region#external-region").expect("identity grammar"),
@@ -618,41 +607,60 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
             shells: vec![
                 ShellId::mint("test:model:shell#external-shell").expect("identity grammar")
             ],
+            native_ref: None,
         },
         Region {
             id: RegionId::mint("test:model:region#cache-region").expect("identity grammar"),
             body: bodies[2].id.clone(),
             shells: vec![ShellId::mint("test:model:shell#cache-shell").expect("identity grammar")],
+            native_ref: None,
         },
     ];
-    let shell = |id: &str, region: &str, face: &str| {
-        Shell::with_face(
+    let shell = |id: &str, region: &str| {
+        Shell::new(
             ShellId::mint(id).expect("identity grammar"),
             RegionId::mint(region).expect("identity grammar"),
-            FaceId::mint(face).expect("identity grammar"),
         )
     };
     let shells = [
         shell(
             "test:model:shell#current-shell",
             "test:model:region#current-region",
-            "f3d:brep/current/brep:face#1",
         ),
         shell(
             "test:model:shell#external-shell",
             "test:model:region#external-region",
-            "f3d:brep/external/brep:face#1",
         ),
         shell(
             "test:model:shell#cache-shell",
             "test:model:region#cache-region",
+        ),
+    ];
+    let faces = [
+        crate::test_support::bare_face(
+            "f3d:brep/current/brep:face#1",
+            "test:model:shell#current-shell",
+        ),
+        crate::test_support::bare_face(
+            "f3d:brep/external/brep:face#1",
+            "test:model:shell#external-shell",
+        ),
+        crate::test_support::bare_face(
             "f3d:brep/cache/brep:face#1",
+            "test:model:shell#cache-shell",
         ),
     ];
 
     assert_eq!(
-        crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
-            .external(&operand, Some("current")),
+        crate::history::body_candidates::BodyCandidates::new(
+            &bodies,
+            &regions,
+            &shells,
+            &faces,
+            &[],
+            &[]
+        )
+        .external(&operand, Some("current")),
         Some(bodies[1].id.clone())
     );
 
@@ -674,10 +682,45 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     operand =
         crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap();
     assert_eq!(
-        crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
-            .external(&operand, Some("current")),
+        crate::history::body_candidates::BodyCandidates::new(
+            &bodies,
+            &regions,
+            &shells,
+            &faces,
+            &[],
+            &[]
+        )
+        .external(&operand, Some("current")),
         None
     );
+}
+
+/// A state of the `BREP.input` history with the given topology.
+fn recipe_state(
+    state_id: i64,
+    topology: AsmHistoricalTopology,
+    next_ref: Option<i64>,
+) -> crate::test_support::history::State {
+    (
+        AsmDeltaState {
+            id: format!("f3d:Breps.BlobParts/BREP.input:asm-delta-state#{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        Some(topology),
+        Vec::new(),
+    )
 }
 
 fn body_recipe_history_fixture() -> (
@@ -789,28 +832,7 @@ fn body_recipe_history_fixture() -> (
         ],
         ..AsmHistoricalTopology::default()
     };
-    let state = |state_id, topology, next_ref| {
-        (
-            AsmDeltaState {
-                id: format!("f3d:Breps.BlobParts/BREP.input:asm-delta-state#{state_id}"),
-                parent: "history".into(),
-                byte_offset: 0,
-                state_id,
-                version_flag: 1,
-                state_flag: 0,
-                previous_ref: None,
-                next_ref,
-                node_index: state_id,
-                partner_ref: None,
-                owner_ref: 0,
-                bulletin_boards: Vec::new(),
-                records: Vec::new(),
-                transition: None,
-            },
-            Some(topology),
-            Vec::new(),
-        )
-    };
+    let state = recipe_state;
     let previous = state(1, topology.clone(), None);
     let current = state(2, topology, Some(1));
     let history = crate::test_support::history::history(
@@ -882,12 +904,18 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
     );
 }
 
-#[test]
-fn direct_body_recipe_selection_resolves_compact_coil_target() {
-    use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, ScaleCenter,
-        ScaleFactors,
-    };
+/// A coil scope whose body recipe operand 21 selects model body
+/// `f3d:brep:body#1` through its face `f3d:brep:entity#7`.
+fn direct_body_fixture() -> (
+    crate::records::feature::scope::DesignParameterScope,
+    &'static str,
+    DesignConstructionOperandGroup,
+    crate::records::topology::body_recipe::DesignBodyRecipeOperand,
+    cadmpeg_ir::topology::Body,
+    cadmpeg_ir::topology::Region,
+    cadmpeg_ir::topology::Shell,
+    cadmpeg_ir::topology::Face,
+) {
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
@@ -994,22 +1022,35 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let body = Body {
         id: BodyId::mint("f3d:brep:body#1").expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("test:model:region#1").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: Some(true),
+        native_ref: None,
     };
     let region = Region {
         id: RegionId::mint("test:model:region#1").expect("identity grammar"),
         body: body.id.clone(),
         shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
+        native_ref: None,
     };
-    let shell = Shell::with_face(
+    let shell = Shell::new(
         ShellId::mint("test:model:shell#1").expect("identity grammar"),
         region.id.clone(),
-        FaceId::mint("f3d:brep:entity#7").expect("identity grammar"),
     );
+    let face = crate::test_support::bare_face("f3d:brep:entity#7", "test:model:shell#1");
+    (scope, group_id, group, operand, body, region, shell, face)
+}
+
+#[test]
+fn direct_body_recipe_selection_resolves_compact_coil_target() {
+    use cadmpeg_ir::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, ScaleCenter,
+        ScaleFactors,
+    };
+    use cadmpeg_ir::ids::BodyId;
+
+    let (scope, group_id, group, operand, body, region, shell, face) = direct_body_fixture();
     let inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),
@@ -1020,6 +1061,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
     };
     let mut selection = BodySelection::Native(group_id.into());
     super::super::bind_direct_body_recipe_body_selection(
@@ -1030,6 +1072,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
@@ -1082,6 +1125,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         std::slice::from_ref(&body),
         std::slice::from_ref(&region),
         std::slice::from_ref(&shell),
+        std::slice::from_ref(&face),
         std::slice::from_ref(&recipe),
         std::slice::from_ref(&link),
     );
@@ -1096,6 +1140,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(
             std::slice::from_ref(&body),
+            &[],
             &[],
             &[],
             std::slice::from_ref(&recipe),
@@ -1114,6 +1159,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             std::slice::from_ref(&body),
             &[],
             &[],
+            &[],
             std::slice::from_ref(&recipe),
             &links
         )
@@ -1126,6 +1172,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(
             std::slice::from_ref(&body),
+            &[],
             &[],
             &[],
             std::slice::from_ref(&recipe),
@@ -1141,6 +1188,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(
             &[body.clone(), second_body],
+            &[],
             &[],
             &[],
             std::slice::from_ref(&recipe),
@@ -1164,6 +1212,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
     };
     let native = format!(
         "{}:design-record#21",
@@ -1178,6 +1227,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
@@ -1221,6 +1271,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
     };
     let mut feature = Feature {
         product_definition: None,
@@ -1281,6 +1332,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
     };
     let mut move_feature = Feature {
         product_definition: None,
@@ -1450,4 +1502,206 @@ fn wrapped_face_history_record_keeps_dispatch_references_and_bytes() {
     };
     assert_eq!(*index, 0);
     assert_eq!(entity_references, &references);
+}
+
+/// The fixture operand with `candidate` as its one candidate face, bound
+/// against a preceding state that holds `bodies` and none of the operand's
+/// faces.
+fn sole_body_case(candidate: &str, bodies: Vec<i64>) -> Option<i64> {
+    let (scope, _, mut operands, _) = body_recipe_history_fixture();
+    for reference in operands[0].reference_bindings_mut() {
+        *reference.candidate_faces =
+            vec![cadmpeg_ir::ids::FaceId::mint(candidate).expect("identity grammar")];
+    }
+    let topology = AsmHistoricalTopology {
+        bodies,
+        ..AsmHistoricalTopology::default()
+    };
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![
+            recipe_state(2, topology.clone(), Some(1)),
+            recipe_state(1, topology, None),
+        ],
+    );
+    bind_body_recipe_operand_history_candidates(
+        &mut operands,
+        &[],
+        std::slice::from_ref(&scope),
+        BindingHistories::Shared(std::slice::from_ref(&history)),
+    )
+    .unwrap();
+    operands[0].resolved_body_slot
+}
+
+#[test]
+fn a_body_operand_of_the_same_brep_selects_the_only_body_of_its_state() {
+    assert_eq!(sole_body_case("f3d:brep:entity#99", vec![7]), Some(7));
+    assert_eq!(
+        sole_body_case("f3d:brep/input/brep:entity#99", vec![7]),
+        Some(7)
+    );
+}
+
+#[test]
+fn a_body_operand_keeps_an_open_slot_in_a_state_of_two_bodies_or_of_another_brep() {
+    assert_eq!(sole_body_case("f3d:brep:entity#99", vec![7, 8]), None);
+    assert_eq!(
+        sole_body_case("f3d:brep/other/brep:entity#99", vec![7]),
+        None
+    );
+}
+
+/// A `RemoveBody` in the coil fixture's scope whose operand resolved body
+/// slot `slot` through its recipe identity. Its face match selects the
+/// displayed fixture body, slot 1.
+fn direct_remove_case(slot: Option<i64>) -> cadmpeg_ir::features::BodySelection {
+    use cadmpeg_ir::features::{
+        BodyRetentionMode, BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
+    let (scope, group_id, group, mut operand, body, region, shell, face) = direct_body_fixture();
+    operand.resolved_body_slot = slot;
+    let mut feature = Feature {
+        product_definition: None,
+        id: FeatureId::mint("f3d:test:feature#remove").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+                bodies: BodySelection::Native(group_id.into()),
+                mode: BodyRetentionMode::DeleteSelected,
+            }),
+        ),
+        native_ref: Some(scope.id.clone()),
+    };
+    let inputs = super::super::FeatureBodySelectionInputs {
+        scopes: std::slice::from_ref(&scope),
+        groups: std::slice::from_ref(&group),
+        body_recipe_operands: std::slice::from_ref(&operand),
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &[],
+        bodies: std::slice::from_ref(&body),
+        regions: std::slice::from_ref(&region),
+        shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
+    };
+    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+    match feature.evaluation.definition() {
+        FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) => bodies.clone(),
+        definition => panic!("removal definition: {definition:?}"),
+    }
+}
+
+#[test]
+fn a_remove_keeps_its_selection_native_when_the_face_match_contradicts_the_recipe_slot() {
+    use cadmpeg_ir::features::BodySelection;
+    for slot in [None, Some(1)] {
+        assert!(
+            matches!(
+                direct_remove_case(slot),
+                BodySelection::Resolved { bodies, .. }
+                    if bodies.as_slice().iter().map(cadmpeg_ir::ids::BodyId::as_str).eq(["f3d:brep:body#1"])
+            ),
+            "slot {slot:?}"
+        );
+    }
+    assert!(matches!(
+        direct_remove_case(Some(7)),
+        BodySelection::Native(native)
+            if native == "f3d:Design/BulkStream.dat:design-construction-operand-group#20"
+    ));
+}
+
+/// A body pattern in the coil fixture's scope whose seed operand resolved
+/// body slot `slot` through its recipe identity. Its face match selects the
+/// displayed fixture body, slot 1.
+fn direct_pattern_seed_case(slot: Option<i64>) -> cadmpeg_ir::features::BodySelection {
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternSeed},
+        Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
+    let (scope, _, group, mut operand, body, region, shell, face) = direct_body_fixture();
+    operand.resolved_body_slot = slot;
+    let mut feature = Feature {
+        product_definition: None,
+        id: FeatureId::mint("f3d:test:feature#mirror").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED_MIRROR,
+            }),
+        ),
+        native_ref: Some(scope.id.clone()),
+    };
+    let inputs = super::super::FeatureBodySelectionInputs {
+        scopes: std::slice::from_ref(&scope),
+        groups: std::slice::from_ref(&group),
+        body_recipe_operands: std::slice::from_ref(&operand),
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &[],
+        bodies: std::slice::from_ref(&body),
+        regions: std::slice::from_ref(&region),
+        shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
+    };
+    super::super::bind_pattern_body_selections(
+        std::slice::from_mut(&mut feature),
+        &inputs,
+        &mut crate::history::body_candidates::BodyCandidates::new(
+            inputs.bodies,
+            inputs.regions,
+            inputs.shells,
+            inputs.faces,
+            inputs.construction_recipes,
+            inputs.persistent_design_links,
+        ),
+    );
+    match feature.evaluation.definition() {
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
+            match seeds.as_slice() {
+                [PatternSeed::Bodies(selection)] => selection.clone(),
+                seeds => panic!("one body seed: {seeds:?}"),
+            }
+        }
+        definition => panic!("pattern definition: {definition:?}"),
+    }
+}
+
+#[test]
+fn a_pattern_seed_stays_native_when_the_face_match_contradicts_the_recipe_slot() {
+    use cadmpeg_ir::features::BodySelection;
+    for slot in [None, Some(1)] {
+        assert!(
+            matches!(
+                direct_pattern_seed_case(slot),
+                BodySelection::Resolved { bodies, .. }
+                    if bodies.as_slice().iter().map(cadmpeg_ir::ids::BodyId::as_str).eq(["f3d:brep:body#1"])
+            ),
+            "slot {slot:?}"
+        );
+    }
+    assert!(matches!(
+        direct_pattern_seed_case(Some(7)),
+        BodySelection::Native(native)
+            if native == "f3d:Design/BulkStream.dat:design-construction-operand-group#20"
+    ));
 }

@@ -357,16 +357,16 @@ fn depths(ir: &mut cadmpeg_ir::CadIr) -> Vec<f64> {
 
 /// The size of each topological arena, so a rewrite that loses one fails.
 fn arena_sizes(ir: &cadmpeg_ir::CadIr) -> [usize; 8] {
-    let model = &ir.model;
+    let geometry = &ir.geometry;
     [
-        model.bodies.len(),
-        model.regions.len(),
-        model.shells.len(),
-        model.faces.len(),
-        model.loops.len(),
-        model.coedges.len(),
-        model.edges.len(),
-        model.vertices.len(),
+        geometry.bodies.len(),
+        geometry.regions.len(),
+        geometry.shells.len(),
+        geometry.faces.len(),
+        geometry.loops.len(),
+        geometry.coedges.len(),
+        geometry.edges.len(),
+        geometry.vertices.len(),
     ]
 }
 
@@ -511,7 +511,7 @@ fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration(
             1,
             "{name}"
         );
-        assert_eq!(ir.model.surfaces.len(), 1, "{name}: one face carrier");
+        assert_eq!(ir.geometry.surfaces.len(), 1, "{name}: one face carrier");
         let expected_curves = match name {
             "authored_complete_planar" | "authored_complete_history" => 0,
             "authored_complete_cylinder" => 3,
@@ -520,11 +520,11 @@ fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration(
             _ => unreachable!(),
         };
         assert_eq!(
-            ir.model.curves.len(),
+            ir.geometry.curves.len(),
             expected_curves,
             "{name}: exact curve carriers"
         );
-        let surface = &ir.model.surfaces[0].geometry;
+        let surface = &ir.geometry.surfaces[0].geometry;
         match name {
             "authored_complete_planar" | "authored_complete_history" => assert!(matches!(
                 surface,
@@ -546,7 +546,7 @@ fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration(
                 assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
                 assert_eq!(nurbs.poles().len(), 4);
                 assert_eq!(
-                    ir.model
+                    ir.geometry
                         .curves
                         .iter()
                         .filter(|curve| matches!(
@@ -588,20 +588,30 @@ fn a_planar_face_loop_runs_counter_clockwise_about_its_normal() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .expect("planar fixture decodes");
-    let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let position = |vertex: &cadmpeg_ir::ids::VertexId| {
-        let vertex = model.vertices.iter().find(|v| &v.id == vertex).unwrap();
-        let point = model.points.iter().find(|p| p.id == vertex.point).unwrap();
+        let vertex = geometry.vertices.iter().find(|v| &v.id == vertex).unwrap();
+        let point = geometry
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap();
         point.position().get()
     };
     // The face is forward on the plane z = 0 with normal +z.
     let mut twice_area = 0.0;
-    for id in model.loops[0].coedges() {
-        let coedge = model.coedges.iter().find(|c| &c.id == id).unwrap();
-        let edge = model.edges.iter().find(|e| e.id == coedge.edge).unwrap();
+    for id in geometry.loops[0].coedges() {
+        let coedge = geometry.coedges.iter().find(|c| &c.id == id).unwrap();
+        let edge = geometry.edges.iter().find(|e| e.id == coedge.edge).unwrap();
         let (start, end) = match coedge.sense {
-            cadmpeg_ir::topology::Sense::Forward => (&edge.start, &edge.end),
-            cadmpeg_ir::topology::Sense::Reversed => (&edge.end, &edge.start),
+            cadmpeg_ir::topology::Sense::Forward => (
+                &edge.ends.as_ref().unwrap().start,
+                &edge.ends.as_ref().unwrap().end,
+            ),
+            cadmpeg_ir::topology::Sense::Reversed => (
+                &edge.ends.as_ref().unwrap().end,
+                &edge.ends.as_ref().unwrap().start,
+            ),
         };
         let (a, b) = (position(start), position(end));
         twice_area += a.x * b.y - b.x * a.y;
@@ -660,22 +670,24 @@ fn normalize_identifier(id: &str, sections: &BTreeMap<u64, String>) -> Option<St
 
 /// Arena storage order is not a semantic nested-list order.
 fn canonicalize_model_arena_order(document: &mut serde_json::Value) {
-    let Some(model) = document
-        .get_mut("model")
-        .and_then(serde_json::Value::as_object_mut)
-    else {
-        return;
-    };
-    for arena in model.values_mut() {
-        let Some(rows) = arena.as_array_mut() else {
+    for home in ["geometry", "model"] {
+        let Some(arenas) = document
+            .get_mut(home)
+            .and_then(serde_json::Value::as_object_mut)
+        else {
             continue;
         };
-        let ids = rows
-            .iter()
-            .map(|row| row.get("id").and_then(serde_json::Value::as_str))
-            .collect::<Option<BTreeSet<_>>>();
-        if ids.is_some_and(|ids| ids.len() == rows.len()) {
-            rows.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+        for arena in arenas.values_mut() {
+            let Some(rows) = arena.as_array_mut() else {
+                continue;
+            };
+            let ids = rows
+                .iter()
+                .map(|row| row.get("id").and_then(serde_json::Value::as_str))
+                .collect::<Option<BTreeSet<_>>>();
+            if ids.is_some_and(|ids| ids.len() == rows.len()) {
+                rows.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+            }
         }
     }
 }
@@ -685,29 +697,40 @@ fn normalized_document(
     sections: &BTreeMap<u64, String>,
 ) -> serde_json::Value {
     let ctx = cadmpeg_test_support::service_decode_context();
+    let original_geometry =
+        serde_json::to_value(&ir.geometry).expect("serialize original geometry");
     let original_model = serde_json::to_value(&ir.model).expect("serialize original model");
     let mut opaque_references = BTreeMap::new();
     let mut declared_replacements = BTreeMap::new();
+    let mut geometry = cadmpeg_ir::document::Topology::default();
     let mut model = cadmpeg_ir::document::Model::default();
-    model
-        .extend_rewritten(
-            ir.model.clone(),
-            &mut DeclaredSectionIdentityRewrite {
-                ctx: &ctx,
-                sections,
-                opaque_references: &mut opaque_references,
-                declared_replacements: &mut declared_replacements,
-            },
-        )
+    let mut rewrite = DeclaredSectionIdentityRewrite {
+        ctx: &ctx,
+        sections,
+        opaque_references: &mut opaque_references,
+        declared_replacements: &mut declared_replacements,
+    };
+    geometry
+        .extend_rewritten(ir.geometry.clone(), &mut rewrite)
         .expect("rewrite only schema-declared source identities");
+    model
+        .extend_rewritten(ir.model.clone(), &mut rewrite)
+        .expect("rewrite only schema-declared source identities");
+    let mut normalized_geometry = serde_json::to_value(&geometry).expect("serialize geometry");
     let mut normalized_model = serde_json::to_value(&model).expect("serialize model");
-    restore_typed_opaque_references(
-        &original_model,
-        &mut normalized_model,
-        &opaque_references,
-        &declared_replacements,
-    );
+    for (original, normalized) in [
+        (&original_geometry, &mut normalized_geometry),
+        (&original_model, &mut normalized_model),
+    ] {
+        restore_typed_opaque_references(
+            original,
+            normalized,
+            &opaque_references,
+            &declared_replacements,
+        );
+    }
     let mut document = serde_json::json!({
+        "geometry": normalized_geometry,
         "model": normalized_model,
         "units": { "length": "millimeter" },
         "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
@@ -805,7 +828,7 @@ fn normalized_comparison_preserves_references_depth_values_and_nested_order() {
         .expect("complete history decode");
     let original = normalized_document(result.ir(), &sections);
     let mut changed = result.ir().clone();
-    changed.model.coedges[0].owner_loop =
+    changed.geometry.coedges[0].owner_loop =
         cadmpeg_ir::ids::LoopId::mint("sldprt:brep:loop#999").expect("authored distinct reference");
     assert_ne!(original, normalized_document(&changed, &sections));
     let mut changed = result.ir().clone();

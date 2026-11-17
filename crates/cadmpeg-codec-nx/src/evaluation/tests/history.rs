@@ -36,7 +36,7 @@ use cadmpeg_ir::features::FeatureOperation;
 #[test]
 fn complete_hole_preserves_the_existing_body_identity() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(complete_hole(body.clone()));
 
     assert_eq!(
@@ -49,7 +49,7 @@ fn complete_hole_preserves_the_existing_body_identity() {
 fn complete_sphere_rederives_a_new_body() {
     let mut ir = CadIr::empty();
     let body = BodyId::mint("test:model:entity#sphere".to_string()).expect("identity grammar");
-    ir.model.bodies.push(model_body(body.as_str()));
+    ir.geometry.bodies.push(model_body(body.as_str()));
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint("synthetic:test:id#sphere-feature".to_string())
@@ -124,7 +124,7 @@ fn exact_empty_replay_input_precedes_a_new_body_construction() {
 #[test]
 fn in_place_edit_can_precede_a_saved_body_image_creator() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features[0].ordinal = 1;
     ir.model.features.push(complete_hole(body.clone()));
     ir.model.features[1].ordinal = 0;
@@ -138,7 +138,7 @@ fn in_place_edit_can_precede_a_saved_body_image_creator() {
 #[test]
 fn curve_construction_families_do_not_change_the_body_census() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.extend([
         body_neutral_feature(
             "projected-curve",
@@ -176,7 +176,7 @@ fn curve_construction_families_do_not_change_the_body_census() {
 #[test]
 fn curve_construction_family_cannot_claim_a_body_output() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut section = body_neutral_feature(
         "section",
         1,
@@ -238,7 +238,7 @@ fn unresolved_block_result_mode_stops_before_body_effect_evaluation() {
 #[test]
 fn boolean_block_preserves_its_existing_output_body() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(body_preserving_feature(
         "joined-block",
         1,
@@ -263,7 +263,7 @@ fn boolean_block_preserves_its_existing_output_body() {
 #[test]
 fn unresolved_block_mode_preserves_a_proven_existing_output() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(body_preserving_feature(
         "existing-block",
         1,
@@ -288,9 +288,9 @@ fn unresolved_block_mode_preserves_a_proven_existing_output() {
 #[test]
 fn complete_extrudes_apply_new_body_and_boolean_output_lineage() {
     let mut ir = complete_block_ir();
-    let existing = ir.model.bodies[0].id.clone();
+    let existing = ir.geometry.bodies[0].id.clone();
     let created = BodyId::mint("test:model:entity#extruded".to_string()).expect("identity grammar");
-    ir.model.bodies.push(model_body(created.as_str()));
+    ir.geometry.bodies.push(model_body(created.as_str()));
     let profile =
         FeatureId::mint("synthetic:test:id#profile".to_string()).expect("identity grammar");
     ir.model.features.push(body_neutral_feature(
@@ -326,7 +326,7 @@ fn complete_extrudes_apply_new_body_and_boolean_output_lineage() {
 #[test]
 fn new_body_operation_cannot_reuse_an_existing_body_identity() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let profile =
         FeatureId::mint("synthetic:test:id#profile".to_string()).expect("identity grammar");
     ir.model.features.push(body_neutral_feature(
@@ -362,7 +362,7 @@ fn new_body_operation_cannot_reuse_an_existing_body_identity() {
 #[test]
 fn unresolved_extrude_preserves_an_existing_output_without_construction_replay() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut extrude = complete_extrude_feature(
         "extrude",
         1,
@@ -475,7 +475,7 @@ fn profile_driven_families_report_incomplete_construction_before_lineage() {
 #[test]
 fn complete_active_configuration_admits_the_rederived_model() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     attach_complete_active_configuration(&mut ir);
 
     assert_eq!(
@@ -540,7 +540,7 @@ fn empty_body_neutral_model_does_not_need_an_active_configuration_identity() {
 #[test]
 fn incomplete_hole_construction_does_not_change_its_body_identity_effect() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut hole = complete_hole(body.clone());
     hole.evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
@@ -607,7 +607,7 @@ fn replay_requires_dependencies_to_precede_their_consumers() {
 #[test]
 fn replay_uses_stable_feature_ordinals_independently_of_storage_order() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(complete_hole(body.clone()));
     ir.model.features.reverse();
 
@@ -620,7 +620,7 @@ fn replay_uses_stable_feature_ordinals_independently_of_storage_order() {
 #[test]
 fn replay_rejects_duplicate_feature_ordinals() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut hole = complete_hole(body.clone());
     hole.ordinal = 0;
     ir.model.features.push(hole);
@@ -643,7 +643,7 @@ fn replay_rejects_duplicate_feature_ordinals() {
 #[test]
 fn base_feature_introduces_its_complete_selected_outputs() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(
@@ -664,10 +664,10 @@ fn base_feature_introduces_its_complete_selected_outputs() {
 #[test]
 fn extract_body_copies_each_existing_source_to_one_new_output() {
     let mut ir = complete_block_ir();
-    let source = ir.model.bodies[0].id.clone();
+    let source = ir.geometry.bodies[0].id.clone();
     let extracted =
         BodyId::mint("test:model:entity#extracted".to_string()).expect("identity grammar");
-    ir.model.bodies.push(model_body(extracted.as_str()));
+    ir.geometry.bodies.push(model_body(extracted.as_str()));
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint("synthetic:test:id#extract".to_string()).expect("identity grammar"),
@@ -740,7 +740,7 @@ fn output_free_local_extract_does_not_change_the_saved_body_census() {
 #[test]
 fn delete_body_removes_an_existing_selected_body() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint("synthetic:test:id#delete".to_string()).expect("identity grammar"),
@@ -764,7 +764,7 @@ fn delete_body_removes_an_existing_selected_body() {
         ),
         native_ref: None,
     });
-    ir.model.bodies.clear();
+    ir.geometry.bodies.clear();
 
     assert_eq!(
         saved_body_census_evidence(&ir),
@@ -811,7 +811,7 @@ fn delete_body_ignores_a_complete_feature_local_body() {
 #[test]
 fn unresolved_suppression_of_a_resolved_delete_remains_a_boundary() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint("synthetic:test:id#delete".to_string()).expect("identity grammar"),
@@ -854,7 +854,7 @@ fn unresolved_suppression_of_a_resolved_delete_remains_a_boundary() {
 #[test]
 fn keep_selected_removes_every_unselected_body() {
     let mut ir = complete_block_ir();
-    let retained = ir.model.bodies[0].id.clone();
+    let retained = ir.geometry.bodies[0].id.clone();
     let removed = BodyId::mint("test:model:entity#removed".to_string()).expect("identity grammar");
     ir.model.features[0].evaluation.edit(|_, outputs| {
         outputs.insert(removed.clone());

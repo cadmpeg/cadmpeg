@@ -32,10 +32,10 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
         let decoded = codec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(decoded.ir().model.faces.len(), 6);
+        assert_eq!(decoded.ir().geometry.faces.len(), 6);
         assert!(decoded
             .ir()
-            .model
+            .geometry
             .bodies
             .iter()
             .any(|body| body.kind == BodyKind::Solid));
@@ -48,32 +48,32 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
     }
 
     let mut original = cadmpeg_ir::examples::unit_cube().unwrap();
-    for face in &mut original.model.faces {
+    for face in &mut original.geometry.faces {
         face.name = None;
     }
     let mut ir = original.clone();
-    let edge = ir.model.edges[0].id.clone();
-    let old_curve = ir.model.edges[0].curve().unwrap().clone();
+    let edge = ir.geometry.edges[0].id.clone();
+    let old_curve = ir.geometry.edges[0].curve().unwrap().clone();
     let coedge = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .position(|use_| use_.edge == edge)
         .unwrap();
     let lp = ir
-        .model
+        .geometry
         .loops
         .iter()
-        .find(|lp| lp.id == ir.model.coedges[coedge].owner_loop)
+        .find(|lp| lp.id == ir.geometry.coedges[coedge].owner_loop)
         .unwrap();
     let face = ir
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id == lp.face)
         .unwrap();
     let surface = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == face.surface)
@@ -90,13 +90,13 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
     };
     let start = uv(Point3::new(0.0, 0.0, 0.0));
     let end = uv(Point3::new(10.0, 0.0, 0.0));
-    let (first, last) = if ir.model.coedges[coedge].sense == Sense::Forward {
+    let (first, last) = if ir.geometry.coedges[coedge].sense == Sense::Forward {
         (start, end)
     } else {
         (end, start)
     };
     let pcurve = PcurveId::mint("test:recovery:pcurve#edge").unwrap();
-    ir.model.pcurves.push(Pcurve {
+    ir.geometry.pcurves.push(Pcurve {
         id: pcurve.clone(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
@@ -113,14 +113,15 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
             cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]),
             None,
         ),
+        native_ref: None,
     });
-    ir.model.coedges[coedge].pcurves.push(PcurveUse {
+    ir.geometry.coedges[coedge].pcurves.push(PcurveUse {
         pcurve,
         isoparametric: Some(first.u == last.u || first.v == last.v),
         parameter_range: Some(DirectedParameterRange::new([0.0, 1.0]).unwrap()),
     });
-    ir.model.edges[0].carrier = EdgeCarrier::Free;
-    ir.model.curves.retain(|curve| curve.id != old_curve);
+    ir.geometry.edges[0].carrier = EdgeCarrier::Free;
+    ir.geometry.curves.retain(|curve| curve.id != old_curve);
 
     round_trip(&cadmpeg_codec_step::StepCodec::default(), &ir, &original);
     round_trip(&cadmpeg_codec_iges::IgesCodec, &ir, &original);

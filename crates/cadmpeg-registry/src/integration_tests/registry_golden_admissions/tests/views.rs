@@ -78,7 +78,7 @@ fn source_and_decode_report_layer_sets_must_match() {
         "ir": {"source": source_view(&nx)},
         "report": report_view(&nx, &[kernel_loss("nx")])
     });
-    decode["report"]["identity"]["dialects"]["extra"][0]["admission"] = json!("admitted");
+    decode["report"]["identity"]["dialects"]["extra"][0]["admission"] = json!({"kind": "admitted"});
     let violation = validate(&decode, &registry).expect_err("the two decode identities differ");
     assert_eq!(violation.pointer, "/report/identity/dialects");
     assert_eq!(
@@ -98,7 +98,8 @@ fn decode_report_and_inspect_layer_sets_must_match() {
         },
         "inspect": inspect_view(&nx, &[kernel_loss("nx")])
     });
-    wrapper["inspect"]["identity"]["dialects"]["extra"][0]["admission"] = json!("admitted");
+    wrapper["inspect"]["identity"]["dialects"]["extra"][0]["admission"] =
+        json!({"kind": "admitted"});
     let violation =
         validate(&wrapper, &registry).expect_err("the decode and inspect identities differ");
     assert_eq!(violation.pointer, "/inspect/identity/dialects");
@@ -177,7 +178,7 @@ fn each_successful_view_shape_requires_a_typed_identity() {
 #[test]
 fn unclassified_successful_view_identities_remain_valid() {
     let registry = registry_rows();
-    let identity = json!({"classification": "unclassified", "format": "nx"});
+    let identity = json!({"kind": "unclassified", "format": "nx"});
     let wrapper = json!({
         "decode": {
             "ir": {

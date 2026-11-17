@@ -6,10 +6,9 @@
 //! [`DecodeDepth::Full`] and at [`DecodeDepth::Geometry`] through the public
 //! [`Codec::decode`] path and asserts that:
 //!
-//! - each document records at least the depth its decode requested;
-//! - a document below `Full` holds no record in a design arena;
-//! - the documents agree on every model arena outside the design class, on
-//!   units, on tolerances, and on source identity;
+//! - each document's scope holds every class its decode requested;
+//! - the documents agree on every arena outside the design and process
+//!   classes, on units, on tolerances, and on source identity;
 //! - every validation finding over the geometry document, neutral and
 //!   codec-native, is also a finding over the full one, so each of its
 //!   references, `native_ref` included, resolves wherever the full one's does;
@@ -29,11 +28,12 @@
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::compare::is_local_digest_attribute;
 use cadmpeg_ir::validate::validate_neutral;
-use cadmpeg_ir::{ArenaClass, ArenaName, CadIr};
+use cadmpeg_ir::{ArenaName, CadIr};
 use serde_json::Value;
 
 /// Outcome counts of one depth-harness run.
@@ -76,7 +76,7 @@ pub fn assert_geometry_agrees_with_full<N: AsRef<str>>(
             decode(codec, bytes, DecodeDepth::Geometry),
         ) {
             (Ok(full), Ok(geometry)) => {
-                if geometry.ir().decode_depth() == DecodeDepth::Geometry {
+                if geometry.report().depth() == DecodeDepth::Geometry {
                     summary.cut += 1;
                 }
                 failures.extend(
@@ -109,6 +109,43 @@ pub fn assert_geometry_agrees_with_full<N: AsRef<str>>(
     summary
 }
 
+/// Decodes `bytes` at each depth and asserts that the document records the
+/// scope that depth requests and holds no process record.
+///
+/// # Panics
+///
+/// Panics when a decode refuses, records another scope, or holds a process
+/// record.
+pub fn assert_each_depth_records_its_scope(codec: &dyn Codec, bytes: &[u8]) {
+    let mut failures = Vec::new();
+    for depth in [
+        DecodeDepth::Container,
+        DecodeDepth::Geometry,
+        DecodeDepth::Design,
+        DecodeDepth::Full,
+    ] {
+        match decode(codec, bytes, depth) {
+            Ok(result) => {
+                if result.ir().scope() != depth.scope() {
+                    failures.push(format!(
+                        "a {depth} decode recorded {:?}",
+                        result.ir().scope()
+                    ));
+                }
+                if result.ir().process.entity_count() != 0 {
+                    failures.push(format!(
+                        "a {depth} decode holds process records: {}",
+                        serde_json::to_string(&result.ir().process)
+                            .expect("serialize decoded process")
+                    ));
+                }
+            }
+            Err(error) => failures.push(format!("a {depth} decode refused: {error}")),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 fn decode(
     codec: &dyn Codec,
     bytes: &[u8],
@@ -131,16 +168,10 @@ fn compare(
 ) -> Vec<String> {
     let mut failures = Vec::new();
     for (requested, result) in [(DecodeDepth::Full, full), (DecodeDepth::Geometry, geometry)] {
-        let delivered = result.ir().decode_depth();
-        if delivered < requested {
-            failures.push(format!("a {requested} request delivered {delivered} depth"));
-        }
-        if delivered < DecodeDepth::Full {
-            if let Some(arena) = result.ir().model.populated_design_arena() {
-                failures.push(format!(
-                    "a {delivered}-depth document holds records in design arena `{arena}`"
-                ));
-            }
+        for class in result.ir().scope().missing_from(requested.scope()) {
+            failures.push(format!(
+                "a {requested} request did not deliver the {class} class"
+            ));
         }
     }
     if let Some(path) = first_difference(&outside_design(full.ir()), &outside_design(geometry.ir()))
@@ -180,19 +211,20 @@ fn compare(
     failures
 }
 
-/// The document as JSON without its recorded depth, design arenas, native
+/// The document as JSON without its scope, design and process arenas, native
 /// namespaces, and local-digest source attributes.
 fn outside_design(ir: &CadIr) -> Value {
     let mut value = serde_json::to_value(ir).expect("serialize decoded document");
     let Value::Object(document) = &mut value else {
         panic!("a document serializes as a JSON object");
     };
-    document.remove("decode_depth");
-    document.remove("native");
-    if let Some(Value::Object(model)) = document.get_mut("model") {
-        for arena in ArenaName::ALL {
-            if arena.class() == ArenaClass::Design {
-                model.remove(arena.as_str());
+    for key in ["scope", "design", "process", "native"] {
+        document.remove(key);
+    }
+    for arena in ArenaName::ALL {
+        if arena.class() != ArenaClass::Model {
+            if let Some(Value::Object(home)) = document.get_mut(arena.home().as_str()) {
+                home.remove(arena.as_str());
             }
         }
     }
@@ -307,7 +339,9 @@ mod tests {
         Decoded {
             ir,
             body: DecodeBody::new(transfer),
-            source_fidelity: SourceFidelity::default(),
+            source_fidelity: SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(
+                &[],
+            )),
         }
     }
 
@@ -360,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "the documents differ outside the design arenas at `/model")]
+    #[should_panic(expected = "the documents differ outside the design arenas at `/geometry")]
     fn a_cut_that_changes_a_model_arena_diverges() {
         fn changes_geometry(depth: DecodeDepth) -> Decoded {
             if depth < DecodeDepth::Full {
@@ -392,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "a geometry request delivered container depth")]
+    #[should_panic(expected = "a geometry request did not deliver the model class")]
     fn an_under_delivery_diverges() {
         fn delivers_container(depth: DecodeDepth) -> Decoded {
             if depth < DecodeDepth::Full {

@@ -37,6 +37,56 @@ fn invalid_parameter_scope_preserves_finding() {
     })
 }
 
+/// A role-`0x10` construction group with record index `record_index`, owned
+/// by `OffsetFaces` scope record 17.
+fn offset_faces_group(
+    record_index: u32,
+) -> crate::records::topology::construction::DesignConstructionOperandGroup {
+    use crate::records::topology::construction::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+        DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+        DesignConstructionOperandRole,
+    };
+    DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        id: format!("f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"),
+        scope_record_index: 17,
+        scope_reference_ordinal: 1,
+        record_index,
+        byte_offset: 1_000,
+        class_tag: "277".to_owned().try_into().unwrap(),
+        members: vec![Located {
+            value: 303,
+            offset: 1_026,
+        }],
+        lost_edge_references: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 1_021,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 1_058,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 1_062,
+                variant: false,
+                closing_flag: false,
+            },
+        )
+        .unwrap(),
+        operand_role: DesignConstructionOperandRole::Other(
+            crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X10,
+        ),
+        role_offset: 1_040,
+        paired_class_tag: "258".to_owned().try_into().unwrap(),
+        paired_byte_offset: 1_080,
+    })
+    .unwrap()
+}
+
 #[test]
 fn offset_faces_counted_member_runs_validate() {
     use crate::records::{
@@ -96,14 +146,32 @@ fn offset_faces_counted_member_runs_validate() {
                 continue;
             }
             assert!(findings(&native).is_empty(), "{count} {count_offset}");
-            let mut changed = native.clone();
-            if let crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(Some(
-                operation,
-            )) = changed.design_parameter_scopes[0].payload_mut()
-            {
-                operation.distance_record_index = 301;
-            }
-            assert_eq!(findings(&changed).len(), 1);
+            let with_distance = |distance_record_index| {
+                let mut changed = native.clone();
+                if let crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(Some(
+                    operation,
+                )) = changed.design_parameter_scopes[0].payload_mut()
+                {
+                    operation.distance_record_index = distance_record_index;
+                }
+                changed
+            };
+            // A first-position distance needs the selected-face group second.
+            assert_eq!(findings(&with_distance(301)).len(), 1);
+            let mut distance_first = with_distance(301);
+            distance_first
+                .design_construction_operand_groups
+                .push(offset_faces_group(302));
+            assert!(
+                findings(&distance_first).is_empty(),
+                "{count} {count_offset}"
+            );
+            let mut group_first = with_distance(301);
+            group_first
+                .design_construction_operand_groups
+                .push(offset_faces_group(301));
+            assert_eq!(findings(&group_first).len(), 1);
+            assert_eq!(findings(&with_distance(302)).len(), 1);
             native.design_record_headers.pop();
             assert_eq!(findings(&native).len(), 1);
         }
@@ -375,7 +443,7 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
         "reference_side_code":4, "height_datum":"outer_faces", "bend_position":"inside"
     })).unwrap();
     if let DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
-        *slot = Some(operation);
+        *slot = Some(operation).into();
     }
     let wire = serde_json::to_value(&scope).unwrap();
     let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
@@ -414,7 +482,10 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
     };
     assert!(findings(decoded).is_empty());
     let mut invalid = scope.clone();
-    if let DesignScopePayloadMut::EdgeFlange(Some(operation)) = invalid.payload_mut() {
+    if let DesignScopePayloadMut::EdgeFlange(
+        crate::records::feature::sheet_metal::edge::DesignEdgeFlangeScope::Legacy(operation),
+    ) = invalid.payload_mut()
+    {
         operation.bend_radius_offset += 1;
     }
     assert!(!findings(invalid).is_empty());
@@ -432,13 +503,19 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
         .unwrap();
     assert!(!findings(invalid).is_empty());
     let mut invalid = scope.clone();
-    if let DesignScopePayloadMut::EdgeFlange(Some(operation)) = invalid.payload_mut() {
+    if let DesignScopePayloadMut::EdgeFlange(
+        crate::records::feature::sheet_metal::edge::DesignEdgeFlangeScope::Legacy(operation),
+    ) = invalid.payload_mut()
+    {
         operation.height_datum =
             crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum::InnerFaces;
     }
     assert!(!findings(invalid).is_empty());
     let mut invalid = scope;
-    if let DesignScopePayloadMut::EdgeFlange(Some(operation)) = invalid.payload_mut() {
+    if let DesignScopePayloadMut::EdgeFlange(
+        crate::records::feature::sheet_metal::edge::DesignEdgeFlangeScope::Legacy(operation),
+    ) = invalid.payload_mut()
+    {
         operation.bend_position = crate::records::feature::sheet_metal::DesignBendPosition::Outside;
     }
     assert!(!findings(invalid).is_empty());

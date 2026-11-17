@@ -69,6 +69,7 @@ fn loop_selection(
         owner_text_offset: 200,
         sketch_scope_record_index: 7,
         sketch_scope_offset: 300,
+        scope_sketch_containers: Vec::new(),
         identity_record_offset: 500,
         identity_end_offset: 0,
         groups: vec![

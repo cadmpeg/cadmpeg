@@ -163,6 +163,10 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalStyleFormsNative,
     /// An attached plate stays native; the note names the first refused admission check.
     FeatureSheetMetalPlateRefused,
+    /// Projected contour flanges retain construction controls and their bend and corner records natively.
+    FeatureSheetMetalContourControlsRetained,
+    /// A contour flange stays native; the note names the first refused admission check.
+    FeatureSheetMetalContourFlangeRefused,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
     /// `DeleteFace` Boolean construction roles remain unresolved.
@@ -289,6 +293,17 @@ pub(crate) enum InventorLossCode {
     KernelHistoryTagSchemaAssumed,
     /// Split and Base features have no bound history state.
     FeatureHistoryStateUnbound,
+    /// A history state could not be materialized or decoded to the body of a
+    /// Base or Split feature.
+    FeatureHistoryBodyUndecoded,
+    /// The body of a Base or Split feature in its history state is not a closed
+    /// manifold solid.
+    FeatureHistoryBodyNotClosed,
+    /// A part passed the local cap of history bodies or of their materialization work.
+    FeatureHistoryBodyBounded,
+    /// The Base or Split feature of a decoded history body is not a projected
+    /// feature, so the body has no origin to name.
+    FeatureHistoryBodyUnlinked,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
@@ -373,6 +388,8 @@ impl InventorLossCode {
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureSheetMetalPlateRefused,
+        Self::FeatureSheetMetalContourControlsRetained,
+        Self::FeatureSheetMetalContourFlangeRefused,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureDeleteFaceOperandsNative,
         Self::FeatureFilletOperandsNative,
@@ -436,6 +453,10 @@ impl InventorLossCode {
         Self::KernelHistoryBounded,
         Self::KernelHistoryTagSchemaAssumed,
         Self::FeatureHistoryStateUnbound,
+        Self::FeatureHistoryBodyUndecoded,
+        Self::FeatureHistoryBodyNotClosed,
+        Self::FeatureHistoryBodyBounded,
+        Self::FeatureHistoryBodyUnlinked,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
         Self::PmiTargetUnresolved,
@@ -536,6 +557,12 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
             Self::FeatureSheetMetalPlateRefused => "feature.sheet-metal-plate-refused",
+            Self::FeatureSheetMetalContourControlsRetained => {
+                "feature.sheet-metal-contour-controls-retained"
+            }
+            Self::FeatureSheetMetalContourFlangeRefused => {
+                "feature.sheet-metal-contour-flange-refused"
+            }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureMirrorBooleanNative => "feature.mirror-boolean-native",
@@ -599,6 +626,10 @@ impl InventorLossCode {
             Self::KernelHistoryBounded => "source.kernel-history-bounded",
             Self::KernelHistoryTagSchemaAssumed => "source.kernel-history-tag-schema-assumed",
             Self::FeatureHistoryStateUnbound => "feature.history-state-unbound",
+            Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
+            Self::FeatureHistoryBodyNotClosed => "feature.history-body-not-closed",
+            Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
+            Self::FeatureHistoryBodyUnlinked => "feature.history-body-unlinked",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
             Self::PmiTargetUnresolved => "pmi.target-unresolved",
@@ -681,6 +712,8 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
             | Self::FeatureSheetMetalPlateRefused
+            | Self::FeatureSheetMetalContourControlsRetained
+            | Self::FeatureSheetMetalContourFlangeRefused
             | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureMirrorBooleanNative
@@ -733,6 +766,10 @@ impl InventorLossCode {
             | Self::KernelHistoryBounded
             | Self::KernelHistoryTagSchemaAssumed
             | Self::FeatureHistoryStateUnbound
+            | Self::FeatureHistoryBodyUndecoded
+            | Self::FeatureHistoryBodyNotClosed
+            | Self::FeatureHistoryBodyBounded
+            | Self::FeatureHistoryBodyUnlinked
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -859,6 +896,8 @@ mod tests {
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
                 "feature.sheet-metal-plate-refused",
+                "feature.sheet-metal-contour-controls-retained",
+                "feature.sheet-metal-contour-flange-refused",
                 "feature.revolve-operands-native",
                 "feature.delete-face-operands-native",
                 "feature.fillet-operands-native",
@@ -922,6 +961,10 @@ mod tests {
                 "source.kernel-history-bounded",
                 "source.kernel-history-tag-schema-assumed",
                 "feature.history-state-unbound",
+                "feature.history-body-undecoded",
+                "feature.history-body-not-closed",
+                "feature.history-body-bounded",
+                "feature.history-body-unlinked",
                 "drawing.native-only",
                 "drawing.record-malformed",
                 "pmi.target-unresolved",

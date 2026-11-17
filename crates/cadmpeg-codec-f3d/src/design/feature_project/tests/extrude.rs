@@ -224,6 +224,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     extrude_profile: Some(
                         DesignSketchProfileOperand::try_new(
                             crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                                sketch_absent: false,
                                 scope_reference_ordinal: 0,
                                 record_index: 100,
                                 byte_offset: 300,
@@ -780,15 +781,16 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 )
             })
             .expect("spatial-profile Extrude feature");
+        let frame = scope
+            .extrude_profile()
+            .expect("profile frame")
+            .byte_offset();
+        let frame = format!("f3d:Design/BulkStream.dat:design-record-header#{frame}");
+        let expected = ProfileRef::spatial_sketch_selection(spatial_sketch.id.clone(), vec![frame]);
         assert!(matches!(
             spatial_extrude.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: ProfileRef::SpatialSketchProfiles {
-                    ref sketch,
-                    ref profiles
-                },
-                ..
-            }) if sketch == &spatial_sketch.id && profiles.as_slice() == [0]
+            FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. })
+                if expected.as_ref().ok() == Some(profile)
         ));
         assert_eq!(
             spatial_extrude.dependencies.as_slice(),
