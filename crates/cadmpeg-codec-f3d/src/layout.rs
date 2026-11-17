@@ -3819,6 +3819,18 @@ pub(crate) mod coil_ten_reference_flagged_prologue_tail {
     pub(crate) const SECOND_MEMBER_REFERENCE: usize = 47;
 }
 
+/// Byte offsets for the `coil_short_ten_reference_compact_scope` record.
+///
+/// Spec §3.1. Record length 454 B.
+pub(crate) mod coil_short_ten_reference_compact_scope {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 454;
+    /// Offset of `control_bytes` (`bytes[2]`). Spec §3.1.
+    pub(crate) const CONTROL_BYTES: usize = 56;
+    /// Stated value of `control_bytes` (`bytes[2]`). Spec §3.1.
+    pub(crate) const CONTROL_BYTES_VALUE: [u8; 2] = [0x01, 0x01];
+}
+
 /// Byte offsets for the `coil_compact_persistent_selection_prefix` record.
 ///
 /// Spec §3.1. Record length 40 B.
@@ -5160,8 +5172,8 @@ pub(crate) mod thread_standard_construction_tail {
     pub(crate) const MAJOR_DIAMETER: usize = 5;
     /// Offset of `minor_diameter` (`f64`, little-endian). Spec §3.1.
     pub(crate) const MINOR_DIAMETER: usize = 13;
-    /// Offset of `pitch_marker` (`u8`). Spec §3.1.
-    pub(crate) const PITCH_MARKER: usize = 21;
+    /// Offset of `modeled_flag` (`u8`). Spec §3.1.
+    pub(crate) const MODELED_FLAG: usize = 21;
     /// Offset of `pitch` (`f64`, little-endian). Spec §3.1.
     pub(crate) const PITCH: usize = 22;
     /// Offset of `pitch_diameter` (`f64`, little-endian). Spec §3.1.

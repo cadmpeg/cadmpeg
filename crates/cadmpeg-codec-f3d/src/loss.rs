@@ -138,6 +138,8 @@ pub(crate) enum F3dLossCode {
     ChamferParameterUnitAssumed,
     /// A Coil's Boolean target group whose member count is not one is read as one body selection.
     CoilTargetMembersAssumed,
+    CoilShortControlsAssumed,
+    CoilTargetUnresolved,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -357,6 +359,8 @@ pub(crate) enum F3dLossCode {
     FeatureMeshSeparateMembershipUnresolved,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
+    /// A Thread scope without the extended prefix stores modeled flag `0`, which is read as a cosmetic thread.
+    ThreadModeledFlagAssumed,
     /// A stored-body operation has an empty proven body set.
     FeatureStoredBodiesEmpty,
     /// A decoded body snapshot supplies no construction recipe.
@@ -545,6 +549,8 @@ pub(crate) enum F3dLossCode {
     /// A feature with no bound history, whose state pair several histories
     /// hold, takes the one history of the BREP blob that holds its outputs.
     HistoricalOutputBlobHistoryInferred,
+    /// A scope takes the unique history whose blob agrees with its edge recipe faces.
+    HistoricalEdgeRecipeHistoryInferred,
     /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
     HistoricalFilletEdgeAmbiguous,
     /// A `Fillet` edge is the one of several shared support edges along the
@@ -1133,6 +1139,8 @@ impl F3dLossCode {
         Self::ChamferParameterKindAssumed,
         Self::ChamferParameterUnitAssumed,
         Self::CoilTargetMembersAssumed,
+        Self::CoilShortControlsAssumed,
+        Self::CoilTargetUnresolved,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
@@ -1275,6 +1283,7 @@ impl F3dLossCode {
         Self::FeatureMeshSeparateReferenceRolesAssumed,
         Self::FeatureMeshSeparateMembershipUnresolved,
         Self::ThreadLiveFaceUnproven,
+        Self::ThreadModeledFlagAssumed,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureHistoryBodyBounded,
@@ -1397,6 +1406,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeSelectionDeletedSetAssumed,
         Self::HistoricalEdgeHistoryInferred,
         Self::HistoricalOutputBlobHistoryInferred,
+        Self::HistoricalEdgeRecipeHistoryInferred,
         Self::HistoricalFilletEdgeAmbiguous,
         Self::HistoricalFilletEdgeCovering,
         Self::HistoricalBodyBoundsUnresolved,
@@ -1820,6 +1830,8 @@ impl F3dLossCode {
             Self::ChamferParameterKindAssumed => "feature.chamfer-parameter-kind-assumed",
             Self::ChamferParameterUnitAssumed => "feature.chamfer-parameter-unit-assumed",
             Self::CoilTargetMembersAssumed => "feature.coil-target-members-assumed",
+            Self::CoilTargetUnresolved => "feature.coil-target-unresolved",
+            Self::CoilShortControlsAssumed => "feature.coil-short-controls-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -2109,6 +2121,7 @@ impl F3dLossCode {
                 "feature.mesh-conversion-output-unresolved"
             }
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
+            Self::ThreadModeledFlagAssumed => "feature.thread-modeled-flag-assumed",
             Self::FeatureMeshSeparateScopeUnparsed => "feature.mesh-separate-scope-unparsed",
             Self::FeatureMeshSeparateTailPartial => "feature.mesh-separate-tail-partial",
             Self::FeatureMeshSeparateReferenceUnresolved => {
@@ -2221,6 +2234,7 @@ impl F3dLossCode {
             }
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
             Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
+            Self::HistoricalEdgeRecipeHistoryInferred => "history.edge-recipe-history-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
             Self::HistoricalFilletEdgeCovering => "history.fillet-edge-covering",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
@@ -2779,6 +2793,8 @@ impl F3dLossCode {
             | Self::ChamferParameterKindAssumed
             | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
+            | Self::CoilShortControlsAssumed
+            | Self::CoilTargetUnresolved
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
@@ -2991,6 +3007,7 @@ impl F3dLossCode {
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
             | Self::FeatureFilletPaddingAssumed
+            | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -3035,6 +3052,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
+            | Self::HistoricalEdgeRecipeHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalFilletEdgeCovering
@@ -3387,6 +3405,8 @@ impl F3dLossCode {
             | Self::ChamferParameterKindAssumed
             | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
+            | Self::CoilShortControlsAssumed
+            | Self::CoilTargetUnresolved
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
@@ -3599,6 +3619,7 @@ impl F3dLossCode {
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
             | Self::FeatureFilletPaddingAssumed
+            | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -3639,6 +3660,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
+            | Self::HistoricalEdgeRecipeHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalFilletEdgeCovering
@@ -4093,6 +4115,8 @@ mod tests {
                 "feature.chamfer-parameter-kind-assumed",
                 "feature.chamfer-parameter-unit-assumed",
                 "feature.coil-target-members-assumed",
+                "feature.coil-short-controls-assumed",
+                "feature.coil-target-unresolved",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
@@ -4235,6 +4259,7 @@ mod tests {
                 "feature.mesh-separate-reference-roles-assumed",
                 "feature.mesh-separate-membership-unresolved",
                 "feature.thread-live-face-unproven",
+                "feature.thread-modeled-flag-assumed",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.history-body-bounded",
@@ -4357,6 +4382,7 @@ mod tests {
                 "history.edge-selection-deleted-set-assumed",
                 "history.edge-history-inferred",
                 "history.output-blob-history-inferred",
+                "history.edge-recipe-history-inferred",
                 "history.fillet-edge-ambiguous",
                 "history.fillet-edge-covering",
                 "history.body-bounds-unresolved",

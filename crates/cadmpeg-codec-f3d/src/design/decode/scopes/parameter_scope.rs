@@ -59,6 +59,7 @@ use super::surfaces::exact_surface_stitch_operation;
 use super::surfaces::exact_surface_untrim_operation;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
+use super::thread::thread_modeled_flag_loss;
 use super::work_geometry::exact_joint_origin_frame;
 use super::work_geometry::exact_work_plane_frame;
 use crate::bytes::lp_ascii_filtered_view;
@@ -685,6 +686,11 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_thread_construction(bytes, &scope, parameter_owners);
+                losses.extend(
+                    construction
+                        .as_ref()
+                        .and_then(|construction| thread_modeled_flag_loss(&scope, construction)),
+                );
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }

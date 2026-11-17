@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, Serializer};
@@ -84,7 +85,10 @@ impl JsonSchema for Base64Bytes {
 #[serde(transparent)]
 pub struct NameTable(
     #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<(EntityRef, NameEntry)>"))]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "BTreeSet<(EntityRef, NameEntry)>")
+    )]
     BTreeMap<EntityRef, NameEntry>,
 );
 
@@ -332,11 +336,11 @@ enum TopoNameWire {
     Bounded {
         /// The faces beside the edge.
         #[serde(with = "cadmpeg_core::distinct_keys::set")]
-        #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
+        #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<TopoName>"))]
         faces: BTreeSet<TopoName>,
         /// The faces at the edge's ends, where the source records them.
         #[serde(with = "cadmpeg_core::distinct_keys::set")]
-        #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
+        #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<TopoName>"))]
         ends: BTreeSet<TopoName>,
         /// The source's own discriminator among entities of equal meaning.
         #[serde(
@@ -350,7 +354,7 @@ enum TopoNameWire {
     Meeting {
         /// The faces that meet at the vertex.
         #[serde(with = "cadmpeg_core::distinct_keys::set")]
-        #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
+        #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<TopoName>"))]
         faces: BTreeSet<TopoName>,
         /// The source's own discriminator among entities of equal meaning.
         #[serde(
@@ -415,7 +419,7 @@ struct MergedName {
     feature: Option<FeatureId>,
     /// The names of the merged entities.
     #[serde(with = "cadmpeg_core::distinct_keys::set")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<TopoName>"))]
     from: BTreeSet<TopoName>,
 }
 
@@ -501,7 +505,7 @@ fn deepest<'a>(names: impl IntoIterator<Item = &'a TopoName>) -> u64 {
 }
 
 /// The kind of a named entity. `Surface` and `Curve` names identify carriers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum NameKind {
@@ -571,7 +575,7 @@ pub enum GenerationRole {
 }
 
 /// The place of a face in a hole's shape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum HoleFaceRole {
