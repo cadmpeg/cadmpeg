@@ -9,9 +9,11 @@
 mod configurations;
 mod containers;
 mod evaluations;
-mod index;
+#[cfg(test)]
+mod fixture;
 mod linkage;
-mod states;
+mod records;
+mod resolved;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -22,7 +24,7 @@ use crate::report::{
     check::{Check, Finding},
     Severity,
 };
-use index::DesignIndex;
+use records::DesignRecords;
 
 /// Check the design layer of `ir` against part 10's scope-and-linkage,
 /// container, position, evaluation, current-geometry, and configuration
@@ -33,13 +35,13 @@ pub(super) fn check_design(
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let index = DesignIndex::new(ir);
-    linkage::check_linkage(&index, ids, findings);
-    containers::check_containers(&index, findings);
-    evaluations::check_evaluations(&index, findings);
-    evaluations::check_current_geometry(&index, findings);
-    states::check_resolved_states(ctx, &index, findings)?;
-    configurations::check_configurations(&index, findings);
+    let records = DesignRecords::new(ir);
+    linkage::check_linkage(&records, ids, findings);
+    containers::check_containers(&records, findings);
+    evaluations::check_evaluations(&records, findings);
+    evaluations::check_current_geometry(&records, findings);
+    resolved::check_resolved_states(ctx, &records, findings)?;
+    configurations::check_configurations(&records, findings);
     Ok(())
 }
 
@@ -52,6 +54,3 @@ fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments
         message,
     );
 }
-
-#[cfg(test)]
-mod tests;

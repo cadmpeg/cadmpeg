@@ -3,11 +3,11 @@
 
 use std::collections::BTreeMap;
 
-use super::index::{members, DesignIndex, MemberKey};
+use super::records::{members, DesignRecords, MemberKey};
 use crate::design::container::{Container, Folder, Rollback};
 use crate::report::check::Finding;
 
-pub(super) fn check_containers(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
+pub(super) fn check_containers(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let design = &index.ir.design;
     let mut listings: BTreeMap<MemberKey<'_>, usize> = BTreeMap::new();
     for container in &design.containers {
@@ -75,7 +75,7 @@ pub(super) fn check_containers(index: &DesignIndex<'_>, findings: &mut Vec<Findi
     }
 }
 
-fn is_own_ancestor(index: &DesignIndex<'_>, id: &str) -> bool {
+fn is_own_ancestor(index: &DesignRecords<'_>, id: &str) -> bool {
     let mut container = id;
     for _ in 0..index.containers.len() {
         let Some(parent) = index.parents.get(&MemberKey::Container(container)) else {
@@ -151,3 +151,6 @@ fn overlap_without_nesting(first: &Folder, second: &Folder) -> bool {
     let second_holds = second.first <= first.first && first.last <= second.last;
     overlap && !first_holds && !second_holds
 }
+
+#[cfg(test)]
+mod tests;

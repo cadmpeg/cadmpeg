@@ -11,7 +11,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use super::evaluations::check_path_steps;
-use super::index::{DesignIndex, MemberKey, OfKey, PositionKey};
+use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
 use crate::design::evaluation::{Evaluation, StateBase, StateDelta};
 use crate::design::feature::FeatureOperation;
 use crate::design::names::NameEntry;
@@ -156,7 +156,7 @@ fn locate(topology: &Topology) -> BTreeMap<&str, Located<'_>> {
 
 struct Resolver<'a, 'c, 'd> {
     ctx: &'c DecodeContext<'d>,
-    index: &'c DesignIndex<'a>,
+    index: &'c DesignRecords<'a>,
     geometry: BTreeMap<&'a str, Located<'a>>,
 }
 
@@ -332,7 +332,7 @@ fn merge<'a, K: Ord, V, T: ?Sized>(
 
 pub(super) fn check_resolved_states(
     ctx: &DecodeContext<'_>,
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let ir = index.ir;
@@ -390,7 +390,7 @@ fn check_current_names(resolver: &Resolver<'_, '_, '_>, findings: &mut Vec<Findi
 /// The resolved state's name, owner, member, instance-body, and pose entries
 /// name what the state holds.
 fn check_entries(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     state: &ResolvedState<'_>,
     evaluation: &str,
     findings: &mut Vec<Finding>,
@@ -503,7 +503,7 @@ fn check_closure(
 /// Where the state after a stored-geometry feature is stored, it holds each
 /// body the feature names (§5.10).
 fn check_stored_bodies(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     evaluation: &Evaluation,
     state: &ResolvedState<'_>,
     findings: &mut Vec<Finding>,
@@ -536,3 +536,6 @@ fn check_stored_bodies(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

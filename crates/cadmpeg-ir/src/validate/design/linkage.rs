@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use super::index::DesignIndex;
+use super::records::DesignRecords;
 use crate::design::feature::{FeatureOperation, StoredOrigin};
 use crate::document::CadIr;
 use crate::index::ModelIndex;
@@ -13,7 +13,7 @@ use crate::report::Severity;
 use crate::schema::ArenaRecord;
 
 pub(super) fn check_linkage(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) {
@@ -140,3 +140,6 @@ fn check_native_refs(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Findin
         check(evaluation.id.as_str(), evaluation.native_ref.as_ref());
     }
 }
+
+#[cfg(test)]
+mod tests;

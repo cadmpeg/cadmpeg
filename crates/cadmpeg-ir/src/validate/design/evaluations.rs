@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::index::{DesignIndex, MemberKey, OfKey, PositionKey};
+use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
@@ -19,7 +19,7 @@ use crate::report::check::Finding;
 /// A position names an existing member of a container, or the start of an
 /// existing ordered container (§5.3). Returns whether it does.
 pub(super) fn check_position(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     position: PositionKey<'_>,
     entity: &str,
     findings: &mut Vec<Finding>,
@@ -51,7 +51,7 @@ pub(super) fn check_position(
 }
 
 /// Whether `position` is `After(Container(c))` for an ordered container `c`.
-fn after_ordered_container(index: &DesignIndex<'_>, position: PositionKey<'_>) -> bool {
+fn after_ordered_container(index: &DesignRecords<'_>, position: PositionKey<'_>) -> bool {
     matches!(
         position,
         PositionKey::After(MemberKey::Container(id))
@@ -60,7 +60,7 @@ fn after_ordered_container(index: &DesignIndex<'_>, position: PositionKey<'_>) -
 }
 
 /// The positions of a scope's current states.
-fn current_positions<'a>(index: &DesignIndex<'a>, scope: &str) -> BTreeSet<PositionKey<'a>> {
+fn current_positions<'a>(index: &DesignRecords<'a>, scope: &str) -> BTreeSet<PositionKey<'a>> {
     index
         .scopes
         .get(scope)
@@ -74,7 +74,7 @@ fn current_positions<'a>(index: &DesignIndex<'a>, scope: &str) -> BTreeSet<Posit
         .unwrap_or_default()
 }
 
-pub(super) fn check_evaluations(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
+pub(super) fn check_evaluations(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let cyclic = cyclic_evaluations(index);
     let mut keys = BTreeMap::new();
     for evaluation in &index.ir.design.evaluations {
@@ -253,7 +253,7 @@ pub(super) fn check_evaluations(index: &DesignIndex<'_>, findings: &mut Vec<Find
 }
 
 /// The evaluations on a cycle of state bases.
-fn cyclic_evaluations<'a>(index: &DesignIndex<'a>) -> BTreeSet<&'a str> {
+fn cyclic_evaluations<'a>(index: &DesignRecords<'a>) -> BTreeSet<&'a str> {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Mark {
         OnChain,
@@ -303,7 +303,7 @@ fn cyclic_evaluations<'a>(index: &DesignIndex<'a>) -> BTreeSet<&'a str> {
 /// cannot change a state. A suppression bound to a parameter resolves through
 /// the parameter's cached value.
 pub(super) fn is_stateless(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     feature: &Feature,
     configuration: Option<&str>,
 ) -> bool {
@@ -332,7 +332,7 @@ pub(super) fn is_stateless(
 }
 
 fn parameter_bool(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     chain: &[&crate::design::configuration::DesignConfiguration],
     parameter: &ParameterId,
 ) -> Option<bool> {
@@ -383,7 +383,7 @@ fn stateless_operation(operation: &FeatureOperation) -> bool {
 
 /// Every `Occurrence` step of the path names an occurrence of the model.
 pub(super) fn check_path_steps(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     path: &OccurrencePath,
     entity: &str,
     what: &str,
@@ -405,7 +405,7 @@ pub(super) fn check_path_steps(
     }
 }
 
-pub(super) fn check_current_geometry(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
+pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let ir = index.ir;
     let bodies: BTreeSet<&str> = ir
         .geometry
@@ -479,7 +479,7 @@ pub(super) fn check_current_geometry(index: &DesignIndex<'_>, findings: &mut Vec
 /// A current state names an existing position through its member, and one
 /// inside an ordered container is at that container's rollback position.
 fn check_current_position(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     at: &Position,
     entity: &str,
     findings: &mut Vec<Finding>,
@@ -501,7 +501,7 @@ fn check_current_position(
     let Some(container) = index.container_of(at) else {
         return;
     };
-    if let Some(rollback) = DesignIndex::rollback_position(container) {
+    if let Some(rollback) = DesignRecords::rollback_position(container) {
         if rollback != at {
             super::error(
                 findings,
@@ -517,7 +517,7 @@ fn check_current_position(
 
 /// A stored-geometry feature's tessellations exist, and a current state after
 /// it holds each body it names (§5.10).
-fn check_stored_features(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
+fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let ir = index.ir;
     let tessellations: BTreeSet<&str> = ir
         .model
@@ -571,3 +571,6 @@ fn check_stored_features(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

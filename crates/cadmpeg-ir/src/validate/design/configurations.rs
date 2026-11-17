@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::text::NonBlankString;
 
 use super::evaluations::check_path_steps;
-use super::index::DesignIndex;
+use super::records::DesignRecords;
 use crate::design::configuration::{
     Arrangement, ArrangementKind, ArrangementRef, DefinitionOverride, FeatureStateOverride,
     OccurrenceOverride, Overrides, ParameterOverride, PartNumber,
@@ -34,7 +34,7 @@ enum Holder {
     Arrangement,
 }
 
-pub(super) fn check_configurations(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
+pub(super) fn check_configurations(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let design = &index.ir.design;
     for scope in &design.scopes {
         check_scope(index, scope, findings);
@@ -129,7 +129,7 @@ pub(super) fn check_configurations(index: &DesignIndex<'_>, findings: &mut Vec<F
     }
 }
 
-fn parent_cycle(index: &DesignIndex<'_>, id: &str) -> bool {
+fn parent_cycle(index: &DesignRecords<'_>, id: &str) -> bool {
     let mut next = index
         .configurations
         .get(id)
@@ -149,7 +149,7 @@ fn parent_cycle(index: &DesignIndex<'_>, id: &str) -> bool {
     false
 }
 
-fn check_scope(index: &DesignIndex<'_>, scope: &DesignScope, findings: &mut Vec<Finding>) {
+fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Vec<Finding>) {
     let id = scope.definition.as_str();
     match (&scope.active_configuration, index.has_configurations(id)) {
         (None, true) => super::error(
@@ -232,7 +232,7 @@ fn check_scope(index: &DesignIndex<'_>, scope: &DesignScope, findings: &mut Vec<
 /// A `ConfigurationRef::Local` names a configuration of the prototype's
 /// scope; `Named` occurs only where that scope is absent or lacks the name.
 fn check_configuration_ref(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     configuration: &ConfigurationRef,
     prototype: Option<&str>,
     entity: &str,
@@ -278,7 +278,7 @@ fn check_configuration_ref(
 /// An occurrence's arrangements name at most one of each kind, and a `Local`
 /// one names an arrangement of the prototype's scope.
 fn check_arrangement_refs(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     arrangements: &[ArrangementRef],
     prototype: Option<&str>,
     entity: &str,
@@ -315,7 +315,7 @@ fn check_arrangement_refs(
 /// `active_arrangements` names arrangements of the scope, at most one of each
 /// kind.
 fn check_active_arrangements(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     entity: &str,
     scope: &str,
     active: &BTreeSet<crate::design::ids::ArrangementId>,
@@ -348,7 +348,7 @@ fn check_active_arrangements(
 
 /// An arrangement that names a configuration is in force in no other
 /// configuration's resolved set.
-fn check_arrangements_in_force(index: &DesignIndex<'_>, findings: &mut Vec<Finding>) {
+fn check_arrangements_in_force(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     for configuration in &index.ir.design.configurations {
         let mut in_force: Vec<&Arrangement> = Vec::new();
         let base = index
@@ -389,7 +389,7 @@ fn check_arrangements_in_force(index: &DesignIndex<'_>, findings: &mut Vec<Findi
 }
 
 fn check_arrangement(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     arrangement: &Arrangement,
     findings: &mut Vec<Finding>,
 ) {
@@ -484,7 +484,7 @@ fn check_arrangement(
 }
 
 /// The prototype of a path's last occurrence.
-fn last_prototype<'a>(index: &DesignIndex<'a>, path: &OccurrencePath) -> Option<&'a str> {
+fn last_prototype<'a>(index: &DesignRecords<'a>, path: &OccurrencePath) -> Option<&'a str> {
     match &path.0.last()?.occurrence {
         StepRef::Occurrence(occurrence) => index.prototype(occurrence.as_str()),
         StepRef::Native(_) => None,
@@ -492,7 +492,7 @@ fn last_prototype<'a>(index: &DesignIndex<'a>, path: &OccurrencePath) -> Option<
 }
 
 fn check_overrides(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     holder: &str,
     scope: &str,
     overrides: &Overrides,
@@ -560,7 +560,7 @@ fn check_parameter_override_fields(
 }
 
 fn check_feature_override(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     holder: &str,
     feature: &str,
     state: &FeatureStateOverride,
@@ -630,7 +630,7 @@ fn check_feature_override(
 }
 
 fn check_occurrence_override(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     holder: &str,
     occurrence: &str,
     value: &OccurrenceOverride,
@@ -689,7 +689,7 @@ fn check_occurrence_override(
 }
 
 fn check_definition_override(
-    index: &DesignIndex<'_>,
+    index: &DesignRecords<'_>,
     holder: &str,
     scope: &str,
     definition: &str,
@@ -813,3 +813,6 @@ fn check_parameter_tolerance(parameter: &DesignParameter, findings: &mut Vec<Fin
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

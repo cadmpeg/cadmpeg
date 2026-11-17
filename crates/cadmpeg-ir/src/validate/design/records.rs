@@ -97,7 +97,7 @@ impl<'a> OfKey<'a> {
 }
 
 /// The design records of one document, by identity.
-pub(super) struct DesignIndex<'a> {
+pub(super) struct DesignRecords<'a> {
     pub(super) ir: &'a CadIr,
     /// Each scope, by the definition whose design it is.
     pub(super) scopes: BTreeMap<&'a str, &'a DesignScope>,
@@ -133,7 +133,7 @@ fn by_id<'a, T>(records: &'a [T], id: impl Fn(&'a T) -> &'a str) -> BTreeMap<&'a
     index
 }
 
-impl<'a> DesignIndex<'a> {
+impl<'a> DesignRecords<'a> {
     pub(super) fn new(ir: &'a CadIr) -> Self {
         let design = &ir.design;
         let mut parents = BTreeMap::new();
