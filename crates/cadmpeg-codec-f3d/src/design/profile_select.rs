@@ -622,7 +622,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 .history_state_id()
                                 .zip(effective_previous_history_state_id),
                         ) {
-                            if let Some(selection) = stored_loop_cap::resolve(
+                            if let Some((selection, coincident_boundary)) = stored_loop_cap::resolve(
                                 group,
                                 &curve_resolution.path_resolution(),
                                 scoped_resolution,
@@ -635,6 +635,11 @@ pub(crate) fn bind_extrude_profile_selections(
                                 },
                             )? {
                                 *profile = ProfileRef::Planar(selection);
+                                if coincident_boundary {
+                                    losses.push(crate::loss::F3dLossCode::FeatureProfileCoincidentBoundaryAssumed.note(
+                                        format!("{}: stored profile curves share intervals with the certified cap boundary", feature.id),
+                                    ));
+                                }
                                 break 'feature_edit;
                             }
                         }

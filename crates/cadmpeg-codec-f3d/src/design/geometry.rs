@@ -3471,6 +3471,47 @@ pub(super) fn boundary_use_carrier(
     }
 }
 
+pub(super) fn curve_overlaps_boundary_use(
+    curve: &cadmpeg_ir::sketches::SketchEntity,
+    use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let Some(carrier) = boundary_use_carrier(use_, entities) else {
+        return false;
+    };
+    match (curve.geometry.definition(), carrier) {
+        (
+            SketchGeometryDefinition::Line { start, end },
+            BoundaryCarrier::Line { start: a, end: b },
+        ) => collinear_line_segments(
+            &ProfileBoundarySegment::Line {
+                start: start.get(),
+                end: end.get(),
+            },
+            &ProfileBoundarySegment::Line { start: a, end: b },
+            tolerance,
+        )
+        .is_some_and(|overlap| overlap > tolerance),
+        (
+            SketchGeometryDefinition::Circle { center, radius },
+            BoundaryCarrier::Arc {
+                center: other,
+                radius: other_radius,
+                sweep,
+                ..
+            },
+        ) => {
+            point_distance(center.get(), other) <= tolerance
+                && (radius.get() - other_radius).abs() <= tolerance
+                && sweep.abs() * other_radius > tolerance
+        }
+        _ => false,
+    }
+}
+
 fn signed_polygon_area(vertices: &[Point2]) -> f64 {
     cadmpeg_ir::math::planar::polygon_area_twice(vertices)
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get)

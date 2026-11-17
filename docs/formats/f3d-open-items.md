@@ -556,7 +556,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** Which sketch curves does a typed profile loop list when the selected region has a curve that ends inside it, or two coincident curves along one boundary interval?
 
-**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. It requires every stored curve to bound a selected atomic region. A loop that lists a line ending inside a circle, or a line coincident with part of another listed line, names a curve that bounds no selected region in that reading. The selection stays native with `feature.profile-selection-native`.
+**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. Each stored entry has a decoded piece on a selected atomic boundary, or a line or circle with a shared boundary interval under `feature.profile-coincident-boundary-assumed`. A loop that lists a line ending inside a circle can name a curve that contributes no boundary interval. The selection stays native with `feature.profile-selection-native`.
 
 **Need.** Controlled Extrudes of one region with a line that ends inside it, and of two regions separated by two coincident lines, with the stored loops and the resulting end caps, to state when a listed curve contributes no boundary interval.
 
@@ -3383,3 +3383,15 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The decoder applies the compact discriminator meanings and reports `feature.coil-short-controls-assumed`. It retains signed driving dimensions and the checked solved placement. An unbound placement remains native. A missing or ambiguous target group retains the Coil with an unresolved Boolean selection and reports `feature.coil-target-unresolved`.
+
+### DR-740. Unbound Extrude profile members
+
+**Question.** Which carrier binds an Extrude construction member to its Sketch boundary when its indexed references have no paired loop identity record?
+
+**Known.** `f3d.md` "A typed-reference profile selection is a construction-operand group member" gives the loop carrier. The IR Probe Mount member 258 has the primary prefix, an inline type GUID `0D57BD2F-D09B-43FC-AD57-1E89A118C453`, asset GUID `58fd6d71-6435-4a8e-9d6f-5344c0c14631`, and decimal text `46396`. Its referenced index is 261. The indexed Design record headers contain 258; indices 259, 260, and 261 have no record headers. The Front Panel PS group 3229 lists unbound members 3232, 3236, 3240, and 3244. The Duct Printed Mount Adapter group 204 lists unbound member 214.
+
+**Need.** The relation from the asset-qualified member to a Sketch boundary, with the selected region proved against its Extrude end caps.
+
+**Conflict.** None.
+
+**Note.** These selections retain their native construction groups and `feature.profile-selection-native` losses.
