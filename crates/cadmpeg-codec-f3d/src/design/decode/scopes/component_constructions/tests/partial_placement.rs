@@ -188,7 +188,7 @@ fn partial_insert_payload_cannot_coexist_with_a_complete_or_other_family_payload
     assert!(serde_json::from_value::<DesignParameterScope>(encoded).is_err());
 }
 
-fn legacy_fixture(frame: usize) -> (Vec<u8>, DesignParameterScope, usize, usize) {
+fn legacy_fixture(frame: usize, name: &str) -> (Vec<u8>, DesignParameterScope, usize, usize) {
     let (identity, relation, markers, guid, table, ordinal) = match frame {
         256 | 257 | 267 => (21, 33, 44, 46, 125, 180),
         261 => (25, 37, 48, 50, 129, 184),
@@ -196,8 +196,10 @@ fn legacy_fixture(frame: usize) -> (Vec<u8>, DesignParameterScope, usize, usize)
         389 | 399 => (25, 37, 48, 178, 257, 312),
         _ => panic!("unknown synthetic scope"),
     };
-    let mut bytes = vec![0; frame + 11];
-    for at in [0, frame] {
+    let stored = frame + 2 * name.encode_utf16().count() - 32;
+    let ordinal = ordinal + 2 * name.encode_utf16().count() - 32;
+    let mut bytes = vec![0; stored + 11];
+    for at in [0, stored] {
         bytes[at..at + 4].copy_from_slice(&3_u32.to_le_bytes());
         bytes[at + 4..at + 7].copy_from_slice(if at == 0 { b"789" } else { b"234" });
         bytes[at + 7..at + 11].copy_from_slice(&30_u32.to_le_bytes());
@@ -229,16 +231,15 @@ fn legacy_fixture(frame: usize) -> (Vec<u8>, DesignParameterScope, usize, usize)
     bytes[table + 4] = 1;
     bytes[table + 5..table + 9].copy_from_slice(&20_u32.to_le_bytes());
     bytes[table + 15..table + 19].copy_from_slice(&u32::MAX.to_le_bytes());
-    bytes[table + 19..ordinal]
-        .copy_from_slice(&crate::bytes::lp_utf16_bytes("Component Insert").unwrap());
+    bytes[table + 19..ordinal].copy_from_slice(&crate::bytes::lp_utf16_bytes(name).unwrap());
     if frame == 385 {
-        bytes[339..343].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes[ordinal + 31..ordinal + 35].copy_from_slice(&u32::MAX.to_le_bytes());
     }
     let (_, mut scope) = fixture(272, false);
     scope
         .try_edit(|draft| {
-            draft.frame_length = u64_from_index(frame);
-            draft.paired_byte_offset = u64_from_index(frame);
+            draft.frame_length = u64_from_index(stored);
+            draft.paired_byte_offset = u64_from_index(stored);
             draft.reference_count_offset = u64_from_index(table);
             draft.reference_members = ReferenceRun::from_columns(
                 vec![20],
@@ -250,57 +251,62 @@ fn legacy_fixture(frame: usize) -> (Vec<u8>, DesignParameterScope, usize, usize)
             draft.feature_ordinal_offset = u64_from_index(ordinal);
         })
         .unwrap();
+    if name != "Component Insert" {
+        scope.source_kind = Some(name.to_owned());
+    }
     (bytes, scope, relation, guid)
 }
 
 #[test]
 fn legacy_scope_frames_retain_placements_without_source_records() {
     for frame in [256, 257, 261, 267, 385, 389, 399] {
-        let (bytes, mut scope, _, _) = legacy_fixture(frame);
-        let placement = unresolved_component_insert_placement(&bytes, &scope)
-            .unwrap_or_else(|| panic!("legacy frame {frame} refused"));
-        assert_eq!(placement.occurrence_identity, 19);
-        if frame >= 385 {
+        for name in ["Component Insert", "Einfügen", "Komponente einfügen"] {
+            let (bytes, mut scope, _, _) = legacy_fixture(frame, name);
+            let placement = unresolved_component_insert_placement(&bytes, &scope)
+                .unwrap_or_else(|| panic!("legacy frame {frame} refused"));
+            assert_eq!(placement.occurrence_identity, 19);
+            if frame >= 385 {
+                assert_eq!(
+                    placement.matrix.as_ref().unwrap().offset,
+                    if frame == 385 { 46 } else { 50 }
+                );
+                assert_eq!(
+                    placement.transform().rows(),
+                    [
+                        [0.6, -0.8, 0.0, 1.0],
+                        [0.8, 0.6, 0.0, 2.0],
+                        [0.0, 0.0, 1.0, 3.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                );
+            } else {
+                assert!(placement.matrix.is_none());
+                assert_eq!(
+                    placement.transform().rows(),
+                    [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                );
+            }
+            if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
+                payload.unresolved_placement = Some(placement);
+            }
+            let encoded = serde_json::to_vec(&scope).unwrap();
             assert_eq!(
-                placement.matrix.as_ref().unwrap().offset,
-                if frame == 385 { 46 } else { 50 }
-            );
-            assert_eq!(
-                placement.transform().rows(),
-                [
-                    [0.6, -0.8, 0.0, 1.0],
-                    [0.8, 0.6, 0.0, 2.0],
-                    [0.0, 0.0, 1.0, 3.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
-            );
-        } else {
-            assert!(placement.matrix.is_none());
-            assert_eq!(
-                placement.transform().rows(),
-                [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
+                serde_json::from_slice::<DesignParameterScope>(&encoded).unwrap(),
+                scope
             );
         }
-        if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
-            payload.unresolved_placement = Some(placement);
-        }
-        let encoded = serde_json::to_vec(&scope).unwrap();
-        assert_eq!(
-            serde_json::from_slice::<DesignParameterScope>(&encoded).unwrap(),
-            scope
-        );
     }
 }
 
 #[test]
 fn legacy_partial_placements_refuse_corrupt_prefixes_and_truncated_frames() {
     for frame in [256, 257, 261, 267, 385, 389, 399] {
-        let (bytes, scope, relation, guid) = legacy_fixture(frame);
+        let (bytes, scope, relation, guid) = legacy_fixture(frame, "Component Insert");
         for at in [
             11,
             relation,

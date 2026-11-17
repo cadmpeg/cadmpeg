@@ -668,6 +668,33 @@ fn exact_component_insert_scope_283_262_385(
     Option<usize>,
     u64,
 )> {
+    let placement = exact_legacy_matrix_insert_prefix(bytes, start, relation_record_index)?;
+    if View::u32_le_at(bytes, start + component_scope_283_385::REFERENCE_COUNT)? != 1
+        || bytes.get(start + component_scope_283_385::REFERENCE_MARKER) != Some(&1)
+        || View::u32_le_at(
+            bytes,
+            start + component_scope_283_385::REFERENCE_RECORD_INDEX,
+        )? != relation_record_index
+        || bytes.get(start + 262..start + 268)? != [0; 6]
+        || View::u32_le_at(
+            bytes,
+            start + component_scope_283_385::PREVIOUS_HISTORY_STATE_ID,
+        )? != u32::MAX
+    {
+        return None;
+    }
+    Some(placement)
+}
+
+fn exact_legacy_matrix_insert_prefix(
+    bytes: &[u8],
+    start: usize,
+    relation_record_index: u32,
+) -> Option<(
+    crate::records::sketch_placement::SketchPlacementMatrix,
+    Option<usize>,
+    u64,
+)> {
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(
             start + component_scope_283_385::TRANSFORM_MARKERS
@@ -692,19 +719,7 @@ fn exact_component_insert_scope_283_262_385(
         start + component_scope_283_385::NULL_GUID_CODE_UNIT_COUNT,
         NULL_COMPONENT_INSERT_GUID,
     )?;
-    if after_null_guid != start + component_scope_283_385::REFERENCE_COUNT - 3
-        || View::u32_le_at(bytes, start + component_scope_283_385::REFERENCE_COUNT)? != 1
-        || bytes.get(start + component_scope_283_385::REFERENCE_MARKER) != Some(&1)
-        || View::u32_le_at(
-            bytes,
-            start + component_scope_283_385::REFERENCE_RECORD_INDEX,
-        )? != relation_record_index
-        || bytes.get(start + 262..start + 268)? != [0; 6]
-        || View::u32_le_at(
-            bytes,
-            start + component_scope_283_385::PREVIOUS_HISTORY_STATE_ID,
-        )? != u32::MAX
-    {
+    if after_null_guid != start + component_scope_283_385::REFERENCE_COUNT - 3 {
         return None;
     }
     Some((
@@ -740,7 +755,7 @@ pub(super) fn unresolved_component_insert_placement(
         ),
         frame @ (385 | 389 | 399) => {
             let (value, offset, identity) = if frame == 385 {
-                exact_component_insert_scope_283_262_385(bytes, start, relation)?
+                exact_legacy_matrix_insert_prefix(bytes, start, relation)?
             } else {
                 exact_component_insert_scope_414_264_389(bytes, start, relation)?
             };
