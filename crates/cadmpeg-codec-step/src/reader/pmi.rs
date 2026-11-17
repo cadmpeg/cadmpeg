@@ -1778,17 +1778,7 @@ fn is_measure_record(record: &RawRecord) -> bool {
 }
 
 fn is_dimension_name(name: &str) -> bool {
-    name == "DIMENSIONAL_SIZE"
-        || name.starts_with("DIMENSIONAL_SIZE_")
-        || name == "DIMENSIONAL_LOCATION"
-        || name.starts_with("DIMENSIONAL_LOCATION_")
-        || name == "ANGULAR_SIZE"
-        || name.starts_with("ANGULAR_SIZE_")
-        || name == "ANGULAR_LOCATION"
-        || name.starts_with("ANGULAR_LOCATION_")
-        || matches!(name, "DIAMETER_SIZE" | "RADIUS_SIZE")
-        || name.ends_with("_SIZE")
-        || name.ends_with("_LOCATION")
+    dimension_kind(name).is_some()
 }
 
 fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
@@ -1799,6 +1789,9 @@ fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
         name if name == "DIMENSIONAL_LOCATION" || name.starts_with("DIMENSIONAL_LOCATION_") => {
             Some(DimensionKind::Location)
         }
+        "DIRECTED_DIMENSIONAL_LOCATION" => Some(DimensionKind::Other(
+            "directed_dimensional_location".to_owned(),
+        )),
         name if name == "ANGULAR_SIZE"
             || name.starts_with("ANGULAR_SIZE_")
             || name == "ANGULAR_LOCATION"
@@ -1808,11 +1801,6 @@ fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
         }
         "DIAMETER_SIZE" => Some(DimensionKind::Diameter),
         "RADIUS_SIZE" => Some(DimensionKind::Radius),
-        name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
-            let mut name = name.to_owned();
-            name.make_ascii_lowercase();
-            Some(DimensionKind::Other(name))
-        }
         _ => None,
     }
 }
