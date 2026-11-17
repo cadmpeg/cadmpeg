@@ -502,9 +502,10 @@ pub(crate) fn own_once(
                 .collect(),
         );
         let entries = overrides.entry(top).or_default();
-        let entry = match entries.iter().position(|entry| entry.path == path) {
-            Some(position) => &mut entries[position],
+        let position = match entries.iter().position(|entry| entry.path == path) {
+            Some(position) => position,
             None => {
+                let position = entries.len();
                 entries.push(NestedOverride {
                     path,
                     transform: None,
@@ -512,9 +513,10 @@ pub(crate) fn own_once(
                     visible: None,
                     representation: None,
                 });
-                entries.last_mut().expect("pushed")
+                position
             }
         };
+        let entry = &mut entries[position];
         entry.transform = entry.transform.or(transform);
         entry.visible = entry.visible.or(visible);
         entry.suppressed = entry.suppressed.or(suppressed);
