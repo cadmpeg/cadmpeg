@@ -47,8 +47,8 @@ fn diameter(entity: &CatiaEntityRecord) -> Option<f64> {
         || !matches!(
             interval.interval.slots,
             Some([
-                RangeIntervalSlot::Unset { .. },
-                RangeIntervalSlot::Unset { .. }
+                RangeIntervalSlot::ZeroLiteral { .. },
+                RangeIntervalSlot::ZeroLiteral { .. }
             ])
         )
     {
