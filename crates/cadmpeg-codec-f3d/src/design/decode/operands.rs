@@ -102,6 +102,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{HashMap, HashSet};
 
 /// Decode edge-recipe operand frames named by edge-selecting feature scopes.
@@ -959,7 +960,7 @@ pub(crate) fn decode_face_operands(
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
     types: &[crate::records::entity_header::SegmentType],
-) -> Result<Vec<DesignFaceOperand>, CodecError> {
+) -> Result<(Vec<DesignFaceOperand>, Vec<LossNote>), CodecError> {
     let mut header_index = HashMap::new();
     for header in headers {
         let Some(stream) = native_stream(&header.id) else {
@@ -1196,12 +1197,12 @@ pub(crate) fn decode_face_operands(
             let Ok(group_member_ordinal) = u32::try_from(group_member_index) else {
                 continue;
             };
-            let registered_frame = split_face_frames.get(&(stream, *record_index));
-            let header = if is_split_face_operand {
-                registered_frame.map(|frame| &frame.header)
-            } else {
-                header_index.get(&(stream, *record_index)).copied()
-            };
+            let registered_frame = is_split_face_operand
+                .then(|| split_face_frames.get(&(stream, *record_index)))
+                .flatten();
+            let header = registered_frame
+                .map(|frame| &frame.header)
+                .or_else(|| header_index.get(&(stream, *record_index)).copied());
             let Some(header) = header else {
                 continue;
             };
@@ -1306,13 +1307,13 @@ pub(crate) fn decode_face_operands(
             if !seen.insert((stream, scope.record_index, record_index)) {
                 continue;
             }
-            let registered_frame = split_face_frames.get(&(stream, record_index));
-            let header =
-                if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace {
-                    registered_frame.map(|frame| &frame.header)
-                } else {
-                    header_index.get(&(stream, record_index)).copied()
-                };
+            let registered_frame = (scope.kind()
+                == crate::records::feature::scope::DesignFeatureKind::SplitFace)
+                .then(|| split_face_frames.get(&(stream, record_index)))
+                .flatten();
+            let header = registered_frame
+                .map(|frame| &frame.header)
+                .or_else(|| header_index.get(&(stream, record_index)).copied());
             let (Ok(scope_reference_ordinal), Some(header)) = (u32::try_from(ordinal), header)
             else {
                 continue;
@@ -1354,7 +1355,23 @@ pub(crate) fn decode_face_operands(
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(out)
+    let losses = out
+        .iter()
+        .filter_map(|operand| {
+            let stream = native_stream(&operand.id)?;
+            let scope = scope_index.get(&(stream, operand.scope_record_index))?;
+            let record_index = operand.record_index();
+            (scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
+                && !split_face_frames.contains_key(&(stream, record_index)))
+            .then(|| {
+                crate::loss::F3dLossCode::FeatureSplitFaceIndexedOperandAssumed.note(format!(
+                    "SplitFace scope {} assumes the indexed headers bound face operand {record_index}; its registered envelope is unavailable.",
+                    scope.id,
+                ))
+            })
+        })
+        .collect();
+    Ok((out, losses))
 }
 
 /// Decode ordered sheet-metal source-region identities.
@@ -7124,11 +7141,8 @@ pub(super) fn parse_face_operand(
         registered_frame,
         header,
     } = input;
-    let is_split_face =
-        scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace;
     let stream = native_stream(&scope.id)?;
-    let (offsets, next_record_index) = if is_split_face {
-        let frame = registered_frame?;
+    let (offsets, next_record_index) = if let Some(frame) = registered_frame {
         if frame.header.record_index != header.record_index
             || frame.header.byte_offset != header.byte_offset
         {
@@ -7195,7 +7209,7 @@ pub(super) fn parse_face_operand(
     let mut matches = recipes.iter().filter(|recipe| {
         recipe.byte_offset > recipe_start
             && recipe.byte_offset < next_byte_offset
-            && (is_split_face
+            && (registered_frame.is_some()
                 || matches!(
                     recipe.kind,
                     ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
@@ -7211,7 +7225,7 @@ pub(super) fn parse_face_operand(
         ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".len(),
         _ => return None,
     };
-    if is_split_face {
+    if registered_frame.is_some() {
         let family = match recipe.kind {
             ConstructionRecipeKind::Face => b"face_recipe_data".as_slice(),
             ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".as_slice(),

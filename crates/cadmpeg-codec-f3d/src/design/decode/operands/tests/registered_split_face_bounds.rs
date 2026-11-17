@@ -8,6 +8,7 @@ use crate::records::topology::face::DesignFaceOperand;
 use crate::test_support::split_face::metadata;
 use crate::test_support::{indexed_header, lp_ascii};
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_ir::report::loss::LossNote;
 
 const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
 const PRIMARY_TYPE: &str = "00000000-0000-0000-0000-000000000001";
@@ -85,6 +86,15 @@ fn decode(
     meta: &[u8],
     role: Option<DesignOperandRole>,
 ) -> Vec<DesignFaceOperand> {
+    decode_with_scanned_header(fixture, meta, role, 11).0
+}
+
+fn decode_with_scanned_header(
+    fixture: &Fixture,
+    meta: &[u8],
+    role: Option<DesignOperandRole>,
+    scanned_header_offset: u64,
+) -> (Vec<DesignFaceOperand>, Vec<LossNote>) {
     let mut scope = DesignParameterScope::empty(
         &format!("{STREAM}:design-parameter-scope#50"),
         DesignFeatureKind::SplitFace,
@@ -130,9 +140,9 @@ fn decode(
         })
         .collect();
     let scanned_header = DesignRecordHeader {
-        id: format!("{STREAM}:design-record-header#11"),
+        id: format!("{STREAM}:design-record-header#{scanned_header_offset}"),
         record_index: 100,
-        byte_offset: 11,
+        byte_offset: scanned_header_offset,
         class_tag: "256".to_owned().try_into().unwrap(),
     };
     let archive = crate::test_support::body_reference_tail_test::archive(&fixture.bytes, meta);
@@ -150,6 +160,50 @@ fn decode(
             .unwrap()
         })
     })
+}
+
+#[test]
+fn grouped_and_direct_split_face_retain_indexed_envelopes_without_registration() {
+    for role in [
+        None,
+        Some(DesignOperandRole::ROLE_0X9),
+        Some(DesignOperandRole::ROLE_0X10),
+    ] {
+        for kind in [
+            ConstructionRecipeKind::Face,
+            ConstructionRecipeKind::BoundedFace,
+        ] {
+            let fixture = fixture(kind, false);
+            let types = [(PRIMARY_TYPE, 1, &[100, 101, 102, 103, 104][..])];
+            let unregistered_member = [
+                fixture.primary[0],
+                fixture.primary[1],
+                fixture.primary[3],
+                fixture.primary[4],
+            ];
+            let incomplete = metadata(&types, &unregistered_member, &fixture.secondary);
+            for meta in [&[][..], incomplete.as_slice()] {
+                let (operands, losses) = decode_with_scanned_header(&fixture, meta, role, 0);
+                let [operand] = operands.as_slice() else {
+                    panic!("one indexed face operand");
+                };
+                assert_eq!(operand.record_index(), 100);
+                assert_eq!(operand.recipe_record_index(), 103);
+                assert_eq!(operand.recipe_kind, kind);
+                assert_eq!(operand.recipe_program, [0, -1, 4]);
+                assert_eq!(operand.next_byte_offset(), fixture.primary[4].1);
+                assert_eq!(operand.group.is_some(), role.is_some());
+                assert!(operand.registered_recipe_frame().is_none());
+                let [loss] = losses.as_slice() else {
+                    panic!("one indexed-frame assumption");
+                };
+                assert_eq!(
+                    loss.code,
+                    crate::loss::F3dLossCode::FeatureSplitFaceIndexedOperandAssumed.kind()
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -226,7 +280,10 @@ fn registered_face_envelope_cannot_borrow_a_later_record_recipe() {
         Some(DesignOperandRole::ROLE_0X9),
         Some(DesignOperandRole::ROLE_0X10),
     ] {
-        assert!(decode(&fixture, &metadata_for(&fixture), role).is_empty());
+        let (operands, losses) =
+            decode_with_scanned_header(&fixture, &metadata_for(&fixture), role, 0);
+        assert!(operands.is_empty());
+        assert!(losses.is_empty());
     }
 }
 
@@ -287,7 +344,7 @@ fn registered_face_rejects_truncated_headers_and_mismatched_recipe_fields() {
 }
 
 #[test]
-fn split_face_requires_complete_unambiguous_registered_metadata() {
+fn split_face_with_an_unusable_scan_requires_complete_unambiguous_registered_metadata() {
     let fixture = fixture(ConstructionRecipeKind::Face, false);
     let valid_types = [
         (PRIMARY_TYPE, 1, &[100, 101, 102, 103, 104][..]),

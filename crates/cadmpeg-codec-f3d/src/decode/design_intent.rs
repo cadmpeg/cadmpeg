@@ -2021,15 +2021,18 @@ fn extend_related_design_records(
         timelines,
         &design.asm_histories,
     )?;
-    design.design_face_operands = crate::design::decode::operands::decode_face_operands(
-        ctx,
-        scan,
-        &design.design_parameter_scopes,
-        &design.design_construction_operand_groups,
-        &design.design_record_headers,
-        &prereqs.construction_recipes,
-        &prereqs.design_types,
-    )?;
+    let (face_operands, face_operand_losses) =
+        crate::design::decode::operands::decode_face_operands(
+            ctx,
+            scan,
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+            &design.design_record_headers,
+            &prereqs.construction_recipes,
+            &prereqs.design_types,
+        )?;
+    design.design_face_operands = face_operands;
+    profile_losses.extend(face_operand_losses);
     crate::design::decode::operands::bind_face_operand_candidates(
         &mut design.design_face_operands,
         &prereqs.construction_recipes,

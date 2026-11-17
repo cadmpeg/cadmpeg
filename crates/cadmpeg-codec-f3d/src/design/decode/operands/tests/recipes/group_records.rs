@@ -90,6 +90,7 @@ fn a_scope_group_record_is_not_a_face_operand() {
                     &[],
                 )
                 .unwrap()
+                .0
                 .iter()
                 .map(crate::records::topology::face::DesignFaceOperand::record_index)
                 .collect::<Vec<_>>()
@@ -181,7 +182,8 @@ fn terminal_profile_member_cannot_borrow_the_next_group_recipe() {
                 &[recipe],
                 &[],
             )
-            .unwrap();
+            .unwrap()
+            .0;
             assert_eq!(
                 operands
                     .iter()
@@ -310,7 +312,8 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
                     std::slice::from_ref(&recipe),
                     &[],
                 )
-                .unwrap();
+                .unwrap()
+                .0;
                 assert_eq!(
                     operands
                         .iter()
@@ -398,6 +401,7 @@ fn sweep_profile_member_is_a_face_operand_only_as_a_topology_recipe() {
                     types,
                 )
                 .unwrap()
+                .0
                 .iter()
                 .map(crate::records::topology::face::DesignFaceOperand::record_index)
                 .collect::<Vec<_>>()
@@ -479,6 +483,7 @@ fn a_pattern_face_seed_group_member_is_a_face_operand() {
                     &[],
                 )
                 .unwrap()
+                .0
                 .iter()
                 .map(crate::records::topology::face::DesignFaceOperand::record_index)
                 .collect::<Vec<_>>()
@@ -553,7 +558,8 @@ fn surface_untrim_groups_retain_face_recipe_members() {
                 std::slice::from_ref(&recipe),
                 &[],
             )
-            .unwrap();
+            .unwrap()
+            .0;
             assert_eq!(operands.len(), 1);
             assert_eq!(operands[0].record_index(), 100);
             assert_eq!(operands[0].scope_record_index, 50);
@@ -572,7 +578,8 @@ fn surface_untrim_groups_retain_face_recipe_members() {
                 std::slice::from_ref(&recipe),
                 &[],
             )
-            .unwrap();
+            .unwrap()
+            .0;
             assert!(unrelated.is_empty());
         });
     });

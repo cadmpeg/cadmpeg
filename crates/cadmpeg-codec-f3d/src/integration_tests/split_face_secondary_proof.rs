@@ -86,6 +86,7 @@ fn decoded(
                 &[],
             )
             .unwrap()
+            .0
         })
     });
     let [operand] = <[_; 1]>::try_from(operands).unwrap();
