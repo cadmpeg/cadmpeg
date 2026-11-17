@@ -646,10 +646,10 @@ fn decode_second_coordinate_lane(
     if matches!(head, 0xa4..=0xa6) {
         return ieee7_dict(data, offset, 0xbf2b + u16::from(head));
     }
-    if matches!(head, 0xa7..=0xb1) {
+    if matches!(head, 0xa7..=0xb2) {
         return ieee7_dict(data, offset, 0xbf2c + u16::from(head));
     }
-    if matches!(head, 0xb2..=0xcf) {
+    if matches!(head, 0xb3..=0xcf) {
         return ieee7_dict(data, offset, 0xbf2d + u16::from(head));
     }
     if matches!(head, 0xd0..=0xdc) {

@@ -990,6 +990,24 @@ fn tabulated_first_coordinate_preserves_the_negative_subunit_boundary() {
 }
 
 #[test]
+fn second_coordinate_and_datum_outline_lanes_share_the_negative_subunit_boundary() {
+    let cache = ScalarCache::default();
+    for (head, ieee_head) in [(0xb1, 0xbfdd_u16), (0xb2, 0xbfde), (0xb3, 0xbfe0)] {
+        let token = [head, 0x28, 0xc7, 0x31, 0xeb, 0x69, 0x50];
+        let [hi, lo] = ieee_head.to_be_bytes();
+        let expected = f64::from_be_bytes([hi, lo, 0x28, 0xc7, 0x31, 0xeb, 0x69, 0x50]);
+        assert_eq!(
+            decode_tabulated_cylinder_second_coordinate(&token, 0, &cache),
+            Some((expected, 7))
+        );
+        assert_eq!(
+            super::decode_datum_outline_coordinate(&token, 0, &cache),
+            Some((expected, 7))
+        );
+    }
+}
+
+#[test]
 fn tabulated_directrix_control_polygon_matches_its_independent_boundary() {
     let cache = ScalarCache::default();
     let bodies = [

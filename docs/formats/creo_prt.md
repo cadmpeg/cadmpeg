@@ -1807,7 +1807,7 @@ The fixed-width forms are `28 <tail7> → 3F <tail7>`,
 `41 <tail7> → 3F <tail7>`, `46 <tail7> → C0 <tail7>`, and
 `4a <tail6> → C0 <tail6> 00`.
 In the second-coordinate lane, prefixes `5c` and `5e..a3` use the positive DICT mapping.
-Negative prefixes `a4..a6`, `a7..b1`, and `b2..c7` add to `BF2B`, `BF2C`, and
+Negative prefixes `a4..a6`, `a7..b2`, and `b3..c7` add to `BF2B`, `BF2C`, and
 `BF2D`. Prefixes `c8..cf`, `d0..dc`, `dd`, and `de..df` add to `BF2D`,
 `BF2E`, `BF2F`, and `BF32`, respectively. Prefixes `2c`, `4c..4d`, `50`, and `54` reconstruct
 `3F <tail6> 00`; `45` reconstructs `BF <tail6> 00`; `28` and `41`
@@ -4072,7 +4072,7 @@ order. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following
 compact `ext_id`.
 The positional `value` lane uses the positive DICT lane of the seven-byte DICT
-form for prefixes `53..a3`, and the following six bytes complete the value; `ad` is an alias for leading bytes `3F D9`. The seven-byte
+form for prefixes `51` and `53..a3`, and the following six bytes complete the value; `ad` is an alias for leading bytes `3F D9`. The seven-byte
 `31 <tail6>` form reconstructs `[40, tail6, 00]`. A bare `18` value is zero. Unresolved `00 XX YY` and `01 XX YY ZZ`
 value forms occupy three and four bytes respectively. Compact `0e` is `-0.5`, so
 the following one-byte `direct`, `aux_value`, and compact `ext_id` fields remain
@@ -5712,7 +5712,7 @@ positions `k` and `k+3` identifies coordinate axis `k` and plane offset zero.
 Zero pairs or multiple pairs do not define a plane equation.
 Datum-outline nonzero coordinates use the bounded model-coordinate DICT lane. `5e..a3`
 set the two-byte IEEE prefix to `0x3f75 + prefix`; `a4..a6`,
-`a7..b1`, `b2..cf`, `d0..dc`, `dd`, and `de..df` set it to
+`a7..b2`, `b3..cf`, `d0..dc`, `dd`, and `de..df` set it to
 `0xbf2b + prefix`, `0xbf2c + prefix`, `0xbf2d + prefix`, `0xbf2e + prefix`,
 `0xbf2f + prefix`, and `0xbf32 + prefix`, respectively. Each prefix is
 followed by `tail6`.
