@@ -2015,7 +2015,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** None.
 
-### DR-646. Referenced-angle Revolve direction kind 1 and second tail reference
+### DR-657. Referenced-angle Revolve direction kind 1 and second tail reference
 
 **Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361-byte referenced-angle frame name?
 
