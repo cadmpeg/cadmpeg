@@ -4,17 +4,17 @@ use cadmpeg_core::decode::ResourceLimits;
 
 use crate::design::configuration::{FeatureStateOverride, ParameterOverride};
 use crate::design::container::{Container, OrderedKind, Rollback};
-use crate::design::dimension::Dimension;
+use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::expr::{Expression, Neutral, Node};
+use crate::design::expr::{parse, Expression, Neutral, Node};
 use crate::design::feature::{FeatureOperation, OperationFamily, StoredOrigin};
 use crate::design::parameter::{ParameterDefinition, ParameterValue};
 use crate::design::refs::{Evaluated, Member, Position};
 use crate::design::units::ValueKind;
 use crate::document::CadIr;
 use crate::validate::design::fixture::{
-    after, assert_finding, assert_no_design_finding, body, configuration, document, evaluation,
-    feature, id, parameter, set_base, stored,
+    after, assert_finding, assert_no_design_finding, body, configuration, design_findings,
+    document, evaluation, feature, id, parameter, set_base, stored,
 };
 
 #[test]
@@ -139,6 +139,71 @@ fn a_suppression_override_with_no_cache_resolves_through_its_expression() {
     let mut ir = suppressed_by_override(true, false);
     ir.design.evaluations.remove(0);
     assert_no_design_finding(&ir);
+}
+
+/// The baseline with feature `extrude` suppressed by parameter `flag`, whose
+/// expression is the literal `false` and which has no cache, a driven
+/// Boolean `other` with no cache, configuration `large` overriding `flag`
+/// with `text` (`$0` reads `other`) and no cache, and an evaluation of
+/// `large` after `extrude`.
+fn suppressed_by_text(text: &str) -> CadIr {
+    let mut ir = suppressed_by_override(false, false);
+    ir.design.parameters[0].value = None;
+    ir.design
+        .parameters
+        .push(parameter("other", ValueKind::Boolean));
+    let other = ParameterRef {
+        target: RefTarget::Parameter(id("parameter", "other")),
+        through: None,
+    };
+    let node = parse(text, &[other], &[]).unwrap();
+    ir.design.configurations[1].overrides.parameters.insert(
+        id("parameter", "flag"),
+        ParameterOverride {
+            expression: Some(Expression::Neutral(Neutral(node))),
+            value: None,
+        },
+    );
+    ir
+}
+
+fn reports_stateless(ir: &CadIr) -> bool {
+    design_findings(ir).iter().any(|finding| {
+        finding
+            .message
+            .contains("is stateless in the evaluation's configuration")
+    })
+}
+
+#[test]
+fn a_boolean_operator_with_an_undecided_operand_decides_no_suppression() {
+    for text in [
+        "true or $0",
+        "$0 or true",
+        "true or \"mm\"",
+        "not (false and $0)",
+        "not ($0 and false)",
+        "if($0, true, true)",
+    ] {
+        assert!(!reports_stateless(&suppressed_by_text(text)), "{text}");
+    }
+    for text in [
+        "true or false",
+        "not false",
+        "true != false",
+        "if(true, true, $0)",
+    ] {
+        assert!(reports_stateless(&suppressed_by_text(text)), "{text}");
+    }
+    for text in [
+        "true and false",
+        "false or false",
+        "true == false",
+        "if(true, false, $0)",
+        "if(false, true, false)",
+    ] {
+        assert_no_design_finding(&suppressed_by_text(text));
+    }
 }
 
 /// The baseline with `count` configurations of its scope, each with an

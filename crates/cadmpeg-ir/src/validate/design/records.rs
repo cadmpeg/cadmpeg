@@ -326,57 +326,59 @@ impl<'a> DesignRecords<'a> {
             .collect()
     }
 
-    /// The definitions `scope` spans (§5.1): its own, and every definition
-    /// placed below it that has no scope of its own.
+    /// Whether `scope` holds the features of several definitions (§5.1): a
+    /// feature of it names a `component` other than the scope's definition.
+    fn holds_several_definitions(&self, scope: &str) -> bool {
+        self.features.iter().any(|(&id, feature)| {
+            feature
+                .component
+                .as_ref()
+                .is_some_and(|component| component.as_str() != scope)
+                && self.scope_of(MemberKey::Feature(id)) == Some(scope)
+        })
+    }
+
+    /// The definitions `scope` spans (§5.1): its own, and, where it holds the
+    /// features of several definitions, every definition placed below it
+    /// that has no scope of its own.
     ///
-    /// An occurrence whose parent is another occurrence is placed in that
-    /// occurrence's prototype; a root occurrence is placed in each definition
-    /// that no occurrence places inside another.
+    /// An occurrence is placed in the definition that owns it (§5.5, §8.1).
+    /// A child occurrence is owned by its parent occurrence's prototype. A
+    /// root occurrence is listed by no definition, so it belongs to the
+    /// scope's definition where that definition is the document's top, which
+    /// no occurrence places; where an occurrence places the scope's
+    /// definition, the root occurrences sit beside it, not below it.
     pub(super) fn spanned_definitions(&self, scope: &str) -> BTreeSet<&'a str> {
         let Some((&scope, _)) = self.definitions.get_key_value(scope) else {
             return BTreeSet::new();
         };
+        let mut spanned = BTreeSet::from([scope]);
+        if !self.holds_several_definitions(scope) {
+            return spanned;
+        }
         let occurrences = &self.ir.model.occurrences;
         let local = |occurrence: &'a Occurrence| match &occurrence.prototype {
             PrototypeReference::Local { definition } => Some(definition.as_str()),
             PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
         };
-        let mut children: BTreeMap<&str, Vec<&'a Occurrence>> = BTreeMap::new();
-        let mut nested = BTreeSet::new();
-        for occurrence in occurrences {
-            if let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
-                children
-                    .entry(parent.as_str())
-                    .or_default()
-                    .push(occurrence);
-                nested.extend(local(occurrence));
-            }
-        }
-        let mut placing: BTreeMap<&str, Vec<&'a Occurrence>> = BTreeMap::new();
-        for occurrence in occurrences {
-            if let Some(prototype) = local(occurrence) {
-                placing.entry(prototype).or_default().push(occurrence);
-            }
-        }
-        let roots: Vec<&'a Occurrence> = occurrences
+        let top = !occurrences
             .iter()
-            .filter(|occurrence| occurrence.parent == OccurrenceParent::Root {})
-            .collect();
-        let mut spanned = BTreeSet::from([scope]);
+            .any(|occurrence| local(occurrence) == Some(scope));
+        let mut owned: BTreeMap<&str, Vec<&'a str>> = BTreeMap::new();
+        for occurrence in occurrences {
+            let owner = match &occurrence.parent {
+                OccurrenceParent::Occurrence { occurrence: parent } => {
+                    self.prototype(parent.as_str())
+                }
+                OccurrenceParent::Root {} => top.then_some(scope),
+            };
+            if let (Some(owner), Some(prototype)) = (owner, local(occurrence)) {
+                owned.entry(owner).or_default().push(prototype);
+            }
+        }
         let mut pending = vec![scope];
         while let Some(definition) = pending.pop() {
-            let mut placed: Vec<&'a Occurrence> = placing
-                .get(definition)
-                .into_iter()
-                .flatten()
-                .filter_map(|occurrence| children.get(occurrence.id.as_str()))
-                .flatten()
-                .copied()
-                .collect();
-            if !nested.contains(definition) {
-                placed.extend(roots.iter().copied());
-            }
-            for prototype in placed.into_iter().filter_map(local) {
+            for &prototype in owned.get(definition).into_iter().flatten() {
                 if !self.scopes.contains_key(prototype) && spanned.insert(prototype) {
                     pending.push(prototype);
                 }

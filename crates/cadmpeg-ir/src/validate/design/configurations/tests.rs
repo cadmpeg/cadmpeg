@@ -194,12 +194,11 @@ fn occurrence(key: &str, prototype: &str, parent: OccurrenceParent) -> Occurrenc
     }
 }
 
-/// The baseline with a product definition `other` that has no bodies and no
-/// scope, which configuration `base` overrides.
-fn other_overridden() -> CadIr {
-    let mut ir = document();
+/// `ir` with a product definition `key` that has no bodies and no scope,
+/// which configuration `base` overrides.
+fn override_definition(ir: &mut CadIr, key: &str) {
     ir.model.product_definitions.push(ProductDefinition {
-        id: id("definition", "other"),
+        id: id("definition", key),
         kind: ProductDefinitionKind::Part,
         source_name: None,
         label: None,
@@ -211,28 +210,64 @@ fn other_overridden() -> CadIr {
         native_ref: None,
     });
     ir.design.configurations[0].overrides.definitions.insert(
-        id("definition", "other"),
+        id("definition", key),
         DefinitionOverride {
-            label: Some("other".to_owned()),
+            label: Some(key.to_owned()),
             ..DefinitionOverride::default()
         },
     );
+}
+
+fn child_of(parent: &str) -> OccurrenceParent {
+    OccurrenceParent::Occurrence {
+        occurrence: id("occurrence", parent),
+    }
+}
+
+/// The baseline as a Fusion design: its scope `part` holds `extrude` of
+/// component `part` and `fillet` of component `bracket`, which has no scope
+/// and which configuration `base` overrides.
+fn fusion() -> CadIr {
+    let mut ir = document();
+    ir.design.features[0].component = Some(id("definition", "part"));
+    ir.design.features[1].component = Some(id("definition", "bracket"));
+    override_definition(&mut ir, "bracket");
     ir
 }
 
 #[test]
 fn a_definition_override_names_a_definition_the_scope_spans() {
-    let ir = other_overridden();
+    let ir = fusion();
     assert_finding(&ir, "which is no definition the scope spans");
 
-    let mut ir = other_overridden();
-    let part = occurrence("part", "part", OccurrenceParent::Root {});
-    let child = OccurrenceParent::Occurrence {
-        occurrence: part.id.clone(),
-    };
-    ir.model.occurrences = vec![part, occurrence("other", "other", child)];
+    let mut ir = fusion();
+    ir.model.occurrences = vec![
+        occurrence("root", "part", OccurrenceParent::Root {}),
+        occurrence("bracket", "bracket", child_of("root")),
+    ];
     assert_no_design_finding(&ir);
-    let mut ir = other_overridden();
+    override_definition(&mut ir, "nested");
+    ir.model
+        .occurrences
+        .push(occurrence("nested", "nested", child_of("bracket")));
+    assert_no_design_finding(&ir);
+    override_definition(&mut ir, "foreign");
+    ir.model
+        .occurrences
+        .push(occurrence("foreign", "foreign", OccurrenceParent::Root {}));
+    assert_finding(&ir, "override names test:design:definition#foreign");
+
+    let mut ir = fusion();
+    ir.model.occurrences = vec![occurrence("bracket", "bracket", OccurrenceParent::Root {})];
+    assert_no_design_finding(&ir);
+
+    let mut ir = document();
+    override_definition(&mut ir, "other");
+    ir.model.occurrences = vec![
+        occurrence("root", "part", OccurrenceParent::Root {}),
+        occurrence("other", "other", child_of("root")),
+    ];
+    assert_finding(&ir, "which is no definition the scope spans");
     ir.model.occurrences = vec![occurrence("other", "other", OccurrenceParent::Root {})];
-    assert_no_design_finding(&ir);
+    assert_finding(&ir, "which is no definition the scope spans");
 }

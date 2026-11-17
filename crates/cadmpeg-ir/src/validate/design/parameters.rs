@@ -210,7 +210,7 @@ fn evaluate_in(
                         match values.pop()? {
                             Some(true) => then,
                             Some(false) => otherwise,
-                            None => then.filter(|_| then == otherwise),
+                            None => None,
                         }
                     }
                     _ => None,
@@ -222,23 +222,16 @@ fn evaluate_in(
     values.pop().flatten()
 }
 
-/// A Boolean operation over undecided operands: `and` is false where either
-/// operand is, `or` true where either is, and a comparison is decided only
-/// where both are.
+/// A Boolean operation, decided only where both operands are Booleans with
+/// a value: `and` and `or` evaluate both operands (§5.13), so an undecided
+/// operand leaves the result undecided.
 fn combine(op: BinaryOp, left: Option<bool>, right: Option<bool>) -> Option<bool> {
+    let (left, right) = (left?, right?);
     match op {
-        BinaryOp::And => match (left, right) {
-            (Some(false), _) | (_, Some(false)) => Some(false),
-            (Some(true), Some(true)) => Some(true),
-            _ => None,
-        },
-        BinaryOp::Or => match (left, right) {
-            (Some(true), _) | (_, Some(true)) => Some(true),
-            (Some(false), Some(false)) => Some(false),
-            _ => None,
-        },
-        BinaryOp::Equal => Some(left? == right?),
-        BinaryOp::NotEqual => Some(left? != right?),
+        BinaryOp::And => Some(left && right),
+        BinaryOp::Or => Some(left || right),
+        BinaryOp::Equal => Some(left == right),
+        BinaryOp::NotEqual => Some(left != right),
         BinaryOp::Add
         | BinaryOp::Subtract
         | BinaryOp::Multiply
