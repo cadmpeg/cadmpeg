@@ -617,19 +617,19 @@ fn parting_scope(form: u32) -> DesignParameterScope {
                 boundary_flag: false,
                 fixed_edges: (form == 3).then_some(Located {
                     value: 104,
-                    offset: 75,
+                    offset: 74,
                 }),
                 pull: Located {
                     value: 102,
-                    offset: if form == 2 { 75 } else { 86 },
+                    offset: if form == 2 { 75 } else { 85 },
                 },
                 tool: Located {
                     value: 103,
-                    offset: if form == 2 { 86 } else { 97 },
+                    offset: if form == 2 { 86 } else { 96 },
                 },
                 faces: Located {
                     value: 101,
-                    offset: if form == 2 { 101 } else { 112 },
+                    offset: if form == 2 { 101 } else { 111 },
                 },
             }),
             ..Default::default()

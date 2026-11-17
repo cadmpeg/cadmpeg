@@ -22,6 +22,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
 
 const MODE_SINGLE_ANGLE: u32 = 1;
+const MARKED_REFERENCE_LEN: usize = 11;
 
 pub(super) fn exact_draft_operation_with_owners(
     bytes: &[u8],
@@ -185,12 +186,15 @@ fn parting_groups(
             offset: scope.byte_offset().checked_add(u64_from_index(offset))?,
         })
     };
-    let fixed_edges = match *bytes.get(parting_prefix::FIXED_EDGES_PRESENT)? {
-        0 => None,
-        1 => Some(reference(parting_prefix::LEN)?),
+    let fixed_edges_at = parting_prefix::FIXED_EDGES_PRESENT;
+    let (fixed_edges, group_at) = match *bytes.get(fixed_edges_at)? {
+        0 => (None, parting_prefix::LEN),
+        1 => (
+            Some(reference(fixed_edges_at)?),
+            fixed_edges_at.checked_add(MARKED_REFERENCE_LEN)?,
+        ),
         _ => return None,
     };
-    let group_at = parting_prefix::LEN.checked_add(if fixed_edges.is_some() { 11 } else { 0 })?;
     let pull = reference(group_at.checked_add(suffix::PULL_REFERENCE)?)?;
     let tool = reference(group_at.checked_add(suffix::TOOL_REFERENCE)?)?;
     let faces = reference(group_at.checked_add(suffix::FACES_REFERENCE)?)?;

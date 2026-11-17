@@ -48,18 +48,18 @@ fn draft_edge_groups_require_an_explicit_parting_tool_or_fixed_edge_reference() 
                             mode: 1,
                             prefix_scalars: [cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(); 2],
                             boundary_flag: false,
-                            fixed_edges: fixed.map(|value| Located { value, offset: 75 }),
+                            fixed_edges: fixed.map(|value| Located { value, offset: 74 }),
                             pull: Located {
                                 value: 120,
-                                offset: 86,
+                                offset: if fixed.is_some() { 85 } else { 75 },
                             },
                             tool: Located {
                                 value: tool,
-                                offset: 97,
+                                offset: if fixed.is_some() { 96 } else { 86 },
                             },
                             faces: Located {
                                 value: 130,
-                                offset: 112,
+                                offset: if fixed.is_some() { 111 } else { 101 },
                             },
                         }),
                         ..Default::default()

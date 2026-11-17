@@ -237,10 +237,9 @@ fn parting_fixture(form: u32) -> Fixture {
     fixture.opposite_value = 0.25;
     fixture.tail = PARTING_TAIL.to_vec();
     if form == 3 {
-        fixture.tail[17] = 1;
         fixture
             .tail
-            .splice(18..18, [1, 94, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            .splice(17..18, [1, 94, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
     fixture
 }
@@ -261,10 +260,14 @@ fn parting_prefixes_retain_both_angles_and_explicit_group_roles() {
             (form == 3).then_some(94)
         );
         assert_eq!(
+            parting.fixed_edges.map(|value| value.offset),
+            (form == 3).then_some(74)
+        );
+        assert_eq!(
             (parting.pull.value, parting.tool.value, parting.faces.value),
             (93, 92, 91)
         );
-        assert_eq!(parting.pull.offset, if form == 2 { 75 } else { 86 });
+        assert_eq!(parting.pull.offset, if form == 2 { 75 } else { 85 });
     }
 }
 
@@ -277,16 +280,28 @@ fn parting_prefixes_reject_truncation_invalid_flags_and_foreign_or_duplicate_ref
             truncated.tail.truncate(end);
             assert!(truncated.decode().is_none(), "form {form}, tail {end}");
         }
-        for offset in [16, 17, 18] {
+        for offset in [16, 17] {
             let mut bad = fixture.clone();
             bad.tail[offset] = 2;
             assert!(bad.decode().is_none());
         }
-        let group_at = if form == 2 { 18 } else { 29 };
-        for (offset, value) in [(group_at + 1, 99), (group_at + 12, 93), (group_at + 5, 1)] {
+        let group_at = if form == 2 { 18 } else { 28 };
+        for (offset, value) in [
+            (group_at, 2),
+            (group_at + 1, 99),
+            (group_at + 12, 93),
+            (group_at + 5, 1),
+        ] {
             let mut bad = fixture.clone();
             bad.tail[offset] = value;
             assert!(bad.decode().is_none());
+        }
+        if form == 3 {
+            for (offset, value) in [(18, 0), (18, 93), (18, 99), (22, 1)] {
+                let mut bad = fixture.clone();
+                bad.tail[offset] = value;
+                assert!(bad.decode().is_none());
+            }
         }
         for value in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
             let mut bad = fixture.clone();
