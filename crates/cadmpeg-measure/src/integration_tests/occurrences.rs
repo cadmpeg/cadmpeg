@@ -68,21 +68,13 @@ fn placing(
 ) -> Occurrence {
     Occurrence {
         id: occurrence_id(key),
-        prototype: PrototypeReference::Local {
-            definition: prototype,
-        },
-        parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
-            OccurrenceParent::Occurrence {
-                occurrence: occurrence_id(parent),
-            }
-        }),
-        ordinal: 0,
-        transform: Transform::affine(transform).expect("transform"),
-        linked_prototype: None,
-        scale: [FiniteReal::ONE; 3],
-        name: None,
+        prototype,
+        transform: Some(Transform::affine(transform).expect("transform")),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
         native_ref: None,
     }
 }

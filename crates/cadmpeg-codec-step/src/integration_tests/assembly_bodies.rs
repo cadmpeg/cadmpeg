@@ -51,23 +51,13 @@ fn occurrence(name: &str, parent: Option<&str>, x: f64) -> Occurrence {
         id: format!("test:assembly:occurrence#{name}")
             .try_into()
             .expect("occurrence identity"),
-        prototype: PrototypeReference::Local {
-            definition: product(name, Vec::new()).id,
-        },
-        parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
-            OccurrenceParent::Occurrence {
-                occurrence: format!("test:assembly:occurrence#{parent}")
-                    .try_into()
-                    .expect("parent identity"),
-            }
-        }),
-        ordinal: 0,
-        transform: translation(x),
-        linked_prototype: None,
-        scale: [FiniteReal::ONE; 3],
-        name: Some(name.into()),
+        prototype: product(name, Vec::new()).id,
+        transform: Some(translation(x)),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: Some(name.into()),
         native_ref: None,
     }
 }

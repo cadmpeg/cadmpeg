@@ -224,15 +224,13 @@ fn occurrences_that_place_bodies_keep_the_verdict_inconclusive() {
         let one = cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite");
         cube.model.occurrences.push(Occurrence {
             id: OccurrenceId::mint("synthetic:cube:occurrence#1").expect("id"),
-            prototype: PrototypeReference::Local { definition },
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform,
-            linked_prototype: None,
-            scale: [one; 3],
-            name: None,
+            prototype: definition,
+            transform: Some(transform),
+            suppressed: None,
             visible: None,
-            link: None,
+            representation: None,
+            overrides: Vec::new(),
+            name: None,
             native_ref: None,
         });
         cube

@@ -1763,37 +1763,31 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     ir.model.occurrences.extend([
         Occurrence {
             id: root.clone(),
-            prototype: cadmpeg_ir::products::PrototypeReference::Local {
-                definition: parent_product.clone(),
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform: Transform::identity(),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some("Root assembly".into()),
+            prototype: parent_product.clone(),
+            transform: Some(Transform::identity()),
+            suppressed: None,
             visible: None,
-            link: None,
+            representation: None,
+            overrides: Vec::new(),
+            name: Some("Root assembly".into()),
             native_ref: None,
         },
         Occurrence {
             id: child.clone(),
-            prototype: cadmpeg_ir::products::PrototypeReference::Local {
-                definition: child_product,
-            },
-            parent: OccurrenceParent::Occurrence { occurrence: root },
-            ordinal: 0,
-            transform: Transform::affine([
-                [1.0, 0.0, 0.0, 25.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-            ])
-            .expect("affine transform"),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some("Child occurrence".into()),
+            prototype: child_product,
+            transform: Some(
+                Transform::affine([
+                    [1.0, 0.0, 0.0, 25.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ])
+                .expect("affine transform"),
+            ),
+            suppressed: None,
             visible: None,
-            link: None,
+            representation: None,
+            overrides: Vec::new(),
+            name: Some("Child occurrence".into()),
             native_ref: None,
         },
     ]);

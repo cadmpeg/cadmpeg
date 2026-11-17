@@ -573,21 +573,13 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
     };
     let occurrence = |id: &str, definition: &str, parent: Option<&str>| Occurrence {
         id: OccurrenceId::mint(id).unwrap(),
-        prototype: PrototypeReference::Local {
-            definition: ProductDefinitionId::mint(definition).unwrap(),
-        },
-        parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
-            OccurrenceParent::Occurrence {
-                occurrence: OccurrenceId::mint(parent).unwrap(),
-            }
-        }),
-        ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
+        prototype: ProductDefinitionId::mint(definition).unwrap(),
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
         native_ref: None,
     };
     let root = "f3d:model:component#root";

@@ -321,17 +321,13 @@ fn writer_reports_root_occurrence_scale() {
         id: "test:model:occurrence#scaled"
             .try_into()
             .expect("valid identity"),
-        prototype: cadmpeg_ir::products::PrototypeReference::Local {
-            definition: product,
-        },
-        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: Transform::identity(),
-        linked_prototype: None,
-        scale: [2.0, 1.0, 1.0].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
-        name: Some("Scaled root".into()),
+        prototype: product,
+        transform: Some(Transform::identity()),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: Some("Scaled root".into()),
         native_ref: None,
     });
 
@@ -508,17 +504,13 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
         id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#local-child")
             .expect("identity grammar"),
-        prototype: cadmpeg_ir::products::PrototypeReference::Local {
-            definition: product,
-        },
-        parent: cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent },
-        ordinal: 1,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
+        prototype: product,
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
         native_ref: None,
     });
 

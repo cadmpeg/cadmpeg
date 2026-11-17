@@ -133,24 +133,14 @@ fn occurrence_id(name: &str) -> OccurrenceId {
 fn occurrence(name: &str, parent: Option<&str>, carrier: &DesignComponentOccurrence) -> Occurrence {
     Occurrence {
         id: occurrence_id(name),
-        prototype: PrototypeReference::Local {
-            definition: cadmpeg_ir::ids::ProductDefinitionId::mint(
-                "f3d:model:component#definition",
-            )
+        prototype: cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:component#definition")
             .unwrap(),
-        },
-        parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
-            OccurrenceParent::Occurrence {
-                occurrence: occurrence_id(parent),
-            }
-        }),
-        ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
         native_ref: Some(carrier.id.clone()),
     }
 }

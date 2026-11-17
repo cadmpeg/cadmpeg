@@ -43,22 +43,14 @@ fn unnamed_occurrence(
 ) -> cadmpeg_ir::products::Occurrence {
     cadmpeg_ir::products::Occurrence {
         id: cadmpeg_ir::ids::OccurrenceId::mint(id).expect("identity grammar"),
-        prototype: cadmpeg_ir::products::PrototypeReference::Local {
-            definition: cadmpeg_ir::ids::ProductDefinitionId::mint(definition)
-                .expect("identity grammar"),
-        },
-        parent: parent.map_or(cadmpeg_ir::products::OccurrenceParent::Root {}, |parent| {
-            cadmpeg_ir::products::OccurrenceParent::Occurrence {
-                occurrence: cadmpeg_ir::ids::OccurrenceId::mint(parent).expect("identity grammar"),
-            }
-        }),
-        ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
+        prototype: cadmpeg_ir::ids::ProductDefinitionId::mint(definition)
+            .expect("identity grammar"),
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
         native_ref: None,
     }
 }

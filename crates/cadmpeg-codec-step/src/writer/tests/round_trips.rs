@@ -730,17 +730,13 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
         id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#root-0")
             .expect("identity grammar"),
-        prototype: cadmpeg_ir::products::PrototypeReference::Local {
-            definition: product,
-        },
-        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: Some("Cube root".into()),
+        prototype: product,
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: Some("Cube root".into()),
         native_ref: None,
     });
     let options = StepWriteOptions {
