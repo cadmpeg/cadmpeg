@@ -8787,7 +8787,11 @@ fn project_replace_face(
     )?;
     Some(FeatureDefinition::Operation(
         FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(targets, replacements).ok()?,
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
+                targets,
+                replacements,
+            )
+            .ok()?,
         },
     ))
 }

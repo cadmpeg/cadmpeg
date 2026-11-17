@@ -18,6 +18,7 @@ mod round_trip;
 mod sketch_tessellation;
 mod swobjects;
 mod targets;
+mod replace_face;
 mod thicken_reference;
 mod transformed_surface;
 mod vertex_records;

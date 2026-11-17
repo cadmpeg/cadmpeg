@@ -468,7 +468,7 @@ fn selection_operand_parts_move_retained_storage() {
     let replacements_text = String::from("replacements-native");
     let targets_pointer = targets_text.as_ptr();
     let replacements_pointer = replacements_text.as_ptr();
-    let operands = crate::features::ReplaceFaceOperands::new(
+    let operands = crate::features::replace_face::ReplaceFaceOperands::new(
         crate::features::FaceSelection::Native(targets_text),
         crate::features::FaceSelection::Native(replacements_text),
     )
