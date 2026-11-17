@@ -2,7 +2,7 @@
 //! STEP product prototypes, occurrence identity, and relative placement.
 
 use crate::ids::{key_word, kind};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{btree_map, BTreeMap, BTreeSet, HashSet};
 
 use super::{named_parameter, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -535,8 +535,8 @@ pub(super) fn decode(
                 admitted_ir_entities,
                 "step_assembly_occurrence",
             )?;
-            if !reached.contains_key(&usage.child_definition) {
-                reached.insert(usage.child_definition, Reached::OnPath);
+            if let btree_map::Entry::Vacant(entry) = reached.entry(usage.child_definition) {
+                entry.insert(Reached::OnPath);
                 stack.push((usage.child_definition, parent_length + 1, 0));
             }
             typed.insert(usage_id);
