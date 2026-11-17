@@ -715,6 +715,14 @@ pub(crate) enum F3dLossCode {
     FeatureFaceGroupsMethodUnmapped,
     FeatureFaceGroupsBoundaryDistanceAssumed,
     FeatureFaceGroupsSettingUnassigned,
+    ReplaceFaceFrameAssumed,
+    ReplaceFaceGroupsAggregatedAssumed,
+    ReplaceFaceOverlapUnresolved,
+    ReplaceFaceSelectionAssumed,
+    ReplaceFaceTangentChainAssumed,
+    ReplaceFaceSupportAssumed,
+    ReplaceFaceIdentityAssumed,
+    ReplaceFaceFlaggedPrefixWordAssumed,
     SurfaceUntrimFrameAssumed,
     SurfaceUntrimGroupSelectionAssumed,
     SurfaceUntrimStoredLoopGroupsAssumed,
@@ -1500,6 +1508,14 @@ impl F3dLossCode {
         Self::FeatureFaceGroupsMethodUnmapped,
         Self::FeatureFaceGroupsBoundaryDistanceAssumed,
         Self::FeatureFaceGroupsSettingUnassigned,
+        Self::ReplaceFaceFrameAssumed,
+        Self::ReplaceFaceGroupsAggregatedAssumed,
+        Self::ReplaceFaceOverlapUnresolved,
+        Self::ReplaceFaceSelectionAssumed,
+        Self::ReplaceFaceTangentChainAssumed,
+        Self::ReplaceFaceSupportAssumed,
+        Self::ReplaceFaceIdentityAssumed,
+        Self::ReplaceFaceFlaggedPrefixWordAssumed,
         Self::SurfaceUntrimFrameAssumed,
         Self::SurfaceUntrimGroupSelectionAssumed,
         Self::SurfaceUntrimStoredLoopGroupsAssumed,
@@ -2380,6 +2396,18 @@ impl F3dLossCode {
             Self::FeatureFaceGroupsSettingUnassigned => {
                 "feature.mesh-face-groups-setting-unassigned"
             }
+            Self::ReplaceFaceFrameAssumed => "feature.replace-face-frame-assumed",
+            Self::ReplaceFaceGroupsAggregatedAssumed => {
+                "feature.replace-face-groups-aggregated-assumed"
+            }
+            Self::ReplaceFaceOverlapUnresolved => "feature.replace-face-overlap-unresolved",
+            Self::ReplaceFaceSelectionAssumed => "feature.replace-face-selection-assumed",
+            Self::ReplaceFaceTangentChainAssumed => "feature.replace-face-tangent-chain-assumed",
+            Self::ReplaceFaceSupportAssumed => "feature.replace-face-support-assumed",
+            Self::ReplaceFaceIdentityAssumed => "feature.replace-face-identity-assumed",
+            Self::ReplaceFaceFlaggedPrefixWordAssumed => {
+                "feature.replace-face-flagged-prefix-word-assumed"
+            }
             Self::SurfaceUntrimFrameAssumed => "feature.surface-untrim-frame-assumed",
             Self::SurfaceUntrimGroupSelectionAssumed => {
                 "feature.surface-untrim-group-selection-assumed"
@@ -3113,6 +3141,14 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsMethodUnmapped
             | Self::FeatureFaceGroupsBoundaryDistanceAssumed
             | Self::FeatureFaceGroupsSettingUnassigned
+            | Self::ReplaceFaceFrameAssumed
+            | Self::ReplaceFaceGroupsAggregatedAssumed
+            | Self::ReplaceFaceOverlapUnresolved
+            | Self::ReplaceFaceSelectionAssumed
+            | Self::ReplaceFaceTangentChainAssumed
+            | Self::ReplaceFaceSupportAssumed
+            | Self::ReplaceFaceIdentityAssumed
+            | Self::ReplaceFaceFlaggedPrefixWordAssumed
             | Self::SurfaceUntrimFrameAssumed
             | Self::SurfaceUntrimGroupSelectionAssumed
             | Self::SurfaceUntrimStoredLoopGroupsAssumed
@@ -3711,6 +3747,14 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsMethodUnmapped
             | Self::FeatureFaceGroupsBoundaryDistanceAssumed
             | Self::FeatureFaceGroupsSettingUnassigned
+            | Self::ReplaceFaceFrameAssumed
+            | Self::ReplaceFaceGroupsAggregatedAssumed
+            | Self::ReplaceFaceOverlapUnresolved
+            | Self::ReplaceFaceSelectionAssumed
+            | Self::ReplaceFaceTangentChainAssumed
+            | Self::ReplaceFaceSupportAssumed
+            | Self::ReplaceFaceIdentityAssumed
+            | Self::ReplaceFaceFlaggedPrefixWordAssumed
             | Self::SurfaceUntrimFrameAssumed
             | Self::SurfaceUntrimGroupSelectionAssumed
             | Self::SurfaceUntrimStoredLoopGroupsAssumed
@@ -4426,6 +4470,14 @@ mod tests {
                 "feature.mesh-face-groups-method-unmapped",
                 "feature.mesh-face-groups-boundary-distance-assumed",
                 "feature.mesh-face-groups-setting-unassigned",
+                "feature.replace-face-frame-assumed",
+                "feature.replace-face-groups-aggregated-assumed",
+                "feature.replace-face-overlap-unresolved",
+                "feature.replace-face-selection-assumed",
+                "feature.replace-face-tangent-chain-assumed",
+                "feature.replace-face-support-assumed",
+                "feature.replace-face-identity-assumed",
+                "feature.replace-face-flagged-prefix-word-assumed",
                 "feature.surface-untrim-frame-assumed",
                 "feature.surface-untrim-group-selection-assumed",
                 "feature.surface-untrim-stored-loop-groups-assumed",
