@@ -189,7 +189,9 @@ fn expression(
     let mut previous_number = false;
     while cursor < text.len() {
         let start = cursor;
-        let ch = text[cursor..].chars().next().expect("character boundary");
+        let Some(ch) = text[cursor..].chars().next() else {
+            break;
+        };
         cursor += ch.len_utf8();
         if ch.is_ascii_digit() || ch == '.' {
             while cursor < text.len()
@@ -210,7 +212,9 @@ fn expression(
             previous_number = true;
         } else if ch.is_alphabetic() || ch == '_' {
             while cursor < text.len() {
-                let ch = text[cursor..].chars().next().expect("character boundary");
+                let Some(ch) = text[cursor..].chars().next() else {
+                    break;
+                };
                 if !ch.is_alphanumeric() && ch != '_' {
                     break;
                 }
