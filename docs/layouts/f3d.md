@@ -3418,8 +3418,10 @@ The member repeats within each selected region. Region and member counts and the
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `kind` | `u32` | little | spec | u32 kind `3` |
-| 4 | 4 | `curve_primary_id` | `u32` | little | spec | one nonzero u32 primary persistent Sketch-curve identity |
-| 8 | 12 | `zero_words_3` | `u32[3]` | little | spec | three zero u32 values |
+| 4 | 4 | `curve_primary_id` | `u32` | little | spec | the nonzero u32 primary persistent Sketch-curve identity |
+| 8 | 4 | `zero_word_after_primary` | `u32` | little | spec | a zero u32 |
+| 12 | 4 | `curve_secondary_id` | `u32` | little | spec | the u32 secondary persistent Sketch-curve identity |
+| 16 | 4 | `zero_word_after_secondary` | `u32` | little | spec | a second zero u32 |
 | 20 | 12 | `incidence_words` | `u32[3]` | little | spec | three incidence values |
 | 32 | 8 | `zero_words_2` | `u32[2]` | little | spec | two zero u32 values |
 

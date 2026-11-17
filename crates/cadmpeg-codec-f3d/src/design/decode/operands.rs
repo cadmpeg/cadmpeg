@@ -5864,7 +5864,7 @@ fn parse_sketch_profile_region_members(
             bytes,
             cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
         )?)?;
-        let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORDS_3)?;
+        let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORD_AFTER_PRIMARY)?;
         let mut incidence_words = [0; 8];
         for (ordinal, word) in incidence_words.iter_mut().enumerate() {
             *word = View::u32_le_at(
@@ -5872,8 +5872,17 @@ fn parse_sketch_profile_region_members(
                 incidence_words_offset.checked_add(ordinal.checked_mul(4)?)?,
             )?;
         }
+        let curve_secondary_id = View::u32_le_at(
+            bytes,
+            cursor.checked_add(region_member::CURVE_SECONDARY_ID)?,
+        )?;
+        let zero_after_secondary = View::u32_le_at(
+            bytes,
+            cursor.checked_add(region_member::ZERO_WORD_AFTER_SECONDARY)?,
+        )?;
         if kind != 3
-            || incidence_words[..3] != [0; 3]
+            || incidence_words[0] != 0
+            || zero_after_secondary != 0
             || !matches!(incidence_words[3], 0 | 1)
             || incidence_words[6..] != [0; 2]
         {
@@ -5886,6 +5895,7 @@ fn parse_sketch_profile_region_members(
                 cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
             )
             .ok()?,
+            curve_secondary_id: std::num::NonZeroU32::new(curve_secondary_id),
             incidence_flag: incidence_words[3] == 1,
             incidence_values: [
                 crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
@@ -7373,7 +7383,11 @@ fn parse_profile_curve_selection(
         else {
             return Ok(None);
         };
-        if parse_sketch_profile_region_selection(bytes, header.record_index, paired_at).is_some() {
+        // A nested region selection whose members name curves without a
+        // secondary identity is the sketch-profile frame's own selection.
+        if parse_sketch_profile_region_selection(bytes, header.record_index, paired_at)
+            .is_some_and(|selection| !selection.has_secondary_identity())
+        {
             return Ok(None);
         }
     }
