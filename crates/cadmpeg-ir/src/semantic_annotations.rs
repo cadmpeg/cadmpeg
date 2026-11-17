@@ -2,6 +2,7 @@
 //! Format-neutral semantic dimensions, notes, symbols, and callouts.
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ crate::ids::id_type!(
 /// Semantic role of an annotation independent of its drawing presentation.
 ///
 /// GD&T frames and datum features are modelled in [`crate::pmi`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
