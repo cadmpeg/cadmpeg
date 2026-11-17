@@ -47,7 +47,10 @@ impl DirectJointOriginCarrier {
                 extended::REFERENCE_SUFFIX_VALUE,
             )
         } else {
-            (short::CONSTRUCTION_REFERENCE, short::ZERO_AFTER_REFERENCE_VALUE)
+            (
+                short::CONSTRUCTION_REFERENCE,
+                short::ZERO_AFTER_REFERENCE_VALUE,
+            )
         };
         Some(Self {
             record_index,

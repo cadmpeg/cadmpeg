@@ -4174,8 +4174,8 @@ pub(crate) mod joint_origin_direct_carrier_369 {
     pub(crate) const ZERO_PREFIX: usize = 11;
     /// Offset of `construction_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const CONSTRUCTION_REFERENCE: usize = 45;
-    /// Offset of `zero_after_reference` (`bytes[4]`). Spec §3.1.
-    pub(crate) const ZERO_AFTER_REFERENCE: usize = 56;
+    /// Stated value of `zero_after_reference` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_REFERENCE_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
     /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const MATRIX: usize = 60;
     /// Offset of `scope_backlink` (`bytes[11]`). Spec §3.1.
@@ -4208,10 +4208,10 @@ pub(crate) mod joint_origin_direct_carrier_391 {
 pub(crate) mod joint_origin_direct_carrier_412 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 412;
-    /// Offset of `matrix_marker` (`u8`). Spec §3.1.
-    pub(crate) const MATRIX_MARKER: usize = 60;
-    /// Stated value of `matrix_marker` (`u8`). Spec §3.1.
-    pub(crate) const MATRIX_MARKER_VALUE: u8 = 1;
+    /// Offset of `construction_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CONSTRUCTION_REFERENCE: usize = 46;
+    /// Stated value of `reference_suffix` (`bytes[4]`). Spec §3.1.
+    pub(crate) const REFERENCE_SUFFIX_VALUE: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
     /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const MATRIX: usize = 61;
     /// Offset of `scope_backlink` (`bytes[11]`). Spec §3.1.

@@ -4621,9 +4621,9 @@ Offsets are relative to the primary placement-carrier header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 11 | 34 | `zero_prefix` | `bytes[34]` | little | spec | Each carrier stores 34 zero bytes |
+| 11 | 34 | `zero_prefix` | `bytes[34]` | little | spec | carriers store 34 zero bytes |
 | 45 | 11 | `construction_reference` | `bytes[11]` | little | spec | a marked construction-record reference at offset 45 |
-| 56 | 4 | `zero_after_reference` | `bytes[4]` | little | spec | four zero bytes after that reference |
+| 56 | 4 | `zero_after_reference` | `bytes[4]` | little | spec | four zero bytes after that reference · value `[0, 0, 0, 0]` |
 | 60 | 128 | `matrix` | `f64[16]` | little | spec | The matrix columns give the axes and the origin in centimetres |
 | 358 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The final eleven bytes of the carrier are a marked scope backlink |
 
@@ -4640,9 +4640,9 @@ Offsets are relative to the primary placement-carrier header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 11 | 34 | `zero_prefix` | `bytes[34]` | little | spec | Each carrier stores 34 zero bytes |
+| 11 | 34 | `zero_prefix` | `bytes[34]` | little | spec | carriers store 34 zero bytes |
 | 45 | 11 | `construction_reference` | `bytes[11]` | little | spec | a marked construction-record reference at offset 45 |
-| 56 | 4 | `zero_after_reference` | `bytes[4]` | little | spec | four zero bytes after that reference |
+| 56 | 4 | `zero_after_reference` | `bytes[4]` | little | spec | four zero bytes after that reference · value `[0, 0, 0, 0]` |
 | 60 | 128 | `matrix` | `f64[16]` | little | spec | The matrix columns give the axes and the origin in centimetres |
 | 380 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The final eleven bytes of the carrier are a marked scope backlink |
 
@@ -4659,10 +4659,9 @@ Offsets are relative to the primary placement-carrier header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 11 | 34 | `zero_prefix` | `bytes[34]` | little | spec | Each carrier stores 34 zero bytes |
-| 45 | 11 | `construction_reference` | `bytes[11]` | little | spec | a marked construction-record reference at offset 45 |
-| 56 | 4 | `zero_after_reference` | `bytes[4]` | little | spec | four zero bytes after that reference |
-| 60 | 1 | `matrix_marker` | `u8` | little | spec | The 412-byte carrier stores byte `1` at offset 60 · value `1` |
+| 11 | 35 | `zero_prefix` | `bytes[35]` | little | spec | The 412-byte carrier stores 35 zero bytes |
+| 46 | 11 | `construction_reference` | `bytes[11]` | little | spec | a marked construction-record reference at offset 46 |
+| 57 | 4 | `reference_suffix` | `bytes[4]` | little | spec | the bytes `00 00 01 00` after that reference · value `[0, 0, 1, 0]` |
 | 61 | 128 | `matrix` | `f64[16]` | little | spec | The matrix columns give the axes and the origin in centimetres |
 | 401 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The final eleven bytes of the carrier are a marked scope backlink |
 
