@@ -507,3 +507,121 @@ fn entries_lie_on_no_face_needs_entry_points_and_input_faces() {
     other_form.reference_type = 14;
     assert!(!entries_lie_on_no_face(&other_form, &box_faces()));
 }
+
+const DRUM: i64 = 50;
+const SIDE: [f64; 3] = [0.0, 1.0, 0.0];
+/// A radial entry point on a drum of radius 20 mm about the z axis.
+const DRUM_ENTRY_MM: [f64; 3] = [0.0, 20.0, 15.0];
+const DRUM_ENTRY_CM: [f64; 3] = [0.0, 2.0, 1.5];
+
+/// A preceding state whose only face is a cylinder of the given radius.
+fn drum(radius: f64) -> AsmHistoricalTopology {
+    AsmHistoricalTopology {
+        faces: vec![DRUM],
+        surface_cylinders: vec![AsmHistoricalCylinder {
+            surface: DRUM + 100,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            radius,
+        }],
+        face_surfaces: vec![AsmHistoricalCarrierBinding {
+            entity: DRUM,
+            carrier: DRUM + 100,
+        }],
+        ..AsmHistoricalTopology::default()
+    }
+}
+
+/// A transition that bores a cylinder along `axis` through `origin` and gives
+/// the drum face and the inserted face the edge `an edge`, or a
+/// separate edge when it is false.
+fn radial_bore(origin: [f64; 3], axis: [f64; 3], meets_drum: bool) -> AsmHistoricalTransition {
+    let drum_edge = if meets_drum { 3001 } else { 3002 };
+    AsmHistoricalTransition {
+        geometry_unchanged: false,
+        previous_state_id: Some(1),
+        records: AsmHistoricalEntityDelta::default(),
+        topology: AsmHistoricalTopologyDelta {
+            faces: AsmHistoricalEntityDelta {
+                inserted: vec![1000],
+                updated: vec![DRUM],
+                ..AsmHistoricalEntityDelta::default()
+            },
+            ..AsmHistoricalTopologyDelta::default()
+        },
+        record_revisions: Vec::new(),
+        rows: serde_json::from_value(json!({
+            "surface_cylinders": {"set": [{
+                "surface": 1100,
+                "origin": {"x": origin[0], "y": origin[1], "z": origin[2]},
+                "axis": {"x": axis[0], "y": axis[1], "z": axis[2]},
+                "radius": 2.5
+            }]},
+            "face_surfaces": {"set": [{"entity": 1000, "carrier": 1100}]},
+            "face_loops": {"set": [
+                {"owner_ref": 1000, "member_refs": [2000]},
+                {"owner_ref": DRUM, "member_refs": [2010]}
+            ]},
+            "loop_coedges": {"set": [
+                {"owner_ref": 2000, "member_refs": [2001]},
+                {"owner_ref": 2010, "member_refs": [2011]}
+            ]},
+            "coedge_topology": {"set": [
+                {"coedge": 2001, "owner_loop": 2000, "edge": 3001,
+                 "next": 2001, "previous": 2001, "radial_next": 2001},
+                {"coedge": 2011, "owner_loop": 2010, "edge": drum_edge,
+                 "next": 2011, "previous": 2011, "radial_next": 2011}
+            ]}
+        }))
+        .unwrap(),
+    }
+}
+
+#[test]
+fn support_is_the_updated_cylinder_that_a_radial_bore_meets() {
+    assert_eq!(
+        hole_support_faces(
+            &sketch_carrier(&[DRUM_ENTRY_CM], SIDE),
+            &radial_bore(DRUM_ENTRY_MM, SIDE, true),
+            &drum(20.0)
+        ),
+        Some(vec![DRUM])
+    );
+}
+
+#[test]
+fn support_cylinder_needs_the_entry_point_on_its_surface() {
+    assert_eq!(
+        hole_support_faces(
+            &sketch_carrier(&[DRUM_ENTRY_CM], SIDE),
+            &radial_bore(DRUM_ENTRY_MM, SIDE, true),
+            &drum(19.0)
+        ),
+        None
+    );
+}
+
+#[test]
+fn support_cylinder_needs_a_bore_along_a_radius() {
+    let slanted = [0.0, 0.6, 0.8];
+    assert_eq!(
+        hole_support_faces(
+            &sketch_carrier(&[DRUM_ENTRY_CM], slanted),
+            &radial_bore(DRUM_ENTRY_MM, slanted, true),
+            &drum(20.0)
+        ),
+        None
+    );
+}
+
+#[test]
+fn support_cylinder_needs_an_edge_shared_with_the_inserted_bore() {
+    assert_eq!(
+        hole_support_faces(
+            &sketch_carrier(&[DRUM_ENTRY_CM], SIDE),
+            &radial_bore(DRUM_ENTRY_MM, SIDE, false),
+            &drum(20.0)
+        ),
+        None
+    );
+}
