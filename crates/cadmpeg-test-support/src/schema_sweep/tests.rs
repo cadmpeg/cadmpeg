@@ -195,3 +195,114 @@ fn the_end_of_text_lookahead_matches_as_the_end_of_text() {
     assert!(!schema.pattern_matches(identity, "a:b#c d"));
     assert!(!schema.pattern_matches(identity, "a:b"));
 }
+
+/// Roots that hold a data-free enum, a set, and a list in source order.
+mod values {
+    use std::collections::BTreeSet;
+
+    use cadmpeg_derive::DeserializeName;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, DeserializeName)]
+    #[serde(rename_all = "snake_case")]
+    enum Named {
+        A,
+        B,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub(super) struct Strict {
+        unit: Named,
+        #[serde(with = "cadmpeg_core::distinct_keys::set")]
+        set: BTreeSet<u32>,
+        list: Vec<Named>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum Derived {
+        A,
+        B,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub(super) struct Lax {
+        unit: Derived,
+        set: BTreeSet<u32>,
+        list: Vec<Derived>,
+    }
+}
+
+fn value_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "unit": {"$ref": "#/$defs/Unit"},
+            "set": {"type": "array", "items": {"type": "integer", "minimum": 0}, "uniqueItems": true},
+            "list": {"type": "array", "items": {"$ref": "#/$defs/Unit"}, "uniqueItems": true},
+        },
+        "additionalProperties": false,
+        "required": ["unit", "set", "list"],
+        "$defs": {"Unit": {"type": "string", "enum": ["a", "b"]}},
+    })
+}
+
+fn sweep_values<T: Serialize + for<'de> Deserialize<'de>>(document: &Value) -> SchemaSweepReport {
+    let read = |text: &str| serde_json::to_value(serde_json::from_str::<T>(text)?);
+    sweep_with(
+        &value_schema(),
+        std::slice::from_ref(document),
+        document,
+        &read,
+    )
+}
+
+#[test]
+fn a_name_and_an_order_read_one_spelling_with_strict_readers() {
+    for document in [
+        json!({"unit": "a", "set": [1, 2], "list": ["b", "a"]}),
+        json!({"unit": "b", "set": [5], "list": ["a"]}),
+    ] {
+        let report = sweep_values::<values::Strict>(&document);
+        assert!(report.accepting.is_empty(), "{:?}", report.accepting);
+        assert!(report.unprobed.is_empty(), "{:?}", report.unprobed);
+        assert_eq!((report.names, report.sets, report.ordered), (1, 1, 1));
+    }
+}
+
+#[test]
+fn a_null_variant_and_a_sorted_rewrite_are_named_with_lax_readers() {
+    let report = sweep_values::<values::Lax>(&json!({"unit": "a", "set": [1, 2], "list": ["a"]}));
+    let accepting = report
+        .accepting
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        accepting,
+        [
+            r#"#/$defs/Unit: `{"a": null}` reads as `a`"#,
+            "#/properties/set: two members out of order are read and written back sorted",
+        ]
+    );
+    assert_eq!((report.names, report.sets, report.ordered), (1, 0, 1));
+}
+
+#[test]
+fn an_array_with_no_second_member_is_reported_unprobed() {
+    let schema = json!({
+        "type": "object",
+        "properties": {"set": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}},
+        "additionalProperties": false,
+        "required": ["set"],
+    });
+    let document = json!({"set": ["only"]});
+    let read = |text: &str| serde_json::to_value(serde_json::from_str::<Value>(text)?);
+    let report = sweep_with(&schema, std::slice::from_ref(&document), &document, &read);
+    assert_eq!(
+        report.unprobed,
+        ["#/properties/set: no document holds two of its members"]
+    );
+}

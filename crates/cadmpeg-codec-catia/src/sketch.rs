@@ -255,6 +255,22 @@ fn constraint_properties(range: &CatiaConstraintRange) -> BTreeMap<String, Strin
                 format_args!("{bits:016x}"),
             );
         }
+        CatiaEntityEvaluation::UnitLiteral | CatiaEntityEvaluation::ZeroLiteral => {
+            let (name, bits) = match range.evaluation {
+                CatiaEntityEvaluation::UnitLiteral => ("unit_literal", 1.0_f64.to_bits()),
+                _ => ("zero_literal", 0.0_f64.to_bits()),
+            };
+            insert_property(
+                &mut properties,
+                format_args!("catia_evaluation"),
+                format_args!("{name}"),
+            );
+            insert_property(
+                &mut properties,
+                format_args!("catia_evaluation_bits"),
+                format_args!("{bits:016x}"),
+            );
+        }
     }
     insert_property(
         &mut properties,
