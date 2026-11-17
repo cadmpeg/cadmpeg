@@ -103,7 +103,7 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         .appearance_bindings
         .iter()
         .any(|binding| matches!(
-            binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
         )));
     assert_eq!(
@@ -116,7 +116,12 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         "machined faces"
     );
     assert!(matches!(
-        result.ir().model.presentation_layers[0].items.as_slice(),
+        result.ir().model.presentation_layers[0]
+            .items
+            .iter()
+            .map(|item| &item.entity)
+            .collect::<Vec<_>>()
+            .as_slice(),
         [cadmpeg_ir::PresentationItem::Face { .. }]
     ));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -151,7 +156,7 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         .appearance_bindings
         .iter()
         .any(|binding| matches!(
-            binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
         )));
     assert_eq!(

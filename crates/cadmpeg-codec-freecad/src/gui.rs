@@ -605,7 +605,7 @@ fn transfer_schema_one(
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{provider_key}:{index}"
                 ))?,
-                target: AppearanceTarget::Body(body.clone()),
+                target: AppearanceTarget::Body(body.clone()).into(),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some("ViewProvider".into()),
@@ -1140,7 +1140,7 @@ fn transfer_primitive_appearance(
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
             ))?,
-            target,
+            target: target.into(),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some(object_type.into()),
@@ -3827,7 +3827,7 @@ fn transfer_shape_appearances(
                         id: binding_id(format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
                         ))?,
-                        target: AppearanceTarget::Body(body.clone()),
+                        target: AppearanceTarget::Body(body.clone()).into(),
                         appearance: appearance_id.clone(),
                         source_entity_id: Some(object_id.to_owned()),
                         object_type: Some("ViewProvider ShapeAppearance".into()),
@@ -4119,7 +4119,7 @@ fn bind_material_faces(
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
             ))?,
-            target: AppearanceTarget::Face(face),
+            target: AppearanceTarget::Face(face).into(),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider ShapeAppearance".into()),
@@ -4236,7 +4236,7 @@ fn transfer_topology_colors(
             if binding.appearance != default_appearance {
                 return true;
             }
-            let topology_id = match &binding.target {
+            let topology_id = match &binding.target.entity {
                 AppearanceTarget::Edge(id) => id.as_str(),
                 AppearanceTarget::Vertex(id) => id.as_str(),
                 _ => return true,
@@ -4320,7 +4320,7 @@ fn transfer_topology_colors(
                     "fcstd:appearance:binding#{kind_key}:{provider_key}:{}:{topology_key}",
                     index + 1,
                 ))?,
-                target,
+                target: target.into(),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some(format!("ViewProvider {}", kind.name())),

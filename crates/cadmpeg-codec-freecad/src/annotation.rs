@@ -9,10 +9,9 @@ use cadmpeg_ir::document::Model;
 use cadmpeg_ir::semantic_annotations::{
     SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
 };
-use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
 use crate::native::{
-    sole_named_property, AnnotationRuntimeType, DrawingRecord, ObjectRecord, PropertyRecord,
+    sole_named_property, AnnotationRuntimeType, ObjectRecord, PropertyRecord,
     SemanticAnnotationRecord,
 };
 
@@ -98,15 +97,7 @@ pub(crate) fn transfer_neutral(
     model: &mut Model,
     records: &[SemanticAnnotationRecord],
     properties: &[PropertyRecord],
-    drawings: &[DrawingRecord],
 ) -> Result<(), CodecError> {
-    let mut drawing_ids = HashMap::new();
-    for drawing in drawings {
-        drawing_ids.insert(
-            drawing.object.as_str(),
-            crate::native::model_id("drawing", &drawing.object, "entity"),
-        );
-    }
     for (order, record) in records.iter().enumerate() {
         let schema = annotation_schema(record.kind);
         let mut owned = Vec::new();
@@ -116,35 +107,11 @@ pub(crate) fn transfer_neutral(
                 .filter(|property| property.owner == record.object),
         );
         validate_text_carriers(ctx, &owned, &schema)?;
-        let target = |link: &Option<crate::native::LinkTarget>| {
-            let Some(link) = link.as_ref() else {
-                return Ok(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
-            };
-            let target = match (link.document_name(), link.object()) {
-                (Some(document), Some(object)) => ReferenceTarget::External {
-                    document: document.to_owned(),
-                    object: object.to_owned(),
-                },
-                (None, None) => ReferenceTarget::Null,
-                (None, Some(object)) => ReferenceTarget::Local(
-                    drawing_ids
-                        .get(object)
-                        .map_or(object, String::as_str)
-                        .to_owned(),
-                ),
-                _ => {
-                    return Err(CodecError::malformed(
-                        "semantic annotation reference has no complete target",
-                    ));
-                }
-            };
-            Ok(ReferenceSelection::new(target, link.subelements().to_vec()))
-        };
         let mut references = BTreeMap::new();
         for (role, targets) in &record.references {
             let mut selections = Vec::new();
             for link in targets {
-                selections.push(target(link)?);
+                selections.extend(crate::drawing::link_references(link.as_ref())?);
             }
             references.insert(role.to_owned(), selections);
         }
@@ -1280,8 +1247,8 @@ pub(crate) mod tests {
             Some([10.0, 20.0, 0.0])
         );
         assert_eq!(
-            semantic_dimension.references["References2D"][0].subelements,
-            ["Edge1"]
+            semantic_dimension.references["References2D"][0].native_text(),
+            Some("Model.Edge1")
         );
         let semantic_note = result
             .ir()
@@ -1303,8 +1270,8 @@ pub(crate) mod tests {
             .find(|drawing| drawing.object.ends_with("#View"))
             .expect("neutral view");
         assert_eq!(
-            semantic_note.references["View"][0].local_target(),
-            Some(neutral_view.id.as_str())
+            semantic_note.references["View"][0].native_text(),
+            Some(crate::native::id_key(&neutral_view.object))
         );
         assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
@@ -1358,7 +1325,13 @@ pub(crate) mod tests {
                 && !annotation.object.ends_with("#Tolerance")));
         let balloon = &result.ir().model.semantic_annotations[0];
         assert_eq!(balloon.text, ["7"]);
-        assert_eq!(balloon.references["Source"][0].subelements, ["Face1"]);
+        assert_eq!(
+            balloon.references["Source"][0]
+                .native_text()
+                .and_then(|text| text.split_once('.'))
+                .map(|(_, subelement)| subelement),
+            Some("Face1")
+        );
         let symbol = result
             .ir()
             .model

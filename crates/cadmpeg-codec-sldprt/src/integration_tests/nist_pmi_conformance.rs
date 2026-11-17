@@ -82,7 +82,7 @@ fn assert_dimension(ir: &CadIr, kind: &DimensionKind, nominal: f64, deviation: f
                 && annotation
                     .targets
                     .iter()
-                    .any(|target| matches!(target, PmiTarget::Face { .. }))
+                    .any(|target| matches!(&target.entity, PmiTarget::Face { .. }))
         }),
         "missing {kind:?} {nominal} ± {deviation} inches with a face target"
     );
@@ -116,7 +116,7 @@ fn assert_named_dimension_targets(
     let faces = annotation
         .targets
         .iter()
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::Face { face } => Some(face),
             _ => None,
         })
@@ -172,7 +172,7 @@ fn assert_counterbore_targets(ir: &CadIr) {
         .targets
         .iter()
         .filter_map(|target| {
-            let PmiTarget::Face { face } = target else {
+            let PmiTarget::Face { face } = &target.entity else {
                 return None;
             };
             let face = ir
@@ -218,14 +218,14 @@ fn assert_tolerance<'a>(
             && (value.get().value.get() - magnitude * MM_PER_INCH).abs() < VALUE_TOLERANCE
             && datum_system.as_ref().map(|id| datum_names(ir, id)).unwrap_or_default() == datums
             && actual_modifiers == modifiers
-            && annotation.targets.iter().any(|target| matches!(target, PmiTarget::Face { .. }))
+            && annotation.targets.iter().any(|target| matches!(&target.entity, PmiTarget::Face { .. }))
     }).unwrap_or_else(|| panic!("missing {kind:?} {magnitude} inches, datums {datums:?}, modifiers {modifiers:?}, and a face target"))
 }
 
 fn assert_cylinder_axes(ir: &CadIr, annotation: &PmiAnnotation, diameter: f64, count: usize) {
     let mut axes: Vec<(Vector3, Point3)> = Vec::new();
     for target in &annotation.targets {
-        let PmiTarget::Face { face } = target else {
+        let PmiTarget::Face { face } = &target.entity else {
             continue;
         };
         let Some(face) = ir
@@ -315,7 +315,7 @@ fn assert_depth_targets_counterbore(
     let depth_faces = annotation
         .targets
         .iter()
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::Face { face } => Some(face),
             _ => None,
         })
@@ -323,7 +323,7 @@ fn assert_depth_targets_counterbore(
     let counterbore_faces = counterbore
         .targets
         .iter()
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::Face { face } => Some(face),
             _ => None,
         })
@@ -488,7 +488,7 @@ fn ftc_08_common_datum_compartments_match_nist() {
                     || !annotation
                         .targets
                         .iter()
-                        .any(|target| matches!(target, PmiTarget::Face { .. }))
+                        .any(|target| matches!(&target.entity, PmiTarget::Face { .. }))
                 {
                     return false;
                 }

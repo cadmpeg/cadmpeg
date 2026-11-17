@@ -1987,12 +1987,15 @@
           "relationships": {
             "References2D": [
               {
-                "subelements": [
-                  "Edge1"
-                ],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "View.Edge1"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#View:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2025,7 +2028,6 @@
           "relationships": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -2051,40 +2053,65 @@
           "relationships": {
             "Template": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Template"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Template:entity"
+                  "kind": "unresolved"
                 }
               }
             ],
             "Views": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "View"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#View:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Dimension"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Dimension:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Note"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Note:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Symbol"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Symbol:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2117,7 +2144,6 @@
           "relationships": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -2234,10 +2260,15 @@
           "relationships": {
             "Source": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Model"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:native:object#Model"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2391,12 +2422,15 @@
           "references": {
             "References2D": [
               {
-                "subelements": [
-                  "Edge1"
-                ],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "View.Edge1"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#View:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2443,7 +2477,6 @@
           "references": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -2490,7 +2523,6 @@
           "references": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
