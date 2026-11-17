@@ -7635,6 +7635,27 @@ impl FaceBoundaryArena {
         ids
     }
 
+    /// Store the boundaries of `other` not yet present and return their
+    /// identities.
+    fn absorb(&mut self, other: Self) -> Vec<String> {
+        self.incomplete.extend(other.incomplete);
+        let mut added = Vec::new();
+        for (id, boundary) in other.records {
+            if let std::collections::btree_map::Entry::Vacant(entry) = self.records.entry(id) {
+                added.push(entry.key().clone());
+                entry.insert(boundary);
+            }
+        }
+        added
+    }
+
+    /// Remove the boundaries `ids` names.
+    fn remove(&mut self, ids: &[String]) {
+        for id in ids {
+            self.records.remove(id);
+        }
+    }
+
     /// The stored boundaries in identity order.
     pub(crate) fn into_records(
         self,
@@ -7643,6 +7664,9 @@ impl FaceBoundaryArena {
     }
 }
 
+/// [`edge_recipe_reference_context_by`] with the union of each name's
+/// Design references.
+#[cfg(test)]
 fn edge_recipe_reference_context<'a>(
     reference_ordinal: u32,
     lane: &[crate::records::dimensions::DesignRecipeReference],
@@ -7652,7 +7676,30 @@ fn edge_recipe_reference_context<'a>(
     topology_queries: &mut TopologyQueryCache<'a>,
     face_boundaries: &mut FaceBoundaryArena,
 ) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
-    let candidate_faces = recipe_index::reference_lane_faces(lane);
+    edge_recipe_reference_context_by(
+        reference_ordinal,
+        (lane, recipe_index::NameReferences::Union),
+        result,
+        preceding,
+        changed_edges,
+        topology_queries,
+        face_boundaries,
+    )
+}
+
+fn edge_recipe_reference_context_by<'a>(
+    reference_ordinal: u32,
+    (lane, names): (
+        &[crate::records::dimensions::DesignRecipeReference],
+        recipe_index::NameReferences,
+    ),
+    result: EdgeBoundaryContext<'a, '_>,
+    preceding: EdgeBoundaryContext<'a, '_>,
+    changed_edges: &HashSet<i64>,
+    topology_queries: &mut TopologyQueryCache<'a>,
+    face_boundaries: &mut FaceBoundaryArena,
+) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
+    let candidate_faces = recipe_index::reference_lane_faces_by(lane, names);
     let candidate_faces = candidate_faces.faces.as_slice();
     let face_slots = |faces: &[cadmpeg_ir::ids::FaceId]| {
         faces
@@ -7731,6 +7778,48 @@ fn edge_recipe_reference_context<'a>(
         shared_edge_slots,
         changed_shared_edge_slots,
         changed_reference_edge_slots,
+    }
+}
+
+/// The one candidate edge that every face set named by the first side of a
+/// standard edge recipe bounds, with no incidence fallback.
+fn side_one_common_edge(
+    structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
+    reference_contexts: &[crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext],
+    candidate_edges: &[i64],
+) -> Option<i64> {
+    let side = structure.and_then(|structure| structure.sides.first())?;
+    let mut ordinals = Vec::new();
+    for value in std::iter::once(side.header_value)
+        .chain(side.scalars.iter().copied())
+        .filter(|value| *value != 0)
+    {
+        ordinals.push(usize::try_from(value).ok()?.checked_sub(1)?);
+    }
+    ordinals.sort_unstable_by(Ord::cmp);
+    ordinals.dedup();
+    if ordinals.len() < 2 {
+        return None;
+    }
+    let mut candidates: Option<Vec<i64>> = None;
+    for ordinal in ordinals {
+        let context = reference_contexts.get(ordinal)?;
+        if Some(context.reference_ordinal) != u32::try_from(ordinal).ok() {
+            return None;
+        }
+        let edges = &context.shared_edge_slots;
+        match &mut candidates {
+            None => candidates = Some(edges.clone()),
+            Some(candidates) => candidates.retain(|edge| edges.contains(edge)),
+        }
+    }
+    let mut candidates = candidates?;
+    candidates.retain(|edge| candidate_edges.contains(edge));
+    candidates.sort_unstable_by(Ord::cmp);
+    candidates.dedup();
+    match candidates.as_slice() {
+        [edge] => Some(*edge),
+        _ => None,
     }
 }
 
@@ -8154,7 +8243,15 @@ fn bind_historical_edge_operand<'a>(
         .iter()
         .map(|&edge| edge_contexts.context(edge))
         .collect::<Vec<_>>();
+    // Contexts whose persistent names join their Design references as a
+    // union, and contexts whose names select the faces common to all their
+    // Design references.
+    // Each set interns its boundaries apart; a boundary that no retained
+    // context names leaves the arena.
     let mut reference_contexts = Vec::new();
+    let mut common_reference_contexts = Vec::new();
+    let mut union_boundaries = FaceBoundaryArena::default();
+    let mut common_boundaries = FaceBoundaryArena::default();
     for (ordinal, lane) in crate::records::dimensions::reference_lanes(&operand.recipe_references)
         .into_iter()
         .enumerate()
@@ -8162,26 +8259,38 @@ fn bind_historical_edge_operand<'a>(
         let Ok(reference_ordinal) = u32::try_from(ordinal) else {
             continue;
         };
-        let context = edge_recipe_reference_context(
-            reference_ordinal,
-            lane,
-            EdgeBoundaryContext {
-                state,
-                topology: result_topology,
-                boundary_edges: &operand.result_boundary_edge_slots,
-            },
-            EdgeBoundaryContext {
-                state: previous,
-                topology,
-                boundary_edges: &operand.preceding_boundary_edge_slots,
-            },
-            &changed_edges,
-            topology_queries,
-            face_boundaries,
-        );
-
-        reference_contexts.push(context);
+        for (names, contexts, boundaries) in [
+            (
+                recipe_index::NameReferences::Union,
+                &mut reference_contexts,
+                &mut union_boundaries,
+            ),
+            (
+                recipe_index::NameReferences::Common,
+                &mut common_reference_contexts,
+                &mut common_boundaries,
+            ),
+        ] {
+            contexts.push(edge_recipe_reference_context_by(
+                reference_ordinal,
+                (lane, names),
+                EdgeBoundaryContext {
+                    state,
+                    topology: result_topology,
+                    boundary_edges: &operand.result_boundary_edge_slots,
+                },
+                EdgeBoundaryContext {
+                    state: previous,
+                    topology,
+                    boundary_edges: &operand.preceding_boundary_edge_slots,
+                },
+                &changed_edges,
+                topology_queries,
+                boundaries,
+            ));
+        }
     }
+    let union_only_boundaries = face_boundaries.absorb(union_boundaries);
     operand.recipe_reference_contexts = reference_contexts;
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
         && operand.surface_patch_recipe_structure.is_some()
@@ -8277,12 +8386,37 @@ fn bind_historical_edge_operand<'a>(
         operand.recipe_structure.as_ref(),
         &changed_edge_contexts,
     );
-    operand.resolved_edge_slot = side_one_recipe_edge(
-        operand.recipe_structure.as_ref(),
-        &operand.recipe_reference_contexts,
-        &operand.recipe_selectors,
-        &operand.preceding_boundary_edge_slots,
-    );
+    // For a Fillet or Chamfer, the faces that carry every Design reference of
+    // each name take precedence when they select an edge that the treatment
+    // transition deletes; otherwise the union of the references applies.
+    operand.resolved_edge_slot = matches!(
+        crate::design::design_feature_family(&scope.kind()),
+        Some(
+            crate::design::DesignFeatureFamily::Fillet
+                | crate::design::DesignFeatureFamily::Chamfer
+        )
+    )
+    .then(|| {
+        side_one_common_edge(
+            operand.recipe_structure.as_ref(),
+            &common_reference_contexts,
+            &operand.preceding_boundary_edge_slots,
+        )
+    })
+    .flatten()
+    .filter(|edge| operand.transition_deleted_edge_slots.contains(edge));
+    if operand.resolved_edge_slot.is_some() {
+        operand.recipe_reference_contexts = common_reference_contexts;
+        face_boundaries.remove(&union_only_boundaries);
+        face_boundaries.absorb(common_boundaries);
+    } else {
+        operand.resolved_edge_slot = side_one_recipe_edge(
+            operand.recipe_structure.as_ref(),
+            &operand.recipe_reference_contexts,
+            &operand.recipe_selectors,
+            &operand.preceding_boundary_edge_slots,
+        );
+    }
     if operand.resolved_edge_slot.is_none()
         && operand.preceding_candidate_faces.is_empty()
         && matches!(
