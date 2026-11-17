@@ -39233,7 +39233,8 @@ source = "spec"
 anchor = "and a control byte"
 
 [[record]]
-name = "replace_face_prologue"
+name = "replace_face_fixed_prefix"
+rust_doc_attributes = true
 kind = "byte"
 section = "3.1"
 anchor = "The ReplaceFace prologue"

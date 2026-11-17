@@ -11844,7 +11844,7 @@ Unstated regions:
 
 - `0..21` (21 B): Indexed header and mesh scope prefix.
 
-## `replace_face_prologue`
+## `replace_face_fixed_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 26 B
 

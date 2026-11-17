@@ -6,7 +6,7 @@ use super::FaceSelection;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[doc = "Disjoint face selections and tangent-chain control for face replacement."]
+#[doc = "Face selections with no known overlap and tangent-chain control for face replacement."]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -40,7 +40,7 @@ struct ReplaceFaceOperandsWire {
 cadmpeg_core::named_optional_field!(deserialize_tangent_chain, bool, "tangent_chain");
 
 impl ReplaceFaceOperands {
-    #[doc = "Admit disjoint selections with unspecified tangent-chain control."]
+    #[doc = "Admit selections with no known overlap and unspecified tangent-chain control."]
     pub fn new(targets: FaceSelection, replacements: FaceSelection) -> Result<Self, &'static str> {
         if face_selections_overlap(&targets, &replacements) {
             return Err("targets and replacements must have valid arity and disjoint membership");

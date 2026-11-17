@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::text::fixed_relaxed_guid_text;
-use crate::layout::replace_face_prologue as layout;
+use crate::layout::replace_face_fixed_prefix as layout;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::feature::surface_ops::DesignReplaceFaceOperation;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
