@@ -258,7 +258,11 @@ fn parses_and_projects_semantic_graph() {
         &["maximum_material_requirement", "projected_zone:4_mm"]
     );
     assert_eq!(
-        position.targets,
+        position
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
         [
             PmiTarget::ShapeAspect {
                 source_id: cadmpeg_core::text::NonBlankString::new("F20")

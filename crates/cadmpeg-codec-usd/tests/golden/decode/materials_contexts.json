@@ -58,8 +58,10 @@
           "id": "usd:stage:appearance-binding#/Root/Cover",
           "source_entity_id": "/Root/Looks/Painted",
           "target": {
-            "kind": "tessellation",
-            "value": "usd:stage:tessellation#/Root/Cover"
+            "entity": {
+              "kind": "tessellation",
+              "value": "usd:stage:tessellation#/Root/Cover"
+            }
           }
         },
         {
@@ -68,8 +70,10 @@
           "id": "usd:stage:appearance-binding#/Root/Plate",
           "source_entity_id": "/Root/Looks/Brushed",
           "target": {
-            "kind": "tessellation",
-            "value": "usd:stage:tessellation#/Root/Plate"
+            "entity": {
+              "kind": "tessellation",
+              "value": "usd:stage:tessellation#/Root/Plate"
+            }
           }
         }
       ],
@@ -376,7 +380,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

@@ -1910,7 +1910,19 @@
           ]
         }
       },
-      "process": {},
+      "process": {
+        "features": [],
+        "groups": [],
+        "machines": [],
+        "operations": [],
+        "parameters": [],
+        "presets": [],
+        "programs": [],
+        "setups": [],
+        "states": [],
+        "toolpaths": [],
+        "tools": []
+      },
       "scope": {
         "design": true,
         "model": true,

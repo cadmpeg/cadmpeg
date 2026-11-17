@@ -18,6 +18,12 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::{decode_inline, decode_inline_result};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
+fn entities(
+    targets: &[cadmpeg_ir::references::InstanceTarget<cadmpeg_ir::pmi::PmiTarget>],
+) -> Vec<cadmpeg_ir::pmi::PmiTarget> {
+    targets.iter().map(|target| target.entity.clone()).collect()
+}
+
 mod aspect_scope;
 mod depth_limits;
 mod shared_walks;
@@ -187,7 +193,7 @@ fn complex_datum_feature_remains_a_dimension_target() {
         .expect("complex datum feature dimension");
     assert!(matches!(&dimension.definition, PmiDefinition::Dimension(_)));
     assert_eq!(
-        dimension.targets,
+        entities(&dimension.targets),
         vec![PmiTarget::ShapeAspect {
             source_id: cadmpeg_core::text::NonBlankString::new("#6")
                 .expect("nonempty source identity")
@@ -221,7 +227,7 @@ fn simple_shape_aspect_subtypes_remain_dimension_targets() {
             .find(|annotation| annotation.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing dimension {name}"));
         assert_eq!(
-            dimension.targets,
+            entities(&dimension.targets),
             vec![PmiTarget::ShapeAspect {
                 source_id: cadmpeg_core::text::NonBlankString::new(source_id)
                     .expect("nonempty source identity")
@@ -255,7 +261,7 @@ fn datum_target_transfers_form_and_identification() {
             .find(|annotation| annotation.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing datum target {name}"));
         assert_eq!(
-            target.targets,
+            entities(&target.targets),
             [PmiTarget::ShapeAspect {
                 source_id: cadmpeg_core::text::NonBlankString::new(source_id)
                     .expect("nonempty source identity")
@@ -301,7 +307,7 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
                 && relation.nominal().is_some_and(|value| value.quantity == PmiQuantity::Length && value.value.get() == 5.0)
     ));
     assert_eq!(
-        dimension.targets,
+        entities(&dimension.targets),
         vec![cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
             source_id: cadmpeg_core::text::NonBlankString::new("#6")
                 .expect("nonempty source identity")
@@ -1465,7 +1471,7 @@ fn complex_datum_reads_identification_from_its_named_partial() {
         PmiDefinition::Datum { identification } if identification == "A"
     ));
     assert_eq!(
-        datum.targets,
+        entities(&datum.targets),
         vec![PmiTarget::ShapeAspect {
             source_id: cadmpeg_core::text::NonBlankString::new("#7")
                 .expect("nonempty source identity")
@@ -1682,16 +1688,26 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         dimension.definition,
         PmiDefinition::Dimension(ref relation) if matches!(relation.kind(), DimensionKind::Diameter)
     ));
-    assert!(dimension.targets.contains(&PmiTarget::ShapeAspect {
-        source_id: cadmpeg_core::text::NonBlankString::new("#39")
-            .expect("nonempty source identity")
-    }));
-    assert!(dimension.targets.contains(&PmiTarget::Face {
-        face: cadmpeg_ir::ids::FaceId::mint("step:data:face#29").expect("identity grammar")
-    }));
-    assert!(dimension.targets.contains(&PmiTarget::Vertex {
-        vertex: cadmpeg_ir::ids::VertexId::mint("step:data:vertex#6").expect("identity grammar")
-    }));
+    assert!(dimension.targets.contains(
+        &PmiTarget::ShapeAspect {
+            source_id: cadmpeg_core::text::NonBlankString::new("#39")
+                .expect("nonempty source identity")
+        }
+        .into()
+    ));
+    assert!(dimension.targets.contains(
+        &PmiTarget::Face {
+            face: cadmpeg_ir::ids::FaceId::mint("step:data:face#29").expect("identity grammar")
+        }
+        .into()
+    ));
+    assert!(dimension.targets.contains(
+        &PmiTarget::Vertex {
+            vertex: cadmpeg_ir::ids::VertexId::mint("step:data:vertex#6")
+                .expect("identity grammar")
+        }
+        .into()
+    ));
     assert!(!result
         .ir()
         .native_unknowns("step")
@@ -1724,14 +1740,14 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         } if identification == "A"
     ));
     assert!(datum_target.targets.iter().any(|target| matches!(
-        target,
+        &target.entity,
         PmiTarget::Face { face } if face.as_str() == "step:data:face#29"
     )));
     assert!(matches!(
         &datum_target.definition,
         PmiDefinition::DatumTarget { basis, .. }
             if basis.contains(&PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new("#47").expect("nonempty source identity")})
+                source_id: cadmpeg_core::text::NonBlankString::new("#47").expect("nonempty source identity")}.into())
     ));
     let point_dimension = result
         .ir()
@@ -1740,9 +1756,12 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .iter()
         .find(|annotation| annotation.name.as_deref() == Some("point dimension"))
         .expect("point dimension annotation");
-    assert!(point_dimension.targets.contains(&PmiTarget::Point {
-        point: "step:data:point#50".try_into().expect("valid identity")
-    }));
+    assert!(point_dimension.targets.contains(
+        &PmiTarget::Point {
+            point: "step:data:point#50".try_into().expect("valid identity")
+        }
+        .into()
+    ));
     let point = result
         .ir()
         .geometry
@@ -1760,9 +1779,12 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .iter()
         .find(|annotation| annotation.name.as_deref() == Some("curve dimension"))
         .expect("curve dimension annotation");
-    assert!(curve_dimension.targets.contains(&PmiTarget::Curve {
-        curve: "step:data:curve#16".try_into().expect("valid identity")
-    }));
+    assert!(curve_dimension.targets.contains(
+        &PmiTarget::Curve {
+            curve: "step:data:curve#16".try_into().expect("valid identity")
+        }
+        .into()
+    ));
 
     let mut output = Vec::new();
     let report = write_step(
@@ -1791,7 +1813,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .find(|annotation| annotation.name.as_deref() == Some("diameter"))
         .expect("roundtripped dimension");
     assert!(roundtripped_dimension.targets.iter().any(|target| matches!(
-        target,
+        &target.entity,
         PmiTarget::Face { face } if face.as_str().starts_with("step:data:face#")
     )));
     let roundtripped_datum_target = roundtrip
@@ -1805,7 +1827,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .targets
         .iter()
         .any(|target| matches!(
-            target,
+            &target.entity,
             PmiTarget::Face { face } if face.as_str().starts_with("step:data:face#")
         )));
     assert!(matches!(
@@ -1813,7 +1835,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         PmiDefinition::DatumTarget { basis, .. }
             if basis
                 .iter()
-                .any(|target| matches!(target, PmiTarget::ShapeAspect { .. }))
+                .any(|target| matches!(&target.entity, PmiTarget::ShapeAspect { .. }))
     ));
     let roundtripped_point_dimension = roundtrip
         .ir()
@@ -1825,7 +1847,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
     assert!(roundtripped_point_dimension
         .targets
         .iter()
-        .any(|target| matches!(target, PmiTarget::Point { .. })));
+        .any(|target| matches!(&target.entity, PmiTarget::Point { .. })));
     let roundtripped_curve_dimension = roundtrip
         .ir()
         .model
@@ -1836,7 +1858,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
     assert!(roundtripped_curve_dimension
         .targets
         .iter()
-        .any(|target| matches!(target, PmiTarget::Curve { .. })));
+        .any(|target| matches!(&target.entity, PmiTarget::Curve { .. })));
 }
 
 #[test]
@@ -1862,7 +1884,7 @@ fn datum_target_writes_and_round_trips() {
         .find(|annotation| annotation.name.as_deref() == Some("datum target"))
         .expect("datum target annotation");
     assert_eq!(
-        target.targets,
+        entities(&target.targets),
         [PmiTarget::ShapeAspect {
             source_id: cadmpeg_core::text::NonBlankString::new("#30")
                 .expect("nonempty source identity")
@@ -1904,7 +1926,7 @@ fn datum_target_writes_and_round_trips() {
             && annotation
                 .targets
                 .iter()
-                .any(|target| matches!(target, PmiTarget::ShapeAspect { .. }))
+                .any(|target| matches!(&target.entity, PmiTarget::ShapeAspect { .. }))
             && identification == "A"
     )));
 
