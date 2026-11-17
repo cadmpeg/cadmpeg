@@ -28,7 +28,7 @@ fn definition(ir: &mut CadIr, bodies: Vec<BodyId>) -> ProductDefinitionId {
     let id = ProductDefinitionId::mint("test:model:product-definition#part").expect("identity");
     ir.model.product_definitions.push(ProductDefinition {
         id: id.clone(),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: None,
         label: None,
         description: None,
@@ -37,6 +37,14 @@ fn definition(ir: &mut CadIr, bodies: Vec<BodyId>) -> ProductDefinitionId {
         bodies,
         sketches: Vec::new(),
         native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     });
     id
 }

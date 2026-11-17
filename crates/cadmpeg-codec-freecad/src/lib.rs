@@ -1095,7 +1095,7 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd link occurrences",
             )?;
-            let (product_definitions, occurrences) = product::transfer_neutral(
+            let products = product::transfer_neutral(
                 ctx,
                 &product_nodes,
                 &joint_records,
@@ -1105,15 +1105,16 @@ impl CodecBackend for FcstdCodec {
                 &ir.geometry.bodies,
             )?;
             product::localize_definition_bodies(
-                &product_definitions,
-                &occurrences,
+                &products.definitions,
+                &products.occurrences,
                 &mut ir.geometry.bodies,
             );
-            ir.model.product_definitions = product_definitions;
-            ir.model.occurrences = occurrences;
+            ir.model.product_definitions = products.definitions;
+            ir.model.occurrences = products.occurrences;
             application_geometry::mesh_placement::project(
                 ctx,
                 &mut ir,
+                &products.parents,
                 &graph.properties,
                 &product_nodes,
                 &mut transfer_losses,

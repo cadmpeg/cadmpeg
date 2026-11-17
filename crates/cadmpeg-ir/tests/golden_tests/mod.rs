@@ -240,7 +240,7 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
     products.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
         id: "test:model:product#0".try_into().expect("valid identity"),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: None,
         label: None,
         description: None,
@@ -248,6 +248,14 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
         bom_properties: named("bom"),
         bodies: Vec::new(),
         native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     });
 
     let mut annotations = CadIr::empty();

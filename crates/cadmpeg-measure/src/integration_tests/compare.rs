@@ -204,7 +204,7 @@ fn occurrences_that_place_bodies_keep_the_verdict_inconclusive() {
         cube.model.product_definitions.push(ProductDefinition {
             sketches: Vec::default(),
             id: definition.clone(),
-            kind: ProductDefinitionKind::Part,
+            kind: Some(ProductDefinitionKind::Part),
             source_name: None,
             label: None,
             description: None,
@@ -212,6 +212,14 @@ fn occurrences_that_place_bodies_keep_the_verdict_inconclusive() {
             bom_properties: std::collections::BTreeMap::new(),
             bodies: vec![cube.geometry.bodies[0].id.clone()],
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
         let one = cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite");
         cube.model.occurrences.push(Occurrence {

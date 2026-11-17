@@ -131,7 +131,6 @@ fn compose(
     report.notes.push(format!(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
-    merge::make_sibling_ordinals_unique(&mut ir.model.occurrences)?;
     crate::scene::bind(ctx, &mut ir, &scene_sources, &mut report.losses)?;
     report.losses.append(&mut outer_losses);
     finalize_result(ctx, ir, source, report, fidelity)

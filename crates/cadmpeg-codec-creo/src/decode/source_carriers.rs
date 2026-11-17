@@ -69,8 +69,7 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut occurrence: Occurrence,
     ) -> Result<(), CodecError> {
-        self.scale_product_translation(&mut occurrence.transform)?;
-        if let Some(transform) = occurrence.linked_prototype.as_mut() {
+        if let Some(transform) = occurrence.transform.as_mut() {
             self.scale_product_translation(transform)?;
         }
         ir.model.occurrences.push(occurrence);

@@ -52,43 +52,6 @@ pub(super) fn merge_archive(
     .merge(ir, report, fidelity, &table)
 }
 
-/// Reassigns only repeated sibling ordinals after independent document graphs
-/// have been combined.
-pub(super) fn make_sibling_ordinals_unique(
-    occurrences: &mut [cadmpeg_ir::products::Occurrence],
-) -> Result<(), CodecError> {
-    use std::collections::{HashMap, HashSet};
-
-    // Every ordinal below a parent's floor is in use, so the search for the
-    // smallest free ordinal resumes there and each parent's search is linear
-    // over the whole pass.
-    let mut used = HashMap::<Option<&cadmpeg_ir::ids::OccurrenceId>, (HashSet<u32>, u64)>::new();
-    for occurrence in occurrences {
-        let parent = match &occurrence.parent {
-            cadmpeg_ir::products::OccurrenceParent::Root {} => None,
-            cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } => Some(occurrence),
-        };
-        let (siblings, floor) = used.entry(parent).or_default();
-        let ordinal = if siblings.contains(&occurrence.ordinal) {
-            let free = (*floor..=u64::from(u32::MAX))
-                .filter_map(|candidate| u32::try_from(candidate).ok())
-                .find(|candidate| !siblings.contains(candidate))
-                .ok_or_else(|| {
-                    CodecError::malformed(
-                        "F3Z sibling occurrence population exhausts the u32 ordinal space",
-                    )
-                })?;
-            *floor = u64::from(free) + 1;
-            free
-        } else {
-            occurrence.ordinal
-        };
-        siblings.insert(ordinal);
-        occurrence.ordinal = ordinal;
-    }
-    Ok(())
-}
-
 fn xref_table_from_ir(
     ctx: &DecodeContext<'_>,
     ir: &cadmpeg_ir::CadIr,
@@ -137,12 +100,10 @@ fn member_placements<'a>(
     table: &'a XrefTable,
     containing_scope: Option<&str>,
 ) -> Vec<MemberPlacement<'a>> {
-    use cadmpeg_ir::products::PrototypeReference;
-
     let mut placements = Vec::new();
     for reference in &table.references {
         for occurrence in model.occurrences.iter().filter(|occurrence| {
-            matches!(occurrence.prototype, PrototypeReference::External { .. })
+            crate::xref::is_document_definition(&occurrence.prototype)
                 && occurrence.native_ref.as_deref() == Some(reference.id.as_str())
         }) {
             let key = occurrence_key(reference);
@@ -329,8 +290,6 @@ impl MergeSession<'_, '_> {
             cadmpeg_ir::ids::OccurrenceId,
         >,
     ) -> Result<usize, CodecError> {
-        use cadmpeg_ir::products::PrototypeReference;
-
         let mut merged = 0usize;
         for placement in placements {
             let reference = placement.reference;
@@ -437,7 +396,12 @@ impl MergeSession<'_, '_> {
                     source_fidelity: component_fidelity,
                 } = component;
                 scope_document_parameters(self.ctx, &mut component_ir.model)?;
-                let definition = define_member(self.ctx, &mut component_ir, label)?;
+                let definition = define_member(
+                    self.ctx,
+                    &mut component_ir,
+                    label,
+                    reference.relative_path.as_str(),
+                )?;
                 append_feature_history(&parent_ir.model, &mut component_ir.model)?;
                 let targets = native_record_targets(&component_ir.native, &occurrence);
                 rescope_partial_pattern_sources(&mut component_ir.model, &occurrence);
@@ -521,17 +485,34 @@ impl MergeSession<'_, '_> {
                     .insert(reference.relative_path.as_str().to_owned(), member.clone());
                 member
             };
-            let mut instance = member.instantiate(self.ctx, &occurrence, &placement.parent)?;
+            let instance = member.instantiate(self.ctx, &occurrence, &placement.parent)?;
             let child_placements = member_placements(&instance, &member.table, Some(&occurrence));
+            // Each instance's occurrences sit in the definitions that hold
+            // the first instance's, the member definition holding its top
+            // level, which the placing occurrence places.
+            let first = format!("f3d:xref/{}/", member.scope);
+            let this = format!("f3d:xref/{occurrence}/");
             for root in &instance.occurrences {
-                if matches!(root.parent, cadmpeg_ir::products::OccurrenceParent::Root {})
-                    && matches!(root.prototype, PrototypeReference::Local { .. })
+                let counterpart = match root.id.as_str().strip_prefix(&this) {
+                    Some(tail) if first != this => {
+                        cadmpeg_ir::ids::OccurrenceId::mint(format!("{first}{tail}"))
+                            .map_err(CodecError::malformed)?
+                    }
+                    _ => root.id.clone(),
+                };
+                let owner =
+                    cadmpeg_ir::products::owner(&parent_ir.model.product_definitions, &counterpart)
+                        .map(|definition| definition.id.clone());
+                if owner.as_ref() == Some(&member.definition)
+                    && !crate::xref::is_document_definition(&root.prototype)
                     && root.native_ref.is_none()
                 {
                     member_roots.insert(root.id.clone(), placement.parent.clone());
                 }
+                if let Some(owner) = owner {
+                    crate::tree::place_in(&mut parent_ir.model, &owner, root.id.clone());
+                }
             }
-            reparent_component_roots(&mut instance.occurrences, &placement.parent)?;
             parent_ir.model.occurrences.extend(instance.occurrences);
             parent_ir
                 .model
@@ -543,9 +524,7 @@ impl MergeSession<'_, '_> {
                 .iter_mut()
                 .find(|item| item.id == placement.parent)
                 .ok_or_else(|| CodecError::malformed("missing F3Z placing occurrence"))?;
-            placing.prototype = PrototypeReference::Local {
-                definition: member.definition,
-            };
+            placing.prototype = member.definition;
             self.stack.push(reference.relative_path.as_str().to_owned());
             let descendants = self.merge_placements(
                 parent_ir,
@@ -574,20 +553,11 @@ fn omit_unbound_member_joints(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-    use cadmpeg_ir::products::{OccurrenceParent, OperandContainer};
+    use cadmpeg_ir::products::OperandContainer;
     if unplaced_members.is_empty() {
         return;
     }
-    let parents = model
-        .occurrences
-        .iter()
-        .filter_map(|occurrence| {
-            let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-                return None;
-            };
-            Some((occurrence.id.clone(), parent.clone()))
-        })
-        .collect::<std::collections::BTreeMap<_, _>>();
+    let parents = crate::tree::parent_ids(&model.product_definitions, &model.occurrences);
     let mut ancestors = unplaced_members.clone();
     for member in unplaced_members {
         let mut current = member;
@@ -606,7 +576,7 @@ fn omit_unbound_member_joints(
                 return matches!(
                     &connector.operand.container,
                     OperandContainer::External { external_document }
-                        if !matches!(external_document, cadmpeg_ir::products::ExternalDocument::Missing {})
+                        if *external_document != cadmpeg_ir::products::ExternalDocument::default()
                 );
             };
             if occurrence_path.is_empty() && connector.operand.subelements.is_empty() {
@@ -718,8 +688,15 @@ fn rebind_joint_descent(
     {
         complete_scopes.add(scope?);
     }
-    let children = joint_children(&ir.model.occurrences, &carriers, member_roots, None);
+    let children = joint_children(
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        &carriers,
+        member_roots,
+        None,
+    );
     let complete_children = joint_children(
+        &ir.model.product_definitions,
         &ir.model.occurrences,
         &external,
         member_roots,
@@ -744,6 +721,7 @@ fn rebind_joint_descent(
 /// `native` over `occurrences`.
 pub(crate) fn rebind_standalone_projected_joints(
     native: &crate::native::F3dNative,
+    definitions: &[cadmpeg_ir::products::ProductDefinition],
     occurrences: &[cadmpeg_ir::products::Occurrence],
     joints: &mut Vec<cadmpeg_ir::products::AssemblyJoint>,
 ) {
@@ -780,6 +758,7 @@ pub(crate) fn rebind_standalone_projected_joints(
         &carriers,
         &external,
         &complete_scopes.ids,
+        definitions,
         occurrences,
         joints,
     );
@@ -789,13 +768,19 @@ fn rebind_projected_joints(
     carriers: &std::collections::BTreeMap<String, String>,
     external: &std::collections::BTreeMap<String, String>,
     complete_scopes: &std::collections::BTreeSet<String>,
+    definitions: &[cadmpeg_ir::products::ProductDefinition],
     occurrences: &[cadmpeg_ir::products::Occurrence],
     joints: &mut Vec<cadmpeg_ir::products::AssemblyJoint>,
 ) {
     let member_roots = std::collections::BTreeMap::new();
-    let children = joint_children(occurrences, carriers, &member_roots, None);
-    let complete_children =
-        joint_children(occurrences, external, &member_roots, Some(children.clone()));
+    let children = joint_children(definitions, occurrences, carriers, &member_roots, None);
+    let complete_children = joint_children(
+        definitions,
+        occurrences,
+        external,
+        &member_roots,
+        Some(children.clone()),
+    );
     rebind_joints(
         &mut JointRows {
             occurrences,
@@ -853,6 +838,7 @@ impl<'t> CompleteJointScopes<'t> {
 /// record `keys` names, through every member root above the parent. A key
 /// shared by two children of one parent maps to `None`.
 fn joint_children<'o>(
+    definitions: &[cadmpeg_ir::products::ProductDefinition],
     occurrences: &'o [cadmpeg_ir::products::Occurrence],
     keys: &std::collections::BTreeMap<String, String>,
     member_roots: &std::collections::BTreeMap<
@@ -861,13 +847,13 @@ fn joint_children<'o>(
     >,
     base: Option<JointChildren<'o>>,
 ) -> JointChildren<'o> {
-    use cadmpeg_ir::products::OccurrenceParent;
+    let parents = crate::tree::parent_ids(definitions, occurrences);
     let mut children = base.unwrap_or_default();
     for occurrence in occurrences {
         let Some(key) = occurrence.native_ref.as_deref().and_then(|id| keys.get(id)) else {
             continue;
         };
-        let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
+        let Some(parent) = parents.get(&occurrence.id) else {
             continue;
         };
         let mut parent = parent;
@@ -1270,7 +1256,6 @@ fn place_contained_poses_with_protected(
     boundary: Option<&cadmpeg_ir::ids::OccurrenceId>,
 ) -> Result<usize, CodecError> {
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
-    use cadmpeg_ir::products::OccurrenceParent;
     use cadmpeg_ir::transform::Transform;
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -1304,10 +1289,18 @@ fn place_contained_poses_with_protected(
         .enumerate()
         .map(|(position, occurrence)| (occurrence.id.clone(), position))
         .collect::<BTreeMap<_, _>>();
-    let parent_of = |position: usize| match ir.model.occurrences.get(position).map(|o| &o.parent) {
-        Some(OccurrenceParent::Occurrence { occurrence }) => index.get(occurrence).copied(),
-        _ => None,
-    };
+    let parents = crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
+    let parent_positions = ir
+        .model
+        .occurrences
+        .iter()
+        .map(|o| {
+            parents
+                .get(&o.id)
+                .and_then(|occurrence| index.get(occurrence).copied())
+        })
+        .collect::<Vec<_>>();
+    let parent_of = |position: usize| parent_positions.get(position).copied().flatten();
     let boundary_index = boundary
         .map(|id| {
             index.get(id).copied().ok_or_else(|| {
@@ -1346,7 +1339,7 @@ fn place_contained_poses_with_protected(
         .into_iter()
         .rev()
         .try_fold(Transform::identity(), |world, position| {
-            world.compose(ir.model.occurrences[position].transform)
+            world.compose(ir.model.occurrences[position].transform.unwrap_or_default())
         })
         .map_err(|_| CodecError::malformed("F3Z component-path source frame overflow"))?;
     let source_scope = boundary_index.and_then(|boundary| {
@@ -1487,9 +1480,13 @@ fn place_contained_poses_with_protected(
                     let Some(occurrence) = ir.model.occurrences.get(child) else {
                         continue;
                     };
-                    let local = below.compose(occurrence.transform).map_err(|_| {
-                        CodecError::malformed("F3Z contained occurrence transform is not finite")
-                    })?;
+                    let local = below
+                        .compose(occurrence.transform.unwrap_or_default())
+                        .map_err(|_| {
+                            CodecError::malformed(
+                                "F3Z contained occurrence transform is not finite",
+                            )
+                        })?;
                     // Only the referenced design's own records: a member nested
                     // inside it has its own record indices.
                     let own = occurrence.native_ref.as_deref().filter(|id| {
@@ -1576,7 +1573,9 @@ fn place_contained_poses_with_protected(
                             })?;
                         if contained_frames_agree(source_pose, stored) {
                             stored = source_world
-                                .compose(ir.model.occurrences[instance].transform)
+                                .compose(
+                                    ir.model.occurrences[instance].transform.unwrap_or_default(),
+                                )
                                 .and_then(|world| world.compose(*below))
                                 .map_err(|_| {
                                     CodecError::malformed("F3Z contained current frame overflow")
@@ -1711,25 +1710,19 @@ fn place_contained_poses_with_protected(
     });
     for (position, pose) in placed {
         let mut chain = Vec::new();
-        let mut at = match &ir.model.occurrences[position].parent {
-            OccurrenceParent::Occurrence { occurrence } => index.get(occurrence).copied(),
-            OccurrenceParent::Root { .. } => None,
-        };
+        let mut at = parent_of(position);
         while let Some(parent) = at {
             chain.push(parent);
             if chain.len() > index.len() {
                 return Err(CodecError::malformed("F3Z occurrence owner cycle"));
             }
-            at = match &ir.model.occurrences[parent].parent {
-                OccurrenceParent::Occurrence { occurrence } => index.get(occurrence).copied(),
-                OccurrenceParent::Root { .. } => None,
-            };
+            at = parent_of(parent);
         }
         let parent_world = chain
             .iter()
             .rev()
             .try_fold(Transform::identity(), |world, &parent| {
-                world.compose(ir.model.occurrences[parent].transform)
+                world.compose(ir.model.occurrences[parent].transform.unwrap_or_default())
             })
             .map_err(|_| CodecError::malformed("F3Z occurrence world transform is not finite"))?;
         let local = parent_world
@@ -1737,12 +1730,12 @@ fn place_contained_poses_with_protected(
             .and_then(|inverse| inverse.compose(pose))
             .map_err(|_| CodecError::malformed("F3Z contained pose is not invertible"))?;
         if let Some(occurrence) = ir.model.occurrences.get_mut(position) {
-            if occurrence.transform.rows() == Transform::identity().rows()
+            if occurrence.transform.unwrap_or_default().rows() == Transform::identity().rows()
                 && local.rows() != Transform::identity().rows()
             {
                 left_identity += 1;
             }
-            occurrence.transform = local;
+            occurrence.transform = Some(local);
         }
     }
     if count != 0 {
@@ -1852,8 +1845,9 @@ fn define_member(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     label: &str,
+    document: &str,
 ) -> Result<cadmpeg_ir::ids::ProductDefinitionId, CodecError> {
-    use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
+    use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, Storage};
 
     // A member without occurrences has no placement for a Design stream's
     // stored-frame group, so its bodies belong to the member definition that
@@ -1889,6 +1883,22 @@ fn define_member(
         .filter(|sketch| !owned_sketches.contains(&sketch.id))
         .map(|sketch| sketch.id.clone())
         .collect();
+    // The member file's own root definition is the member definition: it is
+    // stored in its own file of the archive, and holds the member's top level.
+    let top_level = ir
+        .model
+        .product_definitions
+        .iter()
+        .position(|row| row.id == crate::tree::file_root_id())
+        .map(|position| ir.model.product_definitions.remove(position).occurrences)
+        .unwrap_or_default();
+    let storage = match ir.source.clone() {
+        Some(source) => Storage::File {
+            document: ExternalDocument::path(document.to_owned()),
+            source: Some(source),
+        },
+        None => Storage::Embedded,
+    };
     let id = crate::ids::archive_product_definition_id();
     if let Some(definition) = ir
         .model
@@ -1899,45 +1909,18 @@ fn define_member(
         definition.bodies.extend(bodies);
         definition.sketches.extend(sketches);
         definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
+        definition.occurrences.extend(top_level);
+        definition.storage = storage;
         return Ok(id);
     }
     ctx.charge_entities(1, "F3Z member product definition")?;
-    ir.model.product_definitions.push(ProductDefinition {
-        id: id.clone(),
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: (!label.trim().is_empty()).then(|| label.to_owned()),
-        description: None,
-        part_number: None,
-        bom_properties: std::collections::BTreeMap::new(),
-        bodies,
-        sketches,
-        native_ref: None,
-    });
+    let mut definition = ProductDefinition::new(id.clone(), storage);
+    definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
+    definition.bodies = bodies;
+    definition.sketches = sketches;
+    definition.occurrences = top_level;
+    ir.model.product_definitions.push(definition);
     Ok(id)
-}
-
-/// Places every root-level occurrence from a merged member inside the
-/// occurrence that owns that member. Child occurrence parents already carry
-/// the member-local hierarchy and are left unchanged.
-fn reparent_component_roots(
-    occurrences: &mut [cadmpeg_ir::products::Occurrence],
-    parent: &cadmpeg_ir::ids::OccurrenceId,
-) -> Result<(), CodecError> {
-    for occurrence in occurrences {
-        if matches!(
-            occurrence.parent,
-            cadmpeg_ir::products::OccurrenceParent::Root {}
-        ) {
-            let parent_id = String::from_utf8(parent.as_str().as_bytes().to_vec())
-                .map_err(CodecError::malformed)?;
-            occurrence.parent = cadmpeg_ir::products::OccurrenceParent::Occurrence {
-                occurrence: cadmpeg_ir::ids::OccurrenceId::mint(parent_id)
-                    .map_err(CodecError::malformed)?,
-            };
-        }
-    }
-    Ok(())
 }
 
 /// Gives document parameters an equation container before occurrence rescoping.
@@ -2497,7 +2480,7 @@ mod tests {
                     "f3d:stream:product-definition#stored-frame",
                 )
                 .unwrap(),
-                kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+                kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
                 source_name: None,
                 label: None,
                 description: None,
@@ -2506,6 +2489,14 @@ mod tests {
                 bodies: vec![body.clone()],
                 sketches: Vec::new(),
                 native_ref: None,
+                generated_from: None,
+                storage: cadmpeg_ir::products::Storage::Embedded,
+                occurrences: Vec::new(),
+                instance_bodies: Vec::new(),
+                representations: Vec::new(),
+                units: None,
+                general_tolerance: None,
+                active: None,
             });
         let ctx = cadmpeg_test_support::service_decode_context();
         let id = define_member(&ctx, &mut ir, "member").unwrap();

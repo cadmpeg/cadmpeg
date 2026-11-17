@@ -61,7 +61,7 @@ fn product(ir: &mut cadmpeg_ir::CadIr) {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
             id: "test:model:product-definition#empty".try_into().unwrap(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             source_name: None,
             label: None,
             description: None,
@@ -69,6 +69,14 @@ fn product(ir: &mut cadmpeg_ir::CadIr) {
             bom_properties: std::collections::BTreeMap::default(),
             bodies: Vec::new(),
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
 }
 

@@ -78,7 +78,7 @@ fn product_descriptions_transfer_from_product_and_definition() {
             id: "test:model:product#described"
                 .try_into()
                 .expect("valid identity"),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             source_name: Some("Described part".into()),
             label: Some("Described part".into()),
             description: Some("Round-tripped description".into()),
@@ -86,6 +86,14 @@ fn product_descriptions_transfer_from_product_and_definition() {
             bom_properties: std::collections::BTreeMap::new(),
             bodies: vec![ir.geometry.bodies[0].id.clone()],
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
     let mut output = Vec::new();
     write_step(

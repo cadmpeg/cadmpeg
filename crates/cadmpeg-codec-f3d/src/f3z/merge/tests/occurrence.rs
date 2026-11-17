@@ -1089,7 +1089,7 @@ fn imported_definition_bodies_keep_their_definition_frame() {
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             id: cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:component#owned").unwrap(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             bodies: vec![body],
             source_name: None,
             label: None,
@@ -1098,6 +1098,14 @@ fn imported_definition_bodies_keep_their_definition_frame() {
             bom_properties: std::collections::BTreeMap::new(),
             sketches: Vec::new(),
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
     let original = ir.geometry.bodies[0].transform;
     let mut free_body = ir.geometry.bodies[0].clone();

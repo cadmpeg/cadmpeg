@@ -135,7 +135,7 @@ mod tests {
             .push(crate::products::ProductDefinition {
                 sketches: Vec::default(),
                 id: owner.try_into().unwrap(),
-                kind: crate::products::ProductDefinitionKind::Part,
+                kind: Some(crate::products::ProductDefinitionKind::Part),
                 source_name: Some("test:model:name#plain".into()),
                 label: None,
                 description: None,
@@ -143,6 +143,14 @@ mod tests {
                 bom_properties: std::collections::BTreeMap::new(),
                 bodies: vec![target.try_into().unwrap(), target.try_into().unwrap()],
                 native_ref: None,
+                generated_from: None,
+                storage: crate::products::Storage::Embedded,
+                occurrences: Vec::new(),
+                instance_bodies: Vec::new(),
+                representations: Vec::new(),
+                units: None,
+                general_tolerance: None,
+                active: None,
             });
         let identities = crate::index::identities::BorrowedIdentities::<()>::new();
         let arena = DecodeArena::new();

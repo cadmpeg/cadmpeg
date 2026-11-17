@@ -208,9 +208,8 @@ pub(crate) fn joint_placed_identity_occurrences<'a>(
             cadmpeg_ir::OperandContainer::Occurrence { occurrence, .. } => {
                 named.insert(occurrence);
             }
-            cadmpeg_ir::OperandContainer::External {
-                external_document: ExternalDocument::Missing {},
-            } => {}
+            cadmpeg_ir::OperandContainer::External { external_document }
+                if *external_document == ExternalDocument::default() => {}
             cadmpeg_ir::OperandContainer::External { external_document } => {
                 if !documents.contains(&external_document) {
                     documents.push(external_document);
@@ -222,10 +221,9 @@ pub(crate) fn joint_placed_identity_occurrences<'a>(
     let (direct, unnamed) = occurrences
         .iter()
         .filter(|occurrence| {
-            matches!(
-                occurrence.prototype,
-                cadmpeg_ir::products::PrototypeReference::External { .. }
-            ) && occurrence.transform.rows() == cadmpeg_ir::transform::Transform::identity().rows()
+            crate::xref::is_document_definition(&occurrence.prototype)
+                && occurrence.transform.unwrap_or_default().rows()
+                    == cadmpeg_ir::transform::Transform::identity().rows()
         })
         .fold((0_usize, 0_usize), |(direct, unnamed), occurrence| {
             if named.contains(&occurrence.id) {
@@ -1246,7 +1244,7 @@ fn project_assembly_joint(
                 frames.clone(),
                 frames.each_ref().map(|frame| {
                     JointOperand::external(
-                        ExternalDocument::Missing {},
+                        ExternalDocument::default(),
                         scope.id.clone(),
                         vec![format!(
                             "construction-record#{}",
