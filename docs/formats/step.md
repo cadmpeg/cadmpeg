@@ -1563,8 +1563,14 @@ its two operands. The difference removes the second operand from the first
 (§6.4.7). A `CSG_SOLID` names the root of one tree of Boolean results and
 primitives; a single primitive is a tree (§6.4.6). A Boolean operand that is
 a `CSG_SOLID` denotes the root of its tree. Length attributes convert to
-millimetres and angle attributes to radians by the units of the item's
-representation context.
+millimetres by the units of the item's representation context.
+
+CADIR decision: a CSG angle attribute and a profile trim parameter convert to
+radians by the turn of their plane-angle unit. A `CONVERSION_BASED_UNIT` named
+`degree` measures one 360th of a turn, whatever radian factor it states; any
+other plane-angle unit measures its radian factor. A revolution angle within
+10⁻⁹ of a turn, relative to the turn, is exactly one turn, and a larger angle
+violates IP3.
 
 CADIR decision: every CSG primitive, swept-area solid, and Boolean result is
 one design feature (CADIR v11 §6.3 and §6.5). The features of a product
@@ -1614,19 +1620,29 @@ vertex, as the seam of the closed side face. A profile segment on the
 revolution axis bounds no side face. Face rings run counterclockwise about
 the outward normal.
 
-CADIR decision: a profile junction between a straight segment, or an arc
-trimmed by Cartesian points, and an arc trimmed by parameters takes the
-straight segment's end. Two parameter-trimmed arcs meet at the midpoint of
-their ends. Each arc then runs on its circle through its junction points. A
-boundary of one arc segment is its full circle. The decode reports the
-largest junction gap that it closed (`csg.profile-gap-closed`). An extruded
-profile is projected onto the plane of its `PLANE`. A revolved profile is
-projected onto the half-plane of the axis that holds it. Two of its distances
-from the axis, or two of its heights along the axis, that differ by at most
-10⁻⁷ of the profile's extent are one value, and a distance within that bound
-of zero lies on the axis. Each arc centre then moves along the axis, when it
-lies on the axis, or else along the arc's chord, to the point equidistant from
-the arc's ends.
+CADIR decision: the closing tolerance of a profile is the larger of the
+linear uncertainty and 10⁻⁷ of the diagonal of the box that holds the
+profile's segments. A profile whose junction gap exceeds the closing
+tolerance has no derived body (`csg.solid-unsynthesized`); its feature
+remains. A junction between a straight segment, or an arc trimmed by
+Cartesian points, and an arc trimmed by parameters takes the straight
+segment's end. Two parameter-trimmed arcs meet at the midpoint of their ends.
+Each arc then runs on its circle through its junction points. A boundary of
+one arc segment whose ends meet within the closing tolerance is its full
+circle. The decode reports the largest closed gap above the linear
+uncertainty (`csg.profile-gap-closed`).
+
+An extruded profile is projected onto the plane of its `PLANE`. Every point
+of a revolved profile lies within the closing tolerance of the half-plane
+that the axis bounds and the profile's farthest point names; a profile
+outside it has no derived body (`csg.solid-unsynthesized`). The profile is
+projected onto that half-plane. Two of its distances from the axis, or two of
+its heights along the axis, within the closing tolerance of each other are
+one value, and a distance within it of zero lies on the axis. Each arc centre
+then moves along the axis, when it lies on the axis, or else along the arc's
+chord, to the point equidistant from the arc's ends. A revolved face whose
+boundary meets the axis records the axis vertex as a pole occurrence of its
+loop.
 
 A face boundary uses an `EDGE_LOOP` coedge ring, a `POLY_LOOP` point ring, or
 a `VERTEX_LOOP` vertex at a surface singularity. A vertex loop emits a
