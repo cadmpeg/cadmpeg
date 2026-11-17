@@ -509,6 +509,7 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         solver_settings: Omitted,
         declared_measures: Omitted,
         design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 }
 

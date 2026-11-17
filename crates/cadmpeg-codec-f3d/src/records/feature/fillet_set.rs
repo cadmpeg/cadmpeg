@@ -75,7 +75,7 @@ impl TryFrom<DesignFilletSetListWire> for DesignFilletSetList {
 pub(crate) enum DesignFilletSetListForm {
     /// The rolling-ball byte, `00 01`, and nine zero bytes.
     Current,
-    /// The rolling-ball byte, `01`, and nine zero bytes.
+    /// `01 01` and nine padding bytes.
     Compact,
 }
 

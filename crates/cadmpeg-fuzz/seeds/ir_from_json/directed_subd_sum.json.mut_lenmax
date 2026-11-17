@@ -78,10 +78,9 @@
           "kind": "solved",
           "value": {
             "kind": "line",
-            "origÿÿÿÿ {
+            "origin": {
               "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+              "y": 0.0,ÿÿÿÿ           "z": 0.0
             },
             "direction": {
               "x": 0.0,
@@ -287,6 +286,18 @@
     "evaluations": [],
     "names": []
   },
-  "process": {},
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }
