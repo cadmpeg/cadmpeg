@@ -106,15 +106,12 @@ fn row_follows(before: Carrier<'_>, after: Carrier<'_>, motion: &FaceMotion) -> 
     }
 }
 
-/// Faces of the input state that a `MoveFace` or `OffsetFaces` feature selects,
-/// sorted.
-///
-/// The motion moves every selected face, and a face tangent to a selected face
-/// can move with it. When no face is deleted and every updated face has a plane
-/// or cylinder row, the moved faces therefore hold the whole selection, so a
-/// moved set with one face per distinct member is the selection.
-fn moved_face_selection(
-    members: &[u32],
+/// Faces of the input state that the motion moves, sorted: the updated faces
+/// whose plane or cylinder row follows the motion. `None` when an updated face
+/// has no plane or cylinder row in either state, the motion is a rotation, or
+/// its distance is zero. The list is empty when no updated row follows the
+/// motion.
+fn moved_faces(
     motion: &FaceMotion,
     updated: &BTreeSet<i64>,
     input: &AsmHistoricalTopology,
@@ -141,8 +138,73 @@ fn moved_face_selection(
             moved.push(face);
         }
     }
+    Some(moved)
+}
+
+/// Faces of the input state that a `MoveFace` or `OffsetFaces` feature selects,
+/// sorted.
+///
+/// The motion moves every selected face, and a face tangent to a selected face
+/// can move with it. When no face is deleted and every updated face has a plane
+/// or cylinder row, the moved faces therefore hold the whole selection, so a
+/// moved set with one face per distinct member is the selection.
+fn moved_face_selection(
+    members: &[u32],
+    motion: &FaceMotion,
+    updated: &BTreeSet<i64>,
+    input: &AsmHistoricalTopology,
+    output: &AsmHistoricalTopology,
+) -> Option<Vec<i64>> {
+    let moved = moved_faces(motion, updated, input, output)?;
     let distinct_members = members.iter().collect::<HashSet<_>>().len();
     (!moved.is_empty() && moved.len() == distinct_members).then_some(moved)
+}
+
+/// Faces of the input state that a one-member group selects when the motion
+/// moves several faces of one surface, sorted.
+///
+/// The faces of one surface move together. The moved set is the selection
+/// when every moved face lies on one input surface and one recipe reference of
+/// the member names exactly the moved faces.
+fn shared_surface_selection(
+    members: &[u32],
+    moved: &[i64],
+    operands: &[&DesignFaceOperand],
+    input: &AsmHistoricalTopology,
+) -> Option<Vec<i64>> {
+    let [member, rest @ ..] = members else {
+        return None;
+    };
+    if rest.iter().any(|other| other != member) || moved.len() < 2 {
+        return None;
+    }
+    let mut matching = operands
+        .iter()
+        .filter(|operand| operand.record_index() == *member);
+    let (Some(operand), None) = (matching.next(), matching.next()) else {
+        return None;
+    };
+    let rows = StateRows::new(input);
+    let surfaces = moved
+        .iter()
+        .map(|face| rows.surface(*face))
+        .collect::<Option<BTreeSet<_>>>()?;
+    if surfaces.len() != 1 {
+        return None;
+    }
+    let moved_set: BTreeSet<i64> = moved.iter().copied().collect();
+    operand
+        .recipe_references
+        .iter()
+        .filter(|reference| reference.design_reference >= 0)
+        .any(|reference| {
+            super::effective_faces(reference)
+                .iter()
+                .map(|face| super::stable_ref(face.as_str()))
+                .collect::<Option<BTreeSet<_>>>()
+                .is_some_and(|named| named == moved_set)
+        })
+        .then(|| moved.to_vec())
 }
 
 /// Faces that the transitions from `previous_state_id` to `state` update, or
@@ -209,6 +271,22 @@ fn recipe_face_selection(
     (!faces.is_empty()).then(|| faces.into_iter().collect())
 }
 
+/// The selection of a group from its direct transition reading, its member
+/// recipes, and the shared-surface reading. The shared-surface reading is
+/// taken only when neither of the others states a selection.
+fn group_selection(
+    direct: Option<Vec<i64>>,
+    recipes: Option<Vec<i64>>,
+    shared: impl FnOnce() -> Option<Vec<i64>>,
+) -> Option<Vec<i64>> {
+    let moved = match (direct, &recipes) {
+        (Some(direct), _) => Some(direct),
+        (None, None) => shared(),
+        (None, Some(_)) => None,
+    };
+    agreed_selection(moved, recipes)
+}
+
 /// The selection that the transitions and the member recipes state. Two
 /// different selections state none.
 fn agreed_selection(moved: Option<Vec<i64>>, recipes: Option<Vec<i64>>) -> Option<Vec<i64>> {
@@ -258,10 +336,6 @@ pub(super) fn bind_move_face_selection(
     let Some(input) = history.topology(previous) else {
         return;
     };
-    let moved = history.topology(state).and_then(|output| {
-        let updated = updated_faces(histories, history, state, previous.state_id)?;
-        moved_face_selection(&members, motion, &updated, input, output)
-    });
     let stream = crate::ids::native_stream(&scope.id);
     let group_operands: Vec<_> = operands
         .iter()
@@ -272,7 +346,16 @@ pub(super) fn bind_move_face_selection(
         })
         .collect();
     let recipes = recipe_face_selection(&members, &group_operands, input);
-    let Some(faces) = agreed_selection(moved, recipes) else {
+    let output = history.topology(state);
+    let updated = output.and_then(|_| updated_faces(histories, history, state, previous.state_id));
+    let direct = output.zip(updated.as_ref()).and_then(|(output, updated)| {
+        moved_face_selection(&members, motion, updated, input, output)
+    });
+    let Some(faces) = group_selection(direct, recipes, || {
+        let (output, updated) = output.zip(updated.as_ref())?;
+        let moved = moved_faces(motion, updated, input, output)?;
+        shared_surface_selection(&members, &moved, &group_operands, input)
+    }) else {
         return;
     };
     let prefix = crate::ids::feature_input_prefix(feature_id, previous.state_id);
