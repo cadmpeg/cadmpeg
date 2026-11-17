@@ -17,8 +17,8 @@ use super::{
     ProceduralCurveId, ProceduralSurface, ProceduralSurfaceId, SolvedCurveGeometry,
     SolvedSurfaceGeometry, StandardEdgeSupport, SupportPcurve, Surface, SurfaceGeometry, SurfaceId,
     UnitVector3, UnknownId, Vector3, ANALYTIC_CURVE_ENDPOINT_TOLERANCE,
-    CYLINDER_PLANE_CONIC_TOLERANCE, EPS_STANDARD_DECODE_COARSE_GEOMETRY,
-    EPS_STANDARD_DECODE_GEOMETRY, PERPENDICULAR_CYLINDER_CONIC_TOLERANCE,
+    CYLINDER_CYLINDER_CONIC_TOLERANCE, CYLINDER_PLANE_CONIC_TOLERANCE,
+    EPS_STANDARD_DECODE_COARSE_GEOMETRY, EPS_STANDARD_DECODE_GEOMETRY,
     SPHERE_CENTER_COINCIDENCE_TOLERANCE, SPHERE_SECTION_ENDPOINT_TOLERANCE,
     STANDARD_FACE_BOUNDS_TOLERANCE, SUPPORT_AGREEMENT_TOLERANCE,
 };
@@ -755,7 +755,7 @@ pub(super) fn standard_spline_cylinder_plane(
     ))))
 }
 
-pub(super) fn standard_spline_perpendicular_cylinders(
+pub(super) fn standard_spline_intersecting_cylinders(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
@@ -792,11 +792,11 @@ pub(super) fn standard_spline_perpendicular_cylinders(
             }
             _ => return Ok(None),
         };
-    if (first_radius - second_radius).abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
+    if (first_radius - second_radius).abs() > CYLINDER_CYLINDER_CONIC_TOLERANCE {
         return Ok(None);
     }
     let axis_dot = first_axis.dot(second_axis);
-    if !axis_dot.is_finite() || axis_dot.abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
+    if !axis_dot.is_finite() {
         return Ok(None);
     }
     let denominator = 1.0 - axis_dot * axis_dot;
@@ -812,7 +812,7 @@ pub(super) fn standard_spline_perpendicular_cylinders(
     }
     let first_center = first_origin.translated(first_axis, first_parameter);
     let second_center = second_origin.translated(second_axis, second_parameter);
-    if first_center.distance(second_center) > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
+    if first_center.distance(second_center) > CYLINDER_CYLINDER_CONIC_TOLERANCE {
         return Ok(None);
     }
     let center = Point3::new(
@@ -847,11 +847,7 @@ pub(super) fn standard_spline_perpendicular_cylinders(
         return Ok(None);
     };
     let radius = (first_radius + second_radius) * 0.5;
-    let major_radius = radius * 2.0_f64.sqrt();
     let Some(radius) = cadmpeg_ir::scalar::PositiveLength::new(radius) else {
-        return Ok(None);
-    };
-    let Some(major_radius) = cadmpeg_ir::scalar::PositiveLength::new(major_radius) else {
         return Ok(None);
     };
     let Some(center) = FinitePoint3::new(center) else {
@@ -865,14 +861,17 @@ pub(super) fn standard_spline_perpendicular_cylinders(
     .filter_map(|(axis, major_direction)| {
         let axis = unit_vector(axis)?;
         let major_direction = unit_vector(major_direction)?;
+        let major_axial = major_direction.as_raw().dot(first_axis);
+        let major_scale = (1.0 - major_axial * major_axial).sqrt();
+        let major_radius = PositiveLength::new(radius.get() / major_scale)?;
         let endpoint_is_on_branch = |point: Point3| {
             let offset = point.vector_from(center.get());
             let major = offset.dot(*major_direction.as_raw()) / major_radius.get();
             let minor = offset.dot(*minor_direction.as_raw()) / radius.get();
             let equation = major * major + minor * minor;
-            offset.dot(*axis.as_raw()).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+            offset.dot(*axis.as_raw()).abs() <= CYLINDER_CYLINDER_CONIC_TOLERANCE
                 && equation.is_finite()
-                && (equation - 1.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+                && (equation - 1.0).abs() <= CYLINDER_CYLINDER_CONIC_TOLERANCE
         };
         let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
         (endpoint_is_on_branch(start) && endpoint_is_on_branch(end)).then_some(
@@ -1366,7 +1365,7 @@ pub(super) fn build_standard_edge_curve(
                                 points,
                             )? {
                                 Some(geometry) => (geometry, None),
-                                None => match standard_spline_perpendicular_cylinders(
+                                None => match standard_spline_intersecting_cylinders(
                                     ctx,
                                     ir,
                                     bindings,
@@ -1415,6 +1414,59 @@ pub(super) fn build_standard_edge_curve(
                 endpoints[1],
                 witness,
             );
+        }
+    }
+    if param_range.is_none() {
+        if let CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) = geometry {
+            if let Some((ellipse, range)) = arc_bounds::bounded_ellipse_branch(
+                ellipse,
+                points.map(|point| ir.geometry.points[point].position().get()),
+                &arc_bounds::support_bounds(face_bounds, support),
+            ) {
+                geometry = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse));
+                param_range = Some(range);
+            }
+        }
+    }
+    if param_range.is_none() {
+        if let CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) = geometry {
+            let mut selected = None;
+            let mut conflicting = false;
+            for &face in &support.faces {
+                let Some(surface) = face_surface(ir, bindings, surface_indices, face) else {
+                    continue;
+                };
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) =
+                    &surface.geometry
+                else {
+                    continue;
+                };
+                let Some(witness) = bindings.get(face).and_then(|binding| {
+                    crate::families::standard::records::standard_face_witness(brep, binding.2)
+                }) else {
+                    continue;
+                };
+                let Some(candidate) = arc_bounds::witnessed_cylinder_ellipse_branch(
+                    ellipse,
+                    cylinder,
+                    points.map(|point| ir.geometry.points[point].position().get()),
+                    witness.get(),
+                    &arc_bounds::support_bounds(face_bounds, support),
+                ) else {
+                    continue;
+                };
+                if selected.is_some_and(|prior| prior != candidate) {
+                    conflicting = true;
+                }
+                selected = Some(candidate);
+            }
+            if let Some((ellipse, range, gap)) = selected.filter(|_| !conflicting) {
+                if gap > 0.0 {
+                    refusal.push_conic_branch_bounds_inferred(support.pos, gap);
+                }
+                geometry = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse));
+                param_range = Some(range);
+            }
         }
     }
     let oriented_native_support_pcurves = if matches!(
