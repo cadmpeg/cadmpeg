@@ -7,11 +7,14 @@ use std::fmt::Debug;
 use cadmpeg_core::text::NonBlankString;
 use serde_json::json;
 
+use super::eval::{check_types, Type};
 use super::wire::{exchange_constructions, retarget};
 use super::{evaluate, EditError, EvalError, Literal, ParameterDrivers, Value};
 use crate::design::configuration::{
-    DesignConfiguration, FeatureStateOverride, Overrides, ParameterOverride,
+    Arrangement, ArrangementKind, ArrangementRef, DesignConfiguration, FeatureStateOverride,
+    Overrides, ParameterOverride,
 };
+use crate::design::construction::{Construction, ConstructionInput, InputRole, Relation, Subject};
 use crate::design::container::{Container, Folder, OrderedKind, Rollback, UnorderedKind};
 use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::evaluation::{
@@ -20,17 +23,18 @@ use crate::design::evaluation::{
 use crate::design::expr::{parse, Expression, Measure, MeasureKind, MeasureTarget, Neutral, Node};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use crate::design::names::NameEntry;
+use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::parameter::{
     DesignParameter, Deviations, FitDeviations, ParameterDefinition, ParameterOwner,
     ParameterValue, Tolerance,
 };
-use crate::design::refs::{EntityRef, Evaluated, Member, Position};
-use crate::design::scope::DesignScope;
+use crate::design::refs::{ConfigurationRef, EntityRef, Evaluated, Member, Position};
+use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::selection::{Anchor, Picks, Selection};
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
-use crate::features::{ConfigurationId, FeatureId, ParameterId};
-use crate::ids::{BodyId, ProductDefinitionId};
+use crate::features::{ConfigurationId, FeatureId, FinitePoint3, ParameterId};
+use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::pmi::LimitsAndFits;
 use crate::scalar::{FiniteReal, Length};
 use crate::topology::{Body, BodyKind, Region};
@@ -374,17 +378,21 @@ fn a_deep_tree_evaluates_on_a_small_thread() {
     let handle = std::thread::Builder::new()
         .stack_size(256 * 1024)
         .spawn(move || {
+            let checked = check_types(&node, &|_| Type::Unknown);
             let result = evaluate(&node, &mut |_| None);
             drop(node);
-            result
+            (checked, result)
         })
         .unwrap();
     assert_eq!(
         handle.join().unwrap(),
-        Ok(Value::Number {
-            value: 1.0,
-            quantity: Quantity::LENGTH
-        })
+        (
+            Ok(Type::Number(Quantity::LENGTH)),
+            Ok(Value::Number {
+                value: 1.0,
+                quantity: Quantity::LENGTH
+            })
+        )
     );
 }
 
@@ -694,6 +702,144 @@ fn set_feature_definition_marks_the_states_after_the_feature() {
         cache(&document, 2),
         Some(ParameterValue::Number(real(20.0)))
     );
+}
+
+fn arrangement(key: u32, parameters: BTreeMap<ParameterId, ParameterOverride>) -> Arrangement {
+    Arrangement {
+        id: id("arrangement", key),
+        scope: definition(),
+        name: NonBlankString::new(format!("A{key}")).unwrap(),
+        kind: ArrangementKind::Positional,
+        configuration: None,
+        overrides: Overrides {
+            parameters,
+            ..Overrides::default()
+        },
+        appearances: Vec::new(),
+        moves: Vec::new(),
+        nested: Vec::new(),
+        native_ref: None,
+    }
+}
+
+fn length_override(text: &str, refs: &[ParameterRef], value: f64) -> ParameterOverride {
+    ParameterOverride {
+        expression: Some(neutral(text, refs, &[])),
+        value: Some(ParameterValue::Number(real(value))),
+    }
+}
+
+#[test]
+fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
+    let mut document = timeline();
+    document.design.arrangements = vec![
+        arrangement(
+            1,
+            BTreeMap::from([(parameter_id(1), length_override("5[mm]", &[], 5.0))]),
+        ),
+        arrangement(2, BTreeMap::new()),
+    ];
+    document.design.scopes[0].active_arrangements = BTreeSet::from([id("arrangement", 1)]);
+    document.design.configurations.push(DesignConfiguration {
+        id: configuration(1),
+        scope: definition(),
+        name: "Seven".to_owned(),
+        parent: None,
+        comment: None,
+        overrides: Overrides {
+            parameters: BTreeMap::from([(parameter_id(1), length_override("7[mm]", &[], 7.0))]),
+            ..Overrides::default()
+        },
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    });
+    let doubled = BTreeMap::from([(
+        parameter_id(2),
+        length_override("$0 * 2", &[reference(1)], 1.0),
+    )]);
+    let occurrence = |key: u32| -> OccurrenceId { id("occurrence", key) };
+    document.design.scopes[0].occurrences = BTreeMap::from([
+        (
+            occurrence(1),
+            OccurrenceDesign {
+                configuration: None,
+                arrangements: Vec::new(),
+                grounded: None,
+                flexible: None,
+                parameters: doubled.clone(),
+            },
+        ),
+        (
+            occurrence(2),
+            OccurrenceDesign {
+                configuration: Some(ConfigurationRef::Local(configuration(1))),
+                arrangements: vec![ArrangementRef::Local(id("arrangement", 2))],
+                grounded: None,
+                flexible: None,
+                parameters: doubled,
+            },
+        ),
+    ]);
+
+    document
+        .set_parameter_expression(&parameter_id(1), neutral("10[mm]", &[], &[]))
+        .unwrap();
+
+    let value = |key: u32| {
+        document.design.scopes[0].occurrences[&occurrence(key)].parameters[&parameter_id(2)]
+            .value
+            .clone()
+    };
+    assert_eq!(
+        value(1),
+        Some(ParameterValue::Number(real(10.0))),
+        "the base's positional arrangement sets p1 to 5"
+    );
+    assert_eq!(
+        value(2),
+        Some(ParameterValue::Number(real(14.0))),
+        "the occurrence's configuration sets p1 to 7, and its own arrangement overrides nothing"
+    );
+}
+
+#[test]
+fn set_parameter_expression_refuses_an_ill_typed_tree() {
+    let mut document = timeline();
+    document.design.parameters[1].value = None;
+    let before = serde_json::to_value(&document.design).unwrap();
+    for (text, refs) in [
+        ("if(true, 2[mm], 1[deg])", &[][..]),
+        ("if(false, 1[deg], 2[mm])", &[]),
+        ("if(1, 2[mm], 3[mm])", &[]),
+        ("min(1[mm])", &[]),
+        ("max(1[mm])", &[]),
+        ("atan2(1[mm]) * 1[mm] / 1[rad]", &[]),
+        ("mod(1[mm])", &[]),
+        ("$0 + 1[deg]", &[reference(2)][..]),
+        ("t * 1[mm]", &[]),
+        ("bendradius", &[]),
+        ("\"a\"", &[]),
+        ("$0", &[reference(9)][..]),
+    ] {
+        let refused = document.set_parameter_expression(&parameter_id(1), neutral(text, refs, &[]));
+        assert!(refused.is_err(), "{text} is refused");
+        assert_eq!(
+            serde_json::to_value(&document.design).unwrap(),
+            before,
+            "refusing {text} changes nothing"
+        );
+    }
+    for text in [
+        "if(true, 2[mm], 3[mm])",
+        "min(1[mm], 2[cm])",
+        "max(1[mm], 2[mm], 3[mm])",
+    ] {
+        document
+            .set_parameter_expression(&parameter_id(1), neutral(text, &[], &[]))
+            .unwrap();
+    }
+    assert_eq!(cache(&document, 1), Some(ParameterValue::Number(real(3.0))));
 }
 
 #[test]
@@ -1026,6 +1172,86 @@ fn switching_to_a_configuration_with_no_state_keeps_the_geometry() {
     assert_eq!(
         document.set_active_configuration(&definition(), &configuration(7)),
         Err(EditError::UnknownConfiguration(configuration(7)))
+    );
+}
+
+/// A point datum on one coincident input, at (1, 0, 0) in the active
+/// configuration and at (2, 0, 0) in configuration 2.
+fn point_datum(key: u32) -> Feature {
+    let point = |x: f64| FinitePoint3::from_coordinates(real(x), real(0.0), real(0.0));
+    operation(
+        key,
+        FeatureOperation::Datum(Box::new(Datum {
+            element: DatumElement::Points(vec![Construction {
+                inputs: vec![ConstructionInput {
+                    role: Some(InputRole {
+                        subject: Subject::Whole,
+                        relation: Relation::Coincident,
+                    }),
+                    reference: None,
+                    value: None,
+                    reversed: None,
+                }],
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved: Some(point(1.0)),
+                resolved_in: BTreeMap::from([(configuration(2), point(2.0))]),
+            }]),
+            link: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        })),
+    )
+}
+
+#[test]
+fn switching_exchanges_the_constructions_of_feature_overrides() {
+    let mut document = configured();
+    document.design.features[0] = point_datum(1);
+    let state = FeatureStateOverride {
+        suppressed: None,
+        definition: Some(document.design.features[0].definition.clone()),
+    };
+    document.design.configurations[1].overrides.features =
+        BTreeMap::from([(feature(1), state.clone())]);
+    let mut arranged = arrangement(1, BTreeMap::new());
+    arranged.overrides.features = BTreeMap::from([(feature(1), state)]);
+    document.design.arrangements.push(arranged);
+
+    document
+        .set_active_configuration(&definition(), &configuration(2))
+        .unwrap();
+
+    let construction = |definition: &FeatureDefinition| {
+        let FeatureOperation::Datum(datum) = &definition.operation else {
+            panic!("{definition:?} is a datum");
+        };
+        let DatumElement::Points(points) = &datum.element else {
+            panic!("{datum:?} holds points");
+        };
+        (
+            points[0].resolved.map(|point| point.get().x),
+            points[0].resolved_in.keys().cloned().collect::<Vec<_>>(),
+        )
+    };
+    let expected = (Some(2.0), vec![configuration(1)]);
+    assert_eq!(
+        construction(&document.design.features[0].definition),
+        expected
+    );
+    let overridden = |overrides: &Overrides| {
+        construction(overrides.features[&feature(1)].definition.as_ref().unwrap())
+    };
+    assert_eq!(
+        overridden(&document.design.configurations[1].overrides),
+        expected,
+        "a configuration's feature override"
+    );
+    assert_eq!(
+        overridden(&document.design.arrangements[0].overrides),
+        expected,
+        "an arrangement's feature override"
     );
 }
 

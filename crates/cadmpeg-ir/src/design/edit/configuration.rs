@@ -359,8 +359,8 @@ impl CadIr {
     }
 
     /// Exchanges the cached `resolved` value of every construction of a
-    /// scope's design: its features, containers, sketches, and sheet-metal
-    /// rules.
+    /// scope's design: its features, containers, sketches, sheet-metal
+    /// rules, and the overrides of its configurations and arrangements.
     fn exchange_scope_constructions(
         &mut self,
         scope: &ProductDefinitionId,
@@ -480,6 +480,23 @@ impl CadIr {
                 .sheet_metal_rules
                 .iter_mut()
                 .filter(|rule| &rule.scope == scope),
+            outgoing,
+            incoming,
+        )?;
+        all(
+            design
+                .configurations
+                .iter_mut()
+                .filter(|configuration| &configuration.scope == scope)
+                .map(|configuration| &mut configuration.overrides),
+            outgoing,
+            incoming,
+        )?;
+        all(
+            design
+                .arrangements
+                .iter_mut()
+                .filter(|arrangement| &arrangement.scope == scope),
             outgoing,
             incoming,
         )

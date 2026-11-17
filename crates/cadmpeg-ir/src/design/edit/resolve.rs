@@ -7,15 +7,18 @@ use serde::de::DeserializeOwned;
 use serde_json::Value as Json;
 
 use super::EditError;
-use crate::design::configuration::{DesignConfiguration, ParameterOverride};
+use crate::design::configuration::{
+    Arrangement, DesignConfiguration, Overrides, ParameterOverride,
+};
 use crate::design::dimension::Dimension;
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use crate::design::ops::body::PatternInstances;
 use crate::design::ops::surface::MeshKind;
 use crate::design::parameter::{DesignParameter, ParameterValue};
+use crate::design::refs::ConfigurationRef;
 use crate::design::scope::DesignScope;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
-use crate::ids::ProductDefinitionId;
+use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::CadIr;
 
 impl CadIr {
@@ -114,6 +117,88 @@ impl CadIr {
     ) -> Option<&ConfigurationId> {
         self.design_scope(definition)
             .and_then(|scope| scope.active_configuration.as_ref())
+    }
+
+    /// The arrangements in force in a configuration of a scope, at most one
+    /// of each kind: per kind, the one the configuration names, else its
+    /// parent's resolved one, else the one the scope's base names. `None` in
+    /// `configuration` reads the base.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EditError::UnknownConfiguration`] for a configuration the
+    /// design does not hold, and [`EditError::ConfigurationCycle`] where the
+    /// configuration's parents form a cycle.
+    pub(super) fn arrangements_in_force(
+        &self,
+        scope: &ProductDefinitionId,
+        configuration: Option<&ConfigurationId>,
+    ) -> Result<Vec<&Arrangement>, EditError> {
+        let chain = match configuration {
+            Some(configuration) => self.configuration_chain(configuration)?,
+            None => Vec::new(),
+        };
+        let base = self
+            .design_scope(scope)
+            .map(|record| &record.active_arrangements);
+        let mut in_force: Vec<&Arrangement> = Vec::new();
+        for named in chain
+            .iter()
+            .map(|level| &level.active_arrangements)
+            .chain(base)
+        {
+            for id in named {
+                let Some(arrangement) = self
+                    .design
+                    .arrangements
+                    .iter()
+                    .find(|candidate| &candidate.id == id)
+                else {
+                    continue;
+                };
+                if !in_force.iter().any(|held| held.kind == arrangement.kind) {
+                    in_force.push(arrangement);
+                }
+            }
+        }
+        Ok(in_force)
+    }
+
+    /// The configuration of its prototype that an occurrence of `scope` uses:
+    /// its `OccurrenceDesign.configuration` resolved through the scope's
+    /// active configuration and then through the arrangements in force in
+    /// it (§5.11).
+    ///
+    /// # Errors
+    ///
+    /// As [`CadIr::arrangements_in_force`].
+    pub(super) fn occurrence_configuration(
+        &self,
+        scope: &DesignScope,
+        occurrence: &OccurrenceId,
+    ) -> Result<Option<ConfigurationRef>, EditError> {
+        let active = scope.active_configuration.as_ref();
+        let chain = match active {
+            Some(configuration) => self.configuration_chain(configuration)?,
+            None => Vec::new(),
+        };
+        let stated = |overrides: &Overrides| {
+            overrides
+                .occurrences
+                .get(occurrence)
+                .and_then(|state| state.configuration.clone())
+        };
+        let arranged = self
+            .arrangements_in_force(&scope.definition, active)?
+            .into_iter()
+            .find_map(|arrangement| stated(&arrangement.overrides));
+        let configured = chain.iter().find_map(|level| stated(&level.overrides));
+        Ok(arranged.or(configured).or_else(|| {
+            scope
+                .occurrences
+                .get(occurrence)
+                .and_then(|design| design.configuration.clone())
+        }))
     }
 
     /// Resolves a dimension: a literal is its own value, and a bound

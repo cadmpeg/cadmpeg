@@ -87,7 +87,8 @@ pub enum EditError {
         /// What drives it.
         drivers: ParameterDrivers,
     },
-    /// The value does not have the parameter's declared kind.
+    /// The value does not have the parameter's declared kind, or the
+    /// expression does not type-check (§5.13).
     #[error("the value of parameter {parameter} does not have its kind: {reason}")]
     KindMismatch {
         /// The parameter.

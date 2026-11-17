@@ -13,11 +13,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::eval::{cache_value, evaluate, kind_value, EvalError, Value};
+use super::eval::{
+    cache_value, check_types, evaluate, kind_type, kind_value, EvalError, Type, Value,
+};
 use super::history::{currents, Context, Currents, Dependents, Graph, History, Node};
 use super::wire::{clear_measures, reads, rewrite};
 use super::{EditError, Literal, ParameterDrivers};
-use crate::design::configuration::{Overrides, ParameterOverride};
+use crate::design::configuration::{ArrangementRef, Overrides, ParameterOverride};
 use crate::design::dimension::{ParameterRef, RefTarget};
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::expr::{print, Expression, ExpressionToken, Neutral, Node as ExprNode, UnaryOp};
@@ -25,9 +27,11 @@ use crate::design::feature::FeatureDefinition;
 use crate::design::parameter::{
     FitDeviations, ParameterDefinition, ParameterOwner, ParameterValue, Tolerance,
 };
-use crate::design::refs::{Evaluated, Member};
+use crate::design::refs::{ConfigurationRef, Evaluated, Member};
+use crate::design::scope::DesignScope;
 use crate::design::units::ValueKind;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
+use crate::ids::OccurrenceId;
 use crate::scalar::NonNegativeReal;
 use crate::CadIr;
 
@@ -105,12 +109,14 @@ fn attempt(
     Attempt::Done(result.ok().and_then(|value| kind_value(kind, value).ok()))
 }
 
-/// Whether an evaluation of a new expression refuses its kind outright, as
-/// opposed to lacking a value it reads.
+/// Whether a new expression refuses its kind outright: its tree does not
+/// type-check, or its root or the value it evaluates to is not of the kind;
+/// as opposed to lacking a value it reads.
 fn kind_refusal(
     parameter: &ParameterId,
     expression: &Expression,
     kind: &ValueKind,
+    type_of: &dyn Fn(&ParameterRef) -> Type,
     value_of: &dyn Fn(&ParameterId) -> Option<Value>,
 ) -> Result<(), EditError> {
     let Expression::Neutral(Neutral(node)) = expression else {
@@ -120,6 +126,9 @@ fn kind_refusal(
         parameter: parameter.clone(),
         reason,
     };
+    check_types(node, type_of)
+        .and_then(|found| kind_type(kind, found))
+        .map_err(refusal)?;
     let result = evaluate(
         node,
         &mut |reference: &ParameterRef| match &reference.target {
@@ -153,6 +162,63 @@ impl CadIr {
         let record = self.design_parameter(parameter).ok()?;
         let cache = self.parameter_cache(parameter, configuration).ok()??;
         cache_value(&record.kind, cache)
+    }
+
+    /// The cache of a prototype parameter that an occurrence of `scope` does
+    /// not override: its value in the configuration of its scope that the
+    /// occurrence uses, and then in the arrangements in force there, of each
+    /// kind the one the occurrence names where it names one (§5.1, §5.11).
+    /// `None` where the occurrence uses a configuration or an arrangement
+    /// that the parameter's scope does not hold.
+    fn occurrence_cache(
+        &self,
+        scope: &DesignScope,
+        occurrence: &OccurrenceId,
+        parameter: &ParameterId,
+    ) -> Option<Value> {
+        let record = self.design_parameter(parameter).ok()?;
+        let prototype = &record.scope;
+        let configuration = match self.occurrence_configuration(scope, occurrence).ok()? {
+            None => self.active_configuration_of(prototype).cloned(),
+            Some(ConfigurationRef::Local(configuration)) => {
+                self.design.configurations.iter().find(|candidate| {
+                    candidate.id == configuration && &candidate.scope == prototype
+                })?;
+                Some(configuration)
+            }
+            Some(ConfigurationRef::Named(_)) => return None,
+        };
+        let mut in_force = Vec::new();
+        for named in &scope.occurrences.get(occurrence)?.arrangements {
+            let ArrangementRef::Local(id) = named else {
+                return None;
+            };
+            in_force.push(
+                self.design
+                    .arrangements
+                    .iter()
+                    .find(|candidate| &candidate.id == id && &candidate.scope == prototype)?,
+            );
+        }
+        let own = in_force.len();
+        for arrangement in self
+            .arrangements_in_force(prototype, configuration.as_ref())
+            .ok()?
+        {
+            if !in_force[..own]
+                .iter()
+                .any(|held| held.kind == arrangement.kind)
+            {
+                in_force.push(arrangement);
+            }
+        }
+        match in_force
+            .iter()
+            .find_map(|arrangement| arrangement.overrides.parameters.get(parameter))
+        {
+            Some(arranged) => cache_value(&record.kind, arranged.value.as_ref()?),
+            None => self.cache_in(parameter, configuration.as_ref()),
+        }
     }
 
     /// Sets a parameter's value to a literal: its definition becomes a
@@ -198,21 +264,35 @@ impl CadIr {
 
     /// Replaces a parameter's definition with an expression. Then every
     /// evaluation and current state that depends on the parameter is marked
-    /// `Stale`, and every dependent cache is recomputed or cleared (§4).
+    /// `Stale`, and every dependent cache is recomputed or cleared (§4). A
+    /// refused expression leaves the document unchanged.
     ///
     /// # Errors
     ///
-    /// Returns [`EditError::KindMismatch`] for a neutral expression whose
-    /// value, or whose operands, do not have the parameter's kind, and
-    /// [`EditError::UnknownParameter`] for a parameter the design does not
-    /// hold.
+    /// Returns [`EditError::KindMismatch`] for a neutral expression that does
+    /// not type-check by §5.13 (every `if` branch included, `min` and `max`
+    /// with at least two arguments), whose root or whose value does not have
+    /// the parameter's kind, or that holds the law parameter or a bend
+    /// variable; and [`EditError::UnknownParameter`] for a parameter, or a
+    /// referenced parameter, that the design does not hold.
     pub fn set_parameter_expression(
         &mut self,
         parameter: &ParameterId,
         expression: Expression,
     ) -> Result<(), EditError> {
         let kind = self.design_parameter(parameter)?.kind.clone();
-        kind_refusal(parameter, &expression, &kind, &|target| {
+        for reference in references(&expression)? {
+            if let RefTarget::Parameter(target) = &reference.target {
+                self.design_parameter(target)?;
+            }
+        }
+        let type_of = |reference: &ParameterRef| match &reference.target {
+            RefTarget::Parameter(target) => self
+                .design_parameter(target)
+                .map_or(Type::Unknown, |record| Type::of_kind(&record.kind)),
+            RefTarget::External { .. } => Type::Unknown,
+        };
+        kind_refusal(parameter, &expression, &kind, &type_of, &|target| {
             if target == parameter {
                 None
             } else {
@@ -487,9 +567,9 @@ impl CadIr {
                         .clone(),
                     ..Overrides::default()
                 };
+                let holder = &self.design.scopes[scope];
                 let updated = self.settle_overrides(&overrides, targets, &|target| {
-                    let scope = self.design_parameter(target).ok()?.scope.clone();
-                    self.cache_in(target, self.active_configuration_of(&scope))
+                    self.occurrence_cache(holder, &occurrence, target)
                 });
                 if let Some(design) = self.design.scopes[scope].occurrences.get_mut(&occurrence) {
                     design.parameters = updated;

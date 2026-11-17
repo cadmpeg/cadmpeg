@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Evaluation of neutral expression trees on canonical values (§5.13).
+//! Evaluation and type checking of neutral expression trees on canonical
+//! values (§5.13).
 //!
 //! Every node has a quantity or is Boolean or Text, and every operator checks
 //! it. A literal converts from its authored unit to the canonical unit of its
 //! quantity; a reference takes its parameter's cache; a measure takes its
-//! cached value. The walk keeps its own stack, so a tree of any depth
-//! evaluates on a small thread.
+//! cached value. Evaluation visits only the taken branch of an `if`; the type
+//! check visits every node. Each walk keeps its own stack, so a tree of any
+//! depth evaluates on a small thread.
 
 use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i32};
 
@@ -588,6 +590,326 @@ pub fn evaluate(
         }
     }
     pop(&mut values)
+}
+
+/// The type of an expression node (§5.13).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum Type {
+    /// A number of a quantity.
+    Number(Quantity),
+    /// A Boolean.
+    Boolean,
+    /// A text.
+    Text,
+    /// A reference whose kind the document does not type.
+    Unknown,
+}
+
+impl Type {
+    /// The type of a parameter of a kind.
+    pub(super) const fn of_kind(kind: &ValueKind) -> Self {
+        match kind {
+            ValueKind::Quantity(quantity) => Self::Number(*quantity),
+            ValueKind::Integer => Self::Number(DIMENSIONLESS),
+            ValueKind::Boolean => Self::Boolean,
+            ValueKind::Text => Self::Text,
+            ValueKind::Native(_) => Self::Unknown,
+        }
+    }
+}
+
+/// The quantity of a number operand, `None` where it is unknown.
+fn quantity_of(operand: Type, what: &str) -> Result<Option<Quantity>, String> {
+    match operand {
+        Type::Number(quantity) => Ok(Some(quantity)),
+        Type::Unknown => Ok(None),
+        Type::Boolean | Type::Text => Err(format!("{what} takes a number")),
+    }
+}
+
+fn boolean_type(operand: Type, what: &str) -> Result<(), String> {
+    match operand {
+        Type::Boolean | Type::Unknown => Ok(()),
+        Type::Number(_) | Type::Text => Err(format!("{what} takes a Boolean")),
+    }
+}
+
+/// The one quantity of operands that take the same quantity.
+fn same_type(
+    left: Option<Quantity>,
+    right: Option<Quantity>,
+    what: &str,
+) -> Result<Option<Quantity>, String> {
+    match (left, right) {
+        (Some(left), Some(right)) => same(left, right, what)
+            .map(Some)
+            .map_err(|error| error.to_string()),
+        (known, None) | (None, known) => Ok(known),
+    }
+}
+
+fn number_type(quantity: Option<Quantity>) -> Type {
+    quantity.map_or(Type::Unknown, Type::Number)
+}
+
+fn arity(function: Function, count: usize) -> Result<(), String> {
+    let admitted = match function {
+        Function::Atan2 | Function::Mod => count == 2,
+        Function::Min | Function::Max => count >= 2,
+        _ => count == 1,
+    };
+    if admitted {
+        Ok(())
+    } else {
+        let takes = match function {
+            Function::Atan2 | Function::Mod => "two arguments",
+            Function::Min | Function::Max => "at least two arguments",
+            _ => "one argument",
+        };
+        Err(format!("{} takes {takes}", function.name()))
+    }
+}
+
+fn expect_quantity(operand: Type, expected: Quantity, what: &str) -> Result<(), String> {
+    match quantity_of(operand, what)? {
+        Some(quantity) if quantity != expected => Err(format!("{what} takes {expected:?}")),
+        _ => Ok(()),
+    }
+}
+
+fn binary_type(
+    op: BinaryOp,
+    left: Type,
+    right: Type,
+    right_node: &Node<ParameterRef>,
+) -> Result<Type, String> {
+    let domain = |error: EvalError| error.to_string();
+    Ok(match op {
+        BinaryOp::Add | BinaryOp::Subtract => number_type(same_type(
+            quantity_of(left, "+ and -")?,
+            quantity_of(right, "+ and -")?,
+            "+ and -",
+        )?),
+        BinaryOp::Multiply | BinaryOp::Divide => {
+            let sign = if op == BinaryOp::Multiply { 1 } else { -1 };
+            match (
+                quantity_of(left, "* and /")?,
+                quantity_of(right, "* and /")?,
+            ) {
+                (Some(a), Some(b)) => Type::Number(combined(a, b, sign).map_err(domain)?),
+                _ => Type::Unknown,
+            }
+        }
+        BinaryOp::Power => {
+            let base = quantity_of(left, "^")?;
+            expect_quantity(right, DIMENSIONLESS, "an exponent")?;
+            match base {
+                Some(DIMENSIONLESS) => Type::Number(DIMENSIONLESS),
+                Some(quantity) => {
+                    let literal = literal_exponent(right_node)
+                        .ok_or("a dimensioned base takes a literal exponent")?;
+                    Type::Number(raised_quantity(quantity, literal).map_err(domain)?)
+                }
+                None => Type::Unknown,
+            }
+        }
+        BinaryOp::Equal
+        | BinaryOp::NotEqual
+        | BinaryOp::Less
+        | BinaryOp::LessEqual
+        | BinaryOp::Greater
+        | BinaryOp::GreaterEqual => {
+            let equality = matches!(op, BinaryOp::Equal | BinaryOp::NotEqual);
+            match (left, right) {
+                (Type::Text, Type::Text | Type::Unknown) | (Type::Unknown, Type::Text)
+                    if equality => {}
+                (Type::Text, _) | (_, Type::Text) => {
+                    return Err("text compares only with text, by == and !=".into());
+                }
+                _ => {
+                    same_type(
+                        quantity_of(left, "a comparison")?,
+                        quantity_of(right, "a comparison")?,
+                        "a comparison",
+                    )?;
+                }
+            }
+            Type::Boolean
+        }
+        BinaryOp::And | BinaryOp::Or => {
+            boolean_type(left, "and and or")?;
+            boolean_type(right, "and and or")?;
+            Type::Boolean
+        }
+    })
+}
+
+fn call_type(function: Function, args: &[Type]) -> Result<Type, String> {
+    arity(function, args.len())?;
+    let what = function.name();
+    let first = args[0];
+    Ok(match function {
+        Function::Sin | Function::Cos | Function::Tan => {
+            expect_quantity(first, Quantity::ANGLE, what)?;
+            Type::Number(DIMENSIONLESS)
+        }
+        Function::Asin | Function::Acos | Function::Atan => {
+            expect_quantity(first, DIMENSIONLESS, what)?;
+            Type::Number(Quantity::ANGLE)
+        }
+        Function::Atan2 => {
+            same_type(quantity_of(first, what)?, quantity_of(args[1], what)?, what)?;
+            Type::Number(Quantity::ANGLE)
+        }
+        Function::Sqrt => match quantity_of(first, what)? {
+            Some(quantity) => Type::Number(halved(quantity).map_err(|error| error.to_string())?),
+            None => Type::Unknown,
+        },
+        Function::Abs => number_type(quantity_of(first, what)?),
+        Function::Exp
+        | Function::Ln
+        | Function::Log10
+        | Function::Floor
+        | Function::Ceil
+        | Function::Round
+        | Function::Trunc => {
+            expect_quantity(first, DIMENSIONLESS, what)?;
+            Type::Number(DIMENSIONLESS)
+        }
+        Function::Min | Function::Max | Function::Mod => {
+            let mut held = None;
+            for arg in args {
+                held = same_type(held, quantity_of(*arg, what)?, what)?;
+            }
+            number_type(held)
+        }
+        Function::Sign => {
+            quantity_of(first, what)?;
+            Type::Number(DIMENSIONLESS)
+        }
+    })
+}
+
+/// The one kind of the two branches of an `if`.
+fn branch_type(then: Type, otherwise: Type) -> Result<Type, String> {
+    match (then, otherwise) {
+        (Type::Number(a), Type::Number(b)) => same(a, b, "if")
+            .map(Type::Number)
+            .map_err(|error| error.to_string()),
+        (Type::Unknown, known) | (known, Type::Unknown) => Ok(known),
+        (Type::Boolean, Type::Boolean) => Ok(Type::Boolean),
+        (Type::Text, Type::Text) => Ok(Type::Text),
+        _ => Err("if takes branches of one kind".into()),
+    }
+}
+
+enum Check<'a> {
+    Visit(&'a Node<ParameterRef>),
+    Unary(UnaryOp),
+    Binary(BinaryOp, &'a Node<ParameterRef>),
+    Call(Function, usize),
+    If,
+}
+
+/// Type-checks a parameter's neutral expression tree by the semantics table
+/// of §5.13 and the function arities of part 10, every branch of an `if`
+/// included. `reference` gives a reference's type. A parameter's expression
+/// has no law path and no bend in scope, so the law parameter and the bend
+/// variables are refused.
+///
+/// # Errors
+///
+/// Returns why a node does not type-check.
+pub(super) fn check_types(
+    root: &Node<ParameterRef>,
+    reference: &dyn Fn(&ParameterRef) -> Type,
+) -> Result<Type, String> {
+    let mut tasks = vec![Check::Visit(root)];
+    let mut types: Vec<Type> = Vec::new();
+    let pop = |types: &mut Vec<Type>| types.pop().ok_or("an operator has no operand");
+    while let Some(task) = tasks.pop() {
+        match task {
+            Check::Visit(node) => match node {
+                Node::Number { unit, .. } => types.push(Type::Number(
+                    unit_factor(unit).map_err(|error| error.to_string())?.1,
+                )),
+                Node::Constant(_) => types.push(Type::Number(DIMENSIONLESS)),
+                Node::Boolean(_) => types.push(Type::Boolean),
+                Node::Text(_) => types.push(Type::Text),
+                Node::Reference(target) => types.push(reference(target)),
+                Node::Measure(measure) => {
+                    types.push(Type::Number(measure_quantity(&measure.kind)));
+                }
+                Node::LawParameter => {
+                    return Err("the law parameter occurs only in a law expression".into());
+                }
+                Node::Bend(_) => {
+                    return Err("a bend variable occurs only in a bend allowance".into());
+                }
+                Node::Unary { op, operand } => {
+                    tasks.push(Check::Unary(*op));
+                    tasks.push(Check::Visit(operand));
+                }
+                Node::Binary { op, left, right } => {
+                    tasks.push(Check::Binary(*op, right));
+                    tasks.push(Check::Visit(right));
+                    tasks.push(Check::Visit(left));
+                }
+                Node::Call { function, args } => {
+                    tasks.push(Check::Call(*function, args.len()));
+                    tasks.extend(args.iter().rev().map(Check::Visit));
+                }
+                Node::If(branches) => {
+                    tasks.push(Check::If);
+                    tasks.extend(branches.iter().rev().map(Check::Visit));
+                }
+            },
+            Check::Unary(op) => {
+                let operand = pop(&mut types)?;
+                types.push(match op {
+                    UnaryOp::Negate => number_type(quantity_of(operand, "-")?),
+                    UnaryOp::Not => {
+                        boolean_type(operand, "not")?;
+                        Type::Boolean
+                    }
+                });
+            }
+            Check::Binary(op, right_node) => {
+                let right = pop(&mut types)?;
+                let left = pop(&mut types)?;
+                types.push(binary_type(op, left, right, right_node)?);
+            }
+            Check::Call(function, count) => {
+                let start = types
+                    .len()
+                    .checked_sub(count)
+                    .ok_or("a call has too few arguments")?;
+                let args = types.split_off(start);
+                types.push(call_type(function, &args)?);
+            }
+            Check::If => {
+                let otherwise = pop(&mut types)?;
+                let then = pop(&mut types)?;
+                boolean_type(pop(&mut types)?, "if")?;
+                types.push(branch_type(then, otherwise)?);
+            }
+        }
+    }
+    Ok(pop(&mut types)?)
+}
+
+/// Whether a type is a value of the declared kind; an unknown type may be.
+///
+/// # Errors
+///
+/// Returns the difference where it is not.
+pub(super) fn kind_type(kind: &ValueKind, found: Type) -> Result<(), String> {
+    match (kind, found) {
+        (ValueKind::Native(name), _) => Err(format!("the kind {name} has no neutral value")),
+        (_, Type::Unknown) => Ok(()),
+        (kind, found) if Type::of_kind(kind) == found => Ok(()),
+        (kind, found) => Err(format!("{found:?} is not a value of the kind {kind:?}")),
+    }
 }
 
 /// A cache as an expression value of the declared kind, or `None` where the
