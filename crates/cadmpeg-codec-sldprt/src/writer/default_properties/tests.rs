@@ -12,7 +12,8 @@ fn property(id: &str, name: &str, value: AttributeValue) -> SourceAttribute {
         id: AttributeId::mint(id).unwrap(),
         target: AttributeTarget::Document.into(),
         name: name.into(),
-        values: vec![value],
+        values: vec![Some(value)],
+        native_ref: None,
     }
 }
 
@@ -88,19 +89,19 @@ fn owned_properties_keep_names_values_and_exact_float_bits() {
     renamed.name = "SW-Short Date(Short Date)".into();
     assert!(!same_attribute(&original, &renamed));
     renamed = original.clone();
-    renamed.values = vec![AttributeValue::String("saved".into())];
+    renamed.values = vec![Some(AttributeValue::String("saved".into()))];
     assert!(!same_attribute(&original, &renamed));
     for vector in [false, true] {
         original.values = vec![if vector {
-            AttributeValue::vector([-0.0]).unwrap()
+            Some(AttributeValue::vector([-0.0]).unwrap())
         } else {
-            AttributeValue::float(-0.0).unwrap()
+            Some(AttributeValue::float(-0.0).unwrap())
         }];
         let mut positive = original.clone();
         positive.values = vec![if vector {
-            AttributeValue::vector([0.0]).unwrap()
+            Some(AttributeValue::vector([0.0]).unwrap())
         } else {
-            AttributeValue::float(0.0).unwrap()
+            Some(AttributeValue::float(0.0).unwrap())
         }];
         assert!(!same_attribute(&original, &positive));
     }
@@ -123,7 +124,7 @@ fn empty_saved_property_remains_read_only_and_distinct_from_a_blank_string() {
     let mut changed = original.clone();
     changed.model.attributes[0]
         .values
-        .push(AttributeValue::String(String::new()));
+        .push(Some(AttributeValue::String(String::new())));
     assert!(validate(&changed, &original, &source_scan).is_err());
     changed = original.clone();
     changed.model.attributes[0].name = "Other".into();
@@ -159,7 +160,7 @@ fn retained_guard_detects_removed_added_renamed_and_reidentified_properties() {
                 current.model.attributes[0].id =
                     AttributeId::mint("other:metadata:default_property#8:5:Name").unwrap();
             }
-            4 => current.model.attributes[0].values = vec![AttributeValue::Integer(5)],
+            4 => current.model.attributes[0].values = vec![Some(AttributeValue::Integer(5))],
             5 => current
                 .model
                 .attributes
@@ -193,7 +194,7 @@ fn only_exact_default_carrier_owns_the_unit_mirror_guard() {
             owned || name == "docProps/Config-0-Properties.xml"
         );
         let mut current = original.clone();
-        current.model.attributes[0].values = vec![AttributeValue::Integer(3)];
+        current.model.attributes[0].values = vec![Some(AttributeValue::Integer(3))];
         assert_eq!(validate(&current, &original, &source_scan).is_err(), owned);
         assert!(!is_property(&original.model.attributes[0]));
     }

@@ -355,7 +355,8 @@ fn attribute(
         id,
         target: AttributeTarget::Document.into(),
         name: name.as_str().into(),
-        values,
+        values: values.into_iter().map(Some).collect(),
+        native_ref: None,
     })
 }
 

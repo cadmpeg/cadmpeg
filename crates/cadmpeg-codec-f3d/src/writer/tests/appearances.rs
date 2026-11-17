@@ -62,6 +62,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
             ),
         ]),
         textures: Vec::new(),
+        native_ref: None,
     }];
     let mut encoded = Vec::new();
     F3dCodec
@@ -388,6 +389,7 @@ fn synthesized_appearance_properties_report_each_unwritten_key() {
             base_color: Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap()),
             properties,
             textures: Vec::new(),
+            native_ref: None,
         });
         let plan = F3dCodec
             .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)

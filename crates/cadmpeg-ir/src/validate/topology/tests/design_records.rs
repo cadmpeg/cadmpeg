@@ -97,7 +97,8 @@ fn missing(home: Home) -> Vec<String> {
         id: AttributeId::mint("test:model:attribute#part-number").unwrap(),
         target: AttributeTarget::Configuration(configuration).into(),
         name: "Part Number".into(),
-        values: vec![AttributeValue::Parameter(parameter)],
+        values: vec![Some(AttributeValue::Parameter(parameter))],
+        native_ref: None,
     });
     validate_neutral(&ir, Vec::new())
         .unwrap()

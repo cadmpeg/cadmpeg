@@ -961,6 +961,7 @@ impl Builder<'_, '_, '_, '_> {
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
         self.admit("usd_appearance")
     }
@@ -1016,6 +1017,7 @@ impl Builder<'_, '_, '_, '_> {
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
         self.admit("usd_appearance")
     }
@@ -1463,6 +1465,7 @@ fn surface_appearance(surface: &SurfaceShader) -> Appearance {
         base_color,
         properties,
         textures: Vec::new(),
+        native_ref: None,
     }
 }
 

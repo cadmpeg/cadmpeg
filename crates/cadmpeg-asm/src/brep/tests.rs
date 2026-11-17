@@ -1103,17 +1103,18 @@ fn lump_named_attributes_bind_to_their_owning_body() {
             target: AttributeTarget::Body(body_id).into(),
             name: "name_attrib-gen-attrib".into(),
             values: vec![
-                AttributeValue::Reference("f3d:brep:entity#-1".into()),
-                AttributeValue::Integer(-1),
-                AttributeValue::Reference("f3d:brep:entity#-1".into()),
-                AttributeValue::Reference("f3d:brep:entity#-1".into()),
-                AttributeValue::Reference("f3d:brep:entity#2".into()),
-                AttributeValue::Integer(1),
-                AttributeValue::Integer(3),
-                AttributeValue::Integer(1),
-                AttributeValue::Integer(1),
-                AttributeValue::String("MBRD_ST_SHEETMETAL_LUMP".into()),
+                Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::Integer(-1)),
+                Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::Reference("f3d:brep:entity#2".into())),
+                Some(AttributeValue::Integer(1)),
+                Some(AttributeValue::Integer(3)),
+                Some(AttributeValue::Integer(1)),
+                Some(AttributeValue::Integer(1)),
+                Some(AttributeValue::String("MBRD_ST_SHEETMETAL_LUMP".into())),
             ],
+            native_ref: None,
         }]
     );
 }

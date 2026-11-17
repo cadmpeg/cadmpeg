@@ -40,6 +40,7 @@ fn appearance(schema: Option<&str>) -> Appearance {
         base_color: Some(Color::new(0.2, 0.3, 0.4, 1.0).unwrap()),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     }
 }
 
@@ -67,9 +68,10 @@ fn attributes_outside_sldprt_namespace_have_counted_export_loss() {
             id: "test:model:attribute#other".try_into().unwrap(),
             target: cadmpeg_ir::attributes::AttributeTarget::Document {}.into(),
             name: "other".into(),
-            values: vec![cadmpeg_ir::attributes::AttributeValue::String(
+            values: vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
                 "value".into(),
-            )],
+            ))],
+            native_ref: None,
         });
     assert_loss(
         &ir,
@@ -94,6 +96,7 @@ fn edge_and_vertex_appearance_bindings_have_counted_export_loss() {
             object_type: None,
             visible: None,
             channels: std::collections::BTreeMap::default(),
+            native_ref: None,
         });
         ir.model.appearances.push(appearance);
         assert_loss(

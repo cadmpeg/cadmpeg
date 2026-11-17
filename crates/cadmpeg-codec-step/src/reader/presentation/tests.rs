@@ -1588,6 +1588,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#face"
@@ -1600,6 +1601,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.125,0.125,0.125)"));
@@ -1638,6 +1640,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#vertex"
@@ -1650,6 +1653,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let text = export(&ir);
@@ -1878,6 +1882,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#face"
@@ -1890,6 +1895,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let s = export(&ir);

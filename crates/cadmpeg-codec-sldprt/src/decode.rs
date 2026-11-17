@@ -2983,6 +2983,7 @@ fn ensure_display_appearance(
         base_color: Some(definition.color),
         properties: BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     Ok(id)
 }
@@ -3074,6 +3075,7 @@ fn retain_unresolved_appearance(
                 base_color: Some(color),
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
+                native_ref: None,
             });
     }
     let binding_id = cadmpeg_ir::ids::AppearanceBindingId::compose(
@@ -3100,6 +3102,7 @@ fn retain_unresolved_appearance(
         object_type: Some(unresolved.owner_class.clone()),
         visible: None,
         channels: unresolved_binding_channels(unresolved),
+        native_ref: None,
     });
 }
 
@@ -3280,6 +3283,7 @@ fn push_display_meshes(
                     object_type: Some("DisplayFace".into()),
                     visible: None,
                     channels: display_binding_channels(definition),
+                    native_ref: None,
                 });
             }
             let mesh = display_face.mesh;
@@ -3897,6 +3901,7 @@ fn build_geometry_ir(
                 base_color: Some(face_color.color),
                 textures: Vec::new(),
                 properties: BTreeMap::new(),
+                native_ref: None,
             });
         }
         if let Some(target) = face_color.target {
@@ -3926,6 +3931,7 @@ fn build_geometry_ir(
                     object_type: Some("Face".into()),
                     visible: None,
                     channels: BTreeMap::new(),
+                    native_ref: None,
                 });
             }
         }
@@ -3955,6 +3961,7 @@ fn build_geometry_ir(
             base_color: Some(definition.color),
             textures: Vec::new(),
             properties: BTreeMap::new(),
+            native_ref: None,
         });
     }
     let push = push_display_meshes(
@@ -4087,6 +4094,7 @@ fn build_geometry_ir(
             object_type: Some("Native scoped face".into()),
             visible: None,
             channels: display_binding_channels(definition),
+            native_ref: None,
         });
     }
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
@@ -5988,6 +5996,7 @@ mod digest_tests {
             base_color: None,
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         }
     }
 
@@ -6000,6 +6009,7 @@ mod digest_tests {
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         }
     }
 

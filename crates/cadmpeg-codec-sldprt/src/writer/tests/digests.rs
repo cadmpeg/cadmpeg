@@ -19,6 +19,7 @@ fn metadata_document() -> CadIr {
             target: AttributeTarget::Document.into(),
             name: name.to_owned(),
             values: Vec::new(),
+            native_ref: None,
         });
     }
     ir
@@ -89,11 +90,12 @@ fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
         target: AttributeTarget::Document.into(),
         name: "transformed_reference_enclosure".into(),
         values: vec![
-            AttributeValue::vector([0., 0., 0.]).unwrap(),
-            AttributeValue::vector([100., 100., 100.]).unwrap(),
-            AttributeValue::vector([-100., -100., -100.]).unwrap(),
-            AttributeValue::float(200.).unwrap(),
+            Some(AttributeValue::vector([0., 0., 0.]).unwrap()),
+            Some(AttributeValue::vector([100., 100., 100.]).unwrap()),
+            Some(AttributeValue::vector([-100., -100., -100.]).unwrap()),
+            Some(AttributeValue::float(200.).unwrap()),
         ],
+        native_ref: None,
     });
     assert!(matches!(
         crate::writer::metadata_payloads(&ir, 0.001, false),

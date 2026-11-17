@@ -1202,6 +1202,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#hidden-face"
@@ -1213,6 +1214,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         object_type: None,
         visible: Some(false),
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1264,6 +1266,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearances.push(Appearance {
         id: second_appearance.clone(),
@@ -1279,6 +1282,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#transparent-face"
@@ -1290,6 +1294,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#more-transparent-face"
@@ -1301,6 +1306,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();

@@ -278,6 +278,7 @@ fn insert_appearance(
             base_color: Some(Color::from_rgba8(rgba[0], rgba[1], rgba[2], rgba[3])),
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         });
     }
     Ok(id)
@@ -344,6 +345,7 @@ fn insert_binding_record(
         object_type: Some(object_type),
         visible: None,
         channels: BTreeMap::new(),
+        native_ref: None,
     });
     Ok(())
 }
