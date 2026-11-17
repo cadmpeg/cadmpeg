@@ -310,6 +310,30 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
 }
 
 #[test]
+fn witnessed_inline_torus_reads_its_radius_slots() {
+    let mut suffix = vec![0x2d];
+    suffix.extend_from_slice(&4.75_f64.to_be_bytes()[1..]);
+    suffix.push(0x0d);
+    let torus = inline_non_plane_record(
+        0x26,
+        [2.0, 4.0],
+        [[0.0, 0.0, 6.0], [1.0, 1.0, 8.0]],
+        &[
+            &INLINE_TEST_LOCAL_SYSTEM_Z[..],
+            &[0x2f, 0x14, 0x00, 0x2f, 0x14, 0x00, 0x2f, 0x10, 0x00],
+        ]
+        .concat(),
+        &suffix,
+    );
+    let torus_frame = torus
+        .positional_torus_frame()
+        .expect("witnessed inline torus with radius-slot forms");
+    assert_eq!(torus_frame.frame().origin(), [5.0, 5.0, 4.0]);
+    assert_eq!(torus_frame.major_radius.get(), 4.75);
+    assert_eq!(torus_frame.minor_radius.get(), 0.25);
+}
+
+#[test]
 fn compact_y_image_uses_the_unique_envelope_axis_witness() {
     let mut local_system = vec![0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4];
     push_inline_test_scalar(&mut local_system, 2.0);
