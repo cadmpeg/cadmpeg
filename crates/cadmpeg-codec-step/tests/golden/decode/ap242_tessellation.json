@@ -323,8 +323,10 @@
           "id": "step:presentation:binding#77:0-0",
           "source_entity_id": "#77",
           "target": {
-            "kind": "tessellation",
-            "value": "step:tessellation:mesh#7"
+            "entity": {
+              "kind": "tessellation",
+              "value": "step:tessellation:mesh#7"
+            }
           }
         }
       ],

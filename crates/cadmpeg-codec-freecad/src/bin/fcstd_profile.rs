@@ -930,7 +930,7 @@ fn appearance_checks(
         else {
             return Ok(false);
         };
-        let (kind, target, precedence) = match &binding.target {
+        let (kind, target, precedence) = match &binding.target.entity {
             AppearanceTarget::Body(id) => ("body", id.as_str(), None),
             AppearanceTarget::Face(id) => ("face", id.as_str(), Some("face_over_object")),
             AppearanceTarget::Edge(id) => (

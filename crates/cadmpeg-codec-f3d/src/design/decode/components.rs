@@ -759,6 +759,7 @@ fn parse_attributed_component_occurrence_frame(
                 target,
                 inline_type_guid: None,
                 segment,
+                ..
             } => (target, segment),
             crate::bytes::Reference::Null => (0, 0),
             _ => return None,

@@ -821,3 +821,22 @@ fn texture_coordinates_hold_one_value_per_vertex_or_corner_under_unique_names() 
     }
     rejects_wire_field("texture_coordinates", vec![coordinates("st", Vertex, 3)]);
 }
+
+#[test]
+fn a_tessellation_writes_the_state_it_names_and_refuses_a_null_one() {
+    let mut value = mesh();
+    assert!(serde_json::to_value(&value).unwrap().get("state").is_none());
+    value.state = Some(crate::design::refs::StateRef {
+        configuration: None,
+        of: crate::design::refs::Evaluated::Tool(
+            crate::features::FeatureId::mint("test:design:feature#3").unwrap(),
+        ),
+    });
+    let wire = serde_json::to_value(&value).unwrap();
+    assert_eq!(
+        wire["state"],
+        serde_json::json!({"of": {"kind": "tool", "value": "test:design:feature#3"}})
+    );
+    assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), value);
+    rejects_wire_field("state", serde_json::Value::Null);
+}

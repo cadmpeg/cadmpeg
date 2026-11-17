@@ -552,7 +552,7 @@ fn dimension(
         id: annotation_id(segment, owner_ordinal)?,
         name: name.map(str::to_owned),
         visible: None,
-        targets,
+        targets: targets.into_iter().map(Into::into).collect(),
         definition: PmiDefinition::Dimension(definition),
     }))
 }
@@ -844,7 +844,7 @@ fn datums(
             id,
             name: labels.get(&owner).cloned().flatten(),
             visible: None,
-            targets,
+            targets: targets.into_iter().map(Into::into).collect(),
             definition: PmiDefinition::Datum {
                 identification: label,
             },
@@ -958,7 +958,10 @@ fn frame(
         id: annotation_id(segment, owner_ordinal)?,
         name: name.map(str::to_owned),
         visible: None,
-        targets: owner_targets(scope, owner_ordinal, intent.as_slice(), outcome),
+        targets: owner_targets(scope, owner_ordinal, intent.as_slice(), outcome)
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: kind,
             magnitude,

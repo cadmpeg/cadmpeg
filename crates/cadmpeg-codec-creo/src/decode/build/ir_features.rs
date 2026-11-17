@@ -54,6 +54,21 @@ fn compose_feature_id(feature_id: u32) -> Result<IrFeatureId, cadmpeg_core::Code
     IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
+/// Set each regeneration parent the model admits, and return each refused
+/// edge with the model's reason.
+pub(in crate::decode) fn commit_regeneration_edges(
+    ir: &mut CadIr,
+    edges: Vec<(IrFeatureId, IrFeatureId)>,
+) -> Vec<(IrFeatureId, IrFeatureId, String)> {
+    let mut refused = Vec::new();
+    for (child, parent) in edges {
+        if let Err(error) = ir.model.set_feature_regeneration_parent(&child, &parent) {
+            refused.push((child, parent, error.to_string()));
+        }
+    }
+    refused
+}
+
 fn append_regeneration_edge(
     edges: &mut Vec<(IrFeatureId, IrFeatureId)>,
     child: &IrFeatureId,
@@ -62,16 +77,6 @@ fn append_regeneration_edge(
     let child = child.clone();
     let parent = parent.clone();
     edges.push((child, parent));
-}
-
-fn commit_regeneration_edges(
-    ir: &mut CadIr,
-    edges: Vec<(IrFeatureId, IrFeatureId)>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    for (child, parent) in edges {
-        ir.model.set_feature_regeneration_parent(&child, &parent)?;
-    }
-    Ok(())
 }
 
 fn refresh_feature_outputs(
@@ -351,7 +356,7 @@ pub(super) fn emit_model_features(
                 })
             })
             .map(|feature| &feature.id);
-        if let Some(parent) = parent {
+        if let Some(parent) = parent.filter(|parent| **parent != id) {
             append_regeneration_edge(&mut regeneration_edges, &id, parent);
         }
         if let Some(existing) = ir
@@ -576,7 +581,9 @@ pub(super) fn emit_model_features(
         source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(ctx, scan, ir)?;
     }
-    commit_regeneration_edges(ir, regeneration_edges)?;
+    // `reconcile_feature_links` rebuilds every recipe-parent edge after it
+    // orders the features, and charges each edge it drops.
+    let _refused = commit_regeneration_edges(ir, regeneration_edges);
     Ok(geometry_generator_feature_count)
 }
 
@@ -587,10 +594,11 @@ pub(super) fn finish_feature_transfers(
     annotations: &mut AnnotationBuilder,
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     link_feature_sketch_history(scan, ir)?;
-    reconcile_feature_links(ctx, scan, ir, &prototype_feature_dependencies)?;
+    reconcile_feature_links(ctx, scan, ir, &prototype_feature_dependencies, losses)?;
     let feature_result_topology_count = emit_feature_result_topologies(ctx, scan, ir)?;
     let feature_result_edge_count = ir
         .model
