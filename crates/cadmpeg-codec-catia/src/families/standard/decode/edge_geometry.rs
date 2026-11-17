@@ -1451,6 +1451,7 @@ pub(super) fn build_standard_edge_curve(
                     cylinder,
                     points.map(|point| ir.geometry.points[point].position().get()),
                     witness.get(),
+                    &arc_bounds::support_bounds(face_bounds, support),
                 ) else {
                     continue;
                 };

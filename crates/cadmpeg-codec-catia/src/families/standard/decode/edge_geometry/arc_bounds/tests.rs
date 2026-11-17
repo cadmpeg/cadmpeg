@@ -156,6 +156,7 @@ fn cylinder_witness_selects_oblique_ellipse_arc_independently_of_height() {
             &cylinder,
             endpoints,
             Point3::new(x, 0.0, 100.0),
+            &[Some(bounds([0.0; 3], [2.0; 3])), None],
         )
         .expect("witnessed half ellipse");
         let midpoint = cadmpeg_ir::eval::decode::curve_point(
@@ -167,4 +168,53 @@ fn cylinder_witness_selects_oblique_ellipse_arc_independently_of_height() {
         .get();
         assert!(midpoint.distance(Point3::new(x, 0.0, 0.0)) < 1e-12);
     }
+}
+
+#[test]
+fn cylinder_witness_cannot_override_either_incident_box() {
+    use cadmpeg_ir::geometry::analytic::{CylinderSurface, EllipseCurve};
+    let cylinder = CylinderSurface::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        2.0,
+    )
+    .expect("cylinder");
+    let ellipse = EllipseCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        2.0,
+        2.0,
+    )
+    .expect("circular section");
+    let endpoints = [Point3::new(2.0, 0.0, 0.0), Point3::new(0.0, 2.0, 0.0)];
+    let broad = Some(bounds([0.0; 3], [2.0, 2.0, 0.1]));
+    let quarter = Some(bounds([1.0, 1.0, 0.0], [1.0, 1.0, 0.1]));
+    let witness = Point3::new(1.0, -1.38e-7, 0.0);
+    for boxes in [
+        [quarter, None],
+        [broad, quarter],
+        [quarter, broad],
+        [None, None],
+    ] {
+        assert!(
+            super::witnessed_cylinder_ellipse_branch(
+                ellipse, &cylinder, endpoints, witness, &boxes,
+            )
+            .is_none(),
+            "a complementary arc contradicts an incident box"
+        );
+    }
+    assert!(
+        super::witnessed_cylinder_ellipse_branch(
+            ellipse,
+            &cylinder,
+            endpoints,
+            Point3::new(1.0, 1.0, 0.0),
+            &[broad, broad],
+        )
+        .is_some(),
+        "a witness can resolve two box-admitted branches"
+    );
 }
