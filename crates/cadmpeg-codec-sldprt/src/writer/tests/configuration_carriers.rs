@@ -1643,7 +1643,7 @@ fn semantic_writer_preserves_face_appearance() {
         .model
         .appearance_bindings
         .iter()
-        .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+        .find(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_)))
         .expect("face binding");
     let color = regenerated
         .ir()

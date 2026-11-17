@@ -31,9 +31,11 @@ from the name of the constant.
    `max_decompressed_bytes_total`, `max_decompressed_bytes_per_expand`,
    `max_retained_bytes`, `max_entities`, and `max_recursion_depth`. Excess
    refuses the session and sets the fuse. Reading CADIR design values
-   (`cadmpeg_ir::design::read::from_str`) enforces the other four as nesting
+   (`cadmpeg_ir::design::read::from_str`) enforces four as nesting
    ceilings: `max_expression_depth`, `max_name_depth`, `max_pick_depth`, and
-   `max_construction_depth`. Excess refuses that read with
+   `max_construction_depth`. Reading a document enforces
+   `max_state_chain_depth` on each chain of state bases its evaluations
+   and process states form, and refuses a cycle as malformed. Excess refuses that read with
    `CodecError::ResourceLimit` (`RecursionDepth`, `BudgetExceeded`); it sets
    no fuse.
 4. **Local work cap.** The limit bounds a search, an iteration, a

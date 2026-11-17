@@ -6,11 +6,13 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use declarations::{initializer_items, module_scope, Declaration, Declarations};
+use shim_forwards::forwarded_shim;
 use writers::{container_conversion, wire_index, WireIndex, HAND_WRITTEN_KEYS};
 
 mod declarations;
 mod reader_routes;
 mod roots;
+mod shim_forwards;
 mod writers;
 
 /// Every hand-written `Deserialize` in the three wire crates, with the reader
@@ -254,6 +256,12 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "free-form",
     ),
     ("crates/cadmpeg-ir/src/pmi.rs", "PmiMagnitude", "keyless"),
+    ("crates/cadmpeg-ir/src/process/tool.rs", "Uuid", "keyless"),
+    (
+        "crates/cadmpeg-ir/src/process/wire.rs",
+        "Distinct",
+        "keyless",
+    ),
     (
         "crates/cadmpeg-core/src/text.rs",
         "NonBlankString",
@@ -831,14 +839,26 @@ fn every_read_optional_field_refuses_a_null_spelling() {
 /// `deserialize_source_id` as a required key and another as an optional one.
 /// A name declared twice in one file carries both macros, which is what refuses
 /// a shim only some of whose definitions guard.
-fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
+///
+/// The second map holds each function [`forwarded_shim`] reads as a forward
+/// to another helper of its file, keyed the same way, with that helper's name.
+fn shim_definitions() -> (ShimMacros, BTreeMap<(String, String), String>) {
     fn walk(
         items: &[syn::Item],
         relative: &str,
-        found: &mut BTreeMap<(String, String), BTreeSet<String>>,
+        found: &mut ShimMacros,
+        forwarders: &mut BTreeMap<(String, String), String>,
     ) {
         for item in items {
             match item {
+                syn::Item::Fn(function) => {
+                    if let Some(callee) = forwarded_shim(function) {
+                        forwarders.insert(
+                            (relative.to_owned(), function.sig.ident.to_string()),
+                            callee,
+                        );
+                    }
+                }
                 syn::Item::Macro(invocation) => {
                     let path = &invocation.mac.path;
                     let Some(macro_name) = path.segments.last() else {
@@ -868,7 +888,7 @@ fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
                 }
                 syn::Item::Mod(module) => {
                     if let Some((_, nested)) = &module.content {
-                        walk(nested, relative, found);
+                        walk(nested, relative, found, forwarders);
                     }
                 }
                 _ => {}
@@ -882,6 +902,7 @@ fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
         .expect("the repository root sits two levels above the crate manifest")
         .to_path_buf();
     let mut found = BTreeMap::new();
+    let mut forwarders = BTreeMap::new();
     for source in [
         "crates/cadmpeg-ir/src",
         "crates/cadmpeg-core/src",
@@ -904,11 +925,14 @@ fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
             let parsed = syn::parse_file(&text)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
-            walk(&parsed.items, &relative, &mut found);
+            walk(&parsed.items, &relative, &mut found, &mut forwarders);
         }
     }
-    found
+    (found, forwarders)
 }
+
+/// Per shim site, the macro paths that define it.
+type ShimMacros = BTreeMap<(String, String), BTreeSet<String>>;
 
 /// One key's spelling of `None` on the writing declaration.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1131,22 +1155,36 @@ fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
 /// is private to `cadmpeg_core::absent_key`. Every shim that macro defines
 /// refuses `null` and names its own key in the refusal. A name another macro
 /// also defines is left out, so a shim only some of whose definitions guard is
-/// no proof.
+/// no proof. A function that [`forwarded_shim`] reads as a forward to such a
+/// shim of its own file refuses `null` too; it is how a field whose type is not
+/// the shim's own reads through one, such as a set read with its refusal of a
+/// repeated member.
 ///
 /// Anything else on a field that skips on `None` is an offender, because a
 /// `deserialize_with` that does not state the refusal gives `None` a second
-/// spelling. Each shim maps to the macro path its invocation spells.
+/// spelling. Each shim maps to the macro path its invocation spells, and a
+/// forward to the path of the shim it calls.
 fn null_refusing_helpers() -> &'static BTreeMap<(String, String), String> {
     static HELPERS: OnceLock<BTreeMap<(String, String), String>> = OnceLock::new();
     HELPERS.get_or_init(|| {
-        shim_definitions()
-            .into_iter()
+        let (macros, forwarders) = shim_definitions();
+        let shims: BTreeMap<(String, String), String> = macros
+            .iter()
             .filter_map(|(site, macros)| {
-                let [invoked] = macros.into_iter().collect::<Vec<_>>().try_into().ok()?;
+                let [invoked] = macros.iter().collect::<Vec<_>>().try_into().ok()?;
                 (invoked.rsplit("::").next() == Some("named_optional_field"))
-                    .then_some((site, invoked))
+                    .then(|| (site.clone(), invoked.clone()))
             })
-            .collect()
+            .collect();
+        let forwarding: Vec<((String, String), String)> = forwarders
+            .into_iter()
+            .filter(|(site, _)| !macros.contains_key(site))
+            .filter_map(|(site, callee)| {
+                let invoked = shims.get(&(site.0.clone(), callee))?;
+                Some((site, invoked.clone()))
+            })
+            .collect();
+        shims.into_iter().chain(forwarding).collect()
     })
 }
 

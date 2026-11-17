@@ -59,6 +59,9 @@ struct Index {
     imports: BTreeMap<String, Vec<(String, Vec<String>)>>,
     hand_serialize: BTreeMap<String, Vec<String>>,
     option_readers: BTreeSet<String>,
+    /// Functions that forward to another helper, by name, with each helper a
+    /// function of that name forwards to.
+    option_forwards: BTreeMap<String, BTreeSet<String>>,
     macro_serde_attrs: Vec<(String, Vec<TokenTree>)>,
 }
 
@@ -291,6 +294,43 @@ fn serde_groups(tokens: &TokenStream, out: &mut Vec<Vec<TokenTree>>) {
     }
 }
 
+/// The helper `function` forwards to, when its body is one call of a helper
+/// named without a path on its one parameter, followed by nothing but `.map`
+/// calls. `Result::map` rewrites only `Ok`, so such a function refuses
+/// whatever its callee refuses. The source census reads a forward by the same
+/// rule.
+fn forwarded_reader(function: &syn::ItemFn) -> Option<String> {
+    let mut parameters = function.sig.inputs.iter();
+    let (Some(syn::FnArg::Typed(parameter)), None) = (parameters.next(), parameters.next()) else {
+        return None;
+    };
+    let syn::Pat::Ident(parameter) = parameter.pat.as_ref() else {
+        return None;
+    };
+    let [syn::Stmt::Expr(body, None)] = function.block.stmts.as_slice() else {
+        return None;
+    };
+    let mut expression = body;
+    while let syn::Expr::MethodCall(call) = expression {
+        if call.method != "map" || call.args.len() != 1 {
+            return None;
+        }
+        expression = &call.receiver;
+    }
+    let syn::Expr::Call(call) = expression else {
+        return None;
+    };
+    let syn::Expr::Path(callee) = call.func.as_ref() else {
+        return None;
+    };
+    let callee = callee.path.get_ident()?;
+    let mut arguments = call.args.iter();
+    let (Some(syn::Expr::Path(argument)), None) = (arguments.next(), arguments.next()) else {
+        return None;
+    };
+    (argument.path.get_ident()? == &parameter.ident).then(|| callee.to_string())
+}
+
 fn macro_option_readers(tokens: &TokenStream, out: &mut BTreeSet<String>) {
     let tokens: Vec<TokenTree> = tokens.clone().into_iter().collect();
     for window in tokens.windows(3) {
@@ -418,7 +458,16 @@ impl Walker<'_> {
                         }
                     }
                 }
-                Item::Fn(item) => self.block(&item.block, index),
+                Item::Fn(item) => {
+                    if let Some(callee) = forwarded_reader(item) {
+                        index
+                            .option_forwards
+                            .entry(item.sig.ident.to_string())
+                            .or_default()
+                            .insert(callee);
+                    }
+                    self.block(&item.block, index);
+                }
                 Item::Mod(item) => {
                     if let Some((_, nested)) = &item.content {
                         self.items(nested, index);
@@ -506,6 +555,21 @@ fn last_segment(ty: &syn::Type) -> Option<(&syn::Ident, &syn::PathArguments)> {
     }
 }
 
+/// The generic parameter of `owner` whose associated type `ty` names, as in
+/// `S::Curve` or `<S as Space>::Curve`. Its payload is whatever each
+/// implementation chooses, so it is no declaration that shares its last name.
+fn associated_parameter(ty: &syn::Type, owner: &Decl) -> Option<String> {
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+    let parameter = match &path.qself {
+        Some(qself) => last_segment(&qself.ty)?.0.to_string(),
+        None if path.path.segments.len() > 1 => path.path.segments.first()?.ident.to_string(),
+        None => return None,
+    };
+    owner.generics.contains(&parameter).then_some(parameter)
+}
+
 fn first_type_argument(arguments: &syn::PathArguments) -> Option<&syn::Type> {
     let syn::PathArguments::AngleBracketed(arguments) = arguments else {
         return None;
@@ -525,6 +589,19 @@ fn field_name(field: &syn::Field) -> String {
 }
 
 impl Index {
+    /// Whether `name` is a `named_optional_field!` reader, or a function
+    /// every definition of which forwards to one. A forward refuses whatever
+    /// its callee refuses, so it reads a set through the set reader and still
+    /// refuses `null` at its key.
+    fn is_option_reader(&self, name: &str) -> bool {
+        self.option_readers.contains(name)
+            || self.option_forwards.get(name).is_some_and(|callees| {
+                callees
+                    .iter()
+                    .all(|callee| self.option_readers.contains(callee))
+            })
+    }
+
     fn unique(&self, name: &str) -> Option<&Decl> {
         let decls = self.decls.get(name)?;
         let serialized: Vec<&Decl> = decls
@@ -600,6 +677,35 @@ impl Index {
         }
     }
 
+    /// The declaration a module-qualified type such as `mesh::Payload`,
+    /// written in file `from`, refers to: the one in the module its qualifier
+    /// names. `None` for an unqualified type or when no single one matches.
+    fn qualified(&self, ty: &syn::Type, name: &str, from: &str) -> Option<&Decl> {
+        let syn::Type::Path(ty) = ty else {
+            return None;
+        };
+        if ty.path.segments.len() < 2 {
+            return None;
+        }
+        let path: Vec<String> = ty
+            .path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect();
+        let (krate, module) = module_of(from)?;
+        let target = import_module(&krate, &module, &path);
+        let mut matched = self
+            .decls
+            .get(name)?
+            .iter()
+            .filter(|decl| module_of(&decl.file).as_ref() == Some(&target));
+        match (matched.next(), matched.next()) {
+            (Some(decl), None) => Some(decl),
+            _ => None,
+        }
+    }
+
     /// The type an alias named `name`, written in file `from`, stands for,
     /// with the file that declares the alias.
     fn alias(&self, name: &str, from: &str) -> Option<(&str, &syn::Type)> {
@@ -627,6 +733,27 @@ impl Index {
             (Some((file, ty)), None) => Some((file.as_str(), ty)),
             _ => None,
         }
+    }
+
+    /// The type a field of type `ty`, written in file `from`, holds: the
+    /// target of a nongeneric alias that no declaration shares a name with,
+    /// followed through further such aliases, or `ty` itself.
+    fn field_type<'a>(&'a self, ty: &'a syn::Type, from: &'a str) -> &'a syn::Type {
+        let (mut ty, mut from) = (ty, from);
+        for _ in 0..6 {
+            let Some((ident, syn::PathArguments::None)) = last_segment(ty) else {
+                break;
+            };
+            let name = ident.to_string();
+            if self.decls.contains_key(&name) {
+                break;
+            }
+            let Some((file, aliased)) = self.alias(&name, from) else {
+                break;
+            };
+            (ty, from) = (aliased, file);
+        }
+        ty
     }
 
     fn is_collection(&self, ty: &syn::Type, depth: usize) -> bool {
@@ -693,6 +820,9 @@ impl Index {
                 self.payload(inner, owner, from, depth)
             });
         }
+        if let Some(parameter) = owner.and_then(|owner| associated_parameter(ty, owner)) {
+            return Payload::Generic(format!("{parameter}::{name}"));
+        }
         if let Some(owner) = owner.filter(|owner| owner.generics.contains(&name)) {
             return owner.generic_defaults.get(&name).map_or_else(
                 || Payload::Generic(name.clone()),
@@ -705,7 +835,10 @@ impl Index {
         if let Some((file, aliased)) = self.scoped_alias(&name, from) {
             return self.payload(aliased, None, file, depth + 1);
         }
-        let Some(decl) = self.resolve(&name, from) else {
+        let Some(decl) = self
+            .qualified(ty, &name, from)
+            .or_else(|| self.resolve(&name, from))
+        else {
             if self.decls.contains_key(&name) {
                 return Payload::Unresolved(format!("{name} has more than one declaration"));
             }
@@ -911,8 +1044,11 @@ fn check_fields(
     problems: &mut Vec<String>,
 ) {
     let newtype = matches!(fields, Fields::Unnamed(_));
+    // `at` is `file:line name`: the file declares the fields.
+    let from = at.split_once(':').map_or(at, |(file, _)| file);
     for (position, field) in fields.iter().enumerate() {
         let metas = serde_metas(&field.attrs);
+        let ty = index.field_type(&field.ty, from);
         if has(&metas, "skip") {
             continue;
         }
@@ -928,9 +1064,9 @@ fn check_fields(
         let named_reader = reader.is_some_and(|reader| {
             let name = reader.rsplit("::").next().unwrap_or(reader);
             let name = name.split('<').next().unwrap_or(name);
-            name == OPTION_READER || index.option_readers.contains(name)
+            name == OPTION_READER || index.is_option_reader(name)
         });
-        if last_segment(&field.ty).is_some_and(|(ident, _)| ident == "Option") {
+        if last_segment(ty).is_some_and(|(ident, _)| ident == "Option") {
             if newtype {
                 // A derived newtype variant writes `value` for every payload,
                 // so it writes `"value": null` for `None`. A newtype struct
@@ -956,7 +1092,7 @@ fn check_fields(
                     "{at}: Option field is not read by a default named_present reader"
                 ));
             }
-        } else if index.is_optional_newtype(&field.ty) {
+        } else if index.is_optional_newtype(ty) {
             if writes && skip.is_none() {
                 problems.push(format!(
                     "{at}: field holding a newtype over an Option writes null for None"
@@ -971,12 +1107,12 @@ fn check_fields(
             if let Some(skip) = skip {
                 problems.push(format!("{at}: field is left out by {skip}"));
             }
-            if reads && has(&metas, "default") && index.is_collection(&field.ty, 0) {
+            if reads && has(&metas, "default") && index.is_collection(ty, 0) {
                 problems.push(format!(
                     "{at}: collection field reads its omission as empty"
                 ));
             }
-            let is_map = last_segment(&field.ty)
+            let is_map = last_segment(ty)
                 .is_some_and(|(ident, _)| MAPS.contains(&ident.to_string().as_str()));
             if reads && is_map && !reader.is_some_and(|reader| reader.contains("distinct_keys")) {
                 problems.push(format!("{at}: map field reads a repeated key"));
@@ -1206,6 +1342,75 @@ fn the_census_reads_newtype_fields_and_adjacent_unit_variants() {
     assert_eq!(probe_problems(STATING_PROBE), Vec::<String>::new());
 }
 
+const FORWARDING_PROBE: &str = r#"#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Holder {
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_set")]
+    set: Option<BTreeSet<u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_loose")]
+    loose: Option<BTreeSet<u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_lenient")]
+    lenient: Option<BTreeSet<u32>>,
+}
+fn deserialize_set<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<u32>>, D::Error> {
+    deserialize_members(d).map(|set| set.map(|Members(set)| set))
+}
+fn deserialize_loose<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<u32>>, D::Error> {
+    read_members(d).map(|set| set.map(|Members(set)| set))
+}
+fn deserialize_lenient<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<u32>>, D::Error> {
+    deserialize_members(d).or_else(|_| Ok(None))
+}
+cadmpeg_core::named_optional_field!(deserialize_members, Members, "set");
+"#;
+
+/// A helper that only forwards to a `named_optional_field!` reader is one;
+/// a forward to another helper, or a call that rewrites the refusal, is not.
+#[test]
+fn a_forward_to_an_option_reader_reads_as_one() {
+    let unread = |line: usize, field: &str| {
+        format!("{PROBE}:3 Holder.{field}@{line}: Option field is not read by a default named_present reader")
+    };
+    assert_eq!(
+        probe_problems(FORWARDING_PROBE),
+        vec![unread(9, "lenient"), unread(7, "loose")]
+    );
+}
+
+#[test]
+fn a_field_is_read_through_a_nongeneric_alias_of_its_type() {
+    let source = |attrs: &str| {
+        format!(
+            "pub type Maybe = Option<u32>;\n\
+             pub type Again = Maybe;\n\
+             cadmpeg_core::named_optional_field!(deserialize_maybe, u32, \"maybe\");\n\
+             #[derive(Serialize, Deserialize)]\n\
+             #[serde(deny_unknown_fields)]\n\
+             struct Holder {{\n\
+                 #[serde({attrs})]\n\
+                 maybe: Again,\n\
+             }}\n"
+        )
+    };
+    let stated = source(
+        "default, skip_serializing_if = \"Option::is_none\", deserialize_with = \"deserialize_maybe\"",
+    );
+    assert_eq!(probe_problems(&stated), Vec::<String>::new());
+    assert_eq!(
+        probe_problems(&source("skip_serializing_if = \"Option::is_none\"")),
+        vec![format!(
+            "{PROBE}:6 Holder.maybe@8: Option field is not read by a default named_present reader"
+        )]
+    );
+    let shadowed = format!("{stated}#[derive(Serialize, Deserialize)] pub struct Again(u32);\n");
+    assert_eq!(
+        probe_problems(&shadowed),
+        vec![format!(
+            "{PROBE}:6 Holder.maybe@8: field is left out by Option::is_none"
+        )]
+    );
+}
+
 #[test]
 fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
     let root =
@@ -1259,6 +1464,73 @@ fn a_payload_resolves_through_imports_aliases_and_generic_parameters() {
         );
     }
     assert_eq!(problems.len(), 4, "{problems:#?}");
+}
+
+const ASSOCIATED_PROBE: &str = r#"#[derive(Serialize)]
+pub struct Curve { pub a: u32 }
+pub trait Space { type Curve; }
+#[derive(Serialize)]
+#[serde(tag = "kind")]
+pub enum Internal<S: Space> { Item(S::Curve) }
+#[derive(Serialize)]
+#[serde(tag = "kind", content = "value")]
+pub enum Adjacent<S: Space> { Item(S::Curve), Qualified(<S as Space>::Curve) }
+"#;
+
+#[test]
+fn an_associated_type_of_a_generic_parameter_need_not_be_a_struct() {
+    let problems = probe_problems(ASSOCIATED_PROBE);
+    assert_eq!(problems.len(), 1, "{problems:#?}");
+    assert!(
+        problems[0].contains(" Internal: enum must take form Adjacent"),
+        "{problems:#?}"
+    );
+}
+
+#[test]
+fn a_module_qualified_payload_resolves_in_the_module_it_names() {
+    let root = std::env::temp_dir().join(format!(
+        "cadmpeg-wire-form-census-qualified-{}",
+        std::process::id()
+    ));
+    let sources = [
+        ("crates/cadmpeg-core/src/lib.rs", ""),
+        (
+            "crates/cadmpeg-ir/src/user/inner.rs",
+            "#[derive(Serialize)] pub struct Payload { pub a: u32 }\n",
+        ),
+        (
+            "crates/cadmpeg-ir/src/other.rs",
+            "#[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Payload { A(u32) }\n",
+        ),
+        (
+            "crates/cadmpeg-ir/src/user.rs",
+            "#[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Qualified { Item(inner::Payload) }\n\
+             #[derive(Serialize)] #[serde(tag = \"kind\", content = \"value\")]\n\
+             pub enum Bare { Item(Payload) }\n",
+        ),
+    ];
+    for (path, text) in sources {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let problems = census(&root);
+    std::fs::remove_dir_all(&root).unwrap();
+    assert!(
+        problems
+            .iter()
+            .any(|problem| problem.contains(" Qualified: enum must take form Internal")),
+        "{problems:#?}"
+    );
+    assert!(
+        problems.iter().any(|problem| problem
+            .contains("Bare::Item: payload unresolved: Payload has more than one declaration")),
+        "{problems:#?}"
+    );
+    assert_eq!(problems.len(), 3, "{problems:#?}");
 }
 
 #[test]

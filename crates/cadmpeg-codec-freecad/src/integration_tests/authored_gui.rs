@@ -109,13 +109,13 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
     let face_bindings = model
         .appearance_bindings
         .iter()
-        .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+        .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_)))
         .collect::<Vec<_>>();
     assert_eq!(face_bindings.len(), expected_face_targets.len());
     assert_eq!(
         face_bindings
             .iter()
-            .map(|binding| binding.target.clone())
+            .map(|binding| binding.target.entity.clone())
             .collect::<BTreeSet<_>>(),
         expected_face_targets
     );
@@ -134,7 +134,7 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
         let target = AppearanceTarget::Face(face.id.clone());
         let binding = face_bindings
             .iter()
-            .find(|binding| binding.target == target)
+            .find(|binding| binding.target.entity == target)
             .expect("every source shell face has an appearance binding");
         let appearance = appearance(&binding.appearance);
         let color = appearance.base_color.expect("face material color");
@@ -169,13 +169,13 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
     let edge_bindings = model
         .appearance_bindings
         .iter()
-        .filter(|binding| matches!(binding.target, AppearanceTarget::Edge(_)))
+        .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Edge(_)))
         .collect::<Vec<_>>();
     assert_eq!(edge_bindings.len(), expected_edge_targets.len());
     assert_eq!(
         edge_bindings
             .iter()
-            .map(|binding| binding.target.clone())
+            .map(|binding| binding.target.entity.clone())
             .collect::<BTreeSet<_>>(),
         expected_edge_targets
     );
@@ -202,13 +202,13 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
     let vertex_bindings = model
         .appearance_bindings
         .iter()
-        .filter(|binding| matches!(binding.target, AppearanceTarget::Vertex(_)))
+        .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Vertex(_)))
         .collect::<Vec<_>>();
     assert_eq!(vertex_bindings.len(), expected_vertex_targets.len());
     assert_eq!(
         vertex_bindings
             .iter()
-            .map(|binding| binding.target.clone())
+            .map(|binding| binding.target.entity.clone())
             .collect::<BTreeSet<_>>(),
         expected_vertex_targets
     );

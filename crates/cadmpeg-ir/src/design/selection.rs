@@ -93,7 +93,10 @@ impl<T: Keyed, O: MemberOrder> Members<T, O> {
     /// Refuses a list that states a member twice.
     pub fn new(mut items: Vec<T>) -> Result<Self, &'static str> {
         let repeats = {
-            let mut keys: Vec<T::Key<'_>> = items.iter().map(T::key).collect();
+            let mut keys: Vec<T::Key<'_>> = Vec::with_capacity(items.len());
+            for item in &items {
+                keys.push(item.key());
+            }
             keys.sort();
             keys.windows(2).any(|pair| pair[0] == pair[1])
         };
@@ -515,13 +518,13 @@ pub struct DefinitionRef {
 }
 
 /// A path of occurrences, outermost first.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct OccurrencePath(pub Vec<PathStep>);
 
 /// One step of an occurrence path.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PathStep {
@@ -539,7 +542,7 @@ pub struct PathStep {
 }
 
 /// The occurrence of a path step.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

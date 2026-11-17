@@ -41,7 +41,7 @@
     "configurations": [],
     "parameters": [],
     "sketches": [],
-    "sketch_en‹ities": [],
+    "sketch_entities": [],
     "sketch_constraints": [],
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
@@ -52,7 +52,7 @@
     "assembly_joints": [],
     "drawings": [],
     "semantic_annotations": [],
-    "presentation_documents": [],
+    "presentation_documents": []Ó
     "view_presentations": [],
     "tessellations": [],
     "appearances": [],
@@ -71,7 +71,38 @@
     "point_clouds": [],
     "history_bodies": []
   },
-  "design": {},
-  "process": {},
+  "design": {
+    "scopes": [],
+    "containers": [],
+    "features": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
+    "parameters": [],
+    "spreadsheets": [],
+    "sheet_metal_rules": [],
+    "programs": [],
+    "configurations": [],
+    "arrangements": [],
+    "publications": [],
+    "evaluations": [],
+    "names": []
+  },
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }

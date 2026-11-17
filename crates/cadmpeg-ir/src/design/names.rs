@@ -22,7 +22,7 @@ use crate::features::FeatureId;
 use crate::sketches::{SketchEntityId, SpatialSketchEntityId};
 
 /// A format id of the dialect registry.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct CodecId(NonBlankString);
@@ -42,7 +42,7 @@ impl From<NonBlankString> for CodecId {
 }
 
 /// A byte string, written in RFC 4648 base64.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(try_from = "String")]
 pub struct Base64Bytes(pub Vec<u8>);
 
@@ -126,7 +126,7 @@ pub struct NameEntry {
 }
 
 /// The source's own name for an entity or a state, tagged with its codec.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct NativeName {
@@ -137,7 +137,7 @@ pub struct NativeName {
 }
 
 /// The stored form of a native name.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
