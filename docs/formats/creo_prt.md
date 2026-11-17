@@ -444,7 +444,7 @@ Reference identifiers use a narrower grammar in `crv_array` suffixes, DEPDB suff
 | `80..bf XX` | Canonical two-byte identifier with value at least `128`. |
 | `c0..ff`    | Invalid reference-identifier start byte.                 |
 
-`srf_array` row fields use the same grammar, except that a `c0..df` head starts the packed tier of §3. `e0..ff` is an invalid start byte in these fields.
+`srf_array` row fields use the compact integers of the first table, and a `c0..df` head starts the packed tier of §3.
 
 In `segtab`, `order_table`, and `ent_tab`, bytes `c0..ff` are single-byte null sentinels. `f6` does not begin a two-byte compact integer in those lanes.
 

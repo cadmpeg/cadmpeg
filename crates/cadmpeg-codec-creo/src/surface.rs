@@ -3322,15 +3322,15 @@ pub(crate) fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
     cross_section_rows_with_packed_readings(payload).0
 }
 
-/// Rows the packed `c0..df XX YY` reading replaces in one counted
-/// `srf_array` frame, or outside every counted frame.
+/// Rows of the reading a payload passes over, in one counted `srf_array`
+/// frame or outside every counted frame, that its kept reading lacks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PackedRowReading {
     /// Offset of the first byte after the frame count.
     pub(crate) frame_start: Option<usize>,
     /// The reading the payload keeps.
     pub(crate) kept: KeptRowReading,
-    /// Rows of the other reading that the kept reading replaces.
+    /// Rows of the other reading that the kept reading lacks.
     pub(crate) replaced: usize,
 }
 
@@ -3443,7 +3443,7 @@ pub(crate) fn packed_reading_chosen(payload: &[u8]) -> bool {
     RowReadings::new(payload).packed_chosen()
 }
 
-/// Rows with `boundary_types`, and the rows the packed reading replaces.
+/// Rows with `boundary_types`, and the passed-over rows of the other reading.
 ///
 /// The payload keeps its packed reading when, for every boundary filter in
 /// [`READING_CHOICE_BOUNDARY_FILTERS`], it keeps at least as many rows as the
@@ -3476,14 +3476,14 @@ fn rows_and_packed_readings(
     (kept_rows, replaced)
 }
 
-/// Rows of every `srf_array` frame, and the rows the packed reading replaces.
+/// Rows of every `srf_array` frame, and the passed-over rows of the other reading.
 pub(crate) fn rows_with_packed_readings(
     payload: &[u8],
 ) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
     rows_and_packed_readings(payload, BOUNDARY_TYPES)
 }
 
-/// Cross-section rows, and the rows the packed reading replaces.
+/// Cross-section rows, and the passed-over rows of the other reading.
 pub(crate) fn cross_section_rows_with_packed_readings(
     payload: &[u8],
 ) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {

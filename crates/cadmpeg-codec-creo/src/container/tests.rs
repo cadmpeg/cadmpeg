@@ -355,5 +355,5 @@ fn compact_row_reading_loss_names_the_passed_over_packed_rows() {
     );
     assert!(losses[0]
         .message
-        .ends_with("in place of 2 packed c0..df XX YY row readings"));
+        .ends_with("dropped 2 rows of the packed c0..df XX YY reading"));
 }

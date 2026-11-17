@@ -1588,7 +1588,7 @@ fn loop_array_sections<'a>(
 
 type RowsWithPackedReadings = (Vec<SurfaceRow>, Vec<surface::PackedRowReading>);
 
-/// Charge each packed surface-row reading of the section at `base`.
+/// Charge the passed-over surface-row reading of the section at `base`.
 pub(crate) fn charge_packed_row_readings(
     base: usize,
     readings: Vec<surface::PackedRowReading>,
@@ -1608,7 +1608,7 @@ pub(crate) fn charge_packed_row_readings(
             }
             surface::KeptRowReading::Compact => {
                 crate::loss::CreoLossCode::SurfaceRowCompactReading.note(format!(
-                    "{place} read one- and two-byte row fields in place of {} packed c0..df XX YY row readings",
+                    "{place} read one- and two-byte row fields and dropped {} rows of the packed c0..df XX YY reading",
                     reading.replaced
                 ))
             }
