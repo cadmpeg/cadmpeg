@@ -39,7 +39,10 @@ fn replace_face_writer_refuses_tangent_chain_settings_it_cannot_encode() {
             &mut Vec::new(),
         );
         if tangent_chain.is_some() {
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::NotImplemented(_))));
+            assert!(matches!(
+                result,
+                Err(cadmpeg_core::CodecError::NotImplemented(_))
+            ));
         } else {
             assert!(result.is_ok());
         }

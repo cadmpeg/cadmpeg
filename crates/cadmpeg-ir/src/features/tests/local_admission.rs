@@ -473,7 +473,7 @@ fn selection_operand_parts_move_retained_storage() {
         crate::features::FaceSelection::Native(replacements_text),
     )
     .unwrap();
-    let (targets, replacements) = operands.into_parts();
+    let (targets, replacements) = (operands.targets(), operands.replacements());
     let crate::features::FaceSelection::Native(targets) = targets else {
         panic!("native targets");
     };
