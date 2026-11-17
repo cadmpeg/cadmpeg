@@ -64,6 +64,9 @@ fn attach_geometry_source(
 }
 
 pub(super) struct GeometryData {
+    pub(super) points: BTreeMap<u64, FinitePoint3>,
+    pub(super) directions: BTreeMap<u64, UnitVector3>,
+    pub(super) vectors: BTreeMap<u64, Vector3>,
     pub(super) placements: BTreeMap<u64, (FinitePoint3, UnitVector3, UnitVector3)>,
     pub(super) transformation_operators: BTreeMap<u64, Transform>,
     pub(super) units: UnitScales,
@@ -541,6 +544,7 @@ pub(super) fn decode(
             PositiveReal::ONE
         }
     };
+    degree_factor_corrections(exchange, &mut losses, ctx)?;
     let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses, ctx)?;
     let angle_scale = angle_scale.get();
     let source_curve_parameter_scales =
@@ -2404,6 +2408,9 @@ pub(super) fn decode(
     Ok((
         StageOutcome {
             value: GeometryData {
+                points,
+                directions,
+                vectors,
                 placements,
                 transformation_operators,
                 units: unit_scales,
@@ -3803,6 +3810,83 @@ fn document_unit_scale(
     Ok(unique_scale(&scales))
 }
 
+/// The radian measure of one degree.
+const DEGREE_RADIANS: f64 = std::f64::consts::PI / 180.0;
+
+/// A stated degree factor within this fraction of `π/180` agrees with it.
+/// The bound lies far above the rounding of `π/180` to the 15 or more
+/// significant digits an exchange writes (about 1e-15) and far below the
+/// `1/57.3` approximation (about 7.4e-5).
+const DEGREE_FACTOR_RELATIVE_TOLERANCE: f64 = 1.0e-9;
+
+/// Whether `record` is a plane-angle `CONVERSION_BASED_UNIT` named `degree`.
+fn is_degree_unit(record: &RawRecord, exchange: &Exchange) -> bool {
+    if record.partial("PLANE_ANGLE_UNIT").is_none() {
+        return false;
+    }
+    let Some(Value::String(bytes)) = record
+        .partial("CONVERSION_BASED_UNIT")
+        .and_then(|unit| unit.parameters.first())
+    else {
+        return false;
+    };
+    exchange
+        .decode_string(bytes)
+        .is_ok_and(|name| name.trim().eq_ignore_ascii_case("degree"))
+}
+
+/// The radian factor a `CONVERSION_BASED_UNIT` states: its conversion
+/// factor's value times the resolved scale of the factor's unit.
+fn stated_conversion_radians(
+    record: &RawRecord,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<f64>, CodecError> {
+    let Some(unit) = record.partial("CONVERSION_BASED_UNIT") else {
+        return Ok(None);
+    };
+    let Some(factor_id) = unit.parameters.get(1).and_then(Value::reference) else {
+        return Ok(None);
+    };
+    let Some(factor) = exchange.records().get(&factor_id) else {
+        return Ok(None);
+    };
+    let Some(value) = record_values(factor).find_map(ValueExt::typed_number) else {
+        return Ok(None);
+    };
+    let Some(base_id) = record_values(factor).find_map(Value::reference) else {
+        return Ok(None);
+    };
+    Ok(unit_scale_radians(base_id, exchange, active, ctx)?.map(|base| value * base.get()))
+}
+
+/// One loss for each plane-angle unit named `degree` whose stated radian
+/// factor differs from `π/180` by more than
+/// [`DEGREE_FACTOR_RELATIVE_TOLERANCE`]; the reader takes `π/180`.
+fn degree_factor_corrections(
+    exchange: &Exchange,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    for (id, record) in exchange.entities_any(&["CONVERSION_BASED_UNIT"]) {
+        if !is_degree_unit(record, exchange) {
+            continue;
+        }
+        let Some(stated) = stated_conversion_radians(record, exchange, &mut BTreeSet::new(), ctx)?
+        else {
+            continue;
+        };
+        if (stated / DEGREE_RADIANS - 1.0).abs() > DEGREE_FACTOR_RELATIVE_TOLERANCE {
+            losses.push(StepLossCode::AngleUnitFactorCorrected.note(format!(
+                "plane-angle unit #{id} named degree states {stated:e} rad; the reader reads \
+                 it as π/180 = {DEGREE_RADIANS:e} rad"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn unit_scale_radians(
     id: u64,
     exchange: &Exchange,
@@ -3829,20 +3913,13 @@ pub(super) fn unit_scale_radians(
             } else {
                 Ok(None)
             }
-        } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
-            let Some(factor_id) = unit.parameters.get(1).and_then(Value::reference) else {
-                return Ok(None);
-            };
-            let Some(factor) = exchange.records().get(&factor_id) else {
-                return Ok(None);
-            };
-            let Some(value) = record_values(factor).find_map(ValueExt::typed_number) else {
-                return Ok(None);
-            };
-            let Some(base_id) = record_values(factor).find_map(Value::reference) else {
-                return Ok(None);
-            };
-            Ok(unit_scale_radians(base_id, exchange, active, ctx)?.map(|base| value * base.get()))
+        } else if record.partial("CONVERSION_BASED_UNIT").is_some() {
+            let stated = stated_conversion_radians(record, exchange, active, ctx)?;
+            if is_degree_unit(record, exchange) {
+                Ok(stated.map(|_| DEGREE_RADIANS))
+            } else {
+                Ok(stated)
+            }
         } else {
             Ok(None)
         }
