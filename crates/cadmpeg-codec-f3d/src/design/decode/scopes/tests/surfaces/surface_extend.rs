@@ -135,6 +135,8 @@ fn compact_owner_and_87_byte_boundary_tail_decode_the_extend_operation() {
             tolerance: cadmpeg_ir::scalar::PositiveReal::new(4.85e-5)
                 .expect("checked fixture value"),
             tolerance_offset: u64_from_index(tail + 39),
+            method_code: None,
+            method_code_offset: None,
         })
     );
 }
@@ -227,4 +229,61 @@ fn compact_flag_record_does_not_add_a_loss() {
             .unwrap();
     assert_eq!(operation.boundary_reference_record_index, 60);
     assert!(losses.is_empty());
+}
+
+fn prologue(method_code: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"354", SCOPE);
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.push(1);
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.extend_from_slice(&method_code.to_le_bytes());
+    marked(&mut bytes, OWNER);
+    assert_eq!(bytes.len(), 44);
+    bytes
+}
+
+fn fixture_after(mut bytes: Vec<u8>) -> Vec<u8> {
+    compact_distance_owner(&mut bytes, 2.54);
+    boundary_carrier(&mut bytes, &COMPACT_TAIL);
+    indexed_header(&mut bytes, *b"123", FLAG_RECORD);
+    bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0]);
+    bytes
+}
+
+#[test]
+fn fixed_prologue_gives_the_extension_method_code() {
+    use cadmpeg_ir::features::SurfaceExtension;
+    for (code, extension) in [
+        (0, SurfaceExtension::Perpendicular),
+        (1, SurfaceExtension::Natural),
+        (2, SurfaceExtension::Linear),
+        (3, SurfaceExtension::Unresolved),
+    ] {
+        let operation = decode(&fixture_after(prologue(code))).unwrap();
+        assert_eq!(operation.method_code, Some(code));
+        assert_eq!(operation.method_code_offset, Some(29));
+        assert_eq!(operation.extension(), extension);
+    }
+}
+
+#[test]
+fn a_violated_prologue_leaves_the_extension_method_unread() {
+    let edits = [
+        (20, 0),
+        (15, 1),
+        (24, 1),
+        (34, u8::try_from(CARRIER).unwrap()),
+    ];
+    for (at, value) in edits {
+        let mut bytes = prologue(1);
+        bytes[at] = value;
+        let operation = decode(&fixture_after(bytes)).unwrap();
+        assert_eq!(operation.method_code, None);
+        assert_eq!(operation.method_code_offset, None);
+        assert_eq!(
+            operation.extension(),
+            cadmpeg_ir::features::SurfaceExtension::Unresolved
+        );
+    }
 }

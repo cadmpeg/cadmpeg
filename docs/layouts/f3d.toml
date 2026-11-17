@@ -22748,6 +22748,57 @@ source = "spec"
 anchor = "The bytes from indexed-header offset 11 through 20 are zero"
 
 [[record]]
+name = "surface_extend_scope_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The `SurfaceExtend` scope prologue"
+size = 44
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The `SurfaceExtend` scope prologue"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "prologue_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "byte `01` at offset 20"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 21
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets 21 through 28"
+
+[[record.field]]
+name = "extension_method"
+offset = 29
+type = "u32"
+endianness = "little"
+source = "spec"
+anchor = "the u32 extension method at offset 29"
+
+[[record.field]]
+name = "distance_reference"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked reference to the distance owner at offset 33"
+
+[[record]]
 name = "surface_untrim_prologue"
 kind = "byte"
 section = "3.1"

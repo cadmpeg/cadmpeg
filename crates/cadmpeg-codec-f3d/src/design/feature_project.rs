@@ -969,7 +969,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 u64::from(operation.boundary_record_index)
                             )),
                             distance: Some(distance),
-                            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+                            method: operation.extension(),
                         })
                     } else {
                         FeatureDefinition::Operation(FeatureOperation::Native {
