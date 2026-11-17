@@ -1381,7 +1381,9 @@ fn square_and_nested_circle_holes(selected: &[usize]) -> Vec<usize> {
     regions
         .iter()
         .map(|region| match region {
-            SketchProfileRegion::Trimmed { hole_boundaries, .. } => hole_boundaries.len(),
+            SketchProfileRegion::Trimmed {
+                hole_boundaries, ..
+            } => hole_boundaries.len(),
             SketchProfileRegion::Loops { .. } => panic!("a trimmed region"),
         })
         .collect()
