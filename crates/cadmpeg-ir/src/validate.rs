@@ -469,14 +469,14 @@ mod tests {
     #[test]
     fn split_face_direction_input_metadata_matches_the_retained_slots() {
         let cases: &[(&[u8], bool)] = &[
-            (br#"{"kind":"along_vector"}"#, true),
-            (br#"{"kind":"along_vector","native_inputs_complete":true}"#, false),
-            (br#"{"kind":"along_vector","native_inputs":[null]}"#, false),
-            (br#"{"kind":"along_vector","native_input_count":0,"native_inputs_complete":true}"#, true),
+            (br#"{"kind":"along_vector","native_inputs":[],"native_inputs_complete":false}"#, true),
+            (br#"{"kind":"along_vector","native_inputs_complete":true,"native_inputs":[]}"#, false),
+            (br#"{"kind":"along_vector","native_inputs":[null],"native_inputs_complete":false}"#, false),
+            (br#"{"kind":"along_vector","native_input_count":0,"native_inputs_complete":true,"native_inputs":[]}"#, true),
             (br#"{"kind":"along_vector","native_inputs":[null],"native_input_count":1,"native_inputs_complete":true}"#, true),
-            (br#"{"kind":"along_vector","native_inputs":[null],"native_input_count":2}"#, true),
+            (br#"{"kind":"along_vector","native_inputs":[null],"native_input_count":2,"native_inputs_complete":false}"#, true),
             (br#"{"kind":"along_vector","native_inputs":[null],"native_input_count":2,"native_inputs_complete":true}"#, false),
-            (br#"{"kind":"along_vector","native_inputs":[null],"native_input_count":0}"#, false),
+            (br#"{"kind":"along_vector","native_inputs":[null],"native_input_count":0,"native_inputs_complete":false}"#, false),
         ];
         for &(bytes, valid) in cases {
             let method: crate::features::surfaces::SplitFaceMethod =
