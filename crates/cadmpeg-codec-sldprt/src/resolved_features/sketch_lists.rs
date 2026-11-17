@@ -35,6 +35,8 @@ const MAX_SKETCH_POINTS: usize = 4096;
 const CURRENT_FIELDS: usize = 64;
 /// Where a record's fields start in files before `swVersion` 11000.
 const LEGACY_FIELDS: usize = 56;
+/// Where a record's u16 selector stands.
+const SELECTOR: usize = 37;
 /// A point record's coordinate masks: bit 4 set writes two coordinates.
 const PLANAR_POINT_MASKS: [u16; 6] = [0x12, 0x13, 0x16, 0x1a, 0x1e, 0x1f];
 /// A point record's coordinate masks that write three coordinates.
@@ -253,9 +255,14 @@ pub(super) fn point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2
 }
 
 /// The form of the curve record at `offset`, when its type is a line or an
-/// arc in its arc layout.
+/// arc in its arc layout and bit 0 of its selector is clear.
 pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
     let fields = curve_fields(payload, offset)?;
+    // A record whose selector has bit 0 set has indices that are not read
+    // (open item EV-27).
+    if View::u16_le_at(payload, offset.checked_add(SELECTOR)?)? & 1 != 0 {
+        return None;
+    }
     let start = usize::from(View::u16_le_at(payload, fields)?);
     let end = usize::from(View::u16_le_at(payload, fields.checked_add(2)?)?);
     match View::u16_le_at(payload, fields.checked_add(16)?)? {
@@ -316,7 +323,8 @@ pub(super) fn listed_record_geometry(
 }
 
 /// A circle or counterclockwise arc about `center` from `start` to `end`, all
-/// in metres, mapped by `project`. The arc's midpoint fixes its sense after
+/// in metres, mapped by `project`. The arc's end angle is its start angle plus
+/// its sweep. The arc's midpoint fixes its sense after
 /// the mapping, which can mirror.
 fn arc_geometry(
     center: [f64; 2],
@@ -364,6 +372,8 @@ fn arc_geometry(
     } else {
         (end_angle, start_angle)
     };
+    // The end angle exceeds the start angle by the counterclockwise sweep.
+    let end_angle = start_angle + (end_angle - start_angle).rem_euclid(TAU);
     SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: center_ir,
         radius,

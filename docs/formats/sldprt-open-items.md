@@ -1074,6 +1074,14 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** Type-`0xffff` records whose curves bound faces of a stored solid, compared with the counterclockwise and clockwise readings.
 
+### EV-27. Sketch curve records with selector bit 0 set
+
+**Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
+
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. With bit 0 clear, the indices select point records of the same `sgSketch` object (`sldprt.md` §2 "Sketch objects"). With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+
+**Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?

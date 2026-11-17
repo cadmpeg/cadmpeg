@@ -229,3 +229,39 @@ fn an_unread_curve_type_and_an_index_past_the_points_stay_unresolved() {
         None
     );
 }
+
+#[test]
+fn a_major_arc_ends_one_sweep_after_its_start() {
+    let mut payload = vec![0; 7];
+    header(&mut payload, 3);
+    point(&mut payload, 0.0, 0.0);
+    point(&mut payload, 0.01, 0.0);
+    point(&mut payload, 0.0, 0.01);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let major = curve(&mut payload, 2, 1, 1, Some(0));
+    let lists = SketchRecordLists::new(&payload);
+    let (_, _, start_angle, end_angle) = arc_parts(listed_record_geometry(
+        &payload,
+        &lists,
+        major,
+        &millimetres,
+    ));
+    assert!((start_angle - FRAC_PI_2).abs() < EPS_TEST);
+    assert!((end_angle - start_angle - 3.0 * FRAC_PI_2).abs() < EPS_TEST);
+}
+
+#[test]
+fn a_curve_whose_selector_has_bit_zero_set_stays_unresolved() {
+    let mut sample = sample();
+    for offset in [sample.line, sample.circle] {
+        sample.payload[offset + SELECTOR] = 5;
+    }
+    let lists = SketchRecordLists::new(&sample.payload);
+    assert!(matches!(
+        lists.record(sample.circle),
+        Some(ListedRecord::Curve { .. })
+    ));
+    assert_eq!(geometry(&sample, sample.line), None);
+    assert_eq!(geometry(&sample, sample.circle), None);
+    assert!(geometry(&sample, sample.arc).is_some());
+}
