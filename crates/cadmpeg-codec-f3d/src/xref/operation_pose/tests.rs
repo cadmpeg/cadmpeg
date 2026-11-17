@@ -78,10 +78,14 @@ fn version_4_table_poses_the_occurrence_of_its_one_reference_path() {
     let mut table = OperationTables::default();
     register(&ctx, &mut table, stream, &body, Some(4)).unwrap();
     assert_eq!(table.native, 0);
-    assert!(table
-        .poses
-        .get(&(crate::ids::native_scope(stream), 10))
-        .is_some_and(Option::is_some));
+    assert_eq!(
+        table
+            .poses
+            .get(&(crate::ids::native_scope(stream), 10))
+            .and_then(Option::as_ref)
+            .map(|pose| pose.path_ordinal),
+        Some(Some(1))
+    );
     let mut reference = reference();
     reference.operation_pose = Some(XrefOperationPose {
         carrier_record_index: 20,
