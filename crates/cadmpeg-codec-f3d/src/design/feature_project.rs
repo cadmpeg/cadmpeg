@@ -92,11 +92,11 @@ mod contour;
 mod delete_face;
 mod edge_flange;
 mod extrude;
-mod fillet_partial;
+mod fillet;
 mod fold;
 
 use extrude::{bind_extrude_work_plane_targets, project_extrude};
-use fillet_partial::FilletProjection;
+use fillet::FilletProjection;
 
 fn unique_feature_match<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
     let first = matches.next()?;
@@ -786,7 +786,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     );
                     definition
                 }
-                Some(DesignFeatureFamily::Fillet) => match project_fillet_arm(
+                Some(DesignFeatureFamily::Fillet) => match fillet::project(
                     ctx,
                     inputs,
                     scope,
@@ -2953,147 +2953,6 @@ fn native_scope_definition(
         kind: scope.kind_name().to_owned().into(),
         parameters: scope_parameter_expressions(scope, parameters)?,
     }))
-}
-
-fn project_fillet_arm<'a>(
-    ctx: &DecodeContext<'_>,
-    inputs: &ProjectInputs<'a>,
-    scope: &'a DesignParameterScope,
-    parameters: &[(u32, &'a DesignParameter)],
-    native_scope: &str,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<FilletProjection<'a>, CodecError> {
-    use cadmpeg_ir::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        EdgeSelection, FeatureDefinition, FeatureOperation,
-    };
-
-    if parameters.is_empty()
-        && crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
-            scope,
-            inputs.construction_groups,
-        )
-    {
-        return fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses);
-    }
-
-    if parameters.is_empty() {
-        if let Some(definition) = project_full_round_fillet(
-            scope,
-            inputs.construction_groups,
-            inputs.face_operands,
-            inputs.owners,
-            inputs.fillet_radius_groups,
-            inputs.histories,
-        )? {
-            return Ok(FilletProjection::Existing(definition));
-        }
-    }
-
-    let mut assignments = Vec::new();
-    for assignment in inputs.fillet_radius_groups {
-        if native_stream(&assignment.id) == Some(native_scope)
-            && assignment.scope_record_index == scope.record_index
-        {
-            assignments.push(assignment);
-        }
-    }
-    assignments.sort_by_key(|left| left.group_ordinal);
-    if !assignments.is_empty()
-        && inputs.construction_groups.iter().any(|group| {
-            native_stream(&group.id) == Some(native_scope)
-                && group.scope_record_index == scope.record_index
-                && group.role() == DesignOperandRole::ROLE_0X10
-                && !group.members().is_empty()
-                && assignments
-                    .iter()
-                    .all(|assignment| assignment.group_record_index != group.record_index)
-        })
-    {
-        return fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses);
-    }
-    if !assignments.is_empty() {
-        let Some(assignments) = resolved_fillet_assignments(&assignments, parameters) else {
-            return fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses);
-        };
-        let mut groups = Vec::new();
-        for resolved in assignments {
-            let edge_radius = match &resolved.radius {
-                RadiusSpec::Constant { radius } => Some(radius.get()),
-                _ => None,
-            };
-            let edges = if let Some(group) = inputs.construction_groups.iter().find(|group| {
-                native_stream(&group.id) == Some(native_scope)
-                    && group.record_index == resolved.assignment.group_record_index
-            }) {
-                resolved_edge_treatment_group_with_corners(
-                    group,
-                    crate::design::edge_resolve::EdgeTreatmentInputs {
-                        groups: inputs.construction_groups,
-                        operands: inputs.edge_operands,
-                        identity_operands: inputs.edge_identity_operands,
-                        vertex_operands: inputs.edge_treatment_vertex_operands,
-                        histories: inputs.histories,
-                        previous_state_id: scope.previous_history_state_id(),
-                        feature_id: &crate::ids::neutral_feature_id(scope),
-                        treatment_radius: edge_radius,
-                    },
-                    ctx,
-                    losses,
-                )?
-            } else {
-                EdgeSelection::Native(resolved.assignment.id.clone())
-            };
-            groups.push(FilletGroup {
-                edges,
-                radius: resolved.radius,
-                tangency_weight: resolved.tangency_weight,
-            });
-        }
-        let groups = groups.try_into().ok();
-        return groups.map_or_else(
-            || fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses),
-            |groups| {
-                Ok(FilletProjection::Existing(FeatureDefinition::Operation(
-                    FeatureOperation::Fillet { groups },
-                )))
-            },
-        );
-    }
-    if let Some(definition) = project_variable_fillet(scope, parameters, inputs, ctx, losses)? {
-        return Ok(FilletProjection::Existing(definition));
-    }
-    if parameters.is_empty() {
-        if let Some(definition) = project_fixed_fillet_with_corners(
-            scope,
-            inputs.construction_groups,
-            inputs.edge_operands,
-            inputs.edge_identity_operands,
-            inputs.edge_treatment_vertex_operands,
-            inputs.histories,
-            (ctx, losses),
-        )? {
-            return Ok(FilletProjection::Existing(definition));
-        }
-    }
-    let [(_, parameter)] = parameters else {
-        return fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses);
-    };
-    let Some(radius) = (parameter.source_kind() == "Radius")
-        .then(|| design_positive_length(parameter))
-        .flatten()
-    else {
-        return fillet_partial::project(ctx, inputs, scope, parameters, native_scope, losses);
-    };
-    Ok(FilletProjection::Existing(FeatureDefinition::Operation(
-        FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
-                edges: EdgeSelection::Native(scope.id.clone()),
-                radius: RadiusSpec::Constant { radius },
-                tangency_weight: None,
-            }),
-        },
-    )))
 }
 
 struct ResolvedFilletAssignment<'a> {
