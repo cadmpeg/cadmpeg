@@ -5822,7 +5822,7 @@ pub(crate) mod component_insert_identity_scope_compact {
 /// Spec §3.1. Record length 122 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The generation-specific scope tail begins at offset 122.
+/// Offsets are relative to the primary indexed header. The 256-, 257- and 267-byte identity forms share this prefix. The generation-specific scope tail begins at offset 122.
 /// ```
 pub(crate) mod component_insert_identity_scope_shifted_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -5955,6 +5955,8 @@ pub(crate) mod component_insert_scope_283_262_385 {
     pub(crate) const RELATION_MARKER: usize = 33;
     /// Offset of `relation_record_index` (`u32`, little-endian). Spec §3.1.
     pub(crate) const RELATION_RECORD_INDEX: usize = 34;
+    /// Offset of `transform_markers` (`bytes[2]`). Spec §3.1.
+    pub(crate) const TRANSFORM_MARKERS: usize = 44;
     /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const TRANSFORM: usize = 46;
     /// Offset of `null_guid_code_unit_count` (`u32`, little-endian). Spec §3.1.

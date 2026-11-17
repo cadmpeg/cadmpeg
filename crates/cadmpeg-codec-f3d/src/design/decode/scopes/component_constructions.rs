@@ -669,7 +669,10 @@ fn exact_component_insert_scope_283_262_385(
     u64,
 )> {
     if bytes.get(start + 11..start + 21)? != [0; 10]
-        || bytes.get(start + 44..start + 52)? != [1, 0, 0, 0, 0, 0, 0, 0]
+        || bytes.get(
+            start + component_scope_283_385::TRANSFORM_MARKERS
+                ..start + component_scope_283_385::TRANSFORM,
+        )? != [1, 0]
         || bytes.get(start + 38..start + 44)? != [0; 6]
         || bytes.get(
             start + component_scope_283_385::RELATION_MARKER
@@ -727,6 +730,28 @@ pub(super) fn unresolved_component_insert_placement(
     let bytes = bytes.get(..end)?;
     let relation = *scope.reference_members().values().next()?;
     let (occurrence_identity, matrix) = match scope.canonical_name_frame_length()? {
+        256 | 257 | 267 => (
+            exact_component_insert_identity_scope_shifted(bytes, start, relation)?,
+            None,
+        ),
+        261 => (
+            exact_component_insert_identity_scope(bytes, start, relation)?,
+            None,
+        ),
+        frame @ (385 | 389 | 399) => {
+            let (value, offset, identity) = if frame == 385 {
+                exact_component_insert_scope_283_262_385(bytes, start, relation)?
+            } else {
+                exact_component_insert_scope_414_264_389(bytes, start, relation)?
+            };
+            (
+                identity,
+                Some(crate::records::identity::Located {
+                    value,
+                    offset: u64::try_from(offset?).ok()?,
+                }),
+            )
+        }
         272 => (
             exact_identity_insert_scope(bytes, start, relation, false)?,
             None,

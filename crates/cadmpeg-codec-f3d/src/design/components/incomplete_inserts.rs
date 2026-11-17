@@ -36,6 +36,17 @@ pub(crate) fn project_features(
             continue;
         }
         let occurrence = crate::ids::neutral_component_insert_occurrence_id(scope);
+        if projected.contains(&occurrence)
+            && scope.component_insert_construction().is_none()
+            && matches!(
+                scope.canonical_name_frame_length(),
+                Some(256 | 257 | 261 | 267 | 385 | 389 | 399)
+            )
+        {
+            losses.push(F3dLossCode::FeatureLegacyInsertFrameAssumed.note(format!(
+                "{} uses its legacy scope-local insertion frame as its unresolved occurrence frame, with the current pose assumed equal to the insertion frame (DR-792).", scope.id
+            )));
+        }
         let definition = if projected.contains(&occurrence) {
             FeatureOperation::InsertComponent { occurrence }
         } else {

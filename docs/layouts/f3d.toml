@@ -20773,9 +20773,9 @@ name = "component_insert_identity_scope_shifted_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "Class `414` paired with class `264` also has 257- and 267-byte shifted identity frames"
+anchor = "Shifted identity insertion scopes have a 122-byte prefix"
 size = 122
-note = "Offsets are relative to the primary indexed header. The generation-specific scope tail begins at offset 122."
+note = "Offsets are relative to the primary indexed header. The 256-, 257- and 267-byte identity forms share this prefix. The generation-specific scope tail begins at offset 122."
 
 [[record.field]]
 name = "indexed_header"

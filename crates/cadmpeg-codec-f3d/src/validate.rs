@@ -3081,7 +3081,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         scope.canonical_name_frame_length(),
                         placement.matrix.as_ref(),
                     ) {
-                        (Some(272 | 276), None) => true,
+                        (Some(256 | 257 | 261 | 267 | 272 | 276), None) => true,
+                        (Some(385), Some(matrix)) => {
+                            scope.byte_offset().checked_add(u64_from_index(
+                                crate::layout::component_insert_scope_283_262_385::TRANSFORM,
+                            )) == Some(matrix.offset)
+                        }
+                        (Some(389 | 399), Some(matrix)) => scope
+                            .byte_offset()
+                            .checked_add(u64_from_index(
+                            crate::layout::component_insert_matrix_scope_414_264_prefix::TRANSFORM,
+                        )) == Some(matrix.offset),
                         (Some(frame @ (400 | 404)), Some(matrix)) => scope
                             .byte_offset()
                             .checked_add(
