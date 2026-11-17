@@ -14,6 +14,7 @@ use crate::pmdc::{
     content_header, reference_list, state_content_header, type_id_string, Cursor, PmDcReference,
 };
 
+pub(crate) mod contour;
 pub(crate) mod corner;
 pub(crate) mod flange;
 pub(super) mod inputs;
@@ -24,6 +25,9 @@ pub(crate) mod style;
 
 const ATTACHMENT_TYPE: [u8; 16] = [
     0x92, 0x59, 0x6b, 0xa9, 0xd3, 0x11, 0xef, 0xa8, 0x60, 0x00, 0xb3, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
+];
+const CONTOUR_ATTACHMENT_TYPE: [u8; 16] = [
+    0x40, 0xb4, 0x55, 0x04, 0xd4, 0x11, 0x56, 0x12, 0x60, 0x00, 0x18, 0xaa, 0x9d, 0xcc, 0xef, 0xb0,
 ];
 const CORNER_TYPE: [u8; 16] = [
     0x83, 0xce, 0x77, 0x86, 0xa9, 0x46, 0xcd, 0xe1, 0x1e, 0xbd, 0x99, 0xb4, 0xfe, 0x02, 0xaf, 0xb2,
@@ -86,6 +90,23 @@ pub(crate) enum SheetMetalProperty {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extension: Option<PmDcReference>,
     },
+    /// The attachment control of a contour flange: the extended attachment
+    /// fields followed by one raw byte.
+    ContourAttachment {
+        control: PmDcReference,
+        thickness: PmDcReference,
+        first_mode: PmDcReference,
+        directions: [PmDcReference; 2],
+        radius: PmDcReference,
+        second_mode: PmDcReference,
+        relief_width: PmDcReference,
+        minimum_remnant: PmDcReference,
+        first_option: PmDcReference,
+        states: NativeBytes<[u8; 3]>,
+        second_option: PmDcReference,
+        extension: PmDcReference,
+        value: u8,
+    },
     Corner {
         control: PmDcReference,
         gap: PmDcReference,
@@ -131,6 +152,7 @@ pub(super) fn property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
     match type_id {
         ATTACHMENT_TYPE => Some(parse_attachment),
         ATTACHMENT_STATE_TYPE => Some(parse_attachment_state),
+        CONTOUR_ATTACHMENT_TYPE => Some(parse_contour_attachment),
         CORNER_TYPE => Some(parse_corner),
         RELIEF_TYPE => Some(parse_relief),
         TRANSITION_TYPE => Some(parse_transition),
@@ -181,6 +203,44 @@ fn parse_attachment_state(
     ))
 }
 
+/// The attachment fields from `control` through `second_option`.
+struct AttachmentFields {
+    control: PmDcReference,
+    thickness: PmDcReference,
+    first_mode: PmDcReference,
+    directions: [PmDcReference; 2],
+    radius: PmDcReference,
+    second_mode: PmDcReference,
+    relief_width: PmDcReference,
+    minimum_remnant: PmDcReference,
+    first_option: PmDcReference,
+    states: NativeBytes<[u8; 3]>,
+    second_option: PmDcReference,
+}
+
+fn attachment_fields(cursor: &mut Cursor<'_>) -> Result<AttachmentFields, CodecError> {
+    Ok(AttachmentFields {
+        control: cursor.reference("attachment control")?,
+        thickness: cursor.reference("attachment thickness")?,
+        first_mode: cursor.reference("attachment first mode")?,
+        directions: [
+            cursor.reference("attachment first direction")?,
+            cursor.reference("attachment second direction")?,
+        ],
+        radius: cursor.reference("attachment radius")?,
+        second_mode: cursor.reference("attachment second mode")?,
+        relief_width: cursor.reference("attachment relief width")?,
+        minimum_remnant: cursor.reference("attachment minimum remnant")?,
+        first_option: cursor.reference("attachment first option")?,
+        states: NativeBytes::new([
+            cursor.u8("attachment first state")?,
+            cursor.u8("attachment second state")?,
+            cursor.u8("attachment third state")?,
+        ]),
+        second_option: cursor.reference("attachment second option")?,
+    })
+}
+
 fn parse_attachment(
     _: &DecodeContext<'_>,
     source: View<'_>,
@@ -188,24 +248,19 @@ fn parse_attachment(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor, version)?;
-    let control = cursor.reference("attachment control")?;
-    let thickness = cursor.reference("attachment thickness")?;
-    let first_mode = cursor.reference("attachment first mode")?;
-    let directions = [
-        cursor.reference("attachment first direction")?,
-        cursor.reference("attachment second direction")?,
-    ];
-    let radius = cursor.reference("attachment radius")?;
-    let second_mode = cursor.reference("attachment second mode")?;
-    let relief_width = cursor.reference("attachment relief width")?;
-    let minimum_remnant = cursor.reference("attachment minimum remnant")?;
-    let first_option = cursor.reference("attachment first option")?;
-    let states = NativeBytes::new([
-        cursor.u8("attachment first state")?,
-        cursor.u8("attachment second state")?,
-        cursor.u8("attachment third state")?,
-    ]);
-    let second_option = cursor.reference("attachment second option")?;
+    let AttachmentFields {
+        control,
+        thickness,
+        first_mode,
+        directions,
+        radius,
+        second_mode,
+        relief_width,
+        minimum_remnant,
+        first_option,
+        states,
+        second_option,
+    } = attachment_fields(&mut cursor)?;
     let extension = if cursor.remaining() == 4 {
         Some(cursor.reference("attachment extension")?)
     } else {
@@ -229,6 +284,52 @@ fn parse_attachment(
                 states,
                 second_option,
                 extension,
+            },
+        },
+    ))
+}
+
+fn parse_contour_attachment(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor, version)?;
+    let AttachmentFields {
+        control,
+        thickness,
+        first_mode,
+        directions,
+        radius,
+        second_mode,
+        relief_width,
+        minimum_remnant,
+        first_option,
+        states,
+        second_option,
+    } = attachment_fields(&mut cursor)?;
+    let extension = cursor.reference("contour attachment extension")?;
+    let value = cursor.u8("contour attachment value")?;
+    cursor.finish("sheet-metal contour attachment")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::SheetMetal {
+            definition: SheetMetalProperty::ContourAttachment {
+                control,
+                thickness,
+                first_mode,
+                directions,
+                radius,
+                second_mode,
+                relief_width,
+                minimum_remnant,
+                first_option,
+                states,
+                second_option,
+                extension,
+                value,
             },
         },
     ))
@@ -499,6 +600,33 @@ impl SheetMetalProperty {
                 refs.extend(extension);
                 refs
             }
+            Self::ContourAttachment {
+                control,
+                thickness,
+                first_mode,
+                directions,
+                radius,
+                second_mode,
+                relief_width,
+                minimum_remnant,
+                first_option,
+                second_option,
+                extension,
+                ..
+            } => vec![
+                *control,
+                *thickness,
+                *first_mode,
+                directions[0],
+                directions[1],
+                *radius,
+                *second_mode,
+                *relief_width,
+                *minimum_remnant,
+                *first_option,
+                *second_option,
+                *extension,
+            ],
             Self::Corner {
                 control,
                 gap,
@@ -573,6 +701,9 @@ pub(crate) fn valid_references<'a>(
                 &ATTACHMENT_REFERENCES
             },
         ),
+        SheetMetalProperty::ContourAttachment { .. } => {
+            (CONTOUR_ATTACHMENT_TYPE, &ATTACHMENT_EXTENDED_REFERENCES)
+        }
         SheetMetalProperty::Corner { .. } => (CORNER_TYPE, &CORNER_REFERENCES),
         SheetMetalProperty::Relief { .. } => (RELIEF_TYPE, &RELIEF_REFERENCES),
         SheetMetalProperty::Transition { .. } => (TRANSITION_TYPE, &TRANSITION_REFERENCES),
@@ -608,7 +739,8 @@ pub(crate) fn valid_references<'a>(
                         actual == type_id_string(*expected)
                             || (record_type == ATTACHMENT_STATE_TYPE
                                 && *expected == ATTACHMENT_TYPE
-                                && actual == type_id_string(HEM_CONTROL_TYPE))
+                                && (actual == type_id_string(HEM_CONTROL_TYPE)
+                                    || actual == type_id_string(CONTOUR_ATTACHMENT_TYPE)))
                     })
                 })
             })
@@ -744,7 +876,10 @@ pub(crate) fn native_kind_counts(
     let mut bends = 0;
     let mut corner_rounds = 0;
     for feature in &inventory.features {
-        if !native.contains(feature.id().as_str()) {
+        // A native contour-flange child has the contour-flange refusal note.
+        if !native.contains(feature.id().as_str())
+            || contour::is_child(&inventory.sheet_metal_flanges, feature)
+        {
             continue;
         }
         let Some(Some(label)) = labels.get(&(
@@ -801,6 +936,18 @@ pub(crate) fn retained_control_losses<'a>(
                 InventorLossCode::FeatureSheetMetalBendControlsRetained,
                 "plate slot-0 construction wire, plate slot-1 direction, attachment control, type-9 first and second modes, direction references, first and second options, state bytes, optional extension state, bend scalar and state, slot-10 Boolean, relief Boolean, and transition Boolean",
             ),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalContourFlange { .. }) => {
+                return vec![
+                    InventorLossCode::FeatureSheetMetalContourControlsRetained.note(format!(
+                        "Projected {} with the type-9 attachment modes, second attachment direction, attachment Booleans and state bytes, relief, transition, corner control, plate-side enumeration, and the bend and corner records retained in its native records; the neutral factor stays unresolved.",
+                        feature.id
+                    )),
+                    InventorLossCode::FeatureSheetMetalStyleFormsNative.note(format!(
+                        "Projected {} with relief and transition forms set by the document style; the form definitions remain in the native document style.",
+                        feature.id
+                    )),
+                ];
+            }
             FeatureDefinition::Operation(FeatureOperation::SheetMetalCorner { .. }) => (
                 InventorLossCode::FeatureSheetMetalCornerControlsRetained,
                 "corner gap, size, Jacobi radius, relief-form and secondary-form enumerations, type-8 corner form, control and option Booleans, raw word, feature dimensions, and profile, attachment, and result references",

@@ -2258,6 +2258,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 design::decode::scopes::direct_face::offset_faces_distance_reference_matches(
                     scope,
                     operation.distance_record_index,
+                    |record_index| {
+                        native
+                            .design_construction_operand_groups
+                            .iter()
+                            .any(|group| {
+                                design_stream(&group.id) == native_stream
+                                    && group.scope_record_index == scope.record_index
+                                    && group.record_index == record_index
+                                    && group.role() == DesignOperandRole::ROLE_0X10
+                            })
+                    },
                 )
             }
             _ => true,
@@ -3108,6 +3119,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     (261, "266", None) if scope.class_tag.as_str() == "434" => true,
                     (257 | 261 | 267, "264", None) if scope.class_tag.as_str() == "414" => true,
                     (257, "262", None) if scope.class_tag.as_str() == "283" => true,
+                    (261, _, None)
+                        if crate::records::feature::assembly_features::legacy_identity_insert_class(
+                            scope.class_tag.as_str(),
+                        ) =>
+                    {
+                        true
+                    }
                     (385, "262", Some(matrix)) if scope.class_tag.as_str() == "283" => {
                         scope
                             .byte_offset()
@@ -3130,6 +3148,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             (381, _) => Some(49),
                             (395, _) => Some(46),
                             (389, "264") if scope.class_tag.as_str() == "414" => Some(50),
+                            (
+                                crate::records::feature::assembly_features::TYPED_COMPONENT_INSERT_FRAME_LENGTH,
+                                _,
+                            ) => Some(u64_from_index(
+                                crate::layout::component_insert_typed_matrix_scope_584_prefix::TRANSFORM,
+                            )),
                             _ => None,
                         };
                         scope_delta.is_some_and(|delta| {
