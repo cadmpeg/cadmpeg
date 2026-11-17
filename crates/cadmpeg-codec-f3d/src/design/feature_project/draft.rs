@@ -190,7 +190,7 @@ fn parting(
         }
     };
     losses.push(F3dLossCode::DraftPartingControlsPartial.note(format!(
-        "Draft scope {} reads anchor kind {} as a parting-line construction and retains mode {}, boundary flag {}, auxiliary scalars, both signed angles and fixed-edge selectors in its native construction; the neutral Draft carries its first angle and resolved pull (DR-810).", scope.id, parting.form, parting.mode, parting.boundary_flag
+        "Draft scope {} reads anchor kind {} as a parting-line construction and retains mode {}, boundary flag {}, auxiliary scalars, both signed angles and fixed-edge selectors in its native construction; the neutral Draft carries its first angle and resolved pull (DR-812).", scope.id, parting.form, parting.mode, parting.boundary_flag
     )));
     let angle = SlopeAngle::new(construction.angle.get());
     if angle.is_none() {
