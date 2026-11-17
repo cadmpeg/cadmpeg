@@ -1295,3 +1295,125 @@ fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
     assert_eq!(other_form_constant.coil_operation(), None);
     assert!(!other_form_constant.coil_has_ten_reference_target());
 }
+
+fn short_compact_coil_bytes() -> Vec<u8> {
+    let mut bytes = vec![0; 228];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"399");
+    bytes[7..11].copy_from_slice(&331u32.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+    bytes[26..30].copy_from_slice(&2u32.to_le_bytes());
+    bytes[30..34].copy_from_slice(&3u32.to_le_bytes());
+    for (offset, target) in [(34usize, 103u32), (45, 107)] {
+        bytes[offset] = 1;
+        bytes[offset + 1..offset + 5].copy_from_slice(&target.to_le_bytes());
+    }
+    bytes[56..58].copy_from_slice(&[1, 1]);
+    bytes[92..96].copy_from_slice(&2u32.to_le_bytes());
+    bytes[107..111].copy_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(&10u32.to_le_bytes());
+    for target in 101u32..111 {
+        bytes.push(1);
+        bytes.extend_from_slice(&target.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&307u32.to_le_bytes());
+    lp_utf16(&mut bytes, "CoilPrimitive");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    indexed_header(&mut bytes, *b"261", 331);
+    bytes
+}
+
+#[test]
+fn short_compact_coil_retains_discriminators_and_reference_table() {
+    let bytes = short_compact_coil_bytes();
+    assert_eq!(bytes.len(), 465);
+    let scope = parse_parameter_scope(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        331,
+        &"399".to_owned().try_into().unwrap(),
+        0,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(scope.frame_length(), 454);
+    assert_eq!(scope.reference_count_offset(), 228);
+    assert_eq!(
+        scope
+            .reference_members()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        (101..111).collect::<Vec<_>>()
+    );
+    assert_eq!(scope.coil_operation(), Some(DesignExtrudeOperation::Cut));
+    assert_eq!(scope.coil_extent(), Some(DesignCoilExtent::HeightPitch));
+    assert_eq!(
+        scope.coil_section(),
+        Some(DesignCoilSection::ExternalTriangle)
+    );
+    assert_eq!(
+        scope.coil_section_placement(),
+        Some(DesignCoilSectionPlacement::Center)
+    );
+    assert_eq!(scope.coil_clockwise(), Some(true));
+    assert!(scope.coil_has_short_compact_prologue());
+}
+
+#[test]
+fn short_compact_coil_refuses_unknown_truncated_and_overflowed_fields() {
+    use super::exact_coil_discriminators;
+    use crate::records::feature::scope::DesignFeatureKind;
+    let bytes = short_compact_coil_bytes();
+    let references = (101..111).collect::<Vec<_>>();
+    let read = |bytes: &[u8], references: &[u32]| {
+        exact_coil_discriminators(bytes, 0, 454, &DesignFeatureKind::CoilPrimitive, references)
+    };
+    for (offset, value) in [
+        (11, 1),
+        (20, 2),
+        (25, 2),
+        (26, 4),
+        (30, 5),
+        (34, 0),
+        (45, 0),
+        (56, 0),
+        (57, 0),
+        (92, 4),
+        (107, 5),
+    ] {
+        let mut malformed = bytes.clone();
+        malformed[offset] = value;
+        assert!(read(&malformed, &references).is_none(), "offset {offset}");
+    }
+    for end in 0..111 {
+        assert!(read(&bytes[..end], &references).is_none(), "end {end}");
+    }
+    for count in 0..10 {
+        assert!(read(&bytes, &references[..count]).is_none());
+    }
+    for offset in [35, 46] {
+        let mut foreign = bytes.clone();
+        foreign[offset..offset + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(read(&foreign, &references).is_none());
+    }
+    assert!(exact_coil_discriminators(
+        &bytes,
+        usize::MAX,
+        454,
+        &DesignFeatureKind::CoilPrimitive,
+        &references
+    )
+    .is_none());
+    assert!(exact_coil_discriminators(
+        &bytes,
+        0,
+        usize::MAX,
+        &DesignFeatureKind::CoilPrimitive,
+        &references
+    )
+    .is_none());
+}

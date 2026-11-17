@@ -38,7 +38,7 @@ fn decodes_structurally_delimited_type24_round_edge_envelope() {
         record.type24_round_edge_envelope(),
         Some(Type24RoundEdgeEnvelope {
             parameter_interval: [
-                f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0]),
+                f64::from_be_bytes([0x3f, 0xc9, 0, 0, 0, 0, 0, 0]),
                 f64::from_be_bytes([0x3f, 0xe0, 0, 0, 0, 0, 0, 0]),
             ],
             vertices: [[0.0, 1.0, 2.0], [-1.0, 2.0, 0.0]],

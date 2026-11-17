@@ -112,6 +112,12 @@ pub(crate) enum SldprtLossCode {
     SketchNativeConstraint,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
+    /// A sketch line, circle, or arc handle keeps its marker role because no
+    /// geometry was admitted for it.
+    SketchHandleUnresolved,
+    /// A sketch line handle keeps its marker role because its two read
+    /// endpoints coincide.
+    SketchLineDegenerate,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// Native sketch relation has no projected neutral constraint.
@@ -355,6 +361,8 @@ impl SldprtLossCode {
         Self::FeatureIncoherentOutputs,
         Self::SketchNativeConstraint,
         Self::SketchNativeGeometry,
+        Self::SketchHandleUnresolved,
+        Self::SketchLineDegenerate,
         Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
@@ -483,6 +491,8 @@ impl SldprtLossCode {
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchProfileRejected => "sketch.profile-rejected",
+            Self::SketchHandleUnresolved => "sketch.handle-unresolved",
+            Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -644,6 +654,8 @@ impl SldprtLossCode {
             | Self::FeatureIncoherentOutputs
             | Self::SketchNativeConstraint
             | Self::SketchNativeGeometry
+            | Self::SketchHandleUnresolved
+            | Self::SketchLineDegenerate
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -844,6 +856,8 @@ impl SldprtLossCode {
             | Self::FeatureIncoherentOutputs
             | Self::SketchNativeConstraint
             | Self::SketchNativeGeometry
+            | Self::SketchHandleUnresolved
+            | Self::SketchLineDegenerate
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -1067,6 +1081,8 @@ mod tests {
                 "feature.incoherent-outputs",
                 "sketch.native-constraint",
                 "sketch.native-geometry",
+                "sketch.handle-unresolved",
+                "sketch.line-degenerate",
                 "sketch.profile-rejected",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
