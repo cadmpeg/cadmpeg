@@ -14,19 +14,24 @@
 //! `untagged`, with a conversion, with a generic parameter, or with a variant
 //! that holds data fails to compile.
 
-use proc_macro::{Delimiter, TokenStream, TokenTree};
+use proc_macro::{Delimiter, LexError, TokenStream, TokenTree};
 
 /// Derives a `Deserialize` that reads a data-free enum from its variant's
 /// name alone.
 #[proc_macro_derive(DeserializeName, attributes(serde))]
 pub fn deserialize_name(input: TokenStream) -> TokenStream {
-    let expanded = match parse(input) {
-        Ok(enumeration) => expand(&enumeration),
-        Err(message) => format!("::core::compile_error!({message:?});"),
-    };
+    let expanded = parse(input).map_or_else(
+        |message| compile_error(&message),
+        |enumeration| expand(&enumeration),
+    );
     expanded
         .parse()
-        .expect("the derive writes a token stream that parses")
+        .or_else(|error: LexError| compile_error(&error.to_string()).parse())
+        .unwrap_or_default()
+}
+
+fn compile_error(message: &str) -> String {
+    format!("::core::compile_error!({message:?});")
 }
 
 /// The container keys that give an enum another wire form than its
