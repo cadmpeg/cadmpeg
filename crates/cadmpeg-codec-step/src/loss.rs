@@ -123,8 +123,8 @@ pub(crate) enum StepLossCode {
     PmiZoneUnresolved,
     /// A dimensional modifier has no complete semantic value.
     PmiDimensionModifierUnresolved,
-    /// A dimension nominal quantity disagrees with the kind of its dimension
-    /// entity, so the dimension keeps the entity name as its kind.
+    /// A dimension's nominal or limit quantity disagrees with the kind of its
+    /// dimension entity, so the dimension keeps the entity name as its kind.
     PmiDimensionKindQuantityMismatch,
     /// Dimensional limit measures do not form one lower and one upper limit.
     DimensionalLimitsOmitted,

@@ -124,7 +124,8 @@ fn a_size_dimension_with_a_ratio_nominal_keeps_its_entity_kind() {
         assert_eq!(dimensions.len(), 1, "{dimension}");
         assert_eq!(
             dimensions[0].1.kind(),
-            &DimensionKind::Other("dimensional_size".to_owned())
+            &DimensionKind::Other("dimensional_size".to_owned()),
+            "{dimension}"
         );
         assert!(dimensions[0]
             .1
@@ -134,4 +135,31 @@ fn a_size_dimension_with_a_ratio_nominal_keeps_its_entity_kind() {
             loss.code == crate::loss::StepLossCode::PmiDimensionKindQuantityMismatch.kind()
         }));
     }
+}
+
+#[test]
+fn a_size_dimension_with_angle_limits_keeps_its_entity_kind() {
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#3=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('from','',#5,.T.);
+#10=DIMENSIONAL_SIZE(#6,'w');
+#11=MEASURE_REPRESENTATION_ITEM('lower limit',PLANE_ANGLE_MEASURE(1.0),#3);
+#12=MEASURE_REPRESENTATION_ITEM('upper limit',PLANE_ANGLE_MEASURE(2.0),#3);
+#13=SHAPE_DIMENSION_REPRESENTATION('w',(#11,#12),#2);
+#14=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#13);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let dimensions = dimensions(result.ir());
+    assert_eq!(dimensions.len(), 1);
+    assert_eq!(
+        dimensions[0].1.kind(),
+        &DimensionKind::Other("dimensional_size".to_owned())
+    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::PmiDimensionKindQuantityMismatch.kind()
+            && loss.message.contains("in place of Size")
+    }));
 }

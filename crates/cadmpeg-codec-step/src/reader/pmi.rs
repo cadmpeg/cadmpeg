@@ -333,7 +333,7 @@ pub(super) fn decode(
                     CodecError::malformed(format_args!("dimension #{id}: {error}"))
                 })?;
                 losses.push(StepLossCode::PmiDimensionKindQuantityMismatch.note(format!(
-                    "dimension #{id}: {error}; the dimension keeps the kind {}",
+                    "dimension #{id}: {error}; the dimension keeps the kind {} in place of {kind:?}",
                     dimension_name.to_ascii_lowercase()
                 )));
                 definition
