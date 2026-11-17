@@ -432,3 +432,27 @@ fn several_root_components_stay_below_the_document_root() {
     assert!(root.is_root());
     assert_eq!(listed(root)[0], ROOT_OCCURRENCE);
 }
+
+#[test]
+fn a_child_only_one_placement_holds_is_owned_once_with_a_loss() {
+    let mut ir = shared_bracket();
+    ir.model
+        .occurrences
+        .push(occurrence("f3d:model:occurrence#b:nut", BOLT, 9.0));
+    ir.model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| definition.id.as_str() == BRACKET)
+        .unwrap()
+        .occurrences
+        .push(occurrence_id("f3d:model:occurrence#b:nut"));
+    let losses = own_once(&mut ir, &BTreeMap::new());
+    assert_eq!(
+        losses,
+        [crate::loss::F3dLossCode::PlacementChildrenDiffer.kind()]
+    );
+    assert_eq!(
+        listed(definition(&ir, BRACKET)),
+        ["f3d:model:occurrence#bolt", "f3d:model:occurrence#nut"]
+    );
+}
