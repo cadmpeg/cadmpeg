@@ -1147,3 +1147,19 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Need.** Establish the records that give every circle and curve of these sketches, so that a profile chain is admitted only when the sketch curve set is complete. Prove each chain against the produced side faces.
 
 **Conflict.** One dimensioned circle can be one of several concentric profile circles. A whole-sketch profile from that circle alone fills the region inside the outer circle.
+
+### DI-72. The +17 value of a sketch curve record
+
+**Question.** What does the little-endian u32 at +17 of a curve record in an `sgSketch` curve list hold?
+
+**Known.** The record is a line or an arc by its curve type at +80 (`sldprt.md` §2.3). The +17 value does not follow the curve type: lines and arcs both carry `1`, `2` and `4`. It is not a relation of the curve: a line with value `4` (the horizontal relation code) or `5` (the vertical relation code) can run in any direction in its sketch. The decoder reads no relation from the value and keeps no constraint for it.
+
+**Need.** The value compared with the relation and dimension groups of the same `sgSketch` object and with the record's handles.
+
+### DI-73. Sketch plane of profile sketches whose curves fit another principal plane
+
+**Question.** Which reference gives the plane of a profile sketch whose curves lie on faces of the solid only when the sketch is placed on a principal plane other than the plane read for it?
+
+**Known.** For 50 extrusion profile sketches in 38 parts and 36 designs, no curve that is not construction geometry lies on a face of the solid in the plane read for the sketch, and the curves lie on faces in another principal plane through the origin. The plane read is most often the `XY` plane through the origin (21 sketches) or the plane with normal `-Y` through the origin (15).
+
+**Need.** The plane reference at the end of these `sgSketch` objects (`sldprt.md` §2.3, the pointer to the `moCompRefPlane_c` that names the sketch plane), compared with the faces of the solid.
