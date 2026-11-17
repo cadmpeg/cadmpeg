@@ -354,6 +354,7 @@ fn dimension_kind(source: &str) -> DimensionKind {
     match source {
         "Linear" => DimensionKind::Location,
         "Diameter" => DimensionKind::Diameter,
+        "Radius" => DimensionKind::Radius,
         "Angle" => DimensionKind::Angular,
         _ => DimensionKind::Other(source.to_owned()),
     }
@@ -466,8 +467,18 @@ fn tolerance(
 
 #[cfg(test)]
 mod tests {
-    use super::{add_attribute, dimension_kind, tolerance, Attribute, DimensionFields, Value};
-    use cadmpeg_ir::pmi::{DimensionKind, DimensionTolerance, PmiQuantity, PmiValue};
+    use super::{
+        add_attribute, dimension_kind, tolerance, transfer, AnnotationIndex, Attribute,
+        DimensionFields, Element, Value,
+    };
+    use crate::loss::CreoLossCode;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::pmi::{
+        DimensionKind, DimensionTolerance, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue,
+    };
+    use cadmpeg_ir::report::loss::LossNote;
+    use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::BTreeMap;
     use std::f64::consts::PI;
 
     const VALUE_TOLERANCE: f64 = 1.0e-12;
@@ -642,6 +653,72 @@ mod tests {
         let (tolerance, unresolved) = tolerance(&fields, fields.nominal, PmiQuantity::Length, 1.0);
         assert!(tolerance.is_none());
         assert!(unresolved);
+    }
+
+    fn transferred_radius(length_scale_mm: Option<f64>) -> (Vec<PmiAnnotation>, Vec<LossNote>) {
+        let attribute = |name: &'static [u8], value, offset| Attribute {
+            name,
+            value,
+            owner: Some(7),
+            owner_type: Some(3),
+            unit: b"",
+            offset,
+        };
+        let attributes = [
+            Some(attribute(b"PTC_DIM_TYPE", Value::Text(b"Radius"), 40)),
+            Some(attribute(
+                b"PTC_DIM_NOMINAL_VAL",
+                Value::Real(Some(5.0)),
+                60,
+            )),
+        ];
+        let elements = [(
+            "BasFullData",
+            vec![Some(Element {
+                owner: 7,
+                owner_type: 3,
+                annotation: None,
+                annotation_type: Some(8),
+            })],
+        )];
+        let dimension_targets = BTreeMap::new();
+        let index = AnnotationIndex {
+            elements: &elements,
+            dimension_targets: &dimension_targets,
+        };
+        let mut ir = CadIr::empty();
+        let mut losses = Vec::new();
+        crate::decode::with_service_context(|ctx| {
+            transfer(
+                ctx,
+                &attributes,
+                &index,
+                length_scale_mm,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &mut losses,
+            )
+        })
+        .expect("radius dimension transfers");
+        (ir.model.pmi, losses)
+    }
+
+    #[test]
+    fn radius_dimension_type_decodes_as_a_length_radius() {
+        for (length_scale_mm, expected_nominal_mm) in [(None, 5.0), (Some(25.4), 127.0)] {
+            let (pmi, losses) = transferred_radius(length_scale_mm);
+            assert_eq!(pmi.len(), 1);
+            let PmiDefinition::Dimension(dimension) = &pmi[0].definition else {
+                panic!("dimension definition")
+            };
+            assert_eq!(dimension.kind(), &DimensionKind::Radius);
+            let nominal = dimension.nominal().expect("nominal");
+            assert_eq!(nominal.quantity, PmiQuantity::Length);
+            close(nominal.value.get(), expected_nominal_mm);
+            assert!(losses
+                .iter()
+                .all(|loss| loss.code != CreoLossCode::PmiDimensionKindInferred.kind()));
+        }
     }
 
     #[test]
