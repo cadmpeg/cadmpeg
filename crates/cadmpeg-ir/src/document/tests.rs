@@ -162,10 +162,10 @@ fn entity_kind_index_is_the_arena_registry_position() {
     let mut kinds = Vec::new();
     macro_rules! collect_kinds {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-            $(kinds.push(<$ty as crate::schema::EntitySchema>::KIND);)*
+            $(kinds.push(<$ty as crate::schema::ArenaRecord>::KIND);)*
         };
     }
-    super::arena_registry!(collect_kinds);
+    super::every_arena_registry!(collect_kinds);
     assert_eq!(kinds, crate::schema::EntityKind::ALL);
     for (position, kind) in kinds.into_iter().enumerate() {
         assert_eq!(kind.index(), position, "{kind:?}");
@@ -982,6 +982,23 @@ fn every_design_arena_is_classified_design() {
             "spatial_sketch_constraints",
             "spreadsheets",
             "history_bodies",
+            "design.scopes",
+            "design.containers",
+            "design.features",
+            "design.sketches",
+            "design.sketch_entities",
+            "design.sketch_constraints",
+            "design.spatial_sketches",
+            "design.spatial_sketch_entities",
+            "design.spatial_sketch_constraints",
+            "design.parameters",
+            "design.spreadsheets",
+            "design.sheet_metal_rules",
+            "design.programs",
+            "design.configurations",
+            "design.arrangements",
+            "design.publications",
+            "design.evaluations",
         ]
     );
 }

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::parameter_scope::parse_parameter_scope_with_type_guid;
-use super::super::path_feature::exact_path_feature_construction;
+use super::super::path_feature::{
+    exact_path_feature_construction, referenced_revolve_reference_loss,
+};
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::{
     DesignPathFeatureConstruction, DesignRevolveConstruction,
@@ -31,6 +33,7 @@ struct Fixture {
     angle_marker: u8,
     angle: f64,
     label: Option<&'static str>,
+    second_reference: Option<u64>,
 }
 
 impl Fixture {
@@ -50,6 +53,7 @@ impl Fixture {
             angle_marker: 1,
             angle: 1.5,
             label: None,
+            second_reference: None,
         }
     }
 
@@ -91,6 +95,8 @@ impl Fixture {
         marked(&mut bytes, self.angle_marker, ANGLE);
         let payload = if self.unmarked {
             369
+        } else if self.second_reference.is_some() {
+            361
         } else if self.references == 8 {
             373
         } else {
@@ -98,7 +104,12 @@ impl Fixture {
         };
         let table = [81_u32, 82, 91, 92, 93, 94, ANGLE, 96];
         let table = &table[table.len() - self.references..];
-        let padding = payload - bytes.len() - 90 - 11 * table.len();
+        let tail_extra = if self.second_reference.is_some() {
+            10
+        } else {
+            0
+        };
+        let padding = payload - bytes.len() - 90 - tail_extra - 11 * table.len();
         bytes.extend(std::iter::repeat_n(0, padding));
         bytes.extend_from_slice(&u32::try_from(table.len()).unwrap().to_le_bytes());
         for &record in table {
@@ -124,9 +135,16 @@ impl Fixture {
             bytes.extend_from_slice(&1u64.to_le_bytes());
             bytes.extend_from_slice(&[0; 3]);
         } else {
-            let mut tail = [0; 78];
+            let mut tail = vec![0; 78 + tail_extra];
             tail[0..4].copy_from_slice(&2_u32.to_le_bytes());
-            tail[31..35].copy_from_slice(&16_u32.to_le_bytes());
+            let previous_state = if let Some(target) = self.second_reference {
+                tail[30] = 1;
+                tail[31..39].copy_from_slice(&target.to_le_bytes());
+                41
+            } else {
+                31
+            };
+            tail[previous_state..previous_state + 4].copy_from_slice(&16_u32.to_le_bytes());
             bytes.extend_from_slice(&tail);
         }
         indexed_header(&mut bytes, *b"258", SCOPE);
@@ -134,6 +152,15 @@ impl Fixture {
     }
 
     fn decode(&self) -> Option<DesignRevolveConstruction> {
+        self.decode_with_loss().0
+    }
+
+    fn decode_with_loss(
+        &self,
+    ) -> (
+        Option<DesignRevolveConstruction>,
+        Option<cadmpeg_ir::report::loss::LossNote>,
+    ) {
         let bytes = self.bytes();
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let class_tag = DesignClassTag::try_from("331".to_owned()).unwrap();
@@ -164,10 +191,13 @@ impl Fixture {
             "companion_record_index": ANGLE + 2,
         }))
         .unwrap();
-        match exact_path_feature_construction(&bytes, &records, &scope, &[owner])? {
-            DesignPathFeatureConstruction::Revolve(construction) => Some(construction),
+        let loss = referenced_revolve_reference_loss(&bytes, &scope);
+        let construction = match exact_path_feature_construction(&bytes, &records, &scope, &[owner])
+        {
+            Some(DesignPathFeatureConstruction::Revolve(construction)) => Some(construction),
             _ => None,
-        }
+        };
+        (construction, loss)
     }
 }
 
@@ -317,4 +347,41 @@ fn marked_form_matches_operation_to_frame_and_reference_count() {
     wrong_operation.project_axis = 1;
     wrong_operation.solid = 0;
     assert!(wrong_operation.decode().is_none());
+}
+
+#[test]
+fn direction_kind_one_reads_only_for_a_full_turn() {
+    let mut full_turn = Fixture::marked();
+    full_turn.angle = std::f64::consts::TAU;
+    let expected = full_turn.decode().expect("full turn");
+    full_turn.direction_kind = 1;
+    assert_eq!(full_turn.decode(), Some(expected));
+    let mut partial = Fixture::marked();
+    partial.direction_kind = 1;
+    assert_eq!(partial.decode(), None);
+    full_turn.direction_kind = 2;
+    assert_eq!(full_turn.decode(), None);
+}
+
+#[test]
+fn a_361_byte_frame_carries_a_second_tail_reference() {
+    let fixture = Fixture {
+        second_reference: Some(56),
+        ..Fixture::marked()
+    };
+    let (construction, loss) = fixture.decode_with_loss();
+    let construction = construction.expect("361-byte referenced-angle Revolve");
+    assert_eq!(construction.operation, DesignExtrudeOperation::NewBody);
+    assert_eq!(construction.angle_record_index, ANGLE);
+    assert!(loss
+        .expect("second tail reference loss")
+        .message
+        .contains("target 56"));
+    assert_eq!(Fixture::marked().decode_with_loss().1, None);
+    let boolean = Fixture {
+        references: 8,
+        operation: 1,
+        ..fixture
+    };
+    assert_eq!(boolean.decode(), None);
 }

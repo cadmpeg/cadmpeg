@@ -26,6 +26,7 @@ use crate::design::ops::shared::{
 };
 use crate::design::options::SymmetricMeasure;
 use crate::design::read;
+use crate::design::tests::arm_failures;
 use crate::features::ParameterId;
 use crate::scalar::{Angle, Length, PositiveReal};
 
@@ -524,6 +525,15 @@ fn every_pattern_type_round_trips() {
     report.check("InstanceChange", changes());
     report.check("PatternMember", members());
     report.finish();
+}
+
+/// §5.10: a pattern is the `FeatureOperation` arm `pattern`, holding the
+/// pattern as its value.
+#[test]
+fn every_pattern_is_a_feature_operation_arm() {
+    use crate::design::feature::{FeatureOperation as Op, OperationFamily as Family};
+    let failures = arm_failures(Family::Pattern, patterns(), Op::Pattern);
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 /// §2.5: an adjacently tagged spacing writes its fields under `value`, a unit
