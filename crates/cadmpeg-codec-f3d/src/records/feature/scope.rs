@@ -3735,7 +3735,8 @@ impl DesignParameterScope {
     }
 
     pub(crate) fn coil_has_short_compact_prologue(&self) -> bool {
-        self.frame_length() == crate::layout::coil_short_ten_reference_compact_scope::LEN
+        self.frame_length()
+            == u64_from_index(crate::layout::coil_short_ten_reference_compact_scope::LEN)
             && self.coil_has_ten_reference_compact_prologue()
     }
 
