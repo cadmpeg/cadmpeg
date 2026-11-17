@@ -3,10 +3,13 @@
 //!
 //! An `sgSketch` object writes a 14-byte header (a little-endian u32 point
 //! count *N*, u16 `0`, a u16, u16 `0` and a little-endian u32), *N* point
-//! records, a little-endian u32 and its curve records. A curve record's
-//! endpoint and centre fields are zero-based indices into the point records of
-//! its own sketch.
+//! records, a little-endian u32 and its curve records. In a current-layout
+//! curve record with selector `4` or `12` and no object-identifier trailer,
+//! the endpoint and centre fields are zero-based indices into the point
+//! records of its own sketch. Other curve records keep the readings of
+//! `super::endpoints`.
 
+use super::endpoints::minor_arc_angles;
 use super::SKETCH_ANGLE_TOLERANCE;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
@@ -37,6 +40,16 @@ const CURRENT_FIELDS: usize = 64;
 const LEGACY_FIELDS: usize = 56;
 /// Where a record's u16 selector stands.
 const SELECTOR: usize = 37;
+/// The selectors whose curve records index the point records of their own
+/// sketch. Selectors `68` and `132` mark the link-bearing forms, and an odd
+/// selector is open item EV-27.
+const ROSTER_SELECTORS: [u16; 2] = [4, 12];
+/// Where a current-layout line record stores its endpoint trailer u32: `1`
+/// selects direct point-object identifiers.
+const LINE_TRAILER: usize = 84;
+/// Where a current-layout line record stores its identity: with a zero
+/// trailer, a value other than `0` and null selects one-based ordinals.
+const LINE_IDENTITY: usize = 88;
 /// A point record's coordinate masks: bit 4 set writes two coordinates.
 const PLANAR_POINT_MASKS: [u16; 6] = [0x12, 0x13, 0x16, 0x1a, 0x1e, 0x1f];
 /// A point record's coordinate masks that write three coordinates.
@@ -47,9 +60,9 @@ const SPATIAL_POINT_MASKS: [u16; 2] = [0x0e, 0x0f];
 pub(super) enum CurveForm {
     /// Type `0`: the segment from the first endpoint to the second.
     Line { start: usize, end: usize },
-    /// Type `1` in its arc layout: the counterclockwise arc about `center`
-    /// from `start` to `end`; a full circle through `start` when the two
-    /// endpoint indices are equal.
+    /// Type `1` in its arc layout: the minor arc about `center` between
+    /// `start` and `end`; a full circle through `start` when the two endpoint
+    /// indices are equal.
     Arc {
         start: usize,
         end: usize,
@@ -255,18 +268,22 @@ pub(super) fn point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2
 }
 
 /// The form of the curve record at `offset`, when its type is a line or an
-/// arc in its arc layout and bit 0 of its selector is clear.
+/// arc in its arc layout and its fields are positions in the point records of
+/// its own sketch: the current layout with its eight zero bytes, a roster
+/// selector, and for a line no object-identifier trailer. The layout before
+/// `swVersion` 11000 keeps the readings of `super::endpoints`.
 pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
     let fields = curve_fields(payload, offset)?;
-    // A record whose selector has bit 0 set has indices that are not read
-    // (open item EV-27).
-    if View::u16_le_at(payload, offset.checked_add(SELECTOR)?)? & 1 != 0 {
+    if fields != offset.checked_add(CURRENT_FIELDS)?
+        || !ROSTER_SELECTORS.contains(&View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?)
+    {
         return None;
     }
     let start = usize::from(View::u16_le_at(payload, fields)?);
     let end = usize::from(View::u16_le_at(payload, fields.checked_add(2)?)?);
     match View::u16_le_at(payload, fields.checked_add(16)?)? {
-        0 => (start != end).then_some(CurveForm::Line { start, end }),
+        0 => (start != end && !object_identifier_line(payload, offset)?)
+            .then_some(CurveForm::Line { start, end }),
         1 => {
             let center_at = fields.checked_add(20)?;
             let tail = center_at.checked_add(2)?;
@@ -282,13 +299,22 @@ pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
     }
 }
 
+/// Whether the current-layout line record at `offset` stores point-object
+/// identifiers or one-based ordinals: a trailer u32 `1`, or a zero trailer and
+/// an identity other than `0` and null.
+fn object_identifier_line(payload: &[u8], offset: usize) -> Option<bool> {
+    let trailer = View::u32_le_at(payload, offset.checked_add(LINE_TRAILER)?)?;
+    let identity = View::u32_le_at(payload, offset.checked_add(LINE_IDENTITY)?)?;
+    Some(trailer == 1 || (trailer == 0 && identity != 0 && identity != u32::MAX))
+}
+
 /// The geometry of the listed record at `offset`, from the record and the
 /// point records of its own sketch: a point record's coordinates, a line
 /// between two point records, a full circle about a point record through
-/// another, or a counterclockwise arc. `project` maps a coordinate pair in
-/// metres to sketch coordinates. `None` when the offset starts no listed
-/// record, a referenced point record writes no coordinates, or the record's
-/// form is not a line or an arc.
+/// another, or the minor arc about a point record between two others.
+/// `project` maps a coordinate pair in metres to sketch coordinates. `None`
+/// when the offset starts no listed record, a referenced point record writes
+/// no coordinates, or the record's form is not one this module reads.
 pub(super) fn listed_record_geometry(
     payload: &[u8],
     lists: &SketchRecordLists,
@@ -322,10 +348,10 @@ pub(super) fn listed_record_geometry(
     }
 }
 
-/// A circle or counterclockwise arc about `center` from `start` to `end`, all
-/// in metres, mapped by `project`. The arc's end angle is its start angle plus
-/// its sweep. The arc's midpoint fixes its sense after
-/// the mapping, which can mirror.
+/// A circle about `center` through `start`, or the minor arc about `center`
+/// between `start` and `end`, all in metres, mapped by `project`. The arc's
+/// end angle is its start angle plus its sweep. The arc's midpoint fixes its
+/// sense after the mapping, which can mirror.
 fn arc_geometry(
     center: [f64; 2],
     start: [f64; 2],
@@ -351,8 +377,15 @@ fn arc_geometry(
     if (end_radius_m - radius_m).abs() > EPS_ARC_RADIUS_M {
         return None;
     }
-    let start_angle_m = (start[1] - center[1]).atan2(start[0] - center[0]);
-    let end_angle_m = (end[1] - center[1]).atan2(end[0] - center[0]);
+    let (start_angle_m, end_angle_m, swapped) = minor_arc_angles(
+        (start[1] - center[1]).atan2(start[0] - center[0]),
+        (end[1] - center[1]).atan2(end[0] - center[0]),
+    );
+    let (start_ir, end) = if swapped {
+        (project(end)?, start)
+    } else {
+        (start_ir, end)
+    };
     let sweep_m = (end_angle_m - start_angle_m).rem_euclid(TAU);
     if sweep_m <= SKETCH_ANGLE_TOLERANCE {
         return None;
