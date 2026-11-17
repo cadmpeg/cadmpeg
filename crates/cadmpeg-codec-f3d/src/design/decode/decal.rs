@@ -62,6 +62,7 @@ pub(crate) fn project_decal_images(
     let mut assets = Vec::new();
     let mut assumed_mappings = 0usize;
     let mut native_placements = 0usize;
+    let mut assumed_layouts = 0usize;
     let mut unresolved_targets = 0usize;
     let mut unresolved_images = 0usize;
     let mut unresolved_definitions = 0usize;
@@ -85,8 +86,22 @@ pub(crate) fn project_decal_images(
                     unresolved_image_asset(Some(image.asset.name()), &image.id)?
                 }
             };
-            if image.placement.is_some() {
+            if let Some(placement) = &image.placement {
                 native_placements += 1;
+                assumed_layouts += usize::from(!placement.has_stated_layout());
+                let target_faces = match targets.faces(scope, image.target_group_record_index) {
+                    Some(FaceSelection::Resolved { faces, .. }) => Some(
+                        faces
+                            .iter()
+                            .map(cadmpeg_ir::ids::FaceId::as_str)
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                    ),
+                    _ => {
+                        unresolved_targets += 1;
+                        None
+                    }
+                };
                 for (key, value) in [
                     ("decal:asset", asset.id.to_string()),
                     (
@@ -97,7 +112,10 @@ pub(crate) fn project_decal_images(
                         "decal:target-group-record-index",
                         image.target_group_record_index.to_string(),
                     ),
-                ] {
+                ]
+                .into_iter()
+                .chain(target_faces.map(|faces| ("decal:target-faces", faces)))
+                {
                     feature.source_properties.extend(
                         cadmpeg_core::text::NonBlankString::new(key).map(|key| (key, value)),
                     );
@@ -161,12 +179,17 @@ pub(crate) fn project_decal_images(
     }
     if native_placements != 0 {
         losses.push(F3dLossCode::DecalPlacementNative.note(format!(
-            "{native_placements} Decal feature(s) keep their placement frame in the native Decal image record and name their image and target group in source properties; the feature definition stays native."
+            "{native_placements} Decal feature(s) keep their placement frame in the native Decal image record and name their image, target group, and resolved target faces in source properties; the feature definition stays native."
+        )));
+    }
+    if assumed_layouts != 0 {
+        losses.push(F3dLossCode::DecalPlacementLayoutAssumed.note(format!(
+            "{assumed_layouts} Decal placement record(s) store adjacent trailing references or five zero bytes before the normal; the decoder reads the frame at the one position that closes the record (DR-484)."
         )));
     }
     if unresolved_targets != 0 {
         losses.push(F3dLossCode::DecalTargetUnresolved.note(format!(
-            "{unresolved_targets} Decal feature(s) keep an unresolved face selection because the target group or its members have no complete whole-body recipe faces (DR-255)."
+            "{unresolved_targets} Decal feature(s) have unresolved target faces because the target group or its members have no complete whole-body recipe faces (DR-255)."
         )));
     }
     if unresolved_images != 0 {
@@ -463,12 +486,7 @@ fn parse_decal_placement_record(
     let u_axis = axis(cursor)?;
     let v_axis = axis(cursor + 12)?;
     cursor += 24;
-    let mirrored = match bytes.get(cursor + 1)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
-    bytes.get(cursor + 2)?;
+    let flag_bytes: [u8; 3] = bytes.get(cursor..cursor + 3)?.try_into().ok()?;
     cursor += 3;
     marked_record_reference(bytes, cursor)?;
     cursor += MARKED_REFERENCE_LEN;
@@ -519,26 +537,29 @@ fn parse_decal_placement_record(
                 bytes.len().checked_sub(indices_at)?,
             )?;
             let end = indices_at.checked_add(indices.checked_mul(4)?)?;
-            (next_indexed_record_offset(bytes, end) == Some(end)
-                && View::u32_le_at(bytes, end + 7) == Some(asset_record_index))
-            .then(|| {
-                (
-                    DesignDecalPlacement {
-                        byte_offset,
-                        class_tag: class_tag.to_owned(),
-                        vertex_count,
-                        ordinal,
-                        u_axis,
-                        v_axis,
-                        mirrored,
-                        normal,
-                        origin,
-                        image_name,
-                        triangle_index_count,
-                    },
-                    end,
-                )
-            })
+            if next_indexed_record_offset(bytes, end) != Some(end)
+                || View::u32_le_at(bytes, end + 7) != Some(asset_record_index)
+            {
+                return None;
+            }
+            Some((
+                DesignDecalPlacement {
+                    byte_offset,
+                    class_tag: class_tag.to_owned(),
+                    vertex_count,
+                    ordinal,
+                    u_axis,
+                    v_axis,
+                    flag_bytes: flag_bytes.into(),
+                    reference_separator: u8::try_from(separator).ok()?,
+                    normal_gap: u8::try_from(gap).ok()?,
+                    normal,
+                    origin,
+                    image_name,
+                    triangle_index_count,
+                },
+                end,
+            ))
             .filter(|(placement, _)| placement.admit(u64::MAX).is_ok())
         });
     let frame = frames.next()?;
@@ -738,11 +759,14 @@ mod tests {
 
     #[test]
     fn decal_placement_record_states_the_frame_for_every_scope_code() {
-        for (separator, gap) in [(1, 4), (1, 5), (0, 4), (0, 5)] {
-            for (mirror, mirrored) in [(0, false), (1, true)] {
+        for (separator, gap) in [(1u8, 4u8), (1, 5), (0, 4), (0, 5)] {
+            for mirror in [0, 1, 2] {
                 for scope_code in [0x00, 0x01, 0x60, 0xE2] {
-                    let image = placed_image(scope_code, &placement_record(mirror, separator, gap))
-                        .expect("Decal image with a placement record");
+                    let image = placed_image(
+                        scope_code,
+                        &placement_record(mirror, usize::from(separator), usize::from(gap)),
+                    )
+                    .expect("Decal image with a placement record");
                     assert_eq!(image.scope_code, scope_code);
                     let placement = image.placement.expect("placement frame");
                     assert_eq!(placement.byte_offset, 0);
@@ -751,7 +775,12 @@ mod tests {
                     assert_eq!(placement.ordinal, 1);
                     assert_eq!(placement.u_axis, [0.5, 0.0, 0.0]);
                     assert_eq!(placement.v_axis, [0.0, -0.5, 0.0]);
-                    assert_eq!(placement.mirrored, mirrored);
+                    assert_eq!(placement.flag_bytes, [1, mirror, 0]);
+                    assert_eq!(
+                        (placement.reference_separator, placement.normal_gap),
+                        (separator, gap)
+                    );
+                    assert_eq!(placement.has_stated_layout(), (separator, gap) == (1, 4));
                     assert_eq!(placement.normal, [0.0, 0.0, -1.0]);
                     assert_eq!(placement.origin, [1.0, 2.0, 0.0]);
                     assert_eq!(placement.image_name, "mark");
@@ -767,9 +796,6 @@ mod tests {
         let flags_at = 36 + 3 * 8 + 4 + 24;
         let normal_at = flags_at + 3 + 11 + 21 + 11 + 1 + 11 + 4;
         let mut cases = Vec::new();
-        let mut mirror = base.clone();
-        mirror[flags_at + 1] = 2;
-        cases.push(("mirror flag 2", mirror));
         let mut gap = base.clone();
         gap[normal_at - 1] = 1;
         cases.push(("nonzero gap", gap));
@@ -789,7 +815,7 @@ mod tests {
         twice.extend_from_slice(&base);
         cases.push(("two placement records", twice));
         let mut unreadable_second = base.clone();
-        unreadable_second.extend_from_slice(&placement_record(2, 1, 4));
+        unreadable_second.extend_from_slice(&placement_record(0, 2, 4));
         cases.push((
             "readable record before an unreadable one",
             unreadable_second,
@@ -828,11 +854,60 @@ mod tests {
             assert_eq!(assets.len(), 1);
             assert_eq!(assets[0].id, crate::ids::neutral_asset_id(ENTRY));
             assert_eq!(definition, native);
-            assert!(matches!(
-                losses.as_slice(),
-                [loss] if loss.code == crate::loss::F3dLossCode::DecalPlacementNative.kind()
-            ));
+            assert_eq!(
+                loss_codes(&losses),
+                [
+                    "appearance.decal-placement-native",
+                    "appearance.decal-target-unresolved"
+                ]
+            );
         }
+    }
+
+    #[test]
+    fn decal_placement_record_outside_the_stated_layout_charges_the_assumed_loss() {
+        for (separator, gap, assumed) in [(1, 4, false), (0, 4, true), (0, 5, true), (1, 5, true)] {
+            let image = placed_image(0x01, &placement_record(0, separator, gap)).unwrap();
+            let (_, _, losses) = project(&archive(true), &image, &[], &[]);
+            assert_eq!(
+                loss_codes(&losses).contains(&"appearance.decal-placement-layout-assumed"),
+                assumed,
+                "separator {separator} gap {gap}"
+            );
+        }
+    }
+
+    #[test]
+    fn decal_with_a_placement_record_names_its_resolved_target_faces() {
+        let image = placed_image(0x01, &placement_record(0, 1, 4)).unwrap();
+        let (group, operand, face) = resolved_target();
+        let scope = scope();
+        let mut features = [feature(&scope)];
+        let mut losses = Vec::new();
+        crate::test_support::zip_test::with_scan(&archive(true), |scan| {
+            super::project_decal_images(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&image),
+                super::DecalTargets {
+                    groups: std::slice::from_ref(&group),
+                    operands: std::slice::from_ref(&operand),
+                },
+                &mut features,
+                &mut losses,
+            )
+            .unwrap()
+        });
+        assert_eq!(
+            features[0]
+                .source_properties
+                .iter()
+                .find(|(key, _)| key.as_str() == "decal:target-faces")
+                .map(|(_, value)| value.as_str()),
+            Some(face.as_str())
+        );
+        assert_eq!(loss_codes(&losses), ["appearance.decal-placement-native"]);
     }
 
     #[test]
@@ -1032,9 +1107,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn decal_projection_emits_one_asset() {
-        let image = image(DesignDecalScopeLayout::Compact, 0x60);
+    fn resolved_target() -> (
+        crate::records::topology::construction::DesignConstructionOperandGroup,
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand,
+        cadmpeg_ir::ids::FaceId,
+    ) {
         let group = crate::records::topology::construction::DesignConstructionOperandGroup::try_from(
             crate::records::topology::construction::DesignConstructionOperandGroupDraft {
                 id: "f3d:Design/BulkStream.dat:operand-group#24".into(),
@@ -1117,6 +1194,13 @@ mod tests {
             },
         )
         .unwrap();
+        (group, operand, face)
+    }
+
+    #[test]
+    fn decal_projection_emits_one_asset() {
+        let image = image(DesignDecalScopeLayout::Compact, 0x60);
+        let (group, operand, face) = resolved_target();
         let (assets, definition, losses) = project(
             &archive(true),
             &image,

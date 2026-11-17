@@ -27,8 +27,12 @@ pub(crate) struct DesignDecalPlacement {
     pub(crate) u_axis: [f64; 3],
     /// Image height axis in Design length units.
     pub(crate) v_axis: [f64; 3],
-    /// Mirror flag.
-    pub(crate) mirrored: bool,
+    /// The three bytes that follow `V`.
+    pub(crate) flag_bytes: cadmpeg_ir::native::bytes::NativeBytes<[u8; 3]>,
+    /// Count of the zero bytes between the two trailing references.
+    pub(crate) reference_separator: u8,
+    /// Count of the zero bytes between the second trailing reference and the normal.
+    pub(crate) normal_gap: u8,
     /// Unit normal of the image plane.
     pub(crate) normal: [f64; 3],
     /// Image centre in Design length units.
@@ -40,6 +44,11 @@ pub(crate) struct DesignDecalPlacement {
 }
 
 impl DesignDecalPlacement {
+    /// Whether one zero byte separates the trailing references and four precede the normal.
+    pub(crate) fn has_stated_layout(&self) -> bool {
+        (self.reference_separator, self.normal_gap) == (1, 4)
+    }
+
     /// Admit a frame that precedes the image-asset record at `asset_byte_offset`.
     pub(crate) fn admit(&self, asset_byte_offset: u64) -> Result<(), String> {
         if self.byte_offset >= asset_byte_offset {
@@ -51,6 +60,12 @@ impl DesignDecalPlacement {
         }
         if self.image_name.is_empty() {
             return Err("placement image_name must be nonempty".into());
+        }
+        if self.reference_separator > 1 {
+            return Err("placement reference_separator must be 0 or 1".into());
+        }
+        if !matches!(self.normal_gap, 4 | 5) {
+            return Err("placement normal_gap must be 4 or 5".into());
         }
         if [self.u_axis, self.v_axis, self.normal, self.origin]
             .iter()

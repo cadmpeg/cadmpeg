@@ -200,7 +200,7 @@ fn decal_image_wire_refuses_an_asset_frame_of_another_layout() {
 fn decal_image_wire_admits_a_placement_frame_before_the_asset_record() {
     let placement = serde_json::json!({
         "byte_offset": 40, "class_tag": "267", "vertex_count": 3, "ordinal": 1,
-        "u_axis": [0.5, 0.0, 0.0], "v_axis": [0.0, -0.5, 0.0], "mirrored": false,
+        "u_axis": [0.5, 0.0, 0.0], "v_axis": [0.0, -0.5, 0.0], "flag_bytes": "010000", "reference_separator": 1, "normal_gap": 4,
         "normal": [0.0, 0.0, -1.0], "origin": [1.0, 2.0, 0.0], "image_name": "mark",
         "triangle_index_count": 3
     });
@@ -215,6 +215,9 @@ fn decal_image_wire_admits_a_placement_frame_before_the_asset_record() {
         ("class_tag", serde_json::json!("")),
         ("image_name", serde_json::json!("")),
         ("normal", serde_json::json!([0.0, 0.0, 2.0])),
+        ("reference_separator", serde_json::json!(2)),
+        ("normal_gap", serde_json::json!(3)),
+        ("normal_gap", serde_json::json!(6)),
     ] {
         let mut refused = value.clone();
         refused["placement"][field] = bad;

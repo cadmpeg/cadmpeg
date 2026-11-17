@@ -283,6 +283,8 @@ pub(crate) enum F3dLossCode {
     DecalMappingAssumed,
     /// A Decal with a decoded placement record keeps its frame in the native record.
     DecalPlacementNative,
+    /// A Decal placement record is read in a trailing-reference layout other than the one-byte separator and four-byte gap.
+    DecalPlacementLayoutAssumed,
     DecalTargetUnresolved,
     DecalImageUnresolved,
     DecalDefinitionUnresolved,
@@ -1181,6 +1183,7 @@ impl F3dLossCode {
         Self::DecalNativeRetained,
         Self::DecalMappingAssumed,
         Self::DecalPlacementNative,
+        Self::DecalPlacementLayoutAssumed,
         Self::DecalTargetUnresolved,
         Self::DecalImageUnresolved,
         Self::DecalDefinitionUnresolved,
@@ -1869,6 +1872,7 @@ impl F3dLossCode {
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::DecalMappingAssumed => "appearance.decal-mapping-assumed",
             Self::DecalPlacementNative => "appearance.decal-placement-native",
+            Self::DecalPlacementLayoutAssumed => "appearance.decal-placement-layout-assumed",
             Self::DecalTargetUnresolved => "appearance.decal-target-unresolved",
             Self::DecalImageUnresolved => "appearance.decal-image-unresolved",
             Self::DecalDefinitionUnresolved => "appearance.decal-definition-unresolved",
@@ -2760,6 +2764,7 @@ impl F3dLossCode {
             | Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
             | Self::DecalPlacementNative
+            | Self::DecalPlacementLayoutAssumed
             | Self::DecalTargetUnresolved
             | Self::DecalImageUnresolved
             | Self::DecalDefinitionUnresolved
@@ -3782,6 +3787,7 @@ impl F3dLossCode {
             | Self::DecalNativeRetained
             | Self::DecalMappingAssumed
             | Self::DecalPlacementNative
+            | Self::DecalPlacementLayoutAssumed
             | Self::DecalTargetUnresolved
             | Self::DecalImageUnresolved
             | Self::DecalDefinitionUnresolved
@@ -4043,6 +4049,7 @@ mod tests {
                 "appearance.decal-native",
                 "appearance.decal-mapping-assumed",
                 "appearance.decal-placement-native",
+                "appearance.decal-placement-layout-assumed",
                 "appearance.decal-target-unresolved",
                 "appearance.decal-image-unresolved",
                 "appearance.decal-definition-unresolved",
