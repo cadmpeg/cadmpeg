@@ -345,4 +345,114 @@ mod selected_path {
         assert!(selected(&ambiguous).is_none());
         assert!(ambiguous.curves.is_empty());
     }
+
+    /// A named sketch line from its start to its end.
+    type Segment<'a> = (&'a str, (f64, f64), (f64, f64));
+
+    fn segment(name: &str, sketch: &SketchId, start: (f64, f64), end: (f64, f64)) -> SketchEntity {
+        SketchEntity::new(
+            SketchEntityId::mint(format!("test:design:sketch-entity#{name}")).expect("id"),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(start.0, start.1),
+                end: Point2::new(end.0, end.1),
+            })
+            .expect("line"),
+        )
+    }
+
+    fn edge(name: Option<i64>, start: (f64, f64), end: (f64, f64)) -> ProfileEdge {
+        ProfileEdge {
+            name: name.map(|associative_id| EdgeName {
+                naming_type: i64::from(NAMING_TYPE),
+                associative_id,
+            }),
+            start: Point3::new(start.0, start.1, 0.0),
+            end: Point3::new(end.0, end.1, 0.0),
+            middle: None,
+            spline: None,
+        }
+    }
+
+    /// Resolves an offset construction wire whose named edges `5` and `6`
+    /// run along the sketch lines `floor` and `wall`, with an unnamed edge
+    /// between them, against the sketch curves `curves`.
+    fn open_path(edges: Vec<ProfileEdge>, curves: &[Segment<'_>]) -> Option<Vec<SketchEntityId>> {
+        let id = SketchId::mint("test:design:sketch#open").expect("id");
+        let sketch = Sketch {
+            id: id.clone(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("plane"),
+            profiles: SketchProfiles::default(),
+            native_ref: None,
+        };
+        let entities: Vec<_> = curves
+            .iter()
+            .map(|(name, start, end)| segment(name, &id, *start, *end))
+            .collect();
+        let body = ProfileBody {
+            segment_token: cadmpeg_ir::identity_key!("segment"),
+            record_ordinal: BODY_ORDINAL,
+            wires: vec![ProfileWire {
+                key: u64::from(WIRE_KEY),
+                edges,
+            }],
+        };
+        let links = [link()];
+        let bodies = [body];
+        let mut index = ProfileIndex::new(&bodies, &links, &[], &[], &entities);
+        for (name, entity) in [5, 6].into_iter().zip(&entities) {
+            index.curves.insert(
+                (TOKEN, SKETCH_ORDINAL, name),
+                Some(entity.id().as_str().to_owned()),
+            );
+        }
+        index.named_open_path(TOKEN, LINK_ORDINAL, SKETCH_ORDINAL, &sketch)
+    }
+
+    fn offset_wire() -> Vec<ProfileEdge> {
+        vec![
+            edge(Some(5), (0.0, 2.0), (47.0, 2.0)),
+            edge(None, (47.0, 2.0), (48.0, 3.0)),
+            edge(Some(6), (48.0, 3.0), (48.0, 30.0)),
+        ]
+    }
+
+    #[test]
+    fn named_wire_edges_select_an_open_chain_of_sketch_curves_in_wire_order() {
+        let l_shape = [
+            ("floor", (0.0, 0.0), (50.0, 0.0)),
+            ("wall", (50.0, 0.0), (50.0, 30.0)),
+        ];
+        let ids = open_path(offset_wire(), &l_shape).expect("open path");
+        let expected: Vec<_> = ["floor", "wall"]
+            .iter()
+            .map(|name| {
+                SketchEntityId::mint(format!("test:design:sketch-entity#{name}")).expect("id")
+            })
+            .collect();
+        assert_eq!(ids, expected);
+        // An unnamed first or last edge, or curves that do not chain, select
+        // no path.
+        let mut unnamed_end = offset_wire();
+        unnamed_end.push(edge(None, (48.0, 30.0), (48.0, 31.0)));
+        assert!(open_path(unnamed_end, &l_shape).is_none());
+        let apart = [
+            ("floor", (0.0, 0.0), (50.0, 0.0)),
+            ("wall", (60.0, 0.0), (60.0, 30.0)),
+        ];
+        assert!(open_path(offset_wire(), &apart).is_none());
+        let closed = [
+            ("floor", (0.0, 0.0), (50.0, 0.0)),
+            ("wall", (50.0, 0.0), (0.0, 0.0)),
+        ];
+        assert!(open_path(offset_wire(), &closed).is_none());
+    }
 }

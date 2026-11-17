@@ -3392,8 +3392,10 @@ The member repeats within each selected region. Region and member counts and the
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `kind` | `u32` | little | spec | u32 kind `3` |
-| 4 | 4 | `curve_primary_id` | `u32` | little | spec | one nonzero u32 primary persistent Sketch-curve identity |
-| 8 | 12 | `zero_words_3` | `u32[3]` | little | spec | three zero u32 values |
+| 4 | 4 | `curve_primary_id` | `u32` | little | spec | the nonzero u32 primary persistent Sketch-curve identity |
+| 8 | 4 | `zero_word_after_primary` | `u32` | little | spec | a zero u32 |
+| 12 | 4 | `curve_secondary_id` | `u32` | little | spec | the u32 secondary persistent Sketch-curve identity |
+| 16 | 4 | `zero_word_after_secondary` | `u32` | little | spec | a second zero u32 |
 | 20 | 12 | `incidence_words` | `u32[3]` | little | spec | three incidence values |
 | 32 | 8 | `zero_words_2` | `u32[2]` | little | spec | two zero u32 values |
 
@@ -6086,6 +6088,51 @@ Parsed by:
 Unstated regions:
 
 - `52..131` (79 B): The fixed native prologue continues to its ordered-reference count.
+
+## `move_face_typed_marker_zero_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 211 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The inline-typed marker-zero prologue |
+| 11 | 9 | `prefix_fields` | `bytes[9]` | little | spec | The inline-typed marker-zero prologue |
+| 20 | 1 | `marker` | `u8` | little | spec | The inline-typed marker-zero prologue · value `0` |
+| 21 | 1 | `transform_flag` | `u8` | little | spec | The inline-typed marker-zero prologue · value `1` |
+| 22 | 51 | `transform_reference` | `bytes[51]` | little | spec | The inline-typed marker-zero prologue |
+| 73 | 4 | `reference_flag` | `u32` | little | spec | The inline-typed marker-zero prologue · value `1` |
+| 77 | 51 | `group_reference` | `bytes[51]` | little | spec | The inline-typed marker-zero prologue |
+| 207 | 4 | `reference_count` | `u32` | little | spec | The inline-typed marker-zero prologue |
+
+Unstated regions:
+
+- `128..207` (79 B): The fixed native prologue continues to its ordered-reference count.
+
+## `move_face_typed_marker_one_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 215 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The inline-typed marker-one prologue |
+| 11 | 9 | `prefix_fields` | `bytes[9]` | little | spec | The inline-typed marker-one prologue |
+| 20 | 1 | `marker` | `u8` | little | spec | The inline-typed marker-one prologue · value `1` |
+| 21 | 4 | `zero_word` | `u32` | little | spec | The inline-typed marker-one prologue · value `0` |
+| 25 | 1 | `transform_flag` | `u8` | little | spec | The inline-typed marker-one prologue · value `1` |
+| 26 | 51 | `transform_reference` | `bytes[51]` | little | spec | The inline-typed marker-one prologue |
+| 77 | 4 | `reference_flag` | `u32` | little | spec | The inline-typed marker-one prologue · value `1` |
+| 81 | 51 | `group_reference` | `bytes[51]` | little | spec | The inline-typed marker-one prologue |
+| 211 | 4 | `reference_count` | `u32` | little | spec | The inline-typed marker-one prologue |
+
+Unstated regions:
+
+- `132..211` (79 B): The fixed native prologue continues to its ordered-reference count.
 
 ## `move_marked_transform_prologue`
 

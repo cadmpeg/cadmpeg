@@ -3,6 +3,8 @@
 
 use std::cell::OnceCell;
 
+use super::parameter_cache::memoize;
+
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
@@ -150,9 +152,13 @@ fn bernstein(degree: usize, t: f64) -> Option<Vec<f64>> {
     Some(row)
 }
 
-fn solve(matrix: &[Vec<f64>], values: &[f64]) -> Option<Vec<f64>> {
+fn solve_columns(matrix: &[Vec<f64>], values: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
     let count = values.len();
-    if matrix.len() != count || matrix.iter().any(|row| row.len() != count) {
+    let columns = values.first()?.len();
+    if matrix.len() != count
+        || matrix.iter().any(|row| row.len() != count)
+        || values.iter().any(|row| row.len() != columns)
+    {
         return None;
     }
     let mut rows = matrix
@@ -160,7 +166,7 @@ fn solve(matrix: &[Vec<f64>], values: &[f64]) -> Option<Vec<f64>> {
         .zip(values)
         .map(|(row, value)| {
             let mut augmented = row.clone();
-            augmented.push(*value);
+            augmented.extend(value);
             augmented
         })
         .collect::<Vec<_>>();
@@ -187,7 +193,7 @@ fn solve(matrix: &[Vec<f64>], values: &[f64]) -> Option<Vec<f64>> {
             }
         }
     }
-    Some(rows.into_iter().map(|row| row[count]).collect())
+    Some(rows.into_iter().map(|row| row[count..].to_vec()).collect())
 }
 
 pub(super) fn fit(
@@ -224,23 +230,22 @@ pub(super) fn fit(
     }
     let mut along_u = [[[0.0; 3]; V_DEGREE + 1]; U_DEGREE + 1];
     for j in 0..=V_DEGREE {
-        for axis in 0..3 {
-            let values = samples.iter().map(|row| row[j][axis]).collect::<Vec<_>>();
-            for (i, value) in solve(&u_basis, &values)?.into_iter().enumerate() {
-                along_u[i][j][axis] = value;
-            }
+        let values = samples
+            .iter()
+            .map(|row| row[j].to_vec())
+            .collect::<Vec<_>>();
+        for (i, row) in solve_columns(&u_basis, &values)?.into_iter().enumerate() {
+            along_u[i][j].copy_from_slice(&row);
         }
     }
     let mut poles = [[[0.0; 3]; V_DEGREE + 1]; U_DEGREE + 1];
     for i in 0..=U_DEGREE {
-        for axis in 0..3 {
-            let values = along_u[i]
-                .iter()
-                .map(|point| point[axis])
-                .collect::<Vec<_>>();
-            for (j, value) in solve(&v_basis, &values)?.into_iter().enumerate() {
-                poles[i][j][axis] = value;
-            }
+        let values = along_u[i]
+            .iter()
+            .map(|point| point.to_vec())
+            .collect::<Vec<_>>();
+        for (j, row) in solve_columns(&v_basis, &values)?.into_iter().enumerate() {
+            poles[i][j].copy_from_slice(&row);
         }
     }
     for i in 0..=HOLDOUT_STEPS {
@@ -340,11 +345,20 @@ pub(super) fn fit_bezier_lanes<const N: usize>(
     evaluate: impl Fn(f64) -> Option<[f64; N]>,
     tolerance: f64,
 ) -> Option<(Vec<f64>, Vec<[f64; N]>)> {
+    let evaluate = memoize(evaluate);
     let basis = (0..=EDGE_DEGREE)
         .map(|index| {
             bernstein(
                 EDGE_DEGREE,
                 f64_from_index(index)? / f64_from_index(EDGE_DEGREE)?,
+            )
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let holdout_coefficients = (0..=EDGE_HOLDOUT_STEPS)
+        .map(|index| {
+            bernstein(
+                EDGE_DEGREE,
+                f64_from_index(index)? / f64_from_index(EDGE_HOLDOUT_STEPS)?,
             )
         })
         .collect::<Option<Vec<_>>>()?;
@@ -361,19 +375,19 @@ pub(super) fn fit_bezier_lanes<const N: usize>(
                 })
                 .collect::<Option<Vec<_>>>()?;
             let mut poles = [[0.0; N]; EDGE_DEGREE + 1];
-            for axis in 0..N {
-                let values = samples.iter().map(|point| point[axis]).collect::<Vec<_>>();
-                for (index, value) in solve(&basis, &values)?.into_iter().enumerate() {
-                    poles[index][axis] = value;
-                }
+            let values = samples
+                .iter()
+                .map(|point| point.to_vec())
+                .collect::<Vec<_>>();
+            for (pole, row) in poles.iter_mut().zip(solve_columns(&basis, &values)?) {
+                pole.copy_from_slice(&row);
             }
             poles[0] = evaluate(lower)?;
             poles[EDGE_DEGREE] = evaluate(upper)?;
             let mut maximum_error = 0.0_f64;
-            for index in 0..=EDGE_HOLDOUT_STEPS {
+            for (index, coefficients) in holdout_coefficients.iter().enumerate() {
                 let fraction = f64_from_index(index)? / f64_from_index(EDGE_HOLDOUT_STEPS)?;
                 let actual = evaluate(interpolate_interval([lower, upper], fraction))?;
-                let coefficients = bernstein(EDGE_DEGREE, fraction)?;
                 let mut predicted = [0.0; N];
                 for (pole, coefficient) in poles.iter().zip(coefficients) {
                     for (value, control) in predicted.iter_mut().zip(pole) {
@@ -698,32 +712,36 @@ fn fit_patch_with_knots(
             samples[i][j] = eval_at(*u, *v)?;
         }
     }
-    let mut intermediate = (0..u_poles)
-        .map(|_| [[0.0; 3]; RECTANGULAR_V_POLES])
+    let values = samples
+        .iter()
+        .map(|row| row.iter().flatten().copied().collect::<Vec<_>>())
         .collect::<Vec<_>>();
-    for j in 0..RECTANGULAR_V_POLES {
-        for axis in 0..3 {
-            let values: Vec<f64> = (0..u_poles).map(|i| samples[i][j][axis]).collect();
-            let sol = solve(&bu, &values)?;
-            for (i, val) in sol.into_iter().enumerate() {
-                intermediate[i][j][axis] = val;
-            }
-        }
-    }
-    let mut poles = (0..u_poles)
-        .map(|_| [[0.0; 3]; RECTANGULAR_V_POLES])
+    let intermediate = solve_columns(&bu, &values)?;
+    let values = (0..RECTANGULAR_V_POLES)
+        .map(|j| {
+            intermediate
+                .iter()
+                .flat_map(|row| row[3 * j..3 * j + 3].iter().copied())
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>();
-    for i in 0..u_poles {
-        for axis in 0..3 {
-            let values: Vec<f64> = (0..RECTANGULAR_V_POLES)
-                .map(|j| intermediate[i][j][axis])
-                .collect();
-            let sol = solve(&bv, &values)?;
-            for (j, val) in sol.into_iter().enumerate() {
-                poles[i][j][axis] = val;
-            }
-        }
-    }
+    let along_v = solve_columns(&bv, &values)?;
+    let poles = (0..u_poles)
+        .map(|i| {
+            std::array::from_fn::<_, RECTANGULAR_V_POLES, _>(|j| {
+                std::array::from_fn::<_, 3, _>(|axis| along_v[j][3 * i + axis])
+            })
+        })
+        .collect::<Vec<_>>();
+    let holdout_v = (0..=RECTANGULAR_HOLDOUT_V)
+        .map(|j| {
+            let v = f64_from_index(j)? / f64_from_index(RECTANGULAR_HOLDOUT_V)?;
+            let weights = (0..RECTANGULAR_V_POLES)
+                .map(|k| bspline_basis(&kv, RECTANGULAR_V_DEGREE, v, k))
+                .collect::<Vec<_>>();
+            Some((v, weights))
+        })
+        .collect::<Option<Vec<_>>>()?;
     for i in 0..=RECTANGULAR_HOLDOUT_U {
         let u = u_min
             + (u_max - u_min) * (f64_from_index(i)?) / (f64_from_index(RECTANGULAR_HOLDOUT_U)?);
@@ -731,12 +749,8 @@ fn fit_patch_with_knots(
         for k in 0..u_poles {
             u_weights.push(bspline_basis(&ku, RECTANGULAR_U_DEGREE, u, k));
         }
-        for j in 0..=RECTANGULAR_HOLDOUT_V {
-            let v = (f64_from_index(j)?) / (f64_from_index(RECTANGULAR_HOLDOUT_V)?);
-            let mut v_weights = Vec::with_capacity(RECTANGULAR_V_POLES);
-            for k in 0..RECTANGULAR_V_POLES {
-                v_weights.push(bspline_basis(&kv, RECTANGULAR_V_DEGREE, v, k));
-            }
+        for (v, v_weights) in &holdout_v {
+            let v = *v;
             let actual = eval_at(u, v)?;
             let mut fitted = [0.0; 3];
             for (r, uw) in u_weights.iter().enumerate() {
@@ -836,6 +850,30 @@ fn fit_patch_with_knots(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn simultaneous_coordinates_preserve_pivoted_solutions() {
+        use super::solve_columns;
+        let matrix = vec![
+            vec![0.0, 2.0, 1.0],
+            vec![1.0, -2.0, -3.0],
+            vec![2.0, 3.0, 1.0],
+        ];
+        let values = vec![vec![1.0, -1.0], vec![-6.0, 7.0], vec![2.0, 3.5]];
+        let expected = [[1.0, 2.0], [-1.0, 0.5], [3.0, -2.0]];
+        let actual = solve_columns(&matrix, &values).expect("invertible system");
+        for (actual, expected) in actual.iter().zip(expected) {
+            for (&actual, expected) in actual.iter().zip(expected) {
+                assert!((actual - expected).abs() < 1.0e-12);
+            }
+        }
+        assert!(solve_columns(
+            &[vec![1.0, 2.0], vec![2.0, 4.0]],
+            &[vec![3.0, 6.0], vec![6.0, 12.0]]
+        )
+        .is_none());
+        assert!(solve_columns(&matrix, &[vec![1.0], vec![2.0, 3.0], vec![4.0]]).is_none());
+    }
+
     #[test]
     fn lifted_edge_shares_its_adaptive_span_endpoints() {
         use super::{

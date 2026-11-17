@@ -95,6 +95,30 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-catia/src/container.rs` — The parser's directory magic matches the stated `file[diroff : diroff+16]` value.
 
+## `visible_body_roster_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 4 B
+
+The count is followed by count positive u32le allocation ends and four zero u32le words.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/container/body_selection.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | <count:u32le> |
+
+## `visible_body_roster_suffix`
+
+Spec §3.1 · layout: byte offsets · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/container/body_selection.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `zero` | `bytes[16]` | little | spec | <zero:u32le[4]> |
+
 ## `vertex_roster_row`
 
 Spec §3.5 · layout: byte offsets · size: 7 B
