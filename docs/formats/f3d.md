@@ -1191,7 +1191,7 @@ A Base Feature result uses its current ASM state's records and transform, with s
 
 A Base Feature scope whose stored bodies match no body of the final model stores the bodies its history state inserts, one for each stored body entity suffix. The stored bodies of such a scope are the bodies of that state alone.
 
-A Split Body feature that selects its target bodies in its input state names state-local body slots of the preceding history state. A selected slot that a later state deletes or revises holds that body only in the preceding state. That body is the complete reference-closed body its slot has in the preceding state's record table, and its volume equals the sum of the volumes of the Split result bodies.
+A Split Body feature that selects its target bodies in its input state names state-local body slots of the preceding history state. A selected slot that a later state deletes or revises holds that body only in the preceding state. That body is the complete reference-closed body its slot has in the preceding state's record table.
 
 A Split Body feature whose target is one body-recipe operand names its target body by the recipe Design id and selector. The target is the body slot of the input state whose body generic-tag group of entity kind `3` stores that Design id and a Design reference equal to the selector. The input state is the state that the Split state's transition names as its predecessor. A body slot that carries the group is the target only when no other body slot of the input state carries an equal pair and the Split transition updates or deletes the slot.
 
