@@ -49,13 +49,8 @@ pub(super) fn project<'a>(
     scope: &'a DesignParameterScope,
     parameters: &[(u32, &'a DesignParameter)],
     native_scope: &str,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<FilletProjection<'a>, CodecError> {
-    use cadmpeg_ir::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        EdgeSelection, FeatureDefinition, FeatureOperation,
-    };
-
     if parameters.is_empty()
         && crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
             scope,
