@@ -585,7 +585,7 @@ impl<'a> Walk<'_, 'a> {
         model: &'a str,
     ) -> Result<Option<ProductDefinitionId>, CodecError> {
         let Some(definition) = NativeDefinition::tree_model(model, self.model_name(model))
-            .map(NativeDefinition::as_root)
+            .map(NativeDefinition::into_root)
         else {
             return Ok(None);
         };
