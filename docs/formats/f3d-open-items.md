@@ -2009,11 +2009,21 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which field layout does a `Revolve` scope use when it has the marker-one prologue and a token-independent frame length other than 345, 355, 367, 351, or 373?
 
-**Known.** `f3d.md` §3.1 gives the marker-one form a 345-, 355-, or 367-byte token-independent frame, and the referenced-angle form, which shares the marker-one prologue through offset 33, a 351- or 373-byte frame. The decoder reads a frame of another length with the marker-one field offsets and records `feature.revolve-layout-assumed`.
+**Known.** `f3d.md` §3.1 gives the marker-one form a 345-, 355-, or 367-byte token-independent frame, and the referenced-angle form, which shares the marker-one prologue through offset 32, a 351-, 361-, or 373-byte frame. The decoder reads a frame of another length with the marker-one field offsets and records `feature.revolve-layout-assumed`.
 
 **Need.** A Design stream with a marker-one `Revolve` scope of another token-independent length and the feature's parameters as the application shows them.
 
 **Note.** None.
+
+### DR-646. Referenced-angle Revolve direction kind 1 and second tail reference
+
+**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361-byte referenced-angle frame name?
+
+**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361-byte frame the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields and records `feature.revolve-layout-assumed` with the target.
+
+**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and a 361-byte referenced-angle scope with the record that its second tail reference names.
+
+**Conflict.** None.
 
 ### DR-270. Curve order of a self-crossing stored profile loop
 
