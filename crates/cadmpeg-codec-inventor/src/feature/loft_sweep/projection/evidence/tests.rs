@@ -23,7 +23,7 @@ fn model() -> CadIr {
             values.push(json!({"kind":"string","value":"INV_NMX_SWEEPGENERATED_TAG"}));
             values.extend([1,44,1,17,-1].into_iter().map(|value|json!({"kind":"integer","value":value})));
             values.extend(match i {0=>vec![0,0,4],1=>vec![0,0,12],_=>vec![8,9,20]}.into_iter().chain([0;7]).map(|value|json!({"kind":"integer","value":value})));
-            json!({"id":format!("test:model:attribute#a{i}"),"name":"ATTRIB_CUSTOM-attrib","target":{"kind":"face","value":format!("test:model:face#f{i}")},"values":values})
+            json!({"id":format!("test:model:attribute#a{i}"),"name":"ATTRIB_CUSTOM-attrib","target":{"entity":{"kind":"face","value":format!("test:model:face#f{i}")}},"values":values})
         }).collect::<Vec<_>>()
     });
     let partial = partial.as_object_mut().expect("partial model");
@@ -386,7 +386,7 @@ fn legacy_model() -> CadIr {
         model.model.attributes.iter_mut().zip(attributes)
     {
         attribute.name = class.into();
-        attribute.target = face(target);
+        attribute.target = face(target).into();
         attribute.values.truncate(5);
         attribute.values.extend(
             [38, 1, generator, -1]
@@ -454,7 +454,8 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     let mut side = duplicate_side.model.attributes[2].clone();
     side.target = AttributeTarget::Face(
         serde_json::from_value(json!("test:model:face#f3")).expect("face id"),
-    );
+    )
+    .into();
     side.values[7] = AttributeValue::Integer(17);
     duplicate_side.model.attributes[3] = side;
     assert!(check(&duplicate_side).is_none());

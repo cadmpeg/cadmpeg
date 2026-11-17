@@ -1572,7 +1572,7 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
             targets[0].target,
             cadmpeg_ir::references::ReferenceTarget::Null
         ));
-        assert!(targets[0].local_target().is_none());
+        assert!(targets[0].native.is_none());
     }
     assert!(annotation.assets.is_empty());
 

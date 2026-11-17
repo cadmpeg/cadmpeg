@@ -274,8 +274,10 @@
           "id": "usd:stage:appearance-binding#/Plant/Frame/Tube",
           "source_entity_id": "/Plant/Looks/Steel",
           "target": {
-            "kind": "tessellation",
-            "value": "usd:stage:tessellation#/Plant/Frame/Tube"
+            "entity": {
+              "kind": "tessellation",
+              "value": "usd:stage:tessellation#/Plant/Frame/Tube"
+            }
           }
         }
       ],

@@ -213,8 +213,10 @@
           "object_type": "Face",
           "source_entity_id": "700",
           "target": {
-            "kind": "face",
-            "value": "sldprt:brep:face#10"
+            "entity": {
+              "kind": "face",
+              "value": "sldprt:brep:face#10"
+            }
           }
         }
       ],
