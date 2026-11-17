@@ -389,9 +389,13 @@ witness = "code:crates/cadmpeg-codec-step/src/options.rs:98"
 # (options.rs:99). Fixture verified: ap242_minimal.p21 line 5 carries
 # `... { 1 0 10303 442 3 1 4 }`, so the file named "minimal" is an edition-2
 # file, not an edition-1 file.
+# The arcs `1 0 10303 442 2 1 4` are ISO/TS 10303-442:2018, the module edition
+# between the Edition 1 and Edition 2 modules. They select this row with the
+# `source.schema-edition-assumed` loss (step-open-items.md ER-06), and the
+# writer declares only the canonical arcs.
 id = "step:ap242-e2"
 title = "STEP AP242 edition 2"
-discriminants = { file_schema_identifier = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", long_form_arcs = "1 0 10303 442 3 1 4" }
+discriminants = { file_schema_identifier = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", long_form_arcs = "1 0 10303 442 3 1 4 | 1 0 10303 442 2 1 4" }
 witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_minimal.p21"
 
 [[dialect]]

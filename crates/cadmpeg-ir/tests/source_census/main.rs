@@ -258,11 +258,6 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ("crates/cadmpeg-ir/src/pmi.rs", "PmiMagnitude", "keyless"),
     ("crates/cadmpeg-ir/src/process/tool.rs", "Uuid", "keyless"),
     (
-        "crates/cadmpeg-ir/src/process/wire.rs",
-        "Distinct",
-        "keyless",
-    ),
-    (
         "crates/cadmpeg-core/src/text.rs",
         "NonBlankString",
         "keyless",
