@@ -150,37 +150,43 @@ fn solid_and_sheet_shell_wire_members_have_counted_export_losses() {
 }
 
 #[test]
-fn missing_local_product_refuses_root_and_nested_occurrences_before_output() {
-    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
+fn missing_local_product_refuses_occurrences_of_the_root_and_nested_definitions_before_output() {
+    use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+    use cadmpeg_ir::transform::Transform;
     for nested in [false, true] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         product(&mut ir);
-        let root: cadmpeg_ir::ids::OccurrenceId = "test:model:occurrence#root".try_into().unwrap();
-        let occurrence = Occurrence {
-            id: root.clone(),
-            prototype: ir.model.product_definitions[0].id.clone(),
-            transform: Some(cadmpeg_ir::transform::Transform::identity()),
-            suppressed: None,
-            visible: None,
-            representation: None,
-            overrides: Vec::new(),
-            name: None,
-            native_ref: None,
-        };
+        let missing: cadmpeg_ir::ids::OccurrenceId =
+            "test:model:occurrence#missing".try_into().unwrap();
+        // The definition that owns the dangling occurrence is the root, or
+        // a definition the root places.
+        let owner = &mut ir.model.product_definitions[0];
+        owner.occurrences.push(missing.clone());
         if nested {
-            ir.model.occurrences.push(occurrence.clone());
+            let placed: cadmpeg_ir::ids::OccurrenceId =
+                "test:model:occurrence#placed".try_into().unwrap();
+            let mut root = ProductDefinition::root(
+                "test:model:product-definition#root".try_into().unwrap(),
+                ExternalDocument::default(),
+            );
+            root.occurrences.push(placed.clone());
+            ir.model.occurrences.push(Occurrence::new(
+                placed,
+                owner.id.clone(),
+                Some(Transform::identity()),
+            ));
+            ir.model.product_definitions.push(root);
+        } else {
+            owner.storage = Storage::File {
+                document: ExternalDocument::default(),
+                source: None,
+            };
         }
-        ir.model.occurrences.push(Occurrence {
-            id: "test:model:occurrence#missing".try_into().unwrap(),
-            prototype: "test:model:product-definition#missing".try_into().unwrap(),
-            transform: Some(Transform::identity()),
-            suppressed: None,
-            visible: None,
-            representation: None,
-            overrides: Vec::new(),
-            name: None,
-            native_ref: None,
-        });
+        ir.model.occurrences.push(Occurrence::new(
+            missing,
+            "test:model:product-definition#missing".try_into().unwrap(),
+            Some(Transform::identity()),
+        ));
         let mut output = vec![0xaa];
         let error = write_step(
             &ir,
