@@ -3529,7 +3529,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             == assembly.byte_offset().checked_add(25)
                 })
             });
-            inline || assembly_operand || single_operand_assembly
+            let direct_carrier =
+                records::feature::work_geometry::joint_origin::DirectJointOriginCarrier::for_scope(
+                    scope,
+                )
+                .is_some_and(|carrier| {
+                    carrier.matches_offsets(origin)
+                        && carrier.has_registered_types(scope, stream_types)
+                        && records_by_index
+                            .get(&(native_stream, carrier.record_index))
+                            .is_some_and(|header| header.byte_offset == carrier.start)
+                });
+            inline || assembly_operand || single_operand_assembly || direct_carrier
         });
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream)?;
         let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream);

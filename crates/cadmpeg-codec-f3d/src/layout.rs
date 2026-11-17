@@ -4148,6 +4148,76 @@ pub(crate) mod joint_origin_legacy_class_337_266_frame {
     pub(crate) const MATRIX: usize = 49;
 }
 
+/// Byte offsets for the `joint_origin_scope_carrier_separation` record.
+///
+/// Spec §3.1. Record length 30 B.
+///
+/// ```text
+/// Offsets are relative to the paired JointOrigin scope header.
+/// ```
+pub(crate) mod joint_origin_scope_carrier_separation {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 30;
+}
+
+/// Byte offsets for the `joint_origin_direct_carrier_369` record.
+///
+/// Spec §3.1. Record length 369 B.
+///
+/// ```text
+/// Offsets are relative to the primary placement-carrier header.
+/// ```
+pub(crate) mod joint_origin_direct_carrier_369 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 369;
+    /// Offset of `zero_prefix` (`bytes[34]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `construction_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CONSTRUCTION_REFERENCE: usize = 45;
+    /// Offset of `zero_after_reference` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_REFERENCE: usize = 56;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 60;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_BACKLINK: usize = 358;
+}
+
+/// Byte offsets for the `joint_origin_direct_carrier_391` record.
+///
+/// Spec §3.1. Record length 391 B.
+///
+/// ```text
+/// Offsets are relative to the primary placement-carrier header.
+/// ```
+pub(crate) mod joint_origin_direct_carrier_391 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 391;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 60;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_BACKLINK: usize = 380;
+}
+
+/// Byte offsets for the `joint_origin_direct_carrier_412` record.
+///
+/// Spec §3.1. Record length 412 B.
+///
+/// ```text
+/// Offsets are relative to the primary placement-carrier header.
+/// ```
+pub(crate) mod joint_origin_direct_carrier_412 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 412;
+    /// Offset of `matrix_marker` (`u8`). Spec §3.1.
+    pub(crate) const MATRIX_MARKER: usize = 60;
+    /// Stated value of `matrix_marker` (`u8`). Spec §3.1.
+    pub(crate) const MATRIX_MARKER_VALUE: u8 = 1;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 61;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_BACKLINK: usize = 401;
+}
+
 /// Byte offsets for the `work_plane_legacy_321_opaque_matrix_frame` record.
 ///
 /// Spec §3.1. Record length 321 B.

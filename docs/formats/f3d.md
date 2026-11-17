@@ -2065,6 +2065,16 @@ The first ordered member is the direct axis carrier and the second is its constr
 
 A `JointOrigin` scope owns one coordinate frame. The 336- and 347-byte forms store 34 zero bytes after the primary indexed header, a marked construction-record reference at offset 45 with ten trailing zero bytes, and a row-major rigid 4×4 local-to-model matrix at offset 60. The 385-byte class-364 form is paired with class 264 and stores 34 zero bytes, `0x01, 0x01, 0x00, 0x00`, and the matrix at offset 49. The 389-byte class-337 form is paired with class 266 and uses the same 34-byte zero prefix, marker, and matrix offset; its 212-byte tail is generation-specific. The 300-, 322-, and 344-byte parameter-scope envelopes store construction graphs; their solved frame is the unique matching operand frame in the consuming `Assemble` scope. An operand frame whose construction reference equals the `JointOrigin` scope record index defines that origin. The 604-byte class-276 `Assemble` form paired with class 258 stores a marked construction reference at offset 24, seven zero bytes, the origin matrix at offset 36, a marked `JointOrigin` scope reference at offset 164, six zero bytes, and u32 value 1. It has exactly eight parameter owners. Four placement owners at local ordinals zero through three precede the angle, local X offset, local Y offset, and local Z offset alignment owners at ordinals four through seven. Matrix columns 0, 1, and 2 are the coordinate-system x, y, and z axes; column 3 is its origin in centimetres.
 
+A version-2 `JointOrigin` scope can store its solved frame in a separate placement carrier of type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`. The first scope reference names the carrier. Its index is the scope index plus one. Its indexed header starts 30 bytes after the paired scope header. The final eleven bytes of the carrier are a marked scope backlink. The paired carrier header follows it.
+
+| Scope length | Carrier version | Carrier length | Matrix offset | Scope backlink offset |
+| ---: | ---: | ---: | ---: | ---: |
+| 315 | 6 | 369 | 60 | 358 |
+| 398 | 6 | 391 | 60 | 380 |
+| 403 | 8 | 412 | 61 | 401 |
+
+The 369- and 391-byte carriers store 34 zero bytes after the indexed header, a marked construction-record reference at offset 45, and four zero bytes after that reference. The 412-byte carrier stores 35 zero bytes after the indexed header, a marked construction-record reference at offset 46, and the bytes `00 00 01 00` after that reference. The matrix columns give the axes and the origin in centimetres.
+
 A direct `WorkPoint` scope references a point-data construction record. The primary record is paired by its record index. Its class level is:
 
 ```

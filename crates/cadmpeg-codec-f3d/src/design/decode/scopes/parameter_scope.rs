@@ -60,10 +60,10 @@ use super::surfaces::exact_surface_untrim_operation;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
 use super::thread::thread_modeled_flag_loss;
-use super::work_geometry::exact_joint_origin_frame;
 use super::work_geometry::exact_work_axis_construction;
 use super::work_geometry::exact_work_plane_frame;
 use super::work_geometry::work_axis_loss_notes;
+use super::work_geometry::{direct_joint_origin_frame, exact_joint_origin_frame};
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
@@ -346,7 +346,10 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {
-                if let Some(frame) = exact_joint_origin_frame(bytes, &records, &scope) {
+                if let Some(frame) =
+                    direct_joint_origin_frame(bytes, &records, &scope, &stream_types)
+                        .or_else(|| exact_joint_origin_frame(bytes, &records, &scope))
+                {
                     if let scope::DesignScopePayloadMut::JointOrigin(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignJointOriginTransform {
                             joint_origin_transform: frame.transform,

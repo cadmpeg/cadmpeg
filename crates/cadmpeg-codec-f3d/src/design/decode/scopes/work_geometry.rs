@@ -9,6 +9,7 @@ use super::point_direction::{
 };
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
+use super::shared_frames::rigid_transform_at;
 use crate::bytes::{f64s_at, finite_reals_at};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
@@ -28,11 +29,15 @@ use crate::layout::work_plane_legacy_class_400_matrix_frame as work_plane_legacy
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::work_geometry::joint_origin::DirectJointOriginCarrier;
 use crate::records::feature::work_geometry::DesignWorkAxisConstruction;
 use crate::records::feature::work_geometry::DesignWorkAxisSource;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
+
+#[cfg(test)]
+mod tests;
 use std::collections::HashMap;
 
 const WORK_AXIS_CARRIER_VALUE_COUNT: u32 = 8;
@@ -623,6 +628,52 @@ fn exact_direct_work_axis_construction(
             carrier_record_index: *carrier_record_index,
             support_record_index: *support_record_index,
         }),
+    })
+}
+
+pub(super) fn direct_joint_origin_frame(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    types: &HashMap<u64, (&str, u32)>,
+) -> Option<ScopePlacementFrame> {
+    use crate::layout::joint_origin_direct_carrier_369 as common;
+
+    let carrier = DirectJointOriginCarrier::for_scope(scope)?;
+    if !carrier.has_registered_types(scope, types) {
+        return None;
+    }
+    let start = usize::try_from(carrier.start).ok()?;
+    let end = start.checked_add(carrier.length)?;
+    if !records
+        .frames(carrier.record_index)
+        .any(|pair| pair == (start, end))
+    {
+        return None;
+    }
+    let mut view = View::over_retained(bytes);
+    view.seek(start)?;
+    let frame = view.take(carrier.length)?;
+    if frame[common::ZERO_PREFIX..carrier.construction_reference]
+        .iter()
+        .any(|byte| *byte != 0)
+        || frame[carrier.matrix - carrier.reference_suffix.len()..carrier.matrix]
+            != carrier.reference_suffix
+        || marked_record_reference(frame, carrier.scope_backlink)? != scope.record_index
+    {
+        return None;
+    }
+    let reference = marked_record_reference(frame, carrier.construction_reference)?;
+    if reference == 0 || records.offsets(reference).is_empty() {
+        return None;
+    }
+    Some(ScopePlacementFrame {
+        transform: rigid_transform_at(frame, carrier.matrix)?,
+        transform_offset: u64_from_index(start + carrier.matrix),
+        reference: Some((
+            reference,
+            u64_from_index(start + carrier.construction_reference + 1),
+        )),
     })
 }
 

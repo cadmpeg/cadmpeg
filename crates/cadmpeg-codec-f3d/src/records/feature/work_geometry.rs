@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Work axes, work points, work planes and the vertex recipes they resolve through.
 
+pub(crate) mod joint_origin;
+
 use crate::records::topology::entity_selection::SelectionSerializationForm;
 use cadmpeg_ir::native::bytes::NativeBytes;
 

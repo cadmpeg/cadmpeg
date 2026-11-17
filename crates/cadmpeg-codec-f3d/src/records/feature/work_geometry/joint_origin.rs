@@ -1,0 +1,93 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::HashMap;
+
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::layout::{
+    joint_origin_direct_carrier_369 as short, joint_origin_direct_carrier_391 as long,
+    joint_origin_direct_carrier_412 as extended, joint_origin_scope_carrier_separation,
+};
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignJointOriginTransform, DesignParameterScope,
+};
+
+const SCOPE_TYPE_GUID: &str = "02E8AA49-08B8-439C-A8C7-221BE20143D8";
+const PLACEMENT_TYPE_GUID: &str = "7B6C3C2D-4096-4E6D-B225-699E8C2D9355";
+
+pub(crate) struct DirectJointOriginCarrier {
+    pub(crate) record_index: u32,
+    pub(crate) start: u64,
+    pub(crate) length: usize,
+    pub(crate) matrix: usize,
+    pub(crate) scope_backlink: usize,
+    pub(crate) construction_reference: usize,
+    pub(crate) reference_suffix: [u8; 4],
+    version: u32,
+}
+
+impl DirectJointOriginCarrier {
+    pub(crate) fn for_scope(scope: &DesignParameterScope) -> Option<Self> {
+        if scope.kind() != DesignFeatureKind::JointOrigin {
+            return None;
+        }
+        let (length, matrix, scope_backlink, version) = match scope.frame_length() {
+            315 => (short::LEN, short::MATRIX, short::SCOPE_BACKLINK, 6),
+            398 => (long::LEN, long::MATRIX, long::SCOPE_BACKLINK, 6),
+            403 => (extended::LEN, extended::MATRIX, extended::SCOPE_BACKLINK, 8),
+            _ => return None,
+        };
+        let record_index = scope.record_index.checked_add(1)?;
+        if scope.reference_members().values().next() != Some(&record_index) {
+            return None;
+        }
+        let (construction_reference, reference_suffix) = if version == 8 {
+            (
+                extended::CONSTRUCTION_REFERENCE,
+                extended::REFERENCE_SUFFIX_VALUE,
+            )
+        } else {
+            (short::CONSTRUCTION_REFERENCE, short::ZERO_AFTER_REFERENCE_VALUE)
+        };
+        Some(Self {
+            record_index,
+            start: scope
+                .paired_byte_offset()
+                .checked_add(u64_from_index(joint_origin_scope_carrier_separation::LEN))?,
+            length,
+            matrix,
+            scope_backlink,
+            construction_reference,
+            reference_suffix,
+            version,
+        })
+    }
+
+    pub(crate) fn has_registered_types(
+        &self,
+        scope: &DesignParameterScope,
+        types: &HashMap<u64, (&str, u32)>,
+    ) -> bool {
+        let matches = |record_index, expected_guid: &str, expected_version| {
+            types
+                .get(&u64::from(record_index))
+                .is_some_and(|(guid, version)| {
+                    guid.eq_ignore_ascii_case(expected_guid) && *version == expected_version
+                })
+        };
+        matches(scope.record_index, SCOPE_TYPE_GUID, 2)
+            && matches(self.record_index, PLACEMENT_TYPE_GUID, self.version)
+    }
+
+    pub(crate) fn matches_offsets(&self, frame: &DesignJointOriginTransform) -> bool {
+        self.start.checked_add(u64_from_index(self.matrix))
+            == Some(frame.joint_origin_transform_offset)
+            && frame.reference.as_ref().is_some_and(|reference| {
+                reference.joint_origin_reference != 0
+                    && self
+                        .start
+                        .checked_add(u64_from_index(self.construction_reference + 1))
+                        == Some(reference.joint_origin_reference_offset)
+            })
+    }
+}

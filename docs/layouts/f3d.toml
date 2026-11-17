@@ -14664,6 +14664,188 @@ size = 212
 note = "The generation-specific placement tail is retained as a named opaque carrier."
 
 [[record]]
+name = "joint_origin_scope_carrier_separation"
+kind = "byte"
+section = "3.1"
+anchor = "A version-2 `JointOrigin` scope can store its solved frame"
+size = 30
+note = "Offsets are relative to the paired JointOrigin scope header."
+
+[[record.field]]
+name = "paired_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header starts 30 bytes after the paired scope header"
+
+[[record.gap]]
+offset = 11
+size = 19
+note = "The paired scope suffix precedes the carrier header."
+
+[[record]]
+name = "joint_origin_direct_carrier_369"
+kind = "byte"
+section = "3.1"
+anchor = "A version-2 `JointOrigin` scope can store its solved frame"
+size = 369
+note = "Offsets are relative to the primary placement-carrier header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[34]"
+source = "spec"
+anchor = "carriers store 34 zero bytes"
+
+[[record.field]]
+name = "construction_reference"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked construction-record reference at offset 45"
+
+[[record.field]]
+name = "zero_after_reference"
+offset = 56
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes after that reference"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 60
+type = "f64[16]"
+source = "spec"
+anchor = "The matrix columns give the axes and the origin in centimetres"
+
+[[record.gap]]
+offset = 188
+size = 170
+note = "Placement carrier payload before its scope backlink."
+
+[[record.field]]
+name = "scope_backlink"
+offset = 358
+type = "bytes[11]"
+source = "spec"
+anchor = "The final eleven bytes of the carrier are a marked scope backlink"
+
+[[record]]
+name = "joint_origin_direct_carrier_391"
+kind = "byte"
+section = "3.1"
+anchor = "A version-2 `JointOrigin` scope can store its solved frame"
+size = 391
+note = "Offsets are relative to the primary placement-carrier header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[34]"
+source = "spec"
+anchor = "carriers store 34 zero bytes"
+
+[[record.field]]
+name = "construction_reference"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked construction-record reference at offset 45"
+
+[[record.field]]
+name = "zero_after_reference"
+offset = 56
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes after that reference"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 60
+type = "f64[16]"
+source = "spec"
+anchor = "The matrix columns give the axes and the origin in centimetres"
+
+[[record.gap]]
+offset = 188
+size = 192
+note = "Placement carrier payload before its scope backlink."
+
+[[record.field]]
+name = "scope_backlink"
+offset = 380
+type = "bytes[11]"
+source = "spec"
+anchor = "The final eleven bytes of the carrier are a marked scope backlink"
+
+[[record]]
+name = "joint_origin_direct_carrier_412"
+kind = "byte"
+section = "3.1"
+anchor = "A version-2 `JointOrigin` scope can store its solved frame"
+size = 412
+note = "Offsets are relative to the primary placement-carrier header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[35]"
+source = "spec"
+anchor = "The 412-byte carrier stores 35 zero bytes"
+
+[[record.field]]
+name = "construction_reference"
+offset = 46
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked construction-record reference at offset 46"
+
+[[record.field]]
+name = "reference_suffix"
+offset = 57
+type = "bytes[4]"
+source = "spec"
+anchor = "the bytes `00 00 01 00` after that reference"
+value = [0, 0, 1, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 61
+type = "f64[16]"
+source = "spec"
+anchor = "The matrix columns give the axes and the origin in centimetres"
+
+[[record.gap]]
+offset = 189
+size = 212
+note = "Placement carrier payload before its scope backlink."
+
+[[record.field]]
+name = "scope_backlink"
+offset = 401
+type = "bytes[11]"
+source = "spec"
+anchor = "The final eleven bytes of the carrier are a marked scope backlink"
+
+[[record]]
 name = "work_plane_legacy_321_opaque_matrix_frame"
 kind = "byte"
 section = "3.1"

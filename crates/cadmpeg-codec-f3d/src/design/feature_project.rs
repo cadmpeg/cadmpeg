@@ -1652,6 +1652,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     || retain_chamfer_records
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
+                    || scope.joint_origin_frame().is_some_and(|frame| {
+                        crate::records::feature::work_geometry::joint_origin::DirectJointOriginCarrier::for_scope(scope)
+                            .is_some_and(|carrier| carrier.matches_offsets(frame))
+                    })
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
                     if retain_chamfer_records {
