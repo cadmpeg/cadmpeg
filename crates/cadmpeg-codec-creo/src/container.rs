@@ -1599,10 +1599,20 @@ pub(crate) fn charge_packed_row_readings(
             Some(start) => format!("srf_array frame at byte {}", base + start),
             None => format!("surface rows outside counted frames in the section at byte {base}"),
         };
-        losses.push(crate::loss::CreoLossCode::SurfaceRowPackedReading.note(format!(
-            "{place} read packed c0..df XX YY row fields in place of {} one- and two-byte row readings",
-            reading.replaced
-        )));
+        losses.push(match reading.kept {
+            surface::KeptRowReading::Packed => {
+                crate::loss::CreoLossCode::SurfaceRowPackedReading.note(format!(
+                    "{place} read packed c0..df XX YY row fields in place of {} one- and two-byte row readings",
+                    reading.replaced
+                ))
+            }
+            surface::KeptRowReading::Compact => {
+                crate::loss::CreoLossCode::SurfaceRowCompactReading.note(format!(
+                    "{place} read one- and two-byte row fields in place of {} packed c0..df XX YY row readings",
+                    reading.replaced
+                ))
+            }
+        });
     }
 }
 

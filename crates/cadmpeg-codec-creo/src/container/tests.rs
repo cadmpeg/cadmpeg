@@ -317,6 +317,7 @@ fn packed_row_reading_loss_states_the_file_byte() {
         100,
         vec![crate::surface::PackedRowReading {
             frame_start: Some(12),
+            kept: crate::surface::KeptRowReading::Packed,
             replaced: 1,
         }],
         &mut losses,
@@ -331,4 +332,28 @@ fn packed_row_reading_loss_states_the_file_byte() {
     assert!(losses[0]
         .message
         .starts_with("srf_array frame at byte 112 "));
+}
+
+#[test]
+fn compact_row_reading_loss_names_the_passed_over_packed_rows() {
+    let mut losses = Vec::new();
+    container::charge_packed_row_readings(
+        100,
+        vec![crate::surface::PackedRowReading {
+            frame_start: None,
+            kept: crate::surface::KeptRowReading::Compact,
+            replaced: 2,
+        }],
+        &mut losses,
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::SurfaceRowCompactReading
+            .note(String::new())
+            .code
+    );
+    assert!(losses[0]
+        .message
+        .ends_with("in place of 2 packed c0..df XX YY row readings"));
 }

@@ -1651,6 +1651,7 @@ fn packed_reading_over_a_compact_row_is_reported() {
         readings,
         vec![crate::surface::PackedRowReading {
             frame_start: Some(b"srf_array\0\xf8\x01".len()),
+            kept: crate::surface::KeptRowReading::Packed,
             replaced: 1,
         }]
     );
@@ -1710,7 +1711,15 @@ fn one_overfilled_frame_keeps_the_compact_reading_of_every_frame() {
             .collect::<Vec<_>>(),
         vec![(5, 14)]
     );
-    assert!(readings.is_empty());
+    // The second frame's packed feat_id row is the passed-over packed reading.
+    assert_eq!(
+        readings,
+        vec![crate::surface::PackedRowReading {
+            frame_start: Some(40),
+            kept: crate::surface::KeptRowReading::Compact,
+            replaced: 1,
+        }]
+    );
 }
 
 #[test]
@@ -1774,6 +1783,7 @@ fn packed_reading_outside_counted_frames_is_reported() {
         readings,
         vec![crate::surface::PackedRowReading {
             frame_start: None,
+            kept: crate::surface::KeptRowReading::Packed,
             replaced: 1,
         }]
     );
@@ -1787,7 +1797,14 @@ fn packed_reading_that_frames_a_row_keeps_the_unframed_compact_rows() {
         decoded.iter().map(|row| row.id).collect::<Vec<_>>(),
         vec![5]
     );
-    assert!(readings.is_empty());
+    assert_eq!(
+        readings,
+        vec![crate::surface::PackedRowReading {
+            frame_start: Some(18),
+            kept: crate::surface::KeptRowReading::Compact,
+            replaced: 1,
+        }]
+    );
 }
 
 #[test]

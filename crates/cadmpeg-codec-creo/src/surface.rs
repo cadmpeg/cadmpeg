@@ -3328,8 +3328,19 @@ pub(crate) fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
 pub(crate) struct PackedRowReading {
     /// Offset of the first byte after the frame count.
     pub(crate) frame_start: Option<usize>,
-    /// Rows of the one- and two-byte reading that the packed reading replaces.
+    /// The reading the payload keeps.
+    pub(crate) kept: KeptRowReading,
+    /// Rows of the other reading that the kept reading replaces.
     pub(crate) replaced: usize,
+}
+
+/// The reading of `srf_array` row fields a payload keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KeptRowReading {
+    /// The packed `c0..df XX YY` reading.
+    Packed,
+    /// The one- and two-byte reading.
+    Compact,
 }
 
 fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<SurfaceRow> {
@@ -3444,22 +3455,25 @@ fn rows_and_packed_readings(
 ) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
     let readings = RowReadings::new(payload);
     let compact_rows = readings.kept(&readings.compact, boundary_types);
-    if !readings.packed_chosen() {
-        return (compact_rows, Vec::new());
-    }
     let packed_rows = readings.kept(&readings.packed, boundary_types);
+    let (kept, kept_rows, other_rows) = if readings.packed_chosen() {
+        (KeptRowReading::Packed, packed_rows, compact_rows)
+    } else {
+        (KeptRowReading::Compact, compact_rows, packed_rows)
+    };
     let mut replaced = BTreeMap::<Option<usize>, usize>::new();
-    for row in compact_rows.iter().filter(|row| !packed_rows.contains(row)) {
+    for row in other_rows.iter().filter(|row| !kept_rows.contains(row)) {
         *replaced.entry(readings.frame_of(row)).or_default() += 1;
     }
     let replaced = replaced
         .into_iter()
         .map(|(frame_start, replaced)| PackedRowReading {
             frame_start,
+            kept,
             replaced,
         })
         .collect();
-    (packed_rows, replaced)
+    (kept_rows, replaced)
 }
 
 /// Rows of every `srf_array` frame, and the rows the packed reading replaces.

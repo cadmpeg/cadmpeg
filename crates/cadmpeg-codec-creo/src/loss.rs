@@ -181,6 +181,9 @@ pub(crate) enum CreoLossCode {
     /// The packed `c0..df XX YY` reading of surface rows replaces rows that
     /// the one- and two-byte reading keeps.
     SurfaceRowPackedReading,
+    /// The one- and two-byte reading of surface rows replaces rows that the
+    /// packed `c0..df XX YY` reading keeps.
+    SurfaceRowCompactReading,
     /// `VisibGeom` curve-topology rows share a non-unique identity.
     VisibGeomCurveAmbiguous,
     /// Decoded section segments retain source-native geometry.
@@ -401,6 +404,7 @@ impl CreoLossCode {
             Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
             Self::SurfaceRowPackedReading => "geometry.surface-row-packed-reading",
+            Self::SurfaceRowCompactReading => "geometry.surface-row-compact-reading",
             Self::VisibGeomCurveAmbiguous => "geometry.visibgeom-curve-ambiguous",
             Self::SectionSegmentGeometryUnresolved => "geometry.section-segment-unresolved",
             Self::CarrierVisibGeomPlanes => "carrier.visibgeom-planes",
@@ -474,6 +478,7 @@ impl CreoLossCode {
             Self::ContainerCensus
             | Self::VisibGeomSurfaceAmbiguous
             | Self::SurfaceRowPackedReading
+            | Self::SurfaceRowCompactReading
             | Self::VisibGeomCurveAmbiguous
             | Self::CarrierVisibGeomPlanes
             | Self::CarrierTopologyBoundPlanes
@@ -655,7 +660,8 @@ impl CreoLossCode {
             | Self::PmiDatumDefinitionSlotAssumed
             | Self::PmiDimensionKindInferred
             | Self::PmiAngularUnitAssumed
-            | Self::SurfaceRowPackedReading => LossTaxonomy::DecodeDiagnostic,
+            | Self::SurfaceRowPackedReading
+            | Self::SurfaceRowCompactReading => LossTaxonomy::DecodeDiagnostic,
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
@@ -867,6 +873,7 @@ mod tests {
                 "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",
                 "geometry.surface-row-packed-reading",
+                "geometry.surface-row-compact-reading",
                 "geometry.visibgeom-curve-ambiguous",
                 "geometry.section-segment-unresolved",
                 "carrier.visibgeom-planes",
