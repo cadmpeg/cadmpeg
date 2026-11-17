@@ -25,6 +25,7 @@ SPEC.loader.exec_module(census)
 # The root of each wire package a reader path can name, as a fixture states it.
 WIRE_PACKAGES = {
     "cadmpeg-core": "pub mod absent_key; pub mod distinct_keys; pub mod tag_only;",
+    "cadmpeg-derive": "",
     "cadmpeg-ir": "pub mod bytes; pub mod features; pub mod ids; pub mod units;",
 }
 REGISTRY_PACKAGES = {"serde_json": "1", "serde_bytes": "0.11", "indexmap": "2"}
@@ -529,6 +530,107 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
                 '''})
                 self.assertEqual(status, 1, output)
                 self.assertIn("Reader", output)
+
+    NAME_READ = '''
+        IMPORT
+        #[derive(Serialize, DERIVE)]
+        #[serde(rename_all = "snake_case", deny_unknown_fields)]
+        enum Reader { A, B = 2 }
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct Holder { base: Reader }
+    '''
+
+    def name_read(self, derive="DeserializeName",
+                  imported="use cadmpeg_derive::DeserializeName;") -> str:
+        return self.NAME_READ.replace("IMPORT", imported).replace("DERIVE", derive)
+
+    def test_a_data_free_enum_read_by_serde_states_a_second_spelling(self) -> None:
+        for case, (source, name) in {
+            "denying": (self.name_read("Deserialize", ""), "Reader"),
+            "not denying": ('''
+                #[derive(Deserialize)] #[serde(rename_all = "snake_case")]
+                enum Reader { A, B }
+            ''', "Reader"),
+            "a macro template": ('''
+                macro_rules! labels {
+                    ($name:ident { $($variant:ident,)* }) => {
+                        #[derive(Deserialize)]
+                        enum $name { $($variant,)* }
+                    };
+                }
+                labels! { Reader { A, B, } }
+            ''', "$name"),
+        }.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": source})
+                self.assertEqual(status, 1, output)
+                self.assertIn(
+                    f"{name}: serde's derived Deserialize reads a data-free enum from "
+                    '{"<variant>": null} beside its name; derive cadmpeg_derive::DeserializeName',
+                    output,
+                )
+
+    def test_a_data_free_enum_read_by_its_name_alone(self) -> None:
+        for case, source in {
+            "imported": self.name_read(),
+            "by its path": self.name_read("cadmpeg_derive::DeserializeName", ""),
+            "by its absolute path": self.name_read("::cadmpeg_derive::DeserializeName", ""),
+            "a macro template": '''
+                use cadmpeg_derive::DeserializeName;
+                macro_rules! labels {
+                    ($name:ident { $($variant:ident,)* }) => {
+                        #[derive(DeserializeName)]
+                        enum $name { $($variant,)* }
+                    };
+                }
+                labels! { Reader { A, B, } }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { base: Reader }
+            ''',
+        }.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": source})
+                self.assertEqual(status, 0, output)
+
+    def test_a_name_reader_that_is_not_the_workspace_derive_proves_nothing(self) -> None:
+        local = "mod cadmpeg_derive { pub use serde::Deserialize as DeserializeName; }"
+        cases = {
+            "no import": (self.name_read(imported=""), "imports no one"),
+            "an import from another crate": (
+                self.name_read(imported="use serde::Deserialize as DeserializeName;"),
+                "serde::Deserialize is not cadmpeg_derive::DeserializeName",
+            ),
+            "a local module of the root's name": (
+                local + self.name_read(),
+                r"spells cadmpeg_derive where it can bind another item",
+            ),
+            "a conditional derive": (
+                self.name_read().replace(
+                    "#[derive(Serialize, DeserializeName)]",
+                    '#[derive(Serialize)] #[cfg_attr(feature = "x", derive(DeserializeName))]',
+                ),
+                "the derive is conditional",
+            ),
+            "a variant that holds data": (
+                self.name_read().replace("B = 2", "B(u8)"),
+                "it reads an enum whose variants hold no data",
+            ),
+            "a tag": (
+                self.name_read().replace('rename_all = "snake_case"', 'tag = "kind"'),
+                "serde tag gives the enum another wire form",
+            ),
+        }
+        for case, (source, reason) in cases.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": source})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader: derives DeserializeName, but", output)
+                self.assertRegex(output, reason)
+        undeclared = '[package]\nname = "fixture"\n[dependencies]\nserde_json.workspace = true\n'
+        status, output = self.run_census(
+            {"lib.rs": self.name_read(), "../Cargo.toml": undeclared}, crate="fixture")
+        self.assertEqual(status, 1, output)
+        self.assertIn("names no dependency cadmpeg_derive", output)
 
     def test_adjacent_tagged_unit_enum_can_deny_unknown_keys(self) -> None:
         status, output = self.run_census({"lib.rs": '''

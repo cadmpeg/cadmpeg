@@ -9,6 +9,7 @@ use std::cmp::Ordering;
 use std::marker::PhantomData;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, Serializer};
@@ -121,8 +122,12 @@ impl<T: Serialize, O> Serialize for Members<T, O> {
 impl<T: Keyed, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
     type Error = &'static str;
 
-    /// Admits a list of members that are distinct by identity.
+    /// Reads a list of members that are distinct by identity. An `Unordered`
+    /// list states its members in identity-key order, its one spelling.
     fn try_from(items: Vec<T>) -> Result<Self, Self::Error> {
+        if O::SORTED && items.windows(2).any(|pair| pair[0].key() > pair[1].key()) {
+            return Err("an unordered member list states its members out of identity-key order");
+        }
         Self::new(items)
     }
 }
@@ -545,7 +550,7 @@ pub enum StepRef {
 }
 
 /// An origin plane, axis, point, or frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum PrincipalEntity {

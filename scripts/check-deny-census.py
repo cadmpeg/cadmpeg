@@ -79,10 +79,16 @@ of:
 * ``untagged`` - unit arms read null, tuple fields are checked in turn, and
   inline struct arms require the container's ``deny_unknown_fields``. This
   also holds for an arm carrying ``#[serde(untagged)]`` inside a tagged enum;
-* every variant is a unit variant without an internal or adjacent tag - the
-  read is a bare name with no key to deny;
 * the enum has no variant at all - it is uninhabited, no document can name a
   variant of it, and serde refuses every input before a key is read.
+
+An enum whose variants hold no data, without a tag, ``untagged``, a
+conversion or ``transparent``, is read from its variant's name. It passes when
+it derives ``cadmpeg_derive::DeserializeName`` (bare under a ``use`` of that
+path, or by the path itself, whose root binds the workspace's
+``cadmpeg-derive``), which reads the name and nothing else. Such an enum that
+derives serde's ``Deserialize`` fails, ``deny_unknown_fields`` or not: serde
+also reads ``{"<variant>": null}`` as the variant, a second spelling.
 
 Anything else fails, unless it is one of the named exceptions below.
 Only actual unconditional metadata supplies refusal evidence. Conditional
@@ -1448,7 +1454,11 @@ class Arm:
 # import from outside the crate can bring in a module of that name. Either
 # leaves the path unproved. `crate::` names the reader only in the crate that
 # is the workspace's package of it.
-PATH_READER_PACKAGES = {"cadmpeg_core": "cadmpeg-core", "cadmpeg_ir": "cadmpeg-ir"}
+PATH_READER_PACKAGES = {
+    "cadmpeg_core": "cadmpeg-core",
+    "cadmpeg_derive": "cadmpeg-derive",
+    "cadmpeg_ir": "cadmpeg-ir",
+}
 STANDARD_ROOTS = {"std", "core", "alloc"}
 REGISTRY_ROOTS = {"serde_json", "serde_bytes", "indexmap"}
 DEPENDENCY_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
@@ -1695,6 +1705,83 @@ def reads_by_tag_alone(raw, item):
         return False, None
     reason = reader_path_failure(reader, item.crate, (TAG_ONLY_OWNER,), "tag_only")
     return reason is None, reason
+
+
+# A data-free enum reads through the derive `cadmpeg_derive::DeserializeName`,
+# which accepts the variant's name alone. serde's derive also reads the
+# one-key object `{"<variant>": null}`, a second spelling of the same value.
+NAME_READER = "cadmpeg_derive::DeserializeName"
+NAME_READER_OWNER = "cadmpeg-derive"
+# The container options that give an enum a wire form other than its
+# variant's name.
+NAMELESS_FORMS = {"tag", "content", "untagged", "from", "try_from", "transparent", "remote"}
+
+
+def imported_path(item, name):
+    """The one path ``name`` is imported from in the module of ``item``, or
+    ``None``. A block between the item and its module, such as a
+    ``macro_rules!`` body, sees the module's imports."""
+    scope = item.scope
+    while True:
+        targets = {
+            binding.target for binding in collect_imports(item.path)
+            if binding.alias == name and binding.scope == scope
+        }
+        if targets or not scope or not scope[-1].startswith("@"):
+            return targets.pop() if len(targets) == 1 else None
+        scope = scope[:-1]
+
+
+@SOURCE_POLICY.cached_analysis
+def name_reader_derive(item):
+    """``(derives, failure)``: whether ``item`` derives ``DeserializeName``,
+    and why the derive is not ``cadmpeg_derive::DeserializeName`` reading a
+    data-free enum by its variant's name, or ``None``."""
+    derives = False
+    for arguments, conditional in attribute_arguments(item.attrs, "derive"):
+        for name in split_metadata(arguments):
+            path = canonical_path(SOURCE_POLICY.mask_rust_non_code(name))
+            if path.rsplit("::", 1)[-1] != "DeserializeName":
+                continue
+            derives = True
+            if conditional:
+                return True, "the derive is conditional"
+            if "::" not in path:
+                path = imported_path(item, path)
+                if path is None:
+                    return True, f"its scope imports no one {NAME_READER}"
+            if canonical_path(path).lstrip(":") != NAME_READER:
+                return True, f"{path} is not {NAME_READER}"
+            reason = reader_path_failure(path, item.crate, (NAME_READER_OWNER,))
+            if reason is not None:
+                return True, reason
+    if not derives:
+        return False, None
+    if item.kind != "enum" or not all_unit_variants(item):
+        return True, "it reads an enum whose variants hold no data"
+    forms = sorted({key for key, _, _ in serde_options(item.attrs)} & NAMELESS_FORMS)
+    if forms:
+        return True, f"serde {', '.join(forms)} gives the enum another wire form"
+    return True, None
+
+
+def name_form_failure(item):
+    """Why ``item``, an enum read from its variant's name, does not read that
+    name alone, or ``None``."""
+    named, failure = name_reader_derive(item)
+    if named:
+        return None if failure is None else f"derives DeserializeName, but {failure}"
+    if (
+        item.kind == "enum"
+        and derives_deserialize(item.attrs)
+        and all_unit_variants(item)
+        and not {key for key, _, _ in serde_options(item.attrs)} & NAMELESS_FORMS
+    ):
+        return (
+            "serde's derived Deserialize reads a data-free enum from "
+            f'{{"<variant>": null}} beside its name; derive {NAME_READER}'
+        )
+    return None
 
 
 GENERIC_HEADER_RE = re.compile(
@@ -4629,6 +4716,12 @@ def main():
                 if target is None:
                     return False
                 return payload_proof(target, item)[0]
+            failure = name_form_failure(item)
+            if failure is not None:
+                arm_failures.append((item.path, item.line, f"{item.name}: {failure}"))
+                return False
+            if name_reader_derive(item)[0]:
+                return True
             if not derives_deserialize(item.attrs) and not item.reader_proven:
                 return False
 
@@ -4677,16 +4770,22 @@ def main():
                 return check_untagged_arms(item, untagged_arms(item))
             if is_uninhabited_enum(item):
                 return True
-            if all_unit_variants(item):
-                return not any(key in {"tag", "content"} for key, _, _ in options)
             return False
         finally:
             checking.discard(identity)
+
+    # A template that a macro instantiates states its derives for every
+    # instance, whichever macro calls the census expands.
+    for path in paths:
+        for item in raw_items[path]:
+            if item.name.startswith("$") and (failure := name_form_failure(item)):
+                arm_failures.append((item.path, item.line, f"{item.name}: {failure}"))
 
     for item in order:
         if not (
             derives_deserialize(item.attrs)
             or item.reader_proven
+            or name_reader_derive(item)[0]
         ):
             continue
         if not passes(item):

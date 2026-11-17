@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, Serializer};
@@ -537,7 +538,7 @@ fn deepest<'a>(names: impl IntoIterator<Item = &'a TopoName>) -> u64 {
 }
 
 /// The kind of a named entity. `Surface` and `Curve` names identify carriers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum NameKind {
@@ -607,7 +608,7 @@ pub enum GenerationRole {
 }
 
 /// The place of a face in a hole's shape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum HoleFaceRole {

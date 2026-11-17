@@ -10,6 +10,7 @@ use std::fmt;
 use std::num::NonZeroU32;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::de::Error as _;
@@ -114,7 +115,7 @@ pub struct Tool {
 }
 
 /// The ISO 14649-111 and 14649-121 tool classes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ToolClass {

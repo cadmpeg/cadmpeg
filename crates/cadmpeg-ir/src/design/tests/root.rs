@@ -218,10 +218,13 @@ fn optional_fields_lists_and_unknown_keys() {
 }
 
 #[test]
-fn a_set_refuses_a_repeated_member() {
+fn a_set_refuses_a_repeated_member_and_an_unsorted_array() {
     let member = json!({"kind": "feature", "value": "test:design:feature#1"});
     let container = json!({"kind": "unordered", "value": {"id": "test:design:container#1", "kind": "group", "members": [member, member]}});
     assert!(refuses::<Container>(&container.to_string()).contains("twice"));
+    let later = json!({"kind": "feature", "value": "test:design:feature#2"});
+    let container = json!({"kind": "unordered", "value": {"id": "test:design:container#1", "kind": "group", "members": [later, member]}});
+    assert!(refuses::<Container>(&container.to_string()).contains("out of order"));
 }
 
 /// §5.13, §5.14: a program's statements hold `Neutral`s, which write

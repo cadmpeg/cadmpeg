@@ -6,6 +6,7 @@
 //! Volumes are cubic millimetres, areas square millimetres, and points
 //! millimetres, in the coordinates of the target.
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -76,7 +77,7 @@ pub enum DeclaredQuantity {
 }
 
 /// The evidence class of a source-stated quantity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
