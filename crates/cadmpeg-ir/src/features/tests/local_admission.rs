@@ -695,3 +695,21 @@ fn selection_reference_constructors_keep_padded_text() {
         result.unwrap();
     }
 }
+
+#[cfg(feature = "schema")]
+#[test]
+fn nonempty_members_schema_requires_a_member() {
+    for (value, valid) in [
+        (serde_json::json!([]), false),
+        (serde_json::json!([7]), true),
+        (serde_json::json!([7, 7]), true),
+    ] {
+        assert_eq!(
+            serde_json::from_value::<NonEmptyMembers<u32>>(value).is_ok(),
+            valid
+        );
+    }
+    let schema = serde_json::to_value(schemars::schema_for!(NonEmptyMembers<u32>)).unwrap();
+    assert_eq!(schema["type"], "array");
+    assert_eq!(schema["minItems"], 1);
+}

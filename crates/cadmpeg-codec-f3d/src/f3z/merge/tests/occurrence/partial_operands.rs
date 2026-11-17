@@ -109,6 +109,7 @@ fn form_occurrences_rewrite_every_typed_identity_with_absent_native_targets() {
                     reference: native.clone(),
                 }],
             }],
+            ..FormInputs::default()
         },
         vec![
             FormCageObservation {
@@ -130,7 +131,12 @@ fn form_occurrences_rewrite_every_typed_identity_with_absent_native_targets() {
             FormCageObservation {
                 paths: Vec::new(),
                 binding: FormCageBinding::Undecoded {
-                    resource,
+                    resource: FormResource {
+                        source: resource.source,
+                        entry: cadmpeg_core::nonblank_literal!(
+                            "Design/TSplines.BlobParts/other.tsm"
+                        ),
+                    },
                     availability: FormResourceAvailability::ActiveUndecoded,
                 },
             },
