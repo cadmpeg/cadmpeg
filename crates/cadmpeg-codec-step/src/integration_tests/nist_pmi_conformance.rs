@@ -324,7 +324,7 @@ fn nist_ctc_01_semantic_pmi_matches_the_nist_definition() {
         all_around
             .targets
             .iter()
-            .filter(|target| matches!(target, cadmpeg_ir::pmi::PmiTarget::Face { .. }))
+            .filter(|target| matches!(&target.entity, cadmpeg_ir::pmi::PmiTarget::Face { .. }))
             .count(),
         6
     );
@@ -783,7 +783,7 @@ fn nist_ftc_10_fit_and_zero_material_tolerances_match_the_nist_definition() {
             annotation
                 .targets
                 .iter()
-                .filter(|target| matches!(target, cadmpeg_ir::pmi::PmiTarget::Face { .. }))
+                .filter(|target| matches!(&target.entity, cadmpeg_ir::pmi::PmiTarget::Face { .. }))
                 .count(),
             6
         );

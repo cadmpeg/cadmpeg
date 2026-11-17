@@ -360,11 +360,11 @@ fn authored_uniform_appearance_binds_every_box_edge_and_vertex() {
     let body_bindings = model
         .appearance_bindings
         .iter()
-        .filter(|binding| matches!(binding.target, AppearanceTarget::Body(_)))
+        .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Body(_)))
         .collect::<Vec<_>>();
     assert_eq!(body_bindings.len(), 1);
     let body_binding = body_bindings[0];
-    assert_eq!(body_binding.target, body_target);
+    assert_eq!(body_binding.target, body_target.into());
     let body_appearance = model
         .appearances
         .iter()
@@ -392,7 +392,7 @@ fn authored_uniform_appearance_binds_every_box_edge_and_vertex() {
             .iter()
             .find(|appearance| appearance.id == binding.appearance)
             .expect("every topology appearance binding resolves");
-        match &binding.target {
+        match &binding.target.entity {
             AppearanceTarget::Edge(id) => {
                 assert!(bound_edge_targets.insert(AppearanceTarget::Edge(id.clone())));
                 assert_eq!(appearance.base_color, Some(edge_color));

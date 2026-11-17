@@ -139,7 +139,7 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
                 let [target] = pmi.targets.as_slice() else {
                     panic!("{} has {} targets", pmi.id.as_str(), pmi.targets.len());
                 };
-                let radius = target_radius(&topology, target).expect("target radius");
+                let radius = target_radius(&topology, &target.entity).expect("target radius");
                 assert!(
                     (2.0 * radius - nominal).abs() < 1.0e-9,
                     "{}",

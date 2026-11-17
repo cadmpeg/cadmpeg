@@ -43,7 +43,11 @@ impl Annotations {
         ir.model.pmi.push(PmiAnnotation {
             id: super::pmi_id(id),
             name: draft.name.filter(|value| !value.is_empty()),
-            targets: draft.targets,
+            targets: draft
+                .targets
+                .into_iter()
+                .map(cadmpeg_ir::references::InstanceTarget::new)
+                .collect(),
             visible: draft.visible,
             definition: draft.definition,
         });

@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -47,8 +53,10 @@
           "id": "usd:stage:articulation#/Arm",
           "native_ref": "/Arm",
           "root": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm"
+            }
           }
         }
       ],
@@ -236,8 +244,10 @@
             "kind": "convex_decomposition"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Base/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Base/Geom",
+              "kind": "body"
+            }
           }
         }
       ],
@@ -529,8 +539,10 @@
           "native_ref": "/Arm/Base",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Base"
+            }
           }
         },
         {
@@ -540,8 +552,10 @@
           "native_ref": "/Arm/Finger",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Finger"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Finger"
+            }
           }
         },
         {
@@ -551,8 +565,10 @@
           "native_ref": "/Arm/Link",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Link"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Link"
+            }
           }
         }
       ],
@@ -567,8 +583,10 @@
           "schema": "PhysxArticulationAPI",
           "solver": "physx",
           "target": {
-            "articulation": "usd:stage:articulation#/Arm",
-            "kind": "articulation"
+            "entity": {
+              "articulation": "usd:stage:articulation#/Arm",
+              "kind": "articulation"
+            }
           },
           "values": {
             "physxArticulation:enabledSelfCollisions": {
@@ -587,8 +605,10 @@
           "schema": "PhysxRigidBodyAPI",
           "solver": "physx",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Base"
+            }
           },
           "values": {
             "physxRigidBody:linearDamping": {
@@ -630,8 +650,10 @@
           "schema": "PhysxCollisionAPI",
           "solver": "physx",
           "target": {
-            "collider": "usd:stage:collider#/Arm/Base/Geom",
-            "kind": "collider"
+            "entity": {
+              "collider": "usd:stage:collider#/Arm/Base/Geom",
+              "kind": "collider"
+            }
           },
           "values": {
             "physxCollision:contactOffset": {
@@ -655,8 +677,10 @@
           "schema": "PhysxConvexDecompositionCollisionAPI",
           "solver": "physx",
           "target": {
-            "collider": "usd:stage:collider#/Arm/Base/Geom",
-            "kind": "collider"
+            "entity": {
+              "collider": "usd:stage:collider#/Arm/Base/Geom",
+              "kind": "collider"
+            }
           },
           "values": {
             "physxConvexDecompositionCollision:maxConvexHulls": {
@@ -671,8 +695,10 @@
           "schema": "PhysxJointAPI",
           "solver": "physx",
           "target": {
-            "joint": "usd:stage:joint#/Arm/Grip",
-            "kind": "joint"
+            "entity": {
+              "joint": "usd:stage:joint#/Arm/Grip",
+              "kind": "joint"
+            }
           },
           "values": {
             "physxJoint:armature": {
@@ -701,8 +727,10 @@
           "schema": "PhysxMimicJointAPI:transX",
           "solver": "physx",
           "target": {
-            "joint": "usd:stage:joint#/Arm/Grip",
-            "kind": "joint"
+            "entity": {
+              "joint": "usd:stage:joint#/Arm/Grip",
+              "kind": "joint"
+            }
           },
           "values": {
             "physxMimicJoint:transX:gearing": {
@@ -727,8 +755,10 @@
               "kind": "targets",
               "targets": [
                 {
-                  "joint": "usd:stage:joint#/Arm/Shoulder",
-                  "kind": "joint"
+                  "entity": {
+                    "joint": "usd:stage:joint#/Arm/Shoulder",
+                    "kind": "joint"
+                  }
                 }
               ]
             },
@@ -744,8 +774,10 @@
           "schema": "PhysxMaterialAPI",
           "solver": "physx",
           "target": {
-            "kind": "physical_material",
-            "material": "usd:stage:physical-material#/Arm/Rubber"
+            "entity": {
+              "kind": "physical_material",
+              "material": "usd:stage:physical-material#/Arm/Rubber"
+            }
           },
           "values": {
             "physxMaterial:frictionCombineMode": {
@@ -760,8 +792,10 @@
           "schema": "PhysxSceneAPI",
           "solver": "physx",
           "target": {
-            "kind": "scene",
-            "scene": "usd:stage:physics-scene#/Arm/Scene"
+            "entity": {
+              "kind": "scene",
+              "scene": "usd:stage:physics-scene#/Arm/Scene"
+            }
           },
           "values": {
             "physxScene:bounceThreshold": {
@@ -789,8 +823,10 @@
           "schema": "PhysicsJointStateAPI:angular",
           "solver": "physx",
           "target": {
-            "joint": "usd:stage:joint#/Arm/Shoulder",
-            "kind": "joint"
+            "entity": {
+              "joint": "usd:stage:joint#/Arm/Shoulder",
+              "kind": "joint"
+            }
           },
           "values": {
             "state:angular:physics:position": {
@@ -810,8 +846,10 @@
           "schema": "PhysxJointAPI",
           "solver": "physx",
           "target": {
-            "joint": "usd:stage:joint#/Arm/Shoulder",
-            "kind": "joint"
+            "entity": {
+              "joint": "usd:stage:joint#/Arm/Shoulder",
+              "kind": "joint"
+            }
           },
           "values": {
             "physxJoint:armature": {
@@ -849,8 +887,10 @@
           "schema": "PhysxLimitAPI:angular",
           "solver": "physx",
           "target": {
-            "joint": "usd:stage:joint#/Arm/Shoulder",
-            "kind": "joint"
+            "entity": {
+              "joint": "usd:stage:joint#/Arm/Shoulder",
+              "kind": "joint"
+            }
           },
           "values": {
             "physxLimit:angular:damping": {
@@ -940,7 +980,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

@@ -154,7 +154,7 @@ fn a_property_of_a_face_has_no_body_target() {
 
     for property in [41, 46, 50, 57] {
         for measure in of_property(result.ir(), property) {
-            assert_eq!(measure.target, DeclaredTarget::Unresolved {}, "{measure:?}");
+            assert_eq!(measure.target, DeclaredTarget::Unresolved, "{measure:?}");
         }
     }
 }
@@ -335,14 +335,14 @@ fn a_shape_aspect_of_a_face_has_no_body_target() {
         )
     });
     let [measure] = of_property(&ir, 1000).try_into().unwrap();
-    assert_eq!(measure.target, DeclaredTarget::Unresolved {});
+    assert_eq!(measure.target, DeclaredTarget::Unresolved);
 }
 
 #[test]
 fn a_shape_aspect_without_geometry_has_no_body_target() {
     let (ir, _) = aspect_part(|_| String::new());
     let [measure] = of_property(&ir, 1000).try_into().unwrap();
-    assert_eq!(measure.target, DeclaredTarget::Unresolved {});
+    assert_eq!(measure.target, DeclaredTarget::Unresolved);
 }
 
 #[test]

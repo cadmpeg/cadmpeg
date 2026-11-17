@@ -80,6 +80,12 @@ impl ExportLossCode {
             | EntityKind::DesignScope
             | EntityKind::DesignContainer
             | EntityKind::DesignFeature
+            | EntityKind::DesignSketch
+            | EntityKind::DesignSketchEntity
+            | EntityKind::DesignSketchConstraint
+            | EntityKind::DesignSpatialSketch
+            | EntityKind::DesignSpatialSketchEntity
+            | EntityKind::DesignSpatialSketchConstraint
             | EntityKind::DesignParameter
             | EntityKind::DesignSpreadsheet
             | EntityKind::DesignSheetMetalRule
@@ -101,6 +107,17 @@ impl ExportLossCode {
             | EntityKind::Articulation
             | EntityKind::PhysicsScene
             | EntityKind::SolverSettings => LossTaxonomy::PhysicsNotTransferred,
+            EntityKind::ProcessSetup
+            | EntityKind::ProcessOperation
+            | EntityKind::ProcessFeature
+            | EntityKind::ProcessGroup
+            | EntityKind::ProcessTool
+            | EntityKind::ProcessPreset
+            | EntityKind::ProcessMachine
+            | EntityKind::ProcessProgram
+            | EntityKind::ProcessParameter
+            | EntityKind::ProcessToolpath
+            | EntityKind::ProcessState => LossTaxonomy::ProcessRecordOmitted,
         }
     }
 

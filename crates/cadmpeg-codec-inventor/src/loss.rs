@@ -163,6 +163,10 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalStyleFormsNative,
     /// An attached plate stays native; the note names the first refused admission check.
     FeatureSheetMetalPlateRefused,
+    /// Projected contour flanges retain construction controls and their bend and corner records natively.
+    FeatureSheetMetalContourControlsRetained,
+    /// A contour flange stays native; the note names the first refused admission check.
+    FeatureSheetMetalContourFlangeRefused,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
     /// `DeleteFace` Boolean construction roles remain unresolved.
@@ -384,6 +388,8 @@ impl InventorLossCode {
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureSheetMetalPlateRefused,
+        Self::FeatureSheetMetalContourControlsRetained,
+        Self::FeatureSheetMetalContourFlangeRefused,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureDeleteFaceOperandsNative,
         Self::FeatureFilletOperandsNative,
@@ -551,6 +557,12 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
             Self::FeatureSheetMetalPlateRefused => "feature.sheet-metal-plate-refused",
+            Self::FeatureSheetMetalContourControlsRetained => {
+                "feature.sheet-metal-contour-controls-retained"
+            }
+            Self::FeatureSheetMetalContourFlangeRefused => {
+                "feature.sheet-metal-contour-flange-refused"
+            }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureMirrorBooleanNative => "feature.mirror-boolean-native",
@@ -700,6 +712,8 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
             | Self::FeatureSheetMetalPlateRefused
+            | Self::FeatureSheetMetalContourControlsRetained
+            | Self::FeatureSheetMetalContourFlangeRefused
             | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureMirrorBooleanNative
@@ -882,6 +896,8 @@ mod tests {
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
                 "feature.sheet-metal-plate-refused",
+                "feature.sheet-metal-contour-controls-retained",
+                "feature.sheet-metal-contour-flange-refused",
                 "feature.revolve-operands-native",
                 "feature.delete-face-operands-native",
                 "feature.fillet-operands-native",

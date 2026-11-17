@@ -6,7 +6,7 @@ mod datum;
 #[cfg(feature = "schema")]
 mod schema;
 mod shared;
-mod sketch;
+pub(in crate::design) mod sketch;
 mod unit_variants;
 
 use std::collections::BTreeMap;

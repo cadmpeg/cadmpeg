@@ -939,6 +939,7 @@ pub(super) fn designs() -> Vec<Design> {
             publications: publications(),
             evaluations: evaluations(),
             names: name_tables().remove(1),
+            ..crate::design::ops::tests::sketch::sketch_arenas()
         },
     ]
 }

@@ -1021,6 +1021,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Membership certainty and order certainty remain independent.
 
+### DR-658. Conflicting and foreign Form reference joins
+
+**Question.** Which Form cage belongs to a source slot when its body, serializer, tracking group or owned list carries conflicting type, owner, position or namespace evidence? What frames a sparse tracking run after an unreadable member?
+
+**Known.** Form reference runs retain local, segment and document targets, inline and separate type claims, qualified asset text, foreign link data, nulls and source positions. A body surface joins a serializer through a compatible local target. Distinct source counts or positions can describe incompatible membership claims. An unreadable variable-width tracking member leaves subsequent slots unvisited. A matching fixed-slot envelope permits an independently retained alternative.
+
+**Need.** Controlled saves that introduce a foreign component and vary each Form selection, body owner and serializer independently, with the producer's resolved cage membership and reference namespace recorded.
+
+**Conflict.** A retained inline type can differ from the registered type of its local target. Separate source records can establish different positions or counts for a Form.
+
+**Note.** `feature.form-reference-type-conflict`, `feature.form-foreign-reference-unresolved`, `feature.form-tracking-owner-conflict`, `feature.form-serializer-reference-unresolved` and `feature.form-membership-conflict` record the unresolved joins and membership claims. `feature.form-tracking-fixed-slots-assumed` records the alternative fixed-slot reading. `feature.form-tracking-run-unresolved` retains the decoded owner when the member count is unavailable or exceeds the frame. Compatible local sibling facts remain available.
+
 ### DR-325. Empty Form selection group
 
 **Question.** What does a zero member count in a Form selection group mean for the cages committed by its scope?
@@ -1277,7 +1289,7 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Question.** Do the flag bytes of the chordal and compact fillet set forms encode tangent chain, do those forms store curvature continuity, and what do the set marker byte, the `00 01` tail of the current flag run, and the compact flag-run form encode?
 
-**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives their positions and admitted values. The decoder stores the flag of every set form as the set's `tangent_chain`, reads curvature continuity in the constant form only, and stores `rolling_ball_corner = true` for the compact flag run, whose first byte is `01`.
+**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives their positions and admitted values. The decoder stores the flag of every set form as the set's `tangent_chain`, reads curvature continuity in the constant form only, and stores `rolling_ball_corner = true` for the compact flag run, whose first byte is `01`. The decoder admits the compact run `01 01`; two public compact frames store `01 00` in its place. Public compact frames store zero bytes, 16-byte-aligned addresses, UTF-16 text fragments, or unrelated f32 values in the nine bytes after the compact run's `01 01` and in the four bytes at compact set offsets `+70` and `+89`. The decoder reads these bytes as padding and reports `feature.fillet-padding-assumed` when one of them is nonzero.
 
 **Need.** Chordal and compact Fillet saves with tangent chain off, with curvature continuity, and with setback corners.
 
@@ -1793,13 +1805,13 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** Which stored relation carries a Thread selection from its result face to the selected region after a later operation rewrites that face?
 
-**Known.** The ASM transition chain preserves stable entity slots across record updates. A later transition can retain the threaded cylinder's slot, axis, and radius while it updates that face, deletes another face, and inserts a replacement face. The Thread selection names its preceding topology.
+**Known.** The ASM transition chain preserves stable entity slots across record updates. A later transition can retain the threaded cylinder's slot, axis, and radius while it updates that face, deletes another face, and inserts a replacement face. The Thread selection names its preceding topology. When every following transition keeps the selected face slot, its surface binding, and the bound surface record and its surface rows, the selected slot identifies the active face in the same BREP member (`f3d.md` §3.1 "A Thread input-face identity uses the stable entity slot").
 
-**Need.** Public controlled Thread designs followed by face splits, face deletion, and face motion, with the selected threaded regions identified before and after each operation.
+**Need.** Public controlled Thread designs followed by a split of the threaded face onto a new carrier, deletion of the threaded face, and motion of the threaded face, with the selected threaded regions identified before and after each operation.
 
 **Conflict.** None.
 
-**Note.** DR-143 tracks the Thread modeled state. The active-face proof requires topology and geometry preservation after the Thread result.
+**Note.** DR-143 tracks the Thread modeled state. A following transition that drops the slot, rebinds its surface, or changes the bound surface record or its rows leaves the face unresolved with `feature.thread-live-face-unproven`.
 
 ### DR-244. Treatment edge proof without a transition
 
@@ -2009,11 +2021,21 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which field layout does a `Revolve` scope use when it has the marker-one prologue and a token-independent frame length other than 345, 355, 367, 351, or 373?
 
-**Known.** `f3d.md` §3.1 gives the marker-one form a 345-, 355-, or 367-byte token-independent frame, and the referenced-angle form, which shares the marker-one prologue through offset 33, a 351- or 373-byte frame. The decoder reads a frame of another length with the marker-one field offsets and records `feature.revolve-layout-assumed`.
+**Known.** `f3d.md` §3.1 gives the marker-one form a 345-, 355-, or 367-byte token-independent frame, and the referenced-angle form, which shares the marker-one prologue through offset 32, a 351-, 361-, or 373-byte frame. The decoder reads a frame of another length with the marker-one field offsets and records `feature.revolve-layout-assumed`.
 
 **Need.** A Design stream with a marker-one `Revolve` scope of another token-independent length and the feature's parameters as the application shows them.
 
 **Note.** None.
+
+### DR-657. Referenced-angle Revolve direction kind 1 and second tail reference
+
+**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361-byte referenced-angle frame name?
+
+**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361-byte frame the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields and records `feature.revolve-layout-assumed` with the target.
+
+**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and a 361-byte referenced-angle scope with the record that its second tail reference names.
+
+**Conflict.** None.
 
 ### DR-270. Curve order of a self-crossing stored profile loop
 
@@ -2409,6 +2431,16 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
+### DR-643. Persistent tags of omitted bodies
+
+**Question.** Does the generic tag on a BREP body that the final model omits supply the recipe join for whole-body operands that select it?
+
+**Known.** A body that a `RemoveBody` deletes stays in the model BREP and the history BREP. Its generic tag stores Design id `307` and reference `8`. The whole-body recipe operands of the `Mirror`, the `RemoveBody`, and the cutting `Extrude` that select it have Design id `307` and selector `8`. The decoder reads persistent design links from model bodies only, and leaves this tag unread.
+
+**Need.** A save in which two omitted bodies carry different tags and are selected by different features.
+
+**Conflict.** None.
+
 ### DR-644. Atomic regions with holes
 
 **Question.** How does a nested profile-region selection store an atomic region that has a hole?
@@ -2715,7 +2747,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** Projection through explicit set references keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 
@@ -2739,7 +2771,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** The result plane forms an angle of approximately 21.2 degrees with the second input plane and 38.8 degrees with the first. Each differs from the 30-degree IR angle.
 
-**Note.** Projection through explicit set references reports `feature.chamfer-angle-reference-assumed` when it reads the stored angle as the neutral reference-face angle. DR-341 tracks the input reference-face assignment.
+**Note.** Projection reports `feature.chamfer-angle-reference-assumed` when it reads the stored angle as the neutral reference-face angle. DR-341 tracks the input reference-face assignment.
 
 ### DR-640. Chamfer parameter recovery from incomplete definitions
 
@@ -2892,11 +2924,11 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which vector defines the signed `Side1Offset` of a one-sided face-target Extrude, and how is travel selected when the target lies behind the start plane?
 
-**Known.** The Runice GT2 20T B5 9mm design stores Extrude record `1424` with profile normal `+Z`, profile offset `0.75` cm, direction `1`, direction reversal `0`, and `Side1Offset = -0.15` cm. Its ASM transition from state `6` to state `22` inserts plane face `709` at z=7.5 mm, plane face `394` at z=18.5 mm, and 120 cylindrical side faces with boundary z coordinates from 7.5 to 18.5 mm. The input state has planar annular faces `3465` at z=0 and `3484` at z=20 mm. The termination operand carries both faces among its recipe candidates. The decoder projects face `3465` as the historical termination. The rear vertex upper brace design stores Extrude record `4140` with profile normal `+Z`, target face `4051` at z=8 mm, and `Side1Offset = 1.6` cm; its transition inserts plane face `4744` at z=24 mm. The travel, profile normal, and target surface normal are parallel in that case.
+**Known.** The Runice GT2 20T B5 9mm design stores Extrude record `1424` with profile normal `+Z`, profile offset `0.75` cm, direction `1`, direction reversal `0`, and `Side1Offset = -0.15` cm. Its ASM transition from state `6` to state `22` inserts plane face `709` at z=7.5 mm, plane face `394` at z=18.5 mm, and 120 cylindrical side faces with boundary z coordinates from 7.5 to 18.5 mm. The input state has planar annular faces `3465` at z=0 and `3484` at z=20 mm. The termination operand carries both faces among its recipe candidates. The decoder projects face `3484` as the historical termination: the z=20 mm target with a displacement of -1.5 mm along `+Z` gives the inserted z=18.5 mm cap. The rear vertex upper brace design stores Extrude record `4140` with profile normal `+Z`, target face `4051` at z=8 mm, and `Side1Offset = 1.6` cm; its transition inserts plane face `4744` at z=24 mm. The travel, profile normal, and target surface normal are parallel in that case.
 
-**Need.** A termination-recipe rule that selects the target from these candidates, and independent transitions with a nonzero offset whose profile normal, oriented travel, and target surface normal distinguish the possible sign rules. A target behind the start plane must also distinguish the direction-reversal setting from travel toward the target.
+**Need.** Independent transitions with a nonzero offset whose profile normal, oriented travel, and target surface normal distinguish the possible sign rules. A target behind the start plane must also distinguish the direction-reversal setting from travel toward the target.
 
-**Conflict.** The projected z=0 target and a signed displacement of magnitude 1.5 mm give termination planes at z=-1.5 or z=+1.5 mm. The transition terminates at z=18.5 mm. The z=20 candidate gives that plane with a displacement of -1.5 mm along `+Z`.
+**Conflict.** None.
 
 **Note.** The transition travels along `+Z` and agrees with direction reversal `0`. The decoder source property `extrude_to_distance = 7.5` equals the start-plane offset in this transition.
 
@@ -3289,3 +3321,53 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** The geometry carrier of these records.
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
+
+### DR-791. Placement carriers of 393- and 399-byte Component Insert scopes
+
+**Question.** Which occurrence placement grammar does the 527-byte carrier of a 393- or 399-byte Component Insert scope use, and which occurrence does that scope select?
+
+**Known.** The 393-byte frame stores the fields of the 404-byte frame through its null GUID. A 399-byte frame with fourteen zero bytes after its indexed header stores the fields of the 400-byte frame through its null GUID. Both frames name a 57-byte relation whose first reference names a 527-byte placement record. That record stores, at its offset 307, a rigid matrix equal to the scope transform, and its last LP-UTF16 GUID equals the role of one external-reference entry. One such record and the legacy typed identity placement of a 261-byte scope can have the same role. The legacy typed and repeated-target placement grammars of §1.4 do not admit the 527-byte record, and the external-reference table does not place its entry from it.
+
+**Need.** The grammar of the 527-byte record before its repeated target, and an assembly that inserts one external design twice, so that the pose of the second occurrence can be checked against final geometry.
+
+**Note.** These scopes keep native Component Insert features with `feature.definition-incomplete`.
+
+### DR-780. Spatial Sketch frames without a nested region selection
+
+**Question.** Which profiles does an Extrude sketch-profile frame on a spatial Sketch select when the frame stores no nested region selection?
+
+**Known.** Each of seventeen Extrude frames on spatial Sketches in seven public designs stores a nested region selection. Their selected regions include hole loops, loops of projected curves with nonzero secondary identities that bound no spatial profile and loops of two coincident full circles.
+
+**Need.** A frame on a spatial Sketch without a nested selection, and the stored body of its Extrude transition.
+
+**Note.** On a Sketch with more than one profile, the decoder states every distinct profile of such a frame only when the far caps of the Extrude transition certify their union; otherwise the frame stays a native spatial-Sketch selection with `feature.profile-selection-native`. On a Sketch with one profile, and for profiles that the selection groups or a nested region selection name, the decoder states the profiles when the far caps do not certify them, with `feature.spatial-profile-transition-assumed`.
+
+### DR-781. Planar Sketch selections with secondary curve identities
+
+**Question.** Does a nested profile-region selection of a planar Sketch frame whose members store nonzero secondary identities name planar profile loops the same way as one whose members store zero?
+
+**Known.** Such selections occur in planar Sketch frames of twelve or more public designs. A member's primary and secondary values match a curve record's persistent identity pair in the spatial Sketch frames examined.
+
+**Need.** Planar frames with nonzero secondary members whose selected regions are proven against the stored Extrude bodies.
+
+**Note.** The decoder resolves a planar frame whose nested selection has a member with a nonzero secondary identity as a frame without a nested selection.
+
+### DR-665. Planar face of an Extrude profile selection with an unbound member identity
+
+**Question.** Which planar face does an Extrude profile selection member select when its local identity is bound to no ASM entity of the history?
+
+**Known.** The member's local identity is read as an entity slot of the preceding state. This read can name a loop or coedge of a cylinder wall. A profile face is planar, so the cylinder wall is not the selected face.
+
+**Need.** A save in which a bound and an unbound member select the same planar face, or a save that stores the planar face's own identity beside the unbound member.
+
+**Note.** A selection whose one face has a cylinder, axis, or radius carrier row and no plane row stays native and reports `feature.extrude-profile-face-curved` with the entity read and the face.
+
+### DR-790. Design role of saved free edges
+
+**Question.** Which Design meaning does a saved free edge of an ASM BREP blob have: visible model geometry of the component, or an edge that the kernel keeps for a timeline feature?
+
+**Known.** A saved free edge is an `edge` record in the saved top-level range of the ASM stream with a null owner coedge (`asm.md` §5.2 "**Edge (98 B):**"). No coedge, loop, or face uses it. The public RailCore Mini archive stores 1790 saved free edges in eleven designs, from 4 to 912 in one design. The decoder emits each one as one wire body, and the count per design equals the count of null-owner-coedge `edge` records in the selected BREP blob. No Design body binding, body member, or body visibility record names a saved free edge. The `affected_saved_edges` property of 31 Extrude, Fillet, Chamfer, and Thread transitions lists them. 989 of the 1790 edges have the same end positions as an edge of a body with faces in the same design. 709 are closed edges.
+
+**Need.** A Design record that names a saved free edge, or a rule that relates a saved free edge to the feature that creates it, and the visibility of that edge in the component.
+
+**Note.** `f3d.md` §3.1 "A local occurrence is a child of each occurrence" excludes saved free-edge bodies from component body coverage. A saved free-edge body without a product-definition owner is reported as `assembly.saved-free-edge-body-unowned`.

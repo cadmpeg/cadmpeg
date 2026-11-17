@@ -197,6 +197,7 @@ fn bounded_face_rule_fixture() -> (
                 }],
             }],
             changed_preceding_face_slots: vec![50],
+            preceding_surface: None,
         }],
         resolved_face_slots: Vec::new(),
         resolved_active_face: None,

@@ -62,6 +62,15 @@ The declaration identifier has four big-endian `u32` words. Its metadata stream 
 
 The metadata property table starts with `total_size:u32be`, `identity:u32be`, and `count:u32be` (12 bytes). Each counted record starts with `size:u32be`, `identity:u32be`, `value_type:u16be`, and `value_bytes:u32be` (14 bytes). The record size is 14 plus `value_bytes`; the records close at `total_size`. Type 2 stores an even-length UTF-16BE value ending in NUL. The content-reference table is a sequence of type-2 records: zero or more unprefixed `Cont_` names of other declared containers, `0003` plus `CATPropertySets`, `0003` plus `CATStorageProperty`, then the unprefixed content stream name. `CATPropertySets` is optional only when no leading name is present. A leading name selects no content and need not name a directory stream. All text ends in UTF-16BE NUL. The final name exactly selects one length-framed directory descriptor. Numeric table and property identities supply no graph ownership edge. The graph's complete physical extent must lie in the selected content stream; the UUID metadata stream is not its graph storage.
 
+A `CATSeeBodyCont` visible-body list is
+`<count:u32le> <allocation_end:u32le[count]> <zero:u32le[4]>`.
+Each positive allocation end selects an A- or B-family class-`5b` frame
+with flag `13` in the declared `CGMGeom` stream. The allocation counter starts at zero
+at the beginning of its contiguous allocated record sequence. The list
+selects visible result bodies independently of the current feature.
+A selected class-`5b` frame with an owned-child reference zero can own the
+adjacent class-`65`/`60`/`61` body chain.
+
 ### 3.2 Inner `V5_CFV2`
 
 The standard path uses the first nested `V5_CFV2` magic after byte 8:
@@ -593,14 +602,14 @@ Object-stream `05 08 01` coordinate rows are unframed allocations outside the co
 
 ### 6.1 `a5 03 34` freeform surface (consolidated class)
 
-Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c`, `0x08 0x05`, `0x08 0x09`, `0x08 0x0d`, `0x08 0x11`, or `0x08 0x15`), `K_U` distinct finite U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight payload, and a limit/parameterization tail. **Only strictly increasing distinct knots are stored.** Degree-1 and degree-3 directions use clamped multiplicities `[degree+1,1,…,1,degree+1]`. Degree 5 uses the clamped C2 policy `[6,3,…,3,6]`, so `n_control = Σmult − degree − 1 = 3·K`. Poles and `05 08 01` vertex coordinates share the identity world frame. Rational weights (mode `0x05`) are either `00` followed by a complete `nu×nv` f64le grid or a row program. A row begins `01 03 00` or `01 07 00`, followed by `ceil(nv/2)` f64le values reflected around the row center; `02` copies the preceding expanded row. The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
+Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c`, `0x08 0x05`, `0x08 0x09`, `0x08 0x0d`, `0x08 0x11`, or `0x08 0x15`), `K_U` distinct finite U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight payload, and a limit/parameterization tail. **Only strictly increasing distinct knots are stored.** A direction with exactly two distinct knots is a single Bézier span for every positive stored degree: both endpoint multiplicities are `degree+1`, and the pole count is `degree+1`. Degree-1 and degree-3 directions use clamped multiplicities `[degree+1,1,…,1,degree+1]`. Degree 5 uses the clamped C2 policy `[6,3,…,3,6]`, so `n_control = Σmult − degree − 1 = 3·K`. Poles and `05 08 01` vertex coordinates share the identity world frame. Rational weights (mode `0x05`) are either `00` followed by a complete `nu×nv` f64le grid or a row program. A row begins `01 03 00` or `01 07 00`, followed by `ceil(nv/2)` f64le values reflected around the row center; `02` copies the preceding expanded row. The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
 
 The frame carries no inline persistent object id. Its byte offset in the object stream identifies the consolidated surface carrier.
 
 The A5 surface tail is length-closed and has one of three forms. Each begins with `05 <u_code:4n+1> 05 <v_code:4n+1>`, eight finite f64 values `<u_min,u_max,v_min,v_max,coef_u,shift_u,coef_v,shift_v>` with `u_min<u_max`, `v_min<v_max`, and nonzero `coef_u` and `coef_v`, then three flags. The 133-byte form uses flags `01 01 01`, seven continuation f64 values that are all zero, and suffix `01 00 01 00 07 07`. The 141-byte form uses flags `01 01 01` or `05 05 01`, eight finite continuation f64 values, and suffix `01 00 01 00 07 07`, `01 00 09 00 07 07`, or `09 00 09 00 07 07`. The flag lane and suffix choice are independent. The 142-byte form uses either flag lane, eight finite continuation f64 values, and suffix `<4n+1> 00 (01|05|09|0d|11|15|19) 01 <4n+1> 07 07`. The frame ends after the suffix.
 
 In an A5 sheet-owned surface, the distinct-knot counts use compact unsigned
-integers. Its array marker also admits `0x08 0x19`. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
+integers. The four terminal patch identifiers also use compact unsigned integers. The eight parameter values follow the fourth identifier. The continuation and suffix lengths are independent of the identifier widths. Its array marker also admits `0x08 0x19`. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
 `05 00 09 00 07 07`, and `09 00 01 00 07 07`. In the 142-byte tail
 the second control pair can begin with `01` and the V limits can descend.
 The pole grid and its increasing knot vectors define the carrier chart.
@@ -852,7 +861,7 @@ An analytic circle edge run is the contiguous B-family sequence `18,19,23,06,06,
 
 Every structurally complete `a5/a6/a7` or `b2/b3/b4 03 20` jet is retained as a typed native pcurve record when its support reference or edge run remains unbound. Once bound to a support surface and edge occurrence, the equivalent neutral degree-5 NURBS uses sixfold piece boundaries and retains the native evaluation range. Support identity and leading-extrapolation count remain attached to the native record.
 
-A consolidated `b2/b3/b4 <flag> 27` plane carrier has a width-coded frame with flag `03`, `13`, or `83`, payload marker `b4`, a selector, and a finite f64 lane. Payload offsets are `+0` marker `b4` and `+1` selector. Selectors `ec`, `e4`, `c4`, `dc`, and `d4` have `+2` point XY (`2×f64le`). Selector `d8` has `+2` origin XYZ (`3×f64le`). The selector fixes the remaining layout:
+A consolidated `b2/b3/b4 <flag> 27` plane carrier has a width-coded frame with flag `03`, `13`, or `83`, payload marker `b4`, a selector, and a finite f64 lane. Payload offsets are `+0` marker `b4` and `+1` selector. Selectors `ec`, `e4`, `c4`, `dc`, and `d4` have `+2` point XY (`2×f64le`). Selectors `d8` and `d0` have `+2` origin XYZ (`3×f64le`). The selector fixes the remaining layout:
 
 | Selector | Direction fields | U direction | Bounds offset | Payload bytes |
 |---|---|---|---:|---:|
@@ -862,8 +871,9 @@ A consolidated `b2/b3/b4 <flag> 27` plane carrier has a width-coded frame with f
 | `dc` | none | `(0,1,0)` | `+18` | 50 |
 | `d4` | `+18` direction Y (`f64le`) | `(0,direction_y,0)` | `+26` | 58 |
 | `d8` | none | `(0,1,0)` | `+26` | 58 |
+| `d0` | `+26` signed Y component (`f64le`) | `(0,direction_y,0)` | `+34` | 66 |
 
-The one-component layout stores `+18` direction component (`f64le`): X for `e4` and Y for `d4`. The 50-byte implicit-axis payload has bounds at `+18`; the 58-byte one-component direction payload has bounds at `+26`; the 58-byte spatial-origin payload has bounds at `+26`; the 66-byte two-component direction payload has bounds at `+34`. Each bounds lane is `u_min,u_max,v_min,v_max` (`4×f64le`) and exhausts the payload. Both intervals are strictly increasing. All scalars are finite. U is horizontal and its hypot length differs from one by at most `1e-12`; no bound supplies a direction component. For selectors `ec`, `e4`, `c4`, `dc`, and `d4`, `origin=(point_x,point_y,0)`. For selector `d8`, `origin=(origin_x,origin_y,origin_z)`. In all selectors, `v_axis=(0,0,1)`, `normal=unit(u_axis×v_axis)`, and `P(U,V)=origin+U·u_axis+V·v_axis`. Header width and frame flag do not change the scalar layout. An unknown selector retains its complete nonempty finite lane without a neutral plane frame. A known selector with a different lane length, non-unit direction, or unordered bounds is invalid.
+The one-component layout stores `+18` direction component (`f64le`): X for `e4` and Y for `d4`. The 50-byte implicit-axis payload has bounds at `+18`; the 58-byte one-component direction payload has bounds at `+26`; the 58-byte spatial-origin payload has bounds at `+26`; the 66-byte two-component direction payload has bounds at `+34`. Each bounds lane is `u_min,u_max,v_min,v_max` (`4×f64le`) and exhausts the payload. Both intervals are strictly increasing. All scalars are finite. U is horizontal and its hypot length differs from one by at most `1e-12`; no bound supplies a direction component. For selectors `ec`, `e4`, `c4`, `dc`, and `d4`, `origin=(point_x,point_y,0)`. For selectors `d8` and `d0`, `origin=(origin_x,origin_y,origin_z)`. Selector `d0` stores a Y component of magnitude one. In all selectors, `v_axis=(0,0,1)`, `normal=unit(u_axis×v_axis)`, and `P(U,V)=origin+U·u_axis+V·v_axis`. Header width and frame flag do not change the scalar layout. An unknown selector retains its complete nonempty finite lane without a neutral plane frame. A known selector with a different lane length, non-unit direction, or unordered bounds is invalid.
 
 A packed consolidated class-`27` plane chart has packed marker `08`, a two-byte little-endian control word, origin `(x,y,z)`, and a scalar lane. The control word selects the chart axes and the scalar order after the origin:
 

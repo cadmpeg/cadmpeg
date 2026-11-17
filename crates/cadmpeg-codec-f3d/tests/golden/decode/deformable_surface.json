@@ -508,6 +508,12 @@
       "scopes": [],
       "containers": [],
       "features": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
       "parameters": [],
       "spreadsheets": [],
       "sheet_metal_rules": [],
@@ -518,7 +524,19 @@
       "evaluations": [],
       "names": []
     },
-    "process": {},
+    "process": {
+      "setups": [],
+      "operations": [],
+      "features": [],
+      "groups": [],
+      "tools": [],
+      "presets": [],
+      "machines": [],
+      "programs": [],
+      "parameters": [],
+      "toolpaths": [],
+      "states": []
+    },
     "native": {
       "f3d": {
         "act_component_links": [],
