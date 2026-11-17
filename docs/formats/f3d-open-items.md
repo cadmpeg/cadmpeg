@@ -3290,7 +3290,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
 
-### DR-657. Placement carriers of 393- and 399-byte Component Insert scopes
+### DR-791. Placement carriers of 393- and 399-byte Component Insert scopes
 
 **Question.** Which occurrence placement grammar does the 527-byte carrier of a 393- or 399-byte Component Insert scope use, and which occurrence does that scope select?
 
