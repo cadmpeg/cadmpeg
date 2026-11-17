@@ -136,7 +136,7 @@ fn selected_target_plane<'a>(
             let frame = super::work_plane_support_frame(work_plane.work_plane_transform()?.into())?;
             Some((frame, Some(work_plane)))
         }
-        (None, OriginClassification::Origin(OriginEntity::Plane(ordinal))) => {
+        (_, OriginClassification::Origin(OriginEntity::Plane(ordinal))) => {
             let frame = crate::history::selection::design_geometry_origin_plane_frame(ordinal)?;
             Some((frame, None))
         }

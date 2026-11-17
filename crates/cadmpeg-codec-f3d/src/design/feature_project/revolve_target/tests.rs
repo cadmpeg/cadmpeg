@@ -211,6 +211,26 @@ fn bound_plane_with_losses(
     scopes: &[DesignParameterScope],
     components: u64,
 ) -> (RevolveExtent, Vec<String>) {
+    bound_plane_in(
+        &crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 39),
+        (extent, faces, bodies),
+        selections,
+        scopes,
+        components,
+    )
+}
+
+fn bound_plane_in(
+    design_types: &[crate::records::entity_header::SegmentType],
+    (extent, faces, bodies): (
+        RevolveExtent,
+        &[DesignFaceOperand],
+        &[DesignBodyRecipeOperand],
+    ),
+    selections: &[DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
+    components: u64,
+) -> (RevolveExtent, Vec<String>) {
     let mut losses = Vec::new();
     let mut definition = revolve(extent);
     let scope = scope();
@@ -225,10 +245,7 @@ fn bound_plane_with_losses(
             face_operands: faces,
             body_recipe_operands: bodies,
             histories: &[],
-            design_types: &crate::test_support::origin_types::origin_design_types(
-                "f3d:Design/MetaStream.dat",
-                39,
-            ),
+            design_types,
             component_naming_spaces: &spaces,
         },
         &mut losses,
@@ -440,6 +457,38 @@ fn an_origin_plane_target_ends_at_its_canonical_frame() {
 }
 
 #[test]
+fn an_origin_plane_identity_before_a_work_plane_record_ends_at_the_origin_plane() {
+    let (extent, losses) = bound_plane_with_losses(
+        one_sided(),
+        &[],
+        &[],
+        &[plane_selection(44, false)],
+        &[work_plane_scope(45)],
+        1,
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let AngularTermination::ToPlane { plane, source, .. } = plane_termination(extent) else {
+        panic!("expected a plane target");
+    };
+    assert_eq!(plane.normal().get(), Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(source, None);
+}
+
+#[test]
+fn a_work_plane_target_without_a_complete_origin_run_stays_native() {
+    assert_eq!(
+        bound_plane_in(
+            &[],
+            (one_sided(), &[], &[]),
+            &[plane_selection(282, false)],
+            &[work_plane_scope(283)],
+            1,
+        ),
+        (one_sided(), Vec::new())
+    );
+}
+
+#[test]
 fn an_unproven_plane_target_stays_native() {
     for (selection, scopes, components) in [
         (plane_selection(282, false), Vec::new(), 1),
@@ -454,7 +503,6 @@ fn an_unproven_plane_target_stays_native() {
         (plane_selection(282, true), vec![work_plane_scope(283)], 1),
         (plane_selection(44, false), Vec::new(), 2),
         (plane_selection(44, false), Vec::new(), 0),
-        (plane_selection(44, false), vec![work_plane_scope(45)], 1),
         (plane_selection(282, false), vec![work_plane_scope(283)], 2),
     ] {
         assert_eq!(

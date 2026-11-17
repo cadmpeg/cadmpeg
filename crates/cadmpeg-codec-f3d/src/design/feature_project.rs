@@ -3997,10 +3997,6 @@ fn draft_pull_vector(normal: Vector3, flipped: bool) -> Vector3 {
     }
 }
 
-/// Ordinal and normal of the Design Geometry origin plane that a group member names.
-///
-/// The type table identifies the origin plane. An ASM entity can share its
-/// number, and such historical candidates describe unrelated topology.
 /// What the Design type table states about the identity of a group's sole
 /// entity selection.
 fn selected_origin_class(
@@ -4030,6 +4026,10 @@ fn selected_origin_class(
     ))
 }
 
+/// Ordinal and normal of the Design Geometry origin plane that a group member names.
+///
+/// The type table identifies the origin plane. An ASM entity can share its
+/// number, and such historical candidates describe unrelated topology.
 fn selected_origin_plane(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
