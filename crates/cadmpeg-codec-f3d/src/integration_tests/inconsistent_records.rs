@@ -92,16 +92,16 @@ fn procedural_surface_in_a_second_model_blob_exports_with_its_owner() {
         },
     ]);
     let conversion = convert_to_step(&bytes);
-    let model = &conversion.ir.model;
-    assert_eq!(model.bodies.len(), 2);
-    assert!(!model.procedural_surfaces.is_empty());
-    for procedural in &model.procedural_surfaces {
+    let geometry = &conversion.ir.geometry;
+    assert_eq!(geometry.bodies.len(), 2);
+    assert!(!geometry.procedural_surfaces.is_empty());
+    for procedural in &geometry.procedural_surfaces {
         assert!(
             procedural.id.as_str().contains("/offset.smbh/"),
             "{} names its source blob",
             procedural.id
         );
-        let owners = model
+        let owners = geometry
             .surfaces
             .iter()
             .filter(|surface| {

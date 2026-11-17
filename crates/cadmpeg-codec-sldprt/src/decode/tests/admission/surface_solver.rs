@@ -75,7 +75,7 @@ fn intersection_chart_edge_tolerance_is_the_chordal_error() {
     );
     let tolerances: Vec<f64> = decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .filter_map(|edge| edge.tolerance)
@@ -108,7 +108,7 @@ fn geometry_surface_solver_derives_intersection_pcurve() {
             .decode(&mut Cursor::new(&source), &options)
             .unwrap(),
     );
-    assert!(decoded.ir().model.pcurves.iter().any(|pcurve| {
+    assert!(decoded.ir().geometry.pcurves.iter().any(|pcurve| {
         decoded
             .source_fidelity()
             .annotations
@@ -134,8 +134,8 @@ fn exact_native_carriers_have_no_approximation_loss() {
     let decoded = crate::SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.ir().model.curves.is_empty());
-    assert!(!decoded.ir().model.surfaces.is_empty());
+    assert!(!decoded.ir().geometry.curves.is_empty());
+    assert!(!decoded.ir().geometry.surfaces.is_empty());
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == crate::loss::SldprtLossCode::GeometryCarrierApproximated.kind()
     }));

@@ -464,7 +464,7 @@ mod tests {
                 Some(record.as_slice())
             );
             // An unresolved definition is legal in the retained native graph.
-            assert!(ir.model.bodies.is_empty());
+            assert!(ir.geometry.bodies.is_empty());
         }
     }
 
@@ -525,7 +525,7 @@ mod tests {
             &serde_json::to_vec(decoded.ir()).expect("product CADIR serialization"),
         )
         .expect("product CADIR admission");
-        assert_eq!(ir.model.points.len(), 1);
+        assert_eq!(ir.geometry.points.len(), 1);
         let records = &ir.native.namespace("rhino").unwrap().arenas()["product_occurrences"];
         assert_eq!(records.len(), 1);
         assert_eq!(

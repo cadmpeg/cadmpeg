@@ -181,6 +181,9 @@ pub enum LossTaxonomy {
     /// Physical materials, mass properties, rigid bodies, colliders, or joint
     /// drives were not transferred.
     PhysicsNotTransferred,
+    /// Manufacturing process records (setups, operations, tools, programs,
+    /// toolpaths, or process states) were not represented in the target.
+    ProcessRecordOmitted,
 }
 
 impl LossTaxonomy {
@@ -231,6 +234,7 @@ impl LossTaxonomy {
             Self::AppearanceReduced => "appearance_reduced",
             Self::PreservedSourceUnavailable => "preserved_source_unavailable",
             Self::PhysicsNotTransferred => "physics_not_transferred",
+            Self::ProcessRecordOmitted => "process_record_omitted",
         }
     }
 
@@ -260,7 +264,8 @@ impl LossTaxonomy {
             | Self::SourceDialectDisplaced
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
-            | Self::PreservedSourceUnavailable => LossCategory::Other,
+            | Self::PreservedSourceUnavailable
+            | Self::ProcessRecordOmitted => LossCategory::Other,
             Self::MissingGeometryStream
             | Self::GeometryNotTransferred
             | Self::GeometryAgreementSampled
@@ -325,14 +330,19 @@ pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 
 /// Machine-readable loss code on the decode/export wire.
 ///
-/// A `scope` tag selects the variant. A shared loss is
-/// `{ "scope": "shared", "kind": "pcurve_omitted" }`; a codec-local one is
-/// `{ "scope": "namespaced", "namespace": "rhino", "code": "brep.trim-pcurve-dropped",
-/// "kind": "pcurve_omitted" }`, carrying `strict_floor` exactly when the code
-/// pins one.
+/// A `kind` tag selects the variant. A shared loss is
+/// `{ "kind": "shared", "value": { "kind": "pcurve_omitted" } }`; a codec-local
+/// one is `{ "kind": "namespaced", "value": { "namespace": "rhino", "code":
+/// "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" } }`, carrying
+/// `strict_floor` exactly when the code pins one.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum LossKind {
     /// Shared loss whose wire code is determined by its taxonomy.
     Shared {

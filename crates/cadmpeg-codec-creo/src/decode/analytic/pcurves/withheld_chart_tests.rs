@@ -23,7 +23,7 @@ fn cap_ruling_case() -> (crate::container::ContainerScan<'static>, CadIr) {
             offset: 20,
         });
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#8".to_owned()).expect("surface identity"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -35,6 +35,7 @@ fn cap_ruling_case() -> (crate::container::ContainerScan<'static>, CadIr) {
             .expect("cylinder"),
         )),
         source_object: None,
+        native_ref: None,
     });
     (scan, ir)
 }
@@ -53,10 +54,11 @@ fn cap_ruling_restores_infinite_line_without_nonzero_axial_endpoints() {
         )
         .expect("ruling");
         assert_eq!(transferred.len(), 1);
-        assert_eq!(ir.model.curves.len(), 1);
-        assert!(ir.model.curves[0].parameter_range.is_none());
-        assert!(ir.model.points.is_empty());
-        let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &ir.model.curves[0].geometry
+        assert_eq!(ir.geometry.curves.len(), 1);
+        assert!(ir.geometry.curves[0].parameter_range.is_none());
+        assert!(ir.geometry.points.is_empty());
+        let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) =
+            &ir.geometry.curves[0].geometry
         else {
             panic!("infinite line")
         };
@@ -97,7 +99,7 @@ fn count_framed_curve_transfer_reports_its_unverified_placement() {
             )
             .expect("ruling")
         });
-        assert_eq!(ir.model.curves.len(), 1);
+        assert_eq!(ir.geometry.curves.len(), 1);
         let reported = losses
             .iter()
             .filter(|loss| {
@@ -123,7 +125,7 @@ fn cap_ruling_requires_constant_angle_and_one_zero_station() {
             assert!(super::cap_adjacent_cylinder_ruling(
                 ctx,
                 &scan,
-                &ModelSurfaceIndex::new(&ir.model.surfaces),
+                &ModelSurfaceIndex::new(&ir.geometry.surfaces),
                 &scan.curves.two_chart_pcurves[0],
                 &crate::decode::source_carriers::SourceUnitCarriers::default()
             )
@@ -157,7 +159,7 @@ fn cap_ruling_rejects_duplicate_curve_identity() {
 fn cap_envelope_withholding_blocks_single_chart_pcurve_promotion() {
     let mut scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#8".to_owned()).expect("surface identity"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -168,6 +170,7 @@ fn cap_envelope_withholding_blocks_single_chart_pcurve_promotion() {
             .expect("plane chart"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = crate::curve::TwoChartPcurveSamples {
         curve_id: 9,
@@ -176,7 +179,7 @@ fn cap_envelope_withholding_blocks_single_chart_pcurve_promotion() {
         offset: 0,
     };
     crate::decode::with_service_context(|ctx| {
-        let surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
+        let surfaces = ModelSurfaceIndex::new(&ir.geometry.surfaces);
         let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
         assert!(matches!(
             mapped_two_chart_endpoint_sets(ctx, &scan, &surfaces, &pcurve, &carriers)
@@ -210,15 +213,15 @@ fn cap_envelope_withholding_blocks_single_chart_pcurve_promotion() {
         .expect("withheld carrier")
         .is_empty());
     });
-    assert!(ir.model.curves.is_empty());
-    assert!(ir.model.points.is_empty());
+    assert!(ir.geometry.curves.is_empty());
+    assert!(ir.geometry.points.is_empty());
 }
 
 #[test]
 fn compact_cone_origin_withholding_blocks_single_chart_pcurve_promotion() {
     let mut scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#8".to_owned()).expect("surface identity"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -229,6 +232,7 @@ fn compact_cone_origin_withholding_blocks_single_chart_pcurve_promotion() {
             .expect("plane chart"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = crate::curve::TwoChartPcurveSamples {
         curve_id: 9,
@@ -237,7 +241,7 @@ fn compact_cone_origin_withholding_blocks_single_chart_pcurve_promotion() {
         offset: 0,
     };
     crate::decode::with_service_context(|ctx| {
-        let surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
+        let surfaces = ModelSurfaceIndex::new(&ir.geometry.surfaces);
         let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
         assert!(matches!(
             mapped_two_chart_endpoint_sets(ctx, &scan, &surfaces, &pcurve, &carriers)
@@ -271,6 +275,6 @@ fn compact_cone_origin_withholding_blocks_single_chart_pcurve_promotion() {
         .expect("withheld carrier")
         .is_empty());
     });
-    assert!(ir.model.curves.is_empty());
-    assert!(ir.model.points.is_empty());
+    assert!(ir.geometry.curves.is_empty());
+    assert!(ir.geometry.points.is_empty());
 }

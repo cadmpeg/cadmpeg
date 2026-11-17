@@ -46,7 +46,7 @@ fn edge_ir(edges: &[(u32, &[u32])]) -> cadmpeg_ir::document::CadIr {
                 .expect("coedge id");
             let owner_loop =
                 LoopId::try_from(format!("creo:visibgeom:loop#{face}")).expect("loop id");
-            ir.model.coedges.push(Coedge {
+            ir.geometry.coedges.push(Coedge {
                 id: coedge.clone(),
                 owner_loop,
                 edge: EdgeId::try_from(format!("creo:visibgeom:edge#{edge}")).expect("edge id"),
@@ -54,15 +54,17 @@ fn edge_ir(edges: &[(u32, &[u32])]) -> cadmpeg_ir::document::CadIr {
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,
+                native_ref: None,
             });
             rings.entry(*face).or_default().push(coedge);
         }
     }
     for (face, coedges) in rings {
-        ir.model.loops.push(Loop {
+        ir.geometry.loops.push(Loop {
             id: LoopId::try_from(format!("creo:visibgeom:loop#{face}")).expect("loop id"),
             face: FaceId::try_from(format!("creo:visibgeom:face#{face}")).expect("face id"),
             boundary: LoopBoundary::Ring(LoopRing::new(coedges, Vec::new()).expect("loop ring")),
+            native_ref: None,
         });
     }
     ir
@@ -124,6 +126,7 @@ fn cylinder_surface(id: &str, center_x: f64) -> cadmpeg_ir::geometry::Surface {
             .expect("cylinder"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -131,7 +134,7 @@ fn visible_face(ir: &mut cadmpeg_ir::document::CadIr, face_id: &str, surface: &s
     use cadmpeg_ir::ids::{ShellId, SurfaceId};
     use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
 
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: FaceId::try_from(format!("creo:visibgeom:face#{face_id}")).expect("face id"),
         shell: ShellId::try_from("creo:visibgeom:shell#1".to_owned()).expect("shell id"),
         surface: SurfaceId::try_from(surface.to_owned()).expect("surface id"),
@@ -140,13 +143,14 @@ fn visible_face(ir: &mut cadmpeg_ir::document::CadIr, face_id: &str, surface: &s
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
 }
 
 #[test]
 fn a_surface_link_selects_the_faces_of_its_visible_surface() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model
+    ir.geometry
         .surfaces
         .push(cylinder_surface("creo:visibgeom:surface#7", 0.0));
     visible_face(&mut ir, "7", "creo:visibgeom:surface#7");
@@ -159,13 +163,13 @@ fn a_surface_link_selects_the_faces_of_its_visible_surface() {
 #[test]
 fn a_datum_cylinder_link_selects_the_visible_faces_on_its_carrier() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model
+    ir.geometry
         .surfaces
         .push(cylinder_surface("creo:actdatums:surface#7", 0.0));
-    ir.model
+    ir.geometry
         .surfaces
         .push(cylinder_surface("creo:visibgeom:surface#8", 0.0));
-    ir.model
+    ir.geometry
         .surfaces
         .push(cylinder_surface("creo:visibgeom:surface#9", 50.0));
     visible_face(&mut ir, "8", "creo:visibgeom:surface#8");
@@ -179,10 +183,10 @@ fn a_datum_cylinder_link_selects_the_visible_faces_on_its_carrier() {
 #[test]
 fn a_link_that_names_a_visible_and_a_datum_surface_selects_no_target() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model
+    ir.geometry
         .surfaces
         .push(cylinder_surface("creo:actdatums:surface#7", 0.0));
-    ir.model
+    ir.geometry
         .surfaces
         .push(cylinder_surface("creo:visibgeom:surface#7", 50.0));
     visible_face(&mut ir, "7", "creo:visibgeom:surface#7");
@@ -200,11 +204,11 @@ fn a_link_that_names_a_visible_and_a_datum_surface_selects_no_target() {
 fn tolerance_surface_ir(datum: bool) -> cadmpeg_ir::document::CadIr {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     if datum {
-        ir.model
+        ir.geometry
             .surfaces
             .push(cylinder_surface("creo:actdatums:surface#7", 0.0));
     }
-    ir.model
+    ir.geometry
         .surfaces
         .push(cylinder_surface("creo:visibgeom:surface#7", 50.0));
     visible_face(&mut ir, "7", "creo:visibgeom:surface#7");

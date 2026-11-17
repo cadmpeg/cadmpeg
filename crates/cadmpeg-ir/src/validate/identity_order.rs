@@ -68,15 +68,15 @@ fn check_order<'a>(
 }
 
 macro_rules! define_model_identity_checks {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+    ($( $field:ident: $element:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn check_model_identity_and_order<'a>(
             ir: &'a CadIr,
             seen: &mut Option<BorrowedIdentities<'a, bool>>,
             findings: &mut Vec<Finding>,
         ) -> Result<(), CodecError> {
             $(
-                check_order(stringify!($field), ir.model.$field.iter().map(crate::schema::EntitySchema::identity), findings);
-                for entity in &ir.model.$field {
+                check_order(stringify!($field), ir.$home.$field.iter().map(crate::schema::EntitySchema::identity), findings);
+                for entity in &ir.$home.$field {
                     push_identity(seen, findings, crate::schema::EntitySchema::identity(entity))?;
                 }
             )*
@@ -98,8 +98,8 @@ pub(super) fn check_identity_and_order(
     // visit first reports a duplicate and the original finding order.
     let mut seen = (!ids.entity_identities_distinct()).then(|| BorrowedIdentities::build(|add| {
         macro_rules! collect_model_identities {
-            ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
-                $(for entity in &view.ir.model.$field {
+            ($( $field:ident: $element:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+                $(for entity in &view.ir.$home.$field {
                     add(crate::schema::EntitySchema::identity(entity), false);
                 })*
             };

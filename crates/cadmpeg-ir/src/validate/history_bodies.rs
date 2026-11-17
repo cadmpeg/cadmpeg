@@ -26,22 +26,22 @@ use super::topology::graphs::{
 use super::topology::{check_references, check_topology_tolerances};
 
 /// Identities of every record of a nest.
-fn nest_identities(model: &crate::document::Model) -> Vec<&str> {
+fn nest_identities(geometry: &crate::document::Topology) -> Vec<&str> {
     fn ids<T: EntitySchema>(records: &[T]) -> impl Iterator<Item = &str> {
         records.iter().map(EntitySchema::identity)
     }
-    ids(&model.bodies)
-        .chain(ids(&model.regions))
-        .chain(ids(&model.shells))
-        .chain(ids(&model.faces))
-        .chain(ids(&model.loops))
-        .chain(ids(&model.coedges))
-        .chain(ids(&model.edges))
-        .chain(ids(&model.vertices))
-        .chain(ids(&model.surfaces))
-        .chain(ids(&model.curves))
-        .chain(ids(&model.pcurves))
-        .chain(ids(&model.points))
+    ids(&geometry.bodies)
+        .chain(ids(&geometry.regions))
+        .chain(ids(&geometry.shells))
+        .chain(ids(&geometry.faces))
+        .chain(ids(&geometry.loops))
+        .chain(ids(&geometry.coedges))
+        .chain(ids(&geometry.edges))
+        .chain(ids(&geometry.vertices))
+        .chain(ids(&geometry.surfaces))
+        .chain(ids(&geometry.curves))
+        .chain(ids(&geometry.pcurves))
+        .chain(ids(&geometry.points))
         .collect()
 }
 
@@ -53,7 +53,7 @@ fn check_nest(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut nest = CadIr::empty();
-    nest.model = body.topology.to_model();
+    nest.geometry = body.topology.to_topology();
     let index = ModelIndex::build(&nest);
     let mut nested = Vec::new();
     check_identity_and_order(&index, &mut nested)?;
@@ -116,8 +116,8 @@ pub(super) fn check_history_bodies(
             }
         }
         check_nest(ctx, body, findings)?;
-        let model = body.topology.to_model();
-        for id in nest_identities(&model) {
+        let geometry = body.topology.to_topology();
+        for id in nest_identities(&geometry) {
             if IdentitySet::contains(ids, id) {
                 record_finding(
                     findings,

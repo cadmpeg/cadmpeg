@@ -18,9 +18,9 @@ use crate::{StepCodec, StepSchema, StepWriteOptions};
 #[test]
 fn a_solid_with_unwritable_faces_keeps_the_other_faces_as_a_sheet() {
     let mut ir = unit_cube().expect("unit cube");
-    let removed_curve = ir.model.edges[0].curve().expect("curve").clone();
-    ir.model.edges[0].carrier = EdgeCarrier::Free;
-    ir.model.curves.retain(|curve| curve.id != removed_curve);
+    let removed_curve = ir.geometry.edges[0].curve().expect("curve").clone();
+    ir.geometry.edges[0].carrier = EdgeCarrier::Free;
+    ir.geometry.curves.retain(|curve| curve.id != removed_curve);
 
     let mut output = Vec::new();
     let report = write_step(
@@ -38,20 +38,20 @@ fn a_solid_with_unwritable_faces_keeps_the_other_faces_as_a_sheet() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("partial STEP decodes");
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(decoded.ir().model.faces.len(), 4);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(decoded.ir().geometry.faces.len(), 4);
 }
 
 #[test]
 fn recovered_wire_keeps_its_body_placement() {
     let mut ir = unit_cube().unwrap();
-    let retained = ir.model.edges[0].curve().unwrap().clone();
-    for edge in ir.model.edges.iter_mut().skip(1) {
+    let retained = ir.geometry.edges[0].curve().unwrap().clone();
+    for edge in ir.geometry.edges.iter_mut().skip(1) {
         edge.carrier = EdgeCarrier::Free;
     }
-    ir.model.curves.retain(|curve| curve.id == retained);
-    ir.model.bodies[0].transform = Some(
+    ir.geometry.curves.retain(|curve| curve.id == retained);
+    ir.geometry.bodies[0].transform = Some(
         cadmpeg_ir::transform::Transform::affine([
             [0.0, -1.0, 0.0, 15.0],
             [1.0, 0.0, 0.0, 4.0],
@@ -80,13 +80,13 @@ fn recovered_wire_keeps_its_body_placement() {
         .unwrap();
     let wire = decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| body.kind == BodyKind::Wire)
         .unwrap();
-    assert_eq!(wire.transform, ir.model.bodies[0].transform);
-    assert_eq!(decoded.ir().model.edges.len(), 1);
+    assert_eq!(wire.transform, ir.geometry.bodies[0].transform);
+    assert_eq!(decoded.ir().geometry.edges.len(), 1);
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn a_fitting_resource_limit_is_reported_by_the_encoder() {
     let context = IntcurveSupportContext::try_new(
         [
             IntcurveSupportSide {
-                surface: Some(ir.model.faces[0].surface.clone()),
+                surface: Some(ir.geometry.faces[0].surface.clone()),
                 pcurve: Some(SupportPcurve::new(pcurve, None)),
             },
             IntcurveSupportSide {
@@ -166,7 +166,7 @@ fn a_fitting_resource_limit_is_reported_by_the_encoder() {
         [Vec::new(), Vec::new(), Vec::new()],
     )
     .unwrap();
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction.clone(),
         ProceduralCurveDefinition::SurfaceCurve {
             family: SurfaceCurveFamily::Parametric {
@@ -175,7 +175,7 @@ fn a_fitting_resource_limit_is_reported_by_the_encoder() {
             },
         },
     ));
-    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+    ir.geometry.curves[0].geometry = CurveGeometry::Procedural {
         construction,
         cache: None,
     };
@@ -190,9 +190,9 @@ fn a_fitting_resource_limit_is_reported_by_the_encoder() {
 #[test]
 fn a_face_with_an_unwritable_inner_boundary_is_not_filled_in() {
     let mut ir = unit_cube().unwrap();
-    let outer = ir.model.faces[0].loops.iter().next().unwrap().clone();
+    let outer = ir.geometry.faces[0].loops.iter().next().unwrap().clone();
     let inner = cadmpeg_ir::ids::LoopId::mint("test:recovery:loop#missing").unwrap();
-    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);
+    ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);
     let mut output = Vec::new();
     let report = write_step(
         &ir,
@@ -208,10 +208,10 @@ fn a_face_with_an_unwritable_inner_boundary_is_not_filled_in() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir().model.faces.len(), 5);
+    assert_eq!(decoded.ir().geometry.faces.len(), 5);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .all(|body| body.kind != BodyKind::Solid));
@@ -229,30 +229,30 @@ fn a_pcurve_recovers_a_missing_cube_edge_in_both_directions() {
     ] {
         let original = unit_cube().expect("unit cube");
         let mut ir = original.clone();
-        let edge = &ir.model.edges[0];
+        let edge = &ir.geometry.edges[0];
         let edge_id = edge.id.clone();
         let removed_curve = edge.curve().expect("curve").clone();
         let coedge_index = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .position(|coedge| coedge.edge == edge_id)
             .unwrap();
-        let coedge = &ir.model.coedges[coedge_index];
+        let coedge = &ir.geometry.coedges[coedge_index];
         let lp = ir
-            .model
+            .geometry
             .loops
             .iter()
             .find(|lp| lp.id == coedge.owner_loop)
             .unwrap();
         let face = ir
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == lp.face)
             .unwrap();
         let surface = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
@@ -293,19 +293,20 @@ fn a_pcurve_recovers_a_missing_cube_edge_in_both_directions() {
         } else {
             line
         };
-        ir.model.pcurves.push(Pcurve {
+        ir.geometry.pcurves.push(Pcurve {
             id: pcurve_id.clone(),
             geometry,
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
-        ir.model.coedges[coedge_index].pcurves.push(PcurveUse {
+        ir.geometry.coedges[coedge_index].pcurves.push(PcurveUse {
             pcurve: pcurve_id,
             isoparametric: None,
             parameter_range: explicit_range
                 .then(|| DirectedParameterRange::new([2.0, 4.0]).unwrap()),
         });
-        ir.model.edges[0].carrier = EdgeCarrier::Free;
-        ir.model.curves.retain(|curve| curve.id != removed_curve);
+        ir.geometry.edges[0].carrier = EdgeCarrier::Free;
+        ir.geometry.curves.retain(|curve| curve.id != removed_curve);
 
         let mut output = Vec::new();
         let report = write_step(
@@ -333,8 +334,8 @@ fn a_pcurve_recovers_a_missing_cube_edge_in_both_directions() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(decoded.ir().model.faces.len(), 6);
-        assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Solid);
+        assert_eq!(decoded.ir().geometry.faces.len(), 6);
+        assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Solid);
         cadmpeg_measure::test_support::round_trip::measures_agree(
             "recovered cube",
             &original,

@@ -139,7 +139,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     use crate::native::features::holes::SimpleHoleExtent;
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
-    use cadmpeg_ir::document::{CadIr, Model};
+    use cadmpeg_ir::document::{CadIr, Topology};
     use cadmpeg_ir::features::holes::HolePlacement;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface};
     use cadmpeg_ir::ids::{
@@ -183,11 +183,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             ])
             .unwrap(),
         };
-        let mut model = Model::default();
+        let mut geometry = Topology::default();
         for ordinal in 0..2 {
             let surface = SurfaceId::mint(format!("test:model:entity#surface-{ordinal}"))
                 .expect("identity grammar");
-            model.surfaces.push(Surface {
+            geometry.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -199,8 +199,9 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                     .unwrap(),
                 )),
                 source_object: None::<SourceObjectAssociation>,
+                native_ref: None,
             });
-            model.faces.push(Face {
+            geometry.faces.push(Face {
                 id: FaceId::mint(format!("test:model:entity#face-{ordinal}"))
                     .expect("identity grammar"),
                 shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
@@ -215,6 +216,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             });
             for boundary in 0..2 {
                 let loop_id = LoopId::mint(format!("test:model:entity#loop-{ordinal}-{boundary}"))
@@ -229,7 +231,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                     "test:model:entity#bore-coedge-{ordinal}-{boundary}"
                 ))
                 .expect("identity grammar");
-                model.curves.push(Curve {
+                geometry.curves.push(Curve {
                     parameter_range: None,
                     id: curve.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -242,15 +244,19 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                         .unwrap(),
                     )),
                     source_object: None,
+                    native_ref: None,
                 });
-                model.edges.push(Edge {
+                geometry.edges.push(Edge {
                     id: edge.clone(),
                     carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
-                    start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                    end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                    ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                        VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                        VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                    )),
                     tolerance: None,
+                    native_ref: None,
                 });
-                model.coedges.push(Coedge {
+                geometry.coedges.push(Coedge {
                     id: coedge.clone(),
                     owner_loop: loop_id,
                     edge,
@@ -258,39 +264,32 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                     sense: Sense::Forward,
                     pcurves: Vec::new(),
                     use_curve: None,
+                    native_ref: None,
                 });
             }
         }
         let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-        model.bodies.push(Body {
+        geometry.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Solid,
-            regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
-        model.regions.push(Region {
+        geometry.regions.push(Region {
             id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
             body: body.clone(),
             shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
+            native_ref: None,
         });
-        model.shells.push(
-            Shell::new(
-                ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-                RegionId::mint("test:model:entity#region").expect("identity grammar"),
-                vec![
-                    FaceId::mint("test:model:entity#face-0").expect("identity grammar"),
-                    FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
-                ],
-                Vec::new(),
-                Vec::new(),
-            )
-            .unwrap(),
-        );
+        geometry.shells.push(Shell::new(
+            ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+            RegionId::mint("test:model:entity#region").expect("identity grammar"),
+        ));
         let mut ir = CadIr::empty();
-        ir.model = model;
+        ir.geometry = geometry;
 
         ({
             let outputs = std::collections::BTreeMap::from([
@@ -348,12 +347,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             )
             .is_empty());
             let mut single_hole = ir.clone();
-            {
-                let members =
-                    vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")];
-                single_hole.model.shells[0].edit_topology(|faces, _, _| *faces = members)
-            }
-            .unwrap();
+            let kept = FaceId::mint("test:model:entity#face-1").expect("identity grammar");
+            single_hole.geometry.faces.retain(|face| face.id == kept);
             let single_operation = [operations[1].clone()];
             let single_output = std::collections::BTreeMap::from([(
                 operations[1].clone(),
@@ -378,7 +373,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 )])
             );
             let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-                &mut single_hole.model.surfaces[1].geometry
+                &mut single_hole.geometry.surfaces[1].geometry
             else {
                 unreachable!()
             };
@@ -415,7 +410,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             );
             let mut opposite_axis = single_hole.clone();
             let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-                &mut opposite_axis.model.surfaces[1].geometry
+                &mut opposite_axis.geometry.surfaces[1].geometry
             else {
                 unreachable!()
             };
@@ -431,7 +426,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 radius,
             )
             .unwrap();
-            for curve in opposite_axis.model.curves.iter_mut().filter(|curve| {
+            for curve in opposite_axis.geometry.curves.iter_mut().filter(|curve| {
                 curve
                     .id
                     .as_str()
@@ -475,7 +470,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             );
             let mut different_radii = ir.clone();
             let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-                &mut different_radii.model.surfaces[1].geometry
+                &mut different_radii.geometry.surfaces[1].geometry
             else {
                 unreachable!()
             };
@@ -491,7 +486,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 radius,
             )
             .unwrap();
-            for curve in different_radii.model.curves.iter_mut().filter(|curve| {
+            for curve in different_radii.geometry.curves.iter_mut().filter(|curve| {
                 curve
                     .id
                     .as_str()
@@ -558,7 +553,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             .is_empty());
             let mut invalid_boundary = ir.clone();
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-                &mut invalid_boundary.model.curves[0].geometry
+                &mut invalid_boundary.geometry.curves[0].geometry
             else {
                 unreachable!()
             };
@@ -580,7 +575,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             );
             let mut coincident_boundaries = ir.clone();
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-                &mut coincident_boundaries.model.curves[1].geometry
+                &mut coincident_boundaries.geometry.curves[1].geometry
             else {
                 unreachable!()
             };
@@ -603,7 +598,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             );
             let mut nonparallel = single_hole.clone();
             let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-                &mut nonparallel.model.surfaces[1].geometry
+                &mut nonparallel.geometry.surfaces[1].geometry
             else {
                 unreachable!()
             };
@@ -626,15 +621,18 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             )
             .is_empty());
             let mut sheet = ir.clone();
-            sheet.model.bodies[0].kind = BodyKind::Sheet;
+            sheet.geometry.bodies[0].kind = BodyKind::Sheet;
             assert!(hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
             let mut disconnected = ir.clone();
-            disconnected.model.bodies[0]
-                .regions
-                .push(RegionId::mint("test:model:entity#second-region").expect("identity grammar"));
+            disconnected.geometry.regions.push(Region {
+                id: RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
+                body: disconnected.geometry.bodies[0].id.clone(),
+                shells: Vec::new(),
+                native_ref: None,
+            });
             assert!(hole_diameters_for_operations(&disconnected, &operations, &outputs).is_empty());
             let mut shared_carrier = ir.clone();
-            shared_carrier.model.faces.push(Face {
+            shared_carrier.geometry.faces.push(Face {
                 id: FaceId::mint("test:model:entity#unowned-shared-cylinder-face")
                     .expect("identity grammar"),
                 shell: ShellId::mint("test:model:entity#unowned-shell").expect("identity grammar"),
@@ -647,6 +645,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             });
             assert_eq!(
                 simple_hole_diameters(
@@ -659,36 +658,31 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             );
 
             let mut distinct = ir.clone();
-            distinct.model.shells[0]
-                .edit_topology(|faces, _, _| faces.pop())
-                .unwrap();
-            distinct.model.bodies.push(Body {
+            distinct.geometry.bodies.push(Body {
                 id: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
                 kind: BodyKind::Solid,
-                regions: vec![
-                    RegionId::mint("test:model:entity#second-region").expect("identity grammar")
-                ],
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             });
-            distinct.model.regions.push(Region {
+            distinct.geometry.regions.push(Region {
                 id: RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
                 body: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
                 shells: vec![
                     ShellId::mint("test:model:entity#second-shell").expect("identity grammar")
                 ],
+                native_ref: None,
             });
-            distinct.model.shells.push(Shell::with_face(
+            distinct.geometry.shells.push(Shell::new(
                 ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
                 RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
-                FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
             ));
-            distinct.model.faces[1].shell =
+            distinct.geometry.faces[1].shell =
                 ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
             let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-                &mut distinct.model.surfaces[1].geometry
+                &mut distinct.geometry.surfaces[1].geometry
             else {
                 unreachable!()
             };
@@ -704,7 +698,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 radius,
             )
             .unwrap();
-            for curve in distinct.model.curves.iter_mut().filter(|curve| {
+            for curve in distinct.geometry.curves.iter_mut().filter(|curve| {
                 curve
                     .id
                     .as_str()
@@ -798,7 +792,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                         LoopId::mint(format!("test:model:entity#cone-loop-{bore}-{end}-outer"))
                             .expect("identity grammar"),
                     ];
-                    chamfered.model.surfaces.push(Surface {
+                    chamfered.geometry.surfaces.push(Surface {
                         id: surface.clone(),
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                             cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -812,9 +806,9 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                             .unwrap(),
                         )),
                         source_object: None,
+                        native_ref: None,
                     });
-                    chamfered.model.shells[0].add_face(face.clone());
-                    chamfered.model.faces.push(Face {
+                    chamfered.geometry.faces.push(Face {
                         id: face,
                         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
                         surface,
@@ -823,6 +817,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                         name: None,
                         color: None,
                         tolerance: None,
+                        native_ref: None,
                     });
                     for (boundary, (loop_id, radius)) in
                         loops.into_iter().zip([2.55, 3.55]).enumerate()
@@ -839,7 +834,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                             "test:model:entity#cone-coedge-{bore}-{end}-{boundary}"
                         ))
                         .expect("identity grammar");
-                        chamfered.model.curves.push(Curve {
+                        chamfered.geometry.curves.push(Curve {
                             parameter_range: None,
                             id: curve.clone(),
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -852,17 +847,21 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                                 .unwrap(),
                             )),
                             source_object: None,
+                            native_ref: None,
                         });
-                        chamfered.model.edges.push(Edge {
+                        chamfered.geometry.edges.push(Edge {
                             id: edge.clone(),
                             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
-                            start: VertexId::mint("test:model:entity#vertex")
-                                .expect("identity grammar"),
-                            end: VertexId::mint("test:model:entity#vertex")
-                                .expect("identity grammar"),
+                            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                                VertexId::mint("test:model:entity#vertex")
+                                    .expect("identity grammar"),
+                                VertexId::mint("test:model:entity#vertex")
+                                    .expect("identity grammar"),
+                            )),
                             tolerance: None,
+                            native_ref: None,
                         });
-                        chamfered.model.coedges.push(Coedge {
+                        chamfered.geometry.coedges.push(Coedge {
                             id: coedge.clone(),
                             owner_loop: loop_id,
                             edge,
@@ -870,6 +869,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                             sense: Sense::Forward,
                             pcurves: Vec::new(),
                             use_curve: None,
+                            native_ref: None,
                         });
                     }
                 }
@@ -912,14 +912,14 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                     simple_hole_chamfers(default_ctx, &chamfered, &templates, &outputs).unwrap()
                 );
                 let mut sheet = chamfered.clone();
-                sheet.model.bodies[0].kind = BodyKind::Sheet;
+                sheet.geometry.bodies[0].kind = BodyKind::Sheet;
                 assert!(
                     simple_hole_chamfers(default_ctx, &sheet, &templates, &outputs)
                         .unwrap()
                         .is_empty()
                 );
                 let mut unrelated = chamfered.clone();
-                unrelated.model.surfaces.push(Surface {
+                unrelated.geometry.surfaces.push(Surface {
                     id: SurfaceId::mint("test:model:entity#unrelated-cone")
                         .expect("identity grammar"),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
@@ -934,8 +934,9 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                         .unwrap(),
                     )),
                     source_object: None,
+                    native_ref: None,
                 });
-                unrelated.model.faces.push(Face {
+                unrelated.geometry.faces.push(Face {
                     id: FaceId::mint("test:model:entity#unrelated-cone-face")
                         .expect("identity grammar"),
                     shell: ShellId::mint("test:model:entity#unrelated-shell")
@@ -950,6 +951,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                     name: None,
                     color: None,
                     tolerance: None,
+                    native_ref: None,
                 });
                 assert_eq!(
                     simple_hole_chamfers(default_ctx, &unrelated, &templates, &outputs).unwrap(),
@@ -958,7 +960,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 let mut unequal_chamfers = chamfered;
                 let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
                     &mut unequal_chamfers
-                        .model
+                        .geometry
                         .curves
                         .last_mut()
                         .expect("required invariant")
@@ -987,7 +989,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
 
                 let mut mismatched = ir;
                 let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-                    &mut mismatched.model.surfaces[1].geometry
+                    &mut mismatched.geometry.surfaces[1].geometry
                 else {
                     unreachable!()
                 };

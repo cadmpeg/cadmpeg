@@ -27,9 +27,9 @@ fn concatenated_sat_tables_preserve_each_independent_sphere() {
             sphere(10, 3, "End-of-ACIS-data\n")
         );
         let decoded = decode_bytes(source.as_bytes());
-        assert_eq!(decoded.ir().model.bodies.len(), 2);
-        assert_eq!(decoded.ir().model.faces.len(), 2);
-        let surfaces = &decoded.ir().model.surfaces;
+        assert_eq!(decoded.ir().geometry.bodies.len(), 2);
+        assert_eq!(decoded.ir().geometry.faces.len(), 2);
+        let surfaces = &decoded.ir().geometry.surfaces;
         assert_eq!(surfaces.len(), 2);
         let radii: Vec<_> = surfaces
             .iter()
@@ -67,10 +67,10 @@ fn concatenated_sat_streams_use_their_own_length_unit() {
         format!("600 5 0 0\n1 T 4 ACIS 1 D\n{scale} 0.01 0.001\nbody $-1 $1 $-1 $-1 #\nlump $-1 $-1 $2 $0 #\nshell $-1 $-1 $-1 $3 $-1 $1 #\nface $-1 $-1 $-1 $2 $-1 $4 forward single #\nsphere-surface $-1 0 0 0 {radius} 1 0 0 0 0 1 forward_v I I I I #\nEnd-of-ACIS-data\n")
     };
     let decoded = decode_bytes(format!("{}{}", sphere(1, 2), sphere(10, 3)).as_bytes());
-    assert_eq!(decoded.ir().model.bodies.len(), 2);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 2);
     let radii: Vec<_> = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .map(|surface| match surface.geometry.solved().unwrap() {
@@ -100,8 +100,8 @@ fn concatenated_sat_different_save_format_retains_the_later_stream_unread() {
         let mut source = first.clone();
         source.extend(&second);
         let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
         assert!(result
             .report()
             .losses
@@ -131,8 +131,8 @@ fn rejected_later_stream_retains_intervening_descriptive_lines() {
             let mut source = first.as_bytes().to_vec();
             source.extend(&unread);
             let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
-            assert_eq!(result.ir().model.bodies.len(), 1);
-            assert_eq!(result.ir().model.faces.len(), 1);
+            assert_eq!(result.ir().geometry.bodies.len(), 1);
+            assert_eq!(result.ir().geometry.faces.len(), 1);
             assert!(
                 result
                     .report()
@@ -161,8 +161,8 @@ fn concatenated_sat_unreadable_later_header_keeps_the_first_model() {
         let mut source = first.clone();
         source.extend(second);
         let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
         assert!(result
             .report()
             .losses
@@ -197,17 +197,17 @@ face $-1 $-1 $-1 $12 $-1 $14 forward single #\n\
 sphere-surface $-1 0 0 0 2 1 0 0 0 0 1 forward_v I I I I #\n\
 End-of-ACIS-data\n";
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
-    let model = &result.ir().model;
-    assert_eq!(model.bodies.len(), 1);
-    assert_eq!(model.faces.len(), 1);
-    assert_eq!(model.surfaces.len(), 1);
-    assert_eq!(model.faces[0].id.as_str(), "sat:brep:entity#13");
-    assert!(model.loops.is_empty());
-    assert!(model.coedges.is_empty());
-    assert!(model.edges.is_empty());
-    assert!(model.vertices.is_empty());
-    assert!(model.points.is_empty());
-    assert!(model.curves.is_empty());
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.surfaces.len(), 1);
+    assert_eq!(geometry.faces[0].id.as_str(), "sat:brep:entity#13");
+    assert!(geometry.loops.is_empty());
+    assert!(geometry.coedges.is_empty());
+    assert!(geometry.edges.is_empty());
+    assert!(geometry.vertices.is_empty());
+    assert!(geometry.points.is_empty());
+    assert!(geometry.curves.is_empty());
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .unwrap()
         .is_ok());

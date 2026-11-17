@@ -44,7 +44,7 @@ fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
             String::from_utf8_lossy(&output.stderr)
         );
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["source"]["identity"]["classification"], "classified");
+        assert_eq!(value["source"]["identity"]["kind"], "classified");
         assert!(
             value["source"]["identity"]["dialects"]["primary"]["dialect"]
                 .as_str()
@@ -128,7 +128,7 @@ fn a_file_of_one_iges_start_card_is_detected_and_dumped() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| loss["code"]["code"] == "card.framing-recovered"));
+        .any(|loss| loss["code"]["value"]["code"] == "card.framing-recovered"));
 }
 
 #[cfg(feature = "iges")]
@@ -283,7 +283,7 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
                 value["source"]["attributes"]["container_kind"],
                 "3dm-chunks"
             );
-            assert_eq!(value["model"]["subds"], serde_json::json!([]));
+            assert_eq!(value["geometry"]["subds"], serde_json::json!([]));
         }
     }
 }
@@ -313,10 +313,10 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
         .unwrap();
     assert!(decoded.status.success());
     let ir: serde_json::Value = serde_json::from_slice(&decoded.stdout).unwrap();
-    assert_eq!(ir["model"]["points"][0]["position"]["x"], 1.25);
-    assert_eq!(ir["model"]["points"][0]["position"]["y"], -2.5);
-    assert_eq!(ir["model"]["points"][0]["position"]["z"], 3.75);
-    let body_id = ir["model"]["bodies"][0]["id"].as_str().unwrap();
+    assert_eq!(ir["geometry"]["points"][0]["position"]["x"], 1.25);
+    assert_eq!(ir["geometry"]["points"][0]["position"]["y"], -2.5);
+    assert_eq!(ir["geometry"]["points"][0]["position"]["z"], 3.75);
+    let body_id = ir["geometry"]["bodies"][0]["id"].as_str().unwrap();
     assert!(ir["native"]["rhino"]["unknowns"][0]["links"]
         .as_array()
         .unwrap()
@@ -346,7 +346,7 @@ fn rhino_v1_to_v5_decode_metadata() {
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
         assert_eq!(value["source"]["attributes"]["archive_version"], version);
-        assert_eq!(value["model"]["subds"], serde_json::json!([]));
+        assert_eq!(value["geometry"]["subds"], serde_json::json!([]));
     }
 }
 

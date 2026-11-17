@@ -1,21 +1,26 @@
 {
-  "ir_version": "10",
-  "decode_depth": "full",
+  "ir_version": "11",
+  "fragment": false,
+  "scope": {
+    "model": true,
+    "design": true,
+    "process": true
+  },
   "units": {
-    "length": "millimeter"
+    "length": "millimeter",
+    "angle": "radian",
+    "mass": "kilogram",
+    "time": "second"
   },
   "tolerances": {
     "linear": 1e-6,
     "angular": 1e-10
   },
-  "model": {
+  "geometry": {
     "bodies": [
       {
         "id": "synthetic:cube:body#0",
         "kind": "solid",
-        "regions": [
-          "synthetic:cube:region#0"
-        ],
         "name": "unit cube"
       }
     ],
@@ -32,32 +37,7 @@
       {
         "id": "synthetic:cube:shell#0",
         "region": "synthetic:cube:region#0",
-        "members": [
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#bottom"
-          },
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#top"
-          },
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#front"
-          },
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#right"
-          },
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#back"
-          },
-          {
-            "kind": "face",
-            "id": "synthetic:cube:face#left"
-          }
-        ]
+        "members": []
       }
     ],
     "faces": [
@@ -67,7 +47,7 @@
         "surface": "synthetic:cube:surface#back",
         "sense": "forward",
         "loops": {
-          "classification": "unspecified",
+          "kind": "unspecified",
           "loops": [
             "synthetic:cube:loop#back"
           ]
@@ -80,7 +60,7 @@
         "surface": "synthetic:cube:surface#bottom",
         "sense": "forward",
         "loops": {
-          "classification": "unspecified",
+          "kind": "unspecified",
           "loops": [
             "synthetic:cube:loop#bottom"
           ]
@@ -93,7 +73,7 @@
         "surface": "synthetic:cube:surface#front",
         "sense": "forward",
         "loops": {
-          "classification": "unspecified",
+          "kind": "unspecified",
           "loops": [
             "synthetic:cube:loop#front"
           ]
@@ -106,7 +86,7 @@
         "surface": "synthetic:cube:surface#left",
         "sense": "forward",
         "loops": {
-          "classification": "unspecified",
+          "kind": "unspecified",
           "loops": [
             "synthetic:cube:loop#left"
           ]
@@ -119,7 +99,7 @@
         "surface": "synthetic:cube:surface#right",
         "sense": "forward",
         "loops": {
-          "classification": "unspecified",
+          "kind": "unspecified",
           "loops": [
             "synthetic:cube:loop#right"
           ]
@@ -132,7 +112,7 @@
         "surface": "synthetic:cube:surface#top",
         "sense": "forward",
         "loops": {
-          "classification": "unspecified",
+          "kind": "unspecified",
           "loops": [
             "synthetic:cube:loop#top"
           ]
@@ -151,7 +131,8 @@
             "synthetic:cube:coedge#back:1",
             "synthetic:cube:coedge#back:2",
             "synthetic:cube:coedge#back:3"
-          ]
+          ],
+          "vertex_uses": []
         }
       },
       {
@@ -164,7 +145,8 @@
             "synthetic:cube:coedge#bottom:1",
             "synthetic:cube:coedge#bottom:2",
             "synthetic:cube:coedge#bottom:3"
-          ]
+          ],
+          "vertex_uses": []
         }
       },
       {
@@ -177,7 +159,8 @@
             "synthetic:cube:coedge#front:1",
             "synthetic:cube:coedge#front:2",
             "synthetic:cube:coedge#front:3"
-          ]
+          ],
+          "vertex_uses": []
         }
       },
       {
@@ -190,7 +173,8 @@
             "synthetic:cube:coedge#left:1",
             "synthetic:cube:coedge#left:2",
             "synthetic:cube:coedge#left:3"
-          ]
+          ],
+          "vertex_uses": []
         }
       },
       {
@@ -203,7 +187,8 @@
             "synthetic:cube:coedge#right:1",
             "synthetic:cube:coedge#right:2",
             "synthetic:cube:coedge#right:3"
-          ]
+          ],
+          "vertex_uses": []
         }
       },
       {
@@ -216,7 +201,8 @@
             "synthetic:cube:coedge#top:1",
             "synthetic:cube:coedge#top:2",
             "synthetic:cube:coedge#top:3"
-          ]
+          ],
+          "vertex_uses": []
         }
       }
     ],
@@ -226,168 +212,192 @@
         "owner_loop": "synthetic:cube:loop#back",
         "edge": "synthetic:cube:edge#2",
         "radial_next": "synthetic:cube:coedge#bottom:2",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#back:1",
         "owner_loop": "synthetic:cube:loop#back",
         "edge": "synthetic:cube:edge#11",
         "radial_next": "synthetic:cube:coedge#left:3",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#back:2",
         "owner_loop": "synthetic:cube:loop#back",
         "edge": "synthetic:cube:edge#6",
         "radial_next": "synthetic:cube:coedge#top:3",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#back:3",
         "owner_loop": "synthetic:cube:loop#back",
         "edge": "synthetic:cube:edge#10",
         "radial_next": "synthetic:cube:coedge#right:1",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#bottom:0",
         "owner_loop": "synthetic:cube:loop#bottom",
         "edge": "synthetic:cube:edge#0",
         "radial_next": "synthetic:cube:coedge#front:0",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#bottom:1",
         "owner_loop": "synthetic:cube:loop#bottom",
         "edge": "synthetic:cube:edge#3",
         "radial_next": "synthetic:cube:coedge#left:0",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#bottom:2",
         "owner_loop": "synthetic:cube:loop#bottom",
         "edge": "synthetic:cube:edge#2",
         "radial_next": "synthetic:cube:coedge#back:0",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#bottom:3",
         "owner_loop": "synthetic:cube:loop#bottom",
         "edge": "synthetic:cube:edge#1",
         "radial_next": "synthetic:cube:coedge#right:0",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#front:0",
         "owner_loop": "synthetic:cube:loop#front",
         "edge": "synthetic:cube:edge#0",
         "radial_next": "synthetic:cube:coedge#bottom:0",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#front:1",
         "owner_loop": "synthetic:cube:loop#front",
         "edge": "synthetic:cube:edge#9",
         "radial_next": "synthetic:cube:coedge#right:3",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#front:2",
         "owner_loop": "synthetic:cube:loop#front",
         "edge": "synthetic:cube:edge#4",
         "radial_next": "synthetic:cube:coedge#top:1",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#front:3",
         "owner_loop": "synthetic:cube:loop#front",
         "edge": "synthetic:cube:edge#8",
         "radial_next": "synthetic:cube:coedge#left:1",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#left:0",
         "owner_loop": "synthetic:cube:loop#left",
         "edge": "synthetic:cube:edge#3",
         "radial_next": "synthetic:cube:coedge#bottom:1",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#left:1",
         "owner_loop": "synthetic:cube:loop#left",
         "edge": "synthetic:cube:edge#8",
         "radial_next": "synthetic:cube:coedge#front:3",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#left:2",
         "owner_loop": "synthetic:cube:loop#left",
         "edge": "synthetic:cube:edge#7",
         "radial_next": "synthetic:cube:coedge#top:0",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#left:3",
         "owner_loop": "synthetic:cube:loop#left",
         "edge": "synthetic:cube:edge#11",
         "radial_next": "synthetic:cube:coedge#back:1",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#right:0",
         "owner_loop": "synthetic:cube:loop#right",
         "edge": "synthetic:cube:edge#1",
         "radial_next": "synthetic:cube:coedge#bottom:3",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#right:1",
         "owner_loop": "synthetic:cube:loop#right",
         "edge": "synthetic:cube:edge#10",
         "radial_next": "synthetic:cube:coedge#back:3",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#right:2",
         "owner_loop": "synthetic:cube:loop#right",
         "edge": "synthetic:cube:edge#5",
         "radial_next": "synthetic:cube:coedge#top:2",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#right:3",
         "owner_loop": "synthetic:cube:loop#right",
         "edge": "synthetic:cube:edge#9",
         "radial_next": "synthetic:cube:coedge#front:1",
-        "sense": "reversed"
+        "sense": "reversed",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#top:0",
         "owner_loop": "synthetic:cube:loop#top",
         "edge": "synthetic:cube:edge#7",
         "radial_next": "synthetic:cube:coedge#left:2",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#top:1",
         "owner_loop": "synthetic:cube:loop#top",
         "edge": "synthetic:cube:edge#4",
         "radial_next": "synthetic:cube:coedge#front:2",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#top:2",
         "owner_loop": "synthetic:cube:loop#top",
         "edge": "synthetic:cube:edge#5",
         "radial_next": "synthetic:cube:coedge#right:2",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       },
       {
         "id": "synthetic:cube:coedge#top:3",
         "owner_loop": "synthetic:cube:loop#top",
         "edge": "synthetic:cube:edge#6",
         "radial_next": "synthetic:cube:coedge#back:2",
-        "sense": "forward"
+        "sense": "forward",
+        "pcurves": []
       }
     ],
     "edges": [
@@ -400,8 +410,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#0",
-        "end": "synthetic:cube:vertex#1"
+        "ends": {
+          "start": "synthetic:cube:vertex#0",
+          "end": "synthetic:cube:vertex#1"
+        }
       },
       {
         "id": "synthetic:cube:edge#1",
@@ -412,10 +424,12 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#1",
-        "end": "synthetic:cube:vertex#2"
+        "ends": {
+          "start": "synthetic:cube:vertex#1",
+          "end": "synthetic:cube:vertex#2"
+        }
       },
-ß     {
+      {
         "id": "synthetic:cube:edge#10",
         "carrier": {
           "curve": "synthetic:cube:curve#10",
@@ -424,8 +438,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#2",
-        "end": "synthetic:cube:vertex#6"
+        "ends": {
+          "start": "synthetic:cube:vertex#2",
+          "end": "synthetic:cube:vertex#6"
+        }
       },
       {
         "id": "synthetic:cube:edge#11",
@@ -436,8 +452,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#3",
-        "end": "synthetic:cube:vertex#7"
+        "ends": {
+          "start": "synthetic:cube:vertex#3",
+          "end": "synthetic:cube:vertex#7"
+        }
       },
       {
         "id": "synthetic:cube:edge#2",
@@ -448,8 +466,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#2",
-        "end": "synthetic:cube:vertex#3"
+        "ends": {
+          "start": "synthetic:cube:vertex#2",
+          "end": "synthetic:cube:vertex#3"
+        }
       },
       {
         "id": "synthetic:cube:edge#3",
@@ -460,20 +480,24 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#3",
-        "end": "synthetic:cube:vertex#0"
+        "ends": {
+          "start": "synthetic:cube:vertex#3",
+          "end": "synthetic:cube:vertex#0"
+        }
       },
       {
         "id": "synthetic:cube:edge#4",
         "carrier": {
-          "curve": "synthetic:cube:curve#4",
+          "curve": "s†nthetic:cube:curve#4",
           "param_range": [
             0.0,
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#4",
-        "end": "synthetic:cube:vertex#5"
+        "ends": {
+          "start": "synthetic:cube:vertex#4",
+          "end": "synthetic:cube:vertex#5"
+        }
       },
       {
         "id": "synthetic:cube:edge#5",
@@ -484,8 +508,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#5",
-        "end": "synthetic:cube:vertex#6"
+        "ends": {
+          "start": "synthetic:cube:vertex#5",
+          "end": "synthetic:cube:vertex#6"
+        }
       },
       {
         "id": "synthetic:cube:edge#6",
@@ -496,8 +522,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#6",
-        "end": "synthetic:cube:vertex#7"
+        "ends": {
+          "start": "synthetic:cube:vertex#6",
+          "end": "synthetic:cube:vertex#7"
+        }
       },
       {
         "id": "synthetic:cube:edge#7",
@@ -508,8 +536,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#7",
-        "end": "synthetic:cube:vertex#4"
+        "ends": {
+          "start": "synthetic:cube:vertex#7",
+          "end": "synthetic:cube:vertex#4"
+        }
       },
       {
         "id": "synthetic:cube:edge#8",
@@ -520,8 +550,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#0",
-        "end": "synthetic:cube:vertex#4"
+        "ends": {
+          "start": "synthetic:cube:vertex#0",
+          "end": "synthetic:cube:vertex#4"
+        }
       },
       {
         "id": "synthetic:cube:edge#9",
@@ -532,8 +564,10 @@
             10.0
           ]
         },
-        "start": "synthetic:cube:vertex#1",
-        "end": "synthetic:cube:vertex#5"
+        "ends": {
+          "start": "synthetic:cube:vertex#1",
+          "end": "synthetic:cube:vertex#5"
+        }
       }
     ],
     "vertices": [
@@ -640,126 +674,144 @@
       {
         "id": "synthetic:cube:surface#back",
         "geometry": {
-          "kind": "plane",
-          "origin": {
-            "x": 0.0,
-            "y": 10.0,
-            "z": 0.0
-          },
-          "normal": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
-          },
-          "u_axis": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:surface#bottom",
         "geometry": {
-          "kind": "plane",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "normal": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": -1.0
-          },
-          "u_axis": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": -1.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:surface#front",
         "geometry": {
-          "kind": "plane",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "normal": {
-            "x": 0.0,
-            "y": -1.0,
-            "z": 0.0
-          },
-          "u_axis": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:surface#left",
         "geometry": {
-          "kind": "plane",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "normal": {
-            "x": -1.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "u_axis": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:surface#right",
         "geometry": {
-          "kind": "plane",
-          "origin": {
-            "x": 10.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "normal": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "u_axis": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "plane",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:surface#top",
         "geometry": {
-          "kind": "plane",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 10.0
-          },
-          "normal": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 1.0
-          },
-          "u_axis": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       }
@@ -768,192 +820,228 @@
       {
         "id": "synthetic:cube:curve#0",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#1",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 10.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#10",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 10.0,
-            "y": 10.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 1.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#11",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 0.0,
-            "y": 10.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 1.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#2",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 10.0,
-            "y": 10.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": -1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#3",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 0.0,
-            "y": 10.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 0.0,
-            "y": -1.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#4",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 10.0
-          },
-          "direction": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            },
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#5",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 10.0,
-            "y": 0.0,
-            "z": 10.0
-          },
-          "direction": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 10.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#6",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 10.0,
-            "y": 10.0,
-            "z": 10.0
-          },
-          "direction": {
-            "x": -1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 10.0,
+              "z": 10.0
+            },
+            "direction": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#7",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 0.0,
-            "y": 10.0,
-            "z": 10.0
-          },
-          "direction": {
-            "x": 0.0,
-            "y": -1.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 10.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#8",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 1.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
           }
         }
       },
       {
         "id": "synthetic:cube:curve#9",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 10.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 1.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
           }
         }
       }
@@ -961,8 +1049,13 @@
     "subds": [],
     "pcurves": [],
     "procedural_surfaces": [],
-    "procedural_curves": [],
+    "procedural_curves": []
+  },
+  "model": {
+    "assets": [],
     "features": [],
+    "feature_input_topologies": [],
+    "feature_result_topologies": [],
     "configurations": [],
     "parameters": [],
     "sketches": [],
@@ -970,6 +1063,7 @@
     "sketch_constraints": [],
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
     "spreadsheets": [],
     "product_definitions": [],
     "occurrences": [],
@@ -983,7 +1077,50 @@
     "appearance_bindings": [],
     "attributes": [],
     "pmi": [],
-    "presentation_layers": []
+    "presentation_layers": [],
+    "physical_materials": [],
+    "mass_properties": [],
+    "rigid_bodies": [],
+    "colliders": [],
+    "articulations": [],
+    "physics_scenes": [],
+    "solver_settings": [],
+    "declared_measures": [],
+    "point_clouds": [],
+    "history_bodies": []
+  },
+  "design": {
+    "scopes": [],
+    "containers": [],
+    "features": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
+    "parameters": [],
+    "spreadsheets": [],
+    "sheet_metal_rules": [],
+    "programs": [],
+    "configurations": [],
+    "arrangements": [],
+    "publications": [],
+    "evaluations": [],
+    "names": []
+  },
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
   },
   "native": {}
 }

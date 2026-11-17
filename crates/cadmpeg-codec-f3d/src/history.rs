@@ -27,6 +27,7 @@ mod edge_samples;
 pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
 mod face_recipe;
+mod face_support;
 mod fallback_face;
 pub(crate) mod fillet_blends;
 pub(crate) mod fragment_edge;
@@ -1217,6 +1218,9 @@ pub(crate) fn bind_feature_outputs(
     let mut feature_edge_midpoints = HashMap::<usize, Vec<cadmpeg_ir::math::Point3>>::new();
     let mut state_deleted_bodies = HashMap::<(usize, i64), Vec<i64>>::new();
     let mut state_solid_bodies = HashMap::<(usize, i64), BTreeSet<i64>>::new();
+    // Every body slot of a measured state, solid or not: a body that a state still holds
+    // is not deleted by the feature that produced the state.
+    let mut state_present_bodies = HashMap::<(usize, i64), BTreeSet<i64>>::new();
     let mut state_body_centers =
         HashMap::<(usize, i64), Vec<(i64, cadmpeg_ir::math::Point3)>>::new();
     let mut state_incomplete_body_centers = HashMap::<(usize, i64), BTreeSet<i64>>::new();
@@ -1462,6 +1466,7 @@ pub(crate) fn bind_feature_outputs(
                 if !bounds_list.is_empty() {
                     state_body_bounds.insert(state_key, bounds_list);
                 }
+                state_present_bodies.insert(state_key, topology.bodies.iter().copied().collect());
                 state_solid_bodies.insert(state_key, solid_edges.into_keys().collect());
             }
             let mut next_deletions = None;
@@ -1814,9 +1819,13 @@ pub(crate) fn bind_feature_outputs(
             .or(prev_feat_solid);
         let after_solid = cur_key.and_then(|k| state_solid_bodies.get(&k));
         let mut deleted_set = BTreeSet::new();
+        let after_present = cur_key.and_then(|k| state_present_bodies.get(&k));
+        let still_present = |b: &i64| after_present.is_some_and(|present| present.contains(b));
         if let (Some(before), Some(after)) = (before_solid, after_solid) {
             for &b in before.difference(after) {
-                deleted_set.insert(b);
+                if !still_present(&b) {
+                    deleted_set.insert(b);
+                }
             }
         } else if let Some(del) = cur_key.and_then(|k| state_deleted_bodies.get(&k)) {
             for &b in del {
@@ -1825,7 +1834,9 @@ pub(crate) fn bind_feature_outputs(
         }
         if let (Some(prev_feat), Some(after)) = (prev_feat_solid, after_solid) {
             for &b in prev_feat.difference(after) {
-                deleted_set.insert(b);
+                if !still_present(&b) {
+                    deleted_set.insert(b);
+                }
             }
         }
         deleted_set.extend(newly_absorbed.iter().copied());
@@ -2148,6 +2159,8 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub(crate) regions: &'a [cadmpeg_ir::topology::Region],
     /// Neutral region shells.
     pub(crate) shells: &'a [cadmpeg_ir::topology::Shell],
+    /// Neutral shell faces.
+    pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
 }
 
 pub(crate) fn bind_feature_body_selections(
@@ -2169,6 +2182,7 @@ pub(crate) fn bind_feature_body_selections(
         bodies,
         regions,
         shells,
+        inputs.faces,
         inputs.construction_recipes,
         inputs.persistent_design_links,
     );
@@ -6005,7 +6019,7 @@ fn bind_historical_face_operand_candidates<'a>(
     } else {
         std::borrow::Cow::Borrowed(history_candidates)
     };
-    operand.historical_support_contexts = historical_face_support_contexts(
+    operand.historical_support_contexts = face_support::historical_face_support_contexts(
         &support_candidates,
         history,
         topology,
@@ -7429,94 +7443,6 @@ fn face_operand_support_candidates<'a>(
         }
     }
     candidates
-}
-
-fn historical_face_support_contexts<'a>(
-    candidates: &[cadmpeg_ir::ids::FaceId],
-    history: &'a AsmHistory,
-    preceding_topology: &'a AsmHistoricalTopology,
-    changed_faces: &HashSet<i64>,
-    topology_queries: &mut TopologyQueryCache<'a>,
-) -> Vec<crate::records::topology::historical_context::DesignHistoricalFaceSupportContext> {
-    let mut preceding_faces = HashSet::new();
-    for face in &preceding_topology.faces {
-        preceding_faces.insert(*face);
-    }
-    let mut contexts = Vec::new();
-    'candidates: for candidate in candidates {
-        let Some(active_face_slot) = stable_ref(candidate.as_str()) else {
-            continue;
-        };
-        let mut preceding_bindings = preceding_topology
-            .face_surfaces
-            .iter()
-            .filter(|binding| binding.entity == active_face_slot);
-        let surface_slot = if let Some(binding) = preceding_bindings.next() {
-            if preceding_bindings.next().is_some() {
-                continue;
-            }
-            binding.carrier
-        } else {
-            let mut carriers = HashSet::new();
-            for topology in history
-                .states()
-                .iter()
-                .filter_map(|state| history.topology(state))
-            {
-                let mut bindings = topology
-                    .face_surfaces
-                    .iter()
-                    .filter(|binding| binding.entity == active_face_slot);
-                if let Some(binding) = bindings.next() {
-                    if bindings.next().is_some() {
-                        continue 'candidates;
-                    }
-                    carriers.insert(binding.carrier);
-                }
-            }
-            if carriers.len() != 1 {
-                continue;
-            }
-            let Some(carrier) = carriers.into_iter().next() else {
-                continue;
-            };
-            carrier
-        };
-        let mut preceding_face_slots = preceding_topology
-            .face_surfaces
-            .iter()
-            .filter(|binding| {
-                binding.carrier == surface_slot && preceding_faces.contains(&binding.entity)
-            })
-            .map(|binding| binding.entity)
-            .collect::<Vec<_>>();
-        preceding_face_slots.sort_unstable_by(Ord::cmp);
-        preceding_face_slots.dedup();
-        if preceding_face_slots.is_empty() {
-            continue;
-        }
-        let changed_preceding_face_slots = preceding_face_slots
-            .iter()
-            .copied()
-            .filter(|face| changed_faces.contains(face))
-            .collect::<Vec<_>>();
-        let preceding_face_boundaries = face_boundary_contexts_for_slots(
-            &preceding_face_slots,
-            preceding_topology,
-            topology_queries,
-        );
-
-        contexts.push(
-            crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
-                active_face_slot,
-                surface_slot,
-                preceding_face_slots,
-                preceding_face_boundaries,
-                changed_preceding_face_slots,
-            },
-        );
-    }
-    contexts
 }
 
 fn face_boundary_edges<'a>(
@@ -9519,6 +9445,43 @@ fn historical_topology(
         .collect::<Vec<_>>();
     surface_axes.sort_by_key(|a| a.surface);
 
+    let mut regions_by_body = HashMap::<&str, Vec<&str>>::new();
+    for region in &brep.regions {
+        regions_by_body
+            .entry(region.body.as_str())
+            .or_default()
+            .push(region.id.as_str());
+    }
+    for body in &brep.bodies {
+        if let Some(chain) = stable_ref(body.id.as_str())
+            .and_then(|record| brep.chain_order.body_regions.get(&record))
+        {
+            regions_by_body.insert(
+                body.id.as_str(),
+                chain
+                    .iter()
+                    .map(cadmpeg_ir::ids::RegionId::as_str)
+                    .collect(),
+            );
+        }
+    }
+    let mut faces_by_shell = HashMap::<&str, Vec<&str>>::new();
+    for face in &brep.faces {
+        faces_by_shell
+            .entry(face.shell.as_str())
+            .or_default()
+            .push(face.id.as_str());
+    }
+    for shell in &brep.shells {
+        if let Some(chain) = stable_ref(shell.id.as_str())
+            .and_then(|record| brep.chain_order.shell_faces.get(&record))
+        {
+            faces_by_shell.insert(
+                shell.id.as_str(),
+                chain.iter().map(cadmpeg_ir::ids::FaceId::as_str).collect(),
+            );
+        }
+    }
     let mut ring_neighbors = HashMap::new();
     for loop_ in &brep.loops {
         let ring = loop_.coedges();
@@ -9583,7 +9546,11 @@ fn historical_topology(
         body_regions: topology_some!(relations(brep.bodies.iter().map(|body| {
             (
                 body.id.as_str(),
-                body.regions.iter().map(cadmpeg_ir::ids::RegionId::as_str),
+                regions_by_body
+                    .get(body.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .copied(),
             )
         }))),
         region_shells: topology_some!(relations(brep.regions.iter().map(|region| {
@@ -9595,25 +9562,23 @@ fn historical_topology(
         shell_faces: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell.faces().iter().map(cadmpeg_ir::ids::FaceId::as_str),
+                faces_by_shell
+                    .get(shell.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .copied(),
             )
         }))),
         shell_wire_edges: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell
-                    .wire_edges()
-                    .iter()
-                    .map(cadmpeg_ir::ids::EdgeId::as_str),
+                shell.wire_edges().map(cadmpeg_ir::ids::EdgeId::as_str),
             )
         }))),
         shell_free_vertices: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell
-                    .free_vertices()
-                    .iter()
-                    .map(cadmpeg_ir::ids::VertexId::as_str),
+                shell.free_vertices().map(cadmpeg_ir::ids::VertexId::as_str),
             )
         }))),
         face_loops: topology_some!(relations(brep.faces.iter().map(|face| {
@@ -9654,8 +9619,8 @@ fn historical_topology(
             .map(|edge| {
                 Some(AsmHistoricalEdge {
                     edge: stable_ref(edge.id.as_str())?,
-                    start_vertex: stable_ref(edge.start.as_str())?,
-                    end_vertex: stable_ref(edge.end.as_str())?,
+                    start_vertex: stable_ref(edge.start()?.as_str())?,
+                    end_vertex: stable_ref(edge.end()?.as_str())?,
                 })
             })
             .collect::<Option<Vec<_>>>()),

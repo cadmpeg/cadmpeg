@@ -130,7 +130,7 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
 
 fn source_ir() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -143,6 +143,7 @@ fn source_ir() -> CadIr {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#3".to_string()).expect("identity grammar"),
@@ -155,6 +156,7 @@ fn source_ir() -> CadIr {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#4".to_string()).expect("identity grammar"),
@@ -167,6 +169,7 @@ fn source_ir() -> CadIr {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
@@ -180,10 +183,11 @@ fn source_ir() -> CadIr {
                 .expect("valid CylinderSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let y = 5.0_f64.sqrt();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -197,6 +201,7 @@ fn source_ir() -> CadIr {
             .expect("valid intersection witness curve"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir
 }
@@ -227,7 +232,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
         ])
     );
     assert!(matches!(with_witness
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id

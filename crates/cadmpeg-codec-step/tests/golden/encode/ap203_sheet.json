@@ -39,38 +39,44 @@
         }
       },
       "identity": {
-        "payload": "native",
+        "kind": "native",
         "target": "step:ap242-e3"
       },
       "losses": [
         {
           "code": {
-            "code": "geometry.carrier-not-written",
-            "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "geometry.carrier-not-written",
+              "kind": "geometry_not_transferred",
+              "namespace": "step",
+              "strict_floor": "warning"
+            }
           },
           "message": "1 geometry carrier(s) were not written: 'step:data:surface#28'",
           "severity": "warning"
         },
         {
           "code": {
-            "code": "geometry.procedural-reduced-to-carrier",
-            "kind": "procedural_reduced",
-            "namespace": "step",
-            "scope": "namespaced"
+            "kind": "namespaced",
+            "value": {
+              "code": "geometry.procedural-reduced-to-carrier",
+              "kind": "procedural_reduced",
+              "namespace": "step"
+            }
           },
           "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
           "severity": "info"
         },
         {
           "code": {
-            "code": "target.source-dialect-displaced",
-            "kind": "source_dialect_displaced",
-            "namespace": "step",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "target.source-dialect-displaced",
+              "kind": "source_dialect_displaced",
+              "namespace": "step",
+              "strict_floor": "warning"
+            }
           },
           "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
           "severity": "warning"
@@ -79,9 +85,9 @@
       "notes": [],
       "write_path": {
         "fidelity": {
-          "status": "not_provided"
+          "kind": "not_provided"
         },
-        "path": "synthesized"
+        "kind": "synthesized"
       }
     }
   },
@@ -125,38 +131,44 @@
         }
       },
       "identity": {
-        "payload": "native",
+        "kind": "native",
         "target": "step:ap214"
       },
       "losses": [
         {
           "code": {
-            "code": "geometry.carrier-not-written",
-            "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "geometry.carrier-not-written",
+              "kind": "geometry_not_transferred",
+              "namespace": "step",
+              "strict_floor": "warning"
+            }
           },
           "message": "1 geometry carrier(s) were not written: 'step:data:surface#28'",
           "severity": "warning"
         },
         {
           "code": {
-            "code": "geometry.procedural-reduced-to-carrier",
-            "kind": "procedural_reduced",
-            "namespace": "step",
-            "scope": "namespaced"
+            "kind": "namespaced",
+            "value": {
+              "code": "geometry.procedural-reduced-to-carrier",
+              "kind": "procedural_reduced",
+              "namespace": "step"
+            }
           },
           "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
           "severity": "info"
         },
         {
           "code": {
-            "code": "target.source-dialect-displaced",
-            "kind": "source_dialect_displaced",
-            "namespace": "step",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "target.source-dialect-displaced",
+              "kind": "source_dialect_displaced",
+              "namespace": "step",
+              "strict_floor": "warning"
+            }
           },
           "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
           "severity": "warning"
@@ -165,9 +177,9 @@
       "notes": [],
       "write_path": {
         "fidelity": {
-          "status": "not_provided"
+          "kind": "not_provided"
         },
-        "path": "synthesized"
+        "kind": "synthesized"
       }
     }
   },
@@ -211,27 +223,31 @@
         }
       },
       "identity": {
-        "payload": "native",
+        "kind": "native",
         "target": "step:ap203-e1"
       },
       "losses": [
         {
           "code": {
-            "code": "geometry.carrier-not-written",
-            "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "geometry.carrier-not-written",
+              "kind": "geometry_not_transferred",
+              "namespace": "step",
+              "strict_floor": "warning"
+            }
           },
           "message": "1 geometry carrier(s) were not written: 'step:data:surface#28'",
           "severity": "warning"
         },
         {
           "code": {
-            "code": "geometry.procedural-reduced-to-carrier",
-            "kind": "procedural_reduced",
-            "namespace": "step",
-            "scope": "namespaced"
+            "kind": "namespaced",
+            "value": {
+              "code": "geometry.procedural-reduced-to-carrier",
+              "kind": "procedural_reduced",
+              "namespace": "step"
+            }
           },
           "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
           "severity": "info"
@@ -240,9 +256,9 @@
       "notes": [],
       "write_path": {
         "fidelity": {
-          "status": "not_provided"
+          "kind": "not_provided"
         },
-        "path": "synthesized"
+        "kind": "synthesized"
       }
     }
   }

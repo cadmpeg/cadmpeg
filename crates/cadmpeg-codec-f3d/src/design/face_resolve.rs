@@ -3146,6 +3146,7 @@ mod tests {
                 })
                 .collect(),
             changed_preceding_face_slots: Vec::new(),
+            preceding_surface: None,
         }
     }
 
@@ -3523,6 +3524,7 @@ mod tests {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         }];
         (operand, group, faces)
     }

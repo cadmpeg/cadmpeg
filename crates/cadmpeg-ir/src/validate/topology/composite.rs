@@ -24,7 +24,7 @@ pub(super) fn check(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let segments = BorrowedIdentities::build(|add| {
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
                 &curve.geometry
             {

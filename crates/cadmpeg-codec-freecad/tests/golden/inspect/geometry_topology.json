@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 28300,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 2062
@@ -21,8 +21,8 @@
         "data_offset": "2149",
         "header_offset": "2104"
       },
-      "compression": "deflate",
       "expanded": 8938,
+      "kind": "deflate",
       "name": "Solid.Shape.brp",
       "role": "brep",
       "stored": 763
@@ -34,8 +34,8 @@
         "data_offset": "2956",
         "header_offset": "2912"
       },
-      "compression": "deflate",
       "expanded": 17543,
+      "kind": "deflate",
       "name": "Void.Shape.brp",
       "role": "brep",
       "stored": 1247
@@ -47,8 +47,8 @@
         "data_offset": "4247",
         "header_offset": "4203"
       },
-      "compression": "deflate",
       "expanded": 3367,
+      "kind": "deflate",
       "name": "Seam.Shape.brp",
       "role": "brep",
       "stored": 440
@@ -60,8 +60,8 @@
         "data_offset": "4737",
         "header_offset": "4687"
       },
-      "compression": "deflate",
       "expanded": 2572,
+      "kind": "deflate",
       "name": "Degenerate.Shape.brp",
       "role": "brep",
       "stored": 442
@@ -73,8 +73,8 @@
         "data_offset": "5224",
         "header_offset": "5179"
       },
-      "compression": "deflate",
       "expanded": 1947,
+      "kind": "deflate",
       "name": "Sheet.Shape.brp",
       "role": "brep",
       "stored": 332
@@ -86,8 +86,8 @@
         "data_offset": "5600",
         "header_offset": "5556"
       },
-      "compression": "deflate",
       "expanded": 1109,
+      "kind": "deflate",
       "name": "Wire.Shape.brp",
       "role": "brep",
       "stored": 292
@@ -99,8 +99,8 @@
         "data_offset": "5940",
         "header_offset": "5892"
       },
-      "compression": "deflate",
       "expanded": 3562,
+      "kind": "deflate",
       "name": "Compound.Shape.brp",
       "role": "brep",
       "stored": 526
@@ -112,8 +112,8 @@
         "data_offset": "6518",
         "header_offset": "6466"
       },
-      "compression": "deflate",
       "expanded": 360,
+      "kind": "deflate",
       "name": "Compound.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 170
@@ -125,8 +125,8 @@
         "data_offset": "6738",
         "header_offset": "6688"
       },
-      "compression": "deflate",
       "expanded": 17399,
+      "kind": "deflate",
       "name": "MultiShell.Shape.brp",
       "role": "brep",
       "stored": 1197
@@ -138,8 +138,8 @@
         "data_offset": "7989",
         "header_offset": "7935"
       },
-      "compression": "deflate",
       "expanded": 363,
+      "kind": "deflate",
       "name": "MultiShell.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 175
@@ -151,8 +151,8 @@
         "data_offset": "8217",
         "header_offset": "8164"
       },
-      "compression": "deflate",
       "expanded": 3018,
+      "kind": "deflate",
       "name": "CurveCarriers.Shape.brp",
       "role": "brep",
       "stored": 614
@@ -164,8 +164,8 @@
         "data_offset": "8888",
         "header_offset": "8831"
       },
-      "compression": "deflate",
       "expanded": 452,
+      "kind": "deflate",
       "name": "CurveCarriers.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 177
@@ -177,8 +177,8 @@
         "data_offset": "9120",
         "header_offset": "9065"
       },
-      "compression": "deflate",
       "expanded": 4967,
+      "kind": "deflate",
       "name": "FreeformSurface.Shape.brp",
       "role": "brep",
       "stored": 657
@@ -190,8 +190,8 @@
         "data_offset": "9825",
         "header_offset": "9777"
       },
-      "compression": "deflate",
       "expanded": 7339,
+      "kind": "deflate",
       "name": "Revolved.Shape.brp",
       "role": "brep",
       "stored": 754
@@ -203,19 +203,20 @@
         "data_offset": "10624",
         "header_offset": "10579"
       },
-      "compression": "deflate",
       "expanded": 3117,
+      "kind": "deflate",
       "name": "Swept.Shape.brp",
       "role": "brep",
       "stored": 419
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.1R20260414 (Git shallow)",
@@ -223,8 +224,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

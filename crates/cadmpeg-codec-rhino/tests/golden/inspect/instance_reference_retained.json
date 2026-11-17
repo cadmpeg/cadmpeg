@@ -8,12 +8,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000014",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -24,12 +24,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000015",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -40,12 +40,12 @@
         "record_count": "1",
         "size": "423"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000021",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 411
       }
     },
@@ -57,12 +57,12 @@
         "record_count": "1",
         "size": "329"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000013",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 317
       }
     },
@@ -73,28 +73,31 @@
         "nil_uuid": "false",
         "total_record_bytes": "305"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "class-f9cfb638-b9d4-4340-87e3-c56e7865d96a",
       "role": "object-class",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 305
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "archive_version": "60"
         },
         "dialect": "rhino:archive-60"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "archive version 60",
     "CRC mismatch at offset 111 for typecode 0x20008076: expected 0x0, got 0xf46c4ebe",

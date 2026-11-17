@@ -92,9 +92,9 @@ fn emit_support(
     assert_eq!(sink.out.surfaces.len(), count);
     prune_rejected_topology(&mut out);
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces = out.surfaces;
-    ir.model.curves = out.curves;
-    ir.model.procedural_surfaces = out.procedural_surfaces;
+    ir.geometry.surfaces = out.surfaces;
+    ir.geometry.curves = out.curves;
+    ir.geometry.procedural_surfaces = out.procedural_surfaces;
     (ir, surface)
 }
 
@@ -159,7 +159,7 @@ fn hidden_swept_offset_support_keeps_native_travel_units_and_normal_side() {
             &[(60, 3, offset(20, distance)), (67, 20, sweep)],
             Some(profile),
         );
-        assert_eq!(ir.model.curves.len(), 1);
+        assert_eq!(ir.geometry.curves.len(), 1);
         let actual = point(&ir, &surface, 0.25, 0.002);
         assert!(
             actual.distance(cadmpeg_ir::math::Point3::new(1.0, -distance * 1000.0, 2.0)) < 1.0e-12

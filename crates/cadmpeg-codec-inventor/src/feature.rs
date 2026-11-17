@@ -12,6 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferGroup, FilletGroup, RadiusSpec},
@@ -2142,7 +2143,7 @@ impl FeatureFamily {
 #[derive(Default)]
 pub(crate) struct ProjectionIndex<'a> {
     body_joins: Option<&'a HashMap<String, cadmpeg_ir::ids::BodyId>>,
-    result_model: Option<&'a cadmpeg_ir::document::Model>,
+    result_model: Option<&'a CadIr>,
     thread_definitions: &'a [thread::Definition],
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
     dimensions: HashMap<(&'a str, u32), Option<&'a revolve::Dimension>>,
@@ -2175,7 +2176,7 @@ pub(crate) struct ProjectedSketches<'a> {
     pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
     /// The decoded profile bodies that extrusion profiles resolve through.
     pub(crate) profile_bodies: &'a [profile::ProfileBody],
-    pub(crate) result_model: Option<&'a cadmpeg_ir::document::Model>,
+    pub(crate) result_model: Option<&'a CadIr>,
 }
 
 pub(crate) fn project(

@@ -45,13 +45,10 @@ pub struct PointCloud {
     /// Point positions in document length units.
     pub positions: Vec<FinitePoint3>,
     /// One unit normal for each point, or none.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub normals: Vec<UnitVector3>,
     /// One color for each point, or none.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub colors: Vec<Color>,
     /// Named scalar values, one for each point in each channel.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub channels: Vec<PointChannel>,
     /// Identifier of the full-fidelity source record.
     #[serde(

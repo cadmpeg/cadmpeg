@@ -200,7 +200,6 @@ pub struct RigidBody {
     )]
     pub angular_velocity: Option<FiniteVector3>,
     /// Whether the body starts at rest until a contact or a force wakes it.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub starts_asleep: bool,
     /// Format-native record supplying this body.
     #[serde(

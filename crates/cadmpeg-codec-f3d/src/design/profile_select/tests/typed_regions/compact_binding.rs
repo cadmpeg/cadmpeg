@@ -42,13 +42,10 @@ fn compact_members_with_missing_geometry_retain_the_selection_for_every_profile_
         let mut feature: Feature = serde_json::from_value(json!({
             "id": "synthetic:test:feature#compact", "ordinal": 0, "suppressed": false,
             "native_ref": scope.id,
-            "definition": {
-                "definition": "extrude", "profile": {"kind":"sketch", "value":sketch_id},
+            "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind":"sketch", "value":sketch_id}},
                 "direction":{"kind":"profile_normal"}, "start":{"kind":"profile_plane"},
                 "extent":{"kind":"one_sided","side":{"termination":{"kind":"blind","length":1.0}}},
-                "op":"new_body", "solid":true
-            }
-        }))
+                "op":"new_body", "solid":true}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
         .unwrap();
         crate::test_support::with_decode_context(|ctx| {
             let sketches = [sketch];

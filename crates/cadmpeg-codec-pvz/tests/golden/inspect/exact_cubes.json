@@ -9,11 +9,11 @@
         "header_offset": "0",
         "signature": "PV-PVS0304"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "model.pvs",
       "role": "document",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 334
       }
     },
@@ -25,11 +25,11 @@
         "header_offset": "373",
         "signature": "DIV-OL09BL"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "cube64.ol",
       "role": "model-data",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 4000
       }
     },
@@ -41,11 +41,11 @@
         "header_offset": "4412",
         "signature": "DIV-OL09BL"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "cube32.ol",
       "role": "model-data",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 3040
       }
     },
@@ -57,28 +57,31 @@
         "header_offset": "7491",
         "signature": "DIV-OL08BL"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "plate.ol",
       "role": "model-data",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 449
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "pvs_signature": "PV-PVS0304"
         },
         "dialect": "pvz:pvs-0304"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "structure member model.pvs; 3 geometry members"
   ]
