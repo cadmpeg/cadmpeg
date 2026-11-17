@@ -1128,6 +1128,119 @@ pub(crate) mod design_mirror_scope_class441_count_owner {
     pub(crate) const OWNED_ORDINAL_VALUE: u32 = 0x0000_0001;
 }
 
+/// Byte offsets for the `scale_modern_operation_prefix` record.
+///
+/// Spec §3.1. Record length 79 B.
+///
+/// ```text
+/// Offsets are relative to the modern Scale scope's primary indexed header. The ordered-reference tail continues after this fixed operation prefix.
+/// ```
+pub(crate) mod scale_modern_operation_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 79;
+}
+
+/// Byte offsets for the `scale_legacy_operation_prefix` record.
+///
+/// Spec §3.1. Record length 75 B.
+///
+/// ```text
+/// Offsets are relative to the legacy Scale scope's primary indexed header. The frame tail carries the ordered-reference members.
+/// ```
+pub(crate) mod scale_legacy_operation_prefix {
+    /// Record length in bytes. Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 75;
+    /// Offset of `factor` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const FACTOR: usize = 21;
+    /// Offset of `center_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CENTER_REFERENCE: usize = 29;
+    /// Offset of `factor_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FACTOR_REFERENCE: usize = 40;
+}
+
+/// Byte offsets for the `scale_legacy_uniform_head` record.
+///
+/// Spec §3.1. Record length 221 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The LP-UTF16 kind code units start at offset 221, and `scale_legacy_uniform_tail` gives the offsets after them.
+/// ```
+pub(crate) mod scale_legacy_uniform_head {
+    /// Offset of `null_guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const NULL_GUID_CODE_UNIT_COUNT: usize = 75;
+    /// Offset of `zero_before_reference_table` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_REFERENCE_TABLE: usize = 151;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 154;
+}
+
+/// Byte offsets for the `scale_counted_group_head` record.
+///
+/// Spec §3.1. Record length 56 B.
+pub(crate) mod scale_counted_group_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 56;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 51;
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GROUP_COUNT: usize = 52;
+}
+
+/// Byte offsets for the `scale_counted_group_suffix` record.
+///
+/// Spec §3.1. Record length 8 B.
+pub(crate) mod scale_counted_group_suffix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ONE: usize = 0;
+    /// Stated value of `one` (`u32`). Spec §3.1.
+    pub(crate) const ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO: usize = 4;
+    /// Stated value of `zero` (`u32`). Spec §3.1.
+    pub(crate) const ZERO_VALUE: u32 = 0x0000_0000;
+}
+
+/// Byte offsets for the `scale_axis_owner_prefix` record.
+///
+/// Spec §3.1. Record length 95 B.
+pub(crate) mod scale_axis_owner_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 95;
+    /// Offset of `zero_run_18` (`bytes[18]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_18: usize = 11;
+    /// Offset of `center_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CENTER_REFERENCE: usize = 29;
+    /// Offset of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE: usize = 40;
+    /// Stated value of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE_VALUE: u8 = 0;
+    /// Offset of `one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ONE: usize = 41;
+    /// Stated value of `one` (`u32`). Spec §3.1.
+    pub(crate) const ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero_word` (`u16`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD: usize = 45;
+    /// Stated value of `zero_word` (`u16`). Spec §3.1.
+    pub(crate) const ZERO_WORD_VALUE: u16 = 0x0000;
+    /// Offset of `x_owner` (`bytes[11]`). Spec §3.1.
+    pub(crate) const X_OWNER: usize = 47;
+    /// Offset of `y_owner` (`bytes[11]`). Spec §3.1.
+    pub(crate) const Y_OWNER: usize = 58;
+    /// Offset of `z_owner` (`bytes[11]`). Spec §3.1.
+    pub(crate) const Z_OWNER: usize = 69;
+    /// Offset of `group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GROUP_COUNT: usize = 80;
+    /// Stated value of `group_count` (`u32`). Spec §3.1.
+    pub(crate) const GROUP_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE: usize = 84;
+}
+
 /// Byte offsets for the `scale_legacy_uniform_tail` record.
 ///
 /// Spec §3.1. Record length 78 B.
@@ -1136,8 +1249,6 @@ pub(crate) mod design_mirror_scope_class441_count_owner {
 /// Offsets are relative to the first byte after the LP-UTF16 kind code units of the 299-byte-payload legacy uniform Scale form, for any kind spelling. The paired same-index header follows the tail.
 /// ```
 pub(crate) mod scale_legacy_uniform_tail {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 78;
     /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 31;
 }

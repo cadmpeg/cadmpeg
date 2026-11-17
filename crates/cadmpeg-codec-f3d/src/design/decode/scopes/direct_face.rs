@@ -1326,9 +1326,9 @@ pub(super) fn exact_scale_operation(
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<DesignScaleOperation>, cadmpeg_core::CodecError> {
+) -> Option<DesignScaleOperation> {
     if scope.kind() != scope::DesignFeatureKind::Scale {
-        return Ok(None);
+        return None;
     }
     let reference_count = scope.reference_members().len();
     let payload_length = parameter_scope_payload_length(scope);
@@ -1341,11 +1341,12 @@ pub(super) fn exact_scale_operation(
         (scope.frame_length(), reference_count),
         (307 | 309, 5) | (318, 6)
     );
-    let read_by_english_frame = !payload_form && english_frame_form;
+    let modern_form = matches!(payload_length, Some(302 | 303)) && reference_count == 5;
+    let read_by_english_frame = !modern_form && !payload_form && english_frame_form;
     let operation = (|| {
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
-            if matches!(payload_length, Some(302 | 303)) && reference_count == 5 {
+            if modern_form {
                 if payload_length == Some(302) {
                     scale_guid_closes_prefix(
                         bytes,
@@ -1480,7 +1481,7 @@ pub(super) fn exact_scale_operation(
             )),
         );
     }
-    Ok(operation
+    operation
         .or_else(|| long_modern_scale(bytes, records, scope, stream_types))
         .or_else(|| counted_group_scale(bytes, records, scope, stream_types))
         .or_else(|| {
@@ -1494,7 +1495,7 @@ pub(super) fn exact_scale_operation(
                 ));
             }
             Some(operation)
-        }))
+        })
 }
 
 #[cfg(test)]

@@ -384,8 +384,7 @@ fn decode_typed_scale_and_losses(
         return (None, Vec::new());
     };
     let mut losses = Vec::new();
-    let operation =
-        exact_scale_operation(bytes, &records, &scope, &HashMap::new(), &mut losses).unwrap();
+    let operation = exact_scale_operation(bytes, &records, &scope, &HashMap::new(), &mut losses);
     (
         operation,
         losses.into_iter().map(|loss| loss.code).collect(),
@@ -399,7 +398,7 @@ fn decode_scale(
 ) -> Option<DesignScaleOperation> {
     let scope = parse_scope(bytes, start)?;
     let records = indexed_record_offsets_for_test(bytes);
-    exact_scale_operation(bytes, &records, &scope, stream_types, &mut Vec::new()).unwrap()
+    exact_scale_operation(bytes, &records, &scope, stream_types, &mut Vec::new())
 }
 
 fn scale_fixture(reference_count: usize, tail_length: usize, start: usize) -> (Vec<u8>, usize) {

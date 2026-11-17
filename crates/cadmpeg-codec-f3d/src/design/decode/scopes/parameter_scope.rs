@@ -526,7 +526,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
-                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)?
+                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)
                         .or_else(|| {
                             exact_axis_owner_scale(
                                 bytes,
