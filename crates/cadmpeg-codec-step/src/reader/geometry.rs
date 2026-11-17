@@ -64,6 +64,9 @@ fn attach_geometry_source(
 }
 
 pub(super) struct GeometryData {
+    pub(super) points: BTreeMap<u64, FinitePoint3>,
+    pub(super) directions: BTreeMap<u64, UnitVector3>,
+    pub(super) vectors: BTreeMap<u64, Vector3>,
     pub(super) placements: BTreeMap<u64, (FinitePoint3, UnitVector3, UnitVector3)>,
     pub(super) transformation_operators: BTreeMap<u64, Transform>,
     pub(super) units: UnitScales,
@@ -2404,6 +2407,9 @@ pub(super) fn decode(
     Ok((
         StageOutcome {
             value: GeometryData {
+                points,
+                directions,
+                vectors,
                 placements,
                 transformation_operators,
                 units: unit_scales,

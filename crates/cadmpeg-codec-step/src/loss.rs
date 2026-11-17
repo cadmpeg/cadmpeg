@@ -394,6 +394,16 @@ pub(crate) enum StepLossCode {
     /// reported here instead, with its measured value, because the cost is
     /// continuous and a threshold cannot express it.
     EdgeVertexOffCarrier,
+    /// A CSG item's attributes do not resolve; it has no feature and no body.
+    CsgItemUnresolved,
+    /// A CSG item has a design feature and no derived body.
+    CsgSolidUnsynthesized,
+    /// A CSG Boolean tree has design features and no derived body.
+    CsgBooleanUnevaluated,
+    /// A swept-area profile closed a gap between boundary segment ends.
+    CsgProfileGapClosed,
+    /// CSG items belong to no product definition, so no design scope files them.
+    CsgDesignUnscoped,
 }
 
 impl StepLossCode {
@@ -575,6 +585,11 @@ impl StepLossCode {
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
         Self::EdgeVertexOffCarrier,
+        Self::CsgItemUnresolved,
+        Self::CsgSolidUnsynthesized,
+        Self::CsgBooleanUnevaluated,
+        Self::CsgProfileGapClosed,
+        Self::CsgDesignUnscoped,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -778,6 +793,11 @@ impl StepLossCode {
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
+            Self::CsgItemUnresolved => "csg.item-unresolved",
+            Self::CsgSolidUnsynthesized => "csg.solid-unsynthesized",
+            Self::CsgBooleanUnevaluated => "csg.boolean-unevaluated",
+            Self::CsgProfileGapClosed => "csg.profile-gap-closed",
+            Self::CsgDesignUnscoped => "csg.design-unscoped",
         }
     }
 
@@ -982,6 +1002,11 @@ impl StepLossCode {
             Self::FaceMultipleOuterBounds
             | Self::ShellDisconnectedFaces
             | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
+            Self::CsgItemUnresolved | Self::CsgSolidUnsynthesized | Self::CsgBooleanUnevaluated => {
+                LossTaxonomy::GeometryNotTransferred
+            }
+            Self::CsgProfileGapClosed => LossTaxonomy::DecodeDiagnostic,
+            Self::CsgDesignUnscoped => LossTaxonomy::MetadataNotTransferred,
             Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
@@ -1235,6 +1260,11 @@ mod tests {
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
                 "geometry.edge-vertex-off-carrier",
+                "csg.item-unresolved",
+                "csg.solid-unsynthesized",
+                "csg.boolean-unevaluated",
+                "csg.profile-gap-closed",
+                "csg.design-unscoped",
             ]
         );
     }
