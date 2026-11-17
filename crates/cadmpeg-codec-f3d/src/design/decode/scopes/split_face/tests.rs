@@ -942,17 +942,27 @@ fn unrelated_duplicate_registration_preserves_the_registered_carrier() {
 
 #[test]
 fn nonfinite_direction_retains_registered_input_slots_and_location() {
-    let meta = carrier_metadata(
-        crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID,
-        1,
-        &[(55, 228)],
+    let meta = metadata(
+        &[
+            (
+                crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID,
+                1,
+                &[55],
+            ),
+            ("00000000-0000-0000-0000-000000000002", 1, &[1]),
+        ],
+        &[(1, 0), (55, 500)],
+        &[(55, 608)],
     );
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let mut bytes = carrier_bytes(false);
-        bytes[169..177].copy_from_slice(&value.to_le_bytes());
+        let carrier = bytes.split_off(120);
+        bytes.resize(500, 0);
+        bytes.extend_from_slice(&carrier);
+        bytes[549..557].copy_from_slice(&value.to_le_bytes());
         let operation = decode_registered_carrier(&bytes, &meta);
         let direction = operation.direction.as_ref().unwrap();
-        assert_eq!(direction.offset, 169);
+        assert_eq!(direction.offset, 549);
         assert_eq!(direction.value, None);
         assert_eq!(operation.input_count.unwrap().value, 1);
         assert_eq!(operation.inputs[0].value.local_record_index(), Some(88));
