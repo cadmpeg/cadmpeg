@@ -5824,10 +5824,9 @@ fn parse_sketch_profile_region_loops(
     let mut loops = Vec::new();
     for _ in 0..loop_count {
         let (mut ring, next) = parse_sketch_profile_region_members(bytes, cursor, EXTERIOR_LEN)?;
-        if !matches!(bytes.get(next), Some(0 | 1)) {
-            return None;
-        }
+        let &exterior = bytes.get(next).filter(|byte| matches!(byte, 0 | 1))?;
         ring.region_ordinal = region_ordinal;
+        ring.hole = exterior == 0;
         loops.push(ring);
         cursor = next.checked_add(EXTERIOR_LEN)?;
     }
@@ -5907,6 +5906,7 @@ fn parse_sketch_profile_region_members(
             member_count_offset: u64::try_from(member_count_offset).ok()?,
             members,
             region_ordinal: 0,
+            hole: false,
         },
         cursor,
     ))
