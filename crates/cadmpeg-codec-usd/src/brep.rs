@@ -3,6 +3,7 @@
 //! to the IR, and encoded as a `BrepArray` (spec §17).
 
 pub(crate) mod convert;
+pub(crate) mod frame;
 pub(crate) mod nurbs;
 pub(crate) mod primitive;
 mod scale;
@@ -100,6 +101,20 @@ impl SurfaceKind {
             Self::Revolution => "revolution",
         }
     }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        [
+            Self::Plane,
+            Self::Cylinder,
+            Self::Cone,
+            Self::Sphere,
+            Self::Torus,
+            Self::Extrusion,
+            Self::Revolution,
+        ]
+        .into_iter()
+        .find(|kind| kind.token() == token)
+    }
 }
 
 /// The analytic curve types.
@@ -122,6 +137,18 @@ impl CurveKind {
             Self::Hyperbola => "hyperbola",
         }
     }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        [
+            Self::Line,
+            Self::Circle,
+            Self::Ellipse,
+            Self::Parabola,
+            Self::Hyperbola,
+        ]
+        .into_iter()
+        .find(|kind| kind.token() == token)
+    }
 }
 
 /// The parameter-space analytic curve types.
@@ -131,6 +158,21 @@ pub(crate) enum PcurveKind {
     Ellipse,
 }
 
+impl PcurveKind {
+    pub(crate) const fn token(self) -> &'static str {
+        match self {
+            Self::Circle => "circle",
+            Self::Ellipse => "ellipse",
+        }
+    }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        [Self::Circle, Self::Ellipse]
+            .into_iter()
+            .find(|kind| kind.token() == token)
+    }
+}
+
 /// The closure assertion of a NURBS parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Form {
@@ -138,6 +180,22 @@ pub(crate) enum Form {
     Open,
     Closed,
     Periodic,
+}
+
+impl Form {
+    pub(crate) const fn token(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+            Self::Periodic => "periodic",
+        }
+    }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        [Self::Open, Self::Closed, Self::Periodic]
+            .into_iter()
+            .find(|form| form.token() == token)
+    }
 }
 
 /// A frame-positioned analytic record.
@@ -219,6 +277,30 @@ pub(crate) struct Brep {
     /// Radians per unit of an angular parameter.
     pub(crate) angle_scale: f64,
     pub(crate) valid: bool,
+    pub(crate) identities: Identities,
+    pub(crate) tolerances: Tolerances,
+}
+
+/// The CADIR identity of the body and of each face, edge, and vertex
+/// record, and the name of the body and of each face, where one is known
+/// (spec §18.1).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct Identities {
+    pub(crate) body: Option<String>,
+    pub(crate) faces: Vec<Option<String>>,
+    pub(crate) edges: Vec<Option<String>>,
+    pub(crate) vertices: Vec<Option<String>>,
+    pub(crate) body_name: Option<String>,
+    pub(crate) face_names: Vec<Option<String>>,
+}
+
+/// The tolerance of each face, edge, and vertex record, where the entity
+/// has its own (spec §18.4).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct Tolerances {
+    pub(crate) faces: Vec<Option<f64>>,
+    pub(crate) edges: Vec<Option<f64>>,
+    pub(crate) vertices: Vec<Option<f64>>,
 }
 
 /// `brep:tolerance` when it is not authored.

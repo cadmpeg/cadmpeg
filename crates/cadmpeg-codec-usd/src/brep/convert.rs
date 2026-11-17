@@ -1515,6 +1515,8 @@ pub(crate) fn nurbs_only(brep: &Brep) -> Result<Converted, String> {
         tolerance: brep.tolerance,
         angle_scale: 1.0,
         valid: brep.valid,
+        identities: brep.identities.clone(),
+        tolerances: brep.tolerances.clone(),
         ..Brep::default()
     };
     for (index, edge) in brep.edges.iter().enumerate() {
@@ -1758,6 +1760,7 @@ fn boundary_loop(brep: &mut Brep, face: usize, trimmed: bool) -> Result<(), Stri
                 dot(gap, gap).sqrt() <= tolerance
             })
     };
+    let face_identity = brep.identities.faces.get(face).cloned().flatten();
     let vertex = |brep: &mut Brep, point: V3| -> usize {
         if let Some(found) = brep.vertices.iter().position(|known| {
             let gap = sub(*known, point);
@@ -1766,7 +1769,14 @@ fn boundary_loop(brep: &mut Brep, face: usize, trimmed: bool) -> Result<(), Stri
             return found;
         }
         brep.vertices.push(point);
-        brep.vertices.len() - 1
+        let index = brep.vertices.len() - 1;
+        if let Some(face) = &face_identity {
+            brep.identities.vertices.resize(index, None);
+            brep.identities
+                .vertices
+                .push(Some(crate::ids::brep::vertex(face, index).to_string()));
+        }
+        index
     };
     let same_sense = brep.faces[face].same_sense;
     // The record loop goes counterclockwise about the outward normal: the
@@ -1794,6 +1804,13 @@ fn boundary_loop(brep: &mut Brep, face: usize, trimmed: bool) -> Result<(), Stri
             *curve.knots.get(curve.points.len()).ok_or_else(refused)?,
         ];
         brep.nurbs_curves.push(curve.clone());
+        if let Some(face) = &face_identity {
+            let index = brep.edges.len();
+            brep.identities.edges.resize(index, None);
+            brep.identities
+                .edges
+                .push(Some(crate::ids::brep::edge(face, position).to_string()));
+        }
         brep.edges.push(super::EdgeRecord {
             vertices: [start, end],
             curve: Some((Catalog::Nurbs, brep.nurbs_curves.len() - 1)),

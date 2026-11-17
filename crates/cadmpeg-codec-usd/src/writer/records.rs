@@ -609,6 +609,8 @@ struct Exporter<'t, 'ir> {
     surfaces: BTreeMap<SurfaceId, Option<(Reference, Chart)>>,
     /// The face ids in record order.
     faces: Vec<FaceId>,
+    /// The oriented edges whose pcurve is traced from the tessellation.
+    traced: Vec<usize>,
     unwritten: Unwritten,
 }
 
@@ -632,6 +634,8 @@ pub(super) struct Exported {
     pub(super) brep: Brep,
     /// The IR face of each face record.
     pub(super) faces: Vec<FaceId>,
+    /// The oriented edges whose pcurve is traced from the tessellation.
+    pub(super) traced: Vec<usize>,
     pub(super) unwritten: Unwritten,
 }
 
@@ -660,6 +664,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             curves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             faces: Vec::new(),
+            traced: Vec::new(),
             unwritten: Unwritten::default(),
         }
     }
@@ -1084,15 +1089,19 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                         // A pcurve that the tessellator found off its edge is
                         // replaced by the traced one.
                         let trusted = trace.is_none_or(|trace| trace.from_pcurve);
-                        let pcurve = trusted
+                        let given = trusted
                             .then(|| self.pcurve(coedge, chart, planar))
-                            .flatten()
-                            .or_else(|| {
-                                if planar {
-                                    return None;
-                                }
-                                self.derived_pcurve(trace?, chart)
-                            });
+                            .flatten();
+                        let traced = given.is_none() && !planar;
+                        let pcurve = given.or_else(|| {
+                            if planar {
+                                return None;
+                            }
+                            self.derived_pcurve(trace?, chart)
+                        });
+                        if traced && pcurve.is_some() {
+                            self.traced.push(self.brep.oriented_edges.len());
+                        }
                         if pcurve.is_none() && !planar {
                             self.unwritten.pcurves += 1;
                         }
@@ -1385,27 +1394,49 @@ pub(super) fn export<'ir>(
     }
     // `brep:tolerance` bounds every vertex-on-face and edge-on-face
     // deviation, so it is the largest entity tolerance of the body.
+    let face_records: Vec<Option<&cadmpeg_ir::topology::Face>> = exporter
+        .faces
+        .iter()
+        .map(|face| index.faces(face.as_str(), StandardIndex))
+        .collect();
+    let mut tolerances = crate::brep::Tolerances {
+        faces: face_records
+            .iter()
+            .map(|face| {
+                face.and_then(|face| face.tolerance)
+                    .map(cadmpeg_ir::scalar::PositiveReal::get)
+            })
+            .collect(),
+        edges: vec![None; exporter.brep.edges.len()],
+        vertices: vec![None; exporter.brep.vertices.len()],
+    };
+    for (id, position) in &exporter.edges {
+        if let (Some(slot), Some(value)) = (
+            tolerances.edges.get_mut(*position),
+            index
+                .edges(id.as_str(), StandardIndex)
+                .and_then(|edge| edge.tolerance),
+        ) {
+            *slot = Some(value.get());
+        }
+    }
+    for (id, position) in &exporter.vertices {
+        if let (Some(slot), Some(value)) = (
+            tolerances.vertices.get_mut(*position),
+            index
+                .vertices(id.as_str(), StandardIndex)
+                .and_then(|vertex| vertex.tolerance),
+        ) {
+            *slot = Some(value.get());
+        }
+    }
     let mut tolerance = exporter.brep.tolerance;
-    for face in &exporter.faces {
-        if let Some(value) = index
-            .faces(face.as_str(), StandardIndex)
-            .and_then(|face| face.tolerance)
-        {
-            tolerance = tolerance.max(value.get());
-        }
-    }
-    for vertex in exporter.vertices.keys() {
-        if let Some(value) = index
-            .vertices(vertex.as_str(), StandardIndex)
-            .and_then(|vertex| vertex.tolerance)
-        {
-            tolerance = tolerance.max(value.get());
-        }
-    }
-    for edge in &exporter.brep.edges {
-        if let Some(value) = edge.tolerance {
-            tolerance = tolerance.max(value);
-        }
+    for value in [&tolerances.faces, &tolerances.edges, &tolerances.vertices]
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        tolerance = tolerance.max(*value);
     }
     // A source whose vertices and edges lie off their surfaces states that
     // distance as its tolerance.
@@ -1413,12 +1444,45 @@ pub(super) fn export<'ir>(
         tolerance = tolerance.max(mesh.deviation * DEVIATION_MARGIN);
     }
     exporter.brep.tolerance = tolerance;
+    let mut identities = crate::brep::Identities {
+        body: Some(body.id.to_string()),
+        faces: exporter
+            .faces
+            .iter()
+            .map(|face| Some(face.to_string()))
+            .collect(),
+        edges: vec![None; exporter.brep.edges.len()],
+        vertices: vec![None; exporter.brep.vertices.len()],
+        body_name: body.name.clone(),
+        face_names: face_records
+            .iter()
+            .map(|face| face.and_then(|face| face.name.clone()))
+            .collect(),
+    };
+    for (id, index) in &exporter.edges {
+        if let Some(slot) = identities.edges.get_mut(*index) {
+            *slot = Some(id.to_string());
+        }
+    }
+    for (id, index) in &exporter.vertices {
+        if let Some(slot) = identities.vertices.get_mut(*index) {
+            *slot = Some(id.to_string());
+        }
+    }
+    if identities.faces.len() != exporter.brep.faces.len() {
+        identities.faces = vec![None; exporter.brep.faces.len()];
+        identities.face_names = vec![None; exporter.brep.faces.len()];
+        tolerances.faces = vec![None; exporter.brep.faces.len()];
+    }
+    exporter.brep.identities = identities;
+    exporter.brep.tolerances = tolerances;
     for edge in &mut exporter.brep.edges {
         edge.tolerance = edge.tolerance.filter(|value| *value > tolerance);
     }
     Some(Exported {
         brep: exporter.brep,
         faces: exporter.faces,
+        traced: exporter.traced,
         unwritten: exporter.unwritten,
     })
 }

@@ -17,10 +17,17 @@
 
 mod brep;
 mod brep_array;
+mod configurations;
+mod features;
+mod mates;
+mod parameters;
 mod physics;
 mod physx;
+mod pmi;
+mod presentation;
 mod records;
 mod shading;
+mod sketch;
 mod text;
 mod texture;
 
@@ -37,7 +44,9 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
-use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::products::{
+    ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference,
+};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh, TextureCoordinateAddressing};
 use cadmpeg_ir::topology::{Body, Sense};
@@ -89,14 +98,14 @@ const COVERAGE: ArenaDispositions = {
         procedural_surfaces: Omitted,
         procedural_curves: Omitted,
         assets: Written,
-        features: Omitted,
-        feature_input_topologies: Omitted,
-        feature_result_topologies: Omitted,
-        configurations: Omitted,
-        parameters: Omitted,
-        sketches: Omitted,
-        sketch_entities: Omitted,
-        sketch_constraints: Omitted,
+        features: Written,
+        feature_input_topologies: Written,
+        feature_result_topologies: Written,
+        configurations: Written,
+        parameters: Written,
+        sketches: Written,
+        sketch_entities: Reported,
+        sketch_constraints: Reported,
         spatial_sketches: Omitted,
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,
@@ -113,9 +122,9 @@ const COVERAGE: ArenaDispositions = {
         history_bodies: Ignored,
         appearances: Reported,
         appearance_bindings: Reported,
-        attributes: Omitted,
-        pmi: Omitted,
-        presentation_layers: Omitted,
+        attributes: Written,
+        pmi: Written,
+        presentation_layers: Written,
         physical_materials: Written,
         mass_properties: Written,
         rigid_bodies: Written,
@@ -176,6 +185,19 @@ pub(crate) fn plan(
 #[derive(Default)]
 struct Unwritten {
     tessellated_bodies: usize,
+    /// Sketch entities with no curve or point prim.
+    sketch_entities: usize,
+    /// Sketch constraints with no constraint type, or whose targets or
+    /// values are not written.
+    sketch_constraints: usize,
+    /// Features whose wire form does not serialize.
+    features: usize,
+    /// Configurations whose wire form does not serialize.
+    configurations: usize,
+    /// Annotations whose wire form does not serialize.
+    pmi: usize,
+    /// Layers and attributes whose wire form does not serialize.
+    presentation: usize,
     /// Bodies with faces and no `BrepArray` prim, with the reason.
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
@@ -310,6 +332,17 @@ struct Writer<'ir> {
     package: Option<Vec<Member>>,
     /// The source of the files that external assets name.
     assets: Option<&'ir dyn cadmpeg_core::decode::Companions>,
+    /// The analytic B-rep records, in metres, and the IR face of each face
+    /// record, of each body written as a `BrepArray` prim.
+    exported: BTreeMap<BodyId, (crate::brep::Brep, Vec<cadmpeg_ir::ids::FaceId>)>,
+    /// The `BrepArray` prim path of each body written as one.
+    brep_paths: BTreeMap<BodyId, String>,
+    /// Connectors of the mates written so far, by prim name.
+    connector_queue: Vec<(String, mates::ConnectorPlan)>,
+    /// The `CadParameter` prim path of each design parameter.
+    parameter_paths: BTreeMap<cadmpeg_ir::features::ParameterId, String>,
+    /// The `CadFeature` prim path of each feature.
+    feature_paths: BTreeMap<cadmpeg_ir::features::FeatureId, String>,
 }
 
 impl<'ir> Writer<'ir> {
@@ -410,6 +443,11 @@ impl<'ir> Writer<'ir> {
             ),
             above_parts,
             package: None,
+            exported: BTreeMap::new(),
+            brep_paths: BTreeMap::new(),
+            parameter_paths: BTreeMap::new(),
+            feature_paths: BTreeMap::new(),
+            connector_queue: Vec::new(),
             assets: None,
         }
     }
@@ -481,6 +519,9 @@ impl<'ir> Writer<'ir> {
                 if physics {
                     names.reserve(physics::PHYSICS);
                 }
+                if !self.ir.model.sketches.is_empty() {
+                    names.reserve(sketch::SKETCHES);
+                }
                 if !self.ir.model.appearances.is_empty() {
                     names.reserve(LOOKS);
                     self.looks(None);
@@ -501,6 +542,12 @@ impl<'ir> Writer<'ir> {
                 }
                 self.free_geometry(&mut names);
                 self.joints(&mut names);
+                self.features(&mut names);
+                self.parameters(&mut names);
+                self.configurations(&mut names);
+                self.pmi(&mut names);
+                self.presentation(&mut names);
+                self.sketches(&mut names, None);
                 names.first().map(str::to_owned)
             }
         };
@@ -530,6 +577,19 @@ impl<'ir> Writer<'ir> {
             header.line("    kilogramsPerUnit = 1");
         }
         header.line(&format!("    upAxis = {}", quoted(&self.up_axis())));
+        let tolerances = &self.ir.tolerances;
+        header.line("    customLayerData = {");
+        header.line("        dictionary cad = {");
+        header.line(&format!(
+            "            double angularTolerance = {}",
+            real(tolerances.angular.get().to_degrees())
+        ));
+        header.line(&format!(
+            "            double linearTolerance = {}",
+            real(tolerances.linear.get() / MILLIMETRES_PER_UNIT)
+        ));
+        header.line("        }");
+        header.line("    }");
         header.line(")");
         header.blank();
         header.finish() + &prims
@@ -651,6 +711,14 @@ impl<'ir> Writer<'ir> {
                 .push(format!("prepend references = [{}]", references.join(", "))),
         }
         let shared = definition.is_some_and(|definition| self.shared.contains_key(&definition.id));
+        placement.properties.push(format!(
+            "uniform string cad:id = {}",
+            quoted(occurrence.id.as_str())
+        ));
+        if let Some(definition) = definition.filter(|_| !shared) {
+            placement.properties.extend(definition_lines(definition));
+            placement.metadata.extend(definition_metadata(definition));
+        }
         let bodies: Vec<&'ir Body> = definition
             .filter(|_| !shared)
             .map(|definition| {
@@ -694,6 +762,7 @@ impl<'ir> Writer<'ir> {
         child_names.reserve(LOOKS);
         if root.is_some() {
             child_names.reserve(physics::PHYSICS);
+            child_names.reserve(sketch::SKETCHES);
         }
         if shared {
             for body in definition
@@ -711,6 +780,12 @@ impl<'ir> Writer<'ir> {
         }
         if root.is_some() {
             self.joints(&mut child_names);
+            self.features(&mut child_names);
+            self.parameters(&mut child_names);
+            self.configurations(&mut child_names);
+            self.pmi(&mut child_names);
+            self.presentation(&mut child_names);
+            self.sketches(&mut child_names, Some(&occurrence.id));
         }
         self.out.close();
         self.stack.pop();
@@ -1578,13 +1653,19 @@ impl<'ir> Writer<'ir> {
                 })
                 .collect();
             let mut names = Names::default();
+            let placement = Placement {
+                metadata: definition_metadata(definition),
+                properties: definition_lines(definition),
+                ..Placement::default()
+            };
             if let [body] = bodies.as_slice() {
-                self.body(body, &mut names, &Placement::default(), Some(&name));
+                self.body(body, &mut names, &placement, Some(&name));
                 continue;
             }
             self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.name_next(&name);
             self.out.open();
+            self.placement(&placement);
             for body in bodies {
                 self.body(body, &mut names, &Placement::default(), None);
             }
@@ -1599,6 +1680,49 @@ impl<'ir> Writer<'ir> {
         let model = &self.ir.model;
         let geometry = &self.ir.geometry;
         let mut losses = Vec::new();
+        if unwritten.sketch_entities > 0 || unwritten.sketch_constraints > 0 {
+            losses.push(UsdLossCode::ExportSketchElementNotWritten.note(format!(
+                "{} sketch entities with no CadSketch curve or point type and {} sketch \
+                 constraints with no CadSketch constraint type, or whose targets or values \
+                 were not written, were not written",
+                unwritten.sketch_entities, unwritten.sketch_constraints
+            )));
+        }
+        let owned = model
+            .parameters
+            .iter()
+            .filter(|parameter| parameter.pmi.is_some())
+            .count();
+        if owned > 0 {
+            losses.push(UsdLossCode::ExportParameterPropertyNotWritten.note(format!(
+                "the PMI semantics of {owned} design parameters have no CadParameter \
+                 attribute and were not written"
+            )));
+        }
+        if unwritten.features > 0 {
+            losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
+                "{} features have no wire form and were not written",
+                unwritten.features
+            )));
+        }
+        if unwritten.configurations > 0 {
+            losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
+                "{} configurations have no wire form and were not written",
+                unwritten.configurations
+            )));
+        }
+        if unwritten.pmi > 0 {
+            losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
+                "{} PMI annotations have no wire form and were not written",
+                unwritten.pmi
+            )));
+        }
+        if unwritten.presentation > 0 {
+            losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
+                "{} layers or attributes have no wire form and were not written",
+                unwritten.presentation
+            )));
+        }
         if unwritten.solver_properties > 0 {
             losses.push(UsdLossCode::ExportSolverPropertyNotWritten.note(format!(
                 "{} solver properties have no PhysX attribute, prim, or relationship target to \
@@ -1863,4 +1987,54 @@ fn positions(ir: &CadIr) -> BTreeMap<&str, usize> {
         out.insert(edge.id.as_str(), position);
     }
     out
+}
+
+/// The attributes of the prim that defines `definition` (spec §18).
+fn definition_lines(definition: &ProductDefinition) -> Vec<String> {
+    let mut lines = vec![format!(
+        "uniform string cad:definition:id = {}",
+        quoted(definition.id.as_str())
+    )];
+    for (name, value) in [
+        ("sourceName", &definition.source_name),
+        ("label", &definition.label),
+        ("partNumber", &definition.part_number),
+    ] {
+        if let Some(value) = value {
+            lines.push(format!(
+                "uniform string cad:definition:{name} = {}",
+                quoted(value)
+            ));
+        }
+    }
+    if !definition.bom_properties.is_empty() {
+        let names: Vec<String> = definition
+            .bom_properties
+            .keys()
+            .map(|name| quoted(name.as_str()))
+            .collect();
+        let values: Vec<String> = definition
+            .bom_properties
+            .values()
+            .map(|value| quoted(value))
+            .collect();
+        lines.push(format!(
+            "uniform string[] cad:definition:bomNames = [{}]",
+            names.join(", ")
+        ));
+        lines.push(format!(
+            "uniform string[] cad:definition:bomValues = [{}]",
+            values.join(", ")
+        ));
+    }
+    lines
+}
+
+/// The metadata of the prim that defines `definition`.
+fn definition_metadata(definition: &ProductDefinition) -> Vec<String> {
+    definition
+        .description
+        .iter()
+        .map(|description| format!("documentation = {}", quoted(description)))
+        .collect()
 }

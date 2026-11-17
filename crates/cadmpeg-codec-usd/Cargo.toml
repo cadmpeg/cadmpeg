@@ -20,6 +20,8 @@ cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 cadmpeg-tessellate.workspace = true
 crc32fast.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 unicode-ident.workspace = true
 
 [dev-dependencies]
@@ -27,7 +29,6 @@ unicode-ident.workspace = true
 cadmpeg-ir = { workspace = true, features = ["examples"] }
 cadmpeg-measure = { workspace = true, features = ["test-support"] }
 cadmpeg-test-support = { workspace = true }
-serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -21,6 +21,10 @@ pub(crate) const EDGE_CURVE_API: &str = "BrepCurve3dNurbAPI:edge3dNurb";
 pub(crate) const SURFACE_API: &str = "BrepSurfaceNurbAPI";
 /// The trim-curve API.
 pub(crate) const TRIM_CURVE_API: &str = "BrepCurveUvNurbAPI";
+/// The identity API (spec §18.1).
+pub(crate) const IDENTITY_API: &str = "CadBrepIdentityAPI";
+/// The tolerance API (spec §18.4).
+pub(crate) const TOLERANCE_API: &str = "CadBrepToleranceAPI";
 /// The type token of a NURBS edge curve.
 const CURVE_TYPE: &str = "BrepCurve3dNurbAPI";
 /// The type token of a point.
@@ -143,6 +147,68 @@ pub(crate) struct Packed {
     pub(crate) edge_curves: Curves<3>,
     pub(crate) surfaces: Surfaces,
     pub(crate) trim_curves: Option<Curves<2>>,
+    /// The CADIR identity of each B-rep, face, edge, and vertex; an empty
+    /// string is no identity.
+    pub(crate) identities: PackedIdentities,
+    /// The tolerance of each face, edge, and vertex; `NaN` is the B-rep
+    /// tolerance.
+    pub(crate) tolerances: PackedTolerances,
+    /// The exact carriers of the entities.
+    pub(crate) exact: exact::PackedExact,
+}
+
+/// The `cad:` arrays of `CadBrepIdentityAPI` (spec §18.1).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct PackedIdentities {
+    pub(crate) breps: Vec<String>,
+    pub(crate) faces: Vec<String>,
+    pub(crate) edges: Vec<String>,
+    pub(crate) vertices: Vec<String>,
+    pub(crate) brep_names: Vec<String>,
+    pub(crate) face_names: Vec<String>,
+}
+
+impl PackedIdentities {
+    /// Whether any entity has an identity or a name.
+    pub(crate) fn any(&self) -> bool {
+        [
+            &self.breps,
+            &self.faces,
+            &self.edges,
+            &self.vertices,
+            &self.brep_names,
+            &self.face_names,
+        ]
+        .iter()
+        .any(|values| values.iter().any(|value| !value.is_empty()))
+    }
+}
+
+/// The `cad:` arrays of `CadBrepToleranceAPI` (spec §18.4).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct PackedTolerances {
+    pub(crate) faces: Vec<f64>,
+    pub(crate) edges: Vec<f64>,
+    pub(crate) vertices: Vec<f64>,
+}
+
+impl PackedTolerances {
+    /// Whether any entity has its own tolerance.
+    pub(crate) fn any(&self) -> bool {
+        [&self.faces, &self.edges, &self.vertices]
+            .iter()
+            .any(|values| values.iter().any(|value| !value.is_nan()))
+    }
+}
+
+/// `values`, padded with `None` to `count`, as packed tolerances.
+fn packed_tolerances(values: &[Option<f64>], count: usize) -> impl Iterator<Item = f64> + '_ {
+    (0..count).map(move |index| values.get(index).copied().flatten().unwrap_or(f64::NAN))
+}
+
+/// `values`, padded with `None` to `count`, as packed strings.
+fn packed_ids(values: &[Option<String>], count: usize) -> impl Iterator<Item = String> + '_ {
+    (0..count).map(move |index| values.get(index).cloned().flatten().unwrap_or_default())
 }
 
 fn count(value: usize) -> Result<u32, Refusal> {
@@ -198,8 +264,15 @@ fn surface_loop(brep: &Brep, loop_: &LoopRecord, same_sense: bool) -> Vec<(usize
 impl Packed {
     /// Appends one NURBS B-rep whose surface `i` is the surface of face `i`,
     /// curve `i` the curve of edge `i`, and pcurve `i`, when present, the
-    /// pcurve of oriented edge `i`.
-    pub(crate) fn push(&mut self, brep: &Brep, trimmed: bool) -> Result<(), Refusal> {
+    /// pcurve of oriented edge `i`, with the exact carriers of `exact`, the
+    /// B-rep it is the NURBS form of (spec §18.5).
+    pub(crate) fn push(
+        &mut self,
+        brep: &Brep,
+        trimmed: bool,
+        exact: Option<&Brep>,
+    ) -> Result<(), Refusal> {
+        let mut layout = exact::Layout::default();
         let face_base = self.face_loop_count.len();
         let vertex_base = self.vertices.len();
         let edge_base = self.edge_vertices.len();
@@ -308,6 +381,7 @@ impl Packed {
             self.face_loop_count.push(count(face.loops.len())?);
             for loop_index in &face.loops {
                 let loop_ = brep.loops.get(*loop_index).ok_or("a face names no loop")?;
+                layout.loops.push(*loop_index);
                 let uses = surface_loop(brep, loop_, face.same_sense);
                 self.loop_edgeuse_count.push(count(uses.len())?);
                 self.loop_vertex.push(match loop_.vertex {
@@ -315,6 +389,7 @@ impl Packed {
                     _ => NO_VERTEX,
                 });
                 for (oriented, same) in uses {
+                    layout.edgeuses.push(oriented);
                     let record = brep
                         .oriented_edges
                         .get(oriented)
@@ -380,6 +455,35 @@ impl Packed {
             ]);
         }
         self.vertices.extend(brep.vertices.iter());
+        let ids = &brep.identities;
+        self.identities
+            .breps
+            .push(ids.body.clone().unwrap_or_default());
+        self.identities
+            .faces
+            .extend(packed_ids(&ids.faces, brep.faces.len()));
+        self.identities
+            .edges
+            .extend(packed_ids(&ids.edges, brep.edges.len()));
+        self.identities
+            .vertices
+            .extend(packed_ids(&ids.vertices, brep.vertices.len()));
+        self.identities
+            .brep_names
+            .push(ids.body_name.clone().unwrap_or_default());
+        self.identities
+            .face_names
+            .extend(packed_ids(&ids.face_names, brep.faces.len()));
+        let tolerances = &brep.tolerances;
+        self.tolerances
+            .faces
+            .extend(packed_tolerances(&tolerances.faces, brep.faces.len()));
+        self.tolerances
+            .edges
+            .extend(packed_tolerances(&tolerances.edges, brep.edges.len()));
+        self.tolerances
+            .vertices
+            .extend(packed_tolerances(&tolerances.vertices, brep.vertices.len()));
 
         self.intersect_tol.push(brep.tolerance);
         let box_ = bounds(
@@ -399,7 +503,7 @@ impl Packed {
         )
         .ok_or("a B-rep has no point")?;
         self.extent.extend(box_);
-        Ok(())
+        self.exact.push(exact, brep, &layout)
     }
 
     fn push_surface(&mut self, record: &NurbsSurfaceRecord) -> Result<(), Refusal> {
@@ -621,6 +725,32 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<Packed, Refus
             weights: reals(prim, "brep:surface:nurb:weights", 1, issues).unwrap_or_default(),
         },
         trim_curves,
+        identities: if schemas.contains(IDENTITY_API) {
+            PackedIdentities {
+                breps: tokens(prim, "cad:brep:id", issues).unwrap_or_default(),
+                faces: tokens(prim, "cad:face:id", issues).unwrap_or_default(),
+                edges: tokens(prim, "cad:edge:id", issues).unwrap_or_default(),
+                vertices: tokens(prim, "cad:vertex:id", issues).unwrap_or_default(),
+                brep_names: tokens(prim, "cad:brep:name", issues).unwrap_or_default(),
+                face_names: tokens(prim, "cad:face:name", issues).unwrap_or_default(),
+            }
+        } else {
+            PackedIdentities::default()
+        },
+        exact: if schemas.contains(exact::ANALYTIC_API) {
+            exact::read(prim, issues)?
+        } else {
+            exact::PackedExact::default()
+        },
+        tolerances: if schemas.contains(TOLERANCE_API) {
+            PackedTolerances {
+                faces: reals(prim, "cad:face:tolerance", 1, issues).unwrap_or_default(),
+                edges: reals(prim, "cad:edge:tolerance", 1, issues).unwrap_or_default(),
+                vertices: reals(prim, "cad:vertex:tolerance", 1, issues).unwrap_or_default(),
+            }
+        } else {
+            PackedTolerances::default()
+        },
     };
     if packed.edge_curves.len() != edge_curve_count
         || packed.edge_vertices.len() != edge_curve_count
@@ -729,6 +859,16 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         }
         None => None,
     };
+    let catalogs = if packed.exact.face_surfaces.is_empty() {
+        None
+    } else {
+        Some(packed.exact.unpack(
+            surfaces.len(),
+            packed.edge_vertices.len(),
+            packed.loop_edgeuse_count.len(),
+            packed.edgeuse_edge.len(),
+        )?)
+    };
     let loops = ranges(&packed.face_loop_count);
     let uses = ranges(&packed.loop_edgeuse_count);
     let faceuses = ranges(&packed.shell_faceuse_count);
@@ -803,6 +943,8 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         // Faces in face order, with their loops and edgeuses.
         let mut faces_in_order: Vec<usize> = face_map.keys().copied().collect();
         faces_in_order.sort_unstable();
+        let mut loop_records: Vec<(usize, usize)> = Vec::new();
+        let mut edgeuse_records: Vec<(usize, usize)> = Vec::new();
         for (written, face) in faces_in_order.iter().enumerate() {
             face_map.insert(*face, written);
             let sense = same_sense[face];
@@ -853,6 +995,7 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
                         orientation: if sense { same } else { !same },
                         pcurve,
                     });
+                    edgeuse_records.push((edgeuse, brep.oriented_edges.len() - 1));
                     oriented.push(brep.oriented_edges.len() - 1);
                 }
                 if !sense {
@@ -867,6 +1010,7 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
                     oriented_edges: oriented,
                     vertex: loop_vertex,
                 });
+                loop_records.push((loop_, brep.loops.len() - 1));
                 loop_indices.push(brep.loops.len() - 1);
             }
             brep.nurbs_surfaces.push(surfaces[*face].clone());
@@ -933,11 +1077,70 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         if trims.is_none() {
             super::convert::derive_pcurves(&mut brep);
         }
+        if let Some(catalogs) = &catalogs {
+            exact::restore(
+                &mut brep,
+                &packed.exact,
+                catalogs,
+                &exact::Decoded {
+                    faces: &faces_in_order,
+                    edges: &edge_map,
+                    loops: &loop_records,
+                    edgeuses: &edgeuse_records,
+                },
+            )?;
+        }
+        let named = |values: &[String], index: usize| {
+            values.get(index).filter(|value| !value.is_empty()).cloned()
+        };
+        let ids = &packed.identities;
+        brep.identities.body = named(&ids.breps, brep_index);
+        brep.identities.faces = faces_in_order
+            .iter()
+            .map(|face| named(&ids.faces, *face))
+            .collect();
+        brep.identities.edges = vec![None; brep.edges.len()];
+        for (global, record) in &edge_map {
+            brep.identities.edges[*record] = named(&ids.edges, *global);
+        }
+        brep.identities.vertices = vec![None; brep.vertices.len()];
+        for (global, record) in &vertex_map {
+            brep.identities.vertices[*record] = named(&ids.vertices, *global);
+        }
+        brep.identities.body_name = named(&ids.brep_names, brep_index);
+        brep.identities.face_names = faces_in_order
+            .iter()
+            .map(|face| named(&ids.face_names, *face))
+            .collect();
+        let own = |values: &[f64], index: usize| {
+            values
+                .get(index)
+                .copied()
+                .filter(|value| value.is_finite() && *value > 0.0)
+        };
+        let tolerances = &packed.tolerances;
+        brep.tolerances.faces = faces_in_order
+            .iter()
+            .map(|face| own(&tolerances.faces, *face))
+            .collect();
+        brep.tolerances.edges = vec![None; brep.edges.len()];
+        for (global, record) in &edge_map {
+            brep.tolerances.edges[*record] = own(&tolerances.edges, *global);
+        }
+        brep.tolerances.vertices = vec![None; brep.vertices.len()];
+        for (global, record) in &vertex_map {
+            brep.tolerances.vertices[*record] = own(&tolerances.vertices, *global);
+        }
+        if catalogs.is_some() {
+            exact::prune(&mut brep);
+        }
         out.faces.push(faces_in_order);
         out.breps.push(brep);
     }
     Ok(out)
 }
+
+pub(crate) mod exact;
 
 #[cfg(test)]
 mod tests;

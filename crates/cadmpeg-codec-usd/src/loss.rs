@@ -102,6 +102,32 @@ pub(crate) enum UsdLossCode {
     /// Geometry subsets of a `BrepArray` prim that are not `face` or `brep`
     /// subsets binding a material were not transferred.
     BrepSubsetNotTransferred,
+    /// A sketch element that does not satisfy its schema, or has no neutral
+    /// form, was not transferred.
+    SketchElementRejected,
+    /// Sketch properties with no neutral form were not transferred.
+    SketchPropertyNotTransferred,
+    /// A `CadParameter` prim that does not satisfy its schema was not
+    /// transferred.
+    ParameterRejected,
+    /// A `CadFeature` or `CadConfiguration` prim that does not satisfy its
+    /// schema, or names a record the stage does not hold, was not
+    /// transferred.
+    FeatureRejected,
+    /// Feature or configuration properties that name records the stage
+    /// does not hold were not transferred.
+    FeaturePropertyNotTransferred,
+    /// A `CadPmi` prim that does not satisfy its schema was not transferred.
+    PmiRejected,
+    /// Annotation targets that name records the stage does not hold were not
+    /// transferred.
+    PmiPropertyNotTransferred,
+    /// A `CadLayer` or `CadAttributes` prim that does not satisfy its schema
+    /// was not transferred.
+    PresentationRejected,
+    /// Layer items and attributes that name records the stage does not hold
+    /// were not transferred.
+    PresentationPropertyNotTransferred,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
     /// Joint properties with no neutral form were not transferred.
@@ -126,6 +152,14 @@ pub(crate) enum UsdLossCode {
     ExportTextureExternal,
     /// B-rep topology was written as the body's tessellation.
     ExportTopologyTessellated,
+    /// A sketch entity or constraint with no `CadSketch` form was not
+    /// written.
+    ExportSketchElementNotWritten,
+    /// A design parameter property with no `CadParameter` form was not
+    /// written.
+    ExportParameterPropertyNotWritten,
+    /// A design or presentation record with no `Cad*` form was not written.
+    ExportFeatureNotWritten,
     /// A body with faces has no `BrepArray` prim.
     ExportBrepNotWritten,
     /// A `BrepArray` prim has no trim curves.
@@ -177,6 +211,15 @@ impl UsdLossCode {
         Self::BrepRejected,
         Self::BrepElementNotTransferred,
         Self::BrepSubsetNotTransferred,
+        Self::SketchElementRejected,
+        Self::SketchPropertyNotTransferred,
+        Self::ParameterRejected,
+        Self::FeatureRejected,
+        Self::FeaturePropertyNotTransferred,
+        Self::PmiRejected,
+        Self::PmiPropertyNotTransferred,
+        Self::PresentationRejected,
+        Self::PresentationPropertyNotTransferred,
         Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
@@ -188,6 +231,9 @@ impl UsdLossCode {
         Self::ExportAppearanceReduced,
         Self::ExportTextureExternal,
         Self::ExportTopologyTessellated,
+        Self::ExportSketchElementNotWritten,
+        Self::ExportParameterPropertyNotWritten,
+        Self::ExportFeatureNotWritten,
         Self::ExportBrepNotWritten,
         Self::ExportBrepUntrimmed,
         Self::ExportCarrierNotWritten,
@@ -338,6 +384,37 @@ impl UsdLossCode {
                 Info,
                 T::MaterialNotTransferred,
             ),
+            Self::SketchElementRejected => (
+                "sketch.element-rejected",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
+            Self::ParameterRejected => ("parameter.rejected", Warning, T::ParametricRecordOmitted),
+            Self::FeatureRejected => ("feature.rejected", Warning, T::ParametricRecordOmitted),
+            Self::FeaturePropertyNotTransferred => (
+                "feature.property-not-transferred",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
+            Self::PmiRejected => ("pmi.rejected", Warning, T::ParametricRecordOmitted),
+            Self::PresentationRejected => {
+                ("presentation.rejected", Warning, T::ParametricRecordOmitted)
+            }
+            Self::PresentationPropertyNotTransferred => (
+                "presentation.property-not-transferred",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
+            Self::PmiPropertyNotTransferred => (
+                "pmi.property-not-transferred",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
+            Self::SketchPropertyNotTransferred => (
+                "sketch.property-not-transferred",
+                Info,
+                T::ParametricRecordOmitted,
+            ),
             Self::JointRejected => (
                 "physics.joint-rejected",
                 Warning,
@@ -386,6 +463,21 @@ impl UsdLossCode {
                 "export.topology-tessellated",
                 Warning,
                 T::TopologyNotTransferred,
+            ),
+            Self::ExportSketchElementNotWritten => (
+                "export.sketch-element-not-written",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
+            Self::ExportParameterPropertyNotWritten => (
+                "export.parameter-property-not-written",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
+            Self::ExportFeatureNotWritten => (
+                "export.feature-not-written",
+                Warning,
+                T::ParametricRecordOmitted,
             ),
             Self::ExportBrepNotWritten => (
                 "export.brep-not-written",

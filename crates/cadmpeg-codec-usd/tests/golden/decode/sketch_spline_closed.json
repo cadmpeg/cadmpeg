@@ -1,0 +1,277 @@
+{
+  "ir": {
+    "design": {},
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "endpoint_refs": [],
+          "geometry": {
+            "curve": {
+              "degree": 3,
+              "knots": [
+                -1.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                2.0,
+                2.0,
+                2.0,
+                3.0,
+                3.0,
+                3.0,
+                4.0,
+                4.0,
+                4.0,
+                5.0,
+                5.0,
+                5.0
+              ],
+              "periodic": true,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "u": 0.0,
+                    "v": 0.0
+                  },
+                  {
+                    "u": 27.4126629065,
+                    "v": -28.2307718229
+                  },
+                  {
+                    "u": 156.713599916,
+                    "v": 1.78753570172
+                  },
+                  {
+                    "u": 200.0,
+                    "v": 40.0
+                  },
+                  {
+                    "u": 241.749738702,
+                    "v": 76.8559269546
+                  },
+                  {
+                    "u": 281.388324977,
+                    "v": 183.14407304500003
+                  },
+                  {
+                    "u": 260.0,
+                    "v": 220.0
+                  },
+                  {
+                    "u": 237.824445832,
+                    "v": 258.212464298
+                  },
+                  {
+                    "u": 103.725552134,
+                    "v": 288.230771823
+                  },
+                  {
+                    "u": 60.0,
+                    "v": 260.0
+                  },
+                  {
+                    "u": 9.98710805761,
+                    "v": 227.70989794999997
+                  },
+                  {
+                    "u": -31.354356454599998,
+                    "v": 32.290102050399994
+                  },
+                  {
+                    "u": 0.0,
+                    "v": 0.0
+                  },
+                  {
+                    "u": 27.4126629065,
+                    "v": -28.2307718229
+                  },
+                  {
+                    "u": 156.713599916,
+                    "v": 1.78753570172
+                  }
+                ]
+              }
+            },
+            "kind": "nurbs"
+          },
+          "id": "usd:stage:sketch-entity#/sketch/s1",
+          "sketch": "usd:stage:sketch#/sketch"
+        }
+      ],
+      "sketches": [
+        {
+          "id": "usd:stage:sketch#/sketch",
+          "name": "sketch",
+          "placement": {
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "kind": "resolved"
+          },
+          "profiles": []
+        }
+      ],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
+      "view_presentations": []
+    },
+    "native": {},
+    "process": {},
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
+    "source": {
+      "attributes": {
+        "default_prim": "sketch",
+        "meters_per_unit": "0.01",
+        "up_axis": "Z"
+      },
+      "identity": {
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {
+              "header": "#usda 1.0"
+            },
+            "dialect": "usd:usda-1.0"
+          }
+        },
+        "kind": "classified"
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
+    }
+  },
+  "report": {
+    "coverage": {},
+    "identity": {
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {
+            "header": "#usda 1.0"
+          },
+          "dialect": "usd:usda-1.0"
+        }
+      },
+      "kind": "classified"
+    },
+    "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "sketch.property-not-transferred",
+            "kind": "parametric_record_omitted",
+            "namespace": "usd"
+          }
+        },
+        "message": "2 sketch properties were not transferred: /sketch/s1: sketch:spline:fitRule, /sketch: sketch:tolerance",
+        "severity": "info"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
+    }
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "5cb7f4360a5776db67c60e0edf69406e948e297803c96466e52e54d30c3f8a5f",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
+  }
+}

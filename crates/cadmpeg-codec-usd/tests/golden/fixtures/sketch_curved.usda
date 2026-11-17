@@ -1,0 +1,178 @@
+#usda 1.0
+(
+    defaultPrim = "sketch"
+    metersPerUnit = 0.01
+    upAxis = "Z"
+)
+
+def CadSketch "sketch"
+{
+    float3[] extent = [(-5, -5, 0), (25, 5, 0)]
+    uniform double sketch:tolerance = 1e-9
+
+    def CadSketchPoint "p1"
+    {
+        uniform double2 sketch:point:position = (0, -5)
+    }
+
+    def CadSketchPoint "p2"
+    {
+        uniform double2 sketch:point:position = (20, -5)
+    }
+
+    def CadSketchPoint "p3"
+    {
+        uniform double2 sketch:point:position = (20, 5)
+    }
+
+    def CadSketchPoint "p4"
+    {
+        uniform double2 sketch:point:position = (0, 5)
+    }
+
+    def CadSketchPoint "c1"
+    {
+        uniform double2 sketch:point:position = (0, 0)
+    }
+
+    def CadSketchPoint "c2"
+    {
+        uniform double2 sketch:point:position = (20, 0)
+    }
+
+    def CadSketchLine "l1"
+    {
+        rel sketch:line:endPoint = </sketch/p2>
+        rel sketch:line:startPoint = </sketch/p1>
+    }
+
+    def CadSketchLine "l2"
+    {
+        rel sketch:line:endPoint = </sketch/p4>
+        rel sketch:line:startPoint = </sketch/p3>
+    }
+
+    def CadSketchArc "a1"
+    {
+        rel sketch:arc:centerPoint = </sketch/c1>
+        rel sketch:arc:endPoint = </sketch/p1>
+        uniform double sketch:arc:radius = 5
+        rel sketch:arc:startPoint = </sketch/p4>
+        uniform token sketch:arc:sweep = "ccw"
+    }
+
+    def CadSketchArc "a2"
+    {
+        rel sketch:arc:centerPoint = </sketch/c2>
+        rel sketch:arc:endPoint = </sketch/p3>
+        uniform double sketch:arc:radius = 5
+        rel sketch:arc:startPoint = </sketch/p2>
+        uniform token sketch:arc:sweep = "ccw"
+    }
+
+    def CadSketchPoint "ch"
+    {
+        uniform double2 sketch:point:position = (10, 0)
+    }
+
+    def CadSketchCircle "hole"
+    {
+        rel sketch:circle:centerPoint = </sketch/ch>
+        uniform double sketch:circle:radius = 3
+    }
+
+    def CadTangentConstraint "t_l1_a1"
+    {
+        rel sketch:constraint:constrained = [
+            </sketch/l1>,
+            </sketch/a1>,
+        ]
+    }
+
+    def CadTangentConstraint "t_l1_a2"
+    {
+        rel sketch:constraint:constrained = [
+            </sketch/l1>,
+            </sketch/a2>,
+        ]
+    }
+
+    def CadTangentConstraint "t_l2_a1"
+    {
+        rel sketch:constraint:constrained = [
+            </sketch/l2>,
+            </sketch/a1>,
+        ]
+    }
+
+    def CadTangentConstraint "t_l2_a2"
+    {
+        rel sketch:constraint:constrained = [
+            </sketch/l2>,
+            </sketch/a2>,
+        ]
+    }
+
+    def CadRadiusConstraint "d_cap1"
+    {
+        rel sketch:constraint:constrained = </sketch/a1>
+        uniform bool sketch:constraint:driving = 1
+        uniform double sketch:constraint:value = 5
+    }
+
+    def CadRadiusConstraint "d_cap2"
+    {
+        rel sketch:constraint:constrained = </sketch/a2>
+        uniform bool sketch:constraint:driving = 1
+        uniform double sketch:constraint:value = 5
+    }
+
+    def CadRadiusConstraint "d_hole"
+    {
+        rel sketch:constraint:constrained = </sketch/hole>
+        uniform bool sketch:constraint:driving = 1
+        uniform double sketch:constraint:value = 3
+    }
+
+    def CadDistanceConstraint "d_length"
+    {
+        rel sketch:constraint:constrained = [
+            </sketch/c1>,
+            </sketch/c2>,
+        ]
+        uniform bool sketch:constraint:driving = 1
+        uniform double sketch:constraint:value = 20
+    }
+
+    def CadDistanceConstraint "d_hole_pos"
+    {
+        rel sketch:constraint:constrained = [
+            </sketch/c1>,
+            </sketch/ch>,
+        ]
+        uniform bool sketch:constraint:driving = 1
+        uniform double sketch:constraint:value = 10
+    }
+
+    def CadHorizontalConstraint "h_axis"
+    {
+        rel sketch:constraint:constrained = [
+            </sketch/c1>,
+            </sketch/c2>,
+        ]
+    }
+
+    def CadHorizontalConstraint "h_hole"
+    {
+        rel sketch:constraint:constrained = [
+            </sketch/c1>,
+            </sketch/ch>,
+        ]
+    }
+
+    def CadFixedConstraint "g_c1"
+    {
+        rel sketch:constraint:constrained = </sketch/c1>
+    }
+}
+

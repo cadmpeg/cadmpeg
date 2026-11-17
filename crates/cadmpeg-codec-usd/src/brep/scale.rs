@@ -127,6 +127,17 @@ impl Brep {
             }
         }
         out.tolerance /= divisor;
+        for tolerance in [
+            &mut out.tolerances.faces,
+            &mut out.tolerances.edges,
+            &mut out.tolerances.vertices,
+        ]
+        .into_iter()
+        .flatten()
+        .flatten()
+        {
+            *tolerance /= divisor;
+        }
         out
     }
 }

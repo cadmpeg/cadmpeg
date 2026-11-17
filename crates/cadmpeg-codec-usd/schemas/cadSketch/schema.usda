@@ -1,0 +1,698 @@
+#usda 1.0
+(
+    subLayers = [
+        @usd/schema.usda@,
+        @usdGeom/schema.usda@
+    ]
+)
+
+# ============================================================================
+# Sketch Schema (truckdriver) — 2D constrained sketches, v1
+# (points, lines, circular arcs, circles).
+#
+# A USD-native re-expression of the ISO 10303-108:2005 sketch/constraint MODEL
+# (parameterization & constraints for explicit geometric product models),
+# re-expressed idiomatically in USD. Codeless during the proposal phase.
+#
+# v2 (2026-07-23, post adversarial-review.md): geometry is PRIMS, not packed SoA
+# arrays; constraints reference geometry by USD RELATIONSHIPS. This is the
+# maximally USD-native encoding (per-element composition, list-editable targets,
+# rel-graph validation) and it makes several v1 problems collapse — see
+# adversarial-review.md BL1/BL3/BL5. The app keeps a packed SoA representation
+# IN MEMORY; the doc/bridge layer maps to/from these prims. The prior SoA+int-id
+# schema (commit 4fafcaf) is superseded.
+#
+# Architecture (see design-sketch-schema.md, revised):
+#   * CadSketch (IsA Boundable) is the container; its local XY plane (z=0, u=+X,
+#     v=+Y, from the inherited xformOp stack) IS the sketch plane (ISO 108 cl. 8
+#     positioned_sketch). No separate plane attribute.
+#   * Geometry entities are CHILD PRIMS: CadSketchPoint, CadSketchLine,
+#     CadSketchArc, CadSketchCircle. Points are first-class (SolveSpace model).
+#     A line or arc references its two endpoints by RELATIONSHIP to sibling
+#     CadSketchPoint prims — so two EDGES that share a corner target the SAME point
+#     prim, and profile-loop closure is TOPOLOGICAL (shared point prims), not
+#     position- or constraint-dependent. A circle has no endpoints and is a loop
+#     by itself.
+#   * Constraints are CHILD PRIMS referencing geometry by RELATIONSHIP
+#     (sketch:constraint:constrained / :reference — ISO 108 cl. 5 constrained_elements
+#     / reference_elements; reference empty => undirected). Namespace containment gives
+#     each constraint an OWNER — the link ISO 108 lacked (NISTIR 7433 defect #1).
+#   * Solved point positions are AUTHORITATIVE — the ISO 108 cl. 6
+#     variational_representation "current result". Constraints are edit-behavior
+#     metadata the authored geometry MUST satisfy within sketch:tolerance (IP1; see
+#     proposal.md for the normative statement, which ranges over ALL logical
+#     constraints + driving dimensional constraints, and uses a SCALE-RELATIVE
+#     tolerance so conformance does not depend on unit choice).
+#
+# NOT in the typed schema (per adversarial-review BL4): solve diagnostics
+# (solveState / degreesOfFreedom / per-constraint status) are DERIVED and can go
+# stale; a producer MAY cache them as non-normative `customData` hints on the
+# CadSketch/constraint prims (advisory only, MUST NOT be trusted over a recompute).
+# They are deliberately NOT normative attributes.
+#
+# RESERVED (v1 authors none; additive later): rational spline weights
+# (`sketch:spline:weights`);
+# an optional `uniform int64 sketch:id` provenance key on geometry prims (for
+# mapping a sketch curve to its generated B-rep face/edge — the kernel
+# apply_stable_ids hook); CadSketchProfile (explicit region selection); expression/
+# parameter binding via attribute connections (ISO 108 cl. 4 model_parameter);
+# external/projected reference geometry (ISO 108 cl. 8 implicit_*); a derived
+# BasisCurves display proxy. (CadAngleConstraint left this list on 2026-10-16, in
+# DEGREES with no sketch:angleUnit: proposal.md, Schema rationale §5.)
+#
+# NOTE: schema *definition* layer (usdGenSchema input), not a scene.
+# Design: design-sketch-schema.md  Prior art: prior-art.md  Rationale: proposal.md
+# ============================================================================
+
+over "GLOBAL" (
+    customData = {
+        string libraryName   = "cadSketch"
+        string libraryPath   = "./"
+        string libraryPrefix = ""
+        string tokensPrefix  = "Cad"
+        bool skipCodeGeneration = true
+    }
+) {
+}
+
+# ----------------------------------------------------------------------------
+# CadSketch -> registered type "CadSketch". Inherits UsdGeomBoundable (extent,
+# purpose, visibility, xformOpOrder). Container for a 2D constrained sketch; its
+# local XY plane is the sketch plane. Geometry and constraint prims are children.
+# ----------------------------------------------------------------------------
+class CadSketch "CadSketch" (
+    inherits = </Boundable>
+    doc = """A 2D constrained sketch: coplanar CadSketchPoint / CadSketchLine /
+             CadSketchArc / CadSketchCircle child prims in the prim's local XY plane,
+             related by geometric and dimensional constraint child prims. Models ISO 10303-108 positioned_sketch
+             (cl. 8); the solved point positions are the authoritative "current result"
+             (cl. 6 variational_representation) and MUST satisfy the authored constraints
+             within sketch:tolerance (cl. 5 explicit_constraint IP1; see proposal.md).
+             Feeds extrude as a profile (see the profile contract in proposal.md).
+             Coordinates are double precision in the sketch's local coordinate unit.
+             Producers MUST author `extent` (this codeless schema computes none).
+             The sketch's composed transform SHOULD be a rigid, orientation-preserving
+             placement: its three basis rows unit-length and mutually orthogonal to within
+             1e-6 absolute, and its determinant positive (proposal.md P-RIGID). A shear or
+             non-uniform scale does not preserve the distances/angles the constraints
+             assert when the profile is lifted to 3D. A reflection preserves both, but
+             leaves the plane normal ambiguous — the frame's third basis row and u x v
+             become opposite — so the profile has no defined outward side; author mirrored
+             geometry by mirroring the 2D coordinates rather than the placement."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
+    rel sketch:definition (
+        doc = """One target, a prim of the product definition that owns the sketch."""
+    )
+    uniform double sketch:tolerance = 0.000000001 (
+        doc = """SCALE-RELATIVE constraint-satisfaction tolerance (dimensionless). The
+                 authored geometry satisfies a constraint when |residual| <=
+                 sketch:tolerance * L, where L is the sketch's characteristic length
+                 (the bounding-box diagonal of its non-construction geometry TAKEN AS
+                 SWEPT CURVES, or 1 if degenerate — proposal.md §6). Relative (not absolute) so IP1 conformance does not depend
+                 on whether the sketch is authored in mm or m. Profile-loop closure is
+                 TOPOLOGICAL (shared point prims), so this tolerance governs constraint
+                 satisfaction only, not endpoint welding. MUST be at least 1e-14 and at
+                 most 1e-2 (P-VALUE `range`, proposal.md §8)."""
+    )
+
+    # RESERVED (v1 authors none): rational spline weights; CadSketchProfile
+    # for explicit region selection (v1 uses the whole-sketch profile contract).
+}
+
+# ----------------------------------------------------------------------------
+# CadSketchPoint -> "CadSketchPoint". A first-class 2D point entity (ISO 108
+# cartesian_point in the sketch's 2D space). Identity = the prim path; a
+# CadSketchLine and a constraint reference it by relationship. Shared corners =
+# two lines targeting one CadSketchPoint.
+# ----------------------------------------------------------------------------
+class CadSketchPoint "CadSketchPoint" (
+    inherits = </Typed>
+    doc = "A 2D point in the owning CadSketch's local XY plane."
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
+    uniform double2 sketch:point:position = (0, 0) (
+        doc = """Solved 2D position (u, v) in the sketch plane. AUTHORITATIVE (the ISO
+                 108 current result). `uniform` in v1 (a single solved sample; animated
+                 sketches are a reserved future version)."""
+    )
+    uniform bool sketch:point:construction = false (
+        doc = "true = construction/auxiliary point, excluded from profiles (usable as a datum by a feature)."
+    )
+    uniform token sketch:construction:role = "none" (
+        allowedTokens = ["none", "axis"]
+        doc = """The DATUM ROLE a feature may use this element for (proposal.md §7d).
+                 "none" = no declared role.  "axis" = a CadSketchLine offered as an axis
+                 (a revolve's), directed from startPoint to endPoint (C-AXIS).  A role
+                 other than "none" requires construction = true (R-ROLE).  The vocabulary is
+                 OPEN, as fitRule's is: allowedTokens is a V1 SNAPSHOT, and a Consumer
+                 meeting a role it does not implement reads the element as having none and
+                 preserves the token (C-ROLE)."""
+    )
+    # RESERVED: uniform int64 sketch:id  -- provenance key for a generated B-rep
+    # vertex (the kernel apply_stable_ids hook); v1 identity is the prim path.
+}
+
+# ----------------------------------------------------------------------------
+# CadSketchLine -> "CadSketchLine". A bounded segment between two CadSketchPoints,
+# referenced by relationship. Two lines sharing an endpoint prim are topologically
+# joined (this is how profile loops close — see proposal.md profile contract).
+# ----------------------------------------------------------------------------
+class CadSketchLine "CadSketchLine" (
+    inherits = </Typed>
+    doc = "A 2D line segment between its startPoint and endPoint (both CadSketchPoint)."
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
+    rel sketch:line:startPoint (
+        doc = "Relationship to the start CadSketchPoint (exactly one target)."
+    )
+    rel sketch:line:endPoint (
+        doc = "Relationship to the end CadSketchPoint (exactly one target)."
+    )
+    uniform bool sketch:line:construction = false (
+        doc = "true = construction/auxiliary line, excluded from profiles."
+    )
+    uniform token sketch:construction:role = "none" (
+        allowedTokens = ["none", "axis"]
+        doc = """The DATUM ROLE a feature may use this element for (proposal.md §7d).
+                 "none" = no declared role.  "axis" = a CadSketchLine offered as an axis
+                 (a revolve's), directed from startPoint to endPoint (C-AXIS).  A role
+                 other than "none" requires construction = true (R-ROLE).  The vocabulary is
+                 OPEN, as fitRule's is: allowedTokens is a V1 SNAPSHOT, and a Consumer
+                 meeting a role it does not implement reads the element as having none and
+                 preserves the token (C-ROLE)."""
+    )
+    # RESERVED: uniform int64 sketch:id  -- provenance key for a generated B-rep edge.
+}
+
+# ----------------------------------------------------------------------------
+# CadSketchArc -> "CadSketchArc". A bounded circular arc. Like CadSketchLine it is
+# an EDGE between two CadSketchPoints referenced by relationship, so an arc and a
+# line that share a corner target the SAME point prim and profile-loop closure stays
+# topological (proposal.md §7a). Its third reference — the centre — is also a
+# CadSketchPoint, which is what makes concentricity expressible as a shared centre
+# prim (two arcs targeting one centre ARE concentric — no constraint needed).
+#
+# The radius is AUTHORED, not derived. An earlier draft derived it from
+# |centre - start| on the reasoning that a fourth authored value can disagree with
+# the three points. Review established that deriving it is worse on three counts:
+#   * it puts the radius outside the variable layer, so no dimensional constraint
+#     can reach it and equal-radius between an arc and a circle is inexpressible;
+#   * ISO 10303-42 faced the same redundancy and solved it by authoring BOTH
+#     representations with a stated precedence (`trimmed_curve.master_representation`)
+#     rather than by deriving one — as do SolveSpace, FreeCAD planegcs, and DXF;
+#   * it left the arc's defining equation outside IP1, so a Producer could satisfy
+#     every in-scope constraint and still emit an arc the Validator must reject.
+# The redundancy is instead resolved by A-ONCIRCLE (proposal.md §6): the two
+# endpoints MUST lie on the authored circle, and that is an IMPLICIT CONSTRAINT
+# inside IP1's scope — so a Producer's solver enforces it like any other.
+#
+# DoF accounting: centre (2) + radius (1) + start (2) + end (2) = 7, less the two
+# A-ONCIRCLE equations = 5, which is exactly the DoF of a circular arc (centre 2,
+# radius 1, two angles).
+# ----------------------------------------------------------------------------
+class CadSketchArc "CadSketchArc" (
+    inherits = </Typed>
+    doc = """A 2D circular arc of the given radius from startPoint to endPoint about
+             centerPoint (all CadSketchPoint). Both endpoints lie on the circle
+             (A-ONCIRCLE, an implicit constraint); sweep resolves which of the two arcs
+             joining them is meant."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
+    uniform double sketch:arc:radius = 1 (
+        doc = """Arc radius in sketch units. MUST be strictly positive (R-RADIUS,
+                 proposal.md §6a). Authored rather than derived so that it is a solver
+                 variable a CadRadiusConstraint can drive and an equal-radius relation
+                 can reach; the endpoints are tied to it by A-ONCIRCLE."""
+    )
+    rel sketch:arc:startPoint (
+        doc = "Relationship to the start CadSketchPoint (exactly one target)."
+    )
+    rel sketch:arc:endPoint (
+        doc = "Relationship to the end CadSketchPoint (exactly one target)."
+    )
+    rel sketch:arc:centerPoint (
+        doc = """Relationship to the centre CadSketchPoint (exactly one target). The
+                 centre is ordinary sketch geometry, NOT an endpoint: it is not a
+                 profile vertex and does not participate in loop closure or in the
+                 degree-2 rule. Two arcs are concentric exactly when they target the
+                 same centre prim."""
+    )
+    uniform token sketch:arc:sweep = "ccw" (
+        allowedTokens = ["ccw", "cw"]
+        doc = """Direction of travel from startPoint to endPoint about centerPoint,
+                 in the sketch's own (u, v) frame (proposal.md §7a). Three points
+                 admit TWO arcs — the minor and the major — and this is what
+                 distinguishes them: "ccw" sweeps in the positive sense about the
+                 plane normal u x v, "cw" in the negative sense. It is a property of
+                 the arc's identity, not of a Consumer's traversal, so it is
+                 unaffected by C-ORIENT's freedom to choose loop winding."""
+    )
+    uniform bool sketch:arc:construction = false (
+        doc = "true = construction/auxiliary arc, excluded from profiles."
+    )
+    uniform token sketch:construction:role = "none" (
+        allowedTokens = ["none", "axis"]
+        doc = """The DATUM ROLE a feature may use this element for (proposal.md §7d).
+                 "none" = no declared role.  "axis" = a CadSketchLine offered as an axis
+                 (a revolve's), directed from startPoint to endPoint (C-AXIS).  A role
+                 other than "none" requires construction = true (R-ROLE).  The vocabulary is
+                 OPEN, as fitRule's is: allowedTokens is a V1 SNAPSHOT, and a Consumer
+                 meeting a role it does not implement reads the element as having none and
+                 preserves the token (C-ROLE)."""
+    )
+    # RESERVED: uniform int64 sketch:id  -- provenance key for a generated B-rep edge.
+}
+
+# ----------------------------------------------------------------------------
+# CadSketchCircle -> "CadSketchCircle". A full circle. Unlike every other geometry
+# entity it has NO endpoints, so it is a closed loop ON ITS OWN — it never joins
+# other geometry, and the degree-2 vertex rule does not apply to it (proposal.md
+# §7a). That also means its radius cannot be derived from endpoints and so is
+# authored here, the one deliberate asymmetry with CadSketchArc.
+# ----------------------------------------------------------------------------
+class CadSketchCircle "CadSketchCircle" (
+    inherits = </Typed>
+    doc = """A full 2D circle about centerPoint (a CadSketchPoint) with an authored
+             radius. Forms a complete profile loop by itself."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
+    rel sketch:circle:centerPoint (
+        doc = "Relationship to the centre CadSketchPoint (exactly one target)."
+    )
+    uniform double sketch:circle:radius = 1 (
+        doc = """Radius in sketch units. MUST be strictly positive (R-RADIUS,
+                 proposal.md §6a). A Producer that wants a driven radius targets this
+                 circle with a CadRadiusConstraint; the same property on CadSketchArc
+                 means one radius dimension works on either entity."""
+    )
+    uniform bool sketch:circle:construction = false (
+        doc = "true = construction/auxiliary circle, excluded from profiles."
+    )
+    uniform token sketch:construction:role = "none" (
+        allowedTokens = ["none", "axis"]
+        doc = """The DATUM ROLE a feature may use this element for (proposal.md §7d).
+                 "none" = no declared role.  "axis" = a CadSketchLine offered as an axis
+                 (a revolve's), directed from startPoint to endPoint (C-AXIS).  A role
+                 other than "none" requires construction = true (R-ROLE).  The vocabulary is
+                 OPEN, as fitRule's is: allowedTokens is a V1 SNAPSHOT, and a Consumer
+                 meeting a role it does not implement reads the element as having none and
+                 preserves the token (C-ROLE)."""
+    )
+    # RESERVED: uniform int64 sketch:id  -- provenance key for a generated B-rep edge.
+}
+
+# ----------------------------------------------------------------------------
+# CadSketchSpline -> "CadSketchSpline". A 2D non-rational B-spline, clamped (open)
+# or periodic (closed). It carries TWO layers, and the split is the whole design:
+#
+#   * a GEOMETRY layer -- degree, knots, multiplicities, poles, form -- which IS
+#     the normative curve.  A Consumer that needs only the curve reads these five
+#     properties and nothing else, exactly as it reads an arc's centre and radius.
+#   * a CONSTRAINT layer -- controlPoints or fitPoints, plus fitRule -- which says
+#     which CadSketchPoint prims DRIVE that geometry.  A-POLE and A-FITRULE tie
+#     the two together (proposal.md §6b), playing the role A-ONCIRCLE plays for
+#     the arc: the authored poles are checked against the driving points without
+#     any Consumer needing to implement a fitter.
+#
+# The poles are AUTHORED, for the same reason the arc's radius is authored: a
+# derived value sits outside the variable layer, where no constraint can drive it.
+# Deriving the poles from the fit points would put the curve itself beyond the
+# reach of the solver.
+#
+# Closed splines list each pole ONCE and set form = "closed".  A repeated relationship
+# target does not survive: the explicit text form is refused by the parser and every
+# other path DE-DUPLICATES AND PERMUTES (R-SPLINE-ORDER).  So wrap-around is expressed
+# by the form token and the periodic knot rules, never by repeating a target
+# (proposal.md §6b).
+#
+# DoF accounting: a pole contributes 2 each. degree, knots and multiplicities are
+# structural, not variables -- in particular the Catmull-Rom knots are INTEGERS
+# and do not depend on the fit points, so a solve moves poles and never knots.
+# ----------------------------------------------------------------------------
+class CadSketchSpline "CadSketchSpline" (
+    inherits = </Typed>
+    doc = """A 2D non-rational B-spline curve, clamped (form "open") or periodic
+             (form "closed"). The poles are authored and are the normative curve;
+             the driving CadSketchPoint prims are named by controlPoints (fitRule
+             "none") or fitPoints (a named rule), and are tied to the poles by the
+             implicit constraints A-POLE and A-FITRULE (proposal.md §6b)."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
+    uniform token sketch:spline:form = "open" (
+        allowedTokens = ["open", "closed"]
+        doc = """"open" = clamped: the curve begins at the first pole and ends at the
+                 last.  "closed" = periodic: the curve joins back on itself and has no
+                 endpoints.  The token selects which knot rules apply (proposal.md
+                 §6b); the two rule sets are NOT interchangeable, so overriding this
+                 token alone turns a valid curve into an invalid one.  allowedTokens
+                 is advisory metadata -- nothing in usdchecker enforces it, which is
+                 why A-FORM states it as a PRODUCER rule that the reference Validator
+                 checks (§8; its V? column reads D -- not implemented yet)."""
+    )
+    uniform int sketch:spline:degree = 3 (
+        doc = """Polynomial degree, 2..7.  Degree 3 is the default and is what both v1
+                 tools author.  A Catmull-Rom spline is cubic by definition and its
+                 degree is not free (A-FITRULE).  NON-NORMATIVE, stated here only as the
+                 app's intent: a degree change on a control-polygon spline keeps the
+                 poles and regenerates uniform knots.  proposal.md states no re-knotting
+                 rule -- R-SPLINE-KNOTS/-OPEN/-CLOSED constrain the AUTHORED layer and
+                 say nothing about what an edit does to it."""
+    )
+    uniform double[] sketch:spline:knots (
+        doc = """The DISTINCT breakpoints, strictly increasing -- not the flat knot
+                 vector.  Multiplicity is carried separately, in one-to-one order, by
+                 sketch:spline:multiplicities.  This is the encoding ISO 10303-42's
+                 b_spline_curve_with_knots uses, and FreeCAD's.  A Catmull-Rom spline's
+                 knots are the integers 0..k and do not depend on the fit points, so
+                 they never drift during a solve."""
+    )
+    uniform int[] sketch:spline:multiplicities (
+        doc = """One multiplicity per knot, same order, each >= 1.  Open (clamped):
+                 first and last are degree+1, interior are <= degree, and the sum is
+                 poles + degree + 1.  Closed (periodic): EVERY multiplicity including
+                 the seam is <= degree, first equals last, and the sum over all but the
+                 last is the pole count (proposal.md §6b)."""
+    )
+    uniform double2[] sketch:spline:poles (
+        doc = """The control points, in order -- the NORMATIVE curve.  At least
+                 degree+1 of them.  For a closed curve each pole is listed once; the
+                 wrap is in the knot rules, not in a repeated pole.  A sparse override
+                 of poles WITHOUT the driving relationship, or the reverse, does not
+                 give two consumers two different curves -- the curve is a function of
+                 the five geometry properties alone, so every conformant consumer reads
+                 the SAME curve.  What it gives is one curve and an A-POLE-INVALID
+                 document, which is the easier harm to test for.  (The two-different-
+                 curves outcome belongs to a `form`-alone override, proposal.md §6b.)"""
+    )
+    uniform token sketch:spline:fitRule = "none" (
+        allowedTokens = ["none", "catmullRomCentripetal"]
+        doc = """"none" = the driving points ARE the poles, named by controlPoints.
+                 Any other token names a rule that derives the poles from the fit
+                 points named by fitPoints.  The vocabulary is OPEN and expected to
+                 grow.  allowedTokens here is a V1 SNAPSHOT, NOT the vocabulary: it is
+                 the one metadatum a UI is specified to read as exhaustive, and on this
+                 property it is not.  Nothing enforces it (A-FORM), so a later rule's
+                 token round-trips unharmed.  A Consumer meeting a
+                 token it does not implement MAY READ the geometry layer but MUST NOT
+                 WRITE the spline back changed -- see A-FITRULE and C-FITRULE
+                 (proposal.md §6b, §7c).  "catmullRomCentripetal" is the
+                 centripetal Catmull-Rom rule, stated exactly in proposal.md §6b."""
+    )
+    rel sketch:spline:controlPoints (
+        doc = """Ordered relationship to the driving CadSketchPoint prims, ONE PER
+                 POLE in pole order.  Authored exactly when fitRule is "none".  No
+                 prim may be repeated within this relationship, and it may not be
+                 reordered (R-SPLINE-ORDER).  USD does not preserve a duplicate: the
+                 explicit form is refused by the parser, and every other path --
+                 prepend/append, reorder, references, the runtime AddTarget -- silently
+                 DE-DUPLICATES AND PERMUTES, keeping the target COUNT intact while every
+                 pole from that index on binds to the wrong point.  A count check cannot
+                 see it; A-POLE's per-index check is what detects it.  Re-read the
+                 relationship after authoring it."""
+    )
+    rel sketch:spline:fitPoints (
+        doc = """Ordered relationship to the CadSketchPoint prims the curve passes
+                 THROUGH.  Authored exactly when fitRule is not "none".  The WHOLE
+                 GEOMETRY LAYER -- poles AND degree, knots, multiplicities -- is the
+                 rule's exact closed-form function of these points (A-FITRULE); a
+                 Consumer checks that function rather than running a fitter.  Binding
+                 the poles alone is not enough: the same poles under a different knot
+                 layer miss these points by 3.11 units.  No prim
+                 may be repeated within this relationship."""
+    )
+    uniform bool sketch:spline:construction = false (
+        doc = "true = construction/auxiliary spline, excluded from profiles."
+    )
+    uniform token sketch:construction:role = "none" (
+        allowedTokens = ["none", "axis"]
+        doc = """The DATUM ROLE a feature may use this element for (proposal.md §7d).
+                 "none" = no declared role.  "axis" = a CadSketchLine offered as an axis
+                 (a revolve's), directed from startPoint to endPoint (C-AXIS).  A role
+                 other than "none" requires construction = true (R-ROLE).  The vocabulary is
+                 OPEN, as fitRule's is: allowedTokens is a V1 SNAPSHOT, and a Consumer
+                 meeting a role it does not implement reads the element as having none and
+                 preserves the token (C-ROLE)."""
+    )
+    # RESERVED: uniform double[] sketch:spline:weights -- rational (NURBS) weights,
+    # deferred 2026-09-19.  v1 is non-rational.  The name is reserved so that adding
+    # it stays additive, but reserving a NAME is not enough on its own: an old reader
+    # that ignored an authored weights array would compute a DIFFERENT curve in
+    # silence.  That is why an unknown sketch:spline:* property makes the sketch
+    # read-only rather than being skipped (proposal.md §7c, C-UNKNOWN).
+    # RESERVED: uniform int64 sketch:id  -- provenance key for a generated B-rep edge.
+}
+
+# ----------------------------------------------------------------------------
+# CadSketchConstraint -> ABSTRACT typed base for all sketch constraints. A concrete
+# subtype's PRIM TYPE carries the constraint semantics (UsdPhysics joint-subtype
+# pattern); this base carries the reference model. A constraint SHOULD be a namespace
+# descendant of the CadSketch whose geometry it references (ownership = containment).
+# References are by RELATIONSHIP to geometry prims, split constrained vs reference per
+# ISO 10303-108 cl. 5 explicit_constraint.
+# ----------------------------------------------------------------------------
+class "CadSketchConstraint" (
+    inherits = </Typed>
+    doc = """Abstract base for a 2D sketch constraint. Concrete subtypes fix the element
+             arity and meaning of the constrained/reference targets (see each subtype's
+             doc). Models ISO 10303-108 explicit_geometric_constraint (cl. 7)."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the record that the prim states (docs/formats/usd.md §18)."""
+    )
+    rel sketch:constraint:constrained (
+        doc = """Relationships to the CONSTRAINED geometry prims (CadSketchPoint /
+                 CadSketchLine of the owning sketch). Arity and per-target meaning are
+                 fixed by the concrete subtype. ISO 108 constrained_elements (cl. 5)."""
+    )
+    rel sketch:constraint:reference (
+        doc = """Relationships to the REFERENCE geometry prims (held fixed; the constrained
+                 elements are positioned relative to them). No targets => the constraint
+                 holds symmetrically among the constrained set (undirected). Present =>
+                 directed. ISO 108 reference_elements (cl. 5)."""
+    )
+    # Solve diagnostics are NOT normative here: a producer MAY cache a per-constraint
+    # advisory status in customData; it MUST NOT be trusted over a recompute.
+}
+
+# ----------------------------------------------------------------------------
+# CadDimensionalConstraint -> ABSTRACT typed base for constraints carrying a measured
+# value (ISO 108's `*_with_dimension` subtypes, cl. 7).
+# ----------------------------------------------------------------------------
+class "CadDimensionalConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """Abstract base for a dimensional (measured) sketch constraint. Mirrors ISO
+             10303-108's dimensioned constraint subtypes (e.g. pgc_with_dimension)."""
+)
+{
+    uniform double sketch:constraint:value = 0.0 (
+        doc = """The dimension value; measure type fixed by the concrete subtype (e.g.
+                 non-negative length for CadDistanceConstraint). `uniform` in v1
+                 (expression/animation binding is a reserved future capability)."""
+    )
+    uniform bool sketch:constraint:driving = true (
+        doc = """true = DRIVING (the constraint enforces this value on the geometry).
+                 false = REFERENCE/DRIVEN (the value is measured FROM the geometry and
+                 reported, not enforced; excluded from IP1). Cf. FreeCAD isDriving."""
+    )
+    rel sketch:constraint:parameter (
+        doc = """One target, the CadParameter prim whose value this dimension states
+                 (docs/formats/usd.md §18.6)."""
+    )
+}
+
+# ---- Concrete logical constraints (v1) -------------------------------------
+# Each adds no properties: the prim TYPE is the semantics (cf. UsdPhysics FixedJoint),
+# and the doc fixes arity. All participate in IP1 (proposal.md) except CadFixedConstraint.
+# CadPointOnCurveConstraint and CadSymmetricConstraint were added 2026-09-30 (arc
+# sketch-schema-additions), two of the constraints FreeCAD's sketcher infers;
+# CadEqualConstraint on 2026-10-02 (the same arc, phase 5), which resolves the
+# equal-radius reservation and adds equal length.
+
+class CadCoincidentConstraint "CadCoincidentConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """Two points are coincident. constrained = EXACTLY 2 CadSketchPoint; reference
+             empty. (Only needed for points NOT already unified as one shared prim — e.g.
+             joining two separately-drawn chains.) ISO 108 incidence (cl. 7)."""
+)
+{
+}
+
+class CadHorizontalConstraint "CadHorizontalConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """A line is parallel to the sketch u-axis (or two points share v). constrained =
+             1 CadSketchLine, OR 2 CadSketchPoint; reference empty. (ISO 108 lacks
+             horizontal/vertical; defined here against the sketch plane's own axes.)"""
+)
+{
+}
+
+class CadVerticalConstraint "CadVerticalConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """A line is parallel to the sketch v-axis (or two points share u). constrained =
+             1 CadSketchLine, OR 2 CadSketchPoint; reference empty."""
+)
+{
+}
+
+class CadParallelConstraint "CadParallelConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """Two lines are parallel. constrained = EXACTLY 2 CadSketchLine; reference empty.
+             ISO 108 parallel_geometric_constraint (cl. 7)."""
+)
+{
+}
+
+class CadPerpendicularConstraint "CadPerpendicularConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """Two lines are perpendicular. constrained = EXACTLY 2 CadSketchLine; reference
+             empty. ISO 108 perpendicular_geometric_constraint (cl. 7)."""
+)
+{
+}
+
+class CadFixedConstraint "CadFixedConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """Grounds an entity (its position is frozen; removes rigid-motion DoF).
+             constrained = 1 CadSketchPoint OR 1 CadSketchLine; reference empty. Has no
+             position residual (it constrains future motion, not the current result), so
+             it is EXCLUDED from IP1. ISO 108 fixed_element_geometric_constraint (cl. 7)."""
+)
+{
+}
+
+class CadPointOnCurveConstraint "CadPointOnCurveConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """A point lies on a curve's CARRIER: the infinite line through a CadSketchLine,
+             or the full circle of a CadSketchArc or CadSketchCircle.  constrained =
+             EXACTLY 1 CadSketchPoint; reference = EXACTLY 1 CadSketchLine, CadSketchArc or
+             CadSketchCircle (directed, as point-line CadDistanceConstraint).  A
+             CadSketchSpline reference is not admitted in this revision: a point's distance
+             to a spline is not closed-form (proposal.md §6).  The carrier, not the bounded
+             span: a point on an arc's circle outside its sweep satisfies it.  The point may
+             not be the reference curve's own centre (R-ARITY).  Removes one degree of
+             freedom in general position.  FreeCAD PointOnObject; ISO 108
+             incidence_geometric_constraint (cl. 7)."""
+)
+{
+}
+
+class CadSymmetricConstraint "CadSymmetricConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """Two points are mirror images.  constrained = EXACTLY 2 CadSketchPoint (a, b);
+             reference = EXACTLY 1 CadSketchLine (the mirror: reflection in its infinite
+             line) OR 1 CadSketchPoint (the centre: point reflection), which is not also a
+             constrained target; neither constrained point may be an endpoint of the mirror
+             line (R-ARITY).  The VERDICT is the distance from b to a's image,
+             | p(b) - sigma(p(a)) |, order-free because a reflection is its own inverse; a
+             solver states it as two signed rows (proposal.md §6).  Removes two degrees of
+             freedom in general position.  FreeCAD Symmetric; ISO 108
+             symmetry_geometric_constraint (cl. 7) for the mirror form."""
+)
+{
+}
+
+class CadEqualConstraint "CadEqualConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """Two entities have the same size.  constrained = EXACTLY 2 different targets,
+             either 2 CadSketchLine (equal LENGTH: the distance between each line's
+             endpoints) or 2 of {CadSketchArc, CadSketchCircle} in any mix (equal RADIUS:
+             the authored radii); reference empty (undirected).  A line paired with an arc
+             or a circle, and any CadSketchSpline, is an R-ARITY violation in this
+             revision.  The length row reads no direction, so a zero-length line is not
+             malformed here.  Binary: k entities of one size are k - 1 constraints.
+             Removes one degree of freedom in general position.  FreeCAD Equal; Onshape
+             EQUAL (proposal.md §6, "Equality")."""
+)
+{
+}
+
+# ---- Concrete dimensional constraints (v1) ---------------------------------
+
+class CadTangentConstraint "CadTangentConstraint" (
+    inherits = </CadSketchConstraint>
+    doc = """Two curves meet tangentially. constrained = EXACTLY 2 of
+             {CadSketchLine, CadSketchArc, CadSketchCircle, CadSketchSpline}, at least one
+             of which is an arc, a circle or a spline; reference empty.
+
+             This is what makes curved geometry USABLE. Without it a slot's caps meet its
+             rails smoothly only because the authored coordinates happen to say so, and any
+             edit opens a corner with nothing to flag it — tangency is what a slot IS.
+             ISO 10303-108's vocabulary carries `tangent` for the same reason, and this
+             proposal's prior-art survey (§7.2) criticises ISO 108 precisely for omissions
+             that forced construction-geometry workarounds; shipping arcs without tangency
+             would repeat that.
+
+             Residuals are normative in proposal.md §6: the line-arc / arc-arc forms, and
+             (DRAFT) the spline rows. Lines, arcs and circles need not touch at a shared
+             point prim: tangency is a geometric relation, and profile-loop closure remains
+             separately topological (§7a). A spline target is the exception and carries
+             R-ARITY's DRAFT clauses — see proposal.md §6, "Tangency on a spline"."""
+)
+{
+}
+
+class CadRadiusConstraint "CadRadiusConstraint" (
+    inherits = </CadDimensionalConstraint>
+    doc = """A radius dimension on a curved entity. constrained = EXACTLY 1
+             CadSketchArc or CadSketchCircle; reference empty; value = the radius, a
+             STRICTLY POSITIVE length.
+
+             Drives `sketch:arc:radius` / `sketch:circle:radius` directly — which is the
+             point of authoring the radius rather than deriving it. A diameter dimension
+             is deliberately NOT a separate type: it is this constraint with the value
+             halved, and a second type would double the residual table for a presentation
+             difference. ISO 108 radius _with_dimension (cl. 7)."""
+)
+{
+}
+
+class CadDistanceConstraint "CadDistanceConstraint" (
+    inherits = </CadDimensionalConstraint>
+    doc = """A distance dimension. Two forms:
+               point-point: constrained = 2 CadSketchPoint; reference empty; value =
+                            distance between the points.
+               point-line:  constrained = 1 CadSketchPoint; reference = 1 CadSketchLine
+                            (directed); value = perpendicular distance from the point to
+                            the INFINITE line through the segment.
+             value is a NON-NEGATIVE length (ISO 108 non_negative_length_measure).
+             ISO 108 point_distance / curve_distance _with_dimension (cl. 7)."""
+)
+{
+}
+
+class CadAngleConstraint "CadAngleConstraint" (
+    inherits = </CadDimensionalConstraint>
+    doc = """An angle dimension between two lines (added 2026-10-16, arc
+             sketch-vocabulary-gaps).  reference = EXACTLY 1 CadSketchLine; constrained =
+             EXACTLY 1 CadSketchLine, a different one (directed).  value = the angle in
+             DEGREES from dir(reference) to dir(constrained), counter-clockwise in the
+             sketch's (u, v) positive, in (-180, 180]; dir(l) runs from startPoint to
+             endPoint.  With the lines' directions fixed, the value fixes the
+             configuration: which of the four angles at the crossing a display shows is
+             not part of it.  Reversing a line re-expresses every angle naming it
+             (R-REVERSE).  The normative text is proposal.md §6, "Angles"; this doc is
+             not.  ISO 108 angle_geometric_constraint / agc_with_dimension (cl. 7.4.19-20),
+             with the sense ISO 108 leaves to the receiving system."""
+)
+{
+}

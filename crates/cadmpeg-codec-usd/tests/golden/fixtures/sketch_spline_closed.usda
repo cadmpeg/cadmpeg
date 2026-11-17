@@ -1,0 +1,49 @@
+#usda 1.0
+(
+    defaultPrim = "sketch"
+    metersPerUnit = 0.01
+    upAxis = "Z"
+)
+
+def CadSketch "sketch"
+{
+    float3[] extent = [(-3.1354356, -2.8230772, 0), (28.138832, 28.823078, 0)]
+    uniform double sketch:tolerance = 1e-9
+
+    def CadSketchPoint "f0"
+    {
+        uniform double2 sketch:point:position = (0, 0)
+    }
+
+    def CadSketchPoint "f1"
+    {
+        uniform double2 sketch:point:position = (20, 4)
+    }
+
+    def CadSketchPoint "f2"
+    {
+        uniform double2 sketch:point:position = (26, 22)
+    }
+
+    def CadSketchPoint "f3"
+    {
+        uniform double2 sketch:point:position = (6, 26)
+    }
+
+    def CadSketchSpline "s1"
+    {
+        uniform int sketch:spline:degree = 3
+        rel sketch:spline:fitPoints = [
+            </sketch/f0>,
+            </sketch/f1>,
+            </sketch/f2>,
+            </sketch/f3>,
+        ]
+        uniform token sketch:spline:fitRule = "catmullRomCentripetal"
+        uniform token sketch:spline:form = "closed"
+        uniform double[] sketch:spline:knots = [0, 1, 2, 3, 4]
+        uniform int[] sketch:spline:multiplicities = [3, 3, 3, 3, 3]
+        uniform double2[] sketch:spline:poles = [(0, 0), (2.74126629065, -2.82307718229), (15.6713599916, 0.178753570172), (20, 4), (24.1749738702, 7.68559269546), (28.1388324977, 18.3144073045), (26, 22), (23.7824445832, 25.8212464298), (10.3725552134, 28.8230771823), (6, 26), (0.998710805761, 22.770989795), (-3.13543564546, 3.22901020504)]
+    }
+}
+

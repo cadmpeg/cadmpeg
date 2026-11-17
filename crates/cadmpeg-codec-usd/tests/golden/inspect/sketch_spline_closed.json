@@ -1,0 +1,41 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "sketch",
+        "header": "#usda 1.0",
+        "metersPerUnit": "0.01",
+        "prim_specs": "6",
+        "property_specs": "13",
+        "upAxis": "Z"
+      },
+      "kind": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "kind": "exact",
+        "size": 1461
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "header": "#usda 1.0"
+        },
+        "dialect": "usd:usda-1.0"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "prim types: CadSketch 1, CadSketchPoint 4, CadSketchSpline 1"
+  ]
+}

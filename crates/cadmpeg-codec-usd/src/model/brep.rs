@@ -58,6 +58,78 @@ pub(crate) struct Imported {
     pub(crate) kind: Option<BodyKind>,
     /// The IR face of each `brep:face:id`.
     pub(crate) face_ids: BTreeMap<i64, FaceId>,
+    /// The body, when its identity is the B-rep's CADIR identity.
+    pub(crate) body: Option<cadmpeg_ir::ids::BodyId>,
+    /// The body name from `cad:brep:name`.
+    pub(crate) name: Option<String>,
+}
+
+/// The tolerance of record `index` of `values`, in millimetres.
+fn own_tolerance(values: &[Option<f64>], index: usize, scale: f64) -> Option<PositiveReal> {
+    values
+        .get(index)
+        .copied()
+        .flatten()
+        .and_then(|tolerance| PositiveReal::new(tolerance * scale))
+}
+
+/// The IR identity of the body and of each face, edge, and vertex record:
+/// the record's CADIR identity when it is valid and not yet used, and
+/// otherwise the identity of its position.
+struct Ids {
+    body: cadmpeg_ir::ids::BodyId,
+    faces: Vec<FaceId>,
+    edges: Vec<EdgeId>,
+    vertices: Vec<cadmpeg_ir::ids::VertexId>,
+}
+
+impl Ids {
+    fn new(brep: &Brep, key: &str, used: &mut BTreeSet<String>) -> Self {
+        fn kept<T>(
+            value: Option<&Option<String>>,
+            used: &mut BTreeSet<String>,
+            mint: impl Fn(String) -> Option<T>,
+        ) -> Option<T> {
+            let text = value.cloned().flatten()?;
+            if used.contains(&text) {
+                return None;
+            }
+            let id = mint(text.clone())?;
+            used.insert(text);
+            Some(id)
+        }
+        let identities = &brep.identities;
+        Self {
+            body: kept(Some(&identities.body), used, |text| {
+                cadmpeg_ir::ids::BodyId::mint(text).ok()
+            })
+            .unwrap_or_else(|| crate::ids::body(key)),
+            faces: (0..brep.faces.len())
+                .map(|index| {
+                    kept(identities.faces.get(index), used, |text| {
+                        FaceId::mint(text).ok()
+                    })
+                    .unwrap_or_else(|| id::face(key, index))
+                })
+                .collect(),
+            edges: (0..brep.edges.len())
+                .map(|index| {
+                    kept(identities.edges.get(index), used, |text| {
+                        EdgeId::mint(text).ok()
+                    })
+                    .unwrap_or_else(|| id::edge(key, index))
+                })
+                .collect(),
+            vertices: (0..brep.vertices.len())
+                .map(|index| {
+                    kept(identities.vertices.get(index), used, |text| {
+                        cadmpeg_ir::ids::VertexId::mint(text).ok()
+                    })
+                    .unwrap_or_else(|| id::vertex(key, index))
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Why a B-rep has no neutral form.
@@ -423,8 +495,18 @@ fn catalog_name(catalog: Catalog) -> &'static str {
 }
 
 /// Imports the B-rep of definition `key`, its lengths multiplied by `scale`.
-pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Refusal> {
-    let mut out = Imported::default();
+pub(super) fn import(
+    brep: &Brep,
+    key: &str,
+    scale: f64,
+    used: &mut BTreeSet<String>,
+) -> Result<Imported, Refusal> {
+    let ids = Ids::new(brep, key, used);
+    let mut out = Imported {
+        body: (ids.body != crate::ids::body(key)).then(|| ids.body.clone()),
+        name: brep.identities.body_name.clone(),
+        ..Imported::default()
+    };
 
     // Ownership: each loop in one face, each oriented edge in one loop, each
     // face in one shell, each shell in at most one solid.
@@ -573,9 +655,9 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             None,
         ));
         out.vertices.push(Vertex {
-            id: id::vertex(key, *vertex),
+            id: ids.vertices[*vertex].clone(),
             point,
-            tolerance: None,
+            tolerance: own_tolerance(&brep.tolerances.vertices, *vertex, scale),
             native_ref: None,
         });
     }
@@ -584,7 +666,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     // increasing curve parameter.
     let edge_ids: BTreeMap<usize, EdgeId> = used_edges
         .iter()
-        .map(|edge| (*edge, id::edge(key, *edge)))
+        .map(|edge| (*edge, ids.edges[*edge].clone()))
         .collect();
     for (edge, edge_id) in &edge_ids {
         let record = &brep.edges[*edge];
@@ -618,16 +700,18 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             }
             None => EdgeCarrier::unbounded(None),
         };
-        let tolerance = record
-            .tolerance
-            .filter(|tolerance| *tolerance > brep.tolerance)
-            .and_then(|tolerance| PositiveReal::new(tolerance * scale));
+        let tolerance = own_tolerance(&brep.tolerances.edges, *edge, scale).or_else(|| {
+            record
+                .tolerance
+                .filter(|tolerance| *tolerance > brep.tolerance)
+                .and_then(|tolerance| PositiveReal::new(tolerance * scale))
+        });
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
             ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
-                id::vertex(key, start),
-                id::vertex(key, end),
+                ids.vertices[start].clone(),
+                ids.vertices[end].clone(),
             )),
             tolerance,
             native_ref: None,
@@ -641,14 +725,14 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             continue;
         };
         let loop_id = id::loop_(key, loop_);
-        let face_id = id::face(key, face);
+        let face_id = ids.faces[face].clone();
         if record.oriented_edges.is_empty() {
             if let Some(vertex) = record.vertex {
                 out.loops.push(Loop {
                     id: loop_id,
                     face: face_id,
                     boundary: LoopBoundary::Vertex {
-                        vertex: id::vertex(key, vertex),
+                        vertex: ids.vertices[vertex].clone(),
                         pcurves: Vec::new(),
                     },
                     native_ref: None,
@@ -686,7 +770,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             out.coedges.push(Coedge {
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),
-                edge: id::edge(key, use_.edge),
+                edge: ids.edges[use_.edge].clone(),
                 radial_next: coedge_id.clone(),
                 sense: if edge.same_sense == use_.orientation {
                     Sense::Forward
@@ -720,7 +804,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     // Faces, shells, regions.
     let written_loops: BTreeSet<LoopId> = out.loops.iter().map(|loop_| loop_.id.clone()).collect();
     for (face, record) in brep.faces.iter().enumerate() {
-        let face_id = id::face(key, face);
+        let face_id = ids.faces[face].clone();
         let loops: Vec<LoopId> = record
             .loops
             .iter()
@@ -742,9 +826,9 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
                 Sense::Reversed
             },
             loops,
-            name: None,
+            name: brep.identities.face_names.get(face).cloned().flatten(),
             color: None,
-            tolerance: None,
+            tolerance: own_tolerance(&brep.tolerances.faces, face, scale),
             native_ref: None,
         });
         out.face_ids.insert(record.id, face_id);
@@ -760,7 +844,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     for (region, shells) in regions.iter().enumerate() {
         out.regions.push(Region {
             id: id::region(key, region),
-            body: crate::ids::body(key),
+            body: ids.body.clone(),
             shells: shells.iter().map(|shell| id::shell(key, *shell)).collect(),
             native_ref: None,
         });
@@ -827,6 +911,9 @@ pub(super) fn folded(
     .then_some(source)
 }
 
+/// A body and the IR face of each record face identity.
+type BodyFaces = (cadmpeg_ir::ids::BodyId, BTreeMap<i64, FaceId>);
+
 impl super::Builder<'_, '_, '_, '_> {
     /// Adds a body for each B-rep of the `BrepArray` prim `prim`, and the
     /// fallback meshes of `fallbacks` as tessellations of its first body.
@@ -854,6 +941,7 @@ impl super::Builder<'_, '_, '_, '_> {
         }
         let mut bodies = Vec::new();
         let mut keys: BTreeMap<usize, String> = BTreeMap::new();
+        let mut faces = BTreeMap::new();
         for (ordinal, records) in decoded.breps.iter().enumerate() {
             let body_key = if ordinal == 0 {
                 key.to_owned()
@@ -861,7 +949,8 @@ impl super::Builder<'_, '_, '_, '_> {
                 format!("{key}#brep{ordinal}")
             };
             match self.brep_body(prim, &body_key, records)? {
-                Ok(body) => {
+                Ok((body, face_ids)) => {
+                    faces.extend(face_ids);
                     self.body_material(prim, &body_key, &body)?;
                     bodies.push(body);
                     keys.insert(ordinal, body_key);
@@ -873,6 +962,13 @@ impl super::Builder<'_, '_, '_, '_> {
             }
         }
         self.brep_subsets(prim, key, &decoded.faces, &keys)?;
+        self.brep_entries.insert(
+            key.to_owned(),
+            super::BrepEntry {
+                faces,
+                body_transform: None,
+            },
+        );
         if let Some(body) = bodies.first() {
             for (ordinal, fallback) in fallbacks.iter().enumerate() {
                 let Some(fallback) = self.stage.prims.get(*fallback) else {
@@ -935,7 +1031,7 @@ impl super::Builder<'_, '_, '_, '_> {
                         .map(|index| {
                             let body_key = keys.get(&usize::try_from(*index).ok()?)?;
                             Some(cadmpeg_ir::appearance::AppearanceTarget::Body(
-                                crate::ids::body(body_key),
+                                self.body_id(body_key),
                             ))
                         })
                         .collect(),
@@ -1040,15 +1136,16 @@ impl super::Builder<'_, '_, '_, '_> {
         self.admit("usd_mesh")
     }
 
-    /// Adds the body of B-rep records `records`, which `prim` defines, or
-    /// gives the reason that the records have no neutral form.
+    /// Adds the body of B-rep records `records`, which `prim` defines, and
+    /// gives it with the IR face of each record face identity, or gives the
+    /// reason that the records have no neutral form.
     pub(super) fn brep_body(
         &mut self,
         prim: &crate::stage::Prim<'_>,
         key: &str,
         records: &crate::brep::Brep,
-    ) -> Result<Result<cadmpeg_ir::ids::BodyId, String>, cadmpeg_core::CodecError> {
-        let imported = match import(records, key, self.scale) {
+    ) -> Result<Result<BodyFaces, String>, cadmpeg_core::CodecError> {
+        let imported = match import(records, key, self.scale, &mut self.used_ids) {
             Ok(imported) => imported,
             Err(reason) => return Ok(Err(reason)),
         };
@@ -1066,7 +1163,9 @@ impl super::Builder<'_, '_, '_, '_> {
             shells,
             regions,
             kind,
-            face_ids: _,
+            face_ids,
+            body,
+            name,
         } = imported;
         let geometry = &mut self.ir.geometry;
         geometry.points.extend(points);
@@ -1089,10 +1188,16 @@ impl super::Builder<'_, '_, '_, '_> {
                 self.ir.tolerances.linear = tolerance;
             }
         }
-        let body = crate::ids::body(key);
+        if let Some(body) = &body {
+            self.body_ids.insert(key.to_owned(), body.clone());
+        }
+        let body = self.body_id(key);
         self.body(prim, key, kind.unwrap_or(BodyKind::General));
+        if let (Some(name), Some(record)) = (name, self.ir.geometry.bodies.last_mut()) {
+            record.name = Some(name);
+        }
         self.transferred = true;
         self.admit("usd_brep")?;
-        Ok(Ok(body))
+        Ok(Ok((body, face_ids)))
     }
 }

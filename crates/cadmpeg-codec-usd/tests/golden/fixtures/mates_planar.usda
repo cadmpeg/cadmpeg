@@ -1,0 +1,375 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Xform "A"
+    {
+        def BrepArray "Brep" (
+            prepend apiSchemas = ["BrepPointAPI:vertexPoint", "BrepCurve3dNurbAPI:edge3dNurb", "BrepSurfaceNurbAPI", "BrepCurveUvNurbAPI"]
+        )
+        {
+            float3[] extent = [(-1.0000001e-6, -1.0000001e-6, -1.0000001e-6), (0.010001, 0.020001002, 0.030001001)]
+            uniform double[] brep:intersectTol3d = [9.999999999999999e-10]
+            uniform double3[] brep:extent = [(-1e-6, -1e-6, -1e-6), (0.010001, 0.020001, 0.030001)]
+            uniform uint[] brep:regionCount = [2]
+            uniform uint[] region:shellCount = [1, 1]
+            uniform token[] region:type = ["voidRegion", "solidRegion"]
+            uniform uint[] shell:faceuseCount = [6, 6]
+            uniform uint[] shell:wireEdgeCount = [0, 0]
+            uniform token[] shell:pointType = ["none", "none"]
+            uniform uint[] faceuse:faceIndex = [
+                0, 1, 2, 3, 4, 5, 0, 1,
+                2, 3, 4, 5
+            ]
+            uniform token[] faceuse:orientationType = [
+                "opposite", "same", "opposite", "same", "opposite", "same", "same", "opposite",
+                "same", "opposite", "same", "opposite"
+            ]
+            uniform uint[] face:loopCount = [1, 1, 1, 1, 1, 1]
+            uniform token[] face:surfaceType = ["BrepSurfaceNurbAPI", "BrepSurfaceNurbAPI", "BrepSurfaceNurbAPI", "BrepSurfaceNurbAPI", "BrepSurfaceNurbAPI", "BrepSurfaceNurbAPI"]
+            uniform token[] face:trimType = ["general", "general", "general", "general", "general", "general"]
+            uniform double2[] face:range = [
+                (-1e-6, -0.020001), (0.030001, 1e-6), (-1e-6, -0.020001), (0.030001, 1e-6), (-1e-6, -1e-6), (0.030001, 0.010001), (-1e-6, -1e-6), (0.030001, 0.010001),
+                (-1e-6, -1e-6), (0.010001, 0.020001), (-1e-6, -1e-6), (0.010001, 0.020001)
+            ]
+            uniform uint[] loop:edgeuseCount = [4, 4, 4, 4, 4, 4]
+            uniform uint[] loop:vertexIndex = [4294967295, 4294967295, 4294967295, 4294967295, 4294967295, 4294967295]
+            uniform uint[] edgeuse:edgeIndex = [
+                3, 2, 1, 0, 4, 5, 6, 7,
+                9, 4, 8, 1, 10, 3, 11, 6,
+                5, 10, 0, 8, 2, 9, 7, 11
+            ]
+            uniform token[] edgeuse:orientationType = [
+                "same", "opposite", "opposite", "same", "opposite", "same", "same", "opposite",
+                "same", "opposite", "opposite", "same", "opposite", "same", "same", "opposite",
+                "same", "opposite", "opposite", "same", "opposite", "same", "same", "opposite"
+            ]
+            uniform uint[] edgeuse:nextRadialEUIndex = [
+                13, 20, 11, 18, 9, 16, 15, 22,
+                21, 4, 19, 2, 17, 0, 23, 6,
+                5, 12, 3, 10, 1, 8, 7, 14
+            ]
+            uniform token[] edgeuse:thisRadialEntryType = [
+                "bottomEntry", "topEntry", "topEntry", "bottomEntry", "topEntry", "bottomEntry", "bottomEntry", "topEntry",
+                "bottomEntry", "topEntry", "topEntry", "bottomEntry", "topEntry", "bottomEntry", "bottomEntry", "topEntry",
+                "bottomEntry", "topEntry", "topEntry", "bottomEntry", "topEntry", "bottomEntry", "bottomEntry", "topEntry"
+            ]
+            uniform token[] edge:curveType = [
+                "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI",
+                "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI"
+            ]
+            uniform double[] edge:range = [
+                0, 0.02, 0, 0.03, 0, 0.02, 0, 0.03,
+                0, 0.03, 0, 0.02, 0, 0.03, 0, 0.02,
+                0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01
+            ]
+            uniform int2[] edge:vertexIndices = [
+                (0, 1), (0, 2), (2, 3), (1, 3), (4, 5), (4, 6), (6, 7), (5, 7),
+                (0, 4), (2, 5), (1, 6), (3, 7)
+            ]
+            uniform token[] wireEdge:curveType = []
+            uniform double[] wireEdge:range = []
+            uniform int2[] wireEdge:vertexIndices = []
+            uniform token[] vertex:pointType = ["BrepPointAPI", "BrepPointAPI", "BrepPointAPI", "BrepPointAPI", "BrepPointAPI", "BrepPointAPI", "BrepPointAPI", "BrepPointAPI"]
+            uniform point3d[] brep:vertexPoint:point:position = [(0, 0, 0), (0, 0.02, 0), (0, 0, 0.03), (0, 0.02, 0.03), (0.01, 0, 0), (0.01, 0, 0.03), (0.01, 0.02, 0), (0.01, 0.02, 0.03)]
+            uniform point3d[] brep:edge3dNurb:curve3d:nurb:controlVertices = [
+                (0, 0, 0), (0, 0.02, 0), (0, 0, 0), (0, 0, 0.03), (0, 0, 0.03), (0, 0.02, 0.03), (0, 0.02, 0), (0, 0.02, 0.03),
+                (0.01, 0, 0), (0.01, 0, 0.03), (0.01, 0, 0), (0.01, 0.02, 0), (0.01, 0.02, 0), (0.01, 0.02, 0.03), (0.01, 0, 0.03), (0.01, 0.02, 0.03),
+                (0, 0, 0), (0.01, 0, 0), (0, 0, 0.03), (0.01, 0, 0.03), (0, 0.02, 0), (0.01, 0.02, 0), (0, 0.02, 0.03), (0.01, 0.02, 0.03)
+            ]
+            uniform uint[] brep:edge3dNurb:curve3d:nurb:vertexCount = [
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2
+            ]
+            uniform uint[] brep:edge3dNurb:curve3d:nurb:order = [
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2
+            ]
+            uniform double[] brep:edge3dNurb:curve3d:nurb:knots = [
+                0, 0, 0.02, 0.02, 0, 0, 0.03, 0.03,
+                0, 0, 0.02, 0.02, 0, 0, 0.03, 0.03,
+                0, 0, 0.03, 0.03, 0, 0, 0.02, 0.02,
+                0, 0, 0.03, 0.03, 0, 0, 0.02, 0.02,
+                0, 0, 0.01, 0.01, 0, 0, 0.01, 0.01,
+                0, 0, 0.01, 0.01, 0, 0, 0.01, 0.01
+            ]
+            uniform double[] brep:edge3dNurb:curve3d:nurb:weights = [
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1
+            ]
+            uniform point3d[] brep:surface:nurb:controlVertices = [
+                (0, 0.020001, -1e-6), (0, -1e-6, -1e-6), (0, 0.020001, 0.030001), (0, -1e-6, 0.030001), (0.01, 0.020001, -1e-6), (0.01, -1e-6, -1e-6), (0.01, 0.020001, 0.030001), (0.01, -1e-6, 0.030001),
+                (-1e-6, 0, -1e-6), (0.010001, 0, -1e-6), (-1e-6, 0, 0.030001), (0.010001, 0, 0.030001), (-1e-6, 0.02, -1e-6), (0.010001, 0.02, -1e-6), (-1e-6, 0.02, 0.030001), (0.010001, 0.02, 0.030001),
+                (-1e-6, -1e-6, 0), (-1e-6, 0.020001, 0), (0.010001, -1e-6, 0), (0.010001, 0.020001, 0), (-1e-6, -1e-6, 0.03), (-1e-6, 0.020001, 0.03), (0.010001, -1e-6, 0.03), (0.010001, 0.020001, 0.03)
+            ]
+            uniform uint[] brep:surface:nurb:uVertexCount = [2, 2, 2, 2, 2, 2]
+            uniform uint[] brep:surface:nurb:vVertexCount = [2, 2, 2, 2, 2, 2]
+            uniform uint[] brep:surface:nurb:uOrder = [2, 2, 2, 2, 2, 2]
+            uniform uint[] brep:surface:nurb:vOrder = [2, 2, 2, 2, 2, 2]
+            uniform double[] brep:surface:nurb:uKnots = [
+                -1e-6, -1e-6, 0.030001, 0.030001, -1e-6, -1e-6, 0.030001, 0.030001,
+                -1e-6, -1e-6, 0.030001, 0.030001, -1e-6, -1e-6, 0.030001, 0.030001,
+                -1e-6, -1e-6, 0.010001, 0.010001, -1e-6, -1e-6, 0.010001, 0.010001
+            ]
+            uniform double[] brep:surface:nurb:vKnots = [
+                -0.020001, -0.020001, 1e-6, 1e-6, -0.020001, -0.020001, 1e-6, 1e-6,
+                -1e-6, -1e-6, 0.010001, 0.010001, -1e-6, -1e-6, 0.010001, 0.010001,
+                -1e-6, -1e-6, 0.020001, 0.020001, -1e-6, -1e-6, 0.020001, 0.020001
+            ]
+            uniform double[] brep:surface:nurb:weights = [
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1
+            ]
+            uniform double2[] brep:curveUv:nurb:controlVertices = [
+                (0, -0.02), (0.03, -0.02), (0.03, -0.02), (0.03, 0), (0.03, 0), (0, 0), (0, 0), (0, -0.02),
+                (0.03, 0), (0, 0), (0, 0), (0, -0.02), (0, -0.02), (0.03, -0.02), (0.03, -0.02), (0.03, 0),
+                (0.03, 0), (0.03, 0.01), (0.03, 0.01), (0, 0.01), (0, 0.01), (0, 0), (0, 0), (0.03, 0),
+                (0, 0.01), (0, 0), (0, 0), (0.03, 0), (0.03, 0), (0.03, 0.01), (0.03, 0.01), (0, 0.01),
+                (0.01, 0), (0.01, 0.02), (0.01, 0.02), (0, 0.02), (0, 0.02), (0, 0), (0, 0), (0.01, 0),
+                (0, 0.02), (0, 0), (0, 0), (0.01, 0), (0.01, 0), (0.01, 0.02), (0.01, 0.02), (0, 0.02)
+            ]
+            uniform uint[] brep:curveUv:nurb:vertexCount = [
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2
+            ]
+            uniform uint[] brep:curveUv:nurb:order = [
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2
+            ]
+            uniform double[] brep:curveUv:nurb:knots = [
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1
+            ]
+            uniform double[] brep:curveUv:nurb:weights = [
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1
+            ]
+        }
+
+        def Scope "connectors"
+        {
+            def CadConnector "top"
+            {
+                rel cadConnector:body = </World/A/Brep>
+                uniform int64 cadConnector:faceId = 5
+                uniform token cadConnector:origin = "faceFrame"
+                uniform matrix4d cadConnector:witness:frame = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0.005, 0.01, 0.03, 1) )
+                uniform point3d cadConnector:witness:point = (0.005, 0.01, 0.03)
+                uniform token cadConnector:witness:surfaceClass = "plane"
+                uniform double[] cadConnector:witness:surfaceParams = []
+            }
+        }
+    }
+
+    def Xform "B"
+    {
+        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0.03, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+
+        def BrepArray "Brep" (
+            prepend apiSchemas = ["BrepPointAPI:vertexPoint", "BrepCurve3dNurbAPI:edge3dNurb", "BrepSurfaceNurbAPI", "BrepCurveUvNurbAPI"]
+        )
+        {
+            float3[] extent = [(-1.0000001e-6, -1.0000001e-6, -1.0000001e-6), (0.010001, 0.020001002, 0.030001001)]
+            uniform double[] brep:intersectTol3d = [9.999999999999999e-10]
+            uniform double3[] brep:extent = [(-1e-6, -1e-6, -1e-6), (0.010001, 0.020001, 0.030001)]
+            uniform uint[] brep:regionCount = [2]
+            uniform uint[] region:shellCount = [1, 1]
+            uniform token[] region:type = ["voidRegion", "solidRegion"]
+            uniform uint[] shell:faceuseCount = [6, 6]
+            uniform uint[] shell:wireEdgeCount = [0, 0]
+            uniform token[] shell:pointType = ["none", "none"]
+            uniform uint[] faceuse:faceIndex = [
+                0, 1, 2, 3, 4, 5, 0, 1,
+                2, 3, 4, 5
+            ]
+            uniform token[] faceuse:orientationType = [
+                "opposite", "same", "opposite", "same", "opposite", "same", "same", "opposite",
+                "same", "opposite", "same", "opposite"
+            ]
+            uniform uint[] face:loopCount = [1, 1, 1, 1, 1, 1]
+            uniform token[] face:surfaceType = ["BrepSurfaceNurbAPI", "BrepSurfaceNurbAPI", "BrepSurfaceNurbAPI", "BrepSurfaceNurbAPI", "BrepSurfaceNurbAPI", "BrepSurfaceNurbAPI"]
+            uniform token[] face:trimType = ["general", "general", "general", "general", "general", "general"]
+            uniform double2[] face:range = [
+                (-1e-6, -0.020001), (0.030001, 1e-6), (-1e-6, -0.020001), (0.030001, 1e-6), (-1e-6, -1e-6), (0.030001, 0.010001), (-1e-6, -1e-6), (0.030001, 0.010001),
+                (-1e-6, -1e-6), (0.010001, 0.020001), (-1e-6, -1e-6), (0.010001, 0.020001)
+            ]
+            uniform uint[] loop:edgeuseCount = [4, 4, 4, 4, 4, 4]
+            uniform uint[] loop:vertexIndex = [4294967295, 4294967295, 4294967295, 4294967295, 4294967295, 4294967295]
+            uniform uint[] edgeuse:edgeIndex = [
+                3, 2, 1, 0, 4, 5, 6, 7,
+                9, 4, 8, 1, 10, 3, 11, 6,
+                5, 10, 0, 8, 2, 9, 7, 11
+            ]
+            uniform token[] edgeuse:orientationType = [
+                "same", "opposite", "opposite", "same", "opposite", "same", "same", "opposite",
+                "same", "opposite", "opposite", "same", "opposite", "same", "same", "opposite",
+                "same", "opposite", "opposite", "same", "opposite", "same", "same", "opposite"
+            ]
+            uniform uint[] edgeuse:nextRadialEUIndex = [
+                13, 20, 11, 18, 9, 16, 15, 22,
+                21, 4, 19, 2, 17, 0, 23, 6,
+                5, 12, 3, 10, 1, 8, 7, 14
+            ]
+            uniform token[] edgeuse:thisRadialEntryType = [
+                "bottomEntry", "topEntry", "topEntry", "bottomEntry", "topEntry", "bottomEntry", "bottomEntry", "topEntry",
+                "bottomEntry", "topEntry", "topEntry", "bottomEntry", "topEntry", "bottomEntry", "bottomEntry", "topEntry",
+                "bottomEntry", "topEntry", "topEntry", "bottomEntry", "topEntry", "bottomEntry", "bottomEntry", "topEntry"
+            ]
+            uniform token[] edge:curveType = [
+                "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI",
+                "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI", "BrepCurve3dNurbAPI"
+            ]
+            uniform double[] edge:range = [
+                0, 0.02, 0, 0.03, 0, 0.02, 0, 0.03,
+                0, 0.03, 0, 0.02, 0, 0.03, 0, 0.02,
+                0, 0.01, 0, 0.01, 0, 0.01, 0, 0.01
+            ]
+            uniform int2[] edge:vertexIndices = [
+                (0, 1), (0, 2), (2, 3), (1, 3), (4, 5), (4, 6), (6, 7), (5, 7),
+                (0, 4), (2, 5), (1, 6), (3, 7)
+            ]
+            uniform token[] wireEdge:curveType = []
+            uniform double[] wireEdge:range = []
+            uniform int2[] wireEdge:vertexIndices = []
+            uniform token[] vertex:pointType = ["BrepPointAPI", "BrepPointAPI", "BrepPointAPI", "BrepPointAPI", "BrepPointAPI", "BrepPointAPI", "BrepPointAPI", "BrepPointAPI"]
+            uniform point3d[] brep:vertexPoint:point:position = [(0, 0, 0), (0, 0.02, 0), (0, 0, 0.03), (0, 0.02, 0.03), (0.01, 0, 0), (0.01, 0, 0.03), (0.01, 0.02, 0), (0.01, 0.02, 0.03)]
+            uniform point3d[] brep:edge3dNurb:curve3d:nurb:controlVertices = [
+                (0, 0, 0), (0, 0.02, 0), (0, 0, 0), (0, 0, 0.03), (0, 0, 0.03), (0, 0.02, 0.03), (0, 0.02, 0), (0, 0.02, 0.03),
+                (0.01, 0, 0), (0.01, 0, 0.03), (0.01, 0, 0), (0.01, 0.02, 0), (0.01, 0.02, 0), (0.01, 0.02, 0.03), (0.01, 0, 0.03), (0.01, 0.02, 0.03),
+                (0, 0, 0), (0.01, 0, 0), (0, 0, 0.03), (0.01, 0, 0.03), (0, 0.02, 0), (0.01, 0.02, 0), (0, 0.02, 0.03), (0.01, 0.02, 0.03)
+            ]
+            uniform uint[] brep:edge3dNurb:curve3d:nurb:vertexCount = [
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2
+            ]
+            uniform uint[] brep:edge3dNurb:curve3d:nurb:order = [
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2
+            ]
+            uniform double[] brep:edge3dNurb:curve3d:nurb:knots = [
+                0, 0, 0.02, 0.02, 0, 0, 0.03, 0.03,
+                0, 0, 0.02, 0.02, 0, 0, 0.03, 0.03,
+                0, 0, 0.03, 0.03, 0, 0, 0.02, 0.02,
+                0, 0, 0.03, 0.03, 0, 0, 0.02, 0.02,
+                0, 0, 0.01, 0.01, 0, 0, 0.01, 0.01,
+                0, 0, 0.01, 0.01, 0, 0, 0.01, 0.01
+            ]
+            uniform double[] brep:edge3dNurb:curve3d:nurb:weights = [
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1
+            ]
+            uniform point3d[] brep:surface:nurb:controlVertices = [
+                (0, 0.020001, -1e-6), (0, -1e-6, -1e-6), (0, 0.020001, 0.030001), (0, -1e-6, 0.030001), (0.01, 0.020001, -1e-6), (0.01, -1e-6, -1e-6), (0.01, 0.020001, 0.030001), (0.01, -1e-6, 0.030001),
+                (-1e-6, 0, -1e-6), (0.010001, 0, -1e-6), (-1e-6, 0, 0.030001), (0.010001, 0, 0.030001), (-1e-6, 0.02, -1e-6), (0.010001, 0.02, -1e-6), (-1e-6, 0.02, 0.030001), (0.010001, 0.02, 0.030001),
+                (-1e-6, -1e-6, 0), (-1e-6, 0.020001, 0), (0.010001, -1e-6, 0), (0.010001, 0.020001, 0), (-1e-6, -1e-6, 0.03), (-1e-6, 0.020001, 0.03), (0.010001, -1e-6, 0.03), (0.010001, 0.020001, 0.03)
+            ]
+            uniform uint[] brep:surface:nurb:uVertexCount = [2, 2, 2, 2, 2, 2]
+            uniform uint[] brep:surface:nurb:vVertexCount = [2, 2, 2, 2, 2, 2]
+            uniform uint[] brep:surface:nurb:uOrder = [2, 2, 2, 2, 2, 2]
+            uniform uint[] brep:surface:nurb:vOrder = [2, 2, 2, 2, 2, 2]
+            uniform double[] brep:surface:nurb:uKnots = [
+                -1e-6, -1e-6, 0.030001, 0.030001, -1e-6, -1e-6, 0.030001, 0.030001,
+                -1e-6, -1e-6, 0.030001, 0.030001, -1e-6, -1e-6, 0.030001, 0.030001,
+                -1e-6, -1e-6, 0.010001, 0.010001, -1e-6, -1e-6, 0.010001, 0.010001
+            ]
+            uniform double[] brep:surface:nurb:vKnots = [
+                -0.020001, -0.020001, 1e-6, 1e-6, -0.020001, -0.020001, 1e-6, 1e-6,
+                -1e-6, -1e-6, 0.010001, 0.010001, -1e-6, -1e-6, 0.010001, 0.010001,
+                -1e-6, -1e-6, 0.020001, 0.020001, -1e-6, -1e-6, 0.020001, 0.020001
+            ]
+            uniform double[] brep:surface:nurb:weights = [
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1
+            ]
+            uniform double2[] brep:curveUv:nurb:controlVertices = [
+                (0, -0.02), (0.03, -0.02), (0.03, -0.02), (0.03, 0), (0.03, 0), (0, 0), (0, 0), (0, -0.02),
+                (0.03, 0), (0, 0), (0, 0), (0, -0.02), (0, -0.02), (0.03, -0.02), (0.03, -0.02), (0.03, 0),
+                (0.03, 0), (0.03, 0.01), (0.03, 0.01), (0, 0.01), (0, 0.01), (0, 0), (0, 0), (0.03, 0),
+                (0, 0.01), (0, 0), (0, 0), (0.03, 0), (0.03, 0), (0.03, 0.01), (0.03, 0.01), (0, 0.01),
+                (0.01, 0), (0.01, 0.02), (0.01, 0.02), (0, 0.02), (0, 0.02), (0, 0), (0, 0), (0.01, 0),
+                (0, 0.02), (0, 0), (0, 0), (0.01, 0), (0.01, 0), (0.01, 0.02), (0.01, 0.02), (0, 0.02)
+            ]
+            uniform uint[] brep:curveUv:nurb:vertexCount = [
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2
+            ]
+            uniform uint[] brep:curveUv:nurb:order = [
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2
+            ]
+            uniform double[] brep:curveUv:nurb:knots = [
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1
+            ]
+            uniform double[] brep:curveUv:nurb:weights = [
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1
+            ]
+        }
+
+        def Scope "connectors"
+        {
+            def CadConnector "bottom"
+            {
+                rel cadConnector:body = </World/B/Brep>
+                uniform int64 cadConnector:faceId = 4
+                uniform token cadConnector:origin = "faceFrame"
+                uniform matrix4d cadConnector:witness:frame = ( (1, 0, 0, 0), (0, -1, 0, 0), (0, 0, -1, 0), (0.005, 0.01, 0, 1) )
+                uniform point3d cadConnector:witness:point = (0.005, 0.01, 0)
+                uniform token cadConnector:witness:surfaceClass = "plane"
+                uniform double[] cadConnector:witness:surfaceParams = []
+            }
+        }
+    }
+
+    def Scope "Mates"
+    {
+        def CadPlanarMate "stack"
+        {
+            rel cadMate:connector0 = </World/A/connectors/top>
+            rel cadMate:connector1 = </World/B/connectors/bottom>
+        }
+    }
+}

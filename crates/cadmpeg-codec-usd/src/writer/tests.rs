@@ -20,8 +20,9 @@ fn the_layer_states_metres_and_one_root() {
     ));
     let (text, _) = encode(source.ir());
     assert!(text.starts_with(
-        "#usda 1.0\n(\n    defaultPrim = \"Robot\"\n    metersPerUnit = 1\n    upAxis = \"Y\"\n)\n"
+        "#usda 1.0\n(\n    defaultPrim = \"Robot\"\n    metersPerUnit = 1\n    upAxis = \"Y\"\n"
     ));
+    assert!(text.contains("        dictionary cad = {\n"), "{text}");
     assert!(text.contains("def Xform \"Robot\""));
     assert!(text.contains("    def Mesh \"Arm\""));
 }
