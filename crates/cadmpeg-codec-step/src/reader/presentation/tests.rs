@@ -1708,7 +1708,9 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     use cadmpeg_ir::ids::{LayerId, OccurrenceId, PmiId, ProductDefinitionId};
     use cadmpeg_ir::pmi::{PmiAnnotation, PmiDefinition};
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
-    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition};
+    use cadmpeg_ir::products::{
+        ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
+    };
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.geometry.bodies[0].id.clone();
@@ -1716,81 +1718,34 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         ProductDefinitionId::mint("test:model:product#parent").expect("identity grammar");
     let child_product =
         ProductDefinitionId::mint("test:model:product#child").expect("identity grammar");
-    ir.model.product_definitions.extend([
-        ProductDefinition {
-            sketches: Vec::default(),
-            id: parent_product.clone(),
-            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
-            source_name: Some("Parent assembly".into()),
-            label: Some("Parent assembly".into()),
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: Vec::new(),
-            native_ref: None,
-            generated_from: None,
-            storage: cadmpeg_ir::products::Storage::Embedded,
-            occurrences: Vec::new(),
-            instance_bodies: Vec::new(),
-            representations: Vec::new(),
-            units: None,
-            general_tolerance: None,
-            active: None,
-        },
-        ProductDefinition {
-            sketches: Vec::default(),
-            id: child_product.clone(),
-            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
-            source_name: Some("Child part".into()),
-            label: Some("Child part".into()),
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: vec![body],
-            native_ref: None,
-            generated_from: None,
-            storage: cadmpeg_ir::products::Storage::Embedded,
-            occurrences: Vec::new(),
-            instance_bodies: Vec::new(),
-            representations: Vec::new(),
-            units: None,
-            general_tolerance: None,
-            active: None,
-        },
-    ]);
-    let root = OccurrenceId::mint("test:model:occurrence#root").expect("identity grammar");
     let child = OccurrenceId::mint("test:model:occurrence#child").expect("identity grammar");
-    ir.model.occurrences.extend([
-        Occurrence {
-            id: root.clone(),
-            prototype: parent_product.clone(),
-            transform: Some(Transform::identity()),
-            suppressed: None,
-            visible: None,
-            representation: None,
-            overrides: Vec::new(),
-            name: Some("Root assembly".into()),
-            native_ref: None,
-        },
-        Occurrence {
-            id: child.clone(),
-            prototype: child_product,
-            transform: Some(
-                Transform::affine([
-                    [1.0, 0.0, 0.0, 25.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                ])
-                .expect("affine transform"),
-            ),
-            suppressed: None,
-            visible: None,
-            representation: None,
-            overrides: Vec::new(),
-            name: Some("Child occurrence".into()),
-            native_ref: None,
-        },
-    ]);
+    let mut parent = ProductDefinition::root(parent_product.clone(), ExternalDocument::default());
+    parent.kind = Some(ProductDefinitionKind::Part);
+    parent.source_name = Some("Parent assembly".into());
+    parent.label = Some("Parent assembly".into());
+    parent.occurrences = vec![child.clone()];
+    let mut child_definition = ProductDefinition::new(child_product.clone(), Storage::Embedded);
+    child_definition.kind = Some(ProductDefinitionKind::Part);
+    child_definition.source_name = Some("Child part".into());
+    child_definition.label = Some("Child part".into());
+    child_definition.bodies = vec![body];
+    ir.model
+        .product_definitions
+        .extend([parent, child_definition]);
+    let mut child_occurrence = Occurrence::new(
+        child.clone(),
+        child_product,
+        Some(
+            Transform::affine([
+                [1.0, 0.0, 0.0, 25.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("affine transform"),
+        ),
+    );
+    child_occurrence.name = Some("Child occurrence".into());
+    ir.model.occurrences.push(child_occurrence);
     let annotation = PmiId::mint("test:model:pmi#note").expect("identity grammar");
     ir.model.pmi.push(PmiAnnotation {
         id: annotation.clone(),
