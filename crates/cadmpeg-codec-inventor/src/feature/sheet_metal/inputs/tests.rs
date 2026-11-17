@@ -127,6 +127,7 @@ fn paired_inputs_select_their_own_complete_independent_rows() {
             names: std::collections::HashMap::default(),
             historical: std::collections::HashMap::default(),
             historical_generators: std::collections::HashMap::default(),
+            unavailable: None,
             faces: std::collections::HashMap::default(),
             geometry: std::collections::HashMap::from([(
                 ("fixture".to_owned(), 61),

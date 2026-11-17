@@ -173,6 +173,12 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalRefoldSourceUnresolved,
     /// An Unfold or Refold stays native; the note names the first refused admission check.
     FeatureSheetMetalFoldRefused,
+    /// A sheet-metal face plate without a bend stays native; the note names the first refused check.
+    FeatureSheetMetalFaceRefused,
+    /// A sheet-metal plate, bend, or corner stays native without another sheet-metal note; the note names the projection stage.
+    FeatureSheetMetalNativeUnexplained,
+    /// The edge-naming and stored-edge joins have no records; the note names the reason.
+    FeatureEdgeInventoryUnavailable,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
     /// `DeleteFace` Boolean construction roles remain unresolved.
@@ -399,6 +405,9 @@ impl InventorLossCode {
         Self::FeatureSheetMetalFoldControlsRetained,
         Self::FeatureSheetMetalRefoldSourceUnresolved,
         Self::FeatureSheetMetalFoldRefused,
+        Self::FeatureSheetMetalFaceRefused,
+        Self::FeatureSheetMetalNativeUnexplained,
+        Self::FeatureEdgeInventoryUnavailable,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureDeleteFaceOperandsNative,
         Self::FeatureFilletOperandsNative,
@@ -579,6 +588,9 @@ impl InventorLossCode {
                 "feature.sheet-metal-refold-source-unresolved"
             }
             Self::FeatureSheetMetalFoldRefused => "feature.sheet-metal-fold-refused",
+            Self::FeatureSheetMetalFaceRefused => "feature.sheet-metal-face-refused",
+            Self::FeatureSheetMetalNativeUnexplained => "feature.sheet-metal-native-unexplained",
+            Self::FeatureEdgeInventoryUnavailable => "feature.edge-inventory-unavailable",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureMirrorBooleanNative => "feature.mirror-boolean-native",
@@ -733,6 +745,9 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalFoldControlsRetained
             | Self::FeatureSheetMetalRefoldSourceUnresolved
             | Self::FeatureSheetMetalFoldRefused
+            | Self::FeatureSheetMetalFaceRefused
+            | Self::FeatureSheetMetalNativeUnexplained
+            | Self::FeatureEdgeInventoryUnavailable
             | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureMirrorBooleanNative
@@ -920,6 +935,9 @@ mod tests {
                 "feature.sheet-metal-fold-controls-retained",
                 "feature.sheet-metal-refold-source-unresolved",
                 "feature.sheet-metal-fold-refused",
+                "feature.sheet-metal-face-refused",
+                "feature.sheet-metal-native-unexplained",
+                "feature.edge-inventory-unavailable",
                 "feature.revolve-operands-native",
                 "feature.delete-face-operands-native",
                 "feature.fillet-operands-native",

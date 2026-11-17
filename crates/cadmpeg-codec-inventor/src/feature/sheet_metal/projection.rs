@@ -513,6 +513,11 @@ fn historical_producers(
 pub(in crate::feature) struct Refusals(BTreeMap<String, PlateRefusal>);
 
 impl Refusals {
+    /// Whether the plate record `source` has a refusal.
+    pub(in crate::feature) fn contains(&self, source: &str) -> bool {
+        self.0.contains_key(source)
+    }
+
     /// Keep the first refusal of a plate record.
     pub(in crate::feature) fn insert(&mut self, source: String, refusal: PlateRefusal) {
         self.0.entry(source).or_insert(refusal);
